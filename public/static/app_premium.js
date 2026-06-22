@@ -1005,15 +1005,30 @@ function forms(formId){
     return `<article class="card clickable" onclick="show('forms','${f.id}')"><span class="badge">Tool${stageNum}</span><h3>${escapeHtml(f.title)}</h3><p style="font-size:.85rem">${f.fields.slice(0,3).map(x=>x.label).join(', ')}…</p></article>`;
   }).join('')}</div>
   <h2 class="mt">Stage Checklists</h2>
-  <div class="grid grid-2">${stageChecklists.map(c=>`<article class="card clickable" style="border-left:3px solid #00d4ff;transition:border-color .2s" onclick="show('forms','${escapeForJs(c.id)}')"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><h3 style="margin:0">${escapeHtml(c.title)}</h3><span style="color:#00d4ff;font-size:1.1rem;font-weight:700">→</span></div><p class="muted small-text">Stage ${c.stage}</p>${renderChecklist(c,true)}</article>`).join('')}</div>
+  <div class="grid grid-2">${stageChecklists.map(c=>`<article class="card clickable" style="border-left:3px solid #00d4ff;transition:border-color .2s" onclick="show('forms','${c.id}')"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><h3 style="margin:0">${escapeHtml(c.title)}</h3><span style="color:#00d4ff;font-size:1.1rem;font-weight:700">→</span></div><p class="muted small-text">Stage ${c.stage}</p>${renderChecklist(c,true)}</article>`).join('')}</div>
   <h2 class="mt">Daily & Weekly Tools</h2>
-  <div class="grid grid-2">${utilChecklists.map(c=>`<article class="card clickable" style="border-left:3px solid #4ade80;transition:border-color .2s" onclick="show('forms','${escapeForJs(c.id)}')"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><h3 style="margin:0">${escapeHtml(c.title)}</h3><span style="color:#4ade80;font-size:1.1rem;font-weight:700">→</span></div>${renderChecklist(c,true)}</article>`).join('')}</div>`;
+  <div class="grid grid-2">${utilChecklists.map(c=>`<article class="card clickable" style="border-left:3px solid #4ade80;transition:border-color .2s" onclick="show('forms','${c.id}')"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><h3 style="margin:0">${escapeHtml(c.title)}</h3><span style="color:#4ade80;font-size:1.1rem;font-weight:700">→</span></div>${renderChecklist(c,true)}</article>`).join('')}</div>`;
   wireChecks();
 }
 function renderFormTool(f){
   const stageChecklist = (data.checklists||[]).find(c=>c.stage===f.stage);
   const fieldLabels = f.fields.map(x=>x.label);
-  view.innerHTML = `<button class="secondary-btn" onclick="show('forms')">← Back to Forms</button><div class="eyebrow">Daily Tool · Stage ${f.stage||'—'}</div><h1>${escapeHtml(f.title)}</h1><div class="grid grid-2 mt"><section class="card"><h2>Fields to Capture</h2>${list(fieldLabels)}<button class="secondary-btn mt8" onclick="copyText('${escapeForJs(fieldLabels.map(x=>\'- \'+x+\':\').join(\'\\n\')}', this)">Copy Field Template</button></section><section class="card"><h2>${stageChecklist ? escapeHtml(stageChecklist.title) : 'Stage Checklist'}</h2>${stageChecklist ? renderChecklist(stageChecklist, true) : '<p class="muted">No checklist for this stage.</p>'}</section></div><section class="card mt"><h2>Copy-Ready Working Note</h2><div class="script-box">${nl2br(fieldLabels.map(x=>`${x}:`).join('\n\n'))}</div><button class="primary-btn mt8" onclick="copyText('${escapeForJs(fieldLabels.map(x=>x+':').join('\n\n'))}')">Copy Note Template</button></section>`;
+  const _fieldCopyStr = fieldLabels.map(x=>'- '+x+':').join('\n');
+  const _noteCopyStr  = fieldLabels.map(x=>x+':').join('\n\n');
+  const _noteHtml     = nl2br(fieldLabels.map(x=>x+':').join('\n\n'));
+  const _scTitle      = stageChecklist ? escapeHtml(stageChecklist.title) : 'Stage Checklist';
+  const _scHtml       = stageChecklist ? renderChecklist(stageChecklist, true) : '<p class="muted">No checklist for this stage.</p>';
+  view.innerHTML =
+    '<button class="secondary-btn" onclick="show(\'forms\')">← Back to Forms</button>'
+    +'<div class="eyebrow">Daily Tool · Stage '+(f.stage||'—')+'</div>'
+    +'<h1>'+escapeHtml(f.title)+'</h1>'
+    +'<div class="grid grid-2 mt">'
+    +'<section class="card"><h2>Fields to Capture</h2>'+list(fieldLabels)
+    +'<button class="secondary-btn mt8" onclick="copyText(\''+ escapeForJs(_fieldCopyStr) +'\',this)">Copy Field Template</button></section>'
+    +'<section class="card"><h2>'+_scTitle+'</h2>'+_scHtml+'</section></div>'
+    +'<section class="card mt"><h2>Copy-Ready Working Note</h2>'
+    +'<div class="script-box">'+_noteHtml+'</div>'
+    +'<button class="primary-btn mt8" onclick="copyText(\''+ escapeForJs(_noteCopyStr) +'\')">Copy Note Template</button></section>';
   wireChecks();
 }
 function escapeForJs(str){ return String(str).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n'); }
