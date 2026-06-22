@@ -78,7 +78,6 @@ async function googleOAuthConnect() {
     response_type: 'token',
     scope: GOOGLE_SCOPES,
     state,
-    nonce,
     include_granted_scopes: 'true',
     prompt: 'select_account'
   });
