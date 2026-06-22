@@ -141,7 +141,7 @@ function renderTodayActivityWidget(){
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px">
         ${Object.entries(targets.ryan||{}).map(([k,v])=>`<div style="background:var(--bg2);border-radius:8px;padding:12px">
           <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">${escapeHtml(v.label)}</div>
-          <div style="font-size:1.1rem;font-weight:700;color:var(--accent)">${v.min === v.max ? v.min : v.min + '–' + v.max}/wk</div>
+          <div style="font-size:1.1rem;font-weight:700;color:var(--accent)">${v.target !== undefined ? (v.floor ? '0 stale' : v.target+'/wk') : (v.min === v.max ? v.min : (v.min||'—')+'–'+(v.max||'—'))}</div>
         </div>`).join('')}
       </div>
     </div>`;
@@ -154,7 +154,8 @@ function renderTodayActivityWidget(){
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:12px">
       ${Object.entries(repTargets).map(([k,v])=>`<div style="background:var(--bg2);border-radius:8px;padding:12px">
         <div style="font-size:.75rem;color:var(--muted);margin-bottom:4px">${escapeHtml(v.label)}</div>
-        <div style="font-size:1.2rem;font-weight:700;color:${currentRep.color||'#00d4ff'}">${v.min === v.max ? v.min : v.min + '–' + v.max}${v.frequency==='daily'?'/day':'/wk'}</div>
+        <div style="font-size:1.2rem;font-weight:700;color:${currentRep.color||'#00d4ff'}">${v.target !== undefined ? (v.floor ? '0 stale' : v.target+(v.frequency==='daily'?'/day':'/wk')) : (v.min === v.max ? v.min : (v.min||'—')+'–'+(v.max||'—'))}</div>
+        ${v.description ? `<div style="font-size:.7rem;color:#64748b;margin-top:4px">${escapeHtml(v.description)}</div>` : ''}
       </div>`).join('')}
     </div>
     <div class="footer-actions mt">
@@ -193,6 +194,11 @@ function pipeline(selectedId){
     const cat = (o.projectCategory||'').toLowerCase();
     return cat.includes('maintenance');
   });
+  if (activeCatFilter === 'snow') opps = opps.filter(o => {
+    const cat = (o.projectCategory||'').toLowerCase();
+    const div = (data.projectCategories||[]).find(pc => pc.name === o.projectCategory);
+    return cat.includes('snow') || (div && div.division === 'snow');
+  });
 
   const filters = data.statuses;
   const grouped = filters.map(status => ({status, items: opps.filter(o=>o.status===status)})).filter(g=>g.items.length || ['New Lead','Contacted','Discovery Scheduled','Proposal / Estimate Sent','Follow-Up','Sold / Activation'].includes(g.status));
@@ -225,6 +231,7 @@ function pipeline(selectedId){
         <button class="tab ${activeCatFilter==='all'?'active':''}" onclick="window._pipelineCatFilter='all';show('pipeline')">All Work</button>
         <button class="tab ${activeCatFilter==='landscape'?'active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">🌿 Landscape</button>
         <button class="tab ${activeCatFilter==='maintenance'?'active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">✂️ Maintenance</button>
+        <button class="tab ${activeCatFilter==='snow'?'active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">❄️ Snow & Ice</button>
       </div>
     </div>
     ${statCards()}
@@ -511,7 +518,209 @@ function academy(){
   wireChecks();
 }
 function manager(){
-  view.innerHTML = `<div class="eyebrow">Leadership Rhythm</div><h1>Manager Tools</h1><p class="lede">Inspect process weekly, not just revenue monthly. Use these tools to coach behavior, not just outcomes.</p>${statCards()}<div class="grid grid-2 mt"><article class="card"><h2>Weekly Sales Meeting Agenda</h2>${list(data.managerAgenda)}</article><article class="card"><h2>Sales KPIs</h2>${list(data.kpis)}</article><article class="card"><h2>Stuck Deal Questions</h2>${list(['What stage is this opportunity actually in?','What is the client’s core buying reason?','Who decides, and have we spoken with them?','What objection is real vs vague?','What is the next yes/no/adjust decision?','What date is the next follow-up?'])}</article><article class="card"><h2>Non-Negotiables</h2>${list(data.nonNegotiables)}</article><article class="card"><h2>Lost Job Debrief</h2>${list(['What did the client choose instead?','Was the issue budget, trust, timing, scope, or fit?','Did we understand the decision process?','Did we follow up properly?','What should change in training, pricing, or process?'])}</article><article class="card"><h2>Production Feedback Review</h2>${list(['What did sales miss?','What did estimating miss?','Where did labor exceed expectation?','Where was the client confused?','What should become a new checklist item?'])}</article></div>`;
+  const fy = data.fy2026;
+  const annual = fy.annual;
+  const divs = fy.divisions;
+  const pd = data.pricingDiscipline;
+  const rc = data.reviewCadence;
+  const tylerCard = data.repData && data.repData.tyler;
+
+  function fmtM(n){ return n != null ? n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}) : '\u2014'; }
+
+  function pbar(actual, target){
+    const pct = target > 0 ? Math.min(100, Math.round((actual/target)*100)) : 0;
+    const barColor = pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171';
+    return `<div style="height:6px;background:#1e293b;border-radius:4px;margin-top:6px"><div style="height:6px;width:${pct}%;background:${barColor};border-radius:4px;transition:width .5s"></div></div><div style="font-size:10px;color:#64748b;margin-top:3px">${pct}% of target</div>`;
+  }
+
+  function divTile(div){
+    const abovePlan = div.remaining <= 0;
+    const gmOk = div.grossMarginPct >= div.grossMarginFloor;
+    return `<article style="background:#0f172a;border:1px solid ${abovePlan?'#16a34a':'#1e293b'};border-radius:14px;padding:20px">
+      <div style="font-size:22px;margin-bottom:6px">${div.icon} <span style="font-weight:700;font-size:1rem">${div.name}</span>
+        ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:8px">\u2713 ABOVE PLAN</span>' : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Target</div><div style="font-size:1.3rem;font-weight:800;color:#e2e8f0">${fmtM(div.target)}</div></div>
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual (5/21)</div><div style="font-size:1.3rem;font-weight:800;color:${abovePlan?'#4ade80':'#00d4ff'}">${fmtM(div.actual)}</div></div>
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:1rem;font-weight:700;color:#f59e0b">${Math.round(div.grossMarginFloor*100)}%</div></div>
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:1rem;font-weight:700;color:${gmOk?'#4ade80':'#f87171'}">${Math.round(div.grossMarginPct*100)}%</div></div>
+      </div>
+      ${pbar(div.actual, div.target)}
+      ${div.remaining > 0 ? `<div style="font-size:11px;color:#64748b;margin-top:6px">Remaining: <strong style="color:#e2e8f0">${fmtM(div.remaining)}</strong></div>` : `<div style="font-size:11px;color:#4ade80;margin-top:6px;font-weight:700">+${fmtM(Math.abs(div.remaining))} over plan</div>`}
+    </article>`;
+  }
+
+  const ytdBudgeted = fy.monthlyBudget.filter(m=>m.actual!=null).reduce((a,m)=>a+m.budgeted,0);
+  const ytdVariance = annual.actualRevenue - ytdBudgeted;
+
+  const monthRows = fy.monthlyBudget.map(m => {
+    const hasActual = m.actual != null;
+    const varSign = m.variance > 0 ? '+' : '';
+    const varColor = m.variance == null ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
+    return `<tr style="border-bottom:1px solid #0f172a">
+      <td style="padding:8px 10px;color:#e2e8f0;font-weight:600">${m.month}</td>
+      <td style="padding:8px 10px;text-align:right">${fmtM(m.budgeted)}</td>
+      <td style="padding:8px 10px;text-align:right;color:${hasActual?'#00d4ff':'#334155'}">${hasActual ? fmtM(m.actual) : '\u2014'}</td>
+      <td style="padding:8px 10px;text-align:right;color:${varColor}">${m.variance != null ? varSign+fmtM(m.variance) : '\u2014'}</td>
+    </tr>`;
+  }).join('');
+
+  view.innerHTML = `
+    <div class="eyebrow">Leadership Rhythm \u2014 FY2026</div>
+    <h1>Manager Tools <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">${escapeHtml(fy.budgetVersion)}</span></h1>
+    <p class="lede">Real division P&amp;L, monthly actuals, HubSpot pipeline gates, pricing discipline, and team scorecard.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:28px;background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:20px">
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">FY2026 Budget</div>
+        <div style="font-size:1.9rem;font-weight:900;color:#e2e8f0">${fmtM(annual.budgetedRevenue)}</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Actual (5/21)</div>
+        <div style="font-size:1.9rem;font-weight:900;color:#00d4ff">${fmtM(annual.actualRevenue)}</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Remaining</div>
+        <div style="font-size:1.9rem;font-weight:900;color:#f87171">${fmtM(annual.remaining)}</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Needed / Month</div>
+        <div style="font-size:1.9rem;font-weight:900;color:#f59e0b">${fmtM(annual.avgNeededPerMonth)}</div>
+        <div style="font-size:10px;color:#64748b">Jun \u2013 Dec (${annual.monthsLeft} months)</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Operating GM</div>
+        <div style="font-size:1.9rem;font-weight:900;color:#a78bfa">${Math.round(annual.grossMarginPct*100)}%</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">True Net Income</div>
+        <div style="font-size:1.5rem;font-weight:900;color:#4ade80">${fmtM(annual.trueNetIncome)}</div>
+        <div style="font-size:10px;color:#64748b">after ${fmtM(annual.loanMonthly)}/mo loans</div>
+      </div>
+    </div>
+
+    <h2 class="mt" style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Division P&amp;L \u2014 Actual vs Target</h2>
+    <div class="grid grid-3 mt" style="gap:16px">
+      ${divTile(divs.landscape)}
+      ${divTile(divs.maintenance)}
+      ${divTile(divs.snow)}
+    </div>
+
+    <div class="card mt">
+      <h2>\u2702\ufe0f Maintenance Growth Pipeline \u2014 Ryan\u2019s ${fmtM(divs.maintenance.growthTarget)} Target</h2>
+      <p class="muted small-text">Contracted base entering 2026: ${fmtM(divs.maintenance.contractedBase)} (${divs.maintenance.contractedCommercialAccounts} comm + ${divs.maintenance.contractedResidentialAccounts} res accounts). Additional ${fmtM(divs.maintenance.growthTarget)} to sell.</p>
+      <div style="overflow-x:auto;margin-top:12px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#0f172a"><th style="padding:8px 12px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Growth Bucket</th><th style="padding:8px 12px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Segment</th><th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Target</th></tr></thead>
+          <tbody>${(divs.maintenance.growthPipeline||[]).map(b=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:8px 12px">${escapeHtml(b.bucket)}</td><td style="padding:8px 12px;text-align:center">${escapeHtml(b.segment)}</td><td style="padding:8px 12px;text-align:right;font-weight:700;color:#4ade80">${fmtM(b.target)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h2>\ud83d\udcc5 Monthly Revenue \u2014 Budget vs Actual (Jan\u2013Dec 2026)</h2>
+      <p class="muted small-text">Actuals through 5/21/2026. Remaining months show budget target only.</p>
+      <div style="overflow-x:auto;margin-top:12px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#0f172a">
+            <th style="padding:8px 12px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Month</th>
+            <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Budgeted</th>
+            <th style="padding:8px 12px;text-align:right;color:#00d4ff;border-bottom:1px solid #1e293b">Actual</th>
+            <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Variance</th>
+          </tr></thead>
+          <tbody>${monthRows}</tbody>
+          <tfoot><tr style="background:#0f172a;font-weight:700">
+            <td style="padding:10px 12px;color:#e2e8f0">YTD Total</td>
+            <td style="padding:10px 12px;text-align:right">${fmtM(ytdBudgeted)}</td>
+            <td style="padding:10px 12px;text-align:right;color:#00d4ff">${fmtM(annual.actualRevenue)}</td>
+            <td style="padding:10px 12px;text-align:right;color:${ytdVariance>=0?'#4ade80':'#f87171'}">${ytdVariance>=0?'+':''}${fmtM(ytdVariance)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h2>\ud83d\udd35 HubSpot 7-Stage Pipeline \u2014 Win Probabilities &amp; Gate Fields</h2>
+      <p class="muted small-text">${escapeHtml((data.hubspotPipeline||{}).description||'')}</p>
+      <div style="overflow-x:auto;margin-top:12px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:#0f172a">
+            <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">#</th>
+            <th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Stage Name</th>
+            <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Win %</th>
+            <th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Mandatory Gate Fields</th>
+          </tr></thead>
+          <tbody>${((data.hubspotPipeline||{}).stages||[]).map(s=>{
+            const pct = Math.round(s.winProb*100);
+            const barC = pct>=80?'#4ade80':pct>=60?'#fbbf24':pct>=40?'#60a5fa':'#94a3b8';
+            return `<tr style="border-bottom:1px solid #0f172a">
+              <td style="padding:8px 10px;text-align:center;font-weight:800;color:${barC}">${s.num}</td>
+              <td style="padding:8px 10px;font-weight:600;color:#e2e8f0">${escapeHtml(s.name)}</td>
+              <td style="padding:8px 10px;text-align:center">
+                <div style="display:flex;align-items:center;gap:6px;justify-content:center">
+                  <div style="width:48px;height:5px;background:#1e293b;border-radius:3px"><div style="width:${pct}%;height:5px;background:${barC};border-radius:3px"></div></div>
+                  <span style="font-weight:700;color:${barC};font-size:11px">${pct}%</span>
+                </div>
+              </td>
+              <td style="padding:8px 10px;font-size:11px;color:#94a3b8">${(s.gates||[]).join(' \u00b7 ')}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px"><h4 style="font-size:12px;color:#64748b;margin-bottom:6px">Hygiene Rules</h4>${list((data.hubspotPipeline||{}).hygieneRules||[])}</div>
+    </div>
+
+    <div class="grid grid-2 mt">
+      <div class="card">
+        <h2>\ud83d\udcb2 Pricing Discipline \u2014 GM Floors</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+          <thead><tr style="background:#0f172a"><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Division</th><th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Floor</th><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Current Status</th></tr></thead>
+          <tbody>${(pd.grossMarginFloors||[]).map(g=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:8px 10px;font-weight:600">${escapeHtml(g.division)}</td><td style="padding:8px 10px;text-align:center;font-weight:800;color:#4ade80">${escapeHtml(g.floor)}</td><td style="padding:8px 10px;font-size:11px;color:#94a3b8">${escapeHtml(g.current)}</td></tr>`).join('')}</tbody>
+        </table>
+        <h4 style="font-size:12px;color:#64748b;margin-top:16px;margin-bottom:6px">Labor Recovery Rules</h4>
+        ${list(pd.laborRecoveryRules||[])}
+      </div>
+      <div class="card">
+        <h2>\ud83d\udccb Cost Recovery by Division</h2>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:8px">
+            <thead><tr style="background:#0f172a"><th style="padding:6px 8px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Category</th><th style="padding:6px 8px;text-align:center;color:#22d3ee;border-bottom:1px solid #1e293b">Landscape</th><th style="padding:6px 8px;text-align:center;color:#4ade80;border-bottom:1px solid #1e293b">Maintenance</th><th style="padding:6px 8px;text-align:center;color:#60a5fa;border-bottom:1px solid #1e293b">Snow</th></tr></thead>
+            <tbody>${(pd.activityCostRecovery||[]).map(r=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:6px 8px;color:#94a3b8">${escapeHtml(r.category)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.landscape)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.maintenance)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.snow)}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mt">
+      <div class="card">
+        <h2>\ud83d\udc64 Tyler \u2014 Leadership Scorecard</h2>
+        <p class="muted small-text">Owner / CEO \u00b7 Total cost: $${((tylerCard&&tylerCard.totalEmployeeCost)||0).toLocaleString()}/yr</p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">
+          <thead><tr style="background:#0f172a"><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Metric</th><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Target</th><th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Cadence</th></tr></thead>
+          <tbody>${((tylerCard&&tylerCard.leadershipScorecard)||[]).map(sc=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:8px 10px;font-weight:600;color:#e2e8f0">${escapeHtml(sc.metric)}</td><td style="padding:8px 10px;color:#4ade80;font-weight:700">${escapeHtml(sc.target)}</td><td style="padding:8px 10px;text-align:center;color:#94a3b8;font-size:11px">${escapeHtml(sc.cadence)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>\ud83d\uddd3 Review Cadence</h2>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          ${(rc||[]).map(r=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:8px;background:var(--bg2);border-radius:8px">
+            <span style="font-size:10px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,.12);padding:2px 8px;border-radius:10px;min-width:60px;text-align:center">${escapeHtml(r.cadence)}</span>
+            <div><div style="font-size:13px;font-weight:600;color:#e2e8f0">${escapeHtml(r.meeting)}</div><div style="font-size:11px;color:#64748b">${escapeHtml(r.attendees)} \u00b7 ${escapeHtml(r.output)}</div></div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mt">
+      <article class="card"><h2>Weekly Sales Meeting Agenda</h2>${list(data.managerAgenda)}</article>
+      <div>
+        <article class="card"><h2>Stuck Deal Questions</h2>${list(['What stage is this opportunity actually in?','What is the client\'s core buying reason?','Who decides, and have we spoken with them?','What objection is real vs vague?','What is the next yes/no/adjust decision?','What date is the next follow-up?'])}</article>
+        <article class="card mt"><h2>Non-Negotiables</h2>${list(data.nonNegotiables.slice(0,6))}</article>
+      </div>
+    </div>
+    ${statCards()}
+  `;
 }
 function settings(){
   view.innerHTML = `<div class="eyebrow">Data and Setup</div><h1>Export / Settings</h1><p class="lede">This static prototype saves data locally in the browser. Export data regularly, especially before moving devices or clearing browser storage.</p><div class="grid grid-2 mt"><section class="card"><h2>Export</h2><p>Download your local pipeline, notes, and settings.</p><div class="footer-actions"><button class="primary-btn" onclick="exportJson()">Download JSON Backup</button><button class="secondary-btn" onclick="exportCsv()">Download Pipeline CSV</button></div></section><section class="card"><h2>Import</h2><p>Restore a JSON backup from this same app.</p><input id="importFile" type="file" accept="application/json"><button class="secondary-btn mt8" onclick="importJson()">Import Backup</button></section><section class="card"><h2>Reset</h2><p>This clears local opportunities, notes, and checklist progress on this browser only.</p><button class="danger-btn" onclick="resetAll()">Reset All Local Data</button></section><section class="card"><h2>App Notes</h2>${list(['Open index.html in a browser.','Use the Install button when available for app-style access.','To share with the team, host the folder on an internal site or migrate into Softr/Notion/Trainual.','For shared manager visibility, connect a future version to Airtable, Google Sheets, or a CRM.'])}</section></div>`;

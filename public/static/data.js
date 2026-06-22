@@ -4,27 +4,323 @@ window.AVALON_DATA = {
     "website": "avalon-lc.com",
     "tagline": "Consultative. Profitable. Operationally clean. Easy to trust."
   },
+
+  "fy2026": {
+    "asOfDate": "5/21/2026",
+    "budgetVersion": "v2.2 — June 2026 Operating Playbook",
+    "annual": {
+      "budgetedRevenue": 1245000,
+      "actualRevenue": 533148.94,
+      "remaining": 711851.06,
+      "monthsLeft": 7,
+      "avgNeededPerMonth": 101693.01,
+      "totalIncome": 1281140.95,
+      "cogs": 776854,
+      "grossProfit": 504286.95,
+      "grossMarginPct": 0.39,
+      "totalExpenses": 394791.87,
+      "netOperatingIncome": 109495.08,
+      "netIncome": 111782.66,
+      "loans": 89059.20,
+      "loanMonthly": 7421.60,
+      "trueNetIncome": 22723.46
+    },
+    "monthlyBudget": [
+      { "month": "Jan", "budgeted": 48000,  "actual": 21100.64,  "variance": -26899.36 },
+      { "month": "Feb", "budgeted": 176000, "actual": 187832.54, "variance": 11832.54  },
+      { "month": "Mar", "budgeted": 109000, "actual": 104275.22, "variance": -4724.78  },
+      { "month": "Apr", "budgeted": 103000, "actual": 113504.53, "variance": 10504.53  },
+      { "month": "May", "budgeted": 113000, "actual": 106436.01, "variance": -6563.99  },
+      { "month": "Jun", "budgeted": 108000, "actual": null, "variance": null },
+      { "month": "Jul", "budgeted": 123000, "actual": null, "variance": null },
+      { "month": "Aug", "budgeted": 103000, "actual": null, "variance": null },
+      { "month": "Sep", "budgeted": 103000, "actual": null, "variance": null },
+      { "month": "Oct", "budgeted": 93000,  "actual": null, "variance": null },
+      { "month": "Nov", "budgeted": 88000,  "actual": null, "variance": null },
+      { "month": "Dec", "budgeted": 78000,  "actual": null, "variance": null }
+    ],
+    "divisions": {
+      "landscape": {
+        "name": "Landscape",
+        "icon": "🌿",
+        "target": 525000,
+        "actual": 153048,
+        "remaining": 371952,
+        "pctOfCompany": 0.422,
+        "operatingIncome": 220609.22,
+        "cogs": 178237,
+        "grossProfit": 304390.78,
+        "grossMarginPct": 0.42,
+        "grossMarginFloor": 0.50,
+        "netOperatingIncome": 42372.22,
+        "jobsTarget": 75,
+        "meanTicket": 6500,
+        "medianTicket": 4000,
+        "closeRate": "20–25%",
+        "arDays": 30,
+        "depositRule": "≥ 40% at signing",
+        "leadResponseSLA": "≤ 24 hours",
+        "funnelTarget": "130–150 opportunities/year (160–190 total contacts)",
+        "laborPctMax": 0.25,
+        "materialsPctMax": 0.40,
+        "serviceCatalog": {
+          "residential": ["Design/Build", "Hardscape (patios, walkways, walls)", "Planting (trees/shrubs/perennials/annuals)", "Sod", "Lighting", "Drainage", "Carpentry/Decks"],
+          "commercial": ["Site Work", "Bed Renovation", "Tree/Shrub Replacement", "Common-Area Plantings"]
+        },
+        "serviceLines": [
+          { "name": "Hardscaping (patios, walkways, walls)", "segment": "Res/Comm", "gmMin": 0.52, "gmMax": 0.55, "avgTicketMin": 15000, "avgTicketMax": 45000, "pricingRule": "Material × 2.2 minimum" },
+          { "name": "Softscaping / Planting",               "segment": "Res/Comm", "gmMin": 0.50, "gmMax": 0.55, "avgTicketMin": 5000,  "avgTicketMax": 20000, "pricingRule": "Wholesale × 2.2" },
+          { "name": "Drainage & Grading",                   "segment": "Res/Comm", "gmMin": 0.58, "gmMax": 0.60, "avgTicketMin": 8000,  "avgTicketMax": 25000, "pricingRule": "Labor-heavy, premium margin" },
+          { "name": "Carpentry & Decks",                    "segment": "Res",      "gmMin": 0.48, "gmMax": 0.52, "avgTicketMin": 12000, "avgTicketMax": 35000, "pricingRule": "Material × 2.0 + labor markup" },
+          { "name": "Masonry & Wet-Cast Walls",             "segment": "Res/Comm", "gmMin": 0.50, "gmMax": 0.54, "avgTicketMin": 10000, "avgTicketMax": 30000, "pricingRule": "Material × 2.2" },
+          { "name": "Lighting Design & Install",            "segment": "Res",      "gmMin": 0.50, "gmMax": 0.55, "avgTicketMin": 4000,  "avgTicketMax": 12000, "pricingRule": "Material × 2.2" },
+          { "name": "Sod Install",                          "segment": "Res/Comm", "gmMin": 0.45, "gmMax": 0.50, "avgTicketMin": 3000,  "avgTicketMax": 15000, "pricingRule": "Material × 2.0" },
+          { "name": "Site Work",                            "segment": "Comm",     "gmMin": 0.45, "gmMax": 0.50, "avgTicketMin": 10000, "avgTicketMax": 50000, "pricingRule": "Per scope" }
+        ]
+      },
+      "maintenance": {
+        "name": "Maintenance",
+        "icon": "✂️",
+        "target": 543000,
+        "actual": 202000,
+        "remaining": 341000,
+        "pctOfCompany": 0.436,
+        "contractedBase": 378614,
+        "contractedCommercial": 314737,
+        "contractedCommercialAccounts": 16,
+        "contractedResidential": 63877,
+        "contractedResidentialAccounts": 17,
+        "growthTarget": 165000,
+        "operatingIncome": 156363.03,
+        "cogs": 194458,
+        "grossProfit": 387250.97,
+        "grossMarginPct": 0.29,
+        "grossMarginFloor": 0.32,
+        "closeRate": "50–60%",
+        "arDays": 30,
+        "depositRule": "CC on file before first service",
+        "leadResponseSLA": "≤ 24 hours",
+        "monthlyRevenuePace": 45250,
+        "funnelTarget": "10–15 leads/month, 50–60% close rate",
+        "laborPctMax": 0.40,
+        "materialsPctRange": "18–22% of route revenue",
+        "equipmentFuelPct": "6–8% of route revenue",
+        "enhancementsMonthlyFloor": 8000,
+        "serviceCatalog": {
+          "residential": ["Lawn Mowing (every 10–14 days, Apr–Oct, max 24 mowings)", "Turf Program (7-step)", "Spring/Fall Clean-Ups", "Edge & Mulch (1× Mar–Apr)", "Professional Pruning (2× May–Sep)", "Grounds Care Visits (every 14 days Apr–Dec)", "Leaf Removal (3× Nov–Dec)", "Aeration & Overseeding (1× Sep–Oct)", "Annual Flowers (2× Spring+Fall)", "Mosquito Control", "Seasonal Color"],
+          "commercial": ["All residential services", "Annual Contract Management", "Property Walks", "Enhancements", "Reporting"]
+        },
+        "growthPipeline": [
+          { "bucket": "Commercial Contract Add-On Enhancements", "segment": "Comm", "target": 20000 },
+          { "bucket": "Residential Contract Add-On Enhancements (mulch, color)", "segment": "Res",  "target": 15000 },
+          { "bucket": "New Annual Commercial Maintenance Agreements", "segment": "Comm", "target": 45000 },
+          { "bucket": "New Annual Residential Maintenance Agreements", "segment": "Res",  "target": 35000 },
+          { "bucket": "Residential Misc. Variable 1× Maintenance", "segment": "Res",  "target": 50000 }
+        ]
+      },
+      "snow": {
+        "name": "Snow & Ice",
+        "icon": "❄️",
+        "target": 177000,
+        "actual": 178101,
+        "remaining": -1101,
+        "status": "ABOVE PLAN",
+        "pctOfCompany": 0.142,
+        "operatingIncome": 127314.70,
+        "cogs": 22096.87,
+        "grossProfit": 85212.25,
+        "grossMarginPct": 0.60,
+        "grossMarginFloor": 0.50,
+        "closeRate": "30–40%",
+        "arDays": 15,
+        "depositRule": "Signed agreement + plow ID assigned",
+        "leadResponseSLA": "≤ 12 hours in season",
+        "emphasis": "Commercial-First — Zero-Tolerance Operations",
+        "stormResponse": "≤ 4 hours of trigger",
+        "preStormComm": "100% of accounts notified ≤ 12 hrs pre-event",
+        "equipmentROI": "> 2.5× season ROI per unit",
+        "saltCostPct": "15–20% of event revenue",
+        "serviceCatalog": {
+          "residential": ["Driveway/Walk push (per-push or seasonal cap)", "Ice melt"],
+          "commercial": ["Lot clearing (per-push with trigger depth)", "Walks/Entry shoveling (per-event)", "Salting/Pre-Treatment (per application)", "Storm Standby/On-Call (retainer + per-event)", "Liquid brining"]
+        }
+      }
+    },
+    "decisionRule": "If work is performed ONCE → Landscape. If it RECURS on a schedule → Maintenance. If triggered by a weather event → Snow & Ice.",
+    "leadSources": {
+      "landscape":    { "websiteInbound": "High", "pastClient": "High", "referrals": "High", "propertyMgr": "Medium", "builderGC": "Medium", "paid": "Medium", "fieldSignage": "Low" },
+      "maintenance":  { "websiteInbound": "High", "pastClient": "Medium", "referrals": "High", "propertyMgr": "Very High", "builderGC": "Low",    "paid": "Medium", "fieldSignage": "Medium" },
+      "snow":         { "websiteInbound": "High (seasonal)", "pastClient": "Medium", "referrals": "Medium", "propertyMgr": "Very High", "builderGC": "Low", "paid": "Low", "fieldSignage": "Low" }
+    }
+  },
+
+  "hubspotPipeline": {
+    "description": "All deals — Landscape, Maintenance Growth, and Snow — track through this 7-stage HubSpot pipeline. A stage cannot be advanced until required field gates are populated. No exceptions.",
+    "hygieneRules": [
+      "No deal sits in any single stage > 14 days without an activity note.",
+      "Stage skipping is disabled — every gate is mandatory.",
+      "Weekly pipeline review (Owner + Ryan) audits Stage 3–6 field completeness.",
+      "Stage 7 firing triggers the Sales-to-Production Handoff workflow (3-phase handoff)."
+    ],
+    "stages": [
+      {
+        "num": 1, "name": "Lead Intake / Rapport", "winProb": 0.10,
+        "gates": ["Source", "Contact Phone", "Contact Email"],
+        "landscape": "Website form, referral, past-client outreach",
+        "maintenance": "Website forms (Res + Comm), commercial outreach",
+        "snow": "Website, referrals, property mgrs, HOA bids"
+      },
+      {
+        "num": 2, "name": "Mutual Agreement Set", "winProb": 0.20,
+        "gates": ["Driveway T.A.P.P.O. Confirmed (Checkbox)"],
+        "landscape": "Driveway T.A.P.P.O. on-site",
+        "maintenance": "Route fit + property walk T.A.P.P.O.",
+        "snow": "Site map + lot sqft confirmation"
+      },
+      {
+        "num": 3, "name": "Discovery / CBR Uncovered", "winProb": 0.40,
+        "gates": ["Core Buying Reason (CBR) Narrative (Text Field)"],
+        "landscape": "Emotional driver (legacy, entertaining, drainage stress)",
+        "maintenance": "Pain point (curb appeal, tenant retention, HOA complaints)",
+        "snow": "Liability + access tolerance (slip-and-fall risk)"
+      },
+      {
+        "num": 4, "name": "Budget & Investment Qualified", "winProb": 0.60,
+        "gates": ["Target Investment Tolerance (Currency Range)"],
+        "landscape": "Budget Bracketing script aligned to scope",
+        "maintenance": "Route-based pricing aligned to scope",
+        "snow": "Per-push or seasonal cap modeled"
+      },
+      {
+        "num": 5, "name": "Decision Process Qualified", "winProb": 0.80,
+        "gates": ["All Decision Makers Identified (Boolean)", "Spouse Present (Boolean)"],
+        "landscape": "All decision makers + spouse present confirmed",
+        "maintenance": "Facilities lead + insurance/risk approval",
+        "snow": "Owner + property manager + AP contact"
+      },
+      {
+        "num": 6, "name": "Presentation & SOW Pitch", "winProb": 0.90,
+        "gates": ["Draft Proposal Uploaded (File)", "Draft SOW Uploaded (File)"],
+        "landscape": "Design plan + SOW uploaded",
+        "maintenance": "Service schedule + annual agreement uploaded",
+        "snow": "Service map + storm trigger SOW uploaded"
+      },
+      {
+        "num": 7, "name": "Deal Closed / Won", "winProb": 1.00,
+        "gates": ["Signed Contract Uploaded", "Signed SOW Uploaded", "Handoff Packet Completed (Checkbox)"],
+        "landscape": "Signed SOW + 40% deposit + Handoff Packet",
+        "maintenance": "Signed agreement + CC on file + Handoff Packet",
+        "snow": "Signed agreement + CC on file + plow ID assigned"
+      }
+    ]
+  },
+
+  "repData": {
+    "ryan": {
+      "name": "Ryan",
+      "role": "Client Relations & Enhancement Sales Associate",
+      "totalEmployeeCost": 56586.80,
+      "quotas": {
+        "landscapeJobs": 75,
+        "landscapeRevenue": 525000,
+        "maintenanceGrowth": 165000,
+        "meanLandscapeTicket": 6500,
+        "medianLandscapeTicket": 4000
+      },
+      "weeklyActivityCadence": [
+        { "activity": "Proactive Sales Calls",    "target": 5, "description": "Outreach to past clients from 2023, 2024, 2025" },
+        { "activity": "Referral Asks",             "target": 2, "description": "Asking satisfied active clients for direct warm introductions" },
+        { "activity": "Past Client Touches",       "target": 1, "description": "Warranty follow-ups, spring/fall landscape walkthrough invites" },
+        { "activity": "On-Site Visits",            "target": 2, "description": "Completed property walks; re-confirming Mutual Agreements live" },
+        { "activity": "Proactive Upsell Proposals","target": 1, "description": "Generated detail on pruning, mulch, or drainage upgrades" }
+      ],
+      "kpiFloors": [
+        { "kpi": "Landscape GM per job",           "floor": "≥ 50%",    "cadence": "Per deal" },
+        { "kpi": "Maintenance Quote-to-Close",     "floor": "50–60%",   "cadence": "Rolling 90-day" },
+        { "kpi": "HubSpot Stage Hygiene",          "floor": "0 stale deals > 14 days", "cadence": "Weekly" },
+        { "kpi": "Driveway T.A.P.P.O. Confirmed",  "floor": "100% of qualified opps", "cadence": "Per deal" },
+        { "kpi": "CBR Narrative Populated",        "floor": "100% of opps in Stage 3+", "cadence": "Per deal" }
+      ]
+    },
+    "tyler": {
+      "name": "Tyler",
+      "role": "Owner / CEO",
+      "totalEmployeeCost": 75850,
+      "leadershipScorecard": [
+        { "metric": "Total Employee Cost",    "target": "$75,850 annual",        "cadence": "Annual" },
+        { "metric": "Landscape Deals Closed", "target": "≥ 1 deal/month minimum", "cadence": "Monthly" },
+        { "metric": "Cash Reserves",          "target": "≥ $30,000",            "cadence": "Monthly" },
+        { "metric": "Margin Protection",      "target": "Avg ≥ 45% across jobs",  "cadence": "Ongoing" }
+      ]
+    }
+  },
+
+  "pricingDiscipline": {
+    "grossMarginFloors": [
+      { "division": "Landscape",    "floor": "≥ 50%", "current": "42% operating budget basis" },
+      { "division": "Maintenance",  "floor": "≥ 32%", "current": "29% — requires tighter recovery" },
+      { "division": "Snow & Ice",   "floor": "≥ 50%", "current": "60% — above floor" }
+    ],
+    "activityCostRecovery": [
+      { "category": "Direct Labor",          "landscape": "20–25%", "maintenance": "35–40%", "snow": "15–20%" },
+      { "category": "Materials/Consumables", "landscape": "30–40%", "maintenance": "18–22%", "snow": "15–20% (salt/brine)" },
+      { "category": "Equipment + Fuel",      "landscape": "4–6%",   "maintenance": "6–8%",   "snow": "8–12%" },
+      { "category": "Subcontractors",        "landscape": "0–8%",   "maintenance": "0–2%",   "snow": "0–5%" },
+      { "category": "Overhead Recovery",     "landscape": "15–18%", "maintenance": "15–18%", "snow": "15–18%" }
+    ],
+    "laborRecoveryRules": [
+      "Maintenance labor is recovered against route revenue, not single-stop revenue. A route missing 40% labor for two consecutive weeks is re-engineered.",
+      "Landscape labor must hit ≤ 25% of project revenue. Overruns trigger a Sales/Ops post-mortem within 10 days of job close.",
+      "Snow equipment must clear a 2.5× season ROI per unit — below that, unit is sold or repurposed.",
+      "Overhead allocation is uniform at 15–18% across all three divisions."
+    ]
+  },
+
+  "reviewCadence": [
+    { "cadence": "Daily",     "meeting": "Morning Huddle",     "attendees": "Crews + Ops",                    "output": "Day plan, safety brief" },
+    { "cadence": "Weekly",    "meeting": "Sales Pipeline Review", "attendees": "Sales + Owner",              "output": "Stage movement, slip risk" },
+    { "cadence": "Weekly",    "meeting": "Production Review",  "attendees": "Ops + Crew Leaders",            "output": "Job status, punch list" },
+    { "cadence": "Monthly",   "meeting": "Division P&L",       "attendees": "Owner + Controller + Division Heads", "output": "Variance vs. budget" },
+    { "cadence": "Monthly",   "meeting": "Rep 1:1",            "attendees": "Owner + Rep",                   "output": "Activity, quota, coaching" },
+    { "cadence": "Quarterly", "meeting": "Executive Review",   "attendees": "Owner + Leadership",            "output": "Strategy, hiring, capex" },
+    { "cadence": "Annual",    "meeting": "Budget Reset",       "attendees": "All leadership",                "output": "Next-year plan + targets" }
+  ],
+
+
   "serviceLines": [
-    "Landscape / Enhancement",
-    "Maintenance – One-Time",
-    "Maintenance – Recurring",
-    "Hardscape / Drainage",
-    "Design-Build",
-    "Irrigation",
-    "Outdoor Lighting",
-    "Commercial Scope",
-    "Specialty / Site Work",
+    "Landscape – Hardscape/Patio/Walls",
+    "Landscape – Softscape/Planting",
+    "Landscape – Drainage & Grading",
+    "Landscape – Carpentry/Decks",
+    "Landscape – Lighting Design",
+    "Landscape – Sod Install",
+    "Landscape – Design/Build",
+    "Landscape – Site Work (Comm)",
+    "Maintenance – Recurring Contract",
+    "Maintenance – One-Time Service",
+    "Maintenance – Enhancement/Upsell",
+    "Snow & Ice – Residential Push",
+    "Snow & Ice – Commercial Lot/Walks",
+    "Snow & Ice – Salting/Pre-Treatment",
+    "Snow & Ice – Storm Standby",
     "Other"
   ],
   "projectCategories": [
-    { "id": "landscape", "label": "Landscape / Enhancement", "type": "landscape", "icon": "🌿" },
-    { "id": "maintenance_onetime", "label": "Maintenance – One-Time", "type": "maintenance", "icon": "✂️" },
-    { "id": "maintenance_recurring", "label": "Maintenance – Recurring", "type": "maintenance", "icon": "🔁" },
-    { "id": "hardscape", "label": "Hardscape / Drainage", "type": "landscape", "icon": "🪨" },
-    { "id": "design_build", "label": "Design-Build", "type": "landscape", "icon": "📐" },
-    { "id": "irrigation", "label": "Irrigation", "type": "landscape", "icon": "💧" },
-    { "id": "lighting", "label": "Outdoor Lighting", "type": "landscape", "icon": "💡" },
-    { "id": "commercial", "label": "Commercial Scope", "type": "commercial", "icon": "🏢" }
+    { "id": "landscape_hardscape",  "label": "Hardscape / Patio / Walls",  "division": "landscape",    "icon": "🪨" },
+    { "id": "landscape_softscape",  "label": "Softscape / Planting",        "division": "landscape",    "icon": "🌿" },
+    { "id": "landscape_drainage",   "label": "Drainage & Grading",          "division": "landscape",    "icon": "💧" },
+    { "id": "landscape_carpentry",  "label": "Carpentry / Decks",           "division": "landscape",    "icon": "🪵" },
+    { "id": "landscape_lighting",   "label": "Lighting Design & Install",   "division": "landscape",    "icon": "💡" },
+    { "id": "landscape_sod",        "label": "Sod Install",                 "division": "landscape",    "icon": "🟩" },
+    { "id": "landscape_designbuild","label": "Design / Build",              "division": "landscape",    "icon": "📐" },
+    { "id": "landscape_sitework",   "label": "Commercial Site Work",        "division": "landscape",    "icon": "🏗️" },
+    { "id": "maintenance_recurring","label": "Maintenance – Recurring",     "division": "maintenance",  "icon": "🔁" },
+    { "id": "maintenance_onetime",  "label": "Maintenance – One-Time",      "division": "maintenance",  "icon": "✂️" },
+    { "id": "maintenance_enhance",  "label": "Enhancement / Upsell",        "division": "maintenance",  "icon": "⬆️" },
+    { "id": "snow_residential",     "label": "Snow – Residential Push",     "division": "snow",         "icon": "❄️" },
+    { "id": "snow_commercial",      "label": "Snow – Commercial Lot/Walks", "division": "snow",         "icon": "🚜" },
+    { "id": "snow_salting",         "label": "Snow – Salting/Pre-Treat",    "division": "snow",         "icon": "🧂" },
+    { "id": "snow_standby",         "label": "Snow – Storm Standby",        "division": "snow",         "icon": "📟" }
   ],
   "clientTypes": [
     { "id": "residential", "label": "Residential", "icon": "🏡" },
@@ -46,17 +342,20 @@ window.AVALON_DATA = {
     "Other"
   ],
   "statuses": [
-    "New Lead",
-    "Discovery Scheduled",
-    "Site Walk Scheduled",
-    "Scope Development",
-    "Estimating",
-    "Proposal Sent",
-    "Follow-Up",
-    "Verbal Yes",
-    "Sold / Activation",
+    "Lead Intake / Rapport",
+    "Mutual Agreement Set",
+    "Discovery / CBR Uncovered",
+    "Budget & Investment Qualified",
+    "Decision Process Qualified",
+    "Presentation & SOW Pitch",
+    "Deal Closed / Won",
     "On Hold",
     "Closed Lost"
+  ],
+  "statusesLegacy": [
+    "New Lead", "Discovery Scheduled", "Site Walk Scheduled",
+    "Scope Development", "Estimating", "Proposal Sent",
+    "Follow-Up", "Verbal Yes", "Sold / Activation", "On Hold", "Closed Lost"
   ],
   "salesProcess": {
     "title": "The 6-Step Avalon Sales Process",
@@ -656,6 +955,24 @@ window.AVALON_DATA = {
     }
   ],
   "scripts": [
+    {
+      "category": "⭐ VERBATIM — Driveway T.A.P.P.O.",
+      "title": "Driveway T.A.P.P.O. Script — Stage 2 Gate (VERBATIM — Do Not Deviate)",
+      "crmAction": "Once client agrees → tick 'Driveway T.A.P.P.O. Confirmed' checkbox → advance to Stage 2.",
+      "body": "\"Thanks for having me out. Just to review what we agreed to: we have about 45 minutes today (Time). We'll walk the property to review the drainage issues and outdoor kitchen goals (Agenda), with both you and your spouse (People). We'll take rough measurements and discuss your budget tolerance (Process). By the end, we'll decide if it makes sense to move forward with a full design agreement (Outcome). Does that still sound good?\""
+    },
+    {
+      "category": "⭐ VERBATIM — Budget Bracketing",
+      "title": "Budget Bracketing Script — Stage 4 Gate (VERBATIM — Use When Client Deflects Budget)",
+      "crmAction": "Record client's comfort range in 'Target Investment Tolerance' currency field → populates Stage 4 gate.",
+      "body": "\"Typically, a backyard layout of this scope with premium thermal flagstone and a complete French drain remediation runs between $100,000 and $130,000. Some go above $150,000 with extensive masonry work. Where on that spectrum do you feel most comfortable aligning your investment?\""
+    },
+    {
+      "category": "⭐ VERBATIM — Objection Handling",
+      "title": "Acknowledge → Reframe → Forward-Question (VERBATIM — Use at Any Stage for Any Objection)",
+      "note": "Apply at any stage when an objection (price, timing, decision delay) surfaces.",
+      "body": "STEP 1 — ACKNOWLEDGE (validate the feeling):\n\"I can appreciate that a $120,000 budget is a significant investment.\"\n\nSTEP 2 — REFRAME (redirect to emotional CBR):\n\"However, keeping this baseline budget guarantees that your basement remains dry and that we have the entire backyard paved and ready to host your daughter's graduation next June.\"\n\nSTEP 3 — FORWARD-QUESTION (regain control with a choice):\n\"When you look at the graduation date, is completing this before the family arrives the highest priority, or would you prefer we phase the softscaping across next fall?\""
+    },
     {
       "category": "First Contact",
       "title": "Inbound Lead Response",
@@ -1295,13 +1612,13 @@ window.AVALON_DATA = {
   ],
   "activityTargets": {
     "ryan": {
-      "pastClientFollowUps": { "min": 15, "max": 25, "label": "Past Client Follow-Ups" },
-      "estimateFollowUps": { "min": 10, "max": 20, "label": "Open Estimate Follow-Ups" },
-      "outboundCalls": { "min": 25, "max": 50, "label": "New Outbound Calls" },
-      "doorHangers": { "min": 100, "max": 250, "label": "Door Hangers / Neighborhood Touches" },
-      "newAppointments": { "min": 2, "max": 5, "label": "New Appointments Created" },
-      "crmNotes": { "min": 1, "max": 1, "label": "CRM Notes & Next Steps (Daily)", "frequency": "daily" },
-      "weeklyReview": { "min": 1, "max": 1, "label": "Weekly Sales Review Meeting" }
+      "proactiveSalesCalls":    { "target": 5,  "label": "Proactive Sales Calls / Week",     "description": "Outreach to past clients from 2023, 2024, 2025" },
+      "referralAsks":           { "target": 2,  "label": "Referral Asks / Week",              "description": "Asking satisfied active clients for warm introductions" },
+      "pastClientTouches":      { "target": 1,  "label": "Past Client Touches / Week",        "description": "Warranty follow-ups, spring/fall landscape walkthrough invites" },
+      "onSiteVisits":           { "target": 2,  "label": "On-Site Visits / Week",             "description": "Property walks; re-confirming Mutual Agreements live" },
+      "proactiveUpsellProposals":{ "target": 1, "label": "Proactive Upsell Proposals / Week", "description": "Generated detail on pruning, mulch, or drainage upgrades" },
+      "hubspotHygiene":         { "target": 0,  "label": "Stale Deals > 14 Days",            "description": "HubSpot stage hygiene — must be zero stale deals weekly", "floor": true },
+      "weeklyPipelineReview":   { "target": 1,  "label": "Weekly Pipeline Review Meeting",    "description": "With owner — stage movement, slip risk" }
     }
   },
   "managerAgenda": [
@@ -1316,25 +1633,65 @@ window.AVALON_DATA = {
     "Set individual rep priorities and commitments for next week.",
     "Review any commission approval requests for $10K+ jobs."
   ],
-  "kpis": [
-    "Leads created per week",
-    "Discovery calls completed per week",
-    "Site walks scheduled and completed per week",
-    "Proposals sent per week",
-    "Proposals closed (won and lost) per week",
-    "Win rate by service line (Landscape vs. Maintenance × Residential vs. Commercial)",
-    "Average deal size by service line and client type",
-    "Days from lead to proposal",
-    "Days from proposal to close",
-    "Follow-up rate (proposals touched within 3 days)",
-    "Overdue follow-ups (more than 7 days no contact)",
-    "Outbound calls per week vs. target (25–50)",
-    "Door hangers / neighborhood touches per week vs. target (100–250)",
-    "New appointments created per week vs. target (2–5)",
-    "Commission earned (collected) per rep per period",
-    "Commission pending (approved not yet collected) per rep",
-    "Maintenance recurring clients added per month"
-  ],
+  "kpis": {
+    "landscape": [
+      { "kpi": "2026 Annual Target",      "value": "$525,000",        "cadence": "Annual" },
+      { "kpi": "% of Company Sales",      "value": "42.2%",           "cadence": "Annual" },
+      { "kpi": "Actual as of 5/21/26",    "value": "$153,048",        "cadence": "YTD" },
+      { "kpi": "Remaining to Goal",       "value": "$371,952",        "cadence": "YTD" },
+      { "kpi": "Jobs Target (2026)",      "value": "75 jobs",         "cadence": "Annual" },
+      { "kpi": "Mean Ticket",             "value": "$6,500",          "cadence": "Per deal" },
+      { "kpi": "Median Ticket",           "value": "$4,000",          "cadence": "Per deal" },
+      { "kpi": "Gross Margin Floor",      "value": "≥ 50%",           "cadence": "Per deal" },
+      { "kpi": "Close Rate",              "value": "20–25%",          "cadence": "Rolling 90-day" },
+      { "kpi": "AR Days",                 "value": "≤ 30",            "cadence": "Monthly" },
+      { "kpi": "Deposit at Signing",      "value": "≥ 40%",          "cadence": "Per deal" },
+      { "kpi": "Lead Response SLA",       "value": "≤ 24 hours",      "cadence": "Per lead" },
+      { "kpi": "Direct Labor %",          "value": "20–25% of job",   "cadence": "Per job" },
+      { "kpi": "Materials %",             "value": "≤ 40% of job",    "cadence": "Per job" }
+    ],
+    "maintenance": [
+      { "kpi": "2026 Annual Target",      "value": "$543,000",        "cadence": "Annual" },
+      { "kpi": "% of Company Sales",      "value": "43.6%",           "cadence": "Annual" },
+      { "kpi": "Actual as of 5/21/26",    "value": "$202,000",        "cadence": "YTD" },
+      { "kpi": "Remaining to Goal",       "value": "$341,000",        "cadence": "YTD" },
+      { "kpi": "Contracted Base (2026)",  "value": "$378,614",        "cadence": "Annual" },
+      { "kpi": "Growth Target (Ryan)",    "value": "$165,000 to sell", "cadence": "Annual" },
+      { "kpi": "Monthly Revenue Pace",    "value": "~$45,250/mo",     "cadence": "Monthly" },
+      { "kpi": "Gross Margin Floor",      "value": "≥ 32%",           "cadence": "Per route" },
+      { "kpi": "Quote-to-Close Rate",     "value": "50–60%",          "cadence": "Rolling 90-day" },
+      { "kpi": "AR Days",                 "value": "≤ 30",            "cadence": "Monthly" },
+      { "kpi": "CC on File Before Service","value": "100% of accounts","cadence": "Per activation" },
+      { "kpi": "Route Labor %",           "value": "≤ 40% of route",  "cadence": "Per route" },
+      { "kpi": "Materials/Chemicals %",   "value": "18–22% of route", "cadence": "Per route" },
+      { "kpi": "Enhancements Sold",       "value": "≥ $8,000/month",  "cadence": "Monthly" },
+      { "kpi": "Client Churn",            "value": "Tracked monthly",  "cadence": "Monthly" }
+    ],
+    "snow": [
+      { "kpi": "2026 Annual Target",      "value": "$177,000",        "cadence": "Annual" },
+      { "kpi": "% of Company Sales",      "value": "14.2%",           "cadence": "Annual" },
+      { "kpi": "Actual as of 5/21/26",    "value": "$178,101",        "cadence": "YTD — ABOVE PLAN" },
+      { "kpi": "Remaining to Goal",       "value": "($1,101) — DONE", "cadence": "YTD" },
+      { "kpi": "Gross Margin Floor",      "value": "≥ 50%",           "cadence": "Per event" },
+      { "kpi": "Close Rate",              "value": "30–40%",          "cadence": "Rolling" },
+      { "kpi": "AR Days",                 "value": "≤ 15 days",       "cadence": "Per event" },
+      { "kpi": "Storm Response",          "value": "≤ 4 hours of trigger", "cadence": "Per event" },
+      { "kpi": "Pre-Storm Comm",          "value": "100% notified ≤ 12 hrs pre-event", "cadence": "Per storm" },
+      { "kpi": "Equipment ROI",           "value": "> 2.5× season ROI per unit", "cadence": "Seasonal" },
+      { "kpi": "Client Churn YoY",        "value": "≤ 10%",           "cadence": "Annual" },
+      { "kpi": "Salt/Brine Cost",         "value": "15–20% of event", "cadence": "Per event" }
+    ],
+    "company": [
+      { "kpi": "Budgeted Annual Revenue", "value": "$1,245,000",      "cadence": "Annual" },
+      { "kpi": "Actual as of 5/21/26",    "value": "$533,148.94",     "cadence": "YTD" },
+      { "kpi": "Remaining to Goal",       "value": "$711,851.06",     "cadence": "YTD" },
+      { "kpi": "Avg Needed / Month Remaining", "value": "$101,693",   "cadence": "Monthly (Jun–Dec)" },
+      { "kpi": "Operating Gross Margin",  "value": "39%",             "cadence": "Operating budget" },
+      { "kpi": "Net Operating Income",    "value": "$109,495",        "cadence": "Budgeted" },
+      { "kpi": "True Net (After Debt)",   "value": "$22,723",         "cadence": "Budgeted" },
+      { "kpi": "Loan Payments",           "value": "$7,421.60/mo",    "cadence": "Monthly" }
+    ]
+  },
   "nonNegotiables": [
     "No estimate goes out without scope clarity — every unknown must be an exclusion.",
     "No proposal goes out without margin review and approval at the right authority level.",

@@ -60,14 +60,29 @@ const COMMISSION_PLANS = {
       over10000: 'tyler_approval',
       complex:   'management_always' // hardscape, drainage, grading, design/build
     },
+    // FY2026 Annual Quotas (from Operating Playbook v2.2)
+    quotas: {
+      landscapeJobs: 75,
+      landscapeRevenue: 525000,
+      maintenanceGrowth: 165000,
+      meanLandscapeTicket: 6500,
+      medianLandscapeTicket: 4000
+    },
+    kpiFloors: [
+      { kpi: 'Landscape GM per job',            floor: '≥ 50%',    cadence: 'Per deal' },
+      { kpi: 'Maintenance Quote-to-Close',       floor: '50–60%',   cadence: 'Rolling 90-day' },
+      { kpi: 'HubSpot Stage Hygiene',            floor: '0 stale deals > 14 days', cadence: 'Weekly' },
+      { kpi: 'Driveway T.A.P.P.O. Confirmed',    floor: '100% of qualified opps',  cadence: 'Per deal' },
+      { kpi: 'CBR Narrative Populated',          floor: '100% of opps in Stage 3+','cadence': 'Per deal' }
+    ],
+    // From Operating Playbook §11 — AUTHORITATIVE weekly cadence (replaces old targets)
     weeklyTargets: {
-      pastClientFollowUps: '15-25',
-      openEstimateFollowUps: '10-20',
-      newOutboundCalls: '25-50',
-      doorHangers: '100-250',
-      newAppointments: '2-5',
-      crmNotes: 'Daily',
-      weeklyMeeting: 1
+      proactiveSalesCalls:     { target: 5, label: 'Proactive Sales Calls',     description: 'Outreach to past clients 2023–2025' },
+      referralAsks:            { target: 2, label: 'Referral Asks',             description: 'Warm introductions from active clients' },
+      pastClientTouches:       { target: 1, label: 'Past Client Touches',        description: 'Warranty follow-ups, seasonal walkthrough invites' },
+      onSiteVisits:            { target: 2, label: 'On-Site Visits',             description: 'Property walks, re-confirming Mutual Agreements live' },
+      proactiveUpsellProposals:{ target: 1, label: 'Proactive Upsell Proposals', description: 'Detail on pruning, mulch, or drainage upgrades' },
+      pipelineReviewMeeting:   { target: 1, label: 'Weekly Pipeline Review Mtg', description: 'With owner — stage movement, slip risk' }
     }
   }
 };
@@ -558,14 +573,21 @@ function renderWeeklyScoreboard(repId, actual, targets) {
   return `<div style="display:flex;flex-direction:column;gap:10px">
     ${keys.map(key => {
       const val = actual[key] || 0;
-      const targetStr = targets[key];
-      const targetMax = parseInt((targetStr + '').split('-').pop()) || 1;
-      const pct = Math.min(100, Math.round((val / targetMax) * 100));
+      const t = targets[key];
+      // Support both new structured format {target, label, description, floor} and old string format
+      const targetNum = (t && typeof t === 'object') ? (t.target || 0) : (parseInt((t + '').split('-').pop()) || 1);
+      const label = (t && t.label) ? t.label : formatActivityKey(key);
+      const isFloor = (t && t.floor);
+      // For floor KPIs (e.g. stale deals = 0 is good), invert the logic
+      const pct = isFloor
+        ? (val === 0 ? 100 : Math.max(0, 100 - Math.round((val / Math.max(targetNum, 1)) * 100)))
+        : (targetNum > 0 ? Math.min(100, Math.round((val / targetNum) * 100)) : 0);
       const color = pct >= 100 ? '#4ade80' : pct >= 60 ? '#fbbf24' : '#f87171';
+      const displayTarget = isFloor ? '0 stale' : targetNum + '/wk';
       return `<div>
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:12px;color:#94a3b8">${formatActivityKey(key)}</span>
-          <span style="font-size:12px;font-weight:700;color:${color}">${val} <span style="color:#334155;font-weight:400">/ ${targetStr}</span></span>
+          <span style="font-size:12px;color:#94a3b8">${label}</span>
+          <span style="font-size:12px;font-weight:700;color:${color}">${val} <span style="color:#334155;font-weight:400">/ ${displayTarget}</span></span>
         </div>
         <div style="height:5px;background:#1e293b;border-radius:3px">
           <div style="height:5px;width:${pct}%;background:${color};border-radius:3px;transition:width .4s"></div>
