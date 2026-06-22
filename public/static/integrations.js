@@ -64,7 +64,7 @@ function getGoogleUserEmail() { return getIntState('googleEmail') || ''; }
 async function googleOAuthConnect() {
   const clientId = getGoogleClientId();
   if (!clientId) {
-    showIntToast('⚠️ Paste your Google Client ID first (see setup guide)', 'warn');
+    showIntToast('Paste your Google Client ID first (see setup guide)', 'warn');
     return false;
   }
   const redirectUri = `${location.origin}/auth/google/callback`;
@@ -116,7 +116,7 @@ async function googleOAuthConnect() {
               const u = await r.json();
               saveIntState({ googleEmail: u.email || '' });
             } catch(_) {}
-            showIntToast('✅ Google connected!', 'success');
+            showIntToast('Google connected', 'success');
             resolve(true);
           }
         }
@@ -406,8 +406,8 @@ function showIntToast(msg, type = 'info') {
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function connBadge(connected, label) {
   return connected
-    ? `<span class="badge" style="background:#00c853;color:#fff">✓ ${label} Connected</span>`
-    : `<span class="badge" style="background:#6b7280;color:#fff">○ Not Connected</span>`;
+    ? `<span class="badge" style="background:#00c853;color:#fff">Connected: ${label}</span>`
+    : `<span class="badge" style="background:#6b7280;color:#fff">Not Connected</span>`;
 }
 function iconBtn(icon, label, onclick) {
   return `<button class="secondary-btn" style="gap:6px;display:inline-flex;align-items:center" onclick="${onclick}">${icon} ${label}</button>`;
@@ -459,16 +459,16 @@ async function integrations() {
 
     <div id="int-google-connected" style="${googleOk ? '' : 'display:none'}">
       <div class="connected-features" style="margin:12px 0">
-        <div style="font-size:11px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">✅ Connected as ${googleEmail||'your Google account'} — What you can do:</div>
-        <div class="cf-row"><span class="cf-icon">📧</span><div><strong>Gmail</strong> — Read recent threads, compose follow-up emails from templates</div></div>
-        <div class="cf-row"><span class="cf-icon">📅</span><div><strong>Calendar</strong> — View upcoming events, schedule site walks and follow-ups</div></div>
-        <div class="cf-row"><span class="cf-icon">📂</span><div><strong>Drive</strong> — Search and link proposal docs, contracts, and site photos</div></div>
-        <div class="cf-row"><span class="cf-icon">🔀</span><div><strong>Template Merge</strong> — Personalize email templates with live lead data and send via Gmail</div></div>
+        <div style="font-size:11px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Connected as ${googleEmail||'your Google account'} — What you can do:</div>
+        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Gmail</strong> — Read recent threads, compose follow-up emails from templates</div></div>
+        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Calendar</strong> — View upcoming events, schedule site walks and follow-ups</div></div>
+        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Drive</strong> — Search and link proposal docs, contracts, and site photos</div></div>
+        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Template Merge</strong> — Personalize email templates with live lead data and send via Gmail</div></div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-        ${iconBtn('📧', 'Gmail', "intShowGmail()")}
-        ${iconBtn('📅', 'Calendar', "intShowCalendar()")}
-        ${iconBtn('📂', 'Drive', "intShowDrive()")}
+        ${iconBtn('', 'Gmail', "intShowGmail()")}
+        ${iconBtn('', 'Calendar', "intShowCalendar()")}
+        ${iconBtn('', 'Drive', "intShowDrive()")}
         <button class="danger-btn" onclick="intGoogleDisconnect()" style="margin-left:auto">Disconnect</button>
       </div>
     </div>
@@ -476,7 +476,7 @@ async function integrations() {
     <!-- Gmail panel -->
     <div id="int-gmail-panel" style="display:none;margin-top:20px;border-top:1px solid #334155;padding-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0">📧 Recent Gmail Threads</h3>
+        <h3 style="margin:0">Recent Gmail Threads</h3>
         <button class="secondary-btn" onclick="intComposeFromTemplate()" style="font-size:12px">+ Compose from Template</button>
       </div>
       <div id="int-gmail-list"><div class="spinner-wrap"><div class="spinner"></div></div></div>
@@ -485,7 +485,7 @@ async function integrations() {
     <!-- Calendar panel -->
     <div id="int-cal-panel" style="display:none;margin-top:20px;border-top:1px solid #334155;padding-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0">📅 Upcoming Events</h3>
+        <h3 style="margin:0">Upcoming Events</h3>
         <button class="secondary-btn" onclick="intCreateCalendarEvent()" style="font-size:12px">+ New Event</button>
       </div>
       <div id="int-cal-list"><div class="spinner-wrap"><div class="spinner"></div></div></div>
@@ -493,7 +493,7 @@ async function integrations() {
 
     <!-- Drive panel -->
     <div id="int-drive-panel" style="display:none;margin-top:20px;border-top:1px solid #334155;padding-top:16px">
-      <h3 style="margin:0 0 12px">📂 Google Drive Files</h3>
+      <h3 style="margin:0 0 12px">Google Drive Files</h3>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <input id="int-drive-search" type="text" placeholder="Search files…"
           style="flex:1;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
@@ -506,7 +506,7 @@ async function integrations() {
   <!-- ── HOMEWORKS / COPILOTCRM ──────────────────────────── -->
   <section class="card" id="int-hw-card">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <span style="font-size:28px">🏡</span>
+      
       <h2 style="margin:0">Homeworks CRM</h2>
       ${connBadge(hwOk, 'Homeworks')}
     </div>
@@ -514,7 +514,7 @@ async function integrations() {
 
     <div style="margin:16px 0">
       ${!hwOk ? `<div class="int-onboarding-state">
-        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#f59e0b;margin-bottom:8px">🚀 Get Started — 4 Steps</div>
+        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#f59e0b;margin-bottom:8px">Get Started — 4 Steps</div>
         <div class="setup-steps">
           <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
             <div class="step-num">1</div>
@@ -534,7 +534,7 @@ async function integrations() {
           </div>
         </div>
       </div>` : ''}
-      <h3 style="margin:0 0 8px">${hwOk ? '⚙️ Webhook Settings' : 'Your Zapier Webhook URL'}</h3>
+      <h3 style="margin:0 0 8px">${hwOk ? 'Webhook Settings' : 'Your Zapier Webhook URL'}</h3>
       <label style="font-size:12px;font-weight:600;color:var(--muted)">ZAPIER WEBHOOK URL</label>
       <input id="zapierWebhookInput" type="url"
         placeholder="https://hooks.zapier.com/hooks/catch/XXXXXXX/XXXXXXX/"
@@ -550,7 +550,7 @@ async function integrations() {
     <!-- Homeworks KPI Dashboard Strip -->
     <div style="border-top:1px solid #334155;padding-top:16px;margin-top:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h3 style="margin:0">📊 Account Standing <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">from Homeworks My Day</span></h3>
+        <h3 style="margin:0">Account Standing <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">from Homeworks My Day</span></h3>
         <a href="https://secure.copilotcrm.com" target="_blank" rel="noopener"
           style="font-size:11px;color:var(--accent);text-decoration:none">Open Homeworks →</a>
       </div>
@@ -581,27 +581,27 @@ async function integrations() {
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
         <a href="https://secure.copilotcrm.com/customers/add-new-customer" target="_blank" rel="noopener"
           style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          👤 Add Customer
+          Add Customer
         </a>
         <a href="https://secure.copilotcrm.com/assets/add-new-asset" target="_blank" rel="noopener"
           style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          🏡 Add Property
+          Add Property
         </a>
         <a href="https://secure.copilotcrm.com/finances/estimates/add" target="_blank" rel="noopener"
           style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          📋 New Estimate
+          New Estimate
         </a>
         <a href="https://secure.copilotcrm.com/scheduler/addvisit" target="_blank" rel="noopener"
           style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          📅 Schedule Visit
+          Schedule Visit
         </a>
         <a href="https://secure.copilotcrm.com/finances/estimates" target="_blank" rel="noopener"
           style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          📊 Estimates List
+          Estimates List
         </a>
         <a href="https://secure.copilotcrm.com/scheduler/month" target="_blank" rel="noopener"
           style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          🗓️ Calendar
+          Calendar
         </a>
       </div>
 
@@ -621,9 +621,9 @@ async function integrations() {
 <div id="int-visit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1001;align-items:center;justify-content:center">
   <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(580px,95vw);max-height:90vh;overflow-y:auto;position:relative">
     <button onclick="document.getElementById('int-visit-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">✕</button>
+      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-      <span style="font-size:24px">📅</span>
+      
       <div>
         <h2 style="margin:0;font-size:18px">Schedule Site Visit</h2>
         <div id="int-visit-client-label" style="font-size:13px;color:var(--muted);margin-top:2px"></div>
@@ -683,13 +683,13 @@ async function integrations() {
       <div id="int-visit-also-gcal" style="display:flex;align-items:center;gap:10px;padding:12px;background:#0f172a;border-radius:8px;border:1px solid #334155">
         <input type="checkbox" id="int-visit-gcal-check" checked style="width:16px;height:16px;cursor:pointer">
         <label for="int-visit-gcal-check" style="font-size:13px;cursor:pointer">
-          📅 Also add to <strong>Google Calendar</strong> ${isGoogleConnected() ? '<span style="color:#4ade80;font-size:11px">● Connected</span>' : '<span style="color:#94a3b8;font-size:11px">(connect Google first)</span>'}
+          Also add to <strong>Google Calendar</strong> ${isGoogleConnected() ? '<span style="color:#4ade80;font-size:11px">● Connected</span>' : '<span style="color:#94a3b8;font-size:11px">(connect Google first)</span>'}
         </label>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
         <button class="secondary-btn" onclick="document.getElementById('int-visit-modal').style.display='none'">Cancel</button>
         <button class="primary-btn" onclick="intSubmitVisit()">
-          📅 Push Visit to Homeworks
+          Push Visit to Homeworks
         </button>
       </div>
     </div>
@@ -700,9 +700,9 @@ async function integrations() {
 <div id="int-estimate-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1001;align-items:center;justify-content:center">
   <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;position:relative">
     <button onclick="document.getElementById('int-estimate-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">✕</button>
+      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-      <span style="font-size:24px">📋</span>
+      
       <div>
         <h2 style="margin:0;font-size:18px">Push as Estimate</h2>
         <div id="int-est-client-label" style="font-size:13px;color:var(--muted);margin-top:2px"></div>
@@ -749,12 +749,12 @@ async function integrations() {
           style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
       </div>
       <div style="padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:12px;color:var(--muted)">
-        ℹ️ This creates the estimate record in Homeworks. Open Homeworks to add line items, pricing, and send to client.
+        This creates the estimate record in Homeworks. Open Homeworks to add line items, pricing, and send to client.
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
         <button class="secondary-btn" onclick="document.getElementById('int-estimate-modal').style.display='none'">Cancel</button>
         <button class="primary-btn" onclick="intSubmitEstimate()">
-          📋 Push Estimate to Homeworks
+          Push Estimate to Homeworks
         </button>
       </div>
     </div>
@@ -765,7 +765,7 @@ async function integrations() {
 <div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
   <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(680px,95vw);max-height:90vh;overflow-y:auto;position:relative">
     <button onclick="document.getElementById('int-compose-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">✕</button>
+      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
     <h2 style="margin:0 0 20px">Compose Email</h2>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div>
@@ -802,7 +802,7 @@ async function integrations() {
 <div id="int-cal-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
   <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;position:relative">
     <button onclick="document.getElementById('int-cal-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">✕</button>
+      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
     <h2 style="margin:0 0 20px">Create Calendar Event</h2>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div>
@@ -889,19 +889,19 @@ function renderHwOpps() {
       <div style="display:flex;gap:6px;padding:10px 14px;flex-wrap:wrap">
         <button onclick="intPushLead('${escapeHtml(o.id)}')"
           style="flex:1;min-width:90px;padding:7px 10px;background:#1e3a5f;border:1px solid #2563eb;border-radius:7px;color:#93c5fd;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-          👤 Customer
+          Customer
         </button>
         <button onclick="intOpenEstimateModal('${escapeHtml(o.id)}')"
           style="flex:1;min-width:90px;padding:7px 10px;background:#1c2a14;border:1px solid #4d7c0f;border-radius:7px;color:#86efac;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-          📋 Estimate
+          Estimate
         </button>
         <button onclick="intOpenVisitModal('${escapeHtml(o.id)}')"
           style="flex:1;min-width:90px;padding:7px 10px;background:#1a1030;border:1px solid #6d28d9;border-radius:7px;color:#c4b5fd;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-          📅 Visit
+          Visit
         </button>
         ${o.email ? `<a href="mailto:${escapeHtml(o.email)}"
           style="flex:none;padding:7px 10px;background:#1a1a1a;border:1px solid #334155;border-radius:7px;color:#94a3b8;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap">
-          ✉️
+          Email
         </a>` : ''}
       </div>
     </div>
@@ -964,7 +964,7 @@ async function intLoadGmail() {
       return `
         <div class="int-list-row">
           <div style="min-width:0;flex:1">
-            <div class="int-list-row-title">✉️ ${escapeHtml(subj)}</div>
+            <div class="int-list-row-title">${escapeHtml(subj)}</div>
             <div class="int-list-row-meta">From: ${escapeHtml(sender)}${d ? ' · ' + d : ''}</div>
           </div>
           <a href="https://mail.google.com/mail/#inbox/${thread.id}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>
@@ -1055,8 +1055,8 @@ function intRenderAgenda() {
         const end = ev.end?.dateTime ? new Date(ev.end.dateTime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
         return `<div class="int-list-row">
           <div style="min-width:0;flex:1">
-            <div class="int-list-row-title">📅 ${escapeHtml(ev.summary || '(no title)')}</div>
-            <div class="int-list-row-meta">${t}${end ? ' – ' + end : ''}${ev.location ? ' · 📍 ' + escapeHtml(ev.location) : ''}</div>
+            <div class="int-list-row-title">${escapeHtml(ev.summary || '(no title)')}</div>
+            <div class="int-list-row-meta">${t}${end ? ' – ' + end : ''}${ev.location ? ' · ' + escapeHtml(ev.location) : ''}</div>
           </div>
           ${ev.htmlLink ? `<a href="${escapeHtml(ev.htmlLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
         </div>`;
@@ -1192,11 +1192,11 @@ async function intLoadDrive() {
     const files = result.files || [];
     if (!files.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No files found.</p>'; return; }
     el.innerHTML = files.map(f => {
-      const icon = f.mimeType?.includes('folder') ? '📁' :
-        f.mimeType?.includes('pdf') ? '📄' :
-        f.mimeType?.includes('sheet') ? '📊' :
-        f.mimeType?.includes('document') ? '📝' :
-        f.mimeType?.includes('image') ? '🖼️' : '📎';
+      const icon = f.mimeType?.includes('folder') ? '&#x25a1;' :
+        f.mimeType?.includes('pdf') ? 'PDF' :
+        f.mimeType?.includes('sheet') ? 'XLS' :
+        f.mimeType?.includes('document') ? 'DOC' :
+        f.mimeType?.includes('image') ? 'IMG' : 'FILE';
       const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
       const typeLabel = f.mimeType?.includes('folder') ? 'Folder' : f.mimeType?.split('/').pop()?.replace('vnd.google-apps.','').replace('vnd.openxmlformats-officedocument.','') || 'File';
       return `
@@ -1227,11 +1227,11 @@ async function intSearchDrive() {
     const files = result.files || [];
     if (!files.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No files matching that search.</p>'; return; }
     el.innerHTML = files.map(f => {
-      const icon = f.mimeType?.includes('folder') ? '📁' :
-        f.mimeType?.includes('pdf') ? '📄' :
-        f.mimeType?.includes('sheet') ? '📊' :
-        f.mimeType?.includes('document') ? '📝' :
-        f.mimeType?.includes('image') ? '🖼️' : '📎';
+      const icon = f.mimeType?.includes('folder') ? '&#x25a1;' :
+        f.mimeType?.includes('pdf') ? 'PDF' :
+        f.mimeType?.includes('sheet') ? 'XLS' :
+        f.mimeType?.includes('document') ? 'DOC' :
+        f.mimeType?.includes('image') ? 'IMG' : 'FILE';
       return `
         <div class="int-list-row">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
@@ -1299,11 +1299,11 @@ async function intSendEmail() {
   try {
     const htmlBody = body.replace(/\n/g, '<br>');
     await gmailSendEmail({ to, subject, body: htmlBody });
-    showIntToast('✅ Email sent!', 'success');
+    showIntToast('Email sent', 'success');
     document.getElementById('int-compose-modal').style.display = 'none';
     intLoadGmail();
   } catch(e) {
-    showIntToast(`❌ ${e.message}`, 'error');
+    showIntToast(e.message, 'error');
   }
 }
 
@@ -1329,12 +1329,12 @@ async function intSubmitCalEvent() {
   if (!isGoogleConnected()) { showIntToast('Connect Google first', 'warn'); return; }
   try {
     const ev = await calCreateEvent({ summary, description, startDate, startTime, durationHours, attendees: attendee ? [attendee] : [] });
-    showIntToast('✅ Event created!', 'success');
+    showIntToast('Event created', 'success');
     document.getElementById('int-cal-modal').style.display = 'none';
     if (ev.htmlLink) window.open(ev.htmlLink, '_blank');
     intLoadCalendar();
   } catch(e) {
-    showIntToast(`❌ ${e.message}`, 'error');
+    showIntToast(e.message, 'error');
   }
 }
 
@@ -1417,7 +1417,7 @@ async function intSubmitVisit() {
       avalon_service_line: opp.serviceLine || ''
     });
 
-    showIntToast(`✅ Visit scheduled for ${opp.client} in Homeworks!`, 'success');
+    showIntToast(`Visit scheduled for ${opp.client} in Homeworks`, 'success');
 
     // Optionally also add to Google Calendar
     if (alsoGcal && isGoogleConnected()) {
@@ -1434,15 +1434,15 @@ async function intSubmitVisit() {
           durationHours: parseFloat(visitHours),
           attendees: opp.email ? [opp.email] : []
         });
-        showIntToast('✅ Also added to Google Calendar!', 'success');
+        showIntToast('Also added to Google Calendar', 'success');
       } catch(gcalErr) {
-        showIntToast(`⚠️ Homeworks ✓ but Calendar failed: ${gcalErr.message}`, 'warn');
+        showIntToast(`Homeworks saved but Calendar failed: ${gcalErr.message}`, 'warn');
       }
     }
 
     document.getElementById('int-visit-modal').style.display = 'none';
   } catch(e) {
-    showIntToast(`❌ ${e.message}`, 'error');
+    showIntToast(e.message, 'error');
   }
 }
 
@@ -1534,7 +1534,7 @@ async function intSubmitEstimate() {
       next_follow_up: opp.nextFollowUp || ''
     });
 
-    showIntToast(`✅ Estimate pushed to Homeworks for ${opp.client}!`, 'success');
+    showIntToast(`Estimate pushed to Homeworks for ${opp.client}`, 'success');
     document.getElementById('int-estimate-modal').style.display = 'none';
 
     // Open Homeworks estimates list so they can add line items
@@ -1544,7 +1544,7 @@ async function intSubmitEstimate() {
       }
     }, 500);
   } catch(e) {
-    showIntToast(`❌ ${e.message}`, 'error');
+    showIntToast(e.message, 'error');
   }
 }
 
@@ -1556,16 +1556,16 @@ function intSaveZapierUrl() {
     return;
   }
   saveIntState({ zapierWebhookUrl: url });
-  showIntToast('✅ Webhook URL saved!', 'success');
+  showIntToast('Webhook URL saved', 'success');
   setTimeout(() => integrations(), 600);
 }
 
 async function intTestZapier() {
   try {
     await sendToHomeworks('test_ping', { message: 'Hello from Avalon Sales Hub!', time: new Date().toISOString() });
-    showIntToast('✅ Test ping sent — check your Zapier task history');
+    showIntToast('Test ping sent — check your Zapier task history');
   } catch(e) {
-    showIntToast(`❌ ${e.message}`, 'error');
+    showIntToast(e.message, 'error');
   }
 }
 
@@ -1575,9 +1575,9 @@ async function intPushLead(oppId) {
   if (!opp) { showIntToast('Opportunity not found'); return; }
   try {
     await pushLeadToHomeworks(opp);
-    showIntToast(`✅ ${opp.client} pushed to Homeworks CRM`);
+    showIntToast(`${opp.client} pushed to Homeworks CRM`);
   } catch(e) {
-    showIntToast(`❌ ${e.message}`, 'error');
+    showIntToast(e.message, 'error');
   }
 }
 

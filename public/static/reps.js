@@ -18,7 +18,7 @@ const REPS = [
     title: 'Owner / Sales Manager',
     role: 'admin',
     pin: '1111',
-    avatar: '👔',
+    avatar: 'TK',
     color: '#00d4ff',
     base: null, // owner — no base
     commissionPlan: 'admin'
@@ -29,7 +29,7 @@ const REPS = [
     title: 'Client Relations & Enhancement Sales Associate',
     role: 'rep',
     pin: '2222',
-    avatar: '🌿',
+    avatar: 'RV',
     color: '#4ade80',
     base: { rateTraining: 20, ratePostTraining: 21 },
     commissionPlan: 'ryan'
@@ -40,7 +40,7 @@ const REPS = [
     title: 'Office Manager — Sales Operations',
     role: 'office_manager',
     pin: '3333',
-    avatar: '📋',
+    avatar: 'JM',
     color: '#f59e0b',
     email: 'admin@avalon-lc.com',
     base: null,
@@ -470,7 +470,7 @@ function renderRepDashboard(viewEl, rep) {
   <!-- My Pipeline -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h2 style="margin:0;font-size:16px">🔥 My Active Pipeline</h2>
+      <h2 style="margin:0;font-size:16px">My Active Pipeline</h2>
       <button class="secondary-btn" onclick="show('pipeline')" style="font-size:12px">View All</button>
     </div>
     ${open.slice(0,6).map(o => repOppMiniCard(o)).join('') || '<p style="color:var(--muted);font-size:13px">No open opportunities yet. <button class="primary-btn" onclick="show(\'lead\')" style="margin-left:8px;padding:4px 12px;font-size:12px">+ New Lead</button></p>'}
@@ -480,18 +480,18 @@ function renderRepDashboard(viewEl, rep) {
   <!-- Weekly Scoreboard -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h2 style="margin:0;font-size:16px">📊 Weekly Activity</h2>
+      <h2 style="margin:0;font-size:16px">Weekly Activity</h2>
       <span style="font-size:11px;color:var(--muted)">Week of ${weekOf()}</span>
     </div>
     ${renderWeeklyScoreboard(rep.id, weeklyActivity, weekTargets)}
-    <button class="secondary-btn" onclick="openWeeklyTracker('${rep.id}')" style="width:100%;margin-top:14px;font-size:13px">📝 Log Today's Activity</button>
+    <button class="secondary-btn" onclick="openWeeklyTracker('${rep.id}')" style="width:100%;margin-top:14px;font-size:13px">Log Today's Activity</button>
   </section>
 
 </div>
 
 <!-- Commission Breakdown -->
 <section class="card" style="margin-bottom:28px">
-  <h2 style="margin:0 0 16px;font-size:16px">💰 Commission Breakdown — Sold Jobs</h2>
+  <h2 style="margin:0 0 16px;font-size:16px">Commission Breakdown — Sold Jobs</h2>
   ${breakdown.length === 0 ? `<p style="color:var(--muted);font-size:13px">No sold jobs yet. Close your first deal to start earning!</p>` :
     `<div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -518,7 +518,7 @@ function renderRepDashboard(viewEl, rep) {
           <td style="padding:10px 12px;text-align:right;font-weight:700;color:${opp.collected ? '#4ade80' : '#fbbf24'}">${fmtCurrency(result.amount)}</td>
           <td style="padding:10px 12px;text-align:center">
             ${opp.collected
-              ? '<span style="background:#14532d;color:#4ade80;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">✓ Collected</span>'
+              ? '<span style="background:#14532d;color:#4ade80;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Collected</span>'
               : result.requiresApproval
                 ? '<span style="background:#1c1917;color:#f59e0b;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Approval Needed</span>'
                 : '<span style="background:#1c1917;color:#fbbf24;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Pending</span>'}
@@ -534,7 +534,7 @@ function renderRepDashboard(viewEl, rep) {
 
 <!-- Commission Plan Quick Reference -->
 <section class="card">
-  <h2 style="margin:0 0 16px;font-size:16px">📋 My Commission Plan</h2>
+  <h2 style="margin:0 0 16px;font-size:16px">My Commission Plan</h2>
   ${renderCommissionPlanRef(rep.commissionPlan)}
 </section>
 
@@ -542,8 +542,8 @@ function renderRepDashboard(viewEl, rep) {
 <div id="weeklyTrackerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
   <div style="background:#1e293b;border-radius:16px;padding:28px;width:min(480px,95vw);max-height:90vh;overflow-y:auto;position:relative">
     <button onclick="document.getElementById('weeklyTrackerModal').style.display='none'"
-      style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:#64748b;font-size:20px;cursor:pointer">✕</button>
-    <h2 style="margin:0 0 20px;font-size:18px">📝 Log This Week's Activity</h2>
+      style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:#64748b;font-size:20px;cursor:pointer">×</button>
+    <h2 style="margin:0 0 20px;font-size:18px">Log This Week's Activity</h2>
     <div style="display:flex;flex-direction:column;gap:14px">
       ${Object.entries(weekTargets).map(([key, target]) => `
       <div>
@@ -572,7 +572,7 @@ function renderRepDashboard(viewEl, rep) {
       if (el) data[key] = parseInt(el.value) || 0;
     });
     saveRepState(repId, { weeklyActivity: data });
-    if (window.showToast) window.showToast('✅ Activity saved!');
+    if (window.showToast) window.showToast('Activity saved');
     document.getElementById('weeklyTrackerModal').style.display = 'none';
     repDashboard();
   };
@@ -683,7 +683,7 @@ function renderCommissionPlanRef(planId) {
         </tr>
       </tbody>
     </table>
-    <p style="font-size:11px;color:#64748b;margin-top:12px">⚠️ Commission paid only on approved, sold, and collected work. Pricing must be management-approved. Base: $20/hr training → $21/hr post-training. 90-day review checkpoint.</p>
+    <p style="font-size:11px;color:#64748b;margin-top:12px">Commission paid only on approved, sold, and collected work. Pricing must be management-approved. Base: $20/hr training → $21/hr post-training. 90-day review checkpoint.</p>
   </div>`;
 }
 
@@ -766,17 +766,17 @@ function renderOMDashboard(viewEl, rep) {
   <!-- Overdue Follow-Ups -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h2 style="margin:0;font-size:15px">🚨 Overdue Follow-Ups</h2>
+      <h2 style="margin:0;font-size:15px">Overdue Follow-Ups</h2>
       <span style="font-size:11px;color:#f87171;font-weight:700">${overdueList.length} item${overdueList.length===1?'':'s'}</span>
     </div>
     ${overdueList.length === 0
-      ? '<p style="color:#4ade80;font-size:13px">✅ No overdue follow-ups — pipeline is current.</p>'
+      ? '<p style="color:#4ade80;font-size:13px">No overdue follow-ups — pipeline is current.</p>'
       : overdueList.slice(0, 8).map(o => `
         <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0f172a;border:1px solid #7f1d1d;border-radius:9px;margin-bottom:7px;cursor:pointer"
           onmouseover="this.style.background='#1a0a0a'" onmouseout="this.style.background='#0f172a'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-            <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.status)} · Due ${o.nextFollowUp}${o.repId ? ' · ' + (window.REPS||[]).find(r=>r.id===o.repId)?.avatar || '' : ' · ⚠️ unassigned'}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.status)} · Due ${o.nextFollowUp}${o.repId ? ' · ' + (window.REPS||[]).find(r=>r.id===o.repId)?.avatar || '' : ' · unassigned'}</div>
           </div>
           <span style="font-size:10px;color:#f87171;font-weight:700;white-space:nowrap">OVERDUE</span>
         </div>`).join('')}
@@ -786,17 +786,17 @@ function renderOMDashboard(viewEl, rep) {
   <!-- Proposals to Chase -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h2 style="margin:0;font-size:15px">📬 Proposals to Chase</h2>
+      <h2 style="margin:0;font-size:15px">Proposals to Chase</h2>
       <span style="font-size:11px;color:#fbbf24;font-weight:700">${chaseList.length} pending</span>
     </div>
     ${chaseList.length === 0
-      ? '<p style="color:#4ade80;font-size:13px">✅ All proposals have a follow-up scheduled.</p>'
+      ? '<p style="color:#4ade80;font-size:13px">All proposals have a follow-up scheduled.</p>'
       : chaseList.map(o => `
         <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0f172a;border:1px solid #1e293b;border-radius:9px;margin-bottom:7px;cursor:pointer"
           onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-            <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.serviceLine||o.status)}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.avatar||'') + ' ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.name||'') : ' · ⚠️ unassigned'}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.serviceLine||o.status)}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.avatar||'') + ' ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.name||'') : ' · unassigned'}</div>
           </div>
           ${o.jobValue ? `<span style="font-size:12px;color:#94a3b8;white-space:nowrap">${fmtCurrency(o.jobValue)}</span>` : ''}
         </div>`).join('')}
@@ -808,15 +808,15 @@ function renderOMDashboard(viewEl, rep) {
 <div class="grid grid-2" style="gap:20px;margin-bottom:24px">
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h2 style="margin:0;font-size:15px">📥 Unassigned Leads</h2>
+      <h2 style="margin:0;font-size:15px">Unassigned Leads</h2>
       <button class="primary-btn" onclick="show('lead')" style="font-size:12px;padding:6px 14px">+ New Lead</button>
     </div>
     ${unassigned.length === 0
-      ? '<p style="color:#4ade80;font-size:13px">✅ All open leads have a rep assigned.</p>'
+      ? '<p style="color:#4ade80;font-size:13px">All open leads have a rep assigned.</p>'
       : unassigned.map(o => `
         <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0f172a;border:1px solid #f59e0b40;border-radius:9px;margin-bottom:7px;cursor:pointer"
           onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
-          <span style="font-size:16px">⚠️</span>
+          
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
             <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.status)} · ${escapeHtml(o.serviceLine||'No service line')}</div>
@@ -826,14 +826,14 @@ function renderOMDashboard(viewEl, rep) {
   </section>
 
   <section class="card">
-    <h2 style="margin:0 0 14px;font-size:15px">⚡ Quick Actions</h2>
+    <h2 style="margin:0 0 14px;font-size:15px">Quick Actions</h2>
     <div style="display:flex;flex-direction:column;gap:10px">
-      <button class="primary-btn" onclick="show('lead')" style="text-align:left;justify-content:flex-start">📋 Add New Lead</button>
-      <button class="secondary-btn" onclick="show('pipeline')" style="text-align:left;justify-content:flex-start">🔍 Open Full Pipeline</button>
-      <button class="secondary-btn" onclick="show('templates')" style="text-align:left;justify-content:flex-start">📧 Email Templates</button>
-      <button class="secondary-btn" onclick="show('forms','follow-up')" style="text-align:left;justify-content:flex-start">📅 Follow-Up Cadence</button>
-      <button class="secondary-btn" onclick="show('manager')" style="text-align:left;justify-content:flex-start">📊 Manager Tools (View)</button>
-      <button class="secondary-btn" onclick="show('settings')" style="text-align:left;justify-content:flex-start">⚙️ Settings / Export</button>
+      <button class="primary-btn" onclick="show('lead')" style="text-align:left;justify-content:flex-start">Add New Lead</button>
+      <button class="secondary-btn" onclick="show('pipeline')" style="text-align:left;justify-content:flex-start">Open Full Pipeline</button>
+      <button class="secondary-btn" onclick="show('templates')" style="text-align:left;justify-content:flex-start">Email il Templates</button>
+      <button class="secondary-btn" onclick="show('forms','follow-up')" style="text-align:left;justify-content:flex-start">Follow-Up Cadence</button>
+      <button class="secondary-btn" onclick="show('manager')" style="text-align:left;justify-content:flex-start">Manager Tools (View)</button>
+      <button class="secondary-btn" onclick="show('settings')" style="text-align:left;justify-content:flex-start">Settings / Export</button>
     </div>
   </section>
 </div>
@@ -903,13 +903,13 @@ function renderAdminDashboard(viewEl) {
     return `<div style="background:#0f172a;border:1px solid ${abovePlan ? '#16a34a' : '#1e293b'};border-radius:12px;padding:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-weight:700;font-size:14px">${div.icon} ${div.name}</div>
-        ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px">✓ ABOVE PLAN</span>' : ''}
+        ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px">ABOVE PLAN</span>' : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
         <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Target</div><div style="font-size:1.1rem;font-weight:800;color:#e2e8f0">${fmtM(div.target)}</div></div>
         <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual</div><div style="font-size:1.1rem;font-weight:800;color:${abovePlan ? '#4ade80' : '#00d4ff'}">${fmtM(div.actual)}</div></div>
         <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:.95rem;font-weight:700;color:#f59e0b">${Math.round(div.grossMarginFloor * 100)}%</div></div>
-        <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:.95rem;font-weight:700;color:${gmOk ? '#4ade80' : '#f87171'}">${Math.round(div.grossMarginPct * 100)}% ${gmOk ? '✓' : '⚠'}</div></div>
+        <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:.95rem;font-weight:700;color:${gmOk ? '#4ade80' : '#f87171'}">${Math.round(div.grossMarginPct * 100)}% ${gmOk ? '+' : '!'}</div></div>
       </div>
       <div style="height:5px;background:#1e293b;border-radius:3px"><div style="height:5px;width:${pct}%;background:${barColor};border-radius:3px;transition:width .5s"></div></div>
       <div style="font-size:10px;color:#64748b;margin-top:4px">${pct}% · ${abovePlan ? '<span style="color:#4ade80">+' + fmtM(Math.abs(div.remaining)) + ' over</span>' : fmtM(div.remaining) + ' remaining'}</div>
@@ -925,7 +925,7 @@ function renderAdminDashboard(viewEl) {
 
   viewEl.innerHTML = `
 <!-- ── HEADER ── -->
-<div class="eyebrow" style="color:#00d4ff">👔 Tyler · Owner / CEO</div>
+<div class="eyebrow" style="color:#00d4ff">Tyler · Owner / CEO</div>
 <h1 style="margin-bottom:4px">Owner Dashboard</h1>
 <p class="lede" style="margin-bottom:20px">FY2026 financials · Division P&L · Team performance · Commission queue · Pipeline health ·
   <button onclick="logoutRep();renderLoginScreen()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;text-decoration:underline">Switch Account</button>
@@ -942,28 +942,28 @@ ${(()=>{
 
   // Revenue vs plan
   if (isAheadBudget) {
-    takeaways.push({ icon:'✅', color:'#4ade80', text:`Revenue is <strong style="color:#4ade80">+${fmtM(Math.abs(ytdVariance||0))} ahead of budget</strong> YTD — currently at ${pctOfBudget}% of annual plan.` });
+    takeaways.push({ icon:'+', color:'#4ade80', text:`Revenue is <strong style="color:#4ade80">+${fmtM(Math.abs(ytdVariance||0))} ahead of budget</strong> YTD — currently at ${pctOfBudget}% of annual plan.` });
   } else {
-    takeaways.push({ icon:'⚠️', color:'#f87171', text:`Revenue is <strong style="color:#f87171">${fmtM(Math.abs(ytdVariance||0))} behind budget</strong> YTD (${pctOfBudget}% of plan) — needs ${fmtM(annual.avgNeededPerMonth)} per month to close gap.` });
+    takeaways.push({ icon:'−', color:'#f87171', text:`Revenue is <strong style="color:#f87171">${fmtM(Math.abs(ytdVariance||0))} behind budget</strong> YTD (${pctOfBudget}% of plan) — needs ${fmtM(annual.avgNeededPerMonth)} per month to close gap.` });
   }
 
   // Overdue follow-ups
   if (overdueCount === 0) {
-    takeaways.push({ icon:'✅', color:'#4ade80', text:'All follow-ups are current — no overdue leads.' });
+    takeaways.push({ icon:'+', color:'#4ade80', text:'All follow-ups are current — no overdue leads.' });
   } else {
-    takeaways.push({ icon:'🚨', color:'#f87171', text:`<strong style="color:#f87171">${overdueCount} lead${overdueCount>1?'s are':' is'} overdue</strong> for follow-up — <span onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">review now →</span>` });
+    takeaways.push({ icon:'!', color:'#f87171', text:`<strong style="color:#f87171">${overdueCount} lead${overdueCount>1?'s are':' is'} overdue</strong> for follow-up — <span onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">review now →</span>` });
   }
 
   // Commission queue
   if (commQueueCount > 0) {
-    takeaways.push({ icon:'💰', color:'#f59e0b', text:`<strong style="color:#f59e0b">${commQueueCount} commission${commQueueCount>1?'s':''} pending approval</strong> — sold but not yet approved. <span onclick="show('repDashboard')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">Review queue →</span>` });
+    takeaways.push({ icon:'$', color:'#f59e0b', text:`<strong style="color:#f59e0b">${commQueueCount} commission${commQueueCount>1?'s':''} pending approval</strong> — sold but not yet approved. <span onclick="show('repDashboard')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">Review queue →</span>` });
   } else {
-    takeaways.push({ icon:'✅', color:'#4ade80', text:'Commission queue is clear — all sold deals have been approved.' });
+    takeaways.push({ icon:'+', color:'#4ade80', text:'Commission queue is clear — all sold deals have been approved.' });
   }
 
   // Unassigned leads
   if (unassignedCount > 0) {
-    takeaways.push({ icon:'📋', color:'#f59e0b', text:`<strong style="color:#f59e0b">${unassignedCount} unassigned lead${unassignedCount>1?'s':''}</strong> in pipeline — assign to Ryan or take directly.` });
+    takeaways.push({ icon:'·', color:'#f59e0b', text:`<strong style="color:#f59e0b">${unassignedCount} unassigned lead${unassignedCount>1?'s':''}</strong> in pipeline — assign to Ryan or take directly.` });
   }
 
   // Stale check
@@ -979,7 +979,7 @@ ${(()=>{
 
   return `<div style="background:linear-gradient(135deg,#0a1020,#0f1a30);border:1px solid #1e4d6b;border-radius:14px;margin-bottom:20px;overflow:hidden">
     <div style="padding:12px 16px;background:#0a1628;border-bottom:1px solid #1e4d6b;display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#00d4ff">📊 Executive Summary</span>
+      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#00d4ff">Executive Summary</span>
       <span style="font-size:11px;color:#64748b">Key takeaways as of today</span>
     </div>
     ${rows}
@@ -1033,7 +1033,7 @@ ${(()=>{
 <!-- ── SECTION 2: DIVISION P&L ── -->
 <div style="margin-bottom:24px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-    <h2 style="margin:0;font-size:16px">📊 Division P&L</h2>
+    <h2 style="margin:0;font-size:16px">Division P&L</h2>
     <button class="secondary-btn" onclick="show('manager')" style="font-size:12px">Full P&L View →</button>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
@@ -1045,7 +1045,7 @@ ${(()=>{
 
 <!-- ── SECTION 3: MONTHLY BUDGET ACTUALS ── -->
 <div style="margin-bottom:24px">
-  <h2 style="font-size:16px;margin-bottom:12px">📅 Monthly Budget vs Actual</h2>
+  <h2 style="font-size:16px;margin-bottom:12px">Monthly Budget vs Actual</h2>
   <div style="overflow-x:auto">
     <div style="display:flex;gap:8px;min-width:600px">
       ${months.map(m => {
@@ -1070,7 +1070,7 @@ ${(()=>{
 
   <!-- Pipeline Health -->
   <section class="card">
-    <h2 style="margin:0 0 14px;font-size:16px">🔥 Pipeline Health</h2>
+    <h2 style="margin:0 0 14px;font-size:16px">Pipeline Health</h2>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View all open opportunities"
         style="background:#0f172a;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
@@ -1117,28 +1117,28 @@ ${(()=>{
     </div>
     ${overdueList.length > 0 ? `
     <div style="border-top:1px solid #1e293b;padding-top:12px">
-      <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:8px">🚨 Most Overdue</div>
+      <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:8px">Most Overdue</div>
       ${overdueList.slice(0, 4).map(o => `
         <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#0f172a;border:1px solid #7f1d1d;border-radius:8px;margin-bottom:5px;cursor:pointer"
           onmouseover="this.style.background='#1a0a0a'" onmouseout="this.style.background='#0f172a'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-            <div style="font-size:10px;color:#64748b">${escapeHtml(o.status)} · Due ${o.nextFollowUp}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.avatar||'') : ' · ⚠️ unassigned'}</div>
+            <div style="font-size:10px;color:#64748b">${escapeHtml(o.status)} · Due ${o.nextFollowUp}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.avatar||'') : ' · unassigned'}</div>
           </div>
           <span style="font-size:9px;color:#f87171;font-weight:700">OVERDUE</span>
         </div>`).join('')}
       ${overdueList.length > 4 ? `<div style="font-size:11px;color:#64748b;text-align:center;margin-top:6px">+${overdueList.length - 4} more — <button class="link-btn" onclick="show('pipeline')" style="color:var(--accent);background:none;border:none;cursor:pointer;font-size:11px;padding:0">open pipeline</button></div>` : ''}
-    </div>` : '<p style="color:#4ade80;font-size:13px;margin-top:8px">✅ No overdue follow-ups.</p>'}
+    </div>` : '<p style="color:#4ade80;font-size:13px;margin-top:8px">No overdue follow-ups.</p>'}
   </section>
 
   <!-- Commission Approval Queue -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h2 style="margin:0;font-size:16px">💰 Commission Approval Queue</h2>
+      <h2 style="margin:0;font-size:16px">Commission Approval Queue</h2>
       <span style="font-size:11px;color:${commQueue.length > 0 ? '#fbbf24' : '#4ade80'};font-weight:700">${commQueue.length} pending</span>
     </div>
     ${commQueue.length === 0
-      ? '<p style="color:#4ade80;font-size:13px">✅ All sold jobs have commission approved.</p>'
+      ? '<p style="color:#4ade80;font-size:13px">All sold jobs have commission approved.</p>'
       : commQueue.map(o => {
           const rep = (window.REPS||[]).find(r => r.id === o.repId);
           const val = parseFloat(o.jobValue || 0);
@@ -1147,11 +1147,11 @@ ${(()=>{
             onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
             <div style="flex:1;min-width:0">
               <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-              <div style="font-size:11px;color:#64748b;margin-top:1px">${rep ? rep.avatar + ' ' + rep.name : '⚠️ unassigned'} · ${escapeHtml(o.serviceLine||o.workType||'—')}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:1px">${rep ? rep.avatar + ' ' + rep.name : 'Unassigned'} · ${escapeHtml(o.serviceLine||o.workType||'—')}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="font-size:13px;font-weight:700;color:#fbbf24">${fmtM(val)}</div>
-              <div style="font-size:10px;color:#64748b">${o.collected ? '✅ collected' : '⏳ uncollected'}</div>
+              <div style="font-size:10px;color:#64748b">${o.collected ? 'collected' : 'uncollected'}</div>
             </div>
           </div>`;
         }).join('')}
@@ -1159,9 +1159,9 @@ ${(()=>{
 
     <!-- Unassigned opps inline -->
     <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:8px">
-      <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">⚠️ Unassigned Leads (${unassigned.length})</div>
+      <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">Unassigned Leads (${unassigned.length})</div>
       ${unassigned.length === 0
-        ? '<p style="color:#4ade80;font-size:12px">✅ All leads are assigned.</p>'
+        ? '<p style="color:#4ade80;font-size:12px">All leads are assigned.</p>'
         : unassigned.slice(0, 5).map(o => `
           <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:#0f172a;border-radius:8px;margin-bottom:5px">
             <div>
@@ -1182,7 +1182,7 @@ ${(()=>{
 <!-- ── SECTION 5: REP PERFORMANCE ── -->
 <div style="margin-bottom:24px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <h2 style="margin:0;font-size:16px">👥 Rep Performance</h2>
+    <h2 style="margin:0;font-size:16px">Rep Performance</h2>
     <button class="secondary-btn" onclick="show('pipeline')" style="font-size:12px">Full Pipeline →</button>
   </div>
   <div class="grid grid-2" style="gap:16px">
@@ -1194,7 +1194,7 @@ ${(()=>{
           <div style="font-weight:700;font-size:16px;color:${rep.color}">${rep.name}</div>
           <div style="font-size:11px;color:#64748b">${rep.title}</div>
         </div>
-        ${overdue > 0 ? `<span style="font-size:10px;background:#7f1d1d;color:#f87171;padding:3px 8px;border-radius:20px;font-weight:700">${overdue} OVERDUE</span>` : '<span style="font-size:10px;background:#14532d;color:#4ade80;padding:3px 8px;border-radius:20px;font-weight:700">✓ ON TRACK</span>'}
+        ${overdue > 0 ? `<span style="font-size:10px;background:#7f1d1d;color:#f87171;padding:3px 8px;border-radius:20px;font-weight:700">${overdue} OVERDUE</span>` : '<span style="font-size:10px;background:#14532d;color:#4ade80;padding:3px 8px;border-radius:20px;font-weight:700">ON TRACK</span>'}
       </div>
       <!-- Stats grid -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
@@ -1263,7 +1263,7 @@ ${(()=>{
 
 function renderUnassignedOpps(allOpps) {
   const unassigned = allOpps.filter(o => !o.repId && !['Closed Lost'].includes(o.status));
-  if (!unassigned.length) return '<p style="color:var(--muted);font-size:13px">✅ All opportunities are assigned to reps.</p>';
+  if (!unassigned.length) return '<p style="color:var(--muted);font-size:13px">All opportunities are assigned to reps.</p>';
   return unassigned.map(o => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;border-radius:10px;margin-bottom:8px">
       <div>
@@ -1282,22 +1282,22 @@ function renderUnassignedOpps(allOpps) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatWorkType(wt) {
   const map = {
-    'landscape': '🌿 Landscape',
-    'maintenance_onetime': '🍂 Maint (one-time)',
-    'maintenance_recurring': '🔄 Maint (recurring)',
-    'maintenance_upsell': '➕ Maint Upsell',
-    'hardscape': '🪨 Hardscape',
-    'drainage': '💧 Drainage',
-    'design_build': '📐 Design/Build'
+    'landscape': 'Landscape',
+    'maintenance_onetime': 'Maint (one-time)',
+    'maintenance_recurring': 'Maint (recurring)',
+    'maintenance_upsell': 'Maint Upsell',
+    'hardscape': 'Hardscape',
+    'drainage': 'Drainage',
+    'design_build': 'Design/Build'
   };
   return map[wt] || wt || '—';
 }
 
 function formatLeadSource(ls) {
   const map = {
-    'self_generated': '🟢 Self-Generated',
-    'company_lead': '🔵 Company Lead',
-    'assisted': '⚪ Assisted'
+    'self_generated': 'Self-Generated',
+    'company_lead': 'Company Lead',
+    'assisted': 'Assisted'
   };
   return map[ls] || ls || '—';
 }
@@ -1344,7 +1344,7 @@ window.assignRep = function(oppId, repId) {
     if (idx >= 0) {
       s.opportunities[idx].repId = repId;
       localStorage.setItem(key, JSON.stringify(s));
-      if (window.showToast) window.showToast(`✅ Assigned to ${REPS.find(r=>r.id===repId)?.name}`);
+      if (window.showToast) window.showToast(`Assigned to ${REPS.find(r=>r.id===repId)?.name}`);
       repDashboard();
     }
   } catch(e) {}

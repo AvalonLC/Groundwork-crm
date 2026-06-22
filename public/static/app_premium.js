@@ -95,7 +95,7 @@ function copyText(text, btnEl){
     showToast('Copied to clipboard!');
     if(btnEl){
       const orig = btnEl.textContent;
-      btnEl.textContent = '✓ Copied!';
+      btnEl.textContent = 'Copied!';
       btnEl.classList.add('btn-copied');
       setTimeout(()=>{ btnEl.textContent=orig; btnEl.classList.remove('btn-copied'); }, 2000);
     }
@@ -119,7 +119,7 @@ function show(viewName='today', param){
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
     const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',integrations:'Integrations',settings:'Settings'};
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px">
-      <div style="font-size:52px;margin-bottom:18px">🔒</div>
+      <div style="font-size:32px;margin-bottom:18px;color:#64748b;font-weight:300;letter-spacing:-2px">&#x2715;</div>
       <h2 style="color:#f87171;margin-bottom:10px">${_viewLabels[viewName] || viewName} — Access Restricted</h2>
       <p style="color:#64748b;max-width:420px;margin:0 auto 24px">Tyler (Owner) has restricted access to this section for your role.<br>Ask Tyler to enable it in <strong style="color:#e2e8f0">Settings → Permission Controls</strong>.</p>
       <button class="secondary-btn" onclick="show('today')">← Back to Today</button>
@@ -205,13 +205,13 @@ function buildSuggestedActions(currentRep){
   const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && !['Sold / Activation','Closed Lost'].includes(o.status)) : [];
 
   if(staleOpps.length) suggestions.push({icon:'⏱',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
-  if(proposalsPending.length) suggestions.push({icon:'📋',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
-  if(noNextStep.length) suggestions.push({icon:'🗓',title:`${noNextStep.length} lead${noNextStep.length>1?'s':''} missing a next follow-up date`,cta:'Set Follow-Up',onclick:`show('pipeline')`});
-  if(unassigned.length) suggestions.push({icon:'⚠️',title:`${unassigned.length} unassigned lead${unassigned.length>1?'s':''} with no rep`,cta:'Assign Now',onclick:`show('pipeline')`});
+  if(proposalsPending.length) suggestions.push({icon:'',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
+  if(noNextStep.length) suggestions.push({icon:'',title:`${noNextStep.length} lead${noNextStep.length>1?'s':''} missing a next follow-up date`,cta:'Set Follow-Up',onclick:`show('pipeline')`});
+  if(unassigned.length) suggestions.push({icon:'',title:`${unassigned.length} unassigned lead${unassigned.length>1?'s':''} with no rep`,cta:'Assign Now',onclick:`show('pipeline')`});
 
   if(!suggestions.length) return '';
   return `<div class="suggested-actions">
-    <div class="sa-header">💡 Suggested Next Actions</div>
+    <div class="sa-header">Suggested Next Actions</div>
     ${suggestions.map(s=>`
       <div class="sa-row">
         <span class="sa-icon">${s.icon}</span>
@@ -293,12 +293,12 @@ function today(){
           <div class="footer-actions">
             <button class="secondary-btn small" onclick="show('manager')"
               style="border-color:rgba(0,167,225,.25)" aria-label="Open Manager Review">
-              📊 Manager Review
+              Manager Review
             </button>
             <button class="primary-btn small" onclick="show('academy')"
               style="display:inline-flex;align-items:center;gap:6px"
               aria-label="Open Training Path — Sales Academy">
-              🎓 Training Path
+              Training Path
             </button>
           </div>
         </aside>
@@ -310,7 +310,7 @@ function today(){
       <section class="card app-card">
         <div class="section-head"><h2>Due Now</h2>${badge(`${due.length} follow-up${due.length===1?'':'s'}`, due.length?'warn-badge':'')}</div>
         ${due.length ? due.map(oppCard).join('') : `<div class="due-now-clear">
-          <div style="font-size:1.8rem;margin-bottom:4px">✅</div>
+          
           <p style="color:#4ade80;font-weight:600;margin:0 0 10px;font-size:14px">No follow-ups due today.</p>
         </div>
         ${buildSuggestedActions(_todayRep)}`}
@@ -321,8 +321,8 @@ function today(){
       </section>
     </div>
     <div class="grid grid-2 mt">
-      <section class="card"><h2>Coming Up</h2>${next.length ? next.map(oppMini).join('') : empty('No upcoming follow-ups.', '📅', `<button class="secondary-btn small" onclick="show('pipeline')">View Pipeline</button>`)}</section>
-      <section class="card"><h2>Recently Updated</h2>${recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '🌱', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`)}</section>
+      <section class="card"><h2>Coming Up</h2>${next.length ? next.map(oppMini).join('') : empty('No upcoming follow-ups.', '', `<button class="secondary-btn small" onclick="show('pipeline')">View Pipeline</button>`)}</section>
+      <section class="card"><h2>Recently Updated</h2>${recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`)}</section>
     </div>
     ${renderTodayActivityWidget()}
   `;
@@ -393,7 +393,7 @@ function oppCard(o){
   const isStale = daysSinceUpdate >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
   const urgencyBadge = isOverdue
-    ? `<span class="urgency-badge overdue">🚨 OVERDUE</span>`
+    ? `<span class="urgency-badge overdue">OVERDUE</span>`
     : isStale
     ? `<span class="urgency-badge stale">⏱ STALE ${daysSinceUpdate}d</span>`
     : '';
@@ -487,26 +487,26 @@ function pipeline(selectedId){
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--muted);align-self:center">Client:</span>
         <button class="tab ${activeTypeFilter==='all'?'active':''}" onclick="window._pipelineTypeFilter='all';show('pipeline')">All</button>
-        <button class="tab ${activeTypeFilter==='Residential'?'active':''}" onclick="window._pipelineTypeFilter='Residential';show('pipeline')">🏡 Residential</button>
-        <button class="tab ${activeTypeFilter==='Commercial'?'active':''}" onclick="window._pipelineTypeFilter='Commercial';show('pipeline')">🏢 Commercial</button>
+        <button class="tab ${activeTypeFilter==='Residential'?'active':''}" onclick="window._pipelineTypeFilter='Residential';show('pipeline')">Residential</button>
+        <button class="tab ${activeTypeFilter==='Commercial'?'active':''}" onclick="window._pipelineTypeFilter='Commercial';show('pipeline')">Commercial</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--muted);align-self:center">Work:</span>
         <button class="tab ${activeCatFilter==='all'?'active':''}" onclick="window._pipelineCatFilter='all';show('pipeline')">All Work</button>
-        <button class="tab ${activeCatFilter==='landscape'?'active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">🌿 Landscape</button>
-        <button class="tab ${activeCatFilter==='maintenance'?'active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">✂️ Maintenance</button>
-        <button class="tab ${activeCatFilter==='snow'?'active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">❄️ Snow & Ice</button>
+        <button class="tab ${activeCatFilter==='landscape'?'active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">Landscape</button>
+        <button class="tab ${activeCatFilter==='maintenance'?'active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">Maintenance</button>
+        <button class="tab ${activeCatFilter==='snow'?'active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">Snow & Ice</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--muted);align-self:center">Sort:</span>
-        <button class="tab ${activeSort==='urgent'?'active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">🚨 Urgent</button>
-        <button class="tab ${activeSort==='recent'?'active':''}" onclick="window._pipelineSort='recent';show('pipeline')">🕐 Recent</button>
-        <button class="tab ${activeSort==='value'?'active':''}" onclick="window._pipelineSort='value';show('pipeline')">💰 Value</button>
+        <button class="tab ${activeSort==='urgent'?'active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">Urgent</button>
+        <button class="tab ${activeSort==='recent'?'active':''}" onclick="window._pipelineSort='recent';show('pipeline')">Recent</button>
+        <button class="tab ${activeSort==='value'?'active':''}" onclick="window._pipelineSort='value';show('pipeline')">Value</button>
       </div>
     </div>
     ${activeStatusFilter ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 14px;background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px">
       <span style="color:#94a3b8">Filtered: <strong style="color:#e2e8f0">${activeStatusFilter}</strong></span>
-      <button class="secondary-btn small" style="margin-left:auto" onclick="window._pipelineStatusFilter=null;show('pipeline')">✕ Clear Filter</button>
+      <button class="secondary-btn small" style="margin-left:auto" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear Filter</button>
     </div>` : ''}
     ${statCards()}
     <div class="kanban mt">
@@ -534,19 +534,19 @@ function lead(){
 
   // Project category tile data
   const _cats = [
-    {v:'Landscape / Enhancement', icon:'🌿', short:'Landscape'},
-    {v:'Maintenance - Recurring',  icon:'🔁', short:'Recurring Maint.'},
-    {v:'Maintenance - One Time',   icon:'🧹', short:'One-Time Maint.'},
-    {v:'Hardscape',                icon:'🪨', short:'Hardscape'},
-    {v:'Drainage',                 icon:'💧', short:'Drainage'},
-    {v:'Design / Build',           icon:'📐', short:'Design / Build'},
-    {v:'Irrigation',               icon:'💦', short:'Irrigation'},
-    {v:'Outdoor Lighting',         icon:'💡', short:'Lighting'},
-    {v:'Other',                    icon:'📋', short:'Other'},
+    {v:'Landscape / Enhancement', icon:'', short:'Landscape'},
+    {v:'Maintenance - Recurring',  icon:'', short:'Recurring Maint.'},
+    {v:'Maintenance - One Time',   icon:'', short:'One-Time Maint.'},
+    {v:'Hardscape',                icon:'', short:'Hardscape'},
+    {v:'Drainage',                 icon:'', short:'Drainage'},
+    {v:'Design / Build',           icon:'', short:'Design / Build'},
+    {v:'Irrigation',               icon:'', short:'Irrigation'},
+    {v:'Outdoor Lighting',         icon:'', short:'Lighting'},
+    {v:'Other',                    icon:'', short:'Other'},
   ];
   const catTilesHtml = _cats.map(c =>
     '<button type="button" class="cat-tile" data-cat="' + c.v + '">'
-    + '<span class="cat-tile-icon">' + c.icon + '</span>'
+    + c.icon ? '<span class="cat-tile-icon">' + c.icon + '</span>' : ''
     + '<span class="cat-tile-label">' + c.short + '</span>'
     + '</button>'
   ).join('');
@@ -563,7 +563,7 @@ function lead(){
   view.innerHTML =
     '<div class="lf-hero">'
       + '<div class="lf-hero-eyebrow">New Opportunity</div>'
-      + '<h1 class="lf-hero-title">🌱 Let\'s capture this lead</h1>'
+      + '<h1 class="lf-hero-title">Let\'s capture this lead</h1>'
       + '<p class="lf-hero-sub">Every great project starts here. Fill in what you know — you can always add more later.</p>'
     + '</div>'
     + '<form id="leadForm">'
@@ -598,9 +598,9 @@ function lead(){
             + '<span class="lf-label">Client Type</span>'
             + '<div class="lf-toggle-group">'
               + '<input type="radio" name="clientType" id="ct-res" value="Residential" checked class="lf-toggle-radio">'
-              + '<label for="ct-res" class="lf-toggle-btn">🏡 Residential</label>'
+              + '<label for="ct-res" class="lf-toggle-btn">Residential</label>'
               + '<input type="radio" name="clientType" id="ct-com" value="Commercial" class="lf-toggle-radio">'
-              + '<label for="ct-com" class="lf-toggle-btn">🏢 Commercial</label>'
+              + '<label for="ct-com" class="lf-toggle-btn">Commercial</label>'
             + '</div>'
           + '</div>'
         + '</div>'
@@ -634,7 +634,7 @@ function lead(){
             + '<input name="jobValue" type="number" class="lf-input lf-input--value" placeholder="0" min="0" step="100">'
           + '</label>'
           + '<div id="commPreview" class="lf-comm-preview" style="display:none">'
-            + '<span class="lf-comm-icon">💰</span>'
+            + '<span class="lf-comm-icon">$</span>'
             + '<span id="commPreviewText"></span>'
           + '</div>'
           + '<label class="lf-field">'
@@ -805,7 +805,7 @@ function lead(){
       const warn = document.createElement('div');
       warn.id = 'dup-warn';
       warn.className = 'dup-warn';
-      warn.innerHTML = '<strong>⚠️ Possible duplicate' + (dupes.length > 1 ? 's' : '') + '</strong> — similar lead' + (dupes.length > 1 ? 's' : '') + ' already in pipeline:<br>' +
+      warn.innerHTML = '<strong>Possible duplicate' + (dupes.length > 1 ? 's' : '') + '</strong> — similar lead' + (dupes.length > 1 ? 's' : '') + ' already in pipeline:<br>' +
         dupes.map(o => '<span onclick="show(\'pipeline\',\'' + o.id + '\')" style="cursor:pointer;color:#00d4ff;text-decoration:underline">' + escapeHtml(o.client||'—') + ' · ' + escapeHtml(o.status||'') + '</span>').join('<br>');
       const form = document.getElementById('leadForm');
       if (form) form.prepend(warn);
@@ -829,7 +829,7 @@ function opportunityDetail(id){
     ${(()=>{
       const _repObj = (window.REPS||[]).find(r=>r.id===o.repId);
       const _repName = _repObj ? _repObj.name : null;
-      const _repAvatar = _repObj ? _repObj.avatar : '⚠️';
+      const _repAvatar = _repObj ? _repObj.avatar : '—';
       const _isOvd = o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
       const _estComm = estCommission(o);
       return `<div class="lead-header-bar">
@@ -839,7 +839,7 @@ function opportunityDetail(id){
         </div>
         <div class="lhb-cell">
           <span class="lhb-label">Rep</span>
-          <span>${_repAvatar} ${escapeHtml(_repName||'⚠️ Unassigned')}</span>
+          <span>${_repAvatar} ${escapeHtml(_repName||'Unassigned')}</span>
         </div>
         <div class="lhb-cell">
           <span class="lhb-label">Est. Value</span>
@@ -855,7 +855,7 @@ function opportunityDetail(id){
         </div>
         <div class="lhb-cell">
           <span class="lhb-label">Commission</span>
-          <span class="status-chip ${o.commissionApproved ? 'sold' : 'pending'}" style="font-size:10px">${o.commissionApproved ? '✅ Approved' : '⏳ Pending'}</span>
+          <span class="status-chip ${o.commissionApproved ? 'sold' : 'pending'}" style="font-size:10px">${o.commissionApproved ? 'Approved' : '⏳ Pending'}</span>
         </div>
       </div>`;
     })()}
@@ -863,7 +863,7 @@ function opportunityDetail(id){
       <div><div class="eyebrow">Opportunity</div><h1>${escapeHtml(o.client||'Unnamed Lead')}</h1><p class="lede">${escapeHtml(o.project||o.serviceLine||'Opportunity')} • ${escapeHtml(o.address||'No address')}</p></div>
       <div class="detail-actions">
         <button class="primary-btn" onclick="saveOpportunity('${o.id}')">Save Changes</button>
-        ${o.status !== 'Sold / Activation' && o.status !== 'Closed Lost' ? `<button class="primary-btn" style="background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 8px 20px rgba(22,163,74,.25)" onclick="openMarkSoldModal('${o.id}')">✅ Mark Sold</button>` : o.status === 'Sold / Activation' ? `<span style="background:#16a34a18;border:1px solid #16a34a40;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;color:#16a34a">✅ Sold</span>` : ''}
+        ${o.status !== 'Sold / Activation' && o.status !== 'Closed Lost' ? `<button class="primary-btn" style="background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 8px 20px rgba(22,163,74,.25)" onclick="openMarkSoldModal('${o.id}')">Mark Sold</button>` : o.status === 'Sold / Activation' ? `<span style="background:#16a34a18;border:1px solid #16a34a40;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;color:#16a34a">Sold</span>` : ''}
         ${(()=>{ const _cr = window.getCurrentRep ? window.getCurrentRep() : null; const _ia = _cr && _cr.role === 'admin'; const _iom = _cr && _cr.role === 'office_manager'; return _ia ? `<button class="secondary-btn" onclick="duplicateOpportunity('${o.id}')">Duplicate</button><button class="danger-btn" onclick="deleteOpportunity('${o.id}')">Delete</button>` : _iom ? `<button class="secondary-btn" onclick="duplicateOpportunity('${o.id}')">Duplicate</button>` : ''; })()}
       </div>
     </div>
@@ -885,7 +885,7 @@ function opportunityDetail(id){
         const stageNum = Math.max(1, data.statuses.indexOf(o.status)+1);
         const stageChecklist = (window.AVALON_DATA.checklists||[]).find(c=>c.stage===stageNum);
         if (!stageChecklist) return '<section class="card"><h2>Stage Checklist</h2><p class="muted">No checklist for this stage.</p></section>';
-        return `<section class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">✅ ${escapeHtml(stageChecklist.title)}</h2><span class="badge" style="font-size:.7rem;background:rgba(0,212,255,.12);color:#00d4ff">Stage ${stageNum}</span></div>${renderChecklist(stageChecklist, true, o.id)}</section>`;
+        return `<section class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">${escapeHtml(stageChecklist.title)}</h2><span class="badge" style="font-size:.7rem;background:rgba(0,212,255,.12);color:#00d4ff">Stage ${stageNum}</span></div>${renderChecklist(stageChecklist, true, o.id)}</section>`;
       })()}
     ${(()=>{
       const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
@@ -899,15 +899,15 @@ function opportunityDetail(id){
             <label style="display:block;font-size:12px;color:#64748b;margin-bottom:6px">Commission Approved</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" id="commApproved" ${_ca.commissionApproved?'checked':''} onchange="setOppField('${o.id}','commissionApproved',this.checked);showToast('Commission approval updated')">
-              <span style="font-size:13px">${_ca.commissionApproved ? '✅ Approved' : '⏳ Pending approval'}</span>
+              <span style="font-size:13px">${_ca.commissionApproved ? 'Approved' : 'Pending approval'}</span>
             </label>
           </div>` : `
           <div style="opacity:.5">
             <label style="display:block;font-size:12px;color:#64748b;margin-bottom:6px">Commission Approved</label>
-            <span style="font-size:12px;color:#64748b">🔒 Tyler (Owner) only</span>
+            <span style="font-size:12px;color:#64748b">Tyler (Owner) only</span>
           </div>`;
       const _borderColor = _isAdm ? '#00d4ff' : '#f59e0b';
-      const _panelTitle  = _isAdm ? '🔑 Admin Controls <span style="font-size:11px;font-weight:400;color:#64748b;margin-left:6px">Tyler Only</span>' : '📋 Office Controls <span style="font-size:11px;font-weight:400;color:#64748b;margin-left:6px">Jen — Sales Ops</span>';
+      const _panelTitle  = _isAdm ? 'Admin Controls <span style="font-size:11px;font-weight:400;color:#64748b;margin-left:6px">Tyler Only</span>' : 'Office Controls <span style="font-size:11px;font-weight:400;color:#64748b;margin-left:6px">Jen — Sales Ops</span>';
       return `<section class="card" style="border:2px solid ${_borderColor}">
         <h2>${_panelTitle}</h2>
         <div class="grid grid-3" style="gap:12px;margin-top:12px">
@@ -916,7 +916,7 @@ function opportunityDetail(id){
             <label style="display:block;font-size:12px;color:#64748b;margin-bottom:6px">Payment Collected</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" id="payCollected" ${_ca.collected?'checked':''} onchange="setOppField('${o.id}','collected',this.checked);showToast('Collection status updated')">
-              <span style="font-size:13px">${_ca.collected ? '✅ Collected' : '⏳ Outstanding'}</span>
+              <span style="font-size:13px">${_ca.collected ? 'Collected' : 'Outstanding'}</span>
             </label>
           </div>
           <div>
@@ -928,7 +928,7 @@ function opportunityDetail(id){
           </div>
         </div>
         <div style="margin-top:12px;padding:10px;background:#0f172a;border-radius:8px;font-size:12px;color:#64748b">
-          💡 Commission is paid only after both "Commission Approved" and "Payment Collected" are checked. Commission approval is Tyler's decision only. Jen can mark payment collected and reassign reps.
+          Commission is paid only after both "Commission Approved" and "Payment Collected" are checked. Commission approval is Tyler's decision only. Jen can mark payment collected and reassign reps.
         </div>
       </section>`;
     })()}
@@ -936,15 +936,15 @@ function opportunityDetail(id){
     <div class="mt">
       <section class="card" style="border:1px solid rgba(0,167,225,.2)">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-          <h2 style="margin:0">🔗 Quick Actions</h2>
-          <button class="secondary-btn small" onclick="show('integrations')" style="font-size:11px">⚙️ Manage Integrations</button>
+          <h2 style="margin:0">Quick Actions</h2>
+          <button class="secondary-btn small" onclick="show('integrations')" style="font-size:11px">Manage Integrations</button>
         </div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Push this lead to your connected tools — CRM, calendar, or email.</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
           <button class="int-action-btn" id="qa_homeworks_${o.id}"
             onclick="qaAction('homeworks','${o.id}',this)"
             aria-label="Push ${escapeHtml(o.client||'lead')} to Homeworks CRM">
-            <span style="font-size:18px">🏡</span>
+            
             <div style="text-align:left">
               <div style="font-weight:700;font-size:13px">Push to Homeworks</div>
               <div style="font-size:11px;color:var(--muted);font-weight:400">Sync to CRM</div>
@@ -953,7 +953,7 @@ function opportunityDetail(id){
           <button class="int-action-btn" id="qa_calendar_${o.id}"
             onclick="qaAction('calendar','${o.id}',this)"
             aria-label="Schedule Google Calendar event for ${escapeHtml(o.client||'lead')}">
-            <span style="font-size:18px">📅</span>
+            
             <div style="text-align:left">
               <div style="font-weight:700;font-size:13px">Schedule Event</div>
               <div style="font-size:11px;color:var(--muted);font-weight:400">Google Calendar</div>
@@ -962,7 +962,7 @@ function opportunityDetail(id){
           <button class="int-action-btn" id="qa_gmail_${o.id}"
             onclick="qaAction('gmail','${o.id}',this)"
             aria-label="Open Gmail compose for ${escapeHtml(o.client||'lead')}">
-            <span style="font-size:18px">📧</span>
+            
             <div style="text-align:left">
               <div style="font-weight:700;font-size:13px">Compose Email</div>
               <div style="font-size:11px;color:var(--muted);font-weight:400">Gmail draft</div>
@@ -988,10 +988,10 @@ window.qaAction = function(type, oppId, btn) {
     btn.disabled = false;
     if (ok) {
       btn.classList.add('success');
-      showToast(msg || '✅ Done');
+      showToast(msg || 'Done');
       setTimeout(() => btn.classList.remove('success'), 2800);
     } else {
-      showToast(msg || '⚠️ Action failed — check Integrations setup');
+      showToast(msg || 'Action failed — check Integrations setup');
     }
   };
 
@@ -1000,9 +1000,9 @@ window.qaAction = function(type, oppId, btn) {
     try {
       if (typeof intPushOppToHomeworks === 'function') {
         intPushOppToHomeworks(oppId);
-        setTimeout(() => done(true, '🏡 Pushed to Homeworks CRM'), 600);
+        setTimeout(() => done(true, 'Pushed to Homeworks CRM'), 600);
       } else {
-        done(false, '⚠️ Homeworks not connected — visit Integrations to set up');
+        done(false, 'Homeworks not connected — visit Integrations to set up');
       }
     } catch(e) { done(false); }
 
@@ -1010,9 +1010,9 @@ window.qaAction = function(type, oppId, btn) {
     try {
       if (typeof intScheduleForLead === 'function') {
         intScheduleForLead(o.client || 'Lead', o.email || '', o.nextFollowUp || '');
-        setTimeout(() => done(true, '📅 Calendar event created'), 600);
+        setTimeout(() => done(true, 'Calendar event created'), 600);
       } else {
-        done(false, '⚠️ Google Calendar not connected — visit Integrations');
+        done(false, 'Google Calendar not connected — visit Integrations');
       }
     } catch(e) { done(false); }
 
@@ -1020,9 +1020,9 @@ window.qaAction = function(type, oppId, btn) {
     try {
       if (typeof intComposeToLead === 'function') {
         intComposeToLead(o.email || '', o.client || '');
-        setTimeout(() => done(true, '📧 Gmail compose opened'), 600);
+        setTimeout(() => done(true, 'Gmail compose opened'), 600);
       } else {
-        done(false, '⚠️ Gmail not connected — visit Integrations');
+        done(false, 'Gmail not connected — visit Integrations');
       }
     } catch(e) { done(false); }
   }
@@ -1069,7 +1069,7 @@ function renderNotes(oppId) {
   if (opp && opp.soldAt) {
     events.push({
       type:'sold', ts:opp.soldAt,
-      title:'🎉 Marked Sold',
+      title:'Marked Sold',
       detail: opp.soldAmount ? `$${Number(opp.soldAmount).toLocaleString()}${opp.division ? ' · '+opp.division : ''}` : ''
     });
   }
@@ -1087,7 +1087,7 @@ function renderNotes(oppId) {
   if (!events.length) return empty('No activity yet for this lead.');
 
   const dotClass = { note:'note', stage:'stage', sold:'sold', created:'created', admin:'admin' };
-  const dotIcon  = { note:'💬', stage:'📋', sold:'🏆', created:'⭐', admin:'🔑' };
+  const dotIcon  = { note:'·', stage:'·', sold:'·', created:'·', admin:'·' };
 
   const items = events.map(e => `
     <li class="timeline-item">
@@ -1163,12 +1163,12 @@ function renderStage(s){
         ${s.proposalStructure ? `<h3 style="margin-top:12px">Proposal Structure</h3>${list(s.proposalStructure)}` : ''}
       </div>
     </div>
-    <div class="card danger mt"><h3>🚩 Red Flags — Do Not Advance Until Resolved</h3>${list(s.redFlags)}</div>
-    ${stageChecklist ? `<div class="card mt"><h3>✅ ${escapeHtml(stageChecklist.title)}</h3>${renderChecklist(stageChecklist, true)}</div>` : ''}
+    <div class="card danger mt"><h3>Red Flags — Do Not Advance Until Resolved</h3>${list(s.redFlags)}</div>
+    ${stageChecklist ? `<div class="card mt"><h3>${escapeHtml(stageChecklist.title)}</h3>${renderChecklist(stageChecklist, true)}</div>` : ''}
     ${(()=>{
       const atStage = (state.opportunities||[]).filter(o => o.status === s.title && !['Sold / Activation','Closed Lost'].includes(o.status));
       if (!atStage.length) return '';
-      return `<div class="card mt" style="border-left:3px solid #00d4ff"><h3 style="color:#00d4ff;margin-bottom:10px">📍 ${atStage.length} Lead${atStage.length>1?'s':''} at This Stage</h3>
+      return `<div class="card mt" style="border-left:3px solid #00d4ff"><h3 style="color:#00d4ff;margin-bottom:10px">${atStage.length} Lead${atStage.length>1?'s':''} at This Stage</h3>
         <div style="display:flex;flex-direction:column;gap:8px">${atStage.slice(0,5).map(o=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#0f172a;border-radius:8px;cursor:pointer" onclick="show('pipeline','${o.id}')">
           <div>
             <div style="font-weight:600;color:#e2e8f0">${escapeHtml(o.client||'—')}</div>
@@ -1246,7 +1246,7 @@ function openLeadPicker(onSelect){
   modal.className = 'modal-overlay';
   modal.innerHTML = `
     <div class="modal" style="max-width:480px">
-      <h3 style="margin:0 0 12px">📎 Select a Lead</h3>
+      <h3 style="margin:0 0 12px">Select a Lead</h3>
       <input id="lpSearch" type="text" placeholder="Search by client or project..."
         style="width:100%;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;margin-bottom:12px;box-sizing:border-box">
       <div id="lpList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
@@ -1302,7 +1302,7 @@ function scripts(){
   const cats = ['All', ...new Set(data.scripts.map(s=>s.category))];
   view.innerHTML = `<div class="eyebrow">Talk Tracks</div><h1>Scripts Library</h1><p class="lede">Use these as flexible language. Keep the intent, adapt the words, and sound human.</p><div class="tabs">${cats.map((c,i)=>`<button class="tab ${i===0?'active':''}" data-cat="${c}">${escapeHtml(c)}</button>`).join('')}</div><div id="scriptList" class="grid grid-2"></div>`;
   const box = document.getElementById('scriptList');
-  function render(cat='All'){ box.innerHTML = data.scripts.filter(s=>cat==='All'||s.category===cat).map(s=>`<article class="card"><span class="badge">${escapeHtml(s.category)}</span><h3>${escapeHtml(s.title)}</h3><div class="script-box">${nl2br(s.body)}</div><div class="footer-actions" style="margin-top:8px;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(s.body)}', this)">Copy Script</button><button class="secondary-btn" onclick="openLeadPicker(function(id){show('pipeline',id);setTimeout(()=>{const el=document.getElementById('newNote');if(el){el.value='[Script: ${escapeForJs(s.title)}]\n\n${escapeForJs(s.body.slice(0,300))}';el.focus();showToast('Script loaded — add your note and save');}},400);})">📎 Use for Lead</button></div></article>`).join(''); }
+  function render(cat='All'){ box.innerHTML = data.scripts.filter(s=>cat==='All'||s.category===cat).map(s=>`<article class="card"><span class="badge">${escapeHtml(s.category)}</span><h3>${escapeHtml(s.title)}</h3><div class="script-box">${nl2br(s.body)}</div><div class="footer-actions" style="margin-top:8px;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(s.body)}', this)">Copy Script</button><button class="secondary-btn" onclick="openLeadPicker(function(id){show('pipeline',id);setTimeout(()=>{const el=document.getElementById('newNote');if(el){el.value='[Script: ${escapeForJs(s.title)}]\n\n${escapeForJs(s.body.slice(0,300))}';el.focus();showToast('Script loaded — add your note and save');}},400);})">Use for Lead</button></div></article>`).join(''); }
   render();
   document.querySelector('.tabs').addEventListener('click',e=>{ if(!e.target.matches('.tab')) return; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); e.target.classList.add('active'); render(e.target.dataset.cat); });
 }
@@ -1310,12 +1310,12 @@ function templates(){
   const cats = ['All', ...new Set(data.templates.map(t=>t.category))];
   view.innerHTML = `<div class="eyebrow">Copy-Ready Communication</div><h1>Email Templates</h1><p class="lede">Templates for daily sales communication. Copy, personalize, and send through Gmail or your CRM.</p><div class="tabs">${cats.map((c,i)=>`<button class="tab ${i===0?'active':''}" data-cat="${c}">${escapeHtml(c)}</button>`).join('')}</div><div id="templateList" class="grid grid-2"></div>`;
   const box = document.getElementById('templateList');
-  function render(cat='All'){ box.innerHTML = data.templates.filter(t=>cat==='All'||t.category===cat).map(t=>`<article class="card"><span class="badge">${escapeHtml(t.category)}</span><h3>${escapeHtml(t.title)}</h3><p><strong>Subject:</strong> ${escapeHtml(t.subject)}</p><div class="script-box">${nl2br(t.body)}</div><div class="footer-actions" style="flex-wrap:wrap;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(t.subject)}', this)">Copy Subject</button><button class="primary-btn" onclick="copyText('${escapeForJs(t.body)}', this)">Copy Body</button><button class="secondary-btn" onclick="openLeadPicker(function(id){const opp=state.opportunities.find(x=>x.id===id);if(!opp)return;const merged=mergeTemplate('${escapeForJs(t.body)}',opp);navigator.clipboard.writeText('Subject: ${escapeForJs(t.subject)}\n\n'+merged).catch(()=>{});showToast('Personalized copy ready for '+(opp.client||'lead'));})">🔀 Personalize + Copy</button><button class="secondary-btn" onclick="openLeadPicker(function(id){show('pipeline',id);setTimeout(()=>{const el=document.getElementById('newNote');if(el){el.value='Subject: ${escapeForJs(t.subject)}\n\n${escapeForJs(t.body.slice(0,300))}';el.focus();showToast('Template loaded into note field');}},400);})">📎 Use for Lead</button></div></article>`).join(''); }
+  function render(cat='All'){ box.innerHTML = data.templates.filter(t=>cat==='All'||t.category===cat).map(t=>`<article class="card"><span class="badge">${escapeHtml(t.category)}</span><h3>${escapeHtml(t.title)}</h3><p><strong>Subject:</strong> ${escapeHtml(t.subject)}</p><div class="script-box">${nl2br(t.body)}</div><div class="footer-actions" style="flex-wrap:wrap;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(t.subject)}', this)">Copy Subject</button><button class="primary-btn" onclick="copyText('${escapeForJs(t.body)}', this)">Copy Body</button><button class="secondary-btn" onclick="openLeadPicker(function(id){const opp=state.opportunities.find(x=>x.id===id);if(!opp)return;const merged=mergeTemplate('${escapeForJs(t.body)}',opp);navigator.clipboard.writeText('Subject: ${escapeForJs(t.subject)}\n\n'+merged).catch(()=>{});showToast('Personalized copy ready for '+(opp.client||'lead'));})">Personalize + Copy</button><button class="secondary-btn" onclick="openLeadPicker(function(id){show('pipeline',id);setTimeout(()=>{const el=document.getElementById('newNote');if(el){el.value='Subject: ${escapeForJs(t.subject)}\n\n${escapeForJs(t.body.slice(0,300))}';el.focus();showToast('Template loaded into note field');}},400);})">Use for Lead</button></div></article>`).join(''); }
   render();
   document.querySelector('.tabs').addEventListener('click',e=>{ if(!e.target.matches('.tab')) return; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); e.target.classList.add('active'); render(e.target.dataset.cat); });
 }
 function objections(){
-  view.innerHTML = `<div class="eyebrow">Decision Management</div><h1>Objection Handling</h1><p class="lede">Do not argue. Clarify, reconnect to the buying reason, protect scope quality, and guide the client toward a clear decision.</p><div class="grid grid-2 mt">${data.objections.map(o=>`<article class="card"><h3>${escapeHtml(o.title)}</h3><p class="muted"><strong>What it may mean:</strong> ${escapeHtml(o.meaning)}</p><h4>How to respond</h4>${list(o.response)}<h4>Say this</h4><div class="script-box">${escapeHtml(o.say)}</div><div class="footer-actions" style="margin-top:10px;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(o.say)}', this)">Copy Response</button><button class="secondary-btn" onclick="openLeadPicker(function(id){const opp=state.opportunities.find(x=>x.id===id);if(!opp)return;const note={id:'n'+Date.now(),text:'Objection raised: ${escapeForJs(o.title)}',createdAt:new Date().toISOString(),type:'objection'};opp.notes=opp.notes||[];opp.notes.push(note);opp.updatedAt=new Date().toISOString();saveState();showToast('Objection logged to '+escapeHtml(opp.client||'lead'));})">📌 Log to Lead</button></div></article>`).join('')}</div>`;
+  view.innerHTML = `<div class="eyebrow">Decision Management</div><h1>Objection Handling</h1><p class="lede">Do not argue. Clarify, reconnect to the buying reason, protect scope quality, and guide the client toward a clear decision.</p><div class="grid grid-2 mt">${data.objections.map(o=>`<article class="card"><h3>${escapeHtml(o.title)}</h3><p class="muted"><strong>What it may mean:</strong> ${escapeHtml(o.meaning)}</p><h4>How to respond</h4>${list(o.response)}<h4>Say this</h4><div class="script-box">${escapeHtml(o.say)}</div><div class="footer-actions" style="margin-top:10px;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(o.say)}', this)">Copy Response</button><button class="secondary-btn" onclick="openLeadPicker(function(id){const opp=state.opportunities.find(x=>x.id===id);if(!opp)return;const note={id:'n'+Date.now(),text:'Objection raised: ${escapeForJs(o.title)}',createdAt:new Date().toISOString(),type:'objection'};opp.notes=opp.notes||[];opp.notes.push(note);opp.updatedAt=new Date().toISOString();saveState();showToast('Objection logged to '+escapeHtml(opp.client||'lead'));})">Log to Lead</button></div></article>`).join('')}</div>`;
 }
 
 function calculator(){
@@ -1334,7 +1334,7 @@ window.calcMargin = function(){
     <strong>Markup on cost:</strong> ${Math.round((price/cost-1)*100)}%<br>
     <strong style="color:#4ade80">Est. commission (~7%):</strong> <span style="color:#4ade80">${money(estComm)}</span>
     <div style="margin-top:10px">
-      <button class="primary-btn small" onclick="window.saveCalcToLead()">💾 Save to Lead</button>
+      <button class="primary-btn small" onclick="window.saveCalcToLead()">Save to Lead</button>
     </div>`;
 };
 window.saveCalcToLead = function(){
@@ -1369,7 +1369,7 @@ function academy(){
     <h1>Avalon Sales Academy</h1>
     <p class="lede">Nine modules that turn the Avalon Sales Manual and 6-Step Process into real skill — onboarding, team training, and manager sign-off certification.</p>
     <div class="card mt" style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.2)">
-      <h3>📋 New Hire Onboarding Path</h3>
+      <h3>New Hire Onboarding Path</h3>
       ${list(onboardingPath)}
     </div>
     <div class="grid grid-3 mt">
@@ -1392,7 +1392,7 @@ function academy(){
       }).join('')}
     </div>
     <div class="card mt">
-      <h3>📚 Sales Manual — Quick Reference</h3>
+      <h3>Sales Manual — Quick Reference</h3>
       <div class="grid grid-2" style="gap:12px;margin-top:10px">
         <div>
           <h4>Core Sales Beliefs</h4>
@@ -1461,7 +1461,7 @@ function manager(){
     const varColor = m.variance == null ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
     const mIdx2 = allMonthNames.indexOf(m.month.slice(0,3));
     const isPastMonth = mIdx2 >= 0 && new Date(2026, mIdx2, 1) < todayM;
-    const missingBadge = !hasActual && isPastMonth ? '<span class="missing-data-badge">⚠️ Missing</span>' : '';
+    const missingBadge = !hasActual && isPastMonth ? '<span class="missing-data-badge">Missing</span>' : '';
     return `<tr style="border-bottom:1px solid #0f172a">
       <td style="padding:8px 10px;color:#e2e8f0;font-weight:600">${m.month} ${missingBadge}</td>
       <td style="padding:8px 10px;text-align:right">${fmtM(m.budgeted)}</td>
@@ -1472,7 +1472,7 @@ function manager(){
 
   view.innerHTML = `
     <div class="eyebrow">Leadership Rhythm \u2014 FY2026</div>
-    <h1>Manager Tools <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">${escapeHtml(fy.budgetVersion)}</span>${(()=>{ const _cr = window.getCurrentRep ? window.getCurrentRep() : null; return (_cr && _cr.role === 'office_manager') ? '<span style="font-size:12px;color:#f59e0b;font-weight:400;margin-left:10px;vertical-align:middle;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:8px;padding:2px 8px">📋 Office Manager View — Read Only</span>' : ''; })()}</h1>
+    <h1>Manager Tools <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">${escapeHtml(fy.budgetVersion)}</span>${(()=>{ const _cr = window.getCurrentRep ? window.getCurrentRep() : null; return (_cr && _cr.role === 'office_manager') ? '<span style="font-size:12px;color:#f59e0b;font-weight:400;margin-left:10px;vertical-align:middle;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:8px;padding:2px 8px">Office Manager View — Read Only</span>' : ''; })()}</h1>
     <p class="lede">Real division P&amp;L, monthly actuals, HubSpot pipeline gates, pricing discipline, and team scorecard.</p>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:28px;background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:20px">
@@ -1506,7 +1506,7 @@ function manager(){
 
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:28px;margin-bottom:0">
       <h2 style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0">Division P&amp;L \u2014 Actual vs Target</h2>
-      <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#1d4ed8,#1e40af)">✏️ Edit Monthly Revenue</button>
+      <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#1d4ed8,#1e40af)">Edit Monthly Revenue</button>
     </div>
     <div class="grid grid-3 mt" style="gap:16px">
       ${divTile(divs.landscape)}
@@ -1525,9 +1525,9 @@ function manager(){
       </div>
     </div>
 
-    ${missingPastMonths.length > 0 ? `<div class="missing-data-alert"><strong>⚠️ ${missingPastMonths.length} past month${missingPastMonths.length>1?'s':''} missing actuals:</strong> ${missingPastMonths.map(m=>m.month).join(', ')} — <button onclick="show('revenueAdmin','division')" style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:inherit;text-decoration:underline;padding:0">Enter data →</button></div>` : ''}
+    ${missingPastMonths.length > 0 ? `<div class="missing-data-alert"><strong>${missingPastMonths.length} past month${missingPastMonths.length>1?'s':''} missing actuals:</strong> ${missingPastMonths.map(m=>m.month).join(', ')} — <button onclick="show('revenueAdmin','division')" style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:inherit;text-decoration:underline;padding:0">Enter data →</button></div>` : ''}
     <div class="card mt">
-      <h2>📅 Monthly Revenue — Budget vs Actual (Jan–Dec 2026)</h2>
+      <h2>Monthly Revenue — Budget vs Actual (Jan–Dec 2026)</h2>
       <p class="muted small-text">Actuals through 5/21/2026. Remaining months show budget target only.</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1636,22 +1636,22 @@ function settings(){
   const _iom = _cr && _cr.role === 'office_manager';
   const adminSections = _ia ? `
     <section class="card" style="border:1px solid #334155">
-      <h2>📥 Import</h2>
+      <h2>Import</h2>
       <p>Restore a JSON backup from this same app. <strong style="color:#f87171">Admin only.</strong></p>
       <input id="importFile" type="file" accept="application/json">
       <button class="secondary-btn mt8" onclick="importJson()">Import Backup</button>
     </section>
     <section class="card" style="border:1px solid #7f1d1d">
-      <h2>⚠️ Reset All Data</h2>
+      <h2>Reset All Data</h2>
       <p>Clears all opportunities, notes, and checklist progress on this browser. <strong style="color:#f87171">Admin only — cannot be undone.</strong></p>
       <button class="danger-btn" onclick="confirmReset()">Reset All Local Data</button>
     </section>` : _iom ? `
     <section class="card" style="background:#0a0f1a;border:1px solid #f59e0b30;opacity:.75">
-      <h2>🔒 Import / Reset</h2>
+      <h2>Import / Reset</h2>
       <p class="muted">Import and data reset are restricted to Tyler (Owner / Admin). Contact Tyler if a data restore is needed.</p>
     </section>` : `
     <section class="card" style="background:#0a0f1a;border:1px solid #1e293b;opacity:.6">
-      <h2>🔒 Import / Reset</h2>
+      <h2>Import / Reset</h2>
       <p class="muted">Import and data reset are restricted to Tyler (Admin).</p>
     </section>`;
 
@@ -1667,7 +1667,7 @@ function settings(){
     <p class="lede">Export your pipeline data for backup or reporting. Data is saved locally in the browser.</p>
     <div class="grid grid-2 mt">
       <section class="card">
-        <h2>📤 Export</h2>
+        <h2>Export</h2>
         <p>Download your local pipeline, notes, and settings.</p>
         <div class="footer-actions">
           <button class="primary-btn" onclick="exportJson()">Download JSON Backup</button>
@@ -1676,7 +1676,7 @@ function settings(){
       </section>
       ${adminSections}
       <section class="card">
-        <h2>ℹ️ App Notes</h2>
+        <h2>App Notes</h2>
         ${list(['Access via browser — bookmark for quick daily use.','Install via the Install button for app-style access on mobile.','Data is stored locally in this browser — export regularly.','Contact Tyler to transfer data between devices or reps.'])}
       </section>
     </div>
@@ -1691,20 +1691,20 @@ function renderPermMatrix() {
     { key: 'rep',            label: 'Ryan — Sales Rep',     color: '#4ade80' }
   ];
   const views = [
-    { key: 'today',       label: '🏠 Today',              group: 'Home' },
-    { key: 'myDashboard', label: '👤 My Dashboard',       group: 'Home' },
-    { key: 'pipeline',    label: '📊 Pipeline',           group: 'Pipeline' },
-    { key: 'lead',        label: '➕ Add Lead',           group: 'Pipeline' },
-    { key: 'process',     label: '📋 Sales Process',      group: 'Sales Toolkit' },
-    { key: 'forms',       label: '📝 Forms & Checklists', group: 'Sales Toolkit' },
-    { key: 'scripts',     label: '💬 Scripts',            group: 'Sales Toolkit' },
-    { key: 'templates',   label: '📧 Email Templates',    group: 'Sales Toolkit' },
-    { key: 'objections',  label: '🛡️ Objection Handling', group: 'Sales Toolkit' },
-    { key: 'calculator',  label: '🧮 Pricing Tools',      group: 'Sales Toolkit' },
-    { key: 'academy',     label: '🎓 Sales Academy',      group: 'Learning' },
-    { key: 'manager',     label: '👔 Manager Tools',      group: 'Admin' },
-    { key: 'integrations',label: '🔗 Integrations',       group: 'Admin' },
-    { key: 'settings',    label: '⚙️ Settings',           group: 'Admin' }
+    { key: 'today',       label: 'Today',              group: 'Home' },
+    { key: 'myDashboard', label: 'My Dashboard',       group: 'Home' },
+    { key: 'pipeline',    label: 'Pipeline',           group: 'Pipeline' },
+    { key: 'lead',        label: 'Add Lead',           group: 'Pipeline' },
+    { key: 'process',     label: 'Sales Process',      group: 'Sales Toolkit' },
+    { key: 'forms',       label: 'Forms & Checklists', group: 'Sales Toolkit' },
+    { key: 'scripts',     label: 'Scripts',            group: 'Sales Toolkit' },
+    { key: 'templates',   label: 'Email Templates',    group: 'Sales Toolkit' },
+    { key: 'objections',  label: 'Objection Handling', group: 'Sales Toolkit' },
+    { key: 'calculator',  label: 'Pricing Tools',      group: 'Sales Toolkit' },
+    { key: 'academy',     label: 'Sales Academy',      group: 'Learning' },
+    { key: 'manager',     label: 'Manager Tools',      group: 'Admin' },
+    { key: 'integrations',label: 'Integrations',       group: 'Admin' },
+    { key: 'settings',    label: 'Settings',           group: 'Admin' }
   ];
 
   const groups = [...new Set(views.map(v => v.group))];
@@ -1731,7 +1731,7 @@ function renderPermMatrix() {
 
   return `
   <section class="card" style="margin-top:20px;border:1px solid #334155">
-    <h2>🔐 Permission Controls <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">— Tyler (Owner) only</span></h2>
+    <h2>Permission Controls <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">— Tyler (Owner) only</span></h2>
     <p style="color:#64748b;font-size:13px;margin-bottom:16px">Control which sections each role can access. Changes take effect immediately. Tyler (Owner) always has full access.</p>
     <div style="overflow-x:auto">
       <table class="perm-table">
@@ -1805,7 +1805,7 @@ function openMarkSoldModal(oppId) {
     <div class="sold-modal">
       <button class="sold-modal-close" onclick="closeMarkSoldModal()" title="Close">×</button>
       <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#16a34a;margin-bottom:8px">Mark as Sold</div>
-      <h2>🎉 ${escapeHtml(o.client || 'Lead')} — Closed Won</h2>
+      <h2>${escapeHtml(o.client || 'Lead')} — Closed Won</h2>
       <p style="color:var(--muted);font-size:14px;margin-bottom:20px">${escapeHtml(o.project || o.serviceLine || 'Opportunity')} · ${escapeHtml(o.address || '')}</p>
       <div class="form-grid" style="gap:14px">
         <label style="display:grid;gap:6px">
@@ -1846,7 +1846,7 @@ function openMarkSoldModal(oppId) {
         </label>
       </div>
       <div style="display:flex;gap:10px;margin-top:24px">
-        <button class="primary-btn" style="background:linear-gradient(135deg,#16a34a,#15803d);flex:1;font-size:15px" onclick="confirmMarkSold('${oppId}')">✅ Confirm — Mark Sold</button>
+        <button class="primary-btn" style="background:linear-gradient(135deg,#16a34a,#15803d);flex:1;font-size:15px" onclick="confirmMarkSold('${oppId}')">Confirm — Mark Sold</button>
         <button class="secondary-btn" onclick="closeMarkSoldModal()">Cancel</button>
       </div>
     </div>
@@ -1864,7 +1864,7 @@ function closeMarkSoldModal() {
 function confirmMarkSold(oppId) {
   const amount = parseFloat(document.getElementById('sm_amount')?.value || '0');
   const date   = document.getElementById('sm_date')?.value || todayISO();
-  if (!amount || amount <= 0) { showToast('⚠️ Enter a sold amount first'); return; }
+  if (!amount || amount <= 0) { showToast('Enter a sold amount first'); return; }
   const o = state.opportunities.find(x => x.id === oppId);
   if (!o) return;
   // Preserve previous stage for audit
@@ -1880,7 +1880,7 @@ function confirmMarkSold(oppId) {
   o.updatedAt       = new Date().toISOString();
   saveState();
   closeMarkSoldModal();
-  showToast(`🎉 ${o.client} marked as sold — $${amount.toLocaleString()}`);
+  showToast(`${o.client} marked as sold — $${amount.toLocaleString()}`);
   show('pipeline', oppId);
 }
 window.openMarkSoldModal = openMarkSoldModal;
@@ -1897,7 +1897,7 @@ window.confirmReset = function(){
   modal.className = 'modal-overlay';
   modal.innerHTML = `
     <div class="modal" style="max-width:420px;border:2px solid #7f1d1d">
-      <div style="font-size:2.4rem;margin-bottom:10px;text-align:center">⚠️</div>
+      
       <h3 style="color:#f87171;text-align:center;margin:0 0 8px">Permanent Data Reset</h3>
       <p style="font-size:13px;color:#94a3b8;text-align:center;margin:0 0 20px">This will delete <strong style="color:#f87171">all pipeline leads, notes, financials, and settings</strong> permanently. There is no undo.</p>
       <p style="font-size:12px;color:#64748b;margin:0 0 8px">Type <strong style="color:#e2e8f0">RESET</strong> to confirm:</p>
@@ -1982,14 +1982,14 @@ window.showExportModal = function(title, buildDataFn) {
           <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">${escapeHtml(title)}</h2>
         </div>
         <button onclick="document.getElementById('exportModalOverlay').remove()"
-          style="background:#1e293b;border:1px solid #334155;border-radius:8px;color:#94a3b8;cursor:pointer;padding:6px 10px;font-size:16px;line-height:1">✕</button>
+          style="background:#1e293b;border:1px solid #334155;border-radius:8px;color:#94a3b8;cursor:pointer;padding:6px 10px;font-size:16px;line-height:1">×</button>
       </div>
       <p style="color:#64748b;font-size:13px;margin:0 0 20px">Choose your preferred format:</p>
       <div style="display:grid;gap:10px">
         <button onclick="exportAsCSV('${escapeHtml(title)}', window._exportDataFn)"
           style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#0a1628;border:1px solid #1e293b;border-radius:12px;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:600;text-align:left;transition:border-color .15s"
           onmouseover="this.style.borderColor='#22d3ee'" onmouseout="this.style.borderColor='#1e293b'">
-          <span style="font-size:24px">📄</span>
+          
           <div>
             <div>CSV</div>
             <div style="font-size:11px;font-weight:400;color:#64748b">Comma-separated, opens in Excel / Sheets</div>
@@ -1998,7 +1998,7 @@ window.showExportModal = function(title, buildDataFn) {
         <button onclick="exportAsXLSX('${escapeHtml(title)}', window._exportDataFn)"
           style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#0a1628;border:1px solid #1e293b;border-radius:12px;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:600;text-align:left;transition:border-color .15s"
           onmouseover="this.style.borderColor='#4ade80'" onmouseout="this.style.borderColor='#1e293b'">
-          <span style="font-size:24px">📊</span>
+          
           <div>
             <div>Excel (.xlsx)</div>
             <div style="font-size:11px;font-weight:400;color:#64748b">Native Excel workbook with formatting</div>
@@ -2007,7 +2007,7 @@ window.showExportModal = function(title, buildDataFn) {
         <button onclick="exportAsPDF('${escapeHtml(title)}', window._exportDataFn)"
           style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#0a1628;border:1px solid #1e293b;border-radius:12px;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:600;text-align:left;transition:border-color .15s"
           onmouseover="this.style.borderColor='#f87171'" onmouseout="this.style.borderColor='#1e293b'">
-          <span style="font-size:24px">📋</span>
+          
           <div>
             <div>PDF</div>
             <div style="font-size:11px;font-weight:400;color:#64748b">Print-ready formatted report</div>
@@ -2035,7 +2035,7 @@ window.exportAsCSV = function(title, buildDataFn) {
   a.click();
   URL.revokeObjectURL(a.href);
   document.getElementById('exportModalOverlay')?.remove();
-  showToast('✅ CSV exported — ' + title);
+  showToast('CSV exported — ' + title);
 };
 
 // ── Excel (.xlsx) Export — pure JS, no dependencies ────────────────────────
@@ -2168,7 +2168,7 @@ ${strings.map(s => `<si><t>${xe(s)}</t></si>`).join('')}
         a.click();
         URL.revokeObjectURL(a.href);
         document.getElementById('exportModalOverlay')?.remove();
-        showToast('✅ Excel exported — ' + title);
+        showToast('Excel exported — ' + title);
       });
   };
 
@@ -2180,7 +2180,7 @@ ${strings.map(s => `<si><t>${xe(s)}</t></si>`).join('')}
     script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
     script.onload = () => doZip(window.JSZip);
     script.onerror = () => {
-      showToast('⚠️ Excel export unavailable offline — using CSV instead');
+      showToast('Excel export unavailable — using CSV instead');
       window.exportAsCSV(title, buildDataFn);
     };
     document.head.appendChild(script);
@@ -2384,9 +2384,9 @@ window.showMonthDrilldown = function(monthKey) {
   const monthBudget = (fy.monthlyBudget || []).find(m => m.month === monthKey) || {};
   const notes = (loadRevenueActuals() || {})['note_' + monthKey] || '';
   const DIVISIONS = [
-    { key:'landscape',   label:'Landscape',   icon:'🌿', color:'#4ade80' },
-    { key:'maintenance', label:'Maintenance',  icon:'✂️', color:'#22d3ee' },
-    { key:'snow',        label:'Snow & Ice',   icon:'❄️', color:'#a78bfa' }
+    { key:'landscape',   label:'Landscape',   icon:'', color:'#4ade80' },
+    { key:'maintenance', label:'Maintenance',  icon:'', color:'#22d3ee' },
+    { key:'snow',        label:'Snow & Ice',   icon:'', color:'#a78bfa' }
   ];
   function fmtM(n){ return n!=null ? n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
   const rows = DIVISIONS.map(d => {
@@ -2431,7 +2431,7 @@ window.showMonthDrilldown = function(monthKey) {
       </table>
       ${notes ? `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;font-size:13px;color:#94a3b8"><strong style="color:#e2e8f0">Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="primary-btn" onclick="this.closest('.modal-overlay').remove();revenueAdmin('division')">✏️ Edit Division Data</button>
+        <button class="primary-btn" onclick="this.closest('.modal-overlay').remove();revenueAdmin('division')">Edit Division Data</button>
         <button class="secondary-btn" onclick="this.closest('.modal-overlay').remove()">Close</button>
       </div>
     </div>`;
@@ -2458,7 +2458,7 @@ function revenueAdmin(tab) {
   // ── Tab Nav ──
   const tabNav = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
-      ${[['monthly','📅 Monthly Totals'],['division','🏢 Division Entry'],['annuals','📊 Annual Financials'],['pnl','📎 P&L Files']].map(([t,label]) =>
+      ${[['monthly','Monthly Totals'],['division','Division Entry'],['annuals','Annual Financials'],['pnl','P&L Files']].map(([t,label]) =>
         `<button onclick="revenueAdmin('${t}')" style="padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid ${_revTab===t?'#22d3ee':'#1e293b'};background:${_revTab===t?'#0e3044':'#0f172a'};color:${_revTab===t?'#22d3ee':'#94a3b8'}">${label}</button>`
       ).join('')}
     </div>`;
@@ -2519,7 +2519,7 @@ function revenueAdmin(tab) {
             ${hasActual ? fmtM(m.actual) : '<span style="color:#334155">—</span>'}
           </div>
           ${hasDivData ? `<div style="font-size:10px;color:#475569;line-height:1.4">
-            🌿 ${fmtM(divBreakdown[0])} · ✂️ ${fmtM(divBreakdown[1])} · ❄️ ${fmtM(divBreakdown[2])}
+            ${fmtM(divBreakdown[0])} · ${fmtM(divBreakdown[1])} · ${fmtM(divBreakdown[2])}
           </div>` : ''}
         </td>
         <td class="right" style="color:${varColor};font-weight:700">${m.variance != null ? varSign + fmtM(m.variance) : '—'}</td>
@@ -2537,8 +2537,8 @@ function revenueAdmin(tab) {
         <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b">
           <h2 style="margin:0;color:#f1f5f9;font-size:1rem">Budget vs Actual — Jan–Dec 2026</h2>
           <div style="display:flex;gap:8px">
-            <button class="secondary-btn small" onclick="revSaveNotes()" style="background:#16a34a;border-color:#16a34a;color:#fff">💾 Save Notes</button>
-            <button class="secondary-btn small" onclick="showExportModal('Monthly Revenue', buildMonthlyExportData)">📥 Export</button>
+            <button class="secondary-btn small" onclick="revSaveNotes()" style="background:#16a34a;border-color:#16a34a;color:#fff">Save Notes</button>
+            <button class="secondary-btn small" onclick="showExportModal('Monthly Revenue', buildMonthlyExportData)">Export</button>
           </div>
         </div>
         <div style="overflow-x:auto">
@@ -2560,7 +2560,7 @@ function revenueAdmin(tab) {
         </div>
       </div>
       <p style="color:#64748b;font-size:12px;margin-top:8px">
-        🔒 Monthly totals are <strong style="color:#22d3ee">automatically computed</strong> from division entries — they cannot be edited directly.
+        Monthly totals are <strong style="color:#22d3ee">automatically computed</strong> from division entries — they cannot be edited directly.
         To change revenue, go to the <strong style="color:#22d3ee">Division Entry</strong> tab.
       </p>`;
   }
@@ -2569,9 +2569,9 @@ function revenueAdmin(tab) {
 
   // ── Tab: Division Entry ──
   const DIVISIONS_META = [
-    { key: 'landscape',   label: 'Landscape',    icon: '🌿', color: '#4ade80' },
-    { key: 'maintenance', label: 'Maintenance',   icon: '✂️', color: '#22d3ee' },
-    { key: 'snow',        label: 'Snow & Ice',    icon: '❄️', color: '#a78bfa' }
+    { key: 'landscape',   label: 'Landscape',    icon: '', color: '#4ade80' },
+    { key: 'maintenance', label: 'Maintenance',   icon: '', color: '#22d3ee' },
+    { key: 'snow',        label: 'Snow & Ice',    icon: '', color: '#a78bfa' }
   ];
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -2620,7 +2620,7 @@ function revenueAdmin(tab) {
             </div>
             <div style="display:flex;gap:8px;align-items:center">
               <span style="font-size:11px;font-weight:700;color:${div.color}">${totalGm}% GM</span>
-              <button class="secondary-btn small" onclick="divSaveDivision('${div.key}')" style="background:#1e4d6b;border-color:#1e4d6b;color:#22d3ee;font-size:11px">💾 Save ${div.label}</button>
+              <button class="secondary-btn small" onclick="divSaveDivision('${div.key}')" style="background:#1e4d6b;border-color:#1e4d6b;color:#22d3ee;font-size:11px">Save ${div.label}</button>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -2645,8 +2645,8 @@ function revenueAdmin(tab) {
     return `
       <p class="lede" style="margin-bottom:16px">Enter revenue and COGS for each division per month. Monthly totals auto-sum to the company total in the Monthly Totals tab.</p>
       <div style="display:flex;gap:8px;margin-bottom:16px">
-        <button class="secondary-btn" onclick="divSaveAllDivisions()" style="background:#16a34a;border-color:#16a34a;color:#fff">💾 Save All Divisions</button>
-        <button class="secondary-btn" onclick="showExportModal('Division Actuals 2026', buildDivisionExportData)">📥 Export</button>
+        <button class="secondary-btn" onclick="divSaveAllDivisions()" style="background:#16a34a;border-color:#16a34a;color:#fff">Save All Divisions</button>
+        <button class="secondary-btn" onclick="showExportModal('Division Actuals 2026', buildDivisionExportData)">Export</button>
       </div>
       ${divSections}`;
   }
@@ -2723,9 +2723,9 @@ function revenueAdmin(tab) {
       </div>
 
       <div style="display:flex;gap:8px">
-        <button class="secondary-btn" onclick="annSaveAll()" style="background:#16a34a;border-color:#16a34a;color:#fff">💾 Save All Annual Figures</button>
-        <button class="secondary-btn" onclick="showExportModal('Annual Financials 2026', buildAnnualExportData)">📥 Export</button>
-        <button class="secondary-btn" onclick="annResetOverrides()" style="background:#7f1d1d;border-color:#991b1b;color:#fca5a5">🔄 Reset to Budget Defaults</button>
+        <button class="secondary-btn" onclick="annSaveAll()" style="background:#16a34a;border-color:#16a34a;color:#fff">Save All Annual Figures</button>
+        <button class="secondary-btn" onclick="showExportModal('Annual Financials 2026', buildAnnualExportData)">Export</button>
+        <button class="secondary-btn" onclick="annResetOverrides()" style="background:#7f1d1d;border-color:#991b1b;color:#fca5a5">Reset to Budget Defaults</button>
       </div>`;
   }
 
@@ -2735,15 +2735,15 @@ function revenueAdmin(tab) {
       ? '<p style="color:#64748b;font-size:13px">No files uploaded yet. Upload a monthly P&L CSV or PDF below.</p>'
       : pnlFiles.map(f => `
         <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;margin-bottom:8px">
-          <span style="font-size:20px">${f.type === 'csv' ? '📊' : '📄'}</span>
+          <span style="font-size:20px">${f.type === 'csv' ? 'CSV' : 'DOC'}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.name)}</div>
             <div style="font-size:11px;color:#64748b">${f.date} · ${f.size} · ${f.type.toUpperCase()}</div>
             ${f.period ? `<div style="font-size:11px;color:#22d3ee">Period: ${escapeHtml(f.period)}</div>` : ''}
           </div>
           <div style="display:flex;gap:6px">
-            ${f.type === 'csv' ? `<button class="secondary-btn small" onclick="pnlImportCsv('${f.id}')" style="font-size:11px">📥 Import to Divisions</button>` : ''}
-            <button class="secondary-btn small" onclick="pnlDeleteFile('${f.id}')" style="background:#7f1d1d;border-color:#991b1b;color:#fca5a5;font-size:11px">🗑</button>
+            ${f.type === 'csv' ? `<button class="secondary-btn small" onclick="pnlImportCsv('${f.id}')" style="font-size:11px">Import to Divisions</button>` : ''}
+            <button class="secondary-btn small" onclick="pnlDeleteFile('${f.id}')" style="background:#7f1d1d;border-color:#991b1b;color:#fca5a5;font-size:11px">×</button>
           </div>
         </div>`).join('');
 
@@ -2751,7 +2751,7 @@ function revenueAdmin(tab) {
       <p class="lede" style="margin-bottom:16px">Upload monthly P&L statements or financial reports. CSV files can be auto-imported into division actuals.</p>
 
       <div class="card" style="background:#0a0f1a;border:2px dashed #1e4d6b;border-radius:14px;padding:24px;text-align:center;margin-bottom:20px">
-        <div style="font-size:32px;margin-bottom:8px">📎</div>
+        
         <div style="color:#e2e8f0;font-weight:600;margin-bottom:4px">Upload P&L File</div>
         <div style="color:#64748b;font-size:12px;margin-bottom:16px">CSV (auto-parsed) or PDF (stored as attachment) · Max 5MB</div>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:14px">
@@ -2767,12 +2767,12 @@ function revenueAdmin(tab) {
       </div>
 
       <div style="margin-bottom:20px">
-        <h3 style="color:#f1f5f9;font-size:14px;margin-bottom:12px">📁 Uploaded Files (${pnlFiles.length})</h3>
+        <h3 style="color:#f1f5f9;font-size:14px;margin-bottom:12px">Uploaded Files (${pnlFiles.length})</h3>
         ${fileList}
       </div>
 
       <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:16px">
-        <h3 style="color:#f1f5f9;font-size:13px;margin-top:0;margin-bottom:8px">📋 CSV Import Format</h3>
+        <h3 style="color:#f1f5f9;font-size:13px;margin-top:0;margin-bottom:8px">CSV Import Format</h3>
         <p style="color:#64748b;font-size:12px;margin:0 0 8px">For auto-import to work, your CSV should include these columns:</p>
         <code style="display:block;background:#0a0f1a;padding:10px 12px;border-radius:6px;color:#22d3ee;font-size:11px;line-height:1.6">
           Month, Division, Revenue, COGS<br>
@@ -2851,7 +2851,7 @@ window.revSaveNotes = function() {
     delete savedNotes[m.month];
   });
   saveRevenueActuals(savedNotes);
-  showToast('✅ Monthly notes saved');
+  showToast('Monthly notes saved');
 };
 
 // Keep legacy revSaveAll as alias so any stale HTML references don't break
@@ -2984,12 +2984,12 @@ window.divSaveDivision = function(divKey) {
   function fmtM(n) { return n != null ? n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
   // Also update the banner summary after save via re-rendering
   const label = divKey.charAt(0).toUpperCase() + divKey.slice(1);
-  showToast(`✅ ${label} saved — monthly totals updated`);
+  showToast(`${label} saved — monthly totals updated`);
 };
 
 window.divSaveAllDivisions = function() {
   ['landscape','maintenance','snow'].forEach(dk => window.divSaveDivision(dk));
-  showToast('✅ All division data saved — dashboards updated');
+  showToast('All division data saved — dashboards updated');
 };
 
 window.divExportCsv = function() {
@@ -3031,13 +3031,13 @@ window.annSaveAll = function() {
     if (cg?.value !== '')  overrides._divOverrides[dk].cogs             = parseFloat(cg.value);
   });
   saveAnnualOverrides(overrides);
-  showToast('✅ Annual financial figures saved — dashboards updated');
+  showToast('Annual financial figures saved — dashboards updated');
 };
 
 window.annResetOverrides = function() {
   if (!confirm('Reset all annual overrides to budget defaults? This cannot be undone.')) return;
   saveAnnualOverrides({});
-  showToast('🔄 Annual figures reset to budget defaults');
+  showToast('Annual figures reset to budget defaults');
   revenueAdmin('annuals');
 };
 
@@ -3045,7 +3045,7 @@ window.annResetOverrides = function() {
 window.pnlHandleUpload = function(input) {
   const file = input.files[0];
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) { showToast('⚠️ File too large — max 5MB'); return; }
+  if (file.size > 5 * 1024 * 1024) { showToast('File too large — max 5MB'); return; }
   const periodEl = document.getElementById('pnl_period');
   const period = periodEl ? periodEl.value.trim() : '';
   const reader = new FileReader();
@@ -3063,9 +3063,9 @@ window.pnlHandleUpload = function(input) {
     };
     files.unshift(newFile);
     savePnlFiles(files);
-    showToast('✅ File uploaded: ' + file.name);
+    showToast('File uploaded: ' + file.name);
     if (isCsv) {
-      showToast('📊 CSV detected — use "Import to Divisions" to auto-parse data');
+      showToast('CSV detected — use "Import to Divisions" to auto-parse data');
     }
     revenueAdmin('pnl');
   };
@@ -3076,7 +3076,7 @@ window.pnlHandleUpload = function(input) {
 window.pnlDeleteFile = function(fileId) {
   const files = loadPnlFiles().filter(f => f.id !== fileId);
   savePnlFiles(files);
-  showToast('🗑 File removed');
+  showToast('File removed');
   revenueAdmin('pnl');
 };
 
@@ -3085,12 +3085,12 @@ window.pnlImportCsv = function(fileId) {
   const f = files.find(x => x.id === fileId);
   if (!f || f.type !== 'csv') return;
   const lines = f.data.split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) { showToast('⚠️ CSV is empty or unreadable'); return; }
+  if (lines.length < 2) { showToast('CSV is empty or unreadable'); return; }
   // Parse header
   const header = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
   const colIdx = { month: header.indexOf('month'), division: header.indexOf('division'), revenue: header.indexOf('revenue'), cogs: header.indexOf('cogs') };
   if (colIdx.month === -1 || colIdx.division === -1 || colIdx.revenue === -1) {
-    showToast('⚠️ CSV must have Month, Division, Revenue columns'); return;
+    showToast('CSV must have Month, Division, Revenue columns'); return;
   }
   const DIVMAP = { landscape: 'landscape', maintenance: 'maintenance', 'snow & ice': 'snow', snow: 'snow' };
   const all = loadDivisionActuals();
@@ -3111,7 +3111,7 @@ window.pnlImportCsv = function(fileId) {
     }
   });
   saveDivisionActuals(all);
-  showToast(`✅ Imported ${imported} entries from CSV into division actuals`);
+  showToast(`Imported ${imported} entries from CSV into division actuals`);
   revenueAdmin('division');
 };
 
