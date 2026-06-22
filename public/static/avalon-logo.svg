@@ -1,18 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 480" width="512" height="480">
   <defs>
-    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#00A7E1"/>
-      <stop offset="100%" style="stop-color:#36C0EF"/>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#36C0EF"/>
+      <stop offset="100%" stop-color="#00A7E1"/>
     </linearGradient>
   </defs>
-  <!-- Main sail shape - left curved blade -->
-  <path d="M280 50 C280 50 80 200 100 400 L280 380 Z" fill="url(#g1)"/>
-  <!-- Right blade / A leg -->
-  <path d="M280 50 C280 50 420 300 380 420 L280 380 Z" fill="url(#g1)" opacity="0.85"/>
-  <!-- Inner highlight/cut -->
-  <path d="M180 350 C200 280 260 220 280 180 C280 180 310 260 340 360 L280 380 Z" fill="white" opacity="0.15"/>
-  <!-- Bottom left foot -->
-  <path d="M100 400 C100 400 70 440 50 460 L180 440 Z" fill="url(#g1)" opacity="0.9"/>
-  <!-- Bottom right foot -->
-  <path d="M380 420 C380 420 440 450 460 470 L300 450 Z" fill="url(#g1)" opacity="0.9"/>
+
+  <!-- Left curved slash - slender crescent arc upper-left, tapers to sharp points -->
+  <path d="
+    M 155 40
+    C 120 80, 75 150, 60 230
+    C 50 280, 55 320, 75 355
+    C 80 365, 85 370, 88 368
+    C 92 366, 90 360, 88 350
+    C 72 310, 70 270, 82 218
+    C 95 162, 130 100, 162 55
+    C 166 47, 165 42, 162 40
+    C 160 38, 158 38, 155 40
+    Z
+  " fill="url(#blueGrad)"/>
+
+  <!-- Central main body - large diagonal A sweep from top peak, broad bottom-left, hook at bottom -->
+  <path d="
+    M 220 15
+    C 215 10, 205 12, 198 20
+    C 150 80, 85 200, 55 310
+    C 40 370, 38 420, 45 450
+    C 48 462, 56 468, 65 465
+    C 100 455, 180 430, 230 395
+    C 255 380, 272 365, 275 350
+    C 278 338, 268 328, 258 335
+    C 250 340, 240 348, 225 358
+    C 195 375, 155 390, 118 400
+    C 108 403, 100 402, 102 394
+    C 108 370, 130 320, 165 262
+    C 185 228, 210 192, 230 162
+    L 252 120
+    C 268 140, 278 165, 280 175
+    C 282 185, 286 188, 290 185
+    C 295 182, 295 175, 292 162
+    C 286 138, 270 105, 252 72
+    C 240 48, 228 20, 220 15
+    Z
+  " fill="url(#blueGrad)"/>
+
+  <!-- Right wing/swoosh - right side curves down to sharp bottom-right point -->
+  <path d="
+    M 300 140
+    C 295 135, 290 138, 288 145
+    C 282 170, 285 210, 295 245
+    C 305 280, 322 315, 338 345
+    C 355 378, 372 408, 388 435
+    C 400 455, 418 472, 432 468
+    C 440 465, 443 455, 440 442
+    C 430 405, 405 355, 380 305
+    C 358 260, 335 215, 322 175
+    C 314 155, 306 142, 300 140
+    Z
+  " fill="url(#blueGrad)"/>
 </svg>

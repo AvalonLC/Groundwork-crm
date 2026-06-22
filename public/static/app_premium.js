@@ -82,7 +82,7 @@ function today(){
         </div>
         <aside class="hero-panel">
           <div>
-            <div class="hero-logo"><img src="/static/avalon-logo.svg" alt="Avalon logo"></div>
+            <div class="hero-logo"><img src="/static/avalon-logo.png" alt="Avalon logo"></div>
             <h3 class="mt">Daily standard</h3>
             <p class="muted">No opportunity moves forward without a clear next step, documented assumptions, and ownership.</p>
           </div>

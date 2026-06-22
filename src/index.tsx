@@ -19,7 +19,7 @@ function getHtml(): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Avalon Sales Hub</title>
-  <link rel="icon" type="image/svg+xml" href="/static/avalon-icon.svg" />
+  <link rel="icon" type="image/png" href="/static/avalon-logo.png" />
   <meta name="theme-color" content="#00A7E1" />
   <meta name="description" content="Avalon Landscape Construction internal sales operating hub." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -32,10 +32,7 @@ function getHtml(): string {
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-mark">
-        <svg width="42" height="42" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M50 8 C50 8 15 75 15 75 L85 75 Z" fill="none" stroke="#00A7E1" stroke-width="8" stroke-linejoin="round"/>
-          <path d="M35 75 C35 75 50 35 65 55" fill="none" stroke="#36C0EF" stroke-width="7" stroke-linecap="round"/>
-        </svg>
+        <img src="/static/avalon-logo.png" alt="Avalon logo" style="width:42px;height:42px;object-fit:contain;">
       </div>
       <div>
         <div class="brand-name">Avalon</div>
