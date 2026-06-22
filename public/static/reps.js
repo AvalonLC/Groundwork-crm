@@ -828,75 +828,345 @@ function renderOMDashboard(viewEl, rep) {
 `;
 }
 
-// ── ADMIN MANAGER DASHBOARD ───────────────────────────────────────────────────
+// ── ADMIN / OWNER DASHBOARD ──────────────────────────────────────────────────
 function renderAdminDashboard(viewEl) {
-  const allOpps = getGlobalOpps();
+  const allOpps  = getGlobalOpps();
+  const today    = todayISO();
+  const fy       = (window.AVALON_DATA || {}).fy2026 || {};
+  const annual   = fy.annual || {};
+  const divs     = fy.divisions || {};
+  const tylerData = ((window.AVALON_DATA || {}).repData || {}).tyler || {};
+  const scorecard = tylerData.leadershipScorecard || [];
+  const pd       = (window.AVALON_DATA || {}).pricingDiscipline || {};
+  const rc       = (window.AVALON_DATA || {}).reviewCadence || [];
+
+  // ── Pipeline stats ──
+  const openOpps   = allOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+  const soldOpps   = allOpps.filter(o => o.status === 'Sold / Activation');
+  const lostOpps   = allOpps.filter(o => o.status === 'Closed Lost');
+  const overdueList = openOpps.filter(o => o.nextFollowUp && o.nextFollowUp < today)
+                              .sort((a,b) => a.nextFollowUp.localeCompare(b.nextFollowUp));
+  const unassigned = openOpps.filter(o => !o.repId);
+  const proposals  = openOpps.filter(o => ['Proposal / Estimate Sent','Follow-Up'].includes(o.status));
+  const stale      = openOpps.filter(o => {
+    if (!o.updatedAt) return false;
+    return (Date.now() - new Date(o.updatedAt).getTime()) > 14 * 24 * 60 * 60 * 1000;
+  });
+  const soldValue  = soldOpps.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0);
+  const totalPipelineValue = openOpps.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0);
+
+  // Commission approval queue — sold opps not yet commission-approved
+  const commQueue = soldOpps.filter(o => !o.commissionApproved && o.repId);
+
+  // ── Rep performance ──
   const repRows = REPS.filter(r => r.role === 'rep').map(rep => {
-    const repOpps = allOpps.filter(o => o.repId === rep.id);
-    const open = repOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status)).length;
-    const sold = repOpps.filter(o => o.status === 'Sold / Activation');
-    const soldValue = sold.reduce((a, o) => a + parseFloat(o.jobValue || 0), 0);
+    const repOpps   = allOpps.filter(o => o.repId === rep.id);
+    const repOpen   = repOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+    const repSold   = repOpps.filter(o => o.status === 'Sold / Activation');
+    const repSoldVal = repSold.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0);
+    const repOverdue = repOpen.filter(o => o.nextFollowUp && o.nextFollowUp < today).length;
+    const repProposals = repOpen.filter(o => ['Proposal / Estimate Sent','Follow-Up'].includes(o.status)).length;
     const { totalEarned, pendingCollection } = calcRepCommissions(rep.id);
-    const overdue = repOpps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status)).length;
-    return { rep, open, sold: sold.length, soldValue, totalEarned, pendingCollection, overdue };
+    // Close rate
+    const repTotal = repSold.length + lostOpps.filter(o => o.repId === rep.id).length;
+    const closeRate = repTotal > 0 ? Math.round((repSold.length / repTotal) * 100) : null;
+    // Quota progress (landscape revenue vs $525K target)
+    const quotaTarget = 525000;
+    const quotaPct = Math.min(100, Math.round((repSoldVal / quotaTarget) * 100));
+    return { rep, open: repOpen.length, sold: repSold.length, soldValue: repSoldVal,
+             totalEarned, pendingCollection, overdue: repOverdue, proposals: repProposals,
+             closeRate, quotaPct };
   });
 
-  viewEl.innerHTML = `
-<div class="eyebrow" style="color:#00d4ff">👔 Tyler · Admin</div>
-<h1 style="margin-bottom:4px">Manager Dashboard</h1>
-<p class="lede" style="margin-bottom:24px">All reps · Full pipeline view · Commission oversight · <button onclick="logoutRep();renderLoginScreen()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;text-decoration:underline">Switch Account</button></p>
+  // ── Helpers ──
+  function fmtM(n) { return n != null ? n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
+  function pbar(actual, target, color) {
+    const pct = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0;
+    const c = color || (pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171');
+    return `<div style="height:5px;background:#1e293b;border-radius:3px;margin-top:6px"><div style="height:5px;width:${pct}%;background:${c};border-radius:3px;transition:width .5s"></div></div><div style="font-size:10px;color:#64748b;margin-top:2px">${pct}% of target</div>`;
+  }
+  function divCard(div, key) {
+    if (!div || !div.target) return '';
+    const abovePlan = div.remaining <= 0;
+    const gmOk = div.grossMarginPct >= div.grossMarginFloor;
+    const pct = Math.min(100, Math.round((div.actual / div.target) * 100));
+    const barColor = pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171';
+    return `<div style="background:#0f172a;border:1px solid ${abovePlan ? '#16a34a' : '#1e293b'};border-radius:12px;padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:700;font-size:14px">${div.icon} ${div.name}</div>
+        ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px">✓ ABOVE PLAN</span>' : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+        <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Target</div><div style="font-size:1.1rem;font-weight:800;color:#e2e8f0">${fmtM(div.target)}</div></div>
+        <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual</div><div style="font-size:1.1rem;font-weight:800;color:${abovePlan ? '#4ade80' : '#00d4ff'}">${fmtM(div.actual)}</div></div>
+        <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:.95rem;font-weight:700;color:#f59e0b">${Math.round(div.grossMarginFloor * 100)}%</div></div>
+        <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:.95rem;font-weight:700;color:${gmOk ? '#4ade80' : '#f87171'}">${Math.round(div.grossMarginPct * 100)}% ${gmOk ? '✓' : '⚠'}</div></div>
+      </div>
+      <div style="height:5px;background:#1e293b;border-radius:3px"><div style="height:5px;width:${pct}%;background:${barColor};border-radius:3px;transition:width .5s"></div></div>
+      <div style="font-size:10px;color:#64748b;margin-top:4px">${pct}% · ${abovePlan ? '<span style="color:#4ade80">+' + fmtM(Math.abs(div.remaining)) + ' over</span>' : fmtM(div.remaining) + ' remaining'}</div>
+    </div>`;
+  }
 
-<!-- Team Summary KPIs -->
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:28px">
-  <div class="stat"><span>Total Open</span><strong>${allOpps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length}</strong></div>
-  <div class="stat"><span>Sold This Period</span><strong>${allOpps.filter(o=>o.status==='Sold / Activation').length}</strong></div>
-  <div class="stat bad"><span>Overdue Follow-ups</span><strong>${allOpps.filter(o=>o.nextFollowUp&&o.nextFollowUp<todayISO()&&!['Sold / Activation','Closed Lost'].includes(o.status)).length}</strong></div>
-  <div class="stat"><span>Total Sold Value</span><strong>${fmtCurrency(allOpps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+parseFloat(o.jobValue||0),0))}</strong></div>
-  <div class="stat"><span>Reps Active</span><strong>${REPS.filter(r=>r.role==='rep').length}</strong></div>
+  // Monthly budget mini-table (actuals only for months with data)
+  const months = (fy.monthlyBudget || []);
+  const completedMonths = months.filter(m => m.actual != null);
+  const ytdBudgeted = completedMonths.reduce((a,m) => a + m.budgeted, 0);
+  const ytdVariance = (annual.actualRevenue || 0) - ytdBudgeted;
+
+  viewEl.innerHTML = `
+<!-- ── HEADER ── -->
+<div class="eyebrow" style="color:#00d4ff">👔 Tyler · Owner / CEO</div>
+<h1 style="margin-bottom:4px">Owner Dashboard</h1>
+<p class="lede" style="margin-bottom:20px">FY2026 financials · Division P&L · Team performance · Commission queue · Pipeline health ·
+  <button onclick="logoutRep();renderLoginScreen()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;text-decoration:underline">Switch Account</button>
+</p>
+
+<!-- ── SECTION 1: FY2026 REVENUE BANNER ── -->
+<div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:16px;padding:20px;margin-bottom:24px">
+  <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px">FY2026 · ${fy.budgetVersion || 'v2.2'} · As of ${fy.asOfDate || '—'}</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
+    <div style="text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Annual Budget</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#e2e8f0">${fmtM(annual.budgetedRevenue)}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Actual Revenue</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#00d4ff">${fmtM(annual.actualRevenue)}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Remaining</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#f87171">${fmtM(annual.remaining)}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Needed / Mo</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#f59e0b">${fmtM(annual.avgNeededPerMonth)}</div>
+      <div style="font-size:9px;color:#64748b">${annual.monthsLeft || 7} months left</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Operating GM</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#a78bfa">${annual.grossMarginPct ? Math.round(annual.grossMarginPct * 100) + '%' : '—'}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">True Net Income</div>
+      <div style="font-size:1.3rem;font-weight:900;color:#4ade80">${fmtM(annual.trueNetIncome)}</div>
+      <div style="font-size:9px;color:#64748b">after ${fmtM(annual.loanMonthly)}/mo loans</div>
+    </div>
+  </div>
+  <!-- YTD progress bar -->
+  <div style="margin-top:16px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px">
+      <span>YTD Progress to Budget</span>
+      <span style="color:${ytdVariance >= 0 ? '#4ade80' : '#f87171'}">${ytdVariance >= 0 ? '+' : ''}${fmtM(ytdVariance)} vs budget</span>
+    </div>
+    <div style="height:8px;background:#1e293b;border-radius:4px">
+      <div style="height:8px;width:${Math.min(100, Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100))}%;background:linear-gradient(90deg,#00d4ff,#4ade80);border-radius:4px;transition:width .5s"></div>
+    </div>
+    <div style="font-size:10px;color:#64748b;margin-top:3px">${Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100)}% of annual budget · ${fy.asOfDate || ''}</div>
+  </div>
 </div>
 
-<!-- Rep Performance Cards -->
-<div style="margin-bottom:28px">
-  <h2 style="font-size:18px;margin-bottom:16px">👥 Rep Performance</h2>
+<!-- ── SECTION 2: DIVISION P&L ── -->
+<div style="margin-bottom:24px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <h2 style="margin:0;font-size:16px">📊 Division P&L</h2>
+    <button class="secondary-btn" onclick="show('manager')" style="font-size:12px">Full P&L View →</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+    ${divCard(divs.landscape, 'landscape')}
+    ${divCard(divs.maintenance, 'maintenance')}
+    ${divCard(divs.snow, 'snow')}
+  </div>
+</div>
+
+<!-- ── SECTION 3: MONTHLY BUDGET ACTUALS ── -->
+<div style="margin-bottom:24px">
+  <h2 style="font-size:16px;margin-bottom:12px">📅 Monthly Budget vs Actual</h2>
+  <div style="overflow-x:auto">
+    <div style="display:flex;gap:8px;min-width:600px">
+      ${months.map(m => {
+        const hasActual = m.actual != null;
+        const varColor = !hasActual ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
+        const barPct = hasActual ? Math.min(100, Math.round((m.actual / m.budgeted) * 100)) : 0;
+        return `<div style="flex:1;min-width:60px;background:#0f172a;border:1px solid ${hasActual ? '#1e4d6b' : '#1e293b'};border-radius:10px;padding:10px 8px;text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:6px">${m.month}</div>
+          <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px">${fmtM(m.budgeted)}</div>
+          ${hasActual ? `<div style="font-size:12px;font-weight:800;color:#00d4ff">${fmtM(m.actual)}</div>
+          <div style="font-size:10px;color:${varColor};font-weight:700;margin-top:2px">${m.variance >= 0 ? '+' : ''}${fmtM(m.variance)}</div>
+          <div style="height:3px;background:#1e293b;border-radius:2px;margin-top:6px"><div style="height:3px;width:${barPct}%;background:${m.variance >= 0 ? '#4ade80' : '#f87171'};border-radius:2px"></div></div>`
+          : `<div style="font-size:10px;color:#334155;margin-top:4px">—</div>`}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+</div>
+
+<!-- ── SECTION 4: PIPELINE HEALTH + COMMISSION QUEUE ── -->
+<div class="grid grid-2" style="gap:20px;margin-bottom:24px">
+
+  <!-- Pipeline Health -->
+  <section class="card">
+    <h2 style="margin:0 0 14px;font-size:16px">🔥 Pipeline Health</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Open Opps</div>
+        <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-top:4px">${openOpps.length}</div>
+        <div style="font-size:10px;color:#64748b">${fmtM(totalPipelineValue)} value</div>
+      </div>
+      <div style="background:${overdueList.length > 0 ? '#2a0a0a' : '#0f172a'};border:1px solid ${overdueList.length > 0 ? '#7f1d1d' : '#1e293b'};border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Overdue</div>
+        <div style="font-size:22px;font-weight:800;color:${overdueList.length > 0 ? '#f87171' : '#4ade80'};margin-top:4px">${overdueList.length}</div>
+        <div style="font-size:10px;color:#64748b">need follow-up</div>
+      </div>
+      <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Proposals Out</div>
+        <div style="font-size:22px;font-weight:800;color:#fbbf24;margin-top:4px">${proposals.length}</div>
+        <div style="font-size:10px;color:#64748b">awaiting decision</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid ${stale.length > 0 ? '#f59e0b40' : '#1e293b'};border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Stale (14d+)</div>
+        <div style="font-size:22px;font-weight:800;color:${stale.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:4px">${stale.length}</div>
+        <div style="font-size:10px;color:#64748b">no recent activity</div>
+      </div>
+      <div style="background:linear-gradient(135deg,#0c2a1a,#0f172a);border:1px solid #16a34a;border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:#86efac;font-weight:600;text-transform:uppercase">Sold</div>
+        <div style="font-size:22px;font-weight:800;color:#4ade80;margin-top:4px">${soldOpps.length}</div>
+        <div style="font-size:10px;color:#64748b">${fmtM(soldValue)} value</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Unassigned</div>
+        <div style="font-size:22px;font-weight:800;color:${unassigned.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:4px">${unassigned.length}</div>
+        <div style="font-size:10px;color:#64748b">no rep assigned</div>
+      </div>
+    </div>
+    ${overdueList.length > 0 ? `
+    <div style="border-top:1px solid #1e293b;padding-top:12px">
+      <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:8px">🚨 Most Overdue</div>
+      ${overdueList.slice(0, 4).map(o => `
+        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#0f172a;border:1px solid #7f1d1d;border-radius:8px;margin-bottom:5px;cursor:pointer"
+          onmouseover="this.style.background='#1a0a0a'" onmouseout="this.style.background='#0f172a'">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
+            <div style="font-size:10px;color:#64748b">${escapeHtml(o.status)} · Due ${o.nextFollowUp}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.avatar||'') : ' · ⚠️ unassigned'}</div>
+          </div>
+          <span style="font-size:9px;color:#f87171;font-weight:700">OVERDUE</span>
+        </div>`).join('')}
+      ${overdueList.length > 4 ? `<div style="font-size:11px;color:#64748b;text-align:center;margin-top:6px">+${overdueList.length - 4} more — <button class="link-btn" onclick="show('pipeline')" style="color:var(--accent);background:none;border:none;cursor:pointer;font-size:11px;padding:0">open pipeline</button></div>` : ''}
+    </div>` : '<p style="color:#4ade80;font-size:13px;margin-top:8px">✅ No overdue follow-ups.</p>'}
+  </section>
+
+  <!-- Commission Approval Queue -->
+  <section class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h2 style="margin:0;font-size:16px">💰 Commission Approval Queue</h2>
+      <span style="font-size:11px;color:${commQueue.length > 0 ? '#fbbf24' : '#4ade80'};font-weight:700">${commQueue.length} pending</span>
+    </div>
+    ${commQueue.length === 0
+      ? '<p style="color:#4ade80;font-size:13px">✅ All sold jobs have commission approved.</p>'
+      : commQueue.map(o => {
+          const rep = (window.REPS||[]).find(r => r.id === o.repId);
+          const val = parseFloat(o.jobValue || 0);
+          return `
+          <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0f172a;border:1px solid #ca8a0440;border-radius:10px;margin-bottom:8px;cursor:pointer"
+            onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:1px">${rep ? rep.avatar + ' ' + rep.name : '⚠️ unassigned'} · ${escapeHtml(o.serviceLine||o.workType||'—')}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:13px;font-weight:700;color:#fbbf24">${fmtM(val)}</div>
+              <div style="font-size:10px;color:#64748b">${o.collected ? '✅ collected' : '⏳ uncollected'}</div>
+            </div>
+          </div>`;
+        }).join('')}
+    ${commQueue.length > 0 ? `<p style="font-size:11px;color:#64748b;margin-top:8px">Open any job above → Admin Controls → check Commission Approved to clear the queue.</p>` : ''}
+
+    <!-- Unassigned opps inline -->
+    <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:8px">
+      <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">⚠️ Unassigned Leads (${unassigned.length})</div>
+      ${unassigned.length === 0
+        ? '<p style="color:#4ade80;font-size:12px">✅ All leads are assigned.</p>'
+        : unassigned.slice(0, 5).map(o => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:#0f172a;border-radius:8px;margin-bottom:5px">
+            <div>
+              <div style="font-weight:600;font-size:12px">${escapeHtml(o.client||'Unnamed')}</div>
+              <div style="font-size:10px;color:#64748b">${escapeHtml(o.serviceLine || o.status)}</div>
+            </div>
+            <select onchange="assignRep('${o.id}', this.value)"
+              style="padding:5px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:11px;cursor:pointer">
+              <option value="">— Assign Rep —</option>
+              ${REPS.filter(r=>r.role==='rep').map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+    </div>
+  </section>
+
+</div>
+
+<!-- ── SECTION 5: REP PERFORMANCE ── -->
+<div style="margin-bottom:24px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <h2 style="margin:0;font-size:16px">👥 Rep Performance</h2>
+    <button class="secondary-btn" onclick="show('pipeline')" style="font-size:12px">Full Pipeline →</button>
+  </div>
   <div class="grid grid-2" style="gap:16px">
-    ${repRows.map(({ rep, open, sold, soldValue, totalEarned, pendingCollection, overdue }) => `
+    ${repRows.map(({ rep, open, sold, soldValue, totalEarned, pendingCollection, overdue, proposals, closeRate, quotaPct }) => `
     <div class="card" style="border-left:4px solid ${rep.color}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
         <span style="font-size:28px">${rep.avatar}</span>
-        <div>
+        <div style="flex:1">
           <div style="font-weight:700;font-size:16px;color:${rep.color}">${rep.name}</div>
-          <div style="font-size:12px;color:#64748b">${rep.title}</div>
+          <div style="font-size:11px;color:#64748b">${rep.title}</div>
+        </div>
+        ${overdue > 0 ? `<span style="font-size:10px;background:#7f1d1d;color:#f87171;padding:3px 8px;border-radius:20px;font-weight:700">${overdue} OVERDUE</span>` : '<span style="font-size:10px;background:#14532d;color:#4ade80;padding:3px 8px;border-radius:20px;font-weight:700">✓ ON TRACK</span>'}
+      </div>
+      <!-- Stats grid -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+        <div style="background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Open</div>
+          <div style="font-size:20px;font-weight:800;color:#e2e8f0">${open}</div>
+        </div>
+        <div style="background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Sold</div>
+          <div style="font-size:20px;font-weight:800;color:#4ade80">${sold}</div>
+        </div>
+        <div style="background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Proposals</div>
+          <div style="font-size:20px;font-weight:800;color:#fbbf24">${proposals}</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-        <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase">Open</div>
-          <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-top:4px">${open}</div>
+      <!-- Sold value + close rate -->
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="flex:1;background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Sold Value</div>
+          <div style="font-size:14px;font-weight:800;color:#e2e8f0;margin-top:3px">${fmtM(soldValue)}</div>
         </div>
-        <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase">Sold</div>
-          <div style="font-size:22px;font-weight:800;color:#4ade80;margin-top:4px">${sold}</div>
-        </div>
-        <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase">Sold Value</div>
-          <div style="font-size:15px;font-weight:800;color:#e2e8f0;margin-top:4px">${fmtCurrency(soldValue)}</div>
-        </div>
-        <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase">Overdue</div>
-          <div style="font-size:22px;font-weight:800;color:${overdue>0?'#f87171':'#e2e8f0'};margin-top:4px">${overdue}</div>
+        <div style="flex:1;background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Close Rate</div>
+          <div style="font-size:14px;font-weight:800;color:${closeRate !== null ? (closeRate >= 20 ? '#4ade80' : '#fbbf24') : '#334155'};margin-top:3px">${closeRate !== null ? closeRate + '%' : '—'}</div>
         </div>
       </div>
-      <div style="background:#0a1a0a;border:1px solid #14532d;border-radius:10px;padding:12px;display:flex;justify-content:space-between;margin-bottom:12px">
+      <!-- Quota progress bar -->
+      <div style="background:#0f172a;border-radius:8px;padding:10px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-bottom:5px">
+          <span>Landscape Revenue Quota</span>
+          <span style="color:${quotaPct >= 100 ? '#4ade80' : '#fbbf24'}">${quotaPct}% · ${fmtM(soldValue)} / ${fmtM(525000)}</span>
+        </div>
+        <div style="height:6px;background:#1e293b;border-radius:3px">
+          <div style="height:6px;width:${quotaPct}%;background:${quotaPct >= 100 ? '#4ade80' : quotaPct >= 60 ? '#fbbf24' : '#f87171'};border-radius:3px;transition:width .5s"></div>
+        </div>
+      </div>
+      <!-- Commission -->
+      <div style="background:#0a1a0a;border:1px solid #14532d;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
         <div style="text-align:center">
-          <div style="font-size:10px;color:#86efac;font-weight:600;text-transform:uppercase">Earned</div>
-          <div style="font-size:16px;font-weight:800;color:#4ade80;margin-top:2px">${fmtCurrency(totalEarned)}</div>
+          <div style="font-size:9px;color:#86efac;font-weight:600;text-transform:uppercase">Earned</div>
+          <div style="font-size:15px;font-weight:800;color:#4ade80;margin-top:2px">${fmtM(totalEarned)}</div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:10px;color:#fde68a;font-weight:600;text-transform:uppercase">Pending</div>
-          <div style="font-size:16px;font-weight:800;color:#fbbf24;margin-top:2px">${fmtCurrency(pendingCollection)}</div>
+          <div style="font-size:9px;color:#fde68a;font-weight:600;text-transform:uppercase">Pending</div>
+          <div style="font-size:15px;font-weight:800;color:#fbbf24;margin-top:2px">${fmtM(pendingCollection)}</div>
         </div>
       </div>
-      <button class="secondary-btn" onclick="viewRepPipeline('${rep.id}')" style="width:100%;font-size:13px">
+      <button class="secondary-btn" onclick="viewRepPipeline('${rep.id}')" style="width:100%;font-size:12px">
         View ${rep.name}'s Pipeline →
       </button>
     </div>
@@ -904,16 +1174,61 @@ function renderAdminDashboard(viewEl) {
   </div>
 </div>
 
-<!-- All Unassigned Opps -->
-<section class="card">
-  <h2 style="font-size:16px;margin-bottom:16px">⚠️ Unassigned Opportunities</h2>
-  ${renderUnassignedOpps(allOpps)}
-</section>
+<!-- ── SECTION 6: TYLER'S LEADERSHIP SCORECARD + REVIEW CADENCE ── -->
+<div class="grid grid-2" style="gap:20px;margin-bottom:24px">
+
+  <!-- Leadership Scorecard -->
+  <section class="card">
+    <h2 style="margin:0 0 14px;font-size:16px">🎯 Owner Scorecard</h2>
+    ${scorecard.length === 0 ? '<p class="muted">No scorecard data.</p>' : scorecard.map(s => `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e293b">
+      <div>
+        <div style="font-weight:600;font-size:13px">${escapeHtml(s.metric)}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">${escapeHtml(s.cadence)}</div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:#00d4ff;text-align:right;flex-shrink:0;margin-left:12px">${escapeHtml(s.target)}</div>
+    </div>`).join('')}
+    <div style="margin-top:14px">
+      <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:8px">GM Floors by Division</div>
+      ${(pd.grossMarginFloors || []).map(g => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0f172a">
+        <span style="font-size:12px">${escapeHtml(g.division)}</span>
+        <div style="text-align:right">
+          <span style="font-size:12px;font-weight:700;color:#f59e0b">${escapeHtml(g.floor)}</span>
+          <span style="font-size:10px;color:#64748b;margin-left:8px">${escapeHtml(g.current)}</span>
+        </div>
+      </div>`).join('')}
+    </div>
+  </section>
+
+  <!-- Review Cadence + Quick Actions -->
+  <section class="card">
+    <h2 style="margin:0 0 14px;font-size:16px">📆 Review Cadence</h2>
+    ${rc.slice(0, 5).map(r => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #1e293b">
+      <span style="font-size:10px;font-weight:700;color:#00d4ff;background:#00d4ff18;border-radius:6px;padding:2px 7px;white-space:nowrap;margin-top:1px">${escapeHtml(r.cadence)}</span>
+      <div>
+        <div style="font-weight:600;font-size:12px">${escapeHtml(r.meeting)}</div>
+        <div style="font-size:10px;color:#64748b">${escapeHtml(r.attendees)}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:1px">→ ${escapeHtml(r.output)}</div>
+      </div>
+    </div>`).join('')}
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Quick Actions</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="primary-btn" onclick="show('lead')" style="font-size:12px">+ Add New Lead</button>
+        <button class="secondary-btn" onclick="show('pipeline')" style="font-size:12px">🔍 Full Pipeline</button>
+        <button class="secondary-btn" onclick="show('manager')" style="font-size:12px">📊 Manager Tools / P&L</button>
+        <button class="secondary-btn" onclick="show('settings')" style="font-size:12px">⚙️ Settings / Export / Import</button>
+      </div>
+    </div>
+  </section>
+
+</div>
 `;
 
   window.viewRepPipeline = function(repId) {
     show('pipeline');
-    // Filter pipeline to this rep — set a temp filter
     setTimeout(() => {
       if (window.filterPipelineByRep) window.filterPipelineByRep(repId);
     }, 100);
