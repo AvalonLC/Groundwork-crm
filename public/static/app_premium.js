@@ -73,8 +73,46 @@ function todayISO(){ return new Date().toISOString().slice(0,10); }
 function prettyDate(dateStr){ if(!dateStr) return 'Not set'; const d = new Date(`${dateStr}T12:00:00`); return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
 function list(items){ return `<ul class="list">${items.map(i=>`<li>${escapeHtml(i)}</li>`).join('')}</ul>`; }
 function badge(text, cls=''){ return `<span class="badge ${cls}">${escapeHtml(text)}</span>`; }
+function statusCssClass(status){
+  const map = {
+    'New Lead':'new-lead','Contacted':'contacted',
+    'Discovery Scheduled':'discovery','Discovery Complete':'discovery','Site Walk':'discovery',
+    'Proposal / Estimate Sent':'proposal','Proposal Sent':'proposal',
+    'Follow-Up':'follow-up','Negotiation':'negotiation','Verbal Approval':'verbal',
+    'Sold / Activation':'sold','Closed Lost':'lost'
+  };
+  return map[status] || 'pending';
+}
+function estCommission(opp){
+  const val = Number(opp?.jobValue || 0);
+  if (!val) return 0;
+  const rates = { landscape:.08, maintenance_onetime:.06, maintenance_recurring:.10, hardscape:.07, drainage:.07, design_build:.07 };
+  return val * (rates[opp?.workType] || .07);
+}
 function showToast(message){ toastEl.textContent = message; toastEl.hidden = false; setTimeout(()=>toastEl.hidden=true, 2200); }
-function copyText(text){ navigator.clipboard?.writeText(text).then(()=>showToast('Copied to clipboard')).catch(()=>showToast('Select and copy manually')); }
+function copyText(text, btnEl){
+  const doFeedback = () => {
+    showToast('Copied to clipboard!');
+    if(btnEl){
+      const orig = btnEl.textContent;
+      btnEl.textContent = '✓ Copied!';
+      btnEl.classList.add('btn-copied');
+      setTimeout(()=>{ btnEl.textContent=orig; btnEl.classList.remove('btn-copied'); }, 2000);
+    }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(doFeedback).catch(()=>{
+      fallbackCopy(text); doFeedback();
+    });
+  } else { fallbackCopy(text); doFeedback(); }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+}
 function show(viewName='today', param){
   // ── Permission gate (admin-configurable) ─────────────────
   if (viewName !== 'settings' && !canViewTab(viewName)) {
@@ -129,15 +167,57 @@ window.show = show;
 })();
 
 function statCards(){
-  const open = state.opportunities.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length;
-  const proposals = state.opportunities.filter(o=>o.status==='Proposal Sent' || o.status==='Follow-Up').length;
-  const overdue = state.opportunities.filter(o=>o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status)).length;
-  const sold = state.opportunities.filter(o=>o.status==='Sold / Activation').length;
+  const openOpps = state.opportunities.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
+  const proposalOpps = state.opportunities.filter(o=>['Proposal / Estimate Sent','Proposal Sent','Follow-Up'].includes(o.status));
+  const overdueOpps = state.opportunities.filter(o=>o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status));
+  const soldOpps = state.opportunities.filter(o=>o.status==='Sold / Activation');
   return `<div class="grid grid-4 stat-grid">
-    <article class="stat"><span>Open</span><strong>${open}</strong></article>
-    <article class="stat"><span>Proposals</span><strong>${proposals}</strong></article>
-    <article class="stat ${overdue?'bad':''}"><span>Overdue</span><strong>${overdue}</strong></article>
-    <article class="stat"><span>Sold</span><strong>${sold}</strong></article>
+    <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
+      <span>Open</span><strong>${openOpps.length}</strong>
+    </article>
+    <article class="stat dash-card-clickable" title="Click to filter: Proposals" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" style="cursor:pointer">
+      <span>Proposals</span><strong>${proposalOpps.length}</strong>
+    </article>
+    <article class="stat ${overdueOpps.length?'bad':''} dash-card-clickable" title="Click to filter: Overdue" onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="cursor:pointer">
+      <span>Overdue</span><strong>${overdueOpps.length}</strong>
+    </article>
+    <article class="stat dash-card-clickable" title="Click to filter: Sold" onclick="window._pipelineStatusFilter='sold';show('pipeline')" style="cursor:pointer">
+      <span>Sold</span><strong>${soldOpps.length}</strong>
+    </article>
+  </div>`;
+}
+
+function buildSuggestedActions(currentRep){
+  const suggestions = [];
+  const isRep = currentRep && currentRep.role === 'rep';
+  const myOpps = isRep ? state.opportunities.filter(o => o.repId === currentRep.id) : state.opportunities;
+  const _today = todayISO();
+  const staleOpps = myOpps.filter(o =>
+    !['Sold / Activation','Closed Lost'].includes(o.status) &&
+    o.updatedAt && Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) >= 7
+  ).slice(0,3);
+  const noNextStep = myOpps.filter(o =>
+    !['Sold / Activation','Closed Lost'].includes(o.status) && !o.nextFollowUp
+  ).slice(0,2);
+  const proposalsPending = myOpps.filter(o =>
+    ['Proposal / Estimate Sent','Proposal Sent'].includes(o.status)
+  ).slice(0,3);
+  const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && !['Sold / Activation','Closed Lost'].includes(o.status)) : [];
+
+  if(staleOpps.length) suggestions.push({icon:'⏱',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
+  if(proposalsPending.length) suggestions.push({icon:'📋',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
+  if(noNextStep.length) suggestions.push({icon:'🗓',title:`${noNextStep.length} lead${noNextStep.length>1?'s':''} missing a next follow-up date`,cta:'Set Follow-Up',onclick:`show('pipeline')`});
+  if(unassigned.length) suggestions.push({icon:'⚠️',title:`${unassigned.length} unassigned lead${unassigned.length>1?'s':''} with no rep`,cta:'Assign Now',onclick:`show('pipeline')`});
+
+  if(!suggestions.length) return '';
+  return `<div class="suggested-actions">
+    <div class="sa-header">💡 Suggested Next Actions</div>
+    ${suggestions.map(s=>`
+      <div class="sa-row">
+        <span class="sa-icon">${s.icon}</span>
+        <span class="sa-text">${s.title}</span>
+        <button class="secondary-btn small" onclick="${s.onclick}">${s.cta}</button>
+      </div>`).join('')}
   </div>`;
 }
 
@@ -229,7 +309,11 @@ function today(){
     <div class="grid grid-2 mt">
       <section class="card app-card">
         <div class="section-head"><h2>Due Now</h2>${badge(`${due.length} follow-up${due.length===1?'':'s'}`, due.length?'warn-badge':'')}</div>
-        ${due.length ? due.map(oppCard).join('') : empty('No follow-ups due today.', '✅', `<button class="primary-btn small" onclick="show('pipeline')">Open Pipeline</button>`)}
+        ${due.length ? due.map(oppCard).join('') : `<div class="due-now-clear">
+          <div style="font-size:1.8rem;margin-bottom:4px">✅</div>
+          <p style="color:#4ade80;font-weight:600;margin:0 0 10px;font-size:14px">No follow-ups due today.</p>
+        </div>
+        ${buildSuggestedActions(_todayRep)}`}
       </section>
       <section class="card app-card">
         <h2>Daily Sales Start-Up</h2>
@@ -290,11 +374,41 @@ function empty(text, icon, ctaHtml){
   }
   return `<div class="empty">${escapeHtml(text)}</div>`;
 }
-function oppMini(o){ return `<button class="mini-row" onclick="show('pipeline','${o.id}')"><strong>${escapeHtml(o.client||'Unnamed')}</strong><span>${escapeHtml(o.status||'New Lead')}</span><em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em></button>`; }
+function oppMini(o){
+  const _today = todayISO();
+  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : null;
+  const urgencyDot = isOverdue ? `<span style="display:inline-block;width:7px;height:7px;background:#f87171;border-radius:50%;margin-right:4px;vertical-align:middle;flex-shrink:0"></span>` : '';
+  return `<button class="mini-row ${isOverdue?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
+    <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed')}</strong>
+    <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px;padding:1px 6px">${escapeHtml(o.status||'New Lead')}</span>
+    <em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em>
+    ${daysSince !== null ? `<span style="font-size:10px;color:#475569;margin-left:auto">${daysSince===0?'Today':daysSince+'d ago'}</span>` : ''}
+  </button>`;
+}
 function oppCard(o){
-  return `<article class="opp-card">
-    <div><h3>${escapeHtml(o.client||'Unnamed Lead')}</h3><p>${escapeHtml(o.project||o.serviceLine||'Opportunity')} • ${escapeHtml(o.address||'No address')}</p></div>
-    <div class="opp-meta">${badge(o.status||'New Lead')}<span>Next: ${prettyDate(o.nextFollowUp)}</span></div>
+  const _today = todayISO();
+  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const daysSinceUpdate = o.updatedAt ? Math.floor((Date.now() - new Date(o.updatedAt).getTime()) / 86400000) : 999;
+  const isStale = daysSinceUpdate >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const repObj = (window.REPS||[]).find(r => r.id === o.repId);
+  const urgencyBadge = isOverdue
+    ? `<span class="urgency-badge overdue">🚨 OVERDUE</span>`
+    : isStale
+    ? `<span class="urgency-badge stale">⏱ STALE ${daysSinceUpdate}d</span>`
+    : '';
+  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}">
+    <div class="opp-card-top">
+      <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
+      ${urgencyBadge}
+    </div>
+    <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')} • ${escapeHtml(o.address||'No address')}</p>
+    <div class="opp-meta">
+      ${badge(o.status||'New Lead')}
+      <span>Next: ${prettyDate(o.nextFollowUp)}</span>
+      ${o.jobValue ? `<span style="color:#4ade80;font-weight:600">${money(Number(o.jobValue))}</span>` : ''}
+      ${repObj ? `<span title="${escapeHtml(repObj.name)}">${repObj.avatar}</span>` : ''}
+    </div>
     <button class="secondary-btn small" onclick="show('pipeline','${o.id}')">Open</button>
   </article>`;
 }
@@ -325,8 +439,28 @@ function pipeline(selectedId){
     return cat.includes('snow') || (div && div.division === 'snow');
   });
 
+  // T28: Status quick-filter from stat cards
+  const activeStatusFilter = window._pipelineStatusFilter || null;
+  if (activeStatusFilter === 'open') opps = opps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+  else if (activeStatusFilter === 'proposals') opps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Follow-Up'].includes(o.status));
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status));
+  else if (activeStatusFilter === 'sold') opps = opps.filter(o => o.status === 'Sold / Activation');
+
+  // T47: Sort
+  const activeSort = window._pipelineSort || 'urgent';
+  function sortOpps(items){
+    if(activeSort==='recent') return [...items].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+    if(activeSort==='value') return [...items].sort((a,b)=>Number(b.jobValue||0)-Number(a.jobValue||0));
+    const _t = todayISO();
+    return [...items].sort((a,b)=>{
+      const ao=a.nextFollowUp&&a.nextFollowUp<_t?0:1; const bo=b.nextFollowUp&&b.nextFollowUp<_t?0:1;
+      if(ao!==bo) return ao-bo;
+      return (a.nextFollowUp||'9999').localeCompare(b.nextFollowUp||'9999');
+    });
+  }
+
   const filters = data.statuses;
-  const grouped = filters.map(status => ({status, items: opps.filter(o=>o.status===status)})).filter(g=>g.items.length || ['New Lead','Contacted','Discovery Scheduled','Proposal / Estimate Sent','Follow-Up','Sold / Activation'].includes(g.status));
+  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))})).filter(g=>g.items.length || ['New Lead','Contacted','Discovery Scheduled','Proposal / Estimate Sent','Follow-Up','Sold / Activation'].includes(g.status));
 
   view.innerHTML = `
     <div class="hero pipeline-hero">
@@ -363,7 +497,17 @@ function pipeline(selectedId){
         <button class="tab ${activeCatFilter==='maintenance'?'active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">✂️ Maintenance</button>
         <button class="tab ${activeCatFilter==='snow'?'active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">❄️ Snow & Ice</button>
       </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--muted);align-self:center">Sort:</span>
+        <button class="tab ${activeSort==='urgent'?'active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">🚨 Urgent</button>
+        <button class="tab ${activeSort==='recent'?'active':''}" onclick="window._pipelineSort='recent';show('pipeline')">🕐 Recent</button>
+        <button class="tab ${activeSort==='value'?'active':''}" onclick="window._pipelineSort='value';show('pipeline')">💰 Value</button>
+      </div>
     </div>
+    ${activeStatusFilter ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 14px;background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px">
+      <span style="color:#94a3b8">Filtered: <strong style="color:#e2e8f0">${activeStatusFilter}</strong></span>
+      <button class="secondary-btn small" style="margin-left:auto" onclick="window._pipelineStatusFilter=null;show('pipeline')">✕ Clear Filter</button>
+    </div>` : ''}
     ${statCards()}
     <div class="kanban mt">
       ${grouped.map(g=>`<section class="kanban-col"><h3>${escapeHtml(g.status)} <span>${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
@@ -395,6 +539,7 @@ function lead(){
         ${select('leadSource','Commission Lead Source',['company_lead','self_generated','assisted'],'company_lead')}
         ${select('workType','Work Type (commission)',['landscape','maintenance_onetime','maintenance_recurring','maintenance_upsell','hardscape','drainage','design_build'],'landscape')}
         ${input('jobValue','Estimated Job Value ($)','number')}
+        <div id="commPreview" style="font-size:12px;color:#4ade80;padding:4px 2px;display:none;grid-column:1/-1;font-weight:600"></div>
 
         ${input('project','Project / Opportunity Name')}
         ${input('urgency','Urgency / Timing')}
@@ -418,6 +563,26 @@ function lead(){
       <div class="footer-actions"><button class="primary-btn" type="submit">Save Lead</button><button type="button" class="secondary-btn" onclick="show('forms','lead-intake')">Open Intake Checklist</button></div>
     </form>
   `;
+  // T35: Commission preview — wire live calc after DOM settles
+  setTimeout(() => {
+    const jvInput = document.getElementById('commPreviewInput') || document.querySelector('[name="jobValue"]');
+    const wtSelect = document.querySelector('[name="workType"]');
+    const preview = document.getElementById('commPreview');
+    function updateCommPreview() {
+      if (!preview) return;
+      const val = Number(jvInput?.value || 0);
+      const wt  = wtSelect?.value || '';
+      if (!val) { preview.style.display = 'none'; return; }
+      const rates = { landscape:.08, maintenance_onetime:.06, maintenance_recurring:.10, hardscape:.07, drainage:.07, design_build:.07 };
+      const rate = rates[wt] || .07;
+      const est  = val * rate;
+      preview.textContent = '💰 Est. commission: ' + est.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) + ' (' + Math.round(rate*100) + '%)';
+      preview.style.display = 'block';
+    }
+    if (jvInput)  jvInput.addEventListener('input', updateCommPreview);
+    if (wtSelect) wtSelect.addEventListener('change', updateCommPreview);
+  }, 150);
+
   document.getElementById('leadForm').addEventListener('submit', e=>{
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -427,6 +592,38 @@ function lead(){
     if(!opp.repId && currentRep) opp.repId = currentRep.id;
     state.opportunities.unshift(opp); saveState(); showToast('Lead saved'); show('pipeline', opp.id);
   });
+
+  // T36: Duplicate detection — blur event on client name + address inputs
+  setTimeout(() => {
+    function checkDuplicates() {
+      const nameEl = document.querySelector('[name="client"]');
+      const addrEl = document.querySelector('[name="address"]');
+      const name = (nameEl?.value || '').toLowerCase().trim();
+      const addr = (addrEl?.value || '').toLowerCase().trim();
+      const existing = document.getElementById('dup-warn');
+      if (existing) existing.remove();
+      if (!name && !addr) return;
+      const dupes = (state.opportunities || []).filter(o => {
+        const oName = (o.client || '').toLowerCase();
+        const oAddr = (o.address || '').toLowerCase();
+        if (name.length > 2 && oName.includes(name)) return true;
+        if (addr.length > 4 && oAddr.includes(addr)) return true;
+        return false;
+      }).slice(0, 3);
+      if (!dupes.length) return;
+      const warn = document.createElement('div');
+      warn.id = 'dup-warn';
+      warn.className = 'dup-warn';
+      warn.innerHTML = '<strong>⚠️ Possible duplicate' + (dupes.length > 1 ? 's' : '') + '</strong> — similar lead' + (dupes.length > 1 ? 's' : '') + ' already in pipeline:<br>' +
+        dupes.map(o => `<span onclick="show('pipeline','${o.id}')" style="cursor:pointer;color:#00d4ff;text-decoration:underline">${escapeHtml(o.client||'—')} · ${escapeHtml(o.status||'')}</span>`).join('<br>');
+      const form = document.getElementById('leadForm');
+      if (form) form.prepend(warn);
+    }
+    const nameEl = document.querySelector('[name="client"]');
+    const addrEl = document.querySelector('[name="address"]');
+    if (nameEl) nameEl.addEventListener('blur', checkDuplicates);
+    if (addrEl) addrEl.addEventListener('blur', checkDuplicates);
+  }, 200);
 }
 function input(name,label,type='text'){ const required = type===true; const actualType = required ? 'text' : type; return `<label><span>${label}${required?' *':''}</span><input name="${name}" type="${actualType}" ${required?'required':''}></label>`; }
 function select(name,label,options,selected=''){ return `<label><span>${label}</span><select name="${name}"><option value="">Select...</option>${options.map(o=>`<option ${o===selected?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></label>`; }
@@ -438,6 +635,39 @@ function opportunityDetail(id){
   const stageGuess = Math.max(1, data.statuses.indexOf(o.status)+1);
   view.innerHTML = `
     <button class="secondary-btn" onclick="show('pipeline')">← Back to Pipeline</button>
+    ${(()=>{
+      const _repObj = (window.REPS||[]).find(r=>r.id===o.repId);
+      const _repName = _repObj ? _repObj.name : null;
+      const _repAvatar = _repObj ? _repObj.avatar : '⚠️';
+      const _isOvd = o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
+      const _estComm = estCommission(o);
+      return `<div class="lead-header-bar">
+        <div class="lhb-cell">
+          <span class="lhb-label">Stage</span>
+          <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:11px">${escapeHtml(o.status||'New Lead')}</span>
+        </div>
+        <div class="lhb-cell">
+          <span class="lhb-label">Rep</span>
+          <span>${_repAvatar} ${escapeHtml(_repName||'⚠️ Unassigned')}</span>
+        </div>
+        <div class="lhb-cell">
+          <span class="lhb-label">Est. Value</span>
+          <strong>${o.jobValue ? money(Number(o.jobValue)) : '—'}</strong>
+        </div>
+        <div class="lhb-cell">
+          <span class="lhb-label">Est. Commission</span>
+          <strong style="color:#4ade80">${_estComm > 0 ? money(_estComm) : '—'}</strong>
+        </div>
+        <div class="lhb-cell">
+          <span class="lhb-label">Next Follow-Up</span>
+          <span class="${_isOvd ? 'overdue-chip' : ''}">${prettyDate(o.nextFollowUp)}</span>
+        </div>
+        <div class="lhb-cell">
+          <span class="lhb-label">Commission</span>
+          <span class="status-chip ${o.commissionApproved ? 'sold' : 'pending'}" style="font-size:10px">${o.commissionApproved ? '✅ Approved' : '⏳ Pending'}</span>
+        </div>
+      </div>`;
+    })()}
     <div class="detail-head">
       <div><div class="eyebrow">Opportunity</div><h1>${escapeHtml(o.client||'Unnamed Lead')}</h1><p class="lede">${escapeHtml(o.project||o.serviceLine||'Opportunity')} • ${escapeHtml(o.address||'No address')}</p></div>
       <div class="detail-actions">
@@ -460,7 +690,12 @@ function opportunityDetail(id){
     </form>
     <div class="grid grid-2 mt">
       <section class="card"><h2>Activity & Notes</h2><div id="noteList">${renderNotes(o.id)}</div><textarea id="newNote" rows="4" placeholder="Add call note, site note, objection, or next step..."></textarea><button class="primary-btn mt8" onclick="addNote('${o.id}')">Add Note</button></section>
-      <section class="card"><h2>Useful Tools</h2><div class="tool-list"><button onclick="show('forms','discovery')">Discovery Planner</button><button onclick="show('forms','site-walk')">Site Walk Checklist</button><button onclick="show('forms','proposal-review')">Proposal Review</button><button onclick="show('templates')">Follow-Up Templates</button><button onclick="show('objections')">Objection Handling</button><button onclick="show('forms','handoff')">Sold Job Activation</button></div></section>
+      ${(()=>{
+        const stageNum = Math.max(1, data.statuses.indexOf(o.status)+1);
+        const stageChecklist = (window.AVALON_DATA.checklists||[]).find(c=>c.stage===stageNum);
+        if (!stageChecklist) return '<section class="card"><h2>Stage Checklist</h2><p class="muted">No checklist for this stage.</p></section>';
+        return `<section class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">✅ ${escapeHtml(stageChecklist.title)}</h2><span class="badge" style="font-size:.7rem;background:rgba(0,212,255,.12);color:#00d4ff">Stage ${stageNum}</span></div>${renderChecklist(stageChecklist, true, o.id)}</section>`;
+      })()}
     ${(()=>{
       const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
       const _isAdm = _cr && _cr.role === 'admin';
@@ -698,15 +933,22 @@ function process(stageId){
     </div>
     <h2 class="mt" style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">12-Stage Operating Procedures</h2>
     <p class="lede" style="font-size:.9rem">Each stage has a purpose, owner, required artifact, stage gate, questions, and red flags. Tap any stage to open the full procedure.</p>
-    <div class="grid grid-3 mt">${data.stages.map(s=>`<article class="card clickable" onclick="show('process',${s.id})">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <div class="stage-number">${s.id}</div>
-        ${s.processStep ? `<span class="badge" style="font-size:.7rem;background:rgba(0,212,255,.12);color:#00d4ff">${escapeHtml(s.processStep)}</span>` : ''}
-      </div>
-      <h3>${escapeHtml(s.title)}</h3>
-      <p style="font-size:.85rem">${escapeHtml(s.purpose)}</p>
-      <p class="meta"><strong>Owner:</strong> ${escapeHtml(s.owner)}</p>
-    </article>`).join('')}</div>
+    <div class="grid grid-3 mt">${data.stages.map(s=>{
+      const stageOpps = (state.opportunities||[]).filter(o => o.status === s.title && !['Sold / Activation','Closed Lost'].includes(o.status));
+      const cnt = stageOpps.length;
+      return `<article class="card clickable" onclick="show('process',${s.id})">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="stage-number">${s.id}</div>
+            ${s.processStep ? `<span class="badge" style="font-size:.7rem;background:rgba(0,212,255,.12);color:#00d4ff">${escapeHtml(s.processStep)}</span>` : ''}
+          </div>
+          ${cnt > 0 ? `<span class="live-count-badge">${cnt}</span>` : '<span class="live-count-badge empty">0</span>'}
+        </div>
+        <h3>${escapeHtml(s.title)}</h3>
+        <p style="font-size:.85rem">${escapeHtml(s.purpose)}</p>
+        <p class="meta"><strong>Owner:</strong> ${escapeHtml(s.owner)}</p>
+      </article>`;
+    }).join('')}</div>
   `;
 }
 function renderStage(s){
@@ -732,6 +974,20 @@ function renderStage(s){
     </div>
     <div class="card danger mt"><h3>🚩 Red Flags — Do Not Advance Until Resolved</h3>${list(s.redFlags)}</div>
     ${stageChecklist ? `<div class="card mt"><h3>✅ ${escapeHtml(stageChecklist.title)}</h3>${renderChecklist(stageChecklist, true)}</div>` : ''}
+    ${(()=>{
+      const atStage = (state.opportunities||[]).filter(o => o.status === s.title && !['Sold / Activation','Closed Lost'].includes(o.status));
+      if (!atStage.length) return '';
+      return `<div class="card mt" style="border-left:3px solid #00d4ff"><h3 style="color:#00d4ff;margin-bottom:10px">📍 ${atStage.length} Lead${atStage.length>1?'s':''} at This Stage</h3>
+        <div style="display:flex;flex-direction:column;gap:8px">${atStage.slice(0,5).map(o=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#0f172a;border-radius:8px;cursor:pointer" onclick="show('pipeline','${o.id}')">
+          <div>
+            <div style="font-weight:600;color:#e2e8f0">${escapeHtml(o.client||'—')}</div>
+            <div style="font-size:11px;color:#64748b">${o.jobValue?money(Number(o.jobValue)):''} ${o.nextFollowUp?'· Follow-up: '+prettyDate(o.nextFollowUp):''}</div>
+          </div>
+          <span style="font-size:11px;color:#00d4ff">→</span>
+        </div>`).join('')}
+        ${atStage.length>5?`<div style="font-size:12px;color:#64748b;text-align:center">+${atStage.length-5} more · <span onclick="window._pipelineStatusFilter=null;show('pipeline')" style="color:#00d4ff;cursor:pointer">View all in pipeline →</span></div>`:''}
+      </div>`;
+    })()}
     <div class="footer-actions mt">
       ${s.id>1?`<button class="secondary-btn" onclick="show('process',${s.id-1})">← Previous Stage</button>`:''}
       ${s.id<12?`<button class="primary-btn" onclick="show('process',${s.id+1})">Next Stage →</button>`:''}
@@ -749,26 +1005,98 @@ function forms(formId){
     return `<article class="card clickable" onclick="show('forms','${f.id}')"><span class="badge">Tool${stageNum}</span><h3>${escapeHtml(f.title)}</h3><p style="font-size:.85rem">${f.fields.slice(0,3).map(x=>x.label).join(', ')}…</p></article>`;
   }).join('')}</div>
   <h2 class="mt">Stage Checklists</h2>
-  <div class="grid grid-2">${stageChecklists.map(c=>`<article class="card"><h3>${escapeHtml(c.title)}</h3><p class="muted small-text">Stage ${c.stage}</p>${renderChecklist(c,true)}</article>`).join('')}</div>
+  <div class="grid grid-2">${stageChecklists.map(c=>`<article class="card clickable" style="border-left:3px solid #00d4ff;transition:border-color .2s" onclick="show('forms','${escapeForJs(c.id)}')"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><h3 style="margin:0">${escapeHtml(c.title)}</h3><span style="color:#00d4ff;font-size:1.1rem;font-weight:700">→</span></div><p class="muted small-text">Stage ${c.stage}</p>${renderChecklist(c,true)}</article>`).join('')}</div>
   <h2 class="mt">Daily & Weekly Tools</h2>
-  <div class="grid grid-2">${utilChecklists.map(c=>`<article class="card"><h3>${escapeHtml(c.title)}</h3>${renderChecklist(c,true)}</article>`).join('')}</div>`;
+  <div class="grid grid-2">${utilChecklists.map(c=>`<article class="card clickable" style="border-left:3px solid #4ade80;transition:border-color .2s" onclick="show('forms','${escapeForJs(c.id)}')"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><h3 style="margin:0">${escapeHtml(c.title)}</h3><span style="color:#4ade80;font-size:1.1rem;font-weight:700">→</span></div>${renderChecklist(c,true)}</article>`).join('')}</div>`;
   wireChecks();
 }
 function renderFormTool(f){
   const stageChecklist = (data.checklists||[]).find(c=>c.stage===f.stage);
   const fieldLabels = f.fields.map(x=>x.label);
-  view.innerHTML = `<button class="secondary-btn" onclick="show('forms')">← Back to Forms</button><div class="eyebrow">Daily Tool · Stage ${f.stage||'—'}</div><h1>${escapeHtml(f.title)}</h1><div class="grid grid-2 mt"><section class="card"><h2>Fields to Capture</h2>${list(fieldLabels)}<button class="secondary-btn mt8" onclick="copyText('${escapeForJs(fieldLabels.map(x=>'- '+x+':').join('\n'))}')">Copy Field Template</button></section><section class="card"><h2>${stageChecklist ? escapeHtml(stageChecklist.title) : 'Stage Checklist'}</h2>${stageChecklist ? renderChecklist(stageChecklist, true) : '<p class="muted">No checklist for this stage.</p>'}</section></div><section class="card mt"><h2>Copy-Ready Working Note</h2><div class="script-box">${nl2br(fieldLabels.map(x=>`${x}:`).join('\n\n'))}</div><button class="primary-btn mt8" onclick="copyText('${escapeForJs(fieldLabels.map(x=>x+':').join('\n\n'))}')">Copy Note Template</button></section>`;
+  view.innerHTML = `<button class="secondary-btn" onclick="show('forms')">← Back to Forms</button><div class="eyebrow">Daily Tool · Stage ${f.stage||'—'}</div><h1>${escapeHtml(f.title)}</h1><div class="grid grid-2 mt"><section class="card"><h2>Fields to Capture</h2>${list(fieldLabels)}<button class="secondary-btn mt8" onclick="copyText('${escapeForJs(fieldLabels.map(x=>\'- \'+x+\':\').join(\'\\n\')}', this)">Copy Field Template</button></section><section class="card"><h2>${stageChecklist ? escapeHtml(stageChecklist.title) : 'Stage Checklist'}</h2>${stageChecklist ? renderChecklist(stageChecklist, true) : '<p class="muted">No checklist for this stage.</p>'}</section></div><section class="card mt"><h2>Copy-Ready Working Note</h2><div class="script-box">${nl2br(fieldLabels.map(x=>`${x}:`).join('\n\n'))}</div><button class="primary-btn mt8" onclick="copyText('${escapeForJs(fieldLabels.map(x=>x+':').join('\n\n'))}')">Copy Note Template</button></section>`;
   wireChecks();
 }
 function escapeForJs(str){ return String(str).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n'); }
-function renderChecklist(c, persist=false){ return `<div class="checklist">${c.items.map((item,i)=>{ const key=`check-${c.id}-${i}`; return `<label class="check-item"><input type="checkbox" ${persist?`data-key="${key}"`:''}><span>${escapeHtml(item)}</span></label>`; }).join('')}</div>`; }
+function renderChecklist(c, persist=false, scopeId=''){
+  const prefix = scopeId ? `check-${c.id}-${scopeId}` : `check-${c.id}`;
+  const items = c.items.map((item,i)=>{
+    const key = `${prefix}-${i}`;
+    const checked = persist ? (localStorage.getItem(key) === '1') : false;
+    return `<label class="check-item"><input type="checkbox" ${persist?`data-key="${key}"`:''}${checked?' checked':''}><span>${escapeHtml(item)}</span></label>`;
+  });
+  const total = c.items.length;
+  const done  = persist ? c.items.filter((_,i)=>localStorage.getItem(`${prefix}-${i}`)==='1').length : 0;
+  const pct   = total ? Math.round((done/total)*100) : 0;
+  const barColor = pct===100?'#4ade80':pct>=50?'#fbbf24':'#60a5fa';
+  const progressBar = persist ? `<div class="checklist-progress"><div class="cp-bar" style="width:${pct}%;background:${barColor}"></div></div><div class="cp-label">${done}/${total} complete</div>` : '';
+  return `${progressBar}<div class="checklist">${items.join('')}</div>`;
+}
 function wireChecks(){ document.querySelectorAll('.check-item input[data-key]').forEach(cb=>{ cb.checked = localStorage.getItem(cb.dataset.key)==='true'; cb.addEventListener('change',()=>localStorage.setItem(cb.dataset.key, cb.checked)); }); }
+
+// ── T31: Lead Picker Modal (shared by Scripts, Templates, Objections, Pricing) ──
+function openLeadPicker(onSelect){
+  const open = state.opportunities.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <h3 style="margin:0 0 12px">📎 Select a Lead</h3>
+      <input id="lpSearch" type="text" placeholder="Search by client or project..."
+        style="width:100%;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;margin-bottom:12px;box-sizing:border-box">
+      <div id="lpList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+      <button class="secondary-btn mt8" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+    </div>`;
+  document.body.appendChild(modal);
+  const listEl = modal.querySelector('#lpList');
+  const searchEl = modal.querySelector('#lpSearch');
+  function renderList(filter=''){
+    const filtered = open.filter(o => !filter ||
+      (o.client||'').toLowerCase().includes(filter.toLowerCase()) ||
+      (o.project||'').toLowerCase().includes(filter.toLowerCase())
+    );
+    listEl.innerHTML = filtered.slice(0,20).map(o =>
+      `<button class="mini-row" style="text-align:left;width:100%"
+        onclick="document.querySelector('.modal-overlay').remove()">
+        <strong>${escapeHtml(o.client||'Unnamed')}</strong>
+        <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px;padding:1px 6px">${escapeHtml(o.status||'')}</span>
+        <em>${escapeHtml(o.project||'')}</em>
+      </button>`
+    ).join('') || '<p class="muted" style="padding:12px">No matching leads.</p>';
+    // Re-wire clicks after render
+    listEl.querySelectorAll('.mini-row').forEach((btn, idx) => {
+      btn.addEventListener('click', () => {
+        const opp = filtered[idx];
+        if(opp) onSelect(opp.id);
+      });
+    });
+  }
+  renderList();
+  searchEl.addEventListener('input', e => renderList(e.target.value));
+  searchEl.focus();
+}
+window.openLeadPicker = openLeadPicker;
+
+// ── T39: Merge template fields from a live lead ──
+function mergeTemplate(body, opp){
+  const rep = (window.REPS||[]).find(r=>r.id===opp.repId) || { name: 'Your Name' };
+  const followDate = opp.nextFollowUp ? prettyDate(opp.nextFollowUp) : 'a time that works for you';
+  return body
+    .replace(/\[Name\]/gi, opp.client||'[Name]')
+    .replace(/\[First Name\]/gi, (opp.client||'').split(' ')[0]||'[Name]')
+    .replace(/\[Your Name\]/gi, rep.name)
+    .replace(/\[service lines?\]/gi, opp.serviceLine||opp.projectCategory||'landscaping services')
+    .replace(/\[project\]/gi, opp.project||'your project')
+    .replace(/\[date\]/gi, followDate)
+    .replace(/\[address\]/gi, opp.address||'[address]')
+    .replace(/\[job value\]/gi, opp.jobValue ? money(Number(opp.jobValue)) : '[amount]');
+}
+window.mergeTemplate = mergeTemplate;
 
 function scripts(){
   const cats = ['All', ...new Set(data.scripts.map(s=>s.category))];
   view.innerHTML = `<div class="eyebrow">Talk Tracks</div><h1>Scripts Library</h1><p class="lede">Use these as flexible language. Keep the intent, adapt the words, and sound human.</p><div class="tabs">${cats.map((c,i)=>`<button class="tab ${i===0?'active':''}" data-cat="${c}">${escapeHtml(c)}</button>`).join('')}</div><div id="scriptList" class="grid grid-2"></div>`;
   const box = document.getElementById('scriptList');
-  function render(cat='All'){ box.innerHTML = data.scripts.filter(s=>cat==='All'||s.category===cat).map(s=>`<article class="card"><span class="badge">${escapeHtml(s.category)}</span><h3>${escapeHtml(s.title)}</h3><div class="script-box">${nl2br(s.body)}</div><button class="secondary-btn mt8" onclick="copyText('${escapeForJs(s.body)}')">Copy Script</button></article>`).join(''); }
+  function render(cat='All'){ box.innerHTML = data.scripts.filter(s=>cat==='All'||s.category===cat).map(s=>`<article class="card"><span class="badge">${escapeHtml(s.category)}</span><h3>${escapeHtml(s.title)}</h3><div class="script-box">${nl2br(s.body)}</div><div class="footer-actions" style="margin-top:8px;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(s.body)}', this)">Copy Script</button><button class="secondary-btn" onclick="openLeadPicker(function(id){show('pipeline',id);setTimeout(()=>{const el=document.getElementById('newNote');if(el){el.value='[Script: ${escapeForJs(s.title)}]\n\n${escapeForJs(s.body.slice(0,300))}';el.focus();showToast('Script loaded — add your note and save');}},400);})">📎 Use for Lead</button></div></article>`).join(''); }
   render();
   document.querySelector('.tabs').addEventListener('click',e=>{ if(!e.target.matches('.tab')) return; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); e.target.classList.add('active'); render(e.target.dataset.cat); });
 }
@@ -776,18 +1104,47 @@ function templates(){
   const cats = ['All', ...new Set(data.templates.map(t=>t.category))];
   view.innerHTML = `<div class="eyebrow">Copy-Ready Communication</div><h1>Email Templates</h1><p class="lede">Templates for daily sales communication. Copy, personalize, and send through Gmail or your CRM.</p><div class="tabs">${cats.map((c,i)=>`<button class="tab ${i===0?'active':''}" data-cat="${c}">${escapeHtml(c)}</button>`).join('')}</div><div id="templateList" class="grid grid-2"></div>`;
   const box = document.getElementById('templateList');
-  function render(cat='All'){ box.innerHTML = data.templates.filter(t=>cat==='All'||t.category===cat).map(t=>`<article class="card"><span class="badge">${escapeHtml(t.category)}</span><h3>${escapeHtml(t.title)}</h3><p><strong>Subject:</strong> ${escapeHtml(t.subject)}</p><div class="script-box">${nl2br(t.body)}</div><div class="footer-actions"><button class="secondary-btn" onclick="copyText('${escapeForJs(t.subject)}')">Copy Subject</button><button class="primary-btn" onclick="copyText('${escapeForJs(t.body)}')">Copy Body</button></div></article>`).join(''); }
+  function render(cat='All'){ box.innerHTML = data.templates.filter(t=>cat==='All'||t.category===cat).map(t=>`<article class="card"><span class="badge">${escapeHtml(t.category)}</span><h3>${escapeHtml(t.title)}</h3><p><strong>Subject:</strong> ${escapeHtml(t.subject)}</p><div class="script-box">${nl2br(t.body)}</div><div class="footer-actions" style="flex-wrap:wrap;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(t.subject)}', this)">Copy Subject</button><button class="primary-btn" onclick="copyText('${escapeForJs(t.body)}', this)">Copy Body</button><button class="secondary-btn" onclick="openLeadPicker(function(id){const opp=state.opportunities.find(x=>x.id===id);if(!opp)return;const merged=mergeTemplate('${escapeForJs(t.body)}',opp);navigator.clipboard.writeText('Subject: ${escapeForJs(t.subject)}\n\n'+merged).catch(()=>{});showToast('Personalized copy ready for '+(opp.client||'lead'));})">🔀 Personalize + Copy</button><button class="secondary-btn" onclick="openLeadPicker(function(id){show('pipeline',id);setTimeout(()=>{const el=document.getElementById('newNote');if(el){el.value='Subject: ${escapeForJs(t.subject)}\n\n${escapeForJs(t.body.slice(0,300))}';el.focus();showToast('Template loaded into note field');}},400);})">📎 Use for Lead</button></div></article>`).join(''); }
   render();
   document.querySelector('.tabs').addEventListener('click',e=>{ if(!e.target.matches('.tab')) return; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); e.target.classList.add('active'); render(e.target.dataset.cat); });
 }
 function objections(){
-  view.innerHTML = `<div class="eyebrow">Decision Management</div><h1>Objection Handling</h1><p class="lede">Do not argue. Clarify, reconnect to the buying reason, protect scope quality, and guide the client toward a clear decision.</p><div class="grid grid-2 mt">${data.objections.map(o=>`<article class="card"><h3>${escapeHtml(o.title)}</h3><p class="muted"><strong>What it may mean:</strong> ${escapeHtml(o.meaning)}</p><h4>How to respond</h4>${list(o.response)}<h4>Say this</h4><div class="script-box">${escapeHtml(o.say)}</div><button class="secondary-btn mt8" onclick="copyText('${escapeForJs(o.say)}')">Copy Response</button></article>`).join('')}</div>`;
+  view.innerHTML = `<div class="eyebrow">Decision Management</div><h1>Objection Handling</h1><p class="lede">Do not argue. Clarify, reconnect to the buying reason, protect scope quality, and guide the client toward a clear decision.</p><div class="grid grid-2 mt">${data.objections.map(o=>`<article class="card"><h3>${escapeHtml(o.title)}</h3><p class="muted"><strong>What it may mean:</strong> ${escapeHtml(o.meaning)}</p><h4>How to respond</h4>${list(o.response)}<h4>Say this</h4><div class="script-box">${escapeHtml(o.say)}</div><div class="footer-actions" style="margin-top:10px;gap:6px"><button class="secondary-btn" onclick="copyText('${escapeForJs(o.say)}', this)">Copy Response</button><button class="secondary-btn" onclick="openLeadPicker(function(id){const opp=state.opportunities.find(x=>x.id===id);if(!opp)return;const note={id:'n'+Date.now(),text:'Objection raised: ${escapeForJs(o.title)}',createdAt:new Date().toISOString(),type:'objection'};opp.notes=opp.notes||[];opp.notes.push(note);opp.updatedAt=new Date().toISOString();saveState();showToast('Objection logged to '+escapeHtml(opp.client||'lead'));})">📌 Log to Lead</button></div></article>`).join('')}</div>`;
 }
 
 function calculator(){
   view.innerHTML = `<div class="eyebrow">Quick Pricing Checks</div><h1>Pricing Tools</h1><p class="lede">Use these for quick internal checks only. Final pricing should still follow Avalon estimating and margin review standards.</p><div class="grid grid-2 mt"><section class="card form"><h2>Margin Calculator</h2><label><span>Estimated Cost</span><input id="cost" type="number" min="0" step="0.01" placeholder="Materials + labor + subs + overhead"></label><label><span>Target Gross Margin %</span><input id="margin" type="number" min="1" max="95" step="1" value="45"></label><button class="primary-btn" onclick="calcMargin()">Calculate Price</button><div id="marginResult" class="result-box"></div></section><section class="card form"><h2>Labor Revenue Check</h2><label><span>Labor Hours</span><input id="hours" type="number" min="0" step="0.5"></label><label><span>Hourly Billing / Internal Rate</span><input id="rate" type="number" min="0" step="1" value="75"></label><button class="primary-btn" onclick="calcLabor()">Calculate Labor Line</button><div id="laborResult" class="result-box"></div></section></div><div class="card warn mt"><h3>Reminder</h3>${list(['Do not discount without changing scope or phasing.','Do not skip contingency on complex work.','Do not send price until scope, assumptions, exclusions, and decision path are clear.'])}</div>`;
 }
-window.calcMargin = function(){ const cost=Number(document.getElementById('cost').value||0); const m=Number(document.getElementById('margin').value||0)/100; if(!cost||!m||m>=1){ document.getElementById('marginResult').innerHTML='Enter valid cost and margin.'; return;} const price=cost/(1-m); const gp=price-cost; document.getElementById('marginResult').innerHTML=`<strong>Suggested sales price:</strong> ${money(price)}<br><strong>Gross profit:</strong> ${money(gp)}<br><strong>Markup on cost:</strong> ${Math.round((price/cost-1)*100)}%`; }
+window.calcMargin = function(){
+  const cost=Number(document.getElementById('cost').value||0);
+  const m=Number(document.getElementById('margin').value||0)/100;
+  if(!cost||!m||m>=1){ document.getElementById('marginResult').innerHTML='Enter valid cost and margin.'; return; }
+  const price=cost/(1-m); const gp=price-cost;
+  const estComm = price * 0.07;
+  window._lastCalcResult = { price, gp, estComm, cost };
+  document.getElementById('marginResult').innerHTML=`
+    <strong>Suggested sales price:</strong> ${money(price)}<br>
+    <strong>Gross profit:</strong> ${money(gp)}<br>
+    <strong>Markup on cost:</strong> ${Math.round((price/cost-1)*100)}%<br>
+    <strong style="color:#4ade80">Est. commission (~7%):</strong> <span style="color:#4ade80">${money(estComm)}</span>
+    <div style="margin-top:10px">
+      <button class="primary-btn small" onclick="window.saveCalcToLead()">💾 Save to Lead</button>
+    </div>`;
+};
+window.saveCalcToLead = function(){
+  if(!window._lastCalcResult) return showToast('Run a calculation first');
+  const r = window._lastCalcResult;
+  openLeadPicker(function(id){
+    const opp = state.opportunities.find(x=>x.id===id);
+    if(!opp) return;
+    const note = { id:'n'+Date.now(), text:'Pricing estimate:\nCost: '+money(r.cost)+'\nPrice: '+money(r.price)+'\nGross Profit: '+money(r.gp)+'\nEst. Commission: '+money(r.estComm), createdAt: new Date().toISOString(), type:'pricing' };
+    opp.notes=opp.notes||[]; opp.notes.push(note);
+    opp.jobValue = Math.round(r.price);
+    opp.updatedAt=new Date().toISOString();
+    saveState();
+    showToast('Pricing saved to '+escapeHtml(opp.client||'lead')+' · Job Value updated');
+  });
+};
 window.calcLabor = function(){ const h=Number(document.getElementById('hours').value||0), r=Number(document.getElementById('rate').value||0); document.getElementById('laborResult').innerHTML = h&&r ? `<strong>Labor line:</strong> ${money(h*r)}<br><span>${h} hours × ${money(r)}/hr</span>` : 'Enter labor hours and rate.'; }
 function money(n){ return n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}); }
 
@@ -881,12 +1238,26 @@ function manager(){
   const ytdBudgeted = fy.monthlyBudget.filter(m=>m.actual!=null).reduce((a,m)=>a+m.budgeted,0);
   const ytdVariance = annual.actualRevenue - ytdBudgeted;
 
+  // T41: Count missing past months for banner
+  const todayM = new Date();
+  const allMonthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const missingPastMonths = fy.monthlyBudget.filter(m => {
+    if (m.actual != null) return false;
+    const mIdx = allMonthNames.indexOf(m.month.slice(0,3));
+    if (mIdx < 0) return false;
+    const mDate = new Date(2026, mIdx, 1);
+    return mDate < todayM;
+  });
+
   const monthRows = fy.monthlyBudget.map(m => {
     const hasActual = m.actual != null;
     const varSign = m.variance > 0 ? '+' : '';
     const varColor = m.variance == null ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
+    const mIdx2 = allMonthNames.indexOf(m.month.slice(0,3));
+    const isPastMonth = mIdx2 >= 0 && new Date(2026, mIdx2, 1) < todayM;
+    const missingBadge = !hasActual && isPastMonth ? '<span class="missing-data-badge">⚠️ Missing</span>' : '';
     return `<tr style="border-bottom:1px solid #0f172a">
-      <td style="padding:8px 10px;color:#e2e8f0;font-weight:600">${m.month}</td>
+      <td style="padding:8px 10px;color:#e2e8f0;font-weight:600">${m.month} ${missingBadge}</td>
       <td style="padding:8px 10px;text-align:right">${fmtM(m.budgeted)}</td>
       <td style="padding:8px 10px;text-align:right;color:${hasActual?'#00d4ff':'#334155'}">${hasActual ? fmtM(m.actual) : '\u2014'}</td>
       <td style="padding:8px 10px;text-align:right;color:${varColor}">${m.variance != null ? varSign+fmtM(m.variance) : '\u2014'}</td>
@@ -948,8 +1319,9 @@ function manager(){
       </div>
     </div>
 
+    ${missingPastMonths.length > 0 ? `<div class="missing-data-alert"><strong>⚠️ ${missingPastMonths.length} past month${missingPastMonths.length>1?'s':''} missing actuals:</strong> ${missingPastMonths.map(m=>m.month).join(', ')} — <button onclick="show('revenueAdmin','division')" style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:inherit;text-decoration:underline;padding:0">Enter data →</button></div>` : ''}
     <div class="card mt">
-      <h2>\ud83d\udcc5 Monthly Revenue \u2014 Budget vs Actual (Jan\u2013Dec 2026)</h2>
+      <h2>📅 Monthly Revenue — Budget vs Actual (Jan–Dec 2026)</h2>
       <p class="muted small-text">Actuals through 5/21/2026. Remaining months show budget target only.</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1066,7 +1438,7 @@ function settings(){
     <section class="card" style="border:1px solid #7f1d1d">
       <h2>⚠️ Reset All Data</h2>
       <p>Clears all opportunities, notes, and checklist progress on this browser. <strong style="color:#f87171">Admin only — cannot be undone.</strong></p>
-      <button class="danger-btn" onclick="resetAll()">Reset All Local Data</button>
+      <button class="danger-btn" onclick="confirmReset()">Reset All Local Data</button>
     </section>` : _iom ? `
     <section class="card" style="background:#0a0f1a;border:1px solid #f59e0b30;opacity:.75">
       <h2>🔒 Import / Reset</h2>
@@ -1166,10 +1538,18 @@ function renderPermMatrix() {
         <tbody>${tableRows}</tbody>
       </table>
     </div>
-    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="secondary-btn" style="font-size:12px" onclick="window._resetNavPerms()">↺ Reset to Defaults</button>
-      <span style="font-size:11px;color:#475569;align-self:center">Changes save instantly. Reps see the lock screen when they try to access a restricted tab.</span>
+    <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-right:4px">Quick Presets:</span>
+      <button class="secondary-btn" style="font-size:11px" onclick="window._applyPermPreset('office_manager','full')">Jen · Full Access</button>
+      <button class="secondary-btn" style="font-size:11px" onclick="window._applyPermPreset('office_manager','standard')">Jen · Standard</button>
+      <button class="secondary-btn" style="font-size:11px" onclick="window._applyPermPreset('office_manager','view')">Jen · View Only</button>
+      <span style="color:#334155">|</span>
+      <button class="secondary-btn" style="font-size:11px" onclick="window._applyPermPreset('rep','full')">Ryan · Full Access</button>
+      <button class="secondary-btn" style="font-size:11px" onclick="window._applyPermPreset('rep','standard')">Ryan · Standard</button>
+      <button class="secondary-btn" style="font-size:11px" onclick="window._applyPermPreset('rep','view')">Ryan · View Only</button>
+      <button class="secondary-btn" style="font-size:12px;margin-left:8px" onclick="window._resetNavPerms()">↺ Reset All Defaults</button>
     </div>
+    <div style="font-size:11px;color:#475569;margin-top:6px">Presets save instantly. Full = all tabs · Standard = hide admin/finance · View Only = today + pipeline only.</div>
   </section>`;
 }
 
@@ -1189,6 +1569,23 @@ window._resetNavPerms = function() {
   if (!confirm('Reset all permissions to defaults?')) return;
   localStorage.removeItem(NAV_PERMS_KEY);
   showToast('Permissions reset to defaults');
+  show('settings');
+};
+
+window._applyPermPreset = function(role, preset) {
+  const ALL_VIEWS = ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'];
+  const STANDARD  = ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy','settings'];
+  const VIEW_ONLY = ['today','pipeline','settings'];
+  let views;
+  if (preset === 'full')     views = [...ALL_VIEWS];
+  else if (preset === 'standard') views = [...STANDARD];
+  else views = [...VIEW_ONLY];
+  const perms = loadNavPerms();
+  perms[role] = views;
+  saveNavPerms(perms);
+  const roleLabel = role === 'office_manager' ? 'Jen' : 'Ryan';
+  const presetLabel = preset === 'full' ? 'Full Access' : preset === 'standard' ? 'Standard' : 'View Only';
+  showToast(roleLabel + ' set to ' + presetLabel);
   show('settings');
 };
 // ── Mark Sold Modal ───────────────────────────────────────────────────────────
@@ -1288,7 +1685,35 @@ function exportJson(){ const blob = new Blob([JSON.stringify(state,null,2)],{typ
 function exportCsv(){ const headers=['client','phone','email','address','serviceLine','source','project','urgency','decisionMaker','budget','status','nextFollowUp','createdAt','updatedAt']; const rows=state.opportunities.map(o=>headers.map(h=>`"${String(o[h]||'').replace(/"/g,'""')}"`).join(',')); downloadBlob(new Blob([[headers.join(','),...rows].join('\n')],{type:'text/csv'}),`avalon-pipeline-${todayISO()}.csv`); }
 function downloadBlob(blob,filename){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href); }
 function importJson(){ const file=document.getElementById('importFile').files[0]; if(!file) return showToast('Choose a JSON file first'); const reader=new FileReader(); reader.onload=()=>{ try{ state={...DEFAULT_STATE,...JSON.parse(reader.result)}; saveState(); showToast('Imported'); show('today'); }catch(e){ showToast('Import failed'); } }; reader.readAsText(file); }
-function resetAll(){ if(!confirm('Reset all local Sales Hub data and checklist progress?')) return; localStorage.clear(); state=structuredClone(DEFAULT_STATE); saveState(); showToast('Reset complete'); show('today'); }
+function resetAll(){ localStorage.clear(); state=structuredClone(DEFAULT_STATE); saveState(); showToast('Reset complete'); show('today'); }
+window.confirmReset = function(){
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:420px;border:2px solid #7f1d1d">
+      <div style="font-size:2.4rem;margin-bottom:10px;text-align:center">⚠️</div>
+      <h3 style="color:#f87171;text-align:center;margin:0 0 8px">Permanent Data Reset</h3>
+      <p style="font-size:13px;color:#94a3b8;text-align:center;margin:0 0 20px">This will delete <strong style="color:#f87171">all pipeline leads, notes, financials, and settings</strong> permanently. There is no undo.</p>
+      <p style="font-size:12px;color:#64748b;margin:0 0 8px">Type <strong style="color:#e2e8f0">RESET</strong> to confirm:</p>
+      <input id="resetConfirmInput" type="text" placeholder="Type RESET here"
+        style="width:100%;padding:10px 12px;background:#1e293b;border:1px solid #7f1d1d;border-radius:8px;color:#f87171;font-size:14px;font-weight:700;letter-spacing:.1em;box-sizing:border-box;margin-bottom:14px">
+      <div style="display:flex;gap:8px">
+        <button class="secondary-btn" style="flex:1" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        <button class="danger-btn" id="resetConfirmBtn" style="flex:1;opacity:.4;pointer-events:none" onclick="window.doResetAll()">Reset All Data</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('resetConfirmInput').addEventListener('input', function(){
+    const btn = document.getElementById('resetConfirmBtn');
+    const ready = this.value.trim() === 'RESET';
+    btn.style.opacity = ready ? '1' : '.4';
+    btn.style.pointerEvents = ready ? 'auto' : 'none';
+  });
+};
+window.doResetAll = function(){
+  document.querySelector('.modal-overlay')?.remove();
+  resetAll();
+};
 
 function buildSearchIndex(){
   const items=[];
@@ -1746,6 +2171,67 @@ window.getResolvedFY = getResolvedFY;
 // ── Revenue Admin Tab State ───────────────────────────────────────────────────
 let _revTab = 'monthly'; // 'monthly' | 'division' | 'annuals' | 'pnl'
 
+// T40: Month drilldown modal — division breakdown + notes
+window.showMonthDrilldown = function(monthKey) {
+  const fy = getResolvedFY();
+  const divActuals = loadDivisionActuals();
+  const monthBudget = (fy.monthlyBudget || []).find(m => m.month === monthKey) || {};
+  const notes = (loadRevenueActuals() || {})['note_' + monthKey] || '';
+  const DIVISIONS = [
+    { key:'landscape',   label:'Landscape',   icon:'🌿', color:'#4ade80' },
+    { key:'maintenance', label:'Maintenance',  icon:'✂️', color:'#22d3ee' },
+    { key:'snow',        label:'Snow & Ice',   icon:'❄️', color:'#a78bfa' }
+  ];
+  function fmtM(n){ return n!=null ? n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
+  const rows = DIVISIONS.map(d => {
+    const entry = (divActuals[d.key]||{})[monthKey] || {};
+    const rev = entry.revenue ?? null;
+    const cogs = entry.cogs ?? null;
+    const gm = (rev != null && cogs != null) ? rev - cogs : null;
+    const gmPct = (gm != null && rev > 0) ? Math.round((gm/rev)*100) : null;
+    return `<tr style="border-bottom:1px solid #1e293b">
+      <td style="padding:10px 12px;font-weight:600">${d.icon} ${d.label}</td>
+      <td style="padding:10px 12px;text-align:right;color:${d.color};font-weight:700">${fmtM(rev)}</td>
+      <td style="padding:10px 12px;text-align:right;color:#64748b">${fmtM(cogs)}</td>
+      <td style="padding:10px 12px;text-align:right;color:${gmPct!=null&&gmPct>=30?'#4ade80':'#f87171'}">${gmPct!=null?gmPct+'%':'—'}</td>
+    </tr>`;
+  }).join('');
+  const total = DIVISIONS.reduce((a,d) => a + ((divActuals[d.key]||{})[monthKey]?.revenue ?? 0), 0);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:580px">
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#22d3ee;margin-bottom:6px">Month Drilldown</div>
+      <h2 style="margin:0 0 4px">${monthKey} 2026</h2>
+      <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Budgeted</div><div style="font-size:1.3rem;font-weight:800;color:#e2e8f0">${fmtM(monthBudget.budgeted)}</div></div>
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual</div><div style="font-size:1.3rem;font-weight:800;color:#22d3ee">${fmtM(monthBudget.actual)}</div></div>
+        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Variance</div><div style="font-size:1.3rem;font-weight:800;color:${(monthBudget.variance||0)>=0?'#4ade80':'#f87171'}">${monthBudget.variance!=null?((monthBudget.variance>=0?'+':'')+fmtM(monthBudget.variance)):'—'}</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
+        <thead><tr style="background:#0f172a">
+          <th style="padding:8px 12px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Division</th>
+          <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Revenue</th>
+          <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">COGS</th>
+          <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">GM%</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
+          <td style="padding:10px 12px;color:#e2e8f0">Total</td>
+          <td style="padding:10px 12px;text-align:right;color:#22d3ee">${fmtM(total)}</td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>
+      ${notes ? `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;font-size:13px;color:#94a3b8"><strong style="color:#e2e8f0">Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="primary-btn" onclick="this.closest('.modal-overlay').remove();revenueAdmin('division')">✏️ Edit Division Data</button>
+        <button class="secondary-btn" onclick="this.closest('.modal-overlay').remove()">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
 function revenueAdmin(tab) {
   if (tab) _revTab = tab;
   const fy = getResolvedFY();
@@ -1819,7 +2305,7 @@ function revenueAdmin(tab) {
         return (e && e.revenue != null) ? e.revenue : null;
       });
       const hasDivData = divBreakdown.some(v => v != null);
-      return `<tr>
+      return `<tr style="cursor:pointer" onclick="showMonthDrilldown('${m.month}')" title="Click for ${m.month} division breakdown">
         <td><span class="rev-month-tag">${escapeHtml(m.month)}</span>${hasActual ? '<span class="rev-locked-badge">auto</span>' : ''}</td>
         <td class="right" style="color:#64748b">${fmtM(m.budgeted)}</td>
         <td class="right">

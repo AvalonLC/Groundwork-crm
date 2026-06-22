@@ -458,6 +458,13 @@ async function integrations() {
     </div>
 
     <div id="int-google-connected" style="${googleOk ? '' : 'display:none'}">
+      <div class="connected-features" style="margin:12px 0">
+        <div style="font-size:11px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">✅ Connected as ${googleEmail||'your Google account'} — What you can do:</div>
+        <div class="cf-row"><span class="cf-icon">📧</span><div><strong>Gmail</strong> — Read recent threads, compose follow-up emails from templates</div></div>
+        <div class="cf-row"><span class="cf-icon">📅</span><div><strong>Calendar</strong> — View upcoming events, schedule site walks and follow-ups</div></div>
+        <div class="cf-row"><span class="cf-icon">📂</span><div><strong>Drive</strong> — Search and link proposal docs, contracts, and site photos</div></div>
+        <div class="cf-row"><span class="cf-icon">🔀</span><div><strong>Template Merge</strong> — Personalize email templates with live lead data and send via Gmail</div></div>
+      </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
         ${iconBtn('📧', 'Gmail', "intShowGmail()")}
         ${iconBtn('📅', 'Calendar', "intShowCalendar()")}
@@ -506,14 +513,28 @@ async function integrations() {
     <p>Push leads and status updates to your Homeworks (CopilotCRM) account via a Zapier webhook. Set up once — then sync with one click from any opportunity.</p>
 
     <div style="margin:16px 0">
-      <h3 style="margin:0 0 8px">Setup (one-time)</h3>
-      <ol style="padding-left:20px;font-size:13px;line-height:1.8;color:var(--muted)">
-        <li>Go to <a href="https://zapier.com/apps/homeworks/integrations" target="_blank" rel="noopener" style="color:var(--accent)">zapier.com → Homeworks integrations</a></li>
-        <li>Create a Zap: Trigger = <strong>Webhooks by Zapier → Catch Hook</strong></li>
-        <li>Action = <strong>Homeworks → Create Customer</strong> (or Create Lead)</li>
-        <li>Copy the <strong>Zapier Webhook URL</strong> from step 2 and paste below</li>
-        <li>Map fields: name → data.name, email → data.email, phone → data.phone, etc.</li>
-      </ol>
+      ${!hwOk ? `<div class="int-onboarding-state">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#f59e0b;margin-bottom:8px">🚀 Get Started — 4 Steps</div>
+        <div class="setup-steps">
+          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
+            <div class="step-num">1</div>
+            <div><strong>Create a Zapier account</strong> (free tier works) at <a href="https://zapier.com" target="_blank" rel="noopener" style="color:var(--accent)">zapier.com</a></div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
+            <div class="step-num">2</div>
+            <div><strong>New Zap:</strong> Trigger = <em>Webhooks by Zapier → Catch Hook</em> — copy the webhook URL Zapier gives you</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
+            <div class="step-num">3</div>
+            <div><strong>Action:</strong> <em>Homeworks → Create Customer</em> — map: name → data.name, email → data.email, phone → data.phone, address → data.address</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
+            <div class="step-num">4</div>
+            <div><strong>Paste your webhook URL below</strong> and click Save — then one-click push any lead to Homeworks</div>
+          </div>
+        </div>
+      </div>` : ''}
+      <h3 style="margin:0 0 8px">${hwOk ? '⚙️ Webhook Settings' : 'Your Zapier Webhook URL'}</h3>
       <label style="font-size:12px;font-weight:600;color:var(--muted)">ZAPIER WEBHOOK URL</label>
       <input id="zapierWebhookInput" type="url"
         placeholder="https://hooks.zapier.com/hooks/catch/XXXXXXX/XXXXXXX/"

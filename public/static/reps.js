@@ -931,6 +931,61 @@ function renderAdminDashboard(viewEl) {
   <button onclick="logoutRep();renderLoginScreen()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;text-decoration:underline">Switch Account</button>
 </p>
 
+<!-- ── EXEC SUMMARY: plain-language takeaways ── -->
+${(()=>{
+  const pctOfBudget = annual.budgetedRevenue > 0 ? Math.round(((annual.actualRevenue||0)/annual.budgetedRevenue)*100) : 0;
+  const isAheadBudget = (ytdVariance||0) >= 0;
+  const overdueCount = overdueList.length;
+  const commQueueCount = commQueue.length;
+  const unassignedCount = unassigned.length;
+  const takeaways = [];
+
+  // Revenue vs plan
+  if (isAheadBudget) {
+    takeaways.push({ icon:'✅', color:'#4ade80', text:`Revenue is <strong style="color:#4ade80">+${fmtM(Math.abs(ytdVariance||0))} ahead of budget</strong> YTD — currently at ${pctOfBudget}% of annual plan.` });
+  } else {
+    takeaways.push({ icon:'⚠️', color:'#f87171', text:`Revenue is <strong style="color:#f87171">${fmtM(Math.abs(ytdVariance||0))} behind budget</strong> YTD (${pctOfBudget}% of plan) — needs ${fmtM(annual.avgNeededPerMonth)} per month to close gap.` });
+  }
+
+  // Overdue follow-ups
+  if (overdueCount === 0) {
+    takeaways.push({ icon:'✅', color:'#4ade80', text:'All follow-ups are current — no overdue leads.' });
+  } else {
+    takeaways.push({ icon:'🚨', color:'#f87171', text:`<strong style="color:#f87171">${overdueCount} lead${overdueCount>1?'s are':' is'} overdue</strong> for follow-up — <span onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">review now →</span>` });
+  }
+
+  // Commission queue
+  if (commQueueCount > 0) {
+    takeaways.push({ icon:'💰', color:'#f59e0b', text:`<strong style="color:#f59e0b">${commQueueCount} commission${commQueueCount>1?'s':''} pending approval</strong> — sold but not yet approved. <span onclick="show('repDashboard')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">Review queue →</span>` });
+  } else {
+    takeaways.push({ icon:'✅', color:'#4ade80', text:'Commission queue is clear — all sold deals have been approved.' });
+  }
+
+  // Unassigned leads
+  if (unassignedCount > 0) {
+    takeaways.push({ icon:'📋', color:'#f59e0b', text:`<strong style="color:#f59e0b">${unassignedCount} unassigned lead${unassignedCount>1?'s':''}</strong> in pipeline — assign to Ryan or take directly.` });
+  }
+
+  // Stale check
+  if (stale.length > 0) {
+    takeaways.push({ icon:'⏱', color:'#f59e0b', text:`<strong style="color:#f59e0b">${stale.length} stale lead${stale.length>1?'s':''}</strong> (14+ days no activity) — at risk of losing interest.` });
+  }
+
+  const rows = takeaways.map(t => `
+    <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid #1e293b">
+      <span style="font-size:1.1rem;min-width:24px">${t.icon}</span>
+      <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.5">${t.text}</p>
+    </div>`).join('');
+
+  return `<div style="background:linear-gradient(135deg,#0a1020,#0f1a30);border:1px solid #1e4d6b;border-radius:14px;margin-bottom:20px;overflow:hidden">
+    <div style="padding:12px 16px;background:#0a1628;border-bottom:1px solid #1e4d6b;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#00d4ff">📊 Executive Summary</span>
+      <span style="font-size:11px;color:#64748b">Key takeaways as of today</span>
+    </div>
+    ${rows}
+  </div>`;
+})()}
+
 <!-- ── SECTION 1: FY2026 REVENUE BANNER ── -->
 <div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:16px;padding:20px;margin-bottom:24px">
   <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px">FY2026 · ${fy.budgetVersion || 'v2.2'} · As of ${fy.asOfDate || '—'}</div>
