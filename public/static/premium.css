@@ -725,3 +725,87 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
   letter-spacing:.02em;
 }
 
+/* ── Avalon Internal Icon System ─────────────────────────────────────────── */
+/* Timeline dot SVG icons — override the plain font-size approach */
+.timeline-dot {
+  /* Override: make the inner span render SVG correctly */
+  overflow: visible;
+}
+.timeline-dot span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.timeline-dot.note    span { color: var(--blue); }
+.timeline-dot.stage   span { color: #a855f7; }
+.timeline-dot.sold    span { color: #16a34a; }
+.timeline-dot.created span { color: #f59e0b; }
+.timeline-dot.admin   span { color: #64748b; }
+
+/* Category tile icon container */
+.cat-tile-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  margin-bottom: 2px;
+}
+.cat-tile--active .cat-tile-icon {
+  background: rgba(0,167,225,.12);
+}
+
+/* Suggested action icon container */
+.sa-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+/* Exec takeaway icon badge */
+.takeaway-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* Division icon wrapper */
+.div-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  flex-shrink: 0;
+}
+
+/* Commission preview icon */
+.lf-comm-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* General inline SVG helper */
+.av-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+/* ────────────────────────────────────────────────────────────────────────── */

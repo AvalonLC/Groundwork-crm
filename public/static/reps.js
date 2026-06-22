@@ -894,15 +894,21 @@ function renderAdminDashboard(viewEl) {
     const c = color || (pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171');
     return `<div style="height:5px;background:#1e293b;border-radius:3px;margin-top:6px"><div style="height:5px;width:${pct}%;background:${c};border-radius:3px;transition:width .5s"></div></div><div style="font-size:10px;color:#64748b;margin-top:2px">${pct}% of target</div>`;
   }
+  const DIV_SVG_ICONS = {
+    landscape:   '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    maintenance: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    snow:        '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#93c5fd" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#93c5fd"/><circle cx="9" cy="15.5" r="1" fill="#93c5fd"/><circle cx="2.5" cy="9" r="1" fill="#93c5fd"/><circle cx="15.5" cy="9" r="1" fill="#93c5fd"/></svg>',
+  };
   function divCard(div, key) {
     if (!div || !div.target) return '';
     const abovePlan = div.remaining <= 0;
     const gmOk = div.grossMarginPct >= div.grossMarginFloor;
     const pct = Math.min(100, Math.round((div.actual / div.target) * 100));
     const barColor = pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171';
+    const divIconSvg = DIV_SVG_ICONS[key] || '';
     return `<div style="background:#0f172a;border:1px solid ${abovePlan ? '#16a34a' : '#1e293b'};border-radius:12px;padding:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="font-weight:700;font-size:14px">${div.icon} ${div.name}</div>
+        <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">${divIconSvg} ${div.name}</div>
         ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px">ABOVE PLAN</span>' : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
@@ -942,33 +948,33 @@ ${(()=>{
 
   // Revenue vs plan
   if (isAheadBudget) {
-    takeaways.push({ icon:'+', color:'#4ade80', text:`Revenue is <strong style="color:#4ade80">+${fmtM(Math.abs(ytdVariance||0))} ahead of budget</strong> YTD — currently at ${pctOfBudget}% of annual plan.` });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(74,222,128,.18);border:1px solid rgba(74,222,128,.4);color:#4ade80;flex-shrink:0" title="Positive"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>`, color:'#4ade80', text:`Revenue is <strong style="color:#4ade80">+${fmtM(Math.abs(ytdVariance||0))} ahead of budget</strong> YTD — currently at ${pctOfBudget}% of annual plan.` });
   } else {
-    takeaways.push({ icon:'−', color:'#f87171', text:`Revenue is <strong style="color:#f87171">${fmtM(Math.abs(ytdVariance||0))} behind budget</strong> YTD (${pctOfBudget}% of plan) — needs ${fmtM(annual.avgNeededPerMonth)} per month to close gap.` });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(248,113,113,.18);border:1px solid rgba(248,113,113,.4);color:#f87171;flex-shrink:0" title="Behind target"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 9V3M6 9l-2.5-3M6 9l2.5-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`, color:'#f87171', text:`Revenue is <strong style="color:#f87171">${fmtM(Math.abs(ytdVariance||0))} behind budget</strong> YTD (${pctOfBudget}% of plan) — needs ${fmtM(annual.avgNeededPerMonth)} per month to close gap.` });
   }
 
   // Overdue follow-ups
   if (overdueCount === 0) {
-    takeaways.push({ icon:'+', color:'#4ade80', text:'All follow-ups are current — no overdue leads.' });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(74,222,128,.18);border:1px solid rgba(74,222,128,.4);color:#4ade80;flex-shrink:0" title="Positive"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>`, color:'#4ade80', text:'All follow-ups are current — no overdue leads.' });
   } else {
-    takeaways.push({ icon:'!', color:'#f87171', text:`<strong style="color:#f87171">${overdueCount} lead${overdueCount>1?'s are':' is'} overdue</strong> for follow-up — <span onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">review now →</span>` });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(251,191,36,.18);border:1px solid rgba(251,191,36,.4);color:#fbbf24;flex-shrink:0" title="Action needed"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="6" cy="9.5" r="1" fill="currentColor"/></svg></span>`, color:'#f87171', text:`<strong style="color:#f87171">${overdueCount} lead${overdueCount>1?'s are':' is'} overdue</strong> for follow-up — <span onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">review now →</span>` });
   }
 
   // Commission queue
   if (commQueueCount > 0) {
-    takeaways.push({ icon:'$', color:'#f59e0b', text:`<strong style="color:#f59e0b">${commQueueCount} commission${commQueueCount>1?'s':''} pending approval</strong> — sold but not yet approved. <span onclick="show('repDashboard')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">Review queue →</span>` });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(251,191,36,.18);border:1px solid rgba(251,191,36,.4);color:#fbbf24;flex-shrink:0" title="Commission"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5v9M4 8c0 1 .9 1.5 2 1.5S8 9 8 8s-1-1.5-2-1.5S4 5 4 4s.9-1.5 2-1.5S8 3 8 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>`, color:'#f59e0b', text:`<strong style="color:#f59e0b">${commQueueCount} commission${commQueueCount>1?'s':''} pending approval</strong> — sold but not yet approved. <span onclick="show('repDashboard')" style="color:#00d4ff;cursor:pointer;text-decoration:underline">Review queue →</span>` });
   } else {
-    takeaways.push({ icon:'+', color:'#4ade80', text:'Commission queue is clear — all sold deals have been approved.' });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(74,222,128,.18);border:1px solid rgba(74,222,128,.4);color:#4ade80;flex-shrink:0" title="Positive"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>`, color:'#4ade80', text:'Commission queue is clear — all sold deals have been approved.' });
   }
 
   // Unassigned leads
   if (unassignedCount > 0) {
-    takeaways.push({ icon:'·', color:'#f59e0b', text:`<strong style="color:#f59e0b">${unassignedCount} unassigned lead${unassignedCount>1?'s':''}</strong> in pipeline — assign to Ryan or take directly.` });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(100,116,139,.18);border:1px solid rgba(100,116,139,.4);color:#94a3b8;flex-shrink:0" title="Note"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="1.5" fill="currentColor"/><path d="M6 2.5v2M6 7.5v2M2.5 6h2M7.5 6h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg></span>`, color:'#f59e0b', text:`<strong style="color:#f59e0b">${unassignedCount} unassigned lead${unassignedCount>1?'s':''}</strong> in pipeline — assign to Ryan or take directly.` });
   }
 
   // Stale check
   if (stale.length > 0) {
-    takeaways.push({ icon:'⏱', color:'#f59e0b', text:`<strong style="color:#f59e0b">${stale.length} stale lead${stale.length>1?'s':''}</strong> (14+ days no activity) — at risk of losing interest.` });
+    takeaways.push({ icon:`<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:rgba(251,191,36,.18);border:1px solid rgba(251,191,36,.4);color:#fbbf24;flex-shrink:0" title="Stale"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6.5" r="4" stroke="currentColor" stroke-width="1.4"/><path d="M6 4v3l1.5 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 1h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg></span>`, color:'#f59e0b', text:`<strong style="color:#f59e0b">${stale.length} stale lead${stale.length>1?'s':''}</strong> (14+ days no activity) — at risk of losing interest.` });
   }
 
   const rows = takeaways.map(t => `

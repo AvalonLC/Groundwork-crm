@@ -204,10 +204,10 @@ function buildSuggestedActions(currentRep){
   ).slice(0,3);
   const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && !['Sold / Activation','Closed Lost'].includes(o.status)) : [];
 
-  if(staleOpps.length) suggestions.push({icon:'⏱',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
-  if(proposalsPending.length) suggestions.push({icon:'',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
-  if(noNextStep.length) suggestions.push({icon:'',title:`${noNextStep.length} lead${noNextStep.length>1?'s':''} missing a next follow-up date`,cta:'Set Follow-Up',onclick:`show('pipeline')`});
-  if(unassigned.length) suggestions.push({icon:'',title:`${unassigned.length} unassigned lead${unassigned.length>1?'s':''} with no rep`,cta:'Assign Now',onclick:`show('pipeline')`});
+  if(staleOpps.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="10" r="6" stroke="#fbbf24" stroke-width="1.5"/><path d="M9 7v4l2 1.5" stroke="#fbbf24" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 2h6" stroke="#fbbf24" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg>',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
+  if(proposalsPending.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#60a5fa" stroke-width="1.5"/><path d="M2 8h14" stroke="#60a5fa" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#60a5fa" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><circle cx="13" cy="13" r="2.5" fill="#f87171" stroke="#0f172a" stroke-width="1"/><path d="M13 11.5v1.5M13 14h.01" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/></svg>',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
+  if(noNextStep.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#f59e0b" stroke-width="1.5"/><path d="M2 8h14" stroke="#f59e0b" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#f59e0b" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><path d="M7 12h4M9 10v4" stroke="#f59e0b" stroke-width="1.4" stroke-linecap="round" opacity=".7"/></svg>',title:`${noNextStep.length} lead${noNextStep.length>1?'s':''} missing a next follow-up date`,cta:'Set Follow-Up',onclick:`show('pipeline')`});
+  if(unassigned.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="7" r="3" stroke="#94a3b8" stroke-width="1.5"/><path d="M3 16c0-3 2.7-5 6-5s6 2 6 5" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/><path d="M14 4v4M12 6h4" stroke="#f59e0b" stroke-width="1.4" stroke-linecap="round"/></svg>',title:`${unassigned.length} unassigned lead${unassigned.length>1?'s':''} with no rep`,cta:'Assign Now',onclick:`show('pipeline')`});
 
   if(!suggestions.length) return '';
   return `<div class="suggested-actions">
@@ -706,15 +706,15 @@ function lead(){
 
   // Project category tile data
   const _cats = [
-    {v:'Landscape / Enhancement', icon:'', short:'Landscape'},
-    {v:'Maintenance - Recurring',  icon:'', short:'Recurring Maint.'},
-    {v:'Maintenance - One Time',   icon:'', short:'One-Time Maint.'},
-    {v:'Hardscape',                icon:'', short:'Hardscape'},
-    {v:'Drainage',                 icon:'', short:'Drainage'},
-    {v:'Design / Build',           icon:'', short:'Design / Build'},
-    {v:'Irrigation',               icon:'', short:'Irrigation'},
-    {v:'Outdoor Lighting',         icon:'', short:'Lighting'},
-    {v:'Other',                    icon:'', short:'Other'},
+    {v:'Landscape / Enhancement', icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 17V10M10 10C10 10 5 10 3 5c3.5 0 7 2 7 5zm0 0c0 0 5 0 7-5-3.5 0-7 2-7 5z" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 17c-2 0-3.5-.5-4-1" stroke="#4ade80" stroke-width="1.4" stroke-linecap="round" opacity=".5"/></svg>', short:'Landscape'},
+    {v:'Maintenance - Recurring',  icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 4a3.5 3.5 0 00-3 5.2L4.6 15.6a1 1 0 001.4 1.4l6.4-6.4A3.5 3.5 0 0016 7.5a3.5 3.5 0 00-.5-1.8l-2 2-1.5-1.5 2-2A3.5 3.5 0 0014 4z" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', short:'Recurring Maint.'},
+    {v:'Maintenance - One Time',   icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 4a3.5 3.5 0 00-3 5.2L4.6 15.6a1 1 0 001.4 1.4l6.4-6.4A3.5 3.5 0 0016 7.5a3.5 3.5 0 00-.5-1.8l-2 2-1.5-1.5 2-2A3.5 3.5 0 0014 4z" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', short:'One-Time Maint.'},
+    {v:'Hardscape',                icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="6" height="3" rx=".5" stroke="#f59e0b" stroke-width="1.4"/><rect x="11" y="4" width="6" height="3" rx=".5" stroke="#f59e0b" stroke-width="1.4"/><rect x="6.5" y="9" width="7" height="3" rx=".5" stroke="#f59e0b" stroke-width="1.4"/><rect x="3" y="14" width="4" height="3" rx=".5" stroke="#f59e0b" stroke-width="1.4" opacity=".7"/><rect x="9" y="14" width="5" height="3" rx=".5" stroke="#f59e0b" stroke-width="1.4" opacity=".7"/></svg>', short:'Hardscape'},
+    {v:'Drainage',                 icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3L13 8a3.5 3.5 0 11-6 0L10 3z" stroke="#60a5fa" stroke-width="1.5" stroke-linejoin="round"/><path d="M4 16h12" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/><path d="M7 16l1.5-3M13 16l-1.5-3" stroke="#60a5fa" stroke-width="1.3" stroke-linecap="round" opacity=".6"/></svg>', short:'Drainage'},
+    {v:'Design / Build',           icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16L15 5" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round"/><path d="M13 3l4 4-2 2-4-4 2-2z" stroke="#a78bfa" stroke-width="1.3" stroke-linejoin="round"/><path d="M4 16l-1 1 1-1zm0 0l2-1-1 1z" stroke="#a78bfa" stroke-width="1.3" stroke-linecap="round"/><rect x="3" y="12" width="8" height="2.5" rx=".5" transform="rotate(-45 3 12)" stroke="#a78bfa" stroke-width="1.3" opacity=".5"/></svg>', short:'Design / Build'},
+    {v:'Irrigation',               icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 15 Q8 8 14 6" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="6" r="1.3" fill="#60a5fa"/><path d="M10 4 Q12 3 14 4" stroke="#60a5fa" stroke-width="1.3" stroke-linecap="round" opacity=".6"/><path d="M12 7 Q15 5 17 6" stroke="#60a5fa" stroke-width="1.3" stroke-linecap="round" opacity=".6"/><path d="M11 10 Q14 9 16 10" stroke="#60a5fa" stroke-width="1.3" stroke-linecap="round" opacity=".4"/><path d="M3 16 Q4 14 5 15" stroke="#60a5fa" stroke-width="1.4" stroke-linecap="round"/></svg>', short:'Irrigation'},
+    {v:'Outdoor Lighting',         icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3a5 5 0 014 8l-1 1v1H7v-1L6 11a5 5 0 014-8z" stroke="#fbbf24" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 16h4" stroke="#fbbf24" stroke-width="1.4" stroke-linecap="round"/><path d="M8.5 16.5 Q10 18 11.5 16.5" stroke="#fbbf24" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5" r="1" fill="#fbbf24" opacity=".4"/><circle cx="17" cy="5" r="1" fill="#fbbf24" opacity=".4"/><circle cx="10" cy="1.5" r="1" fill="#fbbf24" opacity=".4"/></svg>', short:'Lighting'},
+    {v:'Other',                    icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="7" stroke="#64748b" stroke-width="1.4"/><circle cx="7" cy="10" r="1.2" fill="#64748b"/><circle cx="10" cy="10" r="1.2" fill="#64748b"/><circle cx="13" cy="10" r="1.2" fill="#64748b"/></svg>', short:'Other'},
   ];
   const catTilesHtml = _cats.map(c =>
     '<button type="button" class="cat-tile" data-cat="' + c.v + '">'
@@ -806,7 +806,7 @@ function lead(){
             + '<input name="jobValue" type="number" class="lf-input lf-input--value" placeholder="0" min="0" step="100">'
           + '</label>'
           + '<div id="commPreview" class="lf-comm-preview" style="display:none">'
-            + '<span class="lf-comm-icon">$</span>'
+            + '<span class="lf-comm-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#4ade80" stroke-width="1.3"/><path d="M8 3v10M6 11c0 1 .9 1.5 2 1.5S10 12 10 11s-1-1.5-2-1.5S6 8 6 7s.9-1.5 2-1.5S10 5 10 6" stroke="#4ade80" stroke-width="1.2" stroke-linecap="round"/></svg></span>'
             + '<span id="commPreviewText"></span>'
           + '</div>'
           + '<label class="lf-field">'
@@ -1321,7 +1321,7 @@ function renderNotes(oppId) {
   if (!events.length) return empty('No activity yet for this lead.');
 
   const dotClass = { note:'note', stage:'stage', sold:'sold', created:'created', admin:'admin' };
-  const dotIcon  = { note:'·', stage:'·', sold:'·', created:'·', admin:'·' };
+  const dotIcon  = { note:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', stage:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', sold:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 7l2 2 3-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>', created:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v2M7 11v2M1 7h2M11 7h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 3l1.4 1.4M9.6 9.6L11 11M11 3l-1.4 1.4M4.4 9.6L3 11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".6"/></svg>', admin:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="5" cy="6" r="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 7.5l5 3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10.5 9.5v1.5M9 10.5h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>' };
 
   const items = events.map(e => `
     <li class="timeline-item">
@@ -1657,11 +1657,18 @@ function manager(){
     return `<div style="height:6px;background:#1e293b;border-radius:4px;margin-top:6px"><div style="height:6px;width:${pct}%;background:${barColor};border-radius:4px;transition:width .5s"></div></div><div style="font-size:10px;color:#64748b;margin-top:3px">${pct}% of target</div>`;
   }
 
+  const DIV_SVG = {
+    landscape:   '<svg width="20" height="20" viewBox="0 0 18 18" fill="none"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    maintenance: '<svg width="20" height="20" viewBox="0 0 18 18" fill="none"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    snow:        '<svg width="20" height="20" viewBox="0 0 18 18" fill="none"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#93c5fd" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#93c5fd"/><circle cx="9" cy="15.5" r="1" fill="#93c5fd"/><circle cx="2.5" cy="9" r="1" fill="#93c5fd"/><circle cx="15.5" cy="9" r="1" fill="#93c5fd"/></svg>',
+  };
   function divTile(div){
     const abovePlan = div.remaining <= 0;
     const gmOk = div.grossMarginPct >= div.grossMarginFloor;
+    const divKey = div.name ? div.name.toLowerCase().replace(/[^a-z]/g,'') : '';
+    const divSvg = divKey.includes('landscape') ? DIV_SVG.landscape : divKey.includes('snow') ? DIV_SVG.snow : divKey.includes('maint') ? DIV_SVG.maintenance : '';
     return `<article style="background:#0f172a;border:1px solid ${abovePlan?'#16a34a':'#1e293b'};border-radius:14px;padding:20px">
-      <div style="font-size:22px;margin-bottom:6px">${div.icon} <span style="font-weight:700;font-size:1rem">${div.name}</span>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">${divSvg} <span style="font-weight:700;font-size:1rem">${div.name}</span>
         ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:8px">\u2713 ABOVE PLAN</span>' : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
@@ -2819,9 +2826,9 @@ window.showMonthDrilldown = function(monthKey) {
   const monthBudget = (fy.monthlyBudget || []).find(m => m.month === monthKey) || {};
   const notes = (loadRevenueActuals() || {})['note_' + monthKey] || '';
   const DIVISIONS = [
-    { key:'landscape',   label:'Landscape',   icon:'', color:'#4ade80' },
-    { key:'maintenance', label:'Maintenance',  icon:'', color:'#22d3ee' },
-    { key:'snow',        label:'Snow & Ice',   icon:'', color:'#a78bfa' }
+    { key:'landscape',   label:'Landscape',   icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color:'#4ade80' },
+    { key:'maintenance', label:'Maintenance',  icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color:'#22d3ee' },
+    { key:'snow',        label:'Snow & Ice',   icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#93c5fd" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#93c5fd"/><circle cx="9" cy="15.5" r="1" fill="#93c5fd"/><circle cx="2.5" cy="9" r="1" fill="#93c5fd"/><circle cx="15.5" cy="9" r="1" fill="#93c5fd"/></svg>', color:'#a78bfa' }
   ];
   function fmtM(n){ return n!=null ? n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
   const rows = DIVISIONS.map(d => {
@@ -3004,9 +3011,9 @@ function revenueAdmin(tab) {
 
   // ── Tab: Division Entry ──
   const DIVISIONS_META = [
-    { key: 'landscape',   label: 'Landscape',    icon: '', color: '#4ade80' },
-    { key: 'maintenance', label: 'Maintenance',   icon: '', color: '#22d3ee' },
-    { key: 'snow',        label: 'Snow & Ice',    icon: '', color: '#a78bfa' }
+    { key: 'landscape',   label: 'Landscape',    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color: '#4ade80' },
+    { key: 'maintenance', label: 'Maintenance',   icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color: '#22d3ee' },
+    { key: 'snow',        label: 'Snow & Ice',    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#93c5fd" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#93c5fd"/><circle cx="9" cy="15.5" r="1" fill="#93c5fd"/><circle cx="2.5" cy="9" r="1" fill="#93c5fd"/><circle cx="15.5" cy="9" r="1" fill="#93c5fd"/></svg>', color: '#a78bfa' }
   ];
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
