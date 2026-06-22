@@ -125,13 +125,13 @@ function show(viewName='today', param){
       <button class="secondary-btn" onclick="show('today')">← Back to Today</button>
     </div>`;
     activateNav(viewName);
-    sidebar.classList.remove('open');
+    sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible');
     window.scrollTo({top:0, behavior:'smooth'});
     return;
   }
   // ────────────────────────────────────────────────────────
   activateNav(viewName);
-  sidebar.classList.remove('open');
+  sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible');
   // integrations is loaded from integrations.js
   const intRoute = (typeof integrations === 'function') ? {integrations} : {};
   // repDashboard is loaded from reps.js
@@ -2394,9 +2394,13 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.search-wrap')) searchResults.hidden = true;
 });
 
-menuBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
+const sidebarScrim = document.getElementById('sidebarScrim');
+function openSidebar()  { sidebar.classList.add('open');    if (sidebarScrim) sidebarScrim.classList.add('visible'); }
+function closeSidebar() { sidebar.classList.remove('open'); if (sidebarScrim) sidebarScrim.classList.remove('visible'); }
+menuBtn.addEventListener('click', (e) => { e.stopPropagation(); sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); });
+if (sidebarScrim) sidebarScrim.addEventListener('click', closeSidebar);
 document.addEventListener('click', e => {
-  if (!sidebar.contains(e.target) && !menuBtn.contains(e.target)) sidebar.classList.remove('open');
+  if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) closeSidebar();
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
