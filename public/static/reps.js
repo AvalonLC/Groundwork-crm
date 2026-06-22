@@ -716,32 +716,44 @@ function renderOMDashboard(viewEl, rep) {
 
 <!-- Pipeline Health Tiles -->
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:28px">
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center">
+  <div class="dash-card-clickable" onclick="show('pipeline')" title="View all open opportunities"
+    style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Open Opps</div>
     <div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-top:6px">${open.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Active pipeline</div>
   </div>
-  <div style="background:${overdue.length > 0 ? 'linear-gradient(135deg,#2a0a0a,#0f172a)' : '#0f172a'};border:1px solid ${overdue.length > 0 ? '#7f1d1d' : '#1e293b'};border-radius:12px;padding:16px;text-align:center">
+  <div class="dash-card-clickable" onclick="show('pipeline')" title="View overdue follow-ups"
+    style="background:${overdue.length > 0 ? 'linear-gradient(135deg,#2a0a0a,#0f172a)' : '#0f172a'};border:1px solid ${overdue.length > 0 ? '#7f1d1d' : '#1e293b'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Overdue</div>
     <div style="font-size:26px;font-weight:800;color:${overdue.length > 0 ? '#f87171' : '#4ade80'};margin-top:6px">${overdue.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Past follow-up date</div>
   </div>
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center">
+  <div class="dash-card-clickable" onclick="show('pipeline')" title="View proposals awaiting response"
+    style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Proposals Out</div>
     <div style="font-size:26px;font-weight:800;color:#fbbf24;margin-top:6px">${proposals.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Awaiting response</div>
   </div>
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center">
+  <div class="dash-card-clickable" onclick="show('pipeline')" title="View new leads not yet contacted"
+    style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">New Leads</div>
     <div style="font-size:26px;font-weight:800;color:#60a5fa;margin-top:6px">${newLeads.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Not yet contacted</div>
   </div>
-  <div style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:12px;padding:16px;text-align:center">
+  <div class="dash-card-clickable" onclick="show('pipeline')" title="View unassigned leads"
+    style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Unassigned</div>
     <div style="font-size:26px;font-weight:800;color:${unassigned.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:6px">${unassigned.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">No rep assigned</div>
   </div>
-  <div style="background:linear-gradient(135deg,#0c2a1a,#0f172a);border:1px solid #16a34a;border-radius:12px;padding:16px;text-align:center">
+  <div class="dash-card-clickable" onclick="show('pipeline')" title="View sold opportunities"
+    style="background:linear-gradient(135deg,#0c2a1a,#0f172a);border:1px solid #16a34a;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
     <div style="font-size:10px;font-weight:700;color:#86efac;letter-spacing:.06em;text-transform:uppercase">Sold</div>
     <div style="font-size:26px;font-weight:800;color:#4ade80;margin-top:6px">${sold.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">${fmtCurrency(sold.reduce((a,o)=>a+parseFloat(o.jobValue||0),0))}</div>
@@ -1005,32 +1017,44 @@ function renderAdminDashboard(viewEl) {
   <section class="card">
     <h2 style="margin:0 0 14px;font-size:16px">🔥 Pipeline Health</h2>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
+      <div class="dash-card-clickable" onclick="show('pipeline')" title="View all open opportunities"
+        style="background:#0f172a;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
         <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Open Opps</div>
         <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-top:4px">${openOpps.length}</div>
         <div style="font-size:10px;color:#64748b">${fmtM(totalPipelineValue)} value</div>
       </div>
-      <div style="background:${overdueList.length > 0 ? '#2a0a0a' : '#0f172a'};border:1px solid ${overdueList.length > 0 ? '#7f1d1d' : '#1e293b'};border-radius:10px;padding:12px;text-align:center">
+      <div class="dash-card-clickable" onclick="show('pipeline')" title="View overdue follow-ups"
+        style="background:${overdueList.length > 0 ? '#2a0a0a' : '#0f172a'};border:1px solid ${overdueList.length > 0 ? '#7f1d1d' : '#1e293b'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
         <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Overdue</div>
         <div style="font-size:22px;font-weight:800;color:${overdueList.length > 0 ? '#f87171' : '#4ade80'};margin-top:4px">${overdueList.length}</div>
         <div style="font-size:10px;color:#64748b">need follow-up</div>
       </div>
-      <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center">
+      <div class="dash-card-clickable" onclick="show('pipeline')" title="View proposals awaiting decision"
+        style="background:#0f172a;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
         <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Proposals Out</div>
         <div style="font-size:22px;font-weight:800;color:#fbbf24;margin-top:4px">${proposals.length}</div>
         <div style="font-size:10px;color:#64748b">awaiting decision</div>
       </div>
-      <div style="background:#0f172a;border:1px solid ${stale.length > 0 ? '#f59e0b40' : '#1e293b'};border-radius:10px;padding:12px;text-align:center">
+      <div class="dash-card-clickable" onclick="show('pipeline')" title="View stale leads with no recent activity"
+        style="background:#0f172a;border:1px solid ${stale.length > 0 ? '#f59e0b40' : '#1e293b'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
         <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Stale (14d+)</div>
         <div style="font-size:22px;font-weight:800;color:${stale.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:4px">${stale.length}</div>
         <div style="font-size:10px;color:#64748b">no recent activity</div>
       </div>
-      <div style="background:linear-gradient(135deg,#0c2a1a,#0f172a);border:1px solid #16a34a;border-radius:10px;padding:12px;text-align:center">
+      <div class="dash-card-clickable" onclick="show('pipeline')" title="View sold opportunities"
+        style="background:linear-gradient(135deg,#0c2a1a,#0f172a);border:1px solid #16a34a;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
         <div style="font-size:9px;color:#86efac;font-weight:600;text-transform:uppercase">Sold</div>
         <div style="font-size:22px;font-weight:800;color:#4ade80;margin-top:4px">${soldOpps.length}</div>
         <div style="font-size:10px;color:#64748b">${fmtM(soldValue)} value</div>
       </div>
-      <div style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:10px;padding:12px;text-align:center">
+      <div class="dash-card-clickable" onclick="show('pipeline')" title="View unassigned leads"
+        style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
         <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Unassigned</div>
         <div style="font-size:22px;font-weight:800;color:${unassigned.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:4px">${unassigned.length}</div>
         <div style="font-size:10px;color:#64748b">no rep assigned</div>

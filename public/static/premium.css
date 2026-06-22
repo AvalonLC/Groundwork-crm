@@ -111,3 +111,184 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 .pnl-drop-zone:hover { border-color:#22d3ee; }
 /* Dynamic tag */
 .dynamic-tag { font-size:9px; font-weight:700; background:#0e3044; color:#22d3ee; border-radius:4px; padding:1px 5px; margin-left:4px; vertical-align:middle; letter-spacing:.04em; text-transform:uppercase; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   JIRA BATCH: T1/T2/T22/T24/T25 — Global UI readability, button hierarchy,
+   permission matrix, mobile tap targets, dashboard card polish
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── T1: Button hierarchy — clear enabled / hover / focus / disabled states ── */
+.primary-btn:hover   { filter:brightness(1.1); box-shadow:0 14px 28px rgba(0,167,225,.28); }
+.primary-btn:active  { filter:brightness(.94); transform:translateY(1px); }
+.primary-btn:focus-visible { outline:3px solid rgba(0,167,225,.55); outline-offset:3px; }
+.primary-btn:disabled, .primary-btn[disabled] {
+  opacity:.45; cursor:not-allowed; pointer-events:none;
+}
+.secondary-btn:hover { background:var(--blue-soft); border-color:rgba(0,167,225,.36); }
+.secondary-btn:active { transform:translateY(1px); }
+.secondary-btn:focus-visible { outline:3px solid rgba(0,167,225,.45); outline-offset:3px; }
+.secondary-btn:disabled, .secondary-btn[disabled] {
+  opacity:.42; cursor:not-allowed; pointer-events:none; color:var(--muted);
+}
+.danger-btn:hover { background:#FEE2E2; border-color:#f87171; }
+.danger-btn:focus-visible { outline:3px solid rgba(248,113,113,.5); outline-offset:3px; }
+
+/* ── T1: Loading state pill — show spinner inside any button ── */
+.btn-loading { position:relative; pointer-events:none; }
+.btn-loading::after {
+  content:''; position:absolute; right:12px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; border:2px solid rgba(255,255,255,.35);
+  border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite;
+}
+
+/* ── T1: Status chips — not color-only; add shape/icon context ── */
+.status-chip {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;
+  border:1px solid transparent;
+}
+.status-chip.sold    { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+.status-chip.active  { background:#dbeafe; color:#1e40af; border-color:#93c5fd; }
+.status-chip.overdue { background:#fef2f2; color:#991b1b; border-color:#fca5a5; }
+.status-chip.pending { background:#fef9c3; color:#713f12; border-color:#fde68a; }
+.status-chip.lost    { background:#f3f4f6; color:#374151; border-color:#d1d5db; }
+
+/* ── T1/T25: Dark card values — hierarchy and breathing room ── */
+.kpi-card {
+  background:linear-gradient(145deg,#0a1628,#0f172a);
+  border:1px solid #1e293b; border-radius:16px; padding:18px 20px;
+  transition:border-color .15s, box-shadow .15s;
+}
+.kpi-card:hover { border-color:#1e4d6b; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+.kpi-card .kpi-label {
+  font-size:10px; font-weight:800; color:#64748b;
+  text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;
+}
+.kpi-card .kpi-value {
+  font-size:1.9rem; font-weight:900; color:#f8fafc;
+  line-height:1; letter-spacing:-.03em;
+}
+.kpi-card .kpi-sub { font-size:11px; color:#475569; margin-top:5px; }
+.kpi-card .kpi-value.green  { color:#4ade80; }
+.kpi-card .kpi-value.red    { color:#f87171; }
+.kpi-card .kpi-value.cyan   { color:#22d3ee; }
+.kpi-card .kpi-value.amber  { color:#fbbf24; }
+
+/* ── T22: Permission matrix — zebra striping + hover guide ── */
+.perm-table { width:100%; border-collapse:collapse; min-width:480px; }
+.perm-table thead tr { border-bottom:2px solid #1e293b; }
+.perm-table thead th {
+  padding:11px 14px; font-size:12px; font-weight:700; text-align:left;
+}
+.perm-table thead th:not(:first-child) { text-align:center; }
+.perm-table .perm-group-row td {
+  padding:12px 14px 4px; font-size:10px; font-weight:900;
+  letter-spacing:.1em; text-transform:uppercase; color:#475569;
+  border-bottom:1px solid #1e293b; background:#fafafa;
+}
+.perm-table tbody tr.perm-row { border-bottom:1px solid var(--line); }
+.perm-table tbody tr.perm-row:nth-child(even) { background:#f8fafc; }
+.perm-table tbody tr.perm-row:hover { background:var(--blue-soft) !important; }
+.perm-table td.perm-section { padding:10px 14px; font-size:13px; color:var(--ink); }
+.perm-table td.perm-check   { text-align:center; padding:10px; }
+.perm-check input[type=checkbox] { width:18px; height:18px; cursor:pointer; }
+
+/* ── T23: Empty states — richer, more actionable ── */
+.empty-state {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:32px 20px; text-align:center;
+  background:linear-gradient(180deg,#f9fdff,#f0f8fe);
+  border:1.5px dashed rgba(0,167,225,.2); border-radius:18px;
+}
+.empty-state .empty-icon { font-size:36px; margin-bottom:10px; opacity:.7; }
+.empty-state .empty-title { font-weight:800; color:var(--ink); font-size:15px; margin-bottom:4px; }
+.empty-state .empty-body  { color:var(--muted); font-size:13px; max-width:280px; line-height:1.55; }
+.empty-state .empty-cta   { margin-top:14px; }
+
+/* ── T24: Mobile tap targets — minimum 44px touch target ── */
+@media (max-width:920px) {
+  .primary-btn, .secondary-btn, .danger-btn {
+    min-height:44px; padding:12px 18px; font-size:15px;
+  }
+  .small.primary-btn, .small.secondary-btn { min-height:38px; padding:10px 14px; }
+  .nav-item { min-height:40px; padding:10px 10px 10px 24px; font-size:13px; }
+  .check-item input { width:22px; height:22px; }
+  select, input[type=text], input[type=number], input[type=date],
+  input[type=email], textarea {
+    min-height:44px; font-size:16px !important; /* prevent iOS zoom */
+  }
+  /* Quick Actions integration buttons on mobile */
+  .int-action-btn { padding:12px 16px; font-size:14px; }
+  /* Today page stat cards — bigger hit zone */
+  .stat { padding:20px; }
+  /* dashboard-strip tiles on mobile */
+  .dash-tile { padding:16px; }
+  .dash-tile strong { font-size:15px; }
+  .dash-tile span   { font-size:13px; }
+}
+
+/* ── T25: Owner Dashboard — clickable stat cards ── */
+.dash-card-clickable {
+  cursor:pointer; transition:transform .15s, box-shadow .15s, border-color .15s;
+  user-select:none;
+}
+.dash-card-clickable:hover {
+  transform:translateY(-2px);
+  box-shadow:0 12px 32px rgba(7,19,27,.12);
+  border-color:rgba(0,167,225,.3) !important;
+}
+.dash-card-clickable:active { transform:translateY(0); }
+.dash-card-clickable .card-drill-hint {
+  font-size:10px; color:rgba(0,167,225,.6); margin-top:6px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.06em;
+  opacity:0; transition:opacity .15s;
+}
+.dash-card-clickable:hover .card-drill-hint { opacity:1; }
+
+/* ── T6: Quick Actions integration buttons — prominent states ── */
+.int-action-btn.active   { border-color:var(--blue); background:var(--blue-soft); }
+.int-action-btn.success  { border-color:#16a34a; background:#dcfce7; color:#15803d; }
+.int-action-btn.loading  { opacity:.7; pointer-events:none; }
+.int-action-btn.loading::after {
+  content:''; display:inline-block; width:12px; height:12px;
+  border:2px solid rgba(7,62,86,.3); border-top-color:var(--blue-dark);
+  border-radius:50%; animation:spin .7s linear infinite; margin-left:6px;
+  vertical-align:middle;
+}
+
+/* ── T9: Activity timeline in lead detail ── */
+.timeline { list-style:none; padding:0; margin:0; position:relative; }
+.timeline::before {
+  content:''; position:absolute; left:16px; top:0; bottom:0;
+  width:2px; background:var(--line);
+}
+.timeline-item {
+  display:flex; gap:14px; padding:10px 0; position:relative;
+}
+.timeline-dot {
+  width:32px; height:32px; border-radius:50%;
+  background:#fff; border:2px solid var(--line);
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; flex-shrink:0; z-index:1;
+  box-shadow:0 2px 6px rgba(7,19,27,.07);
+}
+.timeline-dot.note    { border-color:var(--blue); background:var(--blue-soft); }
+.timeline-dot.stage   { border-color:#a855f7; background:#faf5ff; }
+.timeline-dot.sold    { border-color:#16a34a; background:#dcfce7; }
+.timeline-dot.created { border-color:#f59e0b; background:#fffbeb; }
+.timeline-dot.admin   { border-color:#64748b; background:#f8fafc; }
+.timeline-body { flex:1; min-width:0; padding-top:4px; }
+.timeline-body time { font-size:11px; color:var(--muted); font-weight:700; }
+.timeline-body .tl-title { font-weight:700; color:var(--ink); font-size:13px; margin-bottom:2px; }
+.timeline-body .tl-detail { font-size:12px; color:var(--muted); line-height:1.5; }
+
+/* ── General: Topbar quick-create pill ── */
+.topbar-quick-add {
+  background:linear-gradient(135deg,var(--blue),var(--blue-2));
+  color:#fff; border:0; border-radius:999px;
+  padding:8px 14px; font-size:13px; font-weight:800;
+  cursor:pointer; white-space:nowrap;
+  box-shadow:0 6px 16px rgba(0,167,225,.22);
+  transition:filter .15s, box-shadow .15s;
+}
+.topbar-quick-add:hover { filter:brightness(1.08); box-shadow:0 10px 22px rgba(0,167,225,.3); }

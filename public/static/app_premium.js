@@ -211,8 +211,15 @@ function today(){
             <p class="muted">No opportunity moves forward without a clear next step, documented assumptions, and ownership.</p>
           </div>
           <div class="footer-actions">
-            <button class="secondary-btn small" onclick="show('manager')">Manager Review</button>
-            <button class="secondary-btn small" onclick="show('academy')">Training Path</button>
+            <button class="secondary-btn small" onclick="show('manager')"
+              style="border-color:rgba(0,167,225,.25)" aria-label="Open Manager Review">
+              📊 Manager Review
+            </button>
+            <button class="primary-btn small" onclick="show('academy')"
+              style="display:inline-flex;align-items:center;gap:6px"
+              aria-label="Open Training Path — Sales Academy">
+              🎓 Training Path
+            </button>
           </div>
         </aside>
       </div>
@@ -222,7 +229,7 @@ function today(){
     <div class="grid grid-2 mt">
       <section class="card app-card">
         <div class="section-head"><h2>Due Now</h2>${badge(`${due.length} follow-up${due.length===1?'':'s'}`, due.length?'warn-badge':'')}</div>
-        ${due.length ? due.map(oppCard).join('') : empty('No follow-ups due today. Review the pipeline or add next steps.')}
+        ${due.length ? due.map(oppCard).join('') : empty('No follow-ups due today.', '✅', `<button class="primary-btn small" onclick="show('pipeline')">Open Pipeline</button>`)}
       </section>
       <section class="card app-card">
         <h2>Daily Sales Start-Up</h2>
@@ -230,8 +237,8 @@ function today(){
       </section>
     </div>
     <div class="grid grid-2 mt">
-      <section class="card"><h2>Coming Up</h2>${next.length ? next.map(oppMini).join('') : empty('No future follow-ups scheduled.')}</section>
-      <section class="card"><h2>Recently Updated</h2>${recent.length ? recent.map(oppMini).join('') : empty('No opportunities yet. Add your first lead.')}</section>
+      <section class="card"><h2>Coming Up</h2>${next.length ? next.map(oppMini).join('') : empty('No upcoming follow-ups.', '📅', `<button class="secondary-btn small" onclick="show('pipeline')">View Pipeline</button>`)}</section>
+      <section class="card"><h2>Recently Updated</h2>${recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '🌱', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`)}</section>
     </div>
     ${renderTodayActivityWidget()}
   `;
@@ -273,7 +280,16 @@ function renderTodayActivityWidget(){
   </div>`;
 }
 
-function empty(text){ return `<div class="empty">${escapeHtml(text)}</div>`; }
+function empty(text, icon, ctaHtml){
+  if(icon !== undefined){
+    return `<div class="empty-state">
+      <div style="font-size:2.4rem;margin-bottom:10px">${icon}</div>
+      <p style="margin:0 0 14px;font-size:14px;color:var(--text-muted)">${escapeHtml(text)}</p>
+      ${ctaHtml || ''}
+    </div>`;
+  }
+  return `<div class="empty">${escapeHtml(text)}</div>`;
+}
 function oppMini(o){ return `<button class="mini-row" onclick="show('pipeline','${o.id}')"><strong>${escapeHtml(o.client||'Unnamed')}</strong><span>${escapeHtml(o.status||'New Lead')}</span><em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em></button>`; }
 function oppCard(o){
   return `<article class="opp-card">
@@ -443,7 +459,7 @@ function opportunityDetail(id){
       ${textarea('prompt','What prompted the inquiry?',o.prompt)}${textarea('desiredOutcome','Desired outcome / what good looks like',o.desiredOutcome)}${textarea('fitConcerns','Fit concerns / risk flags',o.fitConcerns)}
     </form>
     <div class="grid grid-2 mt">
-      <section class="card"><h2>Opportunity Notes</h2><div id="noteList">${renderNotes(o.id)}</div><textarea id="newNote" rows="4" placeholder="Add call note, site note, objection, or next step..."></textarea><button class="primary-btn mt8" onclick="addNote('${o.id}')">Add Note</button></section>
+      <section class="card"><h2>Activity & Notes</h2><div id="noteList">${renderNotes(o.id)}</div><textarea id="newNote" rows="4" placeholder="Add call note, site note, objection, or next step..."></textarea><button class="primary-btn mt8" onclick="addNote('${o.id}')">Add Note</button></section>
       <section class="card"><h2>Useful Tools</h2><div class="tool-list"><button onclick="show('forms','discovery')">Discovery Planner</button><button onclick="show('forms','site-walk')">Site Walk Checklist</button><button onclick="show('forms','proposal-review')">Proposal Review</button><button onclick="show('templates')">Follow-Up Templates</button><button onclick="show('objections')">Objection Handling</button><button onclick="show('forms','handoff')">Sold Job Activation</button></div></section>
     ${(()=>{
       const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
@@ -492,19 +508,100 @@ function opportunityDetail(id){
     })()}
     </div>
     <div class="mt">
-      <section class="card" style="border:1px solid #1e4d6b">
-        <h2>🔗 Quick Actions — Integrations</h2>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Push this lead to your CRM or create a Google Calendar event or Gmail draft instantly.</p>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          <button class="secondary-btn" onclick="intPushOppToHomeworks('${o.id}')">🏡 Push to Homeworks CRM</button>
-          <button class="secondary-btn" onclick="intScheduleForLead('${escapeHtml(o.client||'Lead')}','${escapeHtml(o.email||'')}','${escapeHtml(o.nextFollowUp||'')}')">📅 Schedule in Google Calendar</button>
-          <button class="secondary-btn" onclick="intComposeToLead('${escapeHtml(o.email||'')}','${escapeHtml(o.client||'')}')">📧 Gmail Compose</button>
+      <section class="card" style="border:1px solid rgba(0,167,225,.2)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <h2 style="margin:0">🔗 Quick Actions</h2>
+          <button class="secondary-btn small" onclick="show('integrations')" style="font-size:11px">⚙️ Manage Integrations</button>
         </div>
-        <p style="font-size:11px;color:var(--muted);margin-top:12px">Not connected yet? Go to <button class="link-btn" onclick="show('integrations')" style="color:var(--accent);background:none;border:none;cursor:pointer;font-size:11px;padding:0">🔗 Integrations</button> to set up.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Push this lead to your connected tools — CRM, calendar, or email.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+          <button class="int-action-btn" id="qa_homeworks_${o.id}"
+            onclick="qaAction('homeworks','${o.id}',this)"
+            aria-label="Push ${escapeHtml(o.client||'lead')} to Homeworks CRM">
+            <span style="font-size:18px">🏡</span>
+            <div style="text-align:left">
+              <div style="font-weight:700;font-size:13px">Push to Homeworks</div>
+              <div style="font-size:11px;color:var(--muted);font-weight:400">Sync to CRM</div>
+            </div>
+          </button>
+          <button class="int-action-btn" id="qa_calendar_${o.id}"
+            onclick="qaAction('calendar','${o.id}',this)"
+            aria-label="Schedule Google Calendar event for ${escapeHtml(o.client||'lead')}">
+            <span style="font-size:18px">📅</span>
+            <div style="text-align:left">
+              <div style="font-weight:700;font-size:13px">Schedule Event</div>
+              <div style="font-size:11px;color:var(--muted);font-weight:400">Google Calendar</div>
+            </div>
+          </button>
+          <button class="int-action-btn" id="qa_gmail_${o.id}"
+            onclick="qaAction('gmail','${o.id}',this)"
+            aria-label="Open Gmail compose for ${escapeHtml(o.client||'lead')}">
+            <span style="font-size:18px">📧</span>
+            <div style="text-align:left">
+              <div style="font-weight:700;font-size:13px">Compose Email</div>
+              <div style="font-size:11px;color:var(--muted);font-weight:400">Gmail draft</div>
+            </div>
+          </button>
+        </div>
       </section>
     </div>
   `;
 }
+
+// ── T6: Quick Action button orchestrator — loading + success states ──────────
+window.qaAction = function(type, oppId, btn) {
+  const o = (window.state && window.state.opportunities || []).find(x => x.id === oppId);
+  if (!btn || !o) return;
+
+  // Set loading state
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  const done = (ok, msg) => {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    if (ok) {
+      btn.classList.add('success');
+      showToast(msg || '✅ Done');
+      setTimeout(() => btn.classList.remove('success'), 2800);
+    } else {
+      showToast(msg || '⚠️ Action failed — check Integrations setup');
+    }
+  };
+
+  if (type === 'homeworks') {
+    // Call existing integration function; wrap with done()
+    try {
+      if (typeof intPushOppToHomeworks === 'function') {
+        intPushOppToHomeworks(oppId);
+        setTimeout(() => done(true, '🏡 Pushed to Homeworks CRM'), 600);
+      } else {
+        done(false, '⚠️ Homeworks not connected — visit Integrations to set up');
+      }
+    } catch(e) { done(false); }
+
+  } else if (type === 'calendar') {
+    try {
+      if (typeof intScheduleForLead === 'function') {
+        intScheduleForLead(o.client || 'Lead', o.email || '', o.nextFollowUp || '');
+        setTimeout(() => done(true, '📅 Calendar event created'), 600);
+      } else {
+        done(false, '⚠️ Google Calendar not connected — visit Integrations');
+      }
+    } catch(e) { done(false); }
+
+  } else if (type === 'gmail') {
+    try {
+      if (typeof intComposeToLead === 'function') {
+        intComposeToLead(o.email || '', o.client || '');
+        setTimeout(() => done(true, '📧 Gmail compose opened'), 600);
+      } else {
+        done(false, '⚠️ Gmail not connected — visit Integrations');
+      }
+    } catch(e) { done(false); }
+  }
+};
+
 function selectWithId(id,options,selected){ return `<select id="${id}">${options.map(o=>`<option ${o===selected?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select>`; }
 function inputEdit(name,label,value='',type='text'){ return `<label><span>${label}</span><input name="${name}" type="${type}" value="${escapeHtml(value||'')}"></label>`; }
 function selectEdit(name,label,options,value=''){ return `<label><span>${label}</span><select name="${name}"><option value="">Select...</option>${options.map(o=>`<option ${o===value?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></label>`; }
@@ -518,7 +615,68 @@ function setOppField(id,field,value){ const o = state.opportunities.find(x=>x.id
 function duplicateOpportunity(id){ const o = state.opportunities.find(x=>x.id===id); if(!o) return; const copy={...o,id:uid('opp'),client:`${o.client||'Lead'} Copy`,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}; state.opportunities.unshift(copy); saveState(); showToast('Duplicated'); show('pipeline',copy.id); }
 function deleteOpportunity(id){ if(!confirm('Delete this opportunity?')) return; state.opportunities = state.opportunities.filter(o=>o.id!==id); state.notes = state.notes.filter(n=>n.oppId!==id); saveState(); showToast('Deleted'); show('pipeline'); }
 function addNote(oppId){ const el = document.getElementById('newNote'); if(!el.value.trim()) return; state.notes.unshift({id:uid('note'),oppId,body:el.value.trim(),createdAt:new Date().toISOString()}); const o=state.opportunities.find(x=>x.id===oppId); if(o) o.updatedAt=new Date().toISOString(); saveState(); showToast('Note added'); show('pipeline', oppId); }
-function renderNotes(oppId){ const notes = state.notes.filter(n=>n.oppId===oppId); return notes.length ? notes.map(n=>`<article class="note"><time>${new Date(n.createdAt).toLocaleString()}</time><p>${nl2br(n.body)}</p></article>`).join('') : empty('No notes yet.'); }
+function renderNotes(oppId) {
+  const opp   = state.opportunities.find(x => x.id === oppId);
+  const notes = state.notes.filter(n => n.oppId === oppId);
+  const fmt   = dt => { try { return new Date(dt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); } catch(e) { return dt || ''; } };
+
+  // Build a unified timeline: creation + status changes (from opp.history if present) + notes
+  const events = [];
+
+  // Lead created event
+  if (opp && opp.createdAt) {
+    events.push({
+      type: 'created', ts: opp.createdAt,
+      title: 'Lead created',
+      detail: `${escapeHtml(opp.client || 'Unnamed lead')} · ${escapeHtml(opp.status || 'New')}`
+    });
+  }
+
+  // Stage history (stored in opp.history array if available)
+  if (opp && Array.isArray(opp.history)) {
+    opp.history.forEach(h => {
+      events.push({ type:'stage', ts:h.ts, title:`Stage → ${escapeHtml(h.to||'')}`, detail:h.note||'' });
+    });
+  }
+
+  // Sold event
+  if (opp && opp.soldAt) {
+    events.push({
+      type:'sold', ts:opp.soldAt,
+      title:'🎉 Marked Sold',
+      detail: opp.soldAmount ? `$${Number(opp.soldAmount).toLocaleString()}${opp.division ? ' · '+opp.division : ''}` : ''
+    });
+  }
+
+  // Notes
+  notes.forEach(n => events.push({
+    type:'note', ts:n.createdAt,
+    title:'Note added',
+    detail: escapeHtml(n.body || '')
+  }));
+
+  // Sort newest → oldest
+  events.sort((a,b) => new Date(b.ts) - new Date(a.ts));
+
+  if (!events.length) return empty('No activity yet for this lead.');
+
+  const dotClass = { note:'note', stage:'stage', sold:'sold', created:'created', admin:'admin' };
+  const dotIcon  = { note:'💬', stage:'📋', sold:'🏆', created:'⭐', admin:'🔑' };
+
+  const items = events.map(e => `
+    <li class="timeline-item">
+      <div class="timeline-dot ${dotClass[e.type]||''}">
+        <span>${dotIcon[e.type]||'•'}</span>
+      </div>
+      <div class="timeline-body">
+        <time>${fmt(e.ts)}</time>
+        <div class="tl-title">${e.title}</div>
+        ${e.detail ? `<div class="tl-detail">${e.detail}</div>` : ''}
+      </div>
+    </li>`).join('');
+
+  return `<ul class="timeline">${items}</ul>`;
+}
 
 function process(stageId){
   if(stageId){ return renderStage(data.stages.find(s=>s.id===Number(stageId))); }
@@ -976,17 +1134,17 @@ function renderPermMatrix() {
   const tableRows = groups.map(group => {
     const groupViews = views.filter(v => v.group === group);
     return `
-      <tr><td colspan="${roles.length + 1}" style="padding:14px 12px 4px;font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#475569;border-bottom:1px solid #1e293b">${group}</td></tr>
+      <tr class=\"perm-group-row\"><td colspan=\"${roles.length + 1}\">${group}</td></tr>
       ${groupViews.map(v => `
       <tr style="border-bottom:1px solid #0f172a">
-        <td style="padding:10px 12px;font-size:13px;color:#e2e8f0;white-space:nowrap">${v.label}</td>
+        <td class="perm-section">${v.label}</td>
         ${roles.map(r => {
           const checked = (perms[r.key] || DEFAULT_NAV_PERMS[r.key] || []).includes(v.key);
           const isAdminView = v.key === 'settings';
           return `<td style="text-align:center;padding:10px">
             <input type="checkbox" ${checked ? 'checked' : ''} ${isAdminView ? 'disabled title="Settings always visible"' : ''}
               onchange="window._toggleNavPerm('${r.key}','${v.key}',this.checked)"
-              style="width:16px;height:16px;accent-color:${r.color};cursor:${isAdminView ? 'not-allowed' : 'pointer'}">
+              style="accent-color:${r.color};cursor:${isAdminView ? 'not-allowed' : 'pointer'}">
           </td>`;
         }).join('')}
       </tr>`).join('')}
@@ -998,11 +1156,11 @@ function renderPermMatrix() {
     <h2>🔐 Permission Controls <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">— Tyler (Owner) only</span></h2>
     <p style="color:#64748b;font-size:13px;margin-bottom:16px">Control which sections each role can access. Changes take effect immediately. Tyler (Owner) always has full access.</p>
     <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;min-width:480px">
+      <table class="perm-table">
         <thead>
-          <tr style="border-bottom:2px solid #1e293b">
-            <th style="text-align:left;padding:10px 12px;font-size:12px;color:#64748b;font-weight:700">Section</th>
-            ${roles.map(r => `<th style="text-align:center;padding:10px 12px;font-size:12px;font-weight:700;color:${r.color}">${r.label}</th>`).join('')}
+          <tr>
+            <th>Section</th>
+            ${roles.map(r => `<th style="color:${r.color}">${r.label}</th>`).join('')}
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
