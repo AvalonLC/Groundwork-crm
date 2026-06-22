@@ -7,6 +7,39 @@ const app = new Hono()
 app.use('/static/*', serveStatic({ root: './public' }))
 app.use('/sw.js', serveStatic({ root: './public', path: 'sw.js' }))
 
+// Google OAuth2 callback page — receives access token from Google's implicit flow,
+// posts it back to the opener window, then closes itself.
+app.get('/auth/google/callback', (c) => {
+  return c.html(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Connecting to Google…</title>
+  <style>
+    body { font-family: Inter, sans-serif; background: #0f172a; color: #e2e8f0;
+           display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; flex-direction: column; gap: 16px; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #334155; border-top-color: #00A7E1; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    p { color: #94a3b8; font-size: 14px; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <p>Connecting to Google — you can close this window if it doesn't close automatically.</p>
+  <script>
+    // The access token arrives in the URL hash via Google's implicit flow.
+    // The opener (integrations.js) polls this page's location.hash to read it.
+    // Nothing needs to happen here — just stay open so the polling can read the hash.
+    
+    // Auto-close after 5 seconds as a fallback
+    if (window.opener) {
+      // Let the opener read our hash, then close
+      setTimeout(() => window.close(), 5000);
+    }
+  </script>
+</body>
+</html>`)
+})
+
 // Main app - serve the Avalon Sales Hub
 app.get('/', (c) => {
   return c.html(getHtml())
@@ -52,6 +85,7 @@ function getHtml(): string {
       <button class="nav-item" data-view="calculator" onclick="show('calculator')">🧮 Pricing Tools</button>
       <button class="nav-item" data-view="academy" onclick="show('academy')">🎓 Sales Academy</button>
       <button class="nav-item" data-view="manager" onclick="show('manager')">👔 Manager Tools</button>
+      <button class="nav-item" data-view="integrations" onclick="show('integrations')">🔗 Integrations</button>
       <button class="nav-item" data-view="settings" onclick="show('settings')">⚙️ Settings</button>
     </nav>
     <div class="sidebar-footer">
@@ -75,6 +109,7 @@ function getHtml(): string {
 
 <script src="/static/data.js"></script>
 <script src="/static/app_premium.js"></script>
+<script src="/static/integrations.js"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
@@ -91,6 +126,9 @@ function getHtml(): string {
       btn.onclick = () => { e.prompt(); btn.hidden = true; };
     }
   });
+
+  // Expose state to integrations module
+  window._avalonState = state;
 </script>
 </body>
 </html>`

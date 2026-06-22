@@ -32,9 +32,13 @@ function copyText(text){ navigator.clipboard?.writeText(text).then(()=>showToast
 function show(viewName='today', param){
   navItems.forEach(b=>b.classList.toggle('active', b.dataset.view===viewName));
   sidebar.classList.remove('open');
-  const routes = {today, pipeline, lead, process, forms, scripts, templates, objections, calculator, academy, manager, settings};
+  // integrations is loaded from integrations.js — include if available
+  const intRoute = (typeof integrations === 'function') ? {integrations} : {};
+  const routes = {today, pipeline, lead, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
+  // Keep global state reference fresh for integrations module
+  if (typeof window._avalonState !== 'undefined') window._avalonState = state;
 }
 window.show = show;
 
@@ -204,6 +208,18 @@ function opportunityDetail(id){
     <div class="grid grid-2 mt">
       <section class="card"><h2>Opportunity Notes</h2><div id="noteList">${renderNotes(o.id)}</div><textarea id="newNote" rows="4" placeholder="Add call note, site note, objection, or next step..."></textarea><button class="primary-btn mt8" onclick="addNote('${o.id}')">Add Note</button></section>
       <section class="card"><h2>Useful Tools</h2><div class="tool-list"><button onclick="show('forms','discovery')">Discovery Planner</button><button onclick="show('forms','site-walk')">Site Walk Checklist</button><button onclick="show('forms','proposal-review')">Proposal Review</button><button onclick="show('templates')">Follow-Up Templates</button><button onclick="show('objections')">Objection Handling</button><button onclick="show('forms','handoff')">Sold Job Activation</button></div></section>
+    </div>
+    <div class="mt">
+      <section class="card" style="border:1px solid #1e4d6b">
+        <h2>🔗 Quick Actions — Integrations</h2>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Push this lead to your CRM or create a Google Calendar event or Gmail draft instantly.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <button class="secondary-btn" onclick="intPushOppToHomeworks('${o.id}')">🏡 Push to Homeworks CRM</button>
+          <button class="secondary-btn" onclick="intScheduleForLead('${escapeHtml(o.client||'Lead')}','${escapeHtml(o.email||'')}','${escapeHtml(o.nextFollowUp||'')}')">📅 Schedule in Google Calendar</button>
+          <button class="secondary-btn" onclick="intComposeToLead('${escapeHtml(o.email||'')}','${escapeHtml(o.client||'')}')">📧 Gmail Compose</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:12px">Not connected yet? Go to <button class="link-btn" onclick="show('integrations')" style="color:var(--accent);background:none;border:none;cursor:pointer;font-size:11px;padding:0">🔗 Integrations</button> to set up.</p>
+      </section>
     </div>
   `;
 }
