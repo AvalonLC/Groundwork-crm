@@ -1,6 +1,17 @@
 const data = window.AVALON_DATA;
 const view = document.getElementById('view');
 const navItems = [...document.querySelectorAll('.nav-item')];
+function activateNav(viewName) {
+  navItems.forEach(b => {
+    const isActive = b.dataset.view === viewName;
+    b.classList.toggle('active', isActive);
+    if (isActive) {
+      // auto-open the parent <details> group
+      const group = b.closest('details.nav-group');
+      if (group) group.open = true;
+    }
+  });
+}
 const sidebar = document.getElementById('sidebar');
 const menuBtn = document.getElementById('menuBtn');
 const searchInput = document.getElementById('searchInput');
@@ -67,13 +78,13 @@ function show(viewName='today', param){
       <p style="color:#64748b;max-width:420px;margin:0 auto 24px">Tyler (Owner) has restricted access to this section for your role.<br>Ask Tyler to enable it in <strong style="color:#e2e8f0">Settings → Permission Controls</strong>.</p>
       <button class="secondary-btn" onclick="show('today')">← Back to Today</button>
     </div>`;
-    navItems.forEach(b=>b.classList.toggle('active', b.dataset.view===viewName));
+    activateNav(viewName);
     sidebar.classList.remove('open');
     window.scrollTo({top:0, behavior:'smooth'});
     return;
   }
   // ────────────────────────────────────────────────────────
-  navItems.forEach(b=>b.classList.toggle('active', b.dataset.view===viewName));
+  activateNav(viewName);
   sidebar.classList.remove('open');
   // integrations is loaded from integrations.js
   const intRoute = (typeof integrations === 'function') ? {integrations} : {};

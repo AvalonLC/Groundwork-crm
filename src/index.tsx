@@ -73,41 +73,51 @@ function getHtml(): string {
         <div class="brand-kicker">Sales Hub</div>
       </div>
     </div>
-    <nav class="nav" role="navigation">
+    <nav class="nav" id="mainNav" role="navigation">
 
-      <div class="nav-group">
-        <span class="nav-label">Home</span>
-        <button class="nav-item active" data-view="today" onclick="show('today')">🏠 Today</button>
-        <button class="nav-item" data-view="myDashboard" onclick="show('myDashboard')">👤 My Dashboard</button>
-      </div>
+      <details class="nav-group" open>
+        <summary class="nav-summary">🏠 Home</summary>
+        <div class="nav-items">
+          <button class="nav-item active" data-view="today" onclick="show('today')">Today</button>
+          <button class="nav-item" data-view="myDashboard" onclick="show('myDashboard')">My Dashboard</button>
+        </div>
+      </details>
 
-      <div class="nav-group">
-        <span class="nav-label">Pipeline</span>
-        <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">📊 Pipeline</button>
-        <button class="nav-item" data-view="lead" onclick="show('lead')">➕ Add Lead</button>
-      </div>
+      <details class="nav-group" open>
+        <summary class="nav-summary">📊 Pipeline</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">Pipeline</button>
+          <button class="nav-item" data-view="lead" onclick="show('lead')">Add Lead</button>
+        </div>
+      </details>
 
-      <div class="nav-group">
-        <span class="nav-label">Sales Toolkit</span>
-        <button class="nav-item" data-view="process" onclick="show('process')">📋 Sales Process</button>
-        <button class="nav-item" data-view="forms" onclick="show('forms')">📝 Forms & Checklists</button>
-        <button class="nav-item" data-view="scripts" onclick="show('scripts')">💬 Scripts</button>
-        <button class="nav-item" data-view="templates" onclick="show('templates')">📧 Email Templates</button>
-        <button class="nav-item" data-view="objections" onclick="show('objections')">🛡️ Objection Handling</button>
-        <button class="nav-item" data-view="calculator" onclick="show('calculator')">🧮 Pricing Tools</button>
-      </div>
+      <details class="nav-group">
+        <summary class="nav-summary">🛠️ Sales Toolkit</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="process" onclick="show('process')">Sales Process</button>
+          <button class="nav-item" data-view="forms" onclick="show('forms')">Forms &amp; Checklists</button>
+          <button class="nav-item" data-view="scripts" onclick="show('scripts')">Scripts</button>
+          <button class="nav-item" data-view="templates" onclick="show('templates')">Email Templates</button>
+          <button class="nav-item" data-view="objections" onclick="show('objections')">Objection Handling</button>
+          <button class="nav-item" data-view="calculator" onclick="show('calculator')">Pricing Tools</button>
+        </div>
+      </details>
 
-      <div class="nav-group">
-        <span class="nav-label">Learning</span>
-        <button class="nav-item" data-view="academy" onclick="show('academy')">🎓 Sales Academy</button>
-      </div>
+      <details class="nav-group">
+        <summary class="nav-summary">🎓 Learning</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="academy" onclick="show('academy')">Sales Academy</button>
+        </div>
+      </details>
 
-      <div class="nav-group">
-        <span class="nav-label">Admin</span>
-        <button class="nav-item" data-view="manager" onclick="show('manager')">👔 Manager Tools</button>
-        <button class="nav-item" data-view="integrations" onclick="show('integrations')">🔗 Integrations</button>
-        <button class="nav-item" data-view="settings" onclick="show('settings')">⚙️ Settings</button>
-      </div>
+      <details class="nav-group">
+        <summary class="nav-summary">⚙️ Admin</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="manager" onclick="show('manager')">Manager Tools</button>
+          <button class="nav-item" data-view="integrations" onclick="show('integrations')">Integrations</button>
+          <button class="nav-item" data-view="settings" onclick="show('settings')">Settings</button>
+        </div>
+      </details>
 
     </nav>
     <div class="sidebar-footer">
