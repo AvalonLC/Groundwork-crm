@@ -939,14 +939,14 @@ async function intLoadGmail() {
       const from = headers.find(h => h.name === 'From')?.value || '';
       const date = headers.find(h => h.name === 'Date')?.value || '';
       const d = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+      const sender = from.split('<')[0].trim().replace(/"/g,'') || from;
       return `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:6px;gap:12px">
-          <div style="min-width:0">
-            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subj)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(from.split('<')[0].trim())} · ${d}</div>
+        <div class="int-list-row">
+          <div style="min-width:0;flex:1">
+            <div class="int-list-row-title">✉️ ${escapeHtml(subj)}</div>
+            <div class="int-list-row-meta">From: ${escapeHtml(sender)}${d ? ' · ' + d : ''}</div>
           </div>
-          <a href="https://mail.google.com/mail/#inbox/${thread.id}" target="_blank" rel="noopener"
-            style="font-size:11px;color:var(--accent);white-space:nowrap;text-decoration:none">Open →</a>
+          <a href="https://mail.google.com/mail/#inbox/${thread.id}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>
         </div>
       `;
     }).join('');
@@ -955,32 +955,212 @@ async function intLoadGmail() {
   }
 }
 
+// Calendar view state ('agenda' | 'week' | 'month')
+let _calView = 'agenda';
+let _calEvents = [];
+let _calWeekOffset = 0; // weeks from today
+let _calMonthOffset = 0; // months from today
+
 async function intLoadCalendar() {
   const el = document.getElementById('int-cal-list');
   if (!el) return;
   el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
   try {
-    const result = await calListUpcoming(8);
-    const events = result.items || [];
-    if (!events.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No upcoming events.</p>'; return; }
-    el.innerHTML = events.map(ev => {
-      const start = ev.start?.dateTime || ev.start?.date || '';
-      const d = start ? new Date(start).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : '';
-      const t = ev.start?.dateTime ? new Date(ev.start.dateTime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
-      return `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:6px;gap:12px">
-          <div style="min-width:0">
-            <div style="font-weight:600;font-size:13px">${escapeHtml(ev.summary || '(no title)')}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px">${d}${t ? ' · ' + t : ''}</div>
-          </div>
-          ${ev.htmlLink ? `<a href="${escapeHtml(ev.htmlLink)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);white-space:nowrap;text-decoration:none">Open →</a>` : ''}
-        </div>
-      `;
-    }).join('');
+    // Fetch up to 50 events so we have enough for week/month grids
+    const result = await calListUpcoming(50);
+    _calEvents = result.items || [];
+    intRenderCalView(el);
   } catch(e) {
     el.innerHTML = `<p style="color:#f87171;font-size:13px">Error: ${escapeHtml(e.message)}</p>`;
   }
 }
+
+function intRenderCalView(el) {
+  if (!el) el = document.getElementById('int-cal-list');
+  if (!el) return;
+
+  // Build the view toggle header
+  const navHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <div class="cal-view-toggle">
+      <button class="cal-view-btn ${_calView==='month'?'active':''}" onclick="intSetCalView('month')">Month</button>
+      <button class="cal-view-btn ${_calView==='week'?'active':''}" onclick="intSetCalView('week')">Week</button>
+      <button class="cal-view-btn ${_calView==='agenda'?'active':''}" onclick="intSetCalView('agenda')">Agenda</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button onclick="intCalPrev()" style="background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px">‹</button>
+      <span id="cal-view-label" style="font-size:12px;font-weight:700;color:#94a3b8;min-width:100px;text-align:center"></span>
+      <button onclick="intCalNext()" style="background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px">›</button>
+      <button onclick="intCalToday()" style="background:transparent;border:1px solid #334155;color:#60a5fa;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:700">Today</button>
+    </div>
+  </div>`;
+
+  let bodyHtml = '';
+  if (_calView === 'agenda') bodyHtml = intRenderAgenda();
+  else if (_calView === 'week') bodyHtml = intRenderWeek();
+  else bodyHtml = intRenderMonth();
+
+  el.innerHTML = navHtml + bodyHtml;
+  // Update the label
+  const labelEl = document.getElementById('cal-view-label');
+  if (labelEl) {
+    const today = new Date();
+    if (_calView === 'agenda') labelEl.textContent = 'Upcoming';
+    else if (_calView === 'week') {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() + _calWeekOffset * 7);
+      labelEl.textContent = weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    } else {
+      const d = new Date(today.getFullYear(), today.getMonth() + _calMonthOffset, 1);
+      labelEl.textContent = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    }
+  }
+}
+
+function intRenderAgenda() {
+  const events = _calEvents;
+  if (!events.length) return '<p style="color:var(--muted);font-size:13px">No upcoming events.</p>';
+  const byDay = {};
+  events.forEach(ev => {
+    const start = ev.start?.dateTime || ev.start?.date || '';
+    const dayKey = start ? new Date(start).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'Unknown';
+    if (!byDay[dayKey]) byDay[dayKey] = [];
+    byDay[dayKey].push(ev);
+  });
+  return Object.entries(byDay).map(([day, dayEvents]) => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px;padding:0 2px">${day}</div>
+      ${dayEvents.map(ev => {
+        const t = ev.start?.dateTime ? new Date(ev.start.dateTime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'All day';
+        const end = ev.end?.dateTime ? new Date(ev.end.dateTime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+        return `<div class="int-list-row">
+          <div style="min-width:0;flex:1">
+            <div class="int-list-row-title">📅 ${escapeHtml(ev.summary || '(no title)')}</div>
+            <div class="int-list-row-meta">${t}${end ? ' – ' + end : ''}${ev.location ? ' · 📍 ' + escapeHtml(ev.location) : ''}</div>
+          </div>
+          ${ev.htmlLink ? `<a href="${escapeHtml(ev.htmlLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  `).join('');
+}
+
+function intRenderWeek() {
+  const today = new Date();
+  const todayNum = today.getDate();
+  const todayMonth = today.getMonth();
+  const todayYear = today.getFullYear();
+  // Week starts Sunday
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay() + _calWeekOffset * 7);
+  weekStart.setHours(0,0,0,0);
+
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    days.push(d);
+  }
+  const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const hours = [];
+  for (let h = 7; h <= 19; h++) hours.push(h); // 7am – 7pm
+
+  // Header row
+  let html = `<div class="cal-week-grid">
+    <div class="cal-week-header" style="background:#0a0f1a"></div>
+    ${days.map(d => {
+      const isToday = d.getDate()===todayNum && d.getMonth()===todayMonth && d.getFullYear()===todayYear;
+      const domHtml = isToday
+        ? `<div class="dom today-num">${d.getDate()}</div>`
+        : `<div class="dom">${d.getDate()}</div>`;
+      return `<div class="cal-week-header"><div class="dow">${dowLabels[d.getDay()]}</div>${domHtml}</div>`;
+    }).join('')}`;
+
+  // Time rows
+  hours.forEach(h => {
+    const label = h === 12 ? '12 PM' : h > 12 ? `${h-12} PM` : `${h} AM`;
+    html += `<div class="cal-week-time-label">${label}</div>`;
+    days.forEach(d => {
+      // Find events in this hour
+      const cellEvents = _calEvents.filter(ev => {
+        if (!ev.start?.dateTime) return false;
+        const eStart = new Date(ev.start.dateTime);
+        return eStart.getFullYear()===d.getFullYear() &&
+               eStart.getMonth()===d.getMonth() &&
+               eStart.getDate()===d.getDate() &&
+               eStart.getHours()===h;
+      });
+      const evHtml = cellEvents.map(ev => {
+        const t = new Date(ev.start.dateTime).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+        return `<a href="${escapeHtml(ev.htmlLink||'#')}" target="_blank" rel="noopener" class="cal-week-event" title="${escapeHtml(ev.summary||'')}">${t} ${escapeHtml((ev.summary||'(no title)').slice(0,20))}</a>`;
+      }).join('');
+      html += `<div class="cal-week-cell">${evHtml}</div>`;
+    });
+  });
+  html += '</div>';
+  return html;
+}
+
+function intRenderMonth() {
+  const today = new Date();
+  const viewDate = new Date(today.getFullYear(), today.getMonth() + _calMonthOffset, 1);
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  let html = `<div class="cal-month-grid">
+    ${dowLabels.map(d => `<div class="cal-month-day-header">${d}</div>`).join('')}`;
+
+  // Pad empty cells before day 1
+  for (let i = 0; i < firstDay; i++) {
+    html += `<div class="cal-month-cell other-month"></div>`;
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+    const dayEvents = _calEvents.filter(ev => {
+      const s = ev.start?.dateTime || ev.start?.date;
+      if (!s) return false;
+      const d = new Date(s);
+      return d.getFullYear()===year && d.getMonth()===month && d.getDate()===day;
+    });
+    const evChips = dayEvents.slice(0,3).map(ev =>
+      `<div class="cal-event-chip" title="${escapeHtml(ev.summary||'')}" onclick="window.open('${escapeHtml(ev.htmlLink||'')}','_blank')">${escapeHtml((ev.summary||'Event').slice(0,16))}</div>`
+    ).join('');
+    const moreCount = dayEvents.length - 3;
+    html += `<div class="cal-month-cell${isToday?' today':''}">
+      <div class="cal-month-cell-num">${day}</div>
+      ${evChips}
+      ${moreCount > 0 ? `<div style="font-size:10px;color:#64748b;margin-top:1px">+${moreCount} more</div>` : ''}
+    </div>`;
+  }
+
+  // Pad to complete final week row
+  const totalCells = firstDay + daysInMonth;
+  const remaining = (7 - (totalCells % 7)) % 7;
+  for (let i = 0; i < remaining; i++) {
+    html += `<div class="cal-month-cell other-month"></div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+window.intSetCalView = function(v) { _calView = v; intRenderCalView(); };
+window.intCalPrev = function() {
+  if (_calView === 'week') _calWeekOffset--;
+  else if (_calView === 'month') _calMonthOffset--;
+  intRenderCalView();
+};
+window.intCalNext = function() {
+  if (_calView === 'week') _calWeekOffset++;
+  else if (_calView === 'month') _calMonthOffset++;
+  intRenderCalView();
+};
+window.intCalToday = function() {
+  _calWeekOffset = 0; _calMonthOffset = 0;
+  intRenderCalView();
+};
 
 async function intLoadDrive() {
   const el = document.getElementById('int-drive-list');
@@ -996,17 +1176,18 @@ async function intLoadDrive() {
         f.mimeType?.includes('sheet') ? '📊' :
         f.mimeType?.includes('document') ? '📝' :
         f.mimeType?.includes('image') ? '🖼️' : '📎';
-      const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+      const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      const typeLabel = f.mimeType?.includes('folder') ? 'Folder' : f.mimeType?.split('/').pop()?.replace('vnd.google-apps.','').replace('vnd.openxmlformats-officedocument.','') || 'File';
       return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:6px;gap:12px">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0">
-            <span style="font-size:18px">${icon}</span>
+        <div class="int-list-row">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+            <span style="font-size:22px;flex-shrink:0">${icon}</span>
             <div style="min-width:0">
-              <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.name)}</div>
-              <div style="font-size:11px;color:var(--muted)">${modified}</div>
+              <div class="int-list-row-title">${escapeHtml(f.name)}</div>
+              <div class="int-list-row-meta">${typeLabel}${modified ? ' · Modified ' + modified : ''}</div>
             </div>
           </div>
-          ${f.webViewLink ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);white-space:nowrap;text-decoration:none">Open →</a>` : ''}
+          ${f.webViewLink ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
         </div>
       `;
     }).join('');
@@ -1031,12 +1212,15 @@ async function intSearchDrive() {
         f.mimeType?.includes('document') ? '📝' :
         f.mimeType?.includes('image') ? '🖼️' : '📎';
       return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:6px;gap:12px">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0">
-            <span style="font-size:18px">${icon}</span>
-            <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.name)}</div>
+        <div class="int-list-row">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+            <span style="font-size:20px;flex-shrink:0">${icon}</span>
+            <div style="min-width:0">
+              <div class="int-list-row-title">${escapeHtml(f.name)}</div>
+              <div class="int-list-row-meta">File</div>
+            </div>
           </div>
-          ${f.webViewLink ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);white-space:nowrap;text-decoration:none">Open →</a>` : ''}
+          ${f.webViewLink ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
         </div>
       `;
     }).join('');

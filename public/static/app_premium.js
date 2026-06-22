@@ -35,8 +35,8 @@ const NAV_PERMS_KEY = 'avalonNavPermissions';
 
 // Default permissions by role. Tyler can override from Settings.
 const DEFAULT_NAV_PERMS = {
-  admin: ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'],
-  office_manager: ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'],
+  admin: ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','revenueAdmin'],
+  office_manager: ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','revenueAdmin'],
   rep: ['today','myDashboard','pipeline','lead','process','forms','scripts','templates','objections','calculator','academy']
 };
 
@@ -90,7 +90,8 @@ function show(viewName='today', param){
   const intRoute = (typeof integrations === 'function') ? {integrations} : {};
   // repDashboard is loaded from reps.js
   const repRoute = (typeof repDashboard === 'function') ? {myDashboard: repDashboard} : {};
-  const routes = {today, pipeline, lead, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute};
+  const revenueRoute = (typeof revenueAdmin === 'function') ? {revenueAdmin} : {};
+  const routes = {today, pipeline, lead, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -417,6 +418,7 @@ function opportunityDetail(id){
       <div><div class="eyebrow">Opportunity</div><h1>${escapeHtml(o.client||'Unnamed Lead')}</h1><p class="lede">${escapeHtml(o.project||o.serviceLine||'Opportunity')} • ${escapeHtml(o.address||'No address')}</p></div>
       <div class="detail-actions">
         <button class="primary-btn" onclick="saveOpportunity('${o.id}')">Save Changes</button>
+        ${o.status !== 'Sold / Activation' && o.status !== 'Closed Lost' ? `<button class="primary-btn" style="background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 8px 20px rgba(22,163,74,.25)" onclick="openMarkSoldModal('${o.id}')">✅ Mark Sold</button>` : o.status === 'Sold / Activation' ? `<span style="background:#16a34a18;border:1px solid #16a34a40;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;color:#16a34a">✅ Sold</span>` : ''}
         ${(()=>{ const _cr = window.getCurrentRep ? window.getCurrentRep() : null; const _ia = _cr && _cr.role === 'admin'; const _iom = _cr && _cr.role === 'office_manager'; return _ia ? `<button class="secondary-btn" onclick="duplicateOpportunity('${o.id}')">Duplicate</button><button class="danger-btn" onclick="deleteOpportunity('${o.id}')">Delete</button>` : _iom ? `<button class="secondary-btn" onclick="duplicateOpportunity('${o.id}')">Duplicate</button>` : ''; })()}
       </div>
     </div>
@@ -759,7 +761,10 @@ function manager(){
       </div>
     </div>
 
-    <h2 class="mt" style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Division P&amp;L \u2014 Actual vs Target</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:28px;margin-bottom:0">
+      <h2 style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0">Division P&amp;L \u2014 Actual vs Target</h2>
+      <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#1d4ed8,#1e40af)">✏️ Edit Monthly Revenue</button>
+    </div>
     <div class="grid grid-3 mt" style="gap:16px">
       ${divTile(divs.landscape)}
       ${divTile(divs.maintenance)}
@@ -1020,11 +1025,510 @@ window._resetNavPerms = function() {
   showToast('Permissions reset to defaults');
   show('settings');
 };
+// ── Mark Sold Modal ───────────────────────────────────────────────────────────
+function openMarkSoldModal(oppId) {
+  const o = state.opportunities.find(x => x.id === oppId);
+  if (!o) return;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'sold-modal-backdrop';
+  backdrop.id = 'soldModalBackdrop';
+  backdrop.innerHTML = `
+    <div class="sold-modal">
+      <button class="sold-modal-close" onclick="closeMarkSoldModal()" title="Close">×</button>
+      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#16a34a;margin-bottom:8px">Mark as Sold</div>
+      <h2>🎉 ${escapeHtml(o.client || 'Lead')} — Closed Won</h2>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:20px">${escapeHtml(o.project || o.serviceLine || 'Opportunity')} · ${escapeHtml(o.address || '')}</p>
+      <div class="form-grid" style="gap:14px">
+        <label style="display:grid;gap:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Sold Amount *</span>
+          <input id="sm_amount" type="number" min="0" step="100" placeholder="e.g. 24500" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px;font-weight:600">
+        </label>
+        <label style="display:grid;gap:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Sold Date *</span>
+          <input id="sm_date" type="date" value="${todayISO()}" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+        </label>
+        <label style="display:grid;gap:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Division / Service Line</span>
+          <select id="sm_division" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+            <option value="">— Select —</option>
+            ${(window.AVALON_DATA?.serviceLines || ['Landscape','Maintenance','Snow & Ice']).map(s => `<option value="${escapeHtml(s)}" ${o.serviceLine===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+          </select>
+        </label>
+        <label style="display:grid;gap:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Contract Type</span>
+          <select id="sm_contract" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+            <option value="">— Select —</option>
+            <option value="One-Time">One-Time Project</option>
+            <option value="Recurring">Recurring Contract</option>
+            <option value="Design-Build">Design / Build</option>
+          </select>
+        </label>
+        <label style="display:grid;gap:6px;grid-column:1/-1">
+          <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Sold Notes / Win Reason</span>
+          <textarea id="sm_notes" rows="3" placeholder="What closed this deal?" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical"></textarea>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" id="sm_deposit" style="width:16px;height:16px;accent-color:#16a34a">
+          <span style="font-size:13px;font-weight:600">Deposit Collected</span>
+        </label>
+        <label style="display:grid;gap:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Expected Start Date</span>
+          <input id="sm_startdate" type="date" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:24px">
+        <button class="primary-btn" style="background:linear-gradient(135deg,#16a34a,#15803d);flex:1;font-size:15px" onclick="confirmMarkSold('${oppId}')">✅ Confirm — Mark Sold</button>
+        <button class="secondary-btn" onclick="closeMarkSoldModal()">Cancel</button>
+      </div>
+    </div>
+  `;
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeMarkSoldModal(); });
+  document.body.appendChild(backdrop);
+  document.getElementById('sm_amount').focus();
+}
+
+function closeMarkSoldModal() {
+  const el = document.getElementById('soldModalBackdrop');
+  if (el) el.remove();
+}
+
+function confirmMarkSold(oppId) {
+  const amount = parseFloat(document.getElementById('sm_amount')?.value || '0');
+  const date   = document.getElementById('sm_date')?.value || todayISO();
+  if (!amount || amount <= 0) { showToast('⚠️ Enter a sold amount first'); return; }
+  const o = state.opportunities.find(x => x.id === oppId);
+  if (!o) return;
+  // Preserve previous stage for audit
+  o.previousStatus  = o.status;
+  o.status          = 'Sold / Activation';
+  o.soldAmount      = amount;
+  o.soldDate        = date;
+  o.soldDivision    = document.getElementById('sm_division')?.value || o.serviceLine || '';
+  o.contractType    = document.getElementById('sm_contract')?.value || '';
+  o.soldNotes       = document.getElementById('sm_notes')?.value || '';
+  o.depositCollected = document.getElementById('sm_deposit')?.checked || false;
+  o.expectedStart   = document.getElementById('sm_startdate')?.value || '';
+  o.updatedAt       = new Date().toISOString();
+  saveState();
+  closeMarkSoldModal();
+  showToast(`🎉 ${o.client} marked as sold — $${amount.toLocaleString()}`);
+  show('pipeline', oppId);
+}
+window.openMarkSoldModal = openMarkSoldModal;
+window.closeMarkSoldModal = closeMarkSoldModal;
+window.confirmMarkSold = confirmMarkSold;
+
 function exportJson(){ const blob = new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); downloadBlob(blob,`avalon-sales-hub-backup-${todayISO()}.json`); }
 function exportCsv(){ const headers=['client','phone','email','address','serviceLine','source','project','urgency','decisionMaker','budget','status','nextFollowUp','createdAt','updatedAt']; const rows=state.opportunities.map(o=>headers.map(h=>`"${String(o[h]||'').replace(/"/g,'""')}"`).join(',')); downloadBlob(new Blob([[headers.join(','),...rows].join('\n')],{type:'text/csv'}),`avalon-pipeline-${todayISO()}.csv`); }
 function downloadBlob(blob,filename){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href); }
-function importJson(){ const file=document.getElementById('importFile').files[0]; if(!file) return showToast('Choose a JSON file first'); const reader=new FileReader(); reader.onload=()=>{ try{ state={...DEFAULT_STATE,...JSON.parse(reader.result)}; saveState(); showToast('Imported'); show('today'); }catch(e){ showToast('Import failed'); } }; reader.readAsText(file); }
-function resetAll(){ if(!confirm('Reset all local Sales Hub data and checklist progress?')) return; localStorage.clear(); state=structuredClone(DEFAULT_STATE); saveState(); showToast('Reset complete'); show('today'); }
+function importJson(){ const file=document.getElementById('importFile').files[0]; if(!file) return showToast('Choose a JSON file first'); const reader=new FileReader(); reader.onload=()=>{ try{ state={...DEFAULT_STATE,...JSON.parse(reader.result)}; saveState(); showToast('Imported'); 
+// ── Monthly Revenue Admin (Phase 2B) ─────────────────────────────────────────
+const REV_ACTUALS_KEY = 'avalonRevenueActuals';
+function loadRevenueActuals() {
+  try { return JSON.parse(localStorage.getItem(REV_ACTUALS_KEY)) || {}; }
+  catch(e) { return {}; }
+}
+function saveRevenueActuals(actuals) {
+  localStorage.setItem(REV_ACTUALS_KEY, JSON.stringify(actuals));
+}
+
+function revenueAdmin() {
+  const fy = window.AVALON_DATA.fy2026;
+  const savedActuals = loadRevenueActuals();
+  // Merge saved actuals with data.js actuals (saved wins)
+  const months = (fy.monthlyBudget || []).map((m, idx) => {
+    const saved = savedActuals[m.month];
+    const actual = saved !== undefined ? saved : m.actual;
+    const variance = actual != null ? actual - m.budgeted : null;
+    return { ...m, actual, variance, idx };
+  });
+
+  function fmtM(n) { return n != null ? n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }) : '—'; }
+
+  // Compute YTD from months with actual
+  const ytdBudget  = months.filter(m => m.actual != null).reduce((a,m) => a + m.budgeted, 0);
+  const ytdActual  = months.filter(m => m.actual != null).reduce((a,m) => a + m.actual, 0);
+  const ytdVar     = ytdActual - ytdBudget;
+  const ytdVarColor= ytdVar >= 0 ? '#4ade80' : '#f87171';
+
+  const currentMonthIdx = new Date().getMonth(); // 0-based
+
+  const tableRows = months.map(m => {
+    const isPast     = m.idx < currentMonthIdx;
+    const isCurrent  = m.idx === currentMonthIdx;
+    const hasActual  = m.actual != null;
+    const varColor   = m.variance == null ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
+    const varSign    = m.variance != null && m.variance > 0 ? '+' : '';
+    const lockBadge  = isPast && hasActual ? '<span class="rev-locked-badge">saved</span>' : '';
+    return `<tr>
+      <td><span class="rev-month-tag">${escapeHtml(m.month)}</span>${lockBadge}</td>
+      <td class="right" style="color:#64748b">${fmtM(m.budgeted)}</td>
+      <td class="right">
+        <input class="rev-editor-input" type="number" min="0" step="1000"
+          id="rev_actual_${m.idx}"
+          value="${hasActual ? m.actual : ''}"
+          placeholder="enter actual"
+          onchange="revUpdateRow(${m.idx})"
+          ${isCurrent || isPast ? '' : 'style="opacity:.5"'}
+        >
+      </td>
+      <td class="right" id="rev_var_${m.idx}" style="color:${varColor};font-weight:700">${m.variance != null ? varSign + fmtM(m.variance) : '—'}</td>
+      <td style="color:#64748b;font-size:12px" id="rev_notes_${m.idx}">
+        <input style="background:transparent;border:none;border-bottom:1px solid #1e293b;width:100%;color:#94a3b8;font-size:12px;padding:4px 0" 
+          placeholder="notes…" 
+          id="rev_note_text_${m.idx}"
+          value="${escapeHtml(savedActuals['note_'+m.month]||'')}">
+      </td>
+    </tr>`;
+  }).join('');
+
+  view.innerHTML = `
+    <button class="secondary-btn" onclick="show('manager')">← Back to Manager Tools</button>
+    <div class="eyebrow" style="margin-top:16px">Admin — FY2026</div>
+    <h1>Monthly Revenue Editor</h1>
+    <p class="lede">Enter or edit monthly actual revenue. Variance auto-calculates. Dashboard updates immediately on save.</p>
+
+    <div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:20px;margin-bottom:24px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Budget</div>
+          <div id="rev_ytd_budget" style="font-size:1.6rem;font-weight:900;color:#e2e8f0">${fmtM(ytdBudget)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Actual</div>
+          <div id="rev_ytd_actual" style="font-size:1.6rem;font-weight:900;color:#22d3ee">${fmtM(ytdActual)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Variance</div>
+          <div id="rev_ytd_var" style="font-size:1.6rem;font-weight:900;color:${ytdVarColor}">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Annual Budget</div>
+          <div style="font-size:1.6rem;font-weight:900;color:#a78bfa">${fmtM(fy.annual.budgetedRevenue)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="background:#0a0f1a;border:1px solid #1e293b;padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1e293b">
+        <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">Budget vs Actual — Jan–Dec 2026</h2>
+        <div style="display:flex;gap:8px">
+          <button class="secondary-btn small" onclick="revSaveAll()" style="background:#16a34a;border-color:#16a34a;color:#fff">💾 Save All</button>
+          <button class="secondary-btn small" onclick="revExportCsv()">📥 Export CSV</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rev-editor-table" id="revTable">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th class="right">Budgeted</th>
+              <th class="right">Actual Revenue</th>
+              <th class="right">Variance</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+          <tfoot>
+            <tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
+              <td style="padding:12px;color:#e2e8f0">YTD Total</td>
+              <td class="right" style="padding:12px;color:#64748b" id="rev_tfoot_budget">${fmtM(ytdBudget)}</td>
+              <td class="right" style="padding:12px;color:#22d3ee" id="rev_tfoot_actual">${fmtM(ytdActual)}</td>
+              <td class="right" style="padding:12px;color:${ytdVarColor}" id="rev_tfoot_var">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt" style="background:#0a0f1a;border:1px solid #1e293b">
+      <h3 style="color:#f1f5f9;margin-top:0">How This Works</h3>
+      <ul style="color:#94a3b8;font-size:13px;line-height:1.7;margin:0;padding-left:18px">
+        <li>Enter actual monthly revenue in the <strong style="color:#e2e8f0">Actual Revenue</strong> column</li>
+        <li>Variance calculates automatically (Actual − Budget)</li>
+        <li>Click <strong style="color:#e2e8f0">Save All</strong> to persist. Owner Dashboard and YTD cards update on next load</li>
+        <li>Add notes in the Notes column to explain variances</li>
+        <li>Future months remain editable so you can enter projections</li>
+      </ul>
+    </div>
+  `;
+}
+
+window.revUpdateRow = function(idx) {
+  const fy = window.AVALON_DATA.fy2026;
+  const months = fy.monthlyBudget || [];
+  const m = months[idx];
+  if (!m) return;
+  const input = document.getElementById('rev_actual_' + idx);
+  const rawVal = input?.value;
+  const actual = rawVal !== '' && rawVal != null ? parseFloat(rawVal) : null;
+  const variance = actual != null ? actual - m.budgeted : null;
+  const varColor = variance == null ? '#334155' : variance >= 0 ? '#4ade80' : '#f87171';
+  const varSign  = variance != null && variance > 0 ? '+' : '';
+  function fmtM(n) { return n != null ? n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }) : '—'; }
+  const varEl = document.getElementById('rev_var_' + idx);
+  if (varEl) { varEl.textContent = variance != null ? varSign + fmtM(variance) : '—'; varEl.style.color = varColor; }
+
+  // Recompute YTD from all current inputs
+  let ytdBudget = 0, ytdActual = 0;
+  months.forEach((mb, i) => {
+    const inp = document.getElementById('rev_actual_' + i);
+    const v = inp?.value !== '' && inp?.value != null ? parseFloat(inp.value) : null;
+    if (v != null) { ytdBudget += mb.budgeted; ytdActual += v; }
+  });
+  const ytdVar = ytdActual - ytdBudget;
+  const ytdVarColor = ytdVar >= 0 ? '#4ade80' : '#f87171';
+  const setEl = (id, txt, color) => { const el = document.getElementById(id); if (el) { el.textContent = txt; if (color) el.style.color = color; } };
+  setEl('rev_ytd_budget', fmtM(ytdBudget));
+  setEl('rev_ytd_actual', fmtM(ytdActual), '#22d3ee');
+  setEl('rev_ytd_var', (ytdVar >= 0 ? '+' : '') + fmtM(ytdVar), ytdVarColor);
+  setEl('rev_tfoot_budget', fmtM(ytdBudget));
+  setEl('rev_tfoot_actual', fmtM(ytdActual));
+  setEl('rev_tfoot_var', (ytdVar >= 0 ? '+' : '') + fmtM(ytdVar), ytdVarColor);
+};
+
+window.revSaveAll = function() {
+  const fy = window.AVALON_DATA.fy2026;
+  const months = fy.monthlyBudget || [];
+  const actuals = loadRevenueActuals();
+  months.forEach((m, idx) => {
+    const inp = document.getElementById('rev_actual_' + idx);
+    if (!inp) return;
+    const val = inp.value !== '' && inp.value != null ? parseFloat(inp.value) : undefined;
+    if (val !== undefined && !isNaN(val)) actuals[m.month] = val;
+    else delete actuals[m.month];
+    const noteInp = document.getElementById('rev_note_text_' + idx);
+    if (noteInp) {
+      if (noteInp.value.trim()) actuals['note_' + m.month] = noteInp.value.trim();
+      else delete actuals['note_' + m.month];
+    }
+  });
+  saveRevenueActuals(actuals);
+  showToast('✅ Revenue data saved — dashboard will reflect on reload');
+};
+
+window.revExportCsv = function() {
+  const fy = window.AVALON_DATA.fy2026;
+  const saved = loadRevenueActuals();
+  const months = (fy.monthlyBudget || []).map(m => {
+    const actual = saved[m.month] != null ? saved[m.month] : m.actual;
+    const variance = actual != null ? actual - m.budgeted : null;
+    return { month: m.month, budgeted: m.budgeted, actual, variance, note: saved['note_'+m.month]||'' };
+  });
+  const hdr = ['Month','Budgeted','Actual','Variance','Notes'];
+  const rows = months.map(m => [m.month, m.budgeted||'', m.actual||'', m.variance||'', m.note].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([[hdr.join(','), ...rows].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'avalon-revenue-2026.csv'; a.click(); URL.revokeObjectURL(a.href);
+};
+
+window.revenueAdmin = revenueAdmin;
+
+show('today'); }catch(e){ showToast('Import failed'); } }; reader.readAsText(file); }
+function resetAll(){ if(!confirm('Reset all local Sales Hub data and checklist progress?')) return; localStorage.clear(); state=structuredClone(DEFAULT_STATE); saveState(); showToast('Reset complete'); 
+// ── Monthly Revenue Admin (Phase 2B) ─────────────────────────────────────────
+const REV_ACTUALS_KEY = 'avalonRevenueActuals';
+function loadRevenueActuals() {
+  try { return JSON.parse(localStorage.getItem(REV_ACTUALS_KEY)) || {}; }
+  catch(e) { return {}; }
+}
+function saveRevenueActuals(actuals) {
+  localStorage.setItem(REV_ACTUALS_KEY, JSON.stringify(actuals));
+}
+
+function revenueAdmin() {
+  const fy = window.AVALON_DATA.fy2026;
+  const savedActuals = loadRevenueActuals();
+  // Merge saved actuals with data.js actuals (saved wins)
+  const months = (fy.monthlyBudget || []).map((m, idx) => {
+    const saved = savedActuals[m.month];
+    const actual = saved !== undefined ? saved : m.actual;
+    const variance = actual != null ? actual - m.budgeted : null;
+    return { ...m, actual, variance, idx };
+  });
+
+  function fmtM(n) { return n != null ? n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }) : '—'; }
+
+  // Compute YTD from months with actual
+  const ytdBudget  = months.filter(m => m.actual != null).reduce((a,m) => a + m.budgeted, 0);
+  const ytdActual  = months.filter(m => m.actual != null).reduce((a,m) => a + m.actual, 0);
+  const ytdVar     = ytdActual - ytdBudget;
+  const ytdVarColor= ytdVar >= 0 ? '#4ade80' : '#f87171';
+
+  const currentMonthIdx = new Date().getMonth(); // 0-based
+
+  const tableRows = months.map(m => {
+    const isPast     = m.idx < currentMonthIdx;
+    const isCurrent  = m.idx === currentMonthIdx;
+    const hasActual  = m.actual != null;
+    const varColor   = m.variance == null ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
+    const varSign    = m.variance != null && m.variance > 0 ? '+' : '';
+    const lockBadge  = isPast && hasActual ? '<span class="rev-locked-badge">saved</span>' : '';
+    return `<tr>
+      <td><span class="rev-month-tag">${escapeHtml(m.month)}</span>${lockBadge}</td>
+      <td class="right" style="color:#64748b">${fmtM(m.budgeted)}</td>
+      <td class="right">
+        <input class="rev-editor-input" type="number" min="0" step="1000"
+          id="rev_actual_${m.idx}"
+          value="${hasActual ? m.actual : ''}"
+          placeholder="enter actual"
+          onchange="revUpdateRow(${m.idx})"
+          ${isCurrent || isPast ? '' : 'style="opacity:.5"'}
+        >
+      </td>
+      <td class="right" id="rev_var_${m.idx}" style="color:${varColor};font-weight:700">${m.variance != null ? varSign + fmtM(m.variance) : '—'}</td>
+      <td style="color:#64748b;font-size:12px" id="rev_notes_${m.idx}">
+        <input style="background:transparent;border:none;border-bottom:1px solid #1e293b;width:100%;color:#94a3b8;font-size:12px;padding:4px 0" 
+          placeholder="notes…" 
+          id="rev_note_text_${m.idx}"
+          value="${escapeHtml(savedActuals['note_'+m.month]||'')}">
+      </td>
+    </tr>`;
+  }).join('');
+
+  view.innerHTML = `
+    <button class="secondary-btn" onclick="show('manager')">← Back to Manager Tools</button>
+    <div class="eyebrow" style="margin-top:16px">Admin — FY2026</div>
+    <h1>Monthly Revenue Editor</h1>
+    <p class="lede">Enter or edit monthly actual revenue. Variance auto-calculates. Dashboard updates immediately on save.</p>
+
+    <div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:20px;margin-bottom:24px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Budget</div>
+          <div id="rev_ytd_budget" style="font-size:1.6rem;font-weight:900;color:#e2e8f0">${fmtM(ytdBudget)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Actual</div>
+          <div id="rev_ytd_actual" style="font-size:1.6rem;font-weight:900;color:#22d3ee">${fmtM(ytdActual)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Variance</div>
+          <div id="rev_ytd_var" style="font-size:1.6rem;font-weight:900;color:${ytdVarColor}">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Annual Budget</div>
+          <div style="font-size:1.6rem;font-weight:900;color:#a78bfa">${fmtM(fy.annual.budgetedRevenue)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="background:#0a0f1a;border:1px solid #1e293b;padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1e293b">
+        <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">Budget vs Actual — Jan–Dec 2026</h2>
+        <div style="display:flex;gap:8px">
+          <button class="secondary-btn small" onclick="revSaveAll()" style="background:#16a34a;border-color:#16a34a;color:#fff">💾 Save All</button>
+          <button class="secondary-btn small" onclick="revExportCsv()">📥 Export CSV</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rev-editor-table" id="revTable">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th class="right">Budgeted</th>
+              <th class="right">Actual Revenue</th>
+              <th class="right">Variance</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+          <tfoot>
+            <tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
+              <td style="padding:12px;color:#e2e8f0">YTD Total</td>
+              <td class="right" style="padding:12px;color:#64748b" id="rev_tfoot_budget">${fmtM(ytdBudget)}</td>
+              <td class="right" style="padding:12px;color:#22d3ee" id="rev_tfoot_actual">${fmtM(ytdActual)}</td>
+              <td class="right" style="padding:12px;color:${ytdVarColor}" id="rev_tfoot_var">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt" style="background:#0a0f1a;border:1px solid #1e293b">
+      <h3 style="color:#f1f5f9;margin-top:0">How This Works</h3>
+      <ul style="color:#94a3b8;font-size:13px;line-height:1.7;margin:0;padding-left:18px">
+        <li>Enter actual monthly revenue in the <strong style="color:#e2e8f0">Actual Revenue</strong> column</li>
+        <li>Variance calculates automatically (Actual − Budget)</li>
+        <li>Click <strong style="color:#e2e8f0">Save All</strong> to persist. Owner Dashboard and YTD cards update on next load</li>
+        <li>Add notes in the Notes column to explain variances</li>
+        <li>Future months remain editable so you can enter projections</li>
+      </ul>
+    </div>
+  `;
+}
+
+window.revUpdateRow = function(idx) {
+  const fy = window.AVALON_DATA.fy2026;
+  const months = fy.monthlyBudget || [];
+  const m = months[idx];
+  if (!m) return;
+  const input = document.getElementById('rev_actual_' + idx);
+  const rawVal = input?.value;
+  const actual = rawVal !== '' && rawVal != null ? parseFloat(rawVal) : null;
+  const variance = actual != null ? actual - m.budgeted : null;
+  const varColor = variance == null ? '#334155' : variance >= 0 ? '#4ade80' : '#f87171';
+  const varSign  = variance != null && variance > 0 ? '+' : '';
+  function fmtM(n) { return n != null ? n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }) : '—'; }
+  const varEl = document.getElementById('rev_var_' + idx);
+  if (varEl) { varEl.textContent = variance != null ? varSign + fmtM(variance) : '—'; varEl.style.color = varColor; }
+
+  // Recompute YTD from all current inputs
+  let ytdBudget = 0, ytdActual = 0;
+  months.forEach((mb, i) => {
+    const inp = document.getElementById('rev_actual_' + i);
+    const v = inp?.value !== '' && inp?.value != null ? parseFloat(inp.value) : null;
+    if (v != null) { ytdBudget += mb.budgeted; ytdActual += v; }
+  });
+  const ytdVar = ytdActual - ytdBudget;
+  const ytdVarColor = ytdVar >= 0 ? '#4ade80' : '#f87171';
+  const setEl = (id, txt, color) => { const el = document.getElementById(id); if (el) { el.textContent = txt; if (color) el.style.color = color; } };
+  setEl('rev_ytd_budget', fmtM(ytdBudget));
+  setEl('rev_ytd_actual', fmtM(ytdActual), '#22d3ee');
+  setEl('rev_ytd_var', (ytdVar >= 0 ? '+' : '') + fmtM(ytdVar), ytdVarColor);
+  setEl('rev_tfoot_budget', fmtM(ytdBudget));
+  setEl('rev_tfoot_actual', fmtM(ytdActual));
+  setEl('rev_tfoot_var', (ytdVar >= 0 ? '+' : '') + fmtM(ytdVar), ytdVarColor);
+};
+
+window.revSaveAll = function() {
+  const fy = window.AVALON_DATA.fy2026;
+  const months = fy.monthlyBudget || [];
+  const actuals = loadRevenueActuals();
+  months.forEach((m, idx) => {
+    const inp = document.getElementById('rev_actual_' + idx);
+    if (!inp) return;
+    const val = inp.value !== '' && inp.value != null ? parseFloat(inp.value) : undefined;
+    if (val !== undefined && !isNaN(val)) actuals[m.month] = val;
+    else delete actuals[m.month];
+    const noteInp = document.getElementById('rev_note_text_' + idx);
+    if (noteInp) {
+      if (noteInp.value.trim()) actuals['note_' + m.month] = noteInp.value.trim();
+      else delete actuals['note_' + m.month];
+    }
+  });
+  saveRevenueActuals(actuals);
+  showToast('✅ Revenue data saved — dashboard will reflect on reload');
+};
+
+window.revExportCsv = function() {
+  const fy = window.AVALON_DATA.fy2026;
+  const saved = loadRevenueActuals();
+  const months = (fy.monthlyBudget || []).map(m => {
+    const actual = saved[m.month] != null ? saved[m.month] : m.actual;
+    const variance = actual != null ? actual - m.budgeted : null;
+    return { month: m.month, budgeted: m.budgeted, actual, variance, note: saved['note_'+m.month]||'' };
+  });
+  const hdr = ['Month','Budgeted','Actual','Variance','Notes'];
+  const rows = months.map(m => [m.month, m.budgeted||'', m.actual||'', m.variance||'', m.note].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([[hdr.join(','), ...rows].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'avalon-revenue-2026.csv'; a.click(); URL.revokeObjectURL(a.href);
+};
+
+window.revenueAdmin = revenueAdmin;
+
+show('today'); }
 
 function buildSearchIndex(){
   const items=[];
@@ -1061,5 +1565,208 @@ menuBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
 document.addEventListener('click', e => {
   if (!sidebar.contains(e.target) && !menuBtn.contains(e.target)) sidebar.classList.remove('open');
 });
+
+
+// ── Monthly Revenue Admin (Phase 2B) ─────────────────────────────────────────
+const REV_ACTUALS_KEY = 'avalonRevenueActuals';
+function loadRevenueActuals() {
+  try { return JSON.parse(localStorage.getItem(REV_ACTUALS_KEY)) || {}; }
+  catch(e) { return {}; }
+}
+function saveRevenueActuals(actuals) {
+  localStorage.setItem(REV_ACTUALS_KEY, JSON.stringify(actuals));
+}
+
+function revenueAdmin() {
+  const fy = window.AVALON_DATA.fy2026;
+  const savedActuals = loadRevenueActuals();
+  // Merge saved actuals with data.js actuals (saved wins)
+  const months = (fy.monthlyBudget || []).map((m, idx) => {
+    const saved = savedActuals[m.month];
+    const actual = saved !== undefined ? saved : m.actual;
+    const variance = actual != null ? actual - m.budgeted : null;
+    return { ...m, actual, variance, idx };
+  });
+
+  function fmtM(n) { return n != null ? n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }) : '—'; }
+
+  // Compute YTD from months with actual
+  const ytdBudget  = months.filter(m => m.actual != null).reduce((a,m) => a + m.budgeted, 0);
+  const ytdActual  = months.filter(m => m.actual != null).reduce((a,m) => a + m.actual, 0);
+  const ytdVar     = ytdActual - ytdBudget;
+  const ytdVarColor= ytdVar >= 0 ? '#4ade80' : '#f87171';
+
+  const currentMonthIdx = new Date().getMonth(); // 0-based
+
+  const tableRows = months.map(m => {
+    const isPast     = m.idx < currentMonthIdx;
+    const isCurrent  = m.idx === currentMonthIdx;
+    const hasActual  = m.actual != null;
+    const varColor   = m.variance == null ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
+    const varSign    = m.variance != null && m.variance > 0 ? '+' : '';
+    const lockBadge  = isPast && hasActual ? '<span class="rev-locked-badge">saved</span>' : '';
+    return `<tr>
+      <td><span class="rev-month-tag">${escapeHtml(m.month)}</span>${lockBadge}</td>
+      <td class="right" style="color:#64748b">${fmtM(m.budgeted)}</td>
+      <td class="right">
+        <input class="rev-editor-input" type="number" min="0" step="1000"
+          id="rev_actual_${m.idx}"
+          value="${hasActual ? m.actual : ''}"
+          placeholder="enter actual"
+          onchange="revUpdateRow(${m.idx})"
+          ${isCurrent || isPast ? '' : 'style="opacity:.5"'}
+        >
+      </td>
+      <td class="right" id="rev_var_${m.idx}" style="color:${varColor};font-weight:700">${m.variance != null ? varSign + fmtM(m.variance) : '—'}</td>
+      <td style="color:#64748b;font-size:12px" id="rev_notes_${m.idx}">
+        <input style="background:transparent;border:none;border-bottom:1px solid #1e293b;width:100%;color:#94a3b8;font-size:12px;padding:4px 0" 
+          placeholder="notes…" 
+          id="rev_note_text_${m.idx}"
+          value="${escapeHtml(savedActuals['note_'+m.month]||'')}">
+      </td>
+    </tr>`;
+  }).join('');
+
+  view.innerHTML = `
+    <button class="secondary-btn" onclick="show('manager')">← Back to Manager Tools</button>
+    <div class="eyebrow" style="margin-top:16px">Admin — FY2026</div>
+    <h1>Monthly Revenue Editor</h1>
+    <p class="lede">Enter or edit monthly actual revenue. Variance auto-calculates. Dashboard updates immediately on save.</p>
+
+    <div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:20px;margin-bottom:24px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Budget</div>
+          <div id="rev_ytd_budget" style="font-size:1.6rem;font-weight:900;color:#e2e8f0">${fmtM(ytdBudget)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Actual</div>
+          <div id="rev_ytd_actual" style="font-size:1.6rem;font-weight:900;color:#22d3ee">${fmtM(ytdActual)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Variance</div>
+          <div id="rev_ytd_var" style="font-size:1.6rem;font-weight:900;color:${ytdVarColor}">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Annual Budget</div>
+          <div style="font-size:1.6rem;font-weight:900;color:#a78bfa">${fmtM(fy.annual.budgetedRevenue)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="background:#0a0f1a;border:1px solid #1e293b;padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1e293b">
+        <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">Budget vs Actual — Jan–Dec 2026</h2>
+        <div style="display:flex;gap:8px">
+          <button class="secondary-btn small" onclick="revSaveAll()" style="background:#16a34a;border-color:#16a34a;color:#fff">💾 Save All</button>
+          <button class="secondary-btn small" onclick="revExportCsv()">📥 Export CSV</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rev-editor-table" id="revTable">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th class="right">Budgeted</th>
+              <th class="right">Actual Revenue</th>
+              <th class="right">Variance</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+          <tfoot>
+            <tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
+              <td style="padding:12px;color:#e2e8f0">YTD Total</td>
+              <td class="right" style="padding:12px;color:#64748b" id="rev_tfoot_budget">${fmtM(ytdBudget)}</td>
+              <td class="right" style="padding:12px;color:#22d3ee" id="rev_tfoot_actual">${fmtM(ytdActual)}</td>
+              <td class="right" style="padding:12px;color:${ytdVarColor}" id="rev_tfoot_var">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mt" style="background:#0a0f1a;border:1px solid #1e293b">
+      <h3 style="color:#f1f5f9;margin-top:0">How This Works</h3>
+      <ul style="color:#94a3b8;font-size:13px;line-height:1.7;margin:0;padding-left:18px">
+        <li>Enter actual monthly revenue in the <strong style="color:#e2e8f0">Actual Revenue</strong> column</li>
+        <li>Variance calculates automatically (Actual − Budget)</li>
+        <li>Click <strong style="color:#e2e8f0">Save All</strong> to persist. Owner Dashboard and YTD cards update on next load</li>
+        <li>Add notes in the Notes column to explain variances</li>
+        <li>Future months remain editable so you can enter projections</li>
+      </ul>
+    </div>
+  `;
+}
+
+window.revUpdateRow = function(idx) {
+  const fy = window.AVALON_DATA.fy2026;
+  const months = fy.monthlyBudget || [];
+  const m = months[idx];
+  if (!m) return;
+  const input = document.getElementById('rev_actual_' + idx);
+  const rawVal = input?.value;
+  const actual = rawVal !== '' && rawVal != null ? parseFloat(rawVal) : null;
+  const variance = actual != null ? actual - m.budgeted : null;
+  const varColor = variance == null ? '#334155' : variance >= 0 ? '#4ade80' : '#f87171';
+  const varSign  = variance != null && variance > 0 ? '+' : '';
+  function fmtM(n) { return n != null ? n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }) : '—'; }
+  const varEl = document.getElementById('rev_var_' + idx);
+  if (varEl) { varEl.textContent = variance != null ? varSign + fmtM(variance) : '—'; varEl.style.color = varColor; }
+
+  // Recompute YTD from all current inputs
+  let ytdBudget = 0, ytdActual = 0;
+  months.forEach((mb, i) => {
+    const inp = document.getElementById('rev_actual_' + i);
+    const v = inp?.value !== '' && inp?.value != null ? parseFloat(inp.value) : null;
+    if (v != null) { ytdBudget += mb.budgeted; ytdActual += v; }
+  });
+  const ytdVar = ytdActual - ytdBudget;
+  const ytdVarColor = ytdVar >= 0 ? '#4ade80' : '#f87171';
+  const setEl = (id, txt, color) => { const el = document.getElementById(id); if (el) { el.textContent = txt; if (color) el.style.color = color; } };
+  setEl('rev_ytd_budget', fmtM(ytdBudget));
+  setEl('rev_ytd_actual', fmtM(ytdActual), '#22d3ee');
+  setEl('rev_ytd_var', (ytdVar >= 0 ? '+' : '') + fmtM(ytdVar), ytdVarColor);
+  setEl('rev_tfoot_budget', fmtM(ytdBudget));
+  setEl('rev_tfoot_actual', fmtM(ytdActual));
+  setEl('rev_tfoot_var', (ytdVar >= 0 ? '+' : '') + fmtM(ytdVar), ytdVarColor);
+};
+
+window.revSaveAll = function() {
+  const fy = window.AVALON_DATA.fy2026;
+  const months = fy.monthlyBudget || [];
+  const actuals = loadRevenueActuals();
+  months.forEach((m, idx) => {
+    const inp = document.getElementById('rev_actual_' + idx);
+    if (!inp) return;
+    const val = inp.value !== '' && inp.value != null ? parseFloat(inp.value) : undefined;
+    if (val !== undefined && !isNaN(val)) actuals[m.month] = val;
+    else delete actuals[m.month];
+    const noteInp = document.getElementById('rev_note_text_' + idx);
+    if (noteInp) {
+      if (noteInp.value.trim()) actuals['note_' + m.month] = noteInp.value.trim();
+      else delete actuals['note_' + m.month];
+    }
+  });
+  saveRevenueActuals(actuals);
+  showToast('✅ Revenue data saved — dashboard will reflect on reload');
+};
+
+window.revExportCsv = function() {
+  const fy = window.AVALON_DATA.fy2026;
+  const saved = loadRevenueActuals();
+  const months = (fy.monthlyBudget || []).map(m => {
+    const actual = saved[m.month] != null ? saved[m.month] : m.actual;
+    const variance = actual != null ? actual - m.budgeted : null;
+    return { month: m.month, budgeted: m.budgeted, actual, variance, note: saved['note_'+m.month]||'' };
+  });
+  const hdr = ['Month','Budgeted','Actual','Variance','Notes'];
+  const rows = months.map(m => [m.month, m.budgeted||'', m.actual||'', m.variance||'', m.note].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([[hdr.join(','), ...rows].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'avalon-revenue-2026.csv'; a.click(); URL.revokeObjectURL(a.href);
+};
+
+window.revenueAdmin = revenueAdmin;
 
 show('today');

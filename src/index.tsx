@@ -64,7 +64,7 @@ function getHtml(): string {
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <div class="brand-mark">
+      <div class="brand-mark" onclick="show('today')" style="cursor:pointer" title="Go to Today">
         <img src="/static/avalon-logo.png" alt="Avalon logo" style="width:42px;height:42px;object-fit:contain;">
       </div>
       <div>
@@ -114,6 +114,7 @@ function getHtml(): string {
         <summary class="nav-summary">⚙️ Admin</summary>
         <div class="nav-items">
           <button class="nav-item" data-view="manager" onclick="show('manager')">Manager Tools</button>
+          <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">Revenue Editor</button>
           <button class="nav-item" data-view="integrations" onclick="show('integrations')">Integrations</button>
           <button class="nav-item" data-view="settings" onclick="show('settings')">Settings</button>
         </div>
@@ -133,6 +134,7 @@ function getHtml(): string {
         <div id="searchResults" class="search-results" hidden></div>
       </div>
       <button class="install-btn" id="installBtn" hidden>Install App</button>
+      <button class="topbar-settings" onclick="show('settings')" title="Settings">⚙️ Settings</button>
     </header>
     <div class="view" id="view" role="region" aria-live="polite"></div>
   </main>
