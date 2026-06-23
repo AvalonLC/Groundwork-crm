@@ -230,9 +230,17 @@ async function calListUpcoming(maxResults = 10) {
 }
 
 async function calListAll(maxResults = 250) {
-  // Fetch ALL events — past, present, future — ordered by start time.
-  // No timeMin so past events are included. updatedMin not set so cancelled events show.
-  const r = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&singleEvents=true&orderBy=startTime`);
+  // Fetch events in a rolling window: 2 months back → 12 months forward.
+  // Google Calendar requires timeMin/timeMax for consistent ordering and results.
+  const past   = new Date(); past.setMonth(past.getMonth() - 2);
+  const future = new Date(); future.setFullYear(future.getFullYear() + 1);
+  const tMin = encodeURIComponent(past.toISOString());
+  const tMax = encodeURIComponent(future.toISOString());
+  const r = await gFetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events` +
+    `?maxResults=${maxResults}&singleEvents=true&orderBy=startTime` +
+    `&timeMin=${tMin}&timeMax=${tMax}`
+  );
   return r.json();
 }
 
@@ -1096,10 +1104,10 @@ function gwRenderAgendaDay() {
   });
 
   if (!todayEvs.length) {
-    return '<div style="text-align:center;padding:48px 20px;color:#475569">' +
-           '<div style="font-size:32px;margin-bottom:12px">📅</div>' +
-           '<div style="font-size:14px;font-weight:600;color:#64748b">No events today</div>' +
-           '<div style="font-size:12px;margin-top:4px;color:#334155">Your calendar is clear for today.</div>' +
+    return '<div style="text-align:center;padding:56px 20px;background:#131f35;border-radius:10px;border:1px solid #334155">' +
+           '<div style="font-size:36px;margin-bottom:12px">📅</div>' +
+           '<div style="font-size:15px;font-weight:700;color:#94a3b8">No events today</div>' +
+           '<div style="font-size:13px;margin-top:6px;color:#64748b">Your calendar is clear — enjoy the day.</div>' +
            '</div>';
   }
 
@@ -1121,15 +1129,14 @@ function gwRenderAgendaDay() {
         (end ? ' – '+new Date(end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : '');
       return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')"
         style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;
-        background:${color}14;border:1px solid ${color}40;transition:background .1s"
-        onmouseover="this.style.background='${color}22'" onmouseout="this.style.background='${color}14'">
-        <div style="width:3px;border-radius:2px;background:${color};flex-shrink:0;align-self:stretch;min-height:28px"></div>
+        background:#1e293b;border:1px solid #334155;border-left:4px solid ${color};transition:background .15s"
+        onmouseover="this.style.background='#273549'" onmouseout="this.style.background='#1e293b'">
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
-          <div style="font-size:12px;color:#64748b;margin-top:3px">${timeStr}${ev.location?' · 📍'+escapeHtml(ev.location.slice(0,50)):''}</div>
-          ${ev.description?`<div style="font-size:12px;color:#475569;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.description.slice(0,100))}</div>`:''}
+          <div style="font-size:14px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:4px">${timeStr}${ev.location?' · 📍'+escapeHtml(ev.location.slice(0,50)):''}</div>
+          ${ev.description?`<div style="font-size:12px;color:#64748b;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.description.slice(0,100))}</div>`:''}
         </div>
-        <span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0;align-self:center">TODAY</span>
+        <span style="font-size:10px;font-weight:700;color:#fff;background:${color};border-radius:10px;padding:3px 10px;flex-shrink:0;align-self:center">TODAY</span>
       </div>`;
     }).join('') + '</div>';
 }
@@ -1143,21 +1150,21 @@ function gwRenderWeek() {
   const hours = Array.from({length:24}, (_,i) => i); // all 24h
   const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  let html = `<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:52px repeat(7,1fr);min-width:600px">
-    <div style="background:#0a0f1a;border-bottom:1px solid #1e293b"></div>
+  let html = `<div style="overflow-x:auto;border-radius:8px;border:1px solid #334155;overflow:hidden"><div style="display:grid;grid-template-columns:52px repeat(7,1fr);min-width:600px">
+    <div style="background:#1e293b;border-bottom:1px solid #334155"></div>
     ${days.map(d => {
       const isToday = d.toDateString()===today.toDateString();
       const isPast  = d < today && !isToday;
-      return `<div style="padding:8px 4px;text-align:center;border-bottom:1px solid #1e293b;border-left:1px solid #1e293b;background:#0a0f1a">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${isPast?'#334155':'#64748b'}">${dowLabels[d.getDay()]}</div>
-        <div style="font-size:18px;font-weight:800;color:${isToday?'#00A7E1':isPast?'#334155':'#e2e8f0'};width:28px;height:28px;border-radius:50%;background:${isToday?'#00A7E122':'transparent'};display:flex;align-items:center;justify-content:center;margin:2px auto 0">${d.getDate()}</div>
+      return `<div style="padding:8px 4px;text-align:center;border-bottom:1px solid #334155;border-left:1px solid #334155;background:#1e293b">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${isToday?'#00A7E1':isPast?'#3d5068':'#64748b'}">${dowLabels[d.getDay()]}</div>
+        <div style="font-size:18px;font-weight:800;color:${isToday?'#fff':isPast?'#3d5068':'#e2e8f0'};width:32px;height:32px;border-radius:50%;background:${isToday?'#00A7E1':'transparent'};display:flex;align-items:center;justify-content:center;margin:2px auto 0">${d.getDate()}</div>
       </div>`;
     }).join('')}
     ${hours.map(h => {
       const label = h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`;
       const isCurrentHour = h===today.getHours() && _calWeekOffset===0;
       return `
-        <div style="padding:2px 4px;text-align:right;font-size:10px;color:#475569;border-top:1px solid #0f172a;line-height:36px;height:36px;box-sizing:border-box;${isCurrentHour?'color:#00A7E1':''}">${label}</div>
+        <div style="padding:2px 6px;text-align:right;font-size:10px;font-weight:600;border-top:1px solid #1e293b;line-height:40px;height:40px;box-sizing:border-box;color:${isCurrentHour?'#00A7E1':'#475569'};background:#0d1526">${label}</div>
         ${days.map(d => {
           const cellEvs = _calEvents.filter(ev => {
             if (ev.start?.dateTime) {
@@ -1172,11 +1179,13 @@ function gwRenderWeek() {
             return false;
           });
           const isNowCell = isCurrentHour && d.toDateString()===today.toDateString();
-          return `<div style="border-top:1px solid #0f172a;border-left:1px solid #1e293b;height:36px;position:relative;background:${isNowCell?'#00A7E108':'transparent'}">
+          const isTodayCol = d.toDateString()===today.toDateString();
+          const cellBg = isNowCell ? '#00A7E128' : isTodayCol ? '#131f35' : '#0d1526';
+          return `<div style="border-top:1px solid #1e293b;border-left:1px solid #334155;height:40px;position:relative;background:${cellBg}">
             ${cellEvs.map(ev=>{
               const color=gwEventColor(ev);
               const t=ev.start?.dateTime?new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):'All day';
-              return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}" style="position:absolute;inset:1px 1px auto;background:${color};border-radius:3px;padding:1px 4px;font-size:10px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;z-index:1">${t} ${escapeHtml((ev.summary||'Event').slice(0,18))}</div>`;
+              return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}" style="position:absolute;inset:1px 2px auto;background:${color};border-radius:3px;padding:2px 5px;font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;z-index:1;text-shadow:0 1px 2px #0006;box-shadow:0 1px 3px #0004">${t} ${escapeHtml((ev.summary||'Event').slice(0,20))}</div>`;
             }).join('')}
           </div>`;
         }).join('')}`;
@@ -1193,9 +1202,9 @@ function gwRenderMonth() {
   const daysInMonth = new Date(year,month+1,0).getDate();
   const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid #1e293b;border-top:1px solid #1e293b">
-    ${dowLabels.map(d=>`<div style="padding:6px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;border-right:1px solid #1e293b;border-bottom:1px solid #1e293b">${d}</div>`).join('')}
-    ${Array.from({length:firstDay},()=>`<div style="border-right:1px solid #1e293b;border-bottom:1px solid #1e293b;min-height:80px;background:#060a12"></div>`).join('')}
+  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid #334155;border-top:1px solid #334155;border-radius:8px;overflow:hidden">
+    ${dowLabels.map(d=>`<div style="padding:8px 4px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;border-right:1px solid #334155;border-bottom:1px solid #334155;background:#1e293b">${d}</div>`).join('')}
+    ${Array.from({length:firstDay},()=>`<div style="border-right:1px solid #334155;border-bottom:1px solid #334155;min-height:90px;background:#0d1526"></div>`).join('')}
     ${Array.from({length:daysInMonth},(_,i)=>{
       const day=i+1;
       const cellDate=new Date(year,month,day);
@@ -1212,18 +1221,22 @@ function gwRenderMonth() {
         }
         return false;
       });
-      return `<div style="border-right:1px solid #1e293b;border-bottom:1px solid #1e293b;min-height:80px;padding:4px;background:${isToday?'#00A7E108':isPast?'#060a12':'#0a0f1a'}">
-        <div style="font-size:13px;font-weight:${isToday?'800':'500'};color:${isToday?'#00A7E1':isPast?'#334155':'#94a3b8'};width:24px;height:24px;border-radius:50%;background:${isToday?'#00A7E133':'transparent'};display:flex;align-items:center;justify-content:center;margin-bottom:3px">${day}</div>
+      const cellBg = isToday ? '#00A7E118' : isPast ? '#0d1526' : '#131f35';
+      const numColor = isToday ? '#00A7E1' : isPast ? '#3d5068' : '#94a3b8';
+      const numBg = isToday ? '#00A7E1' : 'transparent';
+      const numTextColor = isToday ? '#fff' : numColor;
+      return `<div style="border-right:1px solid #334155;border-bottom:1px solid #334155;min-height:90px;padding:5px;background:${cellBg}">
+        <div style="font-size:13px;font-weight:700;color:${numTextColor};width:26px;height:26px;border-radius:50%;background:${numBg};display:flex;align-items:center;justify-content:center;margin-bottom:4px">${day}</div>
         ${dayEvs.slice(0,3).map(ev=>{
           const color=gwEventColor(ev);
           const isAllDay=!ev.start?.dateTime;
           const t=isAllDay?'All day':new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
           return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}"
-            style="background:${color}22;border-left:2px solid ${color};border-radius:3px;padding:2px 4px;font-size:10px;font-weight:600;color:${color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;margin-bottom:2px">
-            ${t} ${escapeHtml((ev.summary||'Event').slice(0,16))}
+            style="background:${color};border-radius:3px;padding:2px 5px;font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;margin-bottom:2px;text-shadow:0 1px 2px #0004">
+            ${t} ${escapeHtml((ev.summary||'Event').slice(0,18))}
           </div>`;
         }).join('')}
-        ${dayEvs.length>3?`<div style="font-size:10px;color:#475569;padding-left:2px">+${dayEvs.length-3} more</div>`:''}
+        ${dayEvs.length>3?`<div style="font-size:10px;color:#64748b;padding-left:2px;font-weight:600">+${dayEvs.length-3} more</div>`:''}
       </div>`;
     }).join('')}
   </div>`;
