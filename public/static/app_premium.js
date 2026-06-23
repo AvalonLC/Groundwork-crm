@@ -2418,9 +2418,98 @@ window.calcLabor = function(){ const h=Number(document.getElementById('hours').v
 function money(n){ return n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}); }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Sales Academy 2.0 — View Layer (app_premium.js)
-// All data/logic lives in Academy global from academy.js
+// Sales Academy 2.0 — View Layer  (app_premium.js)
+// Light-mode palette · SVG graphics · role-gated admin · rich lesson renderer
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ─── SVG Badge Shape Renderer ────────────────────────────────────────────────
+function svgBadgeShape(shape, color, size) {
+  size = size || 48;
+  const h = Math.round(size * 0.866);
+  switch (shape) {
+    case 'hex':
+      return `<svg width="${size}" height="${h}" viewBox="0 0 100 87" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="50,2 98,26 98,74 50,98 2,74 2,26" fill="${color}22" stroke="${color}" stroke-width="4"/>
+        <polygon points="50,14 86,33 86,71 50,90 14,71 14,33" fill="${color}44"/>
+      </svg>`;
+    case 'star':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="50,5 61,35 95,35 68,57 79,91 50,70 21,91 32,57 5,35 39,35" fill="${color}33" stroke="${color}" stroke-width="3"/>
+      </svg>`;
+    case 'shield':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 8 L90 22 L90 52 C90 72 68 88 50 96 C32 88 10 72 10 52 L10 22 Z" fill="${color}22" stroke="${color}" stroke-width="4"/>
+        <path d="M50 20 L78 31 L78 52 C78 65 65 76 50 82 C35 76 22 65 22 52 L22 31 Z" fill="${color}44"/>
+      </svg>`;
+    case 'flame':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 95 C25 95 10 78 10 62 C10 46 22 40 28 30 C30 44 38 48 42 44 C36 34 42 16 50 8 C54 22 46 34 58 42 C62 28 66 20 72 14 C78 28 90 40 90 62 C90 78 75 95 50 95 Z" fill="${color}44" stroke="${color}" stroke-width="3"/>
+      </svg>`;
+    case 'bolt':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="58,5 20,55 46,55 42,95 80,45 54,45" fill="${color}44" stroke="${color}" stroke-width="3"/>
+      </svg>`;
+    case 'trophy':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="35" y="75" width="30" height="8" rx="2" fill="${color}66" stroke="${color}" stroke-width="2"/>
+        <rect x="28" y="83" width="44" height="8" rx="3" fill="${color}66" stroke="${color}" stroke-width="2"/>
+        <path d="M25 15 L75 15 L75 50 C75 65 63 75 50 75 C37 75 25 65 25 50 Z" fill="${color}33" stroke="${color}" stroke-width="3"/>
+        <path d="M25 20 C10 20 10 42 25 42" stroke="${color}" stroke-width="3" fill="none"/>
+        <path d="M75 20 C90 20 90 42 75 42" stroke="${color}" stroke-width="3" fill="none"/>
+      </svg>`;
+    case 'check':
+    default:
+      return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="44" fill="${color}22" stroke="${color}" stroke-width="4"/>
+        <polyline points="28,50 44,66 72,34" stroke="${color}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>`;
+  }
+}
+
+// ─── SVG Phase Icon Renderer ──────────────────────────────────────────────────
+function svgPhaseIcon(phaseOrder, color, size) {
+  size = size || 40;
+  if (phaseOrder === 1) {
+    // Seedling / sprout shape
+    return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="50" y1="90" x2="50" y2="40" stroke="${color}" stroke-width="5" stroke-linecap="round"/>
+      <path d="M50 65 C50 65 30 60 22 44 C36 36 52 44 50 65 Z" fill="${color}66" stroke="${color}" stroke-width="2"/>
+      <path d="M50 55 C50 55 70 48 76 32 C62 25 48 34 50 55 Z" fill="${color}44" stroke="${color}" stroke-width="2"/>
+    </svg>`;
+  } else if (phaseOrder === 2) {
+    // Gear / execution
+    return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="14" fill="${color}44" stroke="${color}" stroke-width="4"/>
+      <path d="M50 20 L54 30 L64 28 L68 38 L78 40 L76 50 L84 56 L80 66 L70 66 L64 74 L54 70 L50 80 L46 70 L36 74 L30 66 L20 66 L16 56 L24 50 L22 40 L32 38 L36 28 L46 30 Z" fill="${color}22" stroke="${color}" stroke-width="3"/>
+    </svg>`;
+  } else {
+    // Trophy / mastery
+    return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="50,12 58,36 84,36 64,52 72,76 50,60 28,76 36,52 16,36 42,36" fill="${color}44" stroke="${color}" stroke-width="3"/>
+    </svg>`;
+  }
+}
+
+// ─── SVG Level Indicator ──────────────────────────────────────────────────────
+function svgLevelIcon(levelId, color, size) {
+  size = size || 22;
+  const n = parseInt(levelId.replace('l',''), 10) || 1;
+  // Draw n filled dots up to 9
+  const dots = [];
+  for (let i = 0; i < 9; i++) {
+    dots.push(`<circle cx="${8 + i * 10}" cy="6" r="${i < n ? 5 : 3}" fill="${i < n ? color : color+'44'}"/>`);
+  }
+  return `<svg width="${8 + 9*10}" height="12" viewBox="0 0 96 12" fill="none" xmlns="http://www.w3.org/2000/svg">${dots.join('')}</svg>`;
+}
+
+// ─── SVG status icons (no emojis) ────────────────────────────────────────────
+const SVG_LOCK = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+const SVG_CHECK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const SVG_PLAY = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+const SVG_ARROW = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
+const SVG_TEAM = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+const SVG_NOTE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
+const SVG_STAR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
 
 function academy(param) {
   if (!window.Academy) {
@@ -2428,21 +2517,143 @@ function academy(param) {
     return;
   }
 
-  // Route sub-views
-  if (param && param.startsWith('phase:')) {
-    return academyPhaseDetail(param.replace('phase:', ''));
-  }
-  if (param && param.startsWith('module:')) {
-    return academyModuleWorkspace(param.replace('module:', ''));
-  }
-  if (param === 'badges') {
-    return academyBadgesView();
-  }
+  if (param && param.startsWith('phase:')) return academyPhaseDetail(param.replace('phase:', ''));
+  if (param && param.startsWith('module:')) return academyModuleWorkspace(param.replace('module:', ''));
+  if (param === 'badges') return academyBadgesView();
   if (param === 'admin') {
+    const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+    if (!rep || rep.role !== 'admin') { academy(); return; }
     return academyAdminDashboard();
   }
   return academyHome();
 }
+
+// ─── Shared Academy Styles ────────────────────────────────────────────────────
+const ACAD_STYLES = `
+<style id="acad-styles">
+/* ── Academy light-mode base ── */
+.acad-header{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 28px;margin-bottom:20px;box-shadow:0 1px 4px rgba(14,23,32,.06)}
+.acad-header-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.acad-level-chip{display:inline-flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:6px 14px;font-size:.85rem;font-weight:600;color:var(--ink)}
+.acad-stats{display:flex;gap:24px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.acad-stat{text-align:center}
+.acad-stat-num{font-size:1.5rem;font-weight:700;color:var(--ink)}
+.acad-stat-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:2px}
+.acad-level-bar-wrap{margin-top:14px}
+.acad-level-bar-track{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}
+.acad-level-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+.acad-section-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px}
+/* ── Phase cards ── */
+.phase-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s;position:relative;overflow:hidden}
+.phase-card:hover:not(.phase-locked){border-color:var(--blue);box-shadow:0 4px 16px rgba(0,167,225,.1);transform:translateY(-2px)}
+.phase-card.phase-locked{opacity:.5;cursor:not-allowed}
+.phase-card-accent{position:absolute;top:0;left:0;width:4px;height:100%}
+.phase-card-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.phase-num{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px}
+.phase-title{font-size:1.02rem;font-weight:700;color:var(--ink);margin:0}
+.phase-desc{font-size:.82rem;color:var(--muted);margin:0 0 14px;line-height:1.55}
+.phase-prog-row{display:flex;align-items:center;gap:8px}
+.phase-prog-track{flex:1;height:5px;background:var(--line);border-radius:4px;overflow:hidden}
+.phase-prog-fill{height:100%;border-radius:4px;transition:width .5s}
+.phase-prog-pct{font-size:.75rem;font-weight:700;color:var(--ink);min-width:34px;text-align:right}
+.phase-mod-count{font-size:.71rem;color:var(--muted);margin-top:6px}
+.phase-status-chip{display:inline-flex;align-items:center;gap:5px;font-size:.68rem;font-weight:700;border-radius:99px;padding:3px 9px;margin-top:8px}
+/* ── Next up card ── */
+.acad-next-card{background:var(--card);border:2px solid var(--blue);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px;cursor:pointer;transition:border-color .2s,box-shadow .2s;box-shadow:0 2px 8px rgba(0,167,225,.08)}
+.acad-next-card:hover{box-shadow:0 4px 16px rgba(0,167,225,.18)}
+.acad-next-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);font-weight:700;margin-bottom:3px}
+.acad-next-title{font-size:1rem;font-weight:700;color:var(--ink);margin-bottom:2px}
+.acad-next-sub{font-size:.8rem;color:var(--muted)}
+/* ── Recently completed ── */
+.recently-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s}
+.recently-item:last-child{border-bottom:none}
+.recently-check{width:26px;height:26px;background:rgba(16,185,129,.12);border:1.5px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#10b981;flex-shrink:0}
+/* ── Badge chips ── */
+.badge-upcoming-row{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;background:var(--bg)}
+.badge-upcoming-row:hover{border-color:var(--blue)}
+/* ── Module workspace ── */
+.workspace-layout{display:grid;grid-template-columns:230px 1fr;gap:0;min-height:520px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--bg)}
+@media(max-width:700px){.workspace-layout{grid-template-columns:1fr}}
+.workspace-nav{background:var(--card);border-right:1px solid var(--line);padding:0}
+.workspace-nav-header{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.workspace-nav-title{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px}
+.workspace-nav-pct{font-size:1.4rem;font-weight:700;color:var(--ink)}
+.workspace-nav-bar{height:5px;background:var(--line);border-radius:4px;margin-top:6px;overflow:hidden}
+.workspace-nav-fill{height:100%;border-radius:4px;transition:width .4s}
+.ws-nav-item{display:flex;align-items:center;gap:9px;padding:11px 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;font-size:.82rem;color:var(--muted)}
+.ws-nav-item:hover{background:var(--bg);color:var(--ink)}
+.ws-nav-item.active-section{background:var(--bg);border-left-color:var(--blue);color:var(--ink);font-weight:600}
+.ws-nav-item.done-section{color:#10b981}
+.ws-nav-dot{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700;flex-shrink:0;background:var(--line);color:var(--muted);border:1.5px solid var(--line)}
+.ws-nav-dot.done{background:rgba(16,185,129,.12);color:#10b981;border-color:#10b981}
+.ws-nav-dot.active{background:rgba(0,167,225,.12);color:var(--blue);border-color:var(--blue)}
+.workspace-main{padding:28px 32px;overflow-y:auto;background:var(--bg)}
+/* ── Lesson content ── */
+.ws-section-type{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:6px;font-weight:700}
+.ws-section-title{font-size:1.3rem;font-weight:700;color:var(--ink);margin:0 0 16px}
+.ws-body{color:var(--ink);line-height:1.72;font-size:.93rem;margin-bottom:18px}
+.ws-body p{margin:0 0 12px}
+.ws-key-point{display:flex;gap:10px;padding:11px 15px;background:rgba(0,167,225,.06);border-left:3px solid var(--blue);border-radius:0 8px 8px 0;margin-bottom:8px;font-size:.88rem;color:var(--ink);line-height:1.5}
+.ws-callout{border-radius:10px;padding:14px 18px;margin:16px 0;border-left:4px solid}
+.ws-callout.principle{background:rgba(0,167,225,.06);border-color:var(--blue)}
+.ws-callout.warning{background:rgba(239,68,68,.05);border-color:#ef4444}
+.ws-callout.list{background:rgba(16,185,129,.05);border-color:#10b981}
+.ws-callout-title{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.ws-callout.principle .ws-callout-title{color:var(--blue)}
+.ws-callout.warning .ws-callout-title{color:#ef4444}
+.ws-callout.list .ws-callout-title{color:#10b981}
+.ws-callout-body{font-size:.88rem;color:var(--ink);line-height:1.6}
+.ws-callout-list{margin:0;padding-left:0;list-style:none}
+.ws-callout-list li{padding:4px 0 4px 0;font-size:.87rem;color:var(--ink);line-height:1.5;border-bottom:1px solid var(--line)}
+.ws-callout-list li:last-child{border-bottom:none}
+.ws-examples{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+@media(max-width:600px){.ws-examples{grid-template-columns:1fr}}
+.ws-example{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:13px 15px}
+.ws-example-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:var(--blue)}
+.ws-example-text{font-size:.85rem;color:var(--ink);line-height:1.55;font-style:italic}
+.ws-note-prompt{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:16px 0}
+.ws-note-prompt-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ws-note-textarea{width:100%;min-height:90px;border:1.5px solid var(--line);border-radius:7px;padding:10px 12px;font-size:.87rem;color:var(--ink);background:var(--bg);resize:vertical;font-family:inherit;box-sizing:border-box;transition:border-color .2s}
+.ws-note-textarea:focus{outline:none;border-color:var(--blue)}
+.ws-complete-btn{display:inline-flex;align-items:center;gap:8px;border:none;border-radius:10px;padding:11px 22px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:18px;transition:opacity .15s,transform .1s;color:#fff}
+.ws-complete-btn:hover{opacity:.88;transform:translateY(-1px)}
+.ws-complete-btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.ws-done-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,.1);border:1.5px solid #10b981;color:#10b981;border-radius:10px;padding:10px 18px;font-size:.88rem;font-weight:600;margin-top:16px}
+/* ── Quiz ── */
+.quiz-container{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}
+.quiz-q{margin-bottom:24px}
+.quiz-q-num{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+.quiz-q-prompt{font-weight:600;color:var(--ink);margin-bottom:12px;line-height:1.45;font-size:.95rem}
+.quiz-choice{display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border:1.5px solid var(--line);border-radius:9px;cursor:pointer;margin-bottom:7px;transition:border-color .15s,background .15s;background:var(--bg)}
+.quiz-choice:hover{border-color:var(--blue);background:rgba(0,167,225,.04)}
+.quiz-choice.selected{border-color:var(--blue);background:rgba(0,167,225,.07)}
+.quiz-choice.correct{border-color:#10b981;background:rgba(16,185,129,.07)}
+.quiz-choice.wrong{border-color:#ef4444;background:rgba(239,68,68,.06)}
+.quiz-choice input[type=radio]{margin-top:3px;flex-shrink:0;accent-color:var(--blue)}
+.quiz-choice-text{font-size:.88rem;color:var(--ink);line-height:1.5}
+.quiz-submit-btn{background:var(--blue);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:18px;transition:opacity .15s,transform .1s}
+.quiz-submit-btn:hover{opacity:.88;transform:translateY(-1px)}
+.quiz-submit-btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.quiz-result{border-radius:12px;padding:18px;margin-top:18px}
+.quiz-result.pass{background:rgba(16,185,129,.07);border:1.5px solid rgba(16,185,129,.3)}
+.quiz-result.fail{background:rgba(239,68,68,.05);border:1.5px solid rgba(239,68,68,.2)}
+.quiz-feedback-item{padding:9px 13px;border-radius:8px;margin-bottom:7px;font-size:.84rem;border-left:3px solid}
+.quiz-feedback-item.correct{background:rgba(16,185,129,.07);border-left-color:#10b981}
+.quiz-feedback-item.wrong{background:rgba(239,68,68,.06);border-left-color:#ef4444}
+.quiz-explanation{font-size:.8rem;color:var(--muted);margin-top:4px;line-height:1.45}
+.prev-attempts-chip{display:inline-flex;align-items:center;gap:5px;font-size:.76rem;color:var(--muted);background:var(--line);border-radius:99px;padding:3px 11px;margin-bottom:14px}
+/* ── Admin dashboard ── */
+.admin-rep-card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.admin-rep-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s}
+.admin-rep-header:hover{background:var(--bg)}
+.admin-mod-matrix{overflow-x:auto;padding:0 16px 14px}
+.admin-mod-cell{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:58px;min-width:52px;border:1px solid var(--line);border-radius:7px;padding:7px 4px;font-size:.72rem;font-weight:600;text-align:center;background:var(--bg);margin:4px 2px;transition:border-color .15s;cursor:default}
+.admin-mod-cell.completed{background:rgba(16,185,129,.08);border-color:#10b981;color:#10b981}
+.admin-mod-cell.in-progress{background:rgba(245,158,11,.08);border-color:#f59e0b;color:#f59e0b}
+.admin-action-btn{font-size:.75rem;padding:5px 11px;border:1.5px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);cursor:pointer;font-weight:600;transition:border-color .15s,background .15s}
+.admin-action-btn:hover{border-color:var(--blue);background:rgba(0,167,225,.06)}
+.admin-action-btn.danger:hover{border-color:#ef4444;background:rgba(239,68,68,.06);color:#ef4444}
+</style>`;
 
 // ─── Academy Home ─────────────────────────────────────────────────────────────
 function academyHome() {
@@ -2452,65 +2663,103 @@ function academyHome() {
   const level = hd.currentLevel;
   const nextLevel = hd.nextLevel;
   const pointsToNext = nextLevel ? nextLevel.minPoints - hd.points : 0;
-  const levelPct = nextLevel ? Math.round(((hd.points - level.minPoints) / (nextLevel.minPoints - level.minPoints)) * 100) : 100;
-
+  const levelPct = nextLevel
+    ? Math.min(100, Math.round(((hd.points - level.minPoints) / (nextLevel.minPoints - level.minPoints)) * 100))
+    : 100;
   const isAdmin = rep && rep.role === 'admin';
 
-  view.innerHTML = `
-<style>
-.acad-header{background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border:1px solid #1e293b;border-radius:16px;padding:24px 28px;margin-bottom:20px}
-.acad-header-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.acad-level-chip{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:99px;padding:6px 14px;font-size:.85rem;font-weight:600}
-.acad-stats{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px}
-.acad-stat{text-align:center}
-.acad-stat-num{font-size:1.5rem;font-weight:700;color:#fff}
-.acad-stat-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-top:2px}
-.acad-level-bar-wrap{margin-top:14px}
-.acad-level-bar-track{height:6px;background:#1e293b;border-radius:4px;overflow:hidden;margin-top:4px}
-.acad-level-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
-.phase-card{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:20px;cursor:pointer;transition:border-color .2s,transform .15s;position:relative;overflow:hidden}
-.phase-card:hover:not(.phase-locked){border-color:#334155;transform:translateY(-2px)}
-.phase-card.phase-locked{opacity:.55;cursor:not-allowed}
-.phase-card-accent{position:absolute;top:0;left:0;width:4px;height:100%;border-radius:14px 0 0 14px}
-.phase-card-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
-.phase-icon{font-size:1.8rem;line-height:1}
-.phase-num{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:4px}
-.phase-title{font-size:1.05rem;font-weight:700;color:#fff;margin:0}
-.phase-desc{font-size:.82rem;color:#94a3b8;margin:0 0 14px;line-height:1.5}
-.phase-prog-row{display:flex;align-items:center;gap:8px}
-.phase-prog-track{flex:1;height:5px;background:#1e293b;border-radius:4px;overflow:hidden}
-.phase-prog-fill{height:100%;border-radius:4px;transition:width .5s}
-.phase-prog-pct{font-size:.75rem;font-weight:600;color:#94a3b8;min-width:32px;text-align:right}
-.phase-mod-count{font-size:.72rem;color:#64748b;margin-top:6px}
-.phase-lock-badge{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;background:#1e293b;border-radius:99px;padding:3px 10px;color:#64748b;margin-top:8px}
-.acad-next-card{background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(6,182,212,.08));border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px;cursor:pointer;transition:border-color .2s}
-.acad-next-card:hover{border-color:rgba(99,102,241,.55)}
-.acad-next-icon{font-size:2rem;flex-shrink:0}
-.acad-next-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#6366f1;font-weight:700;margin-bottom:3px}
-.acad-next-title{font-size:1rem;font-weight:700;color:#fff;margin-bottom:2px}
-.acad-next-sub{font-size:.8rem;color:#94a3b8}
-.acad-next-arrow{margin-left:auto;font-size:1.3rem;color:#6366f1;flex-shrink:0}
-.badge-chip{display:inline-flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #1e293b;border-radius:99px;padding:5px 12px;font-size:.78rem;cursor:pointer;transition:border-color .2s}
-.badge-chip:hover{border-color:#334155}
-.badge-chip-icon{font-size:1rem}
-.acad-section-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:12px}
-.recently-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b}
-.recently-item:last-child{border-bottom:none}
-.recently-check{width:26px;height:26px;background:rgba(16,185,129,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0}
-</style>
+  const phaseCards = hd.phaseProgress.map(ph => {
+    const phIcon = svgPhaseIcon(ph.sort_order, ph.color, 36);
+    const completeChip = ph.pct === 100
+      ? `<span class="phase-status-chip" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.3)">${SVG_CHECK} Complete</span>`
+      : ph.inProgress
+      ? `<span class="phase-status-chip" style="background:rgba(245,158,11,.1);color:#b45309;border:1px solid rgba(245,158,11,.3)">In Progress</span>`
+      : '';
+    const lockBadge = ph.locked
+      ? `<span class="phase-status-chip" style="background:var(--line);color:var(--muted);border:none">${SVG_LOCK} Complete Phase ${ph.sort_order - 1} to unlock</span>`
+      : '';
+    return `<article class="phase-card${ph.locked ? ' phase-locked' : ''}" ${ph.locked ? '' : `onclick="show('academy','phase:${ph.id}')"`}>
+      <div class="phase-card-accent" style="background:${ph.color}"></div>
+      <div class="phase-card-header">
+        <div style="flex-shrink:0">${phIcon}</div>
+        <div style="flex:1;min-width:0">
+          <div class="phase-num">Phase ${ph.sort_order}</div>
+          <div class="phase-title">${escapeHtml(ph.title)}</div>
+        </div>
+        <div>${completeChip}</div>
+      </div>
+      <p class="phase-desc">${escapeHtml(ph.short_description)}</p>
+      <div class="phase-prog-row">
+        <div class="phase-prog-track"><div class="phase-prog-fill" style="width:${ph.pct}%;background:${ph.color}"></div></div>
+        <span class="phase-prog-pct">${ph.pct}%</span>
+      </div>
+      <div class="phase-mod-count">${ph.modulesCompleted} of ${ph.totalModules} modules complete</div>
+      ${lockBadge}
+    </article>`;
+  }).join('');
 
+  const nextCard = hd.nextModule
+    ? `<div style="margin-bottom:20px">
+        <div class="acad-section-label">Recommended Next</div>
+        <div class="acad-next-card" onclick="show('academy','module:${hd.nextModule.id}')">
+          <div style="flex-shrink:0">${svgPhaseIcon(hd.nextModule.phase_id === 'phase_1' ? 1 : hd.nextModule.phase_id === 'phase_2' ? 2 : 3, 'var(--blue)', 40)}</div>
+          <div style="flex:1;min-width:0">
+            <div class="acad-next-label">Continue Learning</div>
+            <div class="acad-next-title">${escapeHtml(hd.nextModule.title)}</div>
+            <div class="acad-next-sub">${escapeHtml((hd.nextModule.short_description||'').substring(0,90))}…</div>
+          </div>
+          <div style="flex-shrink:0;color:var(--blue)">${SVG_ARROW}</div>
+        </div>
+      </div>`
+    : hd.overallPct === 100
+    ? `<div style="margin-bottom:20px">
+        <div class="acad-next-card" style="border-color:#10b981;cursor:default">
+          <div style="flex-shrink:0">${svgBadgeShape('trophy','#10b981',44)}</div>
+          <div>
+            <div class="acad-next-label" style="color:#10b981">Academy Complete</div>
+            <div class="acad-next-title">All 9 modules finished</div>
+            <div class="acad-next-sub">You've mastered the full Avalon Sales Academy curriculum.</div>
+          </div>
+        </div>
+      </div>`
+    : '';
+
+  const upcomingBadgesHtml = hd.upcomingBadges.length
+    ? hd.upcomingBadges.map(b => `
+      <div class="badge-upcoming-row" onclick="show('academy','badges')">
+        <div style="flex-shrink:0">${svgBadgeShape(b.shape, b.color, 32)}</div>
+        <div>
+          <div style="font-weight:600;font-size:.85rem;color:var(--ink)">${escapeHtml(b.name)}</div>
+          <div style="font-size:.72rem;color:var(--muted)">${escapeHtml(b.desc)}</div>
+        </div>
+      </div>`).join('')
+    : `<p style="color:var(--muted);font-size:.85rem">All badges earned — well done.</p>`;
+
+  const recentHtml = hd.recentlyCompleted.length
+    ? hd.recentlyCompleted.map(m => `
+      <div class="recently-item" onclick="show('academy','module:${m.id}')">
+        <div class="recently-check">${SVG_CHECK}</div>
+        <div>
+          <div style="font-size:.85rem;font-weight:600;color:var(--ink)">${escapeHtml(m.title)}</div>
+          <div style="font-size:.72rem;color:var(--muted)">Module ${m.sort_order}</div>
+        </div>
+      </div>`).join('')
+    : `<p style="color:var(--muted);font-size:.85rem">No modules completed yet — start with Phase 1.</p>`;
+
+  view.innerHTML = ACAD_STYLES + `
 <div class="acad-header">
   <div class="acad-header-top">
     <div>
       <div class="eyebrow" style="margin-bottom:4px">Training Path</div>
-      <h1 style="margin:0;font-size:1.6rem">Avalon Sales Academy</h1>
+      <h1 style="margin:0;font-size:1.55rem;color:var(--ink)">Avalon Sales Academy</h1>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <div class="acad-level-chip" style="border-color:${level.color}40;color:${level.color}">
-        ${level.icon} ${level.name}
+      <div class="acad-level-chip" style="border-color:${level.color};color:${level.color}">
+        ${svgLevelIcon(level.id, level.color, 20)}
+        <span>${escapeHtml(level.name)}</span>
       </div>
-      ${hd.streak_days > 0 ? `<div class="acad-level-chip" style="border-color:#f97316;color:#f97316">🔥 ${hd.streak_days}-day streak</div>` : ''}
-      ${isAdmin ? `<button class="secondary-btn" style="font-size:.78rem;padding:6px 12px" onclick="show('academy','admin')">👥 Team Progress</button>` : ''}
+      ${hd.streak_days > 0 ? `<div class="acad-level-chip" style="border-color:#f97316;color:#f97316">${svgBadgeShape('flame','#f97316',18)} ${hd.streak_days}-day streak</div>` : ''}
+      ${isAdmin ? `<button class="secondary-btn" style="font-size:.78rem;padding:6px 12px;display:inline-flex;align-items:center;gap:6px" onclick="show('academy','admin')">${SVG_TEAM} Team Progress</button>` : ''}
     </div>
   </div>
 
@@ -2533,103 +2782,43 @@ function academyHome() {
     </div>
     <div class="acad-stat">
       <div class="acad-stat-num">${hd.quizzesPassed}</div>
-      <div class="acad-stat-label">Quizzes Passed</div>
+      <div class="acad-stat-label">Quizzes</div>
     </div>
   </div>
 
-  ${nextLevel ? `
-  <div class="acad-level-bar-wrap">
-    <div style="display:flex;justify-content:space-between;font-size:.72rem;color:#64748b;margin-bottom:4px">
-      <span>${level.icon} ${level.name}</span>
-      <span>${pointsToNext} pts to ${nextLevel.icon} ${nextLevel.name}</span>
-    </div>
-    <div class="acad-level-bar-track">
-      <div class="acad-level-bar-fill" style="width:${levelPct}%;background:${level.color}"></div>
-    </div>
-  </div>` : `<div style="margin-top:12px;font-size:.85rem;color:#f59e0b;font-weight:600">🌟 Maximum Level Achieved</div>`}
+  ${nextLevel
+    ? `<div class="acad-level-bar-wrap">
+        <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-bottom:4px">
+          <span style="color:${level.color};font-weight:600">${escapeHtml(level.name)}</span>
+          <span>${pointsToNext} pts to <strong style="color:${nextLevel.color}">${escapeHtml(nextLevel.name)}</strong></span>
+        </div>
+        <div class="acad-level-bar-track">
+          <div class="acad-level-bar-fill" style="width:${levelPct}%;background:${level.color}"></div>
+        </div>
+      </div>`
+    : `<div style="margin-top:12px;font-size:.85rem;color:#f59e0b;font-weight:600;display:inline-flex;align-items:center;gap:6px">${svgBadgeShape('star','#f59e0b',18)} Maximum Level — Mentor</div>`}
 </div>
 
-${hd.nextModule ? `
-<div style="margin-bottom:20px">
-  <div class="acad-section-label">Recommended Next</div>
-  <div class="acad-next-card" onclick="show('academy','module:${hd.nextModule.id}')">
-    <div class="acad-next-icon">
-      ${hd.nextModule.phase_id === 'phase_1' ? '🌱' : hd.nextModule.phase_id === 'phase_2' ? '⚙️' : '🏆'}
-    </div>
-    <div>
-      <div class="acad-next-label">Continue Learning</div>
-      <div class="acad-next-title">${escapeHtml(hd.nextModule.title)}</div>
-      <div class="acad-next-sub">${escapeHtml(hd.nextModule.short_description.substring(0,90))}…</div>
-    </div>
-    <div class="acad-next-arrow">→</div>
-  </div>
-</div>` : hd.overallPct === 100 ? `
-<div style="margin-bottom:20px">
-  <div class="acad-next-card" style="border-color:rgba(16,185,129,.4);cursor:default">
-    <div class="acad-next-icon">🏆</div>
-    <div>
-      <div class="acad-next-label" style="color:#10b981">Academy Complete!</div>
-      <div class="acad-next-title">All 9 modules finished</div>
-      <div class="acad-next-sub">You've mastered the full Avalon Sales Academy curriculum.</div>
-    </div>
-  </div>
-</div>` : ''}
+${nextCard}
 
 <div class="acad-section-label">Training Phases</div>
-<div class="grid grid-3 mt" style="margin-top:0;margin-bottom:20px">
-  ${hd.phaseProgress.map(ph => `
-  <article class="phase-card ${ph.locked ? 'phase-locked' : ''}" onclick="${ph.locked ? '' : `show('academy','phase:${ph.id}')`}">
-    <div class="phase-card-accent" style="background:${ph.color}"></div>
-    <div class="phase-card-header">
-      <div class="phase-icon">${ph.icon}</div>
-      <div style="flex:1;min-width:0">
-        <div class="phase-num">Phase ${ph.sort_order}</div>
-        <div class="phase-title">${escapeHtml(ph.title)}</div>
-      </div>
-      ${ph.pct === 100 ? '<div style="font-size:1.2rem">✅</div>' : ph.inProgress ? '<div style="font-size:.7rem;color:#f59e0b;font-weight:700;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);padding:3px 8px;border-radius:99px">IN PROGRESS</div>' : ''}
-    </div>
-    <p class="phase-desc">${escapeHtml(ph.short_description)}</p>
-    <div class="phase-prog-row">
-      <div class="phase-prog-track">
-        <div class="phase-prog-fill" style="width:${ph.pct}%;background:${ph.color}"></div>
-      </div>
-      <span class="phase-prog-pct">${ph.pct}%</span>
-    </div>
-    <div class="phase-mod-count">${ph.modulesCompleted} of ${ph.totalModules} modules complete</div>
-    ${ph.locked ? `<div class="phase-lock-badge">🔒 Complete Phase ${ph.sort_order - 1} to unlock</div>` : ''}
-  </article>`).join('')}
-</div>
+<div class="grid grid-3 mt" style="margin-top:0;margin-bottom:22px">${phaseCards}</div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px">
   <div class="card">
     <div class="acad-section-label">Upcoming Badges</div>
-    ${hd.upcomingBadges.length ? hd.upcomingBadges.map(b => `
-    <div class="badge-chip" style="display:flex;border-radius:8px;padding:10px;margin-bottom:8px;width:100%;box-sizing:border-box;align-items:center;gap:10px" onclick="show('academy','badges')">
-      <span class="badge-chip-icon">${b.icon}</span>
-      <div>
-        <div style="font-weight:600;font-size:.85rem;color:#fff">${escapeHtml(b.name)}</div>
-        <div style="font-size:.72rem;color:#64748b">${escapeHtml(b.desc)}</div>
-      </div>
-    </div>`).join('') : '<p style="color:var(--muted);font-size:.85rem">All badges earned! 🎉</p>'}
+    ${upcomingBadgesHtml}
     <button class="secondary-btn" style="width:100%;margin-top:8px;font-size:.78rem" onclick="show('academy','badges')">View All Badges</button>
   </div>
-
   <div class="card">
     <div class="acad-section-label">Recently Completed</div>
-    ${hd.recentlyCompleted.length ? hd.recentlyCompleted.map(m => `
-    <div class="recently-item" onclick="show('academy','module:${m.id}')" style="cursor:pointer">
-      <div class="recently-check">✓</div>
-      <div>
-        <div style="font-size:.85rem;font-weight:600;color:#fff">${escapeHtml(m.title)}</div>
-        <div style="font-size:.72rem;color:#64748b">Module ${m.sort_order}</div>
-      </div>
-    </div>`).join('') : '<p style="color:var(--muted);font-size:.85rem">No modules completed yet — start with Phase 1!</p>'}
+    ${recentHtml}
   </div>
 </div>
 
-<div class="card" style="background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.15)">
-  <h3 style="margin-top:0">New Hire Onboarding Path</h3>
-  ${list(['Read through all 3 Phase 1 modules to understand the Avalon sales system.','Shadow one intake call, one discovery call, one site walk, and one proposal review.','Complete each module quiz — 75% passing score required.','Role-play discovery, budget discussion, proposal delivery, and objection handling.','Build one sample scope and proposal with manager review.','Own a low-complexity opportunity under supervision.','Review first won/lost opportunities in weekly coaching.'])}
+<div class="card" style="border-color:rgba(0,167,225,.2);background:rgba(0,167,225,.03)">
+  <h3 style="margin-top:0;color:var(--ink)">New Hire Onboarding Path</h3>
+  ${list(['Complete all 3 Phase 1 modules to understand the Avalon sales system.','Shadow one intake call, one discovery call, one site walk, and one proposal review.','Pass each module quiz at 75% or higher.','Role-play discovery, budget discussion, proposal delivery, and objection handling.','Build one sample scope and proposal with manager review.','Own a low-complexity opportunity under supervision.','Review first won/lost opportunities in weekly coaching.'])}
 </div>`;
 }
 
@@ -2646,77 +2835,81 @@ function academyPhaseDetail(phaseId) {
   const completedCount = phaseMods.filter(m => (rp.modules[m.id] || {}).status === 'completed').length;
   const pct = Math.round((completedCount / phaseMods.length) * 100);
 
-  view.innerHTML = `
-<style>
-.mod-roadmap-item{display:flex;align-items:flex-start;gap:14px;padding:16px;border-radius:12px;cursor:pointer;transition:background .15s;margin-bottom:8px;border:1px solid transparent}
-.mod-roadmap-item:hover:not(.mod-locked){background:#0f172a;border-color:#1e293b}
-.mod-roadmap-item.mod-locked{opacity:.5;cursor:not-allowed}
-.mod-step{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;flex-shrink:0}
-.mod-step.done{background:rgba(16,185,129,.15);border:2px solid #10b981;color:#10b981}
-.mod-step.inprog{background:rgba(245,158,11,.12);border:2px solid #f59e0b;color:#f59e0b}
-.mod-step.notstarted{background:#1e293b;border:2px solid #334155;color:#64748b}
-.mod-step.locked{background:#111827;border:2px dashed #1e293b;color:#334155}
-.mod-roadmap-body{flex:1;min-width:0}
-.mod-roadmap-title{font-weight:700;color:#fff;margin-bottom:3px}
-.mod-roadmap-desc{font-size:.82rem;color:#94a3b8;margin-bottom:6px;line-height:1.4}
-.mod-roadmap-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.mod-tag{font-size:.7rem;background:#1e293b;border-radius:99px;padding:2px 8px;color:#64748b}
-.mod-tag.done-tag{background:rgba(16,185,129,.1);color:#10b981}
-.mod-tag.inprog-tag{background:rgba(245,158,11,.1);color:#f59e0b}
-</style>
+  const moduleRows = phaseMods.map((m, i) => {
+    const mp = rp.modules[m.id] || {};
+    const status = mp.status || 'not_started';
+    const isLocked = window.Academy.isModuleLocked(m.id, repId);
 
+    let stepEl, stepBg, stepBorder, stepColor;
+    if (status === 'completed') {
+      stepBg = 'rgba(16,185,129,.12)'; stepBorder = '#10b981'; stepColor = '#10b981';
+      stepEl = SVG_CHECK;
+    } else if (status === 'in_progress') {
+      stepBg = 'rgba(245,158,11,.1)'; stepBorder = '#f59e0b'; stepColor = '#f59e0b';
+      stepEl = SVG_PLAY;
+    } else if (isLocked) {
+      stepBg = 'var(--line)'; stepBorder = 'var(--line)'; stepColor = 'var(--muted)';
+      stepEl = SVG_LOCK;
+    } else {
+      stepBg = 'var(--bg)'; stepBorder = 'var(--line)'; stepColor = 'var(--muted)';
+      stepEl = `<span style="font-size:.8rem;font-weight:700">${i+1}</span>`;
+    }
+
+    const statusTag = status === 'completed'
+      ? `<span style="font-size:.7rem;background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.25);border-radius:99px;padding:2px 9px;font-weight:600">Complete</span>`
+      : status === 'in_progress'
+      ? `<span style="font-size:.7rem;background:rgba(245,158,11,.1);color:#b45309;border:1px solid rgba(245,158,11,.3);border-radius:99px;padding:2px 9px;font-weight:600">In Progress</span>`
+      : isLocked
+      ? `<span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">Locked</span>`
+      : `<span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">Not Started</span>`;
+
+    const quizTag = mp.quiz_best_score != null
+      ? `<span style="font-size:.7rem;background:${mp.quiz_passed?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)'};color:${mp.quiz_passed?'#10b981':'#ef4444'};border:1px solid ${mp.quiz_passed?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};border-radius:99px;padding:2px 9px;font-weight:600">Quiz: ${mp.quiz_best_score}%</span>`
+      : '';
+    const pctTag = status !== 'not_started'
+      ? `<span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">${mp.percent_complete||0}% done</span>`
+      : '';
+
+    return `<article style="display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-radius:12px;cursor:${isLocked?'not-allowed':'pointer'};border:1.5px solid var(--line);margin-bottom:8px;background:var(--card);transition:border-color .2s,box-shadow .2s;opacity:${isLocked?.5:1}"
+      ${isLocked ? '' : `onclick="show('academy','module:${m.id}')" onmouseenter="this.style.borderColor='var(--blue)'" onmouseleave="this.style.borderColor='var(--line)'"`}>
+      <div style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${stepBg};border:2px solid ${stepBorder};color:${stepColor}">${stepEl}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;color:var(--ink);margin-bottom:3px">Module ${m.sort_order} — ${escapeHtml(m.title)}</div>
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px;line-height:1.45">${escapeHtml(m.short_description||'')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${statusTag}${pctTag}${quizTag}
+          <span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">~${m.estimated_minutes||'?'} min</span>
+          <span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">${m.difficulty||''}</span>
+        </div>
+      </div>
+      ${isLocked ? '' : `<div style="color:var(--blue);align-self:center;flex-shrink:0">${SVG_ARROW}</div>`}
+    </article>`;
+  }).join('');
+
+  view.innerHTML = ACAD_STYLES + `
 <button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy')">← Academy Home</button>
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
-  <span style="font-size:2.5rem">${ph.icon}</span>
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+  <div style="flex-shrink:0">${svgPhaseIcon(ph.sort_order, ph.color, 44)}</div>
   <div>
-    <div class="eyebrow">Phase ${ph.sort_order}</div>
-    <h1 style="margin:0">${escapeHtml(ph.title)}</h1>
+    <div class="eyebrow" style="color:${ph.color}">Phase ${ph.sort_order}</div>
+    <h1 style="margin:0;color:var(--ink)">${escapeHtml(ph.title)}</h1>
   </div>
 </div>
-<p class="lede" style="margin-bottom:16px">${escapeHtml(ph.long_description)}</p>
+<p class="lede" style="margin-bottom:18px;color:var(--muted)">${escapeHtml(ph.long_description)}</p>
 
-<div class="card" style="margin-bottom:20px;background:#0f172a">
+<div class="card" style="margin-bottom:20px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-    <span style="font-weight:600">Phase Progress</span>
+    <span style="font-weight:600;color:var(--ink)">Phase Progress</span>
     <span style="font-weight:700;color:${ph.color}">${pct}%</span>
   </div>
-  <div style="height:8px;background:#1e293b;border-radius:4px;overflow:hidden">
+  <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
     <div style="height:100%;width:${pct}%;background:${ph.color};border-radius:4px;transition:width .5s"></div>
   </div>
-  <div style="margin-top:8px;font-size:.8rem;color:#64748b">${completedCount} of ${phaseMods.length} modules complete</div>
+  <div style="margin-top:8px;font-size:.8rem;color:var(--muted)">${completedCount} of ${phaseMods.length} modules complete</div>
 </div>
 
-<div class="acad-section-label" style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:10px">Module Roadmap</div>
-
-${phaseMods.map((m, i) => {
-  const mp = rp.modules[m.id] || {};
-  const status = mp.status || 'not_started';
-  const isLocked = window.Academy.isModuleLocked(m.id, repId);
-  const stepClass = status === 'completed' ? 'done' : status === 'in_progress' ? 'inprog' : isLocked ? 'locked' : 'notstarted';
-  const stepLabel = status === 'completed' ? '✓' : status === 'in_progress' ? '▶' : isLocked ? '🔒' : (i + 1);
-  const statusTag = status === 'completed' ? '<span class="mod-tag done-tag">✓ Complete</span>' :
-                    status === 'in_progress' ? '<span class="mod-tag inprog-tag">▶ In Progress</span>' :
-                    isLocked ? '<span class="mod-tag">🔒 Locked</span>' :
-                    '<span class="mod-tag">Not Started</span>';
-  const quizTag = mp.quiz_best_score != null ? `<span class="mod-tag ${mp.quiz_passed ? 'done-tag' : ''}" style="${mp.quiz_passed?'':'color:#f87171;background:rgba(248,113,113,.08)'}">Quiz: ${mp.quiz_best_score}%</span>` : '';
-  const pctTag = status !== 'not_started' ? `<span class="mod-tag">${mp.percent_complete || 0}% done</span>` : '';
-
-  return `<article class="mod-roadmap-item ${isLocked ? 'mod-locked' : ''}" ${isLocked ? '' : `onclick="show('academy','module:${m.id}')"`}>
-    <div class="mod-step ${stepClass}">${stepLabel}</div>
-    <div class="mod-roadmap-body">
-      <div class="mod-roadmap-title">Module ${m.sort_order} — ${escapeHtml(m.title)}</div>
-      <div class="mod-roadmap-desc">${escapeHtml(m.short_description)}</div>
-      <div class="mod-roadmap-meta">
-        ${statusTag}
-        ${pctTag}
-        ${quizTag}
-        <span class="mod-tag">~${m.estimated_minutes} min</span>
-        <span class="mod-tag">${m.difficulty}</span>
-      </div>
-    </div>
-    ${isLocked ? '' : `<div style="color:#334155;font-size:1.1rem;align-self:center;flex-shrink:0">→</div>`}
-  </article>`;
-}).join('')}`;
+<div class="acad-section-label">Module Roadmap</div>
+${moduleRows}`;
 }
 
 // ─── Module Workspace ─────────────────────────────────────────────────────────
@@ -2728,114 +2921,62 @@ function academyModuleWorkspace(moduleId) {
   if (!mod) { academy(); return; }
 
   const ph = content.phases.find(p => p.id === mod.phase_id);
-  const rp = window.Academy.getRepProgress(repId);
   const mp = window.Academy.getModuleProgress(repId, moduleId);
   const isLocked = window.Academy.isModuleLocked(moduleId, repId);
 
   if (isLocked) {
-    view.innerHTML = `
+    view.innerHTML = ACAD_STYLES + `
 <button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy','phase:${mod.phase_id}')">← ${escapeHtml(ph ? ph.title : 'Phase')}</button>
 <div class="card" style="text-align:center;padding:40px">
-  <div style="font-size:3rem;margin-bottom:12px">🔒</div>
-  <h2>Module Locked</h2>
+  <div style="margin-bottom:16px">${svgBadgeShape('shield','var(--muted)',52)}</div>
+  <h2 style="color:var(--ink)">Module Locked</h2>
   <p style="color:var(--muted)">Complete all modules in Phase ${ph ? ph.sort_order - 1 : ''} to unlock this module.</p>
   <button class="primary-btn" onclick="show('academy')">Back to Academy</button>
 </div>`;
     return;
   }
 
-  // Mark first non-quiz section as started if nothing completed yet
-  const firstSection = mod.sections.find(s => s.section_type !== 'quiz');
-  if (firstSection && !mp.sections_completed.includes(firstSection.id) && mp.status === 'not_started') {
-    // Don't auto-mark — let user click
-  }
-
-  // Which section to show — default to first
   const _sectionId = `acad_active_${moduleId}`;
   const activeSectionId = localStorage.getItem(_sectionId) || (mod.sections[0] && mod.sections[0].id);
   const activeSection = mod.sections.find(s => s.id === activeSectionId) || mod.sections[0];
+  const phColor = ph ? ph.color : 'var(--blue)';
 
-  view.innerHTML = `
-<style>
-.workspace-layout{display:grid;grid-template-columns:220px 1fr;gap:0;min-height:500px;border:1px solid #1e293b;border-radius:14px;overflow:hidden;background:#0a0f1a}
-@media(max-width:700px){.workspace-layout{grid-template-columns:1fr;}}
-.workspace-nav{background:#0f172a;border-right:1px solid #1e293b;padding:0}
-.workspace-nav-header{padding:16px;border-bottom:1px solid #1e293b}
-.workspace-nav-title{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px}
-.workspace-nav-pct{font-size:1.4rem;font-weight:700;color:#fff}
-.workspace-nav-bar{height:4px;background:#1e293b;border-radius:4px;margin-top:6px;overflow:hidden}
-.workspace-nav-fill{height:100%;border-radius:4px;transition:width .4s}
-.ws-nav-item{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;font-size:.82rem}
-.ws-nav-item:hover{background:#1e293b}
-.ws-nav-item.active-section{background:#162032;border-left-color:${ph ? ph.color : '#6366f1'};color:#fff}
-.ws-nav-item.done-section{color:#10b981}
-.ws-nav-item.pending-section{color:#94a3b8}
-.ws-nav-dot{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;flex-shrink:0;background:#1e293b;color:#64748b}
-.ws-nav-dot.done{background:rgba(16,185,129,.15);color:#10b981;border:1px solid #10b981}
-.ws-nav-dot.active{background:${ph ? ph.color+'20' : 'rgba(99,102,241,.2)'};color:${ph ? ph.color : '#6366f1'};border:1px solid ${ph ? ph.color : '#6366f1'}}
-.workspace-main{padding:28px;overflow-y:auto}
-.ws-section-title{font-size:1.25rem;font-weight:700;color:#fff;margin:0 0 6px}
-.ws-section-type{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:16px}
-.ws-content-block{margin-bottom:16px;line-height:1.65;color:#cbd5e1}
-.ws-key-point{display:flex;gap:10px;padding:10px 14px;background:#0f172a;border-left:3px solid ${ph ? ph.color : '#6366f1'};border-radius:0 8px 8px 0;margin-bottom:8px;font-size:.88rem;color:#e2e8f0}
-.ws-complete-btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,${ph ? ph.color : '#6366f1'},${ph ? ph.color+'aa' : '#4f46e5'});color:#fff;border:none;border-radius:10px;padding:12px 22px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:16px;transition:opacity .15s}
-.ws-complete-btn:hover{opacity:.88}
-.ws-complete-btn:disabled{opacity:.5;cursor:not-allowed}
-.ws-done-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,.12);border:1px solid #10b981;color:#10b981;border-radius:10px;padding:10px 18px;font-size:.88rem;font-weight:600;margin-top:16px}
-.quiz-container{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px}
-.quiz-q{margin-bottom:20px}
-.quiz-q-prompt{font-weight:600;color:#fff;margin-bottom:10px;line-height:1.4}
-.quiz-choice{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid #1e293b;border-radius:8px;cursor:pointer;margin-bottom:6px;transition:border-color .15s,background .15s}
-.quiz-choice:hover{border-color:#334155;background:#0f172a}
-.quiz-choice.selected{border-color:${ph ? ph.color : '#6366f1'};background:${ph ? ph.color+'12' : 'rgba(99,102,241,.08)'}}
-.quiz-choice.correct{border-color:#10b981;background:rgba(16,185,129,.08)}
-.quiz-choice.wrong{border-color:#f87171;background:rgba(248,113,113,.06)}
-.quiz-choice input{margin-top:3px;flex-shrink:0}
-.quiz-submit-btn{background:${ph ? ph.color : '#6366f1'};color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:16px;transition:opacity .15s}
-.quiz-submit-btn:hover{opacity:.88}
-.quiz-submit-btn:disabled{opacity:.5;cursor:not-allowed}
-.quiz-result{border-radius:12px;padding:16px;margin-top:16px}
-.quiz-result.pass{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25)}
-.quiz-result.fail{background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2)}
-.quiz-feedback-item{padding:8px 12px;border-radius:8px;margin-bottom:6px;font-size:.83rem}
-.quiz-feedback-item.correct{background:rgba(16,185,129,.08);border-left:3px solid #10b981}
-.quiz-feedback-item.wrong{background:rgba(248,113,113,.06);border-left:3px solid #f87171}
-.quiz-explanation{font-size:.78rem;color:#94a3b8;margin-top:4px;line-height:1.4}
-.prev-attempts-chip{display:inline-flex;align-items:center;gap:4px;font-size:.75rem;color:#64748b;background:#1e293b;border-radius:99px;padding:3px 10px;margin-bottom:12px}
-</style>
+  const navItems = mod.sections.map(s => {
+    const done = mp.sections_completed.includes(s.id);
+    const isActive = s.id === (activeSection && activeSection.id);
+    const typeLabel = s.section_type === 'overview' ? 'OV' : s.section_type === 'lesson' ? 'L' : s.section_type === 'quiz' ? 'Q' : 'S';
+    return `<div class="ws-nav-item ${isActive ? 'active-section' : done ? 'done-section' : ''}" onclick="academyShowSection('${moduleId}','${s.id}')" id="ws-nav-${s.id}">
+      <div class="ws-nav-dot ${done ? 'done' : isActive ? 'active' : ''}">
+        ${done ? SVG_CHECK : `<span style="font-size:.6rem;font-weight:700">${typeLabel}</span>`}
+      </div>
+      <span style="line-height:1.35">${escapeHtml(s.title)}</span>
+    </div>`;
+  }).join('');
 
+  view.innerHTML = ACAD_STYLES + `
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
   <button class="secondary-btn" onclick="show('academy','phase:${mod.phase_id}')">← ${escapeHtml(ph ? ph.title : 'Phase')}</button>
-  <span style="color:#334155;font-size:.85rem">›</span>
-  <span style="color:#94a3b8;font-size:.85rem">Module ${mod.sort_order}</span>
+  <span style="color:var(--muted);font-size:.85rem">›</span>
+  <span style="color:var(--muted);font-size:.85rem">Module ${mod.sort_order}</span>
 </div>
 
-<h1 style="font-size:1.4rem;margin:0 0 4px">${escapeHtml(mod.title)}</h1>
-<p style="color:#94a3b8;font-size:.88rem;margin:0 0 16px">${escapeHtml(mod.short_description)}</p>
+<h1 style="font-size:1.38rem;margin:0 0 4px;color:var(--ink)">${escapeHtml(mod.title)}</h1>
+<p style="color:var(--muted);font-size:.88rem;margin:0 0 18px">${escapeHtml(mod.short_description||'')}</p>
 
 <div class="workspace-layout">
   <nav class="workspace-nav" id="ws-nav">
     <div class="workspace-nav-header">
       <div class="workspace-nav-title">Progress</div>
       <div class="workspace-nav-pct" id="ws-pct">${mp.percent_complete}%</div>
-      <div class="workspace-nav-bar"><div class="workspace-nav-fill" id="ws-bar" style="width:${mp.percent_complete}%;background:${ph ? ph.color : '#6366f1'}"></div></div>
+      <div class="workspace-nav-bar"><div class="workspace-nav-fill" id="ws-bar" style="width:${mp.percent_complete}%;background:${phColor}"></div></div>
     </div>
-    ${mod.sections.map(s => {
-      const done = mp.sections_completed.includes(s.id);
-      const isActive = s.id === (activeSection && activeSection.id);
-      const sIcon = s.section_type === 'overview' ? '📋' : s.section_type === 'lesson' ? '📖' : s.section_type === 'quiz' ? '📝' : '🔧';
-      return `<div class="ws-nav-item ${isActive ? 'active-section' : done ? 'done-section' : 'pending-section'}" onclick="academyShowSection('${moduleId}','${s.id}')" id="ws-nav-${s.id}">
-        <div class="ws-nav-dot ${done ? 'done' : isActive ? 'active' : ''}">${done ? '✓' : sIcon}</div>
-        <span style="line-height:1.3">${escapeHtml(s.title)}</span>
-      </div>`;
-    }).join('')}
+    ${navItems}
   </nav>
   <main class="workspace-main" id="ws-main">
     ${renderWorkspaceSection(mod, activeSection, mp, repId, ph)}
   </main>
 </div>`;
 
-  // Make section-switch global for this view
   window.academyShowSection = function(modId, sectId) {
     localStorage.setItem(`acad_active_${modId}`, sectId);
     const c = window.Academy.getContent();
@@ -2848,10 +2989,9 @@ function academyModuleWorkspace(moduleId) {
     const phNow = c.phases.find(p => p.id === m.phase_id);
     const main = document.getElementById('ws-main');
     if (main) main.innerHTML = renderWorkspaceSection(m, sec, mpNow, rId, phNow);
-    // Update nav highlights
+    // Refresh nav active state
     document.querySelectorAll('.ws-nav-item').forEach(el => {
-      const elId = el.getAttribute('onclick');
-      if (elId && elId.includes(`'${sectId}'`)) {
+      if (el.id === `ws-nav-${sectId}`) {
         el.classList.add('active-section');
       } else {
         el.classList.remove('active-section');
@@ -2861,43 +3001,93 @@ function academyModuleWorkspace(moduleId) {
   };
 }
 
+// ─── Section Content Renderer ─────────────────────────────────────────────────
 function renderWorkspaceSection(mod, section, mp, repId, ph) {
   if (!section) return '<p style="color:var(--muted)">Select a section from the left.</p>';
   const isDone = mp.sections_completed.includes(section.id);
-  const phColor = ph ? ph.color : '#6366f1';
+  const phColor = ph ? ph.color : 'var(--blue)';
 
   if (section.section_type === 'quiz') {
     return renderQuizSection(mod, mp, repId, ph);
   }
 
   let body = '';
+
   if (section.section_type === 'overview') {
+    const obj = section.content && section.content.objective ? section.content.objective : '';
+    const kps = section.content && section.content.keyPoints ? section.content.keyPoints : [];
     body = `
-<div class="ws-content-block">
-  <h3 style="color:#fff;font-size:1rem;margin-bottom:8px">Module Objective</h3>
-  <p style="color:#cbd5e1;line-height:1.65">${escapeHtml(section.content.objective)}</p>
-</div>
-${section.content.keyPoints && section.content.keyPoints.length ? `
-<h4 style="color:#fff;font-size:.9rem;margin-top:20px;margin-bottom:10px">Key Takeaways</h4>
-${section.content.keyPoints.map(kp => `<div class="ws-key-point">💡 ${escapeHtml(kp)}</div>`).join('')}` : ''}`;
+<div class="ws-body"><p>${escapeHtml(obj)}</p></div>
+${kps.length ? `<h4 style="color:var(--ink);font-size:.9rem;margin:20px 0 10px;font-weight:700">Key Takeaways</h4>
+${kps.map(kp => `<div class="ws-key-point">${escapeHtml(kp)}</div>`).join('')}` : ''}`;
   } else if (section.section_type === 'lesson') {
-    body = `<div class="ws-content-block"><p>${escapeHtml(section.content.body)}</p></div>
-<div style="margin-top:12px;padding:14px;background:#0f172a;border-radius:10px;border:1px dashed #1e293b">
-  <p style="font-size:.82rem;color:#64748b;margin:0">💬 <em>This lesson covers the Avalon methodology for this skill area. Apply it in your next real or practice opportunity.</em></p>
-</div>`;
+    // Try rich lesson data from Academy engine first
+    const richData = window.Academy.RICH_LESSONS && window.Academy.RICH_LESSONS[mod.id]
+      ? window.Academy.RICH_LESSONS[mod.id].find(l => l.id === section.id)
+      : null;
+
+    if (richData) {
+      // ── Callout block ──
+      let calloutHtml = '';
+      if (richData.callout) {
+        const ct = richData.callout;
+        if (ct.type === 'list' && ct.items) {
+          calloutHtml = `<div class="ws-callout list">
+            <div class="ws-callout-title">${escapeHtml(ct.title||'')}</div>
+            <ul class="ws-callout-list">${ct.items.map(it => `<li>${escapeHtml(it)}</li>`).join('')}</ul>
+          </div>`;
+        } else {
+          calloutHtml = `<div class="ws-callout ${ct.type||'principle'}">
+            <div class="ws-callout-title">${escapeHtml(ct.title||'')}</div>
+            <div class="ws-callout-body">${escapeHtml(ct.body||'')}</div>
+          </div>`;
+        }
+      }
+      // ── Examples ──
+      let examplesHtml = '';
+      if (richData.examples && richData.examples.length) {
+        examplesHtml = `<h4 style="font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:20px 0 10px">Examples</h4>
+        <div class="ws-examples">
+          ${richData.examples.map(ex => `<div class="ws-example">
+            <div class="ws-example-label">${escapeHtml(ex.label)}</div>
+            <div class="ws-example-text">${escapeHtml(ex.text)}</div>
+          </div>`).join('')}
+        </div>`;
+      }
+      // ── Note prompt ──
+      let noteHtml = '';
+      if (richData.note_prompt) {
+        const noteKey = `acad_note_${mod.id}_${section.id}_${repId}`;
+        const savedNote = localStorage.getItem(noteKey) || '';
+        noteHtml = `<div class="ws-note-prompt">
+          <div class="ws-note-prompt-label">${SVG_NOTE} Your Notes</div>
+          <p style="font-size:.84rem;color:var(--muted);margin:0 0 8px;line-height:1.5">${escapeHtml(richData.note_prompt)}</p>
+          <textarea class="ws-note-textarea" id="note-ta-${section.id}" placeholder="Write your notes here…" onchange="localStorage.setItem('${noteKey}',this.value)">${escapeHtml(savedNote)}</textarea>
+        </div>`;
+      }
+      body = `<div class="ws-body">${richData.body||''}</div>${calloutHtml}${examplesHtml}${noteHtml}`;
+    } else {
+      // Fallback: plain content
+      const rawBody = section.content && section.content.body ? section.content.body : '';
+      body = `<div class="ws-body"><p>${escapeHtml(rawBody)}</p></div>
+      <div style="margin-top:14px;padding:13px 16px;background:rgba(0,167,225,.05);border-radius:9px;border:1px solid var(--line)">
+        <p style="font-size:.83rem;color:var(--muted);margin:0;line-height:1.5">Apply this lesson's concepts in your next real or practice opportunity.</p>
+      </div>`;
+    }
   }
 
   const completeBtn = isDone
-    ? `<div class="ws-done-badge">✅ Section Complete</div>`
-    : `<button class="ws-complete-btn" onclick="academyCompleteSection('${mod.id}','${section.id}')">Mark Section Complete →</button>`;
+    ? `<div class="ws-done-badge">${SVG_CHECK} Section Complete</div>`
+    : `<button class="ws-complete-btn" style="background:${phColor}" onclick="academyCompleteSection('${mod.id}','${section.id}')">Mark Section Complete ${SVG_ARROW}</button>`;
 
-  // Next section hint
   const sectionIdx = mod.sections.findIndex(s => s.id === section.id);
   const nextSec = mod.sections[sectionIdx + 1];
-  const nextHint = nextSec ? `<div style="margin-top:20px;padding:12px;background:#0a0f1a;border-radius:8px;cursor:pointer;border:1px solid #1e293b" onclick="academyShowSection('${mod.id}','${nextSec.id}')">
-    <div style="font-size:.7rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">Up Next</div>
-    <div style="color:#94a3b8;font-size:.85rem;font-weight:600">${escapeHtml(nextSec.title)} →</div>
-  </div>` : '';
+  const nextHint = nextSec
+    ? `<div style="margin-top:22px;padding:13px 16px;background:var(--card);border:1px solid var(--line);border-radius:9px;cursor:pointer;transition:border-color .15s" onclick="academyShowSection('${mod.id}','${nextSec.id}')" onmouseenter="this.style.borderColor='var(--blue)'" onmouseleave="this.style.borderColor='var(--line)'">
+        <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Up Next</div>
+        <div style="color:var(--ink);font-size:.87rem;font-weight:600;display:flex;align-items:center;gap:6px">${escapeHtml(nextSec.title)} <span style="color:var(--blue)">${SVG_ARROW}</span></div>
+      </div>`
+    : '';
 
   return `
 <div class="ws-section-type">${section.section_type.replace(/_/g,' ').toUpperCase()}</div>
@@ -2907,32 +3097,35 @@ ${completeBtn}
 ${nextHint}`;
 }
 
+// ─── Quiz Section Renderer ────────────────────────────────────────────────────
 function renderQuizSection(mod, mp, repId, ph) {
   const quiz = mod.quiz;
   if (!quiz) return '<p style="color:var(--muted)">No quiz for this module.</p>';
-  const phColor = ph ? ph.color : '#6366f1';
+  const phColor = ph ? ph.color : 'var(--blue)';
   const prevAttempts = window.Academy.getQuizAttempts(repId, quiz.id);
-  const lastAttempt = prevAttempts[prevAttempts.length - 1];
   const alreadyPassed = mp.quiz_passed;
 
-  let attemptsHtml = prevAttempts.length > 0 ? `<div class="prev-attempts-chip">📊 ${prevAttempts.length} previous attempt${prevAttempts.length>1?'s':''} — Best: ${Math.max(...prevAttempts.map(a=>a.percent_score))}%</div>` : '';
+  const attemptsHtml = prevAttempts.length > 0
+    ? `<div class="prev-attempts-chip">${svgBadgeShape('check','var(--muted)',14)} ${prevAttempts.length} previous attempt${prevAttempts.length>1?'s':''} — Best: ${Math.max(...prevAttempts.map(a=>a.percent_score))}%</div>`
+    : '';
 
   const questionsHtml = quiz.questions.map((q, qi) => `
 <div class="quiz-q" id="qq_${q.id}">
-  <div class="quiz-q-prompt">Q${qi+1}. ${escapeHtml(q.prompt)}</div>
+  <div class="quiz-q-num">Question ${qi+1} of ${quiz.questions.length}</div>
+  <div class="quiz-q-prompt">${escapeHtml(q.prompt)}</div>
   ${q.choices.map(ch => `
   <label class="quiz-choice" id="qc_${q.id}_${ch.value}" onclick="academySelectChoice('${q.id}','${ch.value}')">
-    <input type="radio" name="q_${q.id}" value="${ch.value}" style="flex-shrink:0;margin-top:3px">
-    <span style="font-size:.88rem;color:#cbd5e1"><strong style="color:#64748b;margin-right:4px">${ch.label}.</strong> ${escapeHtml(ch.text)}</span>
+    <input type="radio" name="q_${q.id}" value="${ch.value}">
+    <span class="quiz-choice-text">${escapeHtml(ch.text)}</span>
   </label>`).join('')}
 </div>`).join('');
 
   return `
 <div class="ws-section-type">KNOWLEDGE CHECK</div>
 <h2 class="ws-section-title">Module Quiz</h2>
-<p style="color:#94a3b8;margin-bottom:12px">Answer all questions. ${quiz.pass_score}% required to pass.</p>
+<p style="color:var(--muted);font-size:.88rem;margin:0 0 14px">${quiz.questions.length} questions — ${quiz.pass_score}% required to pass.</p>
 ${attemptsHtml}
-${alreadyPassed ? `<div class="ws-done-badge" style="margin-bottom:14px">✅ Quiz Passed — ${mp.quiz_best_score}%</div>` : ''}
+${alreadyPassed ? `<div class="ws-done-badge" style="margin-bottom:16px">${SVG_CHECK} Quiz Passed — ${mp.quiz_best_score}%</div>` : ''}
 <div class="quiz-container" id="quiz-form-${quiz.id}">
   ${questionsHtml}
   <button class="quiz-submit-btn" id="quiz-submit-btn" onclick="academySubmitQuiz('${mod.id}','${quiz.id}','${repId}')">Submit Quiz</button>
@@ -2940,7 +3133,7 @@ ${alreadyPassed ? `<div class="ws-done-badge" style="margin-bottom:14px">✅ Qui
 <div id="quiz-result-area"></div>`;
 }
 
-// Global quiz interaction handlers
+// ─── Quiz Interaction Handlers ────────────────────────────────────────────────
 window.academySelectChoice = function(questionId, value) {
   document.querySelectorAll(`[id^="qc_${questionId}_"]`).forEach(el => el.classList.remove('selected'));
   const chosen = document.getElementById(`qc_${questionId}_${value}`);
@@ -2952,38 +3145,26 @@ window.academyCompleteSection = function(moduleId, sectionId) {
   const repId = rep ? rep.id : 'ryan';
   window.Academy.markSectionComplete(repId, moduleId, sectionId);
 
-  // Update the button to done state
   const btn = document.querySelector('.ws-complete-btn');
-  if (btn) {
-    btn.outerHTML = '<div class="ws-done-badge">✅ Section Complete</div>';
-  }
+  if (btn) btn.outerHTML = `<div class="ws-done-badge">${SVG_CHECK} Section Complete</div>`;
 
-  // Update nav dot
   const navDot = document.querySelector(`#ws-nav-${sectionId} .ws-nav-dot`);
-  if (navDot) {
-    navDot.classList.remove('active');
-    navDot.classList.add('done');
-    navDot.textContent = '✓';
-  }
+  if (navDot) { navDot.classList.remove('active'); navDot.classList.add('done'); navDot.innerHTML = SVG_CHECK; }
   const navItem = document.getElementById(`ws-nav-${sectionId}`);
   if (navItem) navItem.classList.add('done-section');
 
-  // Update progress bar
   const mp = window.Academy.getModuleProgress(repId, moduleId);
   const pctEl = document.getElementById('ws-pct');
   const barEl = document.getElementById('ws-bar');
   if (pctEl) pctEl.textContent = mp.percent_complete + '%';
   if (barEl) barEl.style.width = mp.percent_complete + '%';
 
-  // Auto-advance to next section
   const content = window.Academy.getContent();
   const mod = content.modules.find(m => m.id === moduleId);
   if (mod) {
     const idx = mod.sections.findIndex(s => s.id === sectionId);
     const next = mod.sections[idx + 1];
-    if (next) {
-      setTimeout(() => window.academyShowSection(moduleId, next.id), 400);
-    }
+    if (next) setTimeout(() => window.academyShowSection(moduleId, next.id), 400);
   }
 };
 
@@ -2992,16 +3173,15 @@ window.academySubmitQuiz = function(moduleId, quizId, repId) {
   const mod = content.modules.find(m => m.id === moduleId);
   if (!mod) return;
 
-  // Gather answers
   const answers = {};
   mod.quiz.questions.forEach(q => {
-    const selected = document.querySelector(`input[name="q_${q.id}"]:checked`);
-    if (selected) answers[q.id] = selected.value;
+    const sel = document.querySelector(`input[name="q_${q.id}"]:checked`);
+    if (sel) answers[q.id] = sel.value;
   });
 
   const unanswered = mod.quiz.questions.filter(q => !answers[q.id]);
   if (unanswered.length > 0) {
-    toast(`Please answer all ${unanswered.length} remaining question${unanswered.length>1?'s':''}.`);
+    showToast(`Please answer all ${unanswered.length} remaining question${unanswered.length>1?'s':''}.`);
     return;
   }
 
@@ -3012,7 +3192,7 @@ window.academySubmitQuiz = function(moduleId, quizId, repId) {
   const resultArea = document.getElementById('quiz-result-area');
   const formEl = document.getElementById(`quiz-form-${quizId}`);
 
-  // Apply correct/wrong styling to choices
+  // Apply correct/wrong styling — v2 schema: ch.correct (not ch.is_correct)
   if (formEl) {
     result.feedback.forEach(f => {
       mod.quiz.questions.forEach(q => {
@@ -3020,41 +3200,42 @@ window.academySubmitQuiz = function(moduleId, quizId, repId) {
         q.choices.forEach(ch => {
           const el = document.getElementById(`qc_${q.id}_${ch.value}`);
           if (!el) return;
-          if (ch.is_correct) el.classList.add('correct');
-          else if (answers[q.id] === ch.value && !ch.is_correct) el.classList.add('wrong');
+          if (ch.correct) el.classList.add('correct');
+          else if (answers[q.id] === ch.value && !ch.correct) el.classList.add('wrong');
         });
       });
     });
     if (submitBtn) submitBtn.style.display = 'none';
   }
 
-  // Show result
   const passed = result.passed;
   const score = result.percentScore;
   const passedCount = result.feedback.filter(f => f.correct).length;
   const totalCount = result.feedback.length;
   const ph = content.phases.find(p => p.id === mod.phase_id);
-  const phColor = ph ? ph.color : '#6366f1';
 
   if (resultArea) {
     resultArea.innerHTML = `
-<div class="quiz-result ${passed ? 'pass' : 'fail'}" style="margin-top:16px">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-    <span style="font-size:2rem">${passed ? '🎉' : '📚'}</span>
+<div class="quiz-result ${passed ? 'pass' : 'fail'}">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <div>${svgBadgeShape(passed?'check':'bolt', passed?'#10b981':'#ef4444', 40)}</div>
     <div>
-      <div style="font-size:1.1rem;font-weight:700;color:${passed?'#10b981':'#f87171'}">${passed ? 'Quiz Passed!' : 'Not quite yet'}</div>
-      <div style="font-size:.85rem;color:#94a3b8">${score}% — ${passedCount}/${totalCount} correct — ${passed ? 'Module progress updated.' : `${mod.quiz.pass_score}% required to pass.`}</div>
+      <div style="font-size:1.1rem;font-weight:700;color:${passed?'#10b981':'#ef4444'}">${passed ? 'Quiz Passed!' : 'Not quite yet'}</div>
+      <div style="font-size:.85rem;color:var(--muted)">${score}% — ${passedCount} of ${totalCount} correct${passed ? ' — module progress updated.' : ` — ${mod.quiz.pass_score}% required.`}</div>
     </div>
   </div>
   ${result.feedback.map(f => {
-    const q = mod.quiz.questions.find(q => q.id === f.questionId);
+    const q = mod.quiz.questions.find(qq => qq.id === f.questionId);
     return `<div class="quiz-feedback-item ${f.correct ? 'correct' : 'wrong'}">
-      <div style="font-weight:600;font-size:.82rem;color:${f.correct?'#10b981':'#f87171'}">${f.correct ? '✓ Correct' : '✗ Incorrect'}</div>
+      <div style="font-weight:700;font-size:.82rem;color:${f.correct?'#10b981':'#ef4444'};margin-bottom:3px">${f.correct ? 'Correct' : 'Incorrect'}</div>
       <div class="quiz-explanation">${escapeHtml(q && q.explanation ? q.explanation : '')}</div>
     </div>`;
   }).join('')}
-  ${passed ? `<div style="margin-top:12px"><button class="ws-complete-btn" style="background:${phColor}" onclick="show('academy','phase:${mod.phase_id}')">← Back to Phase Overview</button></div>` :
-    `<div style="margin-top:12px"><button class="quiz-submit-btn" style="background:#334155" onclick="show('academy','module:${moduleId}')">Review & Retry Quiz</button></div>`}
+  <div style="margin-top:14px">
+    ${passed
+      ? `<button class="ws-complete-btn" style="background:${ph?ph.color:'var(--blue)'}" onclick="show('academy','phase:${mod.phase_id}')">← Back to Phase Overview</button>`
+      : `<button class="ws-complete-btn" style="background:var(--muted)" onclick="show('academy','module:${moduleId}')">Review &amp; Retry Quiz</button>`}
+  </div>
 </div>`;
   }
 };
@@ -3068,36 +3249,32 @@ function academyBadgesView() {
   const earnedBadges = window.Academy.BADGE_DEFS.filter(b => earned.has(b.id));
   const lockedBadges = window.Academy.BADGE_DEFS.filter(b => !earned.has(b.id));
 
-  view.innerHTML = `
+  const badgeCard = (b, isEarned) => `
+  <article class="card" style="text-align:center;${isEarned ? `border-color:${b.color}44;background:${b.color}08` : 'opacity:.5'}">
+    <div style="display:flex;justify-content:center;margin-bottom:10px">${svgBadgeShape(b.shape, isEarned ? b.color : 'var(--muted)', 52)}</div>
+    <div style="font-weight:700;font-size:.92rem;color:${isEarned ? b.color : 'var(--muted)'};margin-bottom:5px">${escapeHtml(b.name)}</div>
+    <div style="font-size:.78rem;color:var(--muted);line-height:1.45">${escapeHtml(b.desc)}</div>
+    <div style="font-size:.66rem;margin-top:8px;text-transform:uppercase;letter-spacing:.06em;color:${isEarned ? b.color+'aa' : 'var(--muted)'};font-weight:700">${b.type}</div>
+  </article>`;
+
+  view.innerHTML = ACAD_STYLES + `
 <button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy')">← Academy Home</button>
 <div class="eyebrow">Achievements</div>
-<h1>Badges & Achievements</h1>
-<p class="lede">${earnedBadges.length} of ${window.Academy.BADGE_DEFS.length} badges earned</p>
+<h1 style="color:var(--ink)">Badges &amp; Achievements</h1>
+<p class="lede" style="color:var(--muted)">${earnedBadges.length} of ${window.Academy.BADGE_DEFS.length} badges earned</p>
 
 ${earnedBadges.length ? `
-<div class="acad-section-label" style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:12px">Earned Badges (${earnedBadges.length})</div>
-<div class="grid grid-3 mt" style="margin-top:0;margin-bottom:24px">
-  ${earnedBadges.map(b => `
-  <article class="card" style="text-align:center;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(16,185,129,.02));border-color:rgba(16,185,129,.2)">
-    <div style="font-size:2.5rem;margin-bottom:8px">${b.icon}</div>
-    <div style="font-weight:700;color:#10b981;margin-bottom:4px">${escapeHtml(b.name)}</div>
-    <div style="font-size:.78rem;color:#94a3b8">${escapeHtml(b.desc)}</div>
-    <div style="font-size:.7rem;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:.05em">${b.type}</div>
-  </article>`).join('')}
-</div>` : `<div class="card" style="text-align:center;padding:30px;margin-bottom:20px">
-  <div style="font-size:2rem;margin-bottom:8px">🎯</div>
-  <p style="color:var(--muted)">No badges earned yet — complete modules to start earning!</p>
+<div class="acad-section-label">Earned Badges (${earnedBadges.length})</div>
+<div class="grid grid-3 mt" style="margin-top:0;margin-bottom:26px">
+  ${earnedBadges.map(b => badgeCard(b, true)).join('')}
+</div>` : `<div class="card" style="text-align:center;padding:30px;margin-bottom:22px">
+  <div style="display:flex;justify-content:center;margin-bottom:12px">${svgBadgeShape('bolt','var(--muted)',44)}</div>
+  <p style="color:var(--muted)">No badges earned yet — complete modules to start earning.</p>
 </div>`}
 
-<div class="acad-section-label" style="font-size:.72px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:12px;font-size:.72rem">Locked Badges (${lockedBadges.length})</div>
+<div class="acad-section-label">Locked Badges (${lockedBadges.length})</div>
 <div class="grid grid-3 mt" style="margin-top:0">
-  ${lockedBadges.map(b => `
-  <article class="card" style="text-align:center;opacity:.55">
-    <div style="font-size:2.5rem;margin-bottom:8px;filter:grayscale(1)">${b.icon}</div>
-    <div style="font-weight:700;color:#64748b;margin-bottom:4px">${escapeHtml(b.name)}</div>
-    <div style="font-size:.78rem;color:#475569">${escapeHtml(b.desc)}</div>
-    <div style="font-size:.7rem;color:#334155;margin-top:6px;text-transform:uppercase;letter-spacing:.05em">${b.type}</div>
-  </article>`).join('')}
+  ${lockedBadges.map(b => badgeCard(b, false)).join('')}
 </div>`;
 }
 
@@ -3111,95 +3288,128 @@ function academyAdminDashboard() {
 
   const allReps = window.Academy.getAllRepsProgress();
   const content = window.Academy.getContent();
+  const avgPct = allReps.length ? Math.round(allReps.reduce((s,r)=>s+r.pct,0)/allReps.length) : 0;
 
-  view.innerHTML = `
-<style>
-.admin-rep-row{display:grid;grid-template-columns:160px 1fr 80px 80px 80px 80px 80px;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid #1e293b;font-size:.83rem}
-.admin-rep-row:hover{background:#0f172a}
-.admin-rep-row.header-row{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#64748b;border-bottom:2px solid #1e293b;cursor:default}
-.admin-rep-row.header-row:hover{background:transparent}
-.admin-prog-bar{height:6px;background:#1e293b;border-radius:4px;overflow:hidden}
-.admin-prog-fill{height:100%;border-radius:4px;background:#6366f1}
-.admin-level-chip{font-size:.7rem;padding:2px 8px;border-radius:99px;font-weight:600;display:inline-flex;align-items:center;gap:3px}
-</style>
+  // Per-rep expandable cards with module detail + admin actions
+  const repCards = allReps.map(r => {
+    const rp = window.Academy.getRepProgress(r.rep.id);
+    const modCells = content.modules.map(m => {
+      const ms = (rp.modules[m.id]||{}).status || 'not_started';
+      const qScore = (rp.modules[m.id]||{}).quiz_best_score;
+      const isComp = ms === 'completed';
+      const isInProg = ms === 'in_progress';
+      return `<div class="admin-mod-cell${isComp ? ' completed' : isInProg ? ' in-progress' : ''}" title="${escapeHtml(m.title)} — ${ms}${qScore!=null?' | Quiz: '+qScore+'%':''}">
+        <div style="font-size:.68rem;font-weight:700;color:inherit">${m.id}</div>
+        <div style="margin-top:3px">${isComp ? SVG_CHECK : isInProg ? SVG_PLAY : '–'}</div>
+        ${qScore != null ? `<div style="font-size:.6rem;margin-top:2px;color:${isComp&&qScore>=75?'#10b981':'var(--muted)'}">${qScore}%</div>` : ''}
+      </div>`;
+    }).join('');
 
+    // Per-module mark-complete buttons (only for non-completed modules)
+    const markBtns = content.modules
+      .filter(m => (rp.modules[m.id]||{}).status !== 'completed')
+      .map(m => `<button class="admin-action-btn" onclick="academyAdminMarkModule('${r.rep.id}','${m.id}')" title="Mark ${m.id} complete for ${r.rep.name}">Mark ${m.id} Complete</button>`)
+      .join(' ');
+
+    return `<div class="admin-rep-card">
+      <div class="admin-rep-header" onclick="toggleAdminRepDetail('${r.rep.id}')">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+          <div>
+            <div style="font-weight:700;color:var(--ink)">${escapeHtml(r.rep.name)}</div>
+            <div style="font-size:.72rem;color:var(--muted);text-transform:capitalize">${r.rep.role}</div>
+          </div>
+          <div style="flex:1;min-width:120px;max-width:220px">
+            <div style="height:6px;background:var(--line);border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:${r.pct}%;background:${r.pct===100?'#10b981':'var(--blue)'};border-radius:4px;transition:width .5s"></div>
+            </div>
+            <div style="font-size:.7rem;color:var(--muted);margin-top:3px">${r.completedMods}/${r.totalMods} modules</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="text-align:center">
+            <div style="font-size:1.1rem;font-weight:700;color:${r.pct===100?'#10b981':'var(--ink)'}">${r.pct}%</div>
+            <div style="font-size:.65rem;color:var(--muted)">done</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:1.1rem;font-weight:700;color:var(--ink)">${r.points}</div>
+            <div style="font-size:.65rem;color:var(--muted)">pts</div>
+          </div>
+          <div style="text-align:center">
+            <span style="font-size:.78rem;font-weight:600;padding:3px 10px;border-radius:99px;background:${r.level.color}18;color:${r.level.color};border:1px solid ${r.level.color}44">${escapeHtml(r.level.name)}</span>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:1rem;font-weight:700;color:${r.quizAvg!=null?(r.quizAvg>=75?'#10b981':'#ef4444'):'var(--muted)'}">${r.quizAvg != null ? r.quizAvg+'%' : '—'}</div>
+            <div style="font-size:.65rem;color:var(--muted)">quiz avg</div>
+          </div>
+          <div>${svgBadgeShape('hex',r.level.color,22)}</div>
+          <div style="color:var(--muted);font-size:.8rem">${SVG_ARROW}</div>
+        </div>
+      </div>
+      <div id="rep-detail-${r.rep.id}" style="display:none">
+        <div class="admin-mod-matrix">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:12px 0 8px">Module Status</div>
+          <div style="display:flex;flex-wrap:wrap">${modCells}</div>
+        </div>
+        <div style="padding:10px 16px 14px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-right:4px">Admin Actions:</span>
+          ${markBtns || `<span style="font-size:.8rem;color:#10b981">All modules complete</span>`}
+          <button class="admin-action-btn danger" onclick="academyAdminResetRep('${r.rep.id}','${escapeHtml(r.rep.name)}')">Reset All Progress</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  view.innerHTML = ACAD_STYLES + `
 <button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy')">← Academy Home</button>
 <div class="eyebrow">Admin Dashboard</div>
-<h1>Team Academy Progress</h1>
+<h1 style="color:var(--ink)">Team Academy Progress</h1>
 
-<div class="grid grid-3 mt" style="margin-bottom:20px">
+<div class="grid grid-3 mt" style="margin-bottom:22px">
   <div class="card" style="text-align:center">
-    <div style="font-size:1.6rem;font-weight:700;color:#fff">${allReps.length}</div>
-    <div style="font-size:.75rem;color:#64748b;margin-top:4px">Total Reps</div>
+    <div style="font-size:1.7rem;font-weight:700;color:var(--ink)">${allReps.length}</div>
+    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Team Members</div>
   </div>
   <div class="card" style="text-align:center">
-    <div style="font-size:1.6rem;font-weight:700;color:#10b981">${allReps.filter(r => r.pct === 100).length}</div>
-    <div style="font-size:.75rem;color:#64748b;margin-top:4px">Academy Complete</div>
+    <div style="font-size:1.7rem;font-weight:700;color:#10b981">${allReps.filter(r => r.pct === 100).length}</div>
+    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Academy Complete</div>
   </div>
   <div class="card" style="text-align:center">
-    <div style="font-size:1.6rem;font-weight:700;color:#6366f1">${allReps.length ? Math.round(allReps.reduce((s,r)=>s+r.pct,0)/allReps.length) : 0}%</div>
-    <div style="font-size:.75rem;color:#64748b;margin-top:4px">Avg Completion</div>
+    <div style="font-size:1.7rem;font-weight:700;color:var(--blue)">${avgPct}%</div>
+    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Avg Completion</div>
   </div>
 </div>
 
-<div class="card" style="padding:0;overflow:hidden">
-  <div class="admin-rep-row header-row">
-    <span>Rep</span>
-    <span>Progress</span>
-    <span>%</span>
-    <span>Level</span>
-    <span>Points</span>
-    <span>Badges</span>
-    <span>Quiz Avg</span>
-  </div>
-  ${allReps.map(r => `
-  <div class="admin-rep-row">
-    <div>
-      <div style="font-weight:600;color:#fff">${escapeHtml(r.rep.name)}</div>
-      <div style="font-size:.7rem;color:#64748b;text-transform:capitalize">${r.rep.role}</div>
-    </div>
-    <div>
-      <div class="admin-prog-bar"><div class="admin-prog-fill" style="width:${r.pct}%;background:${r.pct===100?'#10b981':'#6366f1'}"></div></div>
-      <div style="font-size:.7rem;color:#64748b;margin-top:3px">${r.completedMods}/${r.totalMods} modules</div>
-    </div>
-    <div style="font-weight:700;color:${r.pct===100?'#10b981':'#94a3b8'}">${r.pct}%</div>
-    <div><span class="admin-level-chip" style="background:${r.level.color}20;color:${r.level.color};border:1px solid ${r.level.color}40">${r.level.icon} ${r.level.name.split(' ')[0]}</span></div>
-    <div style="color:#fff;font-weight:600">${r.points}</div>
-    <div style="color:#f59e0b">${r.badgesEarned} 🏅</div>
-    <div style="color:${r.quizAvg!=null?(r.quizAvg>=75?'#10b981':'#f87171'):'#64748b'}">${r.quizAvg != null ? r.quizAvg + '%' : '—'}</div>
-  </div>`).join('')}
-</div>
+<div class="acad-section-label">Rep Progress — click a row to expand details and actions</div>
+${repCards}
 
-<div style="margin-top:20px">
-  <h3>Module Completion Matrix</h3>
-  <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:.78rem;min-width:600px">
-      <thead>
-        <tr style="border-bottom:1px solid #1e293b">
-          <th style="text-align:left;padding:8px;color:#64748b;font-weight:600">Rep</th>
-          ${content.modules.map(m => `<th style="padding:6px;color:#64748b;font-weight:600;text-align:center;font-size:.65rem;max-width:60px">${m.id}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${allReps.map(r => {
-          const rp = window.Academy.getRepProgress(r.rep.id);
-          return `<tr style="border-bottom:1px solid #0f172a">
-            <td style="padding:8px;color:#fff;font-weight:600">${escapeHtml(r.rep.name)}</td>
-            ${content.modules.map(m => {
-              const ms = (rp.modules[m.id] || {}).status || 'not_started';
-              const qScore = (rp.modules[m.id] || {}).quiz_best_score;
-              const bg = ms === 'completed' ? 'rgba(16,185,129,.15)' : ms === 'in_progress' ? 'rgba(245,158,11,.1)' : '#0a0f1a';
-              const text = ms === 'completed' ? '✓' : ms === 'in_progress' ? '▶' : '·';
-              const color = ms === 'completed' ? '#10b981' : ms === 'in_progress' ? '#f59e0b' : '#334155';
-              return `<td style="text-align:center;padding:6px;background:${bg};color:${color};font-weight:700" title="${m.title} — ${ms}${qScore != null ? ' | Quiz: ' + qScore + '%' : ''}">${text}</td>`;
-            }).join('')}
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  </div>
-  <div style="margin-top:8px;font-size:.72rem;color:#64748b">✓ = Complete · ▶ = In Progress · · = Not Started</div>
+<div class="card" style="margin-top:18px;border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.03)">
+  <div style="font-size:.78rem;font-weight:700;color:#ef4444;margin-bottom:6px">Admin Controls</div>
+  <p style="font-size:.83rem;color:var(--muted);margin:0">Click any rep row to expand their full module breakdown. Use <strong>Mark Complete</strong> to credit a module for a rep (e.g. after an in-person session). Use <strong>Reset All Progress</strong> to clear a rep's data — this cannot be undone.</p>
 </div>`;
+
+  // Toggle detail expand/collapse
+  window.toggleAdminRepDetail = function(repId) {
+    const el = document.getElementById(`rep-detail-${repId}`);
+    if (!el) return;
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  };
+
+  // Mark module complete for rep
+  window.academyAdminMarkModule = function(repId, moduleId) {
+    if (!window.Academy.adminMarkModuleComplete) return showToast('Admin function unavailable');
+    window.Academy.adminMarkModuleComplete(repId, moduleId);
+    showToast(`Module ${moduleId} marked complete for rep.`);
+    academyAdminDashboard(); // Re-render
+  };
+
+  // Reset rep progress
+  window.academyAdminResetRep = function(repId, repName) {
+    if (!confirm(`Reset ALL academy progress for ${repName}? This cannot be undone.`)) return;
+    if (!window.Academy.adminResetRepProgress) return showToast('Admin function unavailable');
+    window.Academy.adminResetRepProgress(repId);
+    showToast(`Progress reset for ${repName}.`);
+    academyAdminDashboard(); // Re-render
+  };
 }
 function manager(){
   const fy = getResolvedFY();
