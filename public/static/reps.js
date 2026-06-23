@@ -64,11 +64,149 @@ function loadActiveCommissionRules() {
 window.loadActiveCommissionRules = loadActiveCommissionRules;
 
 function saveCommissionRules(rules) {
+  // ── COMM-04: Audit trail — log before/after state with actor + timestamp ──
+  try {
+    const prev = JSON.parse(localStorage.getItem('avalonCommissionRulesV1') || 'null');
+    const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+    const auditKey = 'avalonCommissionAuditV1';
+    const audit = JSON.parse(localStorage.getItem(auditKey) || '[]');
+    audit.unshift({
+      id:        'audit_' + Date.now(),
+      ts:        new Date().toISOString(),
+      actor,
+      action:    prev ? 'rules_updated' : 'rules_created',
+      before:    prev,
+      after:     rules
+    });
+    // Keep last 50 entries
+    if (audit.length > 50) audit.length = 50;
+    localStorage.setItem(auditKey, JSON.stringify(audit));
+  } catch(e) {}
   rules.updatedAt = new Date().toISOString();
   rules.updatedBy = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+  rules.version   = (rules.version || 0) + 1;
   localStorage.setItem('avalonCommissionRulesV1', JSON.stringify(rules));
 }
 window.saveCommissionRules = saveCommissionRules;
+
+// ── COMM-04: Load commission audit trail ─────────────────────────────────────
+function loadCommissionAudit() {
+  try { return JSON.parse(localStorage.getItem('avalonCommissionAuditV1') || '[]'); }
+  catch(e) { return []; }
+}
+window.loadCommissionAudit = loadCommissionAudit;
+
+// ── COMM-11: Commission lifecycle helpers ─────────────────────────────────────
+// Status flow: estimated → pending_approval → approved → paid
+//              estimated → rejected | on_hold
+// Stored in opp.commissionLifecycle: { status, amount, rate, note, ruleApplied, capApplied,
+//   requiresApproval, retentionBonus, retentionBonusPaidAt, history[] }
+// Backwards-compatible: opp.commissionApproved (bool) still accepted as fallback.
+
+function getCommissionStatus(opp) {
+  if (opp.commissionLifecycle && opp.commissionLifecycle.status) {
+    return opp.commissionLifecycle.status;
+  }
+  // Migrate legacy boolean field
+  if (opp.commissionApproved === true)  return 'approved';
+  if (opp.status === 'Sold / Activation') return 'pending_approval';
+  return 'estimated';
+}
+window.getCommissionStatus = getCommissionStatus;
+
+function getCommissionStatusLabel(status) {
+  return {
+    estimated:        'Estimated',
+    pending_approval: 'Pending Approval',
+    approved:         'Approved',
+    paid:             'Paid',
+    rejected:         'Rejected',
+    on_hold:          'On Hold',
+    pending_reapproval: 'Needs Re-Approval'
+  }[status] || status;
+}
+window.getCommissionStatusLabel = getCommissionStatusLabel;
+
+function getCommissionStatusColor(status) {
+  return {
+    estimated:          '#94a3b8',
+    pending_approval:   '#f59e0b',
+    pending_reapproval: '#f87171',
+    approved:           '#00d4ff',
+    paid:               '#4ade80',
+    rejected:           '#f87171',
+    on_hold:            '#f59e0b'
+  }[status] || '#94a3b8';
+}
+window.getCommissionStatusColor = getCommissionStatusColor;
+
+/**
+ * Upgrade an opportunity's commission state to the lifecycle model,
+ * recalculating from the engine. Saves to localStorage.
+ * Returns the updated opp object (not saved unless persist=true).
+ */
+function touchCommissionLifecycle(oppId, { newStatus, actor, note: actionNote, persist = true } = {}) {
+  try {
+    const stateKey = 'avalonSalesHubStateV3';
+    const s = JSON.parse(localStorage.getItem(stateKey) || '{}');
+    const idx = (s.opportunities || []).findIndex(o => o.id === oppId);
+    if (idx < 0) return null;
+    const opp = s.opportunities[idx];
+
+    // Calculate fresh from engine
+    const repObj = REPS.find(r => r.id === opp.repId);
+    const result = calculateCommission({
+      planId:     repObj?.commissionPlan || 'ryan',
+      workType:   opp.workType   || 'landscape',
+      leadSource: opp.leadSource || 'company_lead',
+      jobValue:   parseFloat(opp.jobValue || 0),
+      collected:  !!opp.collected,
+      approved:   newStatus === 'approved' || newStatus === 'paid',
+      preview:    true
+    });
+
+    const prevLC    = opp.commissionLifecycle || {};
+    const prevStatus = prevLC.status || getCommissionStatus(opp);
+    const resolvedStatus = newStatus || prevStatus || 'pending_approval';
+
+    const historyEntry = {
+      ts:       new Date().toISOString(),
+      actor:    actor || (window.getCurrentRep ? (window.getCurrentRep()?.id || 'system') : 'system'),
+      from:     prevStatus,
+      to:       resolvedStatus,
+      amount:   result.amount,
+      note:     actionNote || ''
+    };
+
+    opp.commissionLifecycle = {
+      status:          resolvedStatus,
+      amount:          result.amount,
+      rate:            result.rate,
+      cap:             result.cap,
+      capApplied:      result.capApplied,
+      requiresApproval:result.requiresApproval,
+      note:            result.note,
+      ruleApplied:     result.ruleApplied,
+      retentionBonus:  result.retentionBonus,
+      retentionBonusPaidAt: prevLC.retentionBonusPaidAt || null,
+      calculatedAt:    new Date().toISOString(),
+      history:         [historyEntry, ...(prevLC.history || [])].slice(0, 20)
+    };
+
+    // Keep legacy boolean in sync for backwards compat
+    opp.commissionApproved    = resolvedStatus === 'approved' || resolvedStatus === 'paid';
+    opp.commissionApprovedAt  = opp.commissionApproved ? (opp.commissionApprovedAt || historyEntry.ts) : null;
+    opp.commissionApprovedBy  = opp.commissionApproved ? (actor || opp.commissionApprovedBy || 'admin') : null;
+    opp.updatedAt = new Date().toISOString();
+
+    if (persist) {
+      s.opportunities[idx] = opp;
+      localStorage.setItem(stateKey, JSON.stringify(s));
+    }
+    return opp;
+  } catch(e) { console.error('touchCommissionLifecycle:', e); return null; }
+}
+window.touchCommissionLifecycle = touchCommissionLifecycle;
 
 const COMMISSION_PLANS = {
   ryan: {
@@ -287,30 +425,70 @@ function estimateCommission(opts) {
 }
 
 /**
- * Total commissions for a rep across all their opportunities
+ * Total commissions for a rep — COMM-11/13: lifecycle-aware
+ * Returns: { totalEarned, pendingApproval, approved, paid, onHold, rejected,
+ *            pendingCollection (legacy), ytdTotal, retentionBonusTotal, breakdown }
  */
 function calcRepCommissions(repId) {
   const allOpps = getGlobalOpps();
   const repOpps = allOpps.filter(o => o.repId === repId && o.status === 'Sold / Activation');
-  let totalEarned = 0;
-  let pendingCollection = 0;
+  const repObj  = REPS.find(r => r.id === repId);
+  const planId  = repObj?.commissionPlan || 'ryan';
+
+  let totalEarned = 0;         // legacy: collected+approved
+  let pendingCollection = 0;   // legacy: sold but not collected
+  let approvedTotal = 0;       // lifecycle: approved (not yet paid)
+  let paidTotal = 0;           // lifecycle: paid out
+  let pendingApprovalTotal = 0;// lifecycle: awaiting approval
+  let onHoldTotal = 0;
+  let rejectedTotal = 0;
+  let retentionBonusTotal = 0;
   let breakdown = [];
 
   repOpps.forEach(o => {
     const result = calculateCommission({
-      planId: COMMISSION_PLANS[(REPS.find(r => r.id === repId)?.commissionPlan)] ? (REPS.find(r => r.id === repId)?.commissionPlan) : 'ryan',
-      workType: o.workType || 'landscape',
+      planId,
+      workType:   o.workType   || 'landscape',
       leadSource: o.leadSource || 'company_lead',
-      jobValue: parseFloat(o.jobValue || o.budget?.replace(/[^0-9.]/g, '') || 0),
-      collected: !!o.collected,
-      approved: !!o.commissionApproved
+      jobValue:   parseFloat(o.jobValue || o.budget?.replace(/[^0-9.]/g, '') || 0),
+      collected:  !!o.collected,
+      approved:   !!o.commissionApproved,
+      preview:    true
     });
-    if (o.collected) totalEarned += result.amount;
-    else pendingCollection += result.amount;
-    breakdown.push({ opp: o, result });
+
+    // Resolve lifecycle status
+    const lcStatus = getCommissionStatus(o);
+
+    // Bucket by lifecycle status
+    switch (lcStatus) {
+      case 'paid':              paidTotal             += result.amount; break;
+      case 'approved':          approvedTotal         += result.amount; break;
+      case 'on_hold':           onHoldTotal           += result.amount; break;
+      case 'rejected':          rejectedTotal         += result.amount; break;
+      default:                  pendingApprovalTotal  += result.amount; break;
+    }
+
+    // Legacy buckets (for backwards-compat with existing dashboard cards)
+    if (o.collected) totalEarned       += result.amount;
+    else             pendingCollection += result.amount;
+
+    // Retention bonus tracking
+    if (result.retentionBonus > 0 && lcStatus === 'paid') {
+      retentionBonusTotal += result.retentionBonus;
+    }
+
+    breakdown.push({ opp: o, result, lcStatus });
   });
 
-  return { totalEarned, pendingCollection, breakdown };
+  const ytdTotal = paidTotal + approvedTotal + pendingApprovalTotal;
+  return {
+    // Legacy (still used by dashboard summary cards)
+    totalEarned, pendingCollection,
+    // Lifecycle buckets
+    paidTotal, approvedTotal, pendingApprovalTotal, onHoldTotal, rejectedTotal,
+    ytdTotal, retentionBonusTotal,
+    breakdown
+  };
 }
 
 // ── Global opps bridge ────────────────────────────────────────────────────────
@@ -503,7 +681,9 @@ function renderRepDashboard(viewEl, rep) {
   const sold = opps.filter(o => o.status === 'Sold / Activation');
   const lost = opps.filter(o => o.status === 'Closed Lost');
   const overdue = open.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO());
-  const { totalEarned, pendingCollection, breakdown } = calcRepCommissions(rep.id);
+  const { totalEarned, pendingCollection, breakdown,
+          paidTotal, approvedTotal, pendingApprovalTotal, onHoldTotal, rejectedTotal,
+          ytdTotal, retentionBonusTotal } = calcRepCommissions(rep.id);
 
   // Weekly activity from repState
   const repState = loadRepState(rep.id);
@@ -584,7 +764,13 @@ function renderRepDashboard(viewEl, rep) {
         </tr>
       </thead>
       <tbody>
-        ${breakdown.map(({ opp, result }) => `
+        ${breakdown.map(({ opp, result, lcStatus }) => {
+          const statusColor = getCommissionStatusColor(lcStatus);
+          const statusLabel = getCommissionStatusLabel(lcStatus);
+          const capBadge = result.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
+          const bonusBadge = result.retentionBonus > 0 && lcStatus === 'paid'
+            ? `<span style="font-size:9px;background:#16a34a;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">+${fmtCurrency(result.retentionBonus)} bonus</span>` : '';
+          return `
         <tr style="border-bottom:1px solid #0f172a;cursor:pointer" onclick="show('pipeline','${opp.id}')"
           onmouseover="this.style.background='#0f172a'" onmouseout="this.style.background=''">
           <td style="padding:10px 12px;font-weight:600">${escapeHtml(opp.client)}</td>
@@ -592,21 +778,77 @@ function renderRepDashboard(viewEl, rep) {
           <td style="padding:10px 12px;color:#94a3b8">${formatLeadSource(opp.leadSource)}</td>
           <td style="padding:10px 12px;text-align:right">${fmtCurrency(opp.jobValue)}</td>
           <td style="padding:10px 12px;text-align:right;color:${rep.color}">${fmtPercent(result.rate)}</td>
-          <td style="padding:10px 12px;text-align:right;font-weight:700;color:${opp.collected ? '#4ade80' : '#fbbf24'}">${fmtCurrency(result.amount)}</td>
+          <td style="padding:10px 12px;text-align:right;font-weight:700;color:${statusColor}">${fmtCurrency(result.amount)}${capBadge}${bonusBadge}</td>
           <td style="padding:10px 12px;text-align:center">
-            ${opp.collected
-              ? '<span style="background:#14532d;color:#4ade80;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Collected</span>'
-              : result.requiresApproval
-                ? '<span style="background:#1c1917;color:#f59e0b;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Approval Needed</span>'
-                : '<span style="background:#1c1917;color:#fbbf24;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">Pending</span>'}
+            <span style="background:${statusColor}22;color:${statusColor};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid ${statusColor}40">${statusLabel}</span>
           </td>
         </tr>
         <tr>
           <td colspan="7" style="padding:0 12px 10px;font-size:11px;color:#64748b">${escapeHtml(result.note)}</td>
-        </tr>
-        `).join('')}
+        </tr>`;
+        }).join('')}
       </tbody>
     </table></div>`}
+</section>
+
+<!-- COMM-13: Rep Payout View — by lifecycle status with YTD totals + retention bonuses -->
+<section class="card" style="margin-bottom:28px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <h2 style="margin:0;font-size:16px">My Commission Payouts</h2>
+    <span style="font-size:11px;color:#64748b">YTD · All sold jobs</span>
+  </div>
+
+  <!-- YTD Summary Chips -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px">
+    ${[
+      { label:'Paid Out',        val: paidTotal,            color:'#4ade80', status:'paid' },
+      { label:'Approved',        val: approvedTotal,        color:'#00d4ff', status:'approved' },
+      { label:'Pending Approval',val: pendingApprovalTotal, color:'#f59e0b', status:'pending_approval' },
+      { label:'On Hold',         val: onHoldTotal,          color:'#f59e0b', status:'on_hold' },
+      { label:'Retention Bonus', val: retentionBonusTotal,  color:'#4ade80', status:null }
+    ].filter(b => b.val > 0).map(b => `
+    <div style="background:${b.color}12;border:1px solid ${b.color}40;border-radius:10px;padding:12px;text-align:center">
+      <div style="font-size:9px;font-weight:700;color:${b.color};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${b.label}</div>
+      <div style="font-size:20px;font-weight:800;color:${b.color}">${fmtCurrency(b.val)}</div>
+    </div>`).join('') || '<div style="color:#64748b;font-size:13px">No commissions yet — close your first deal!</div>'}
+  </div>
+
+  <!-- Buckets by status -->
+  ${['paid','approved','pending_approval','pending_reapproval','on_hold','rejected'].map(status => {
+    const items = breakdown.filter(b => b.lcStatus === status);
+    if (!items.length) return '';
+    const label = getCommissionStatusLabel(status);
+    const color = getCommissionStatusColor(status);
+    const subtotal = items.reduce((a, b) => a + b.result.amount, 0);
+    return `
+  <div style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:12px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.04em">${label}</span>
+      <span style="font-size:12px;font-weight:700;color:${color}">${fmtCurrency(subtotal)}</span>
+    </div>
+    ${items.map(({ opp, result, lcStatus: s }) => {
+      const capBadge = result.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
+      const bonusEl = result.retentionBonus > 0
+        ? `<div style="font-size:10px;color:#4ade80;margin-top:2px">${s === 'paid' ? '✓' : '○'} ${fmtCurrency(result.retentionBonus)} retention bonus ${s === 'paid' ? 'earned' : 'after 90-day active'}</div>` : '';
+      return `
+    <div onclick="show('pipeline','${opp.id}')" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:5px;cursor:pointer;border:1px solid #1e293b"
+      onmouseover="this.style.borderColor='${color}40'" onmouseout="this.style.borderColor='#1e293b'">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${escapeHtml(opp.client || 'Unnamed')}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">${formatWorkType(opp.workType)} · ${formatLeadSource(opp.leadSource)}</div>
+        <div style="font-size:10px;color:#475569;margin-top:3px">${escapeHtml(result.note)}</div>
+        ${bonusEl}
+      </div>
+      <div style="text-align:right;flex-shrink:0;margin-left:12px">
+        <div style="font-size:14px;font-weight:800;color:${color}">${fmtCurrency(result.amount)}${capBadge}</div>
+        <div style="font-size:10px;color:#64748b">${fmtCurrency(opp.jobValue)}</div>
+      </div>
+    </div>`;
+    }).join('')}
+  </div>`;
+  }).join('')}
+
+  ${breakdown.length === 0 ? '<p style="color:#64748b;font-size:13px">No sold jobs yet.</p>' : ''}
 </section>
 
 <!-- Commission Plan Quick Reference -->
@@ -993,7 +1235,16 @@ function renderAdminDashboard(viewEl) {
   const totalPipelineValue = openOpps.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0);
 
   // Commission approval queue — sold opps not yet commission-approved
-  const commQueue = soldOpps.filter(o => !o.commissionApproved && o.repId);
+  // COMM-11: lifecycle-aware queue — pending_approval + pending_reapproval + on_hold
+  const commQueue = soldOpps.filter(o => {
+    const s = getCommissionStatus(o);
+    return o.repId && ['pending_approval','pending_reapproval','on_hold','estimated'].includes(s);
+  });
+  // Approved queue (for mark-paid action)
+  const commApproved = soldOpps.filter(o => {
+    const s = getCommissionStatus(o);
+    return o.repId && s === 'approved';
+  });
 
   // ── Rep performance ──
   const repRows = REPS.filter(r => r.role === 'rep').map(rep => {
@@ -1285,70 +1536,85 @@ ${(()=>{
     </div>` : '<p style="color:#4ade80;font-size:13px;margin-top:8px">No overdue follow-ups.</p>'}
   </section>
 
-  <!-- Commission Approval Queue (COMM-12: engine-aware) -->
+  <!-- Commission Approval Queue (COMM-11/12/13: lifecycle-aware) -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <h2 style="margin:0;font-size:16px">Commission Approval Queue</h2>
-      <span style="font-size:11px;color:${commQueue.length > 0 ? '#fbbf24' : '#4ade80'};font-weight:700">${commQueue.length} pending</span>
+      <span style="font-size:11px;color:${commQueue.length > 0 ? '#fbbf24' : '#4ade80'};font-weight:700">${commQueue.length} pending · ${commApproved.length} approved</span>
     </div>
-    ${commQueue.length === 0
-      ? '<p style="color:#4ade80;font-size:13px">All sold jobs have commission approved. ✓</p>'
-      : commQueue.map(o => {
-          const repObj = (window.REPS||[]).find(r => r.id === o.repId);
-          const val = parseFloat(o.jobValue || 0);
-          // Run master engine for this item
-          let commResult = { amount: 0, rate: 0, note: '—', ruleApplied: '—', capApplied: false, requiresApproval: false, retentionBonus: 0 };
-          if (typeof calculateCommission === 'function') {
-            commResult = calculateCommission({
-              planId:     repObj?.commissionPlan || 'ryan',
-              workType:   o.workType   || 'landscape',
-              leadSource: o.leadSource || 'company_lead',
-              jobValue:   val,
-              collected:  !!o.collected,
-              approved:   false, // pending approval — show what would be paid
-              preview:    true
-            });
-          }
-          const commAmt = fmtM(commResult.amount);
-          const capBadge = commResult.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
-          const srcLabel = o.leadSource === 'self_generated' ? 'Self-Gen' : o.leadSource === 'company_lead' ? 'Co. Lead' : o.leadSource === 'assisted' ? 'Assisted' : '—';
-          const wt = o.workType ? o.workType.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—';
-          return `
-          <div style="background:#0f172a;border:1px solid #ca8a0440;border-radius:12px;margin-bottom:10px;overflow:hidden">
-            <!-- Header row — clickable to open lead -->
-            <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer"
-              onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='transparent'">
-              <div style="flex:1;min-width:0">
-                <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-                <div style="font-size:11px;color:#64748b;margin-top:1px">${repObj ? `<span style="color:${repObj.color||'#94a3b8'}">${escapeHtml(repObj.name)}</span> · ` : ''}${wt} · ${srcLabel}</div>
+
+    ${(()=>{
+      function queueCard(o, isApproved) {
+        const repObj = (window.REPS||[]).find(r => r.id === o.repId);
+        const val = parseFloat(o.jobValue || 0);
+        const lcStatus = getCommissionStatus(o);
+        const scol = getCommissionStatusColor(lcStatus);
+        const slbl = getCommissionStatusLabel(lcStatus);
+        const cr = calculateCommission({
+          planId:     repObj?.commissionPlan || 'ryan',
+          workType:   o.workType   || 'landscape',
+          leadSource: o.leadSource || 'company_lead',
+          jobValue:   val,
+          collected:  !!o.collected,
+          approved:   isApproved,
+          preview:    true
+        });
+        const capBadge = cr.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
+        const srcLabel = o.leadSource === 'self_generated' ? 'Self-Gen' : o.leadSource === 'company_lead' ? 'Co. Lead' : o.leadSource === 'assisted' ? 'Assisted' : '—';
+        const wt = o.workType ? o.workType.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—';
+        return `
+        <div style="background:#0f172a;border:1px solid ${scol}40;border-radius:12px;margin-bottom:10px;overflow:hidden">
+          <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer"
+            onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='transparent'">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</span>
+                <span style="font-size:9px;background:${scol}22;color:${scol};border:1px solid ${scol}40;border-radius:20px;padding:1px 7px;white-space:nowrap">${slbl}</span>
               </div>
-              <div style="text-align:right;flex-shrink:0">
-                <div style="font-size:13px;font-weight:800;color:#00d4ff">${fmtM(val)}</div>
-                <div style="font-size:10px;color:${o.collected?'#4ade80':'#f59e0b'}">${o.collected ? '✓ collected' : '⏳ uncollected'}</div>
-              </div>
+              <div style="font-size:11px;color:#64748b;margin-top:1px">${repObj ? `<span style="color:${repObj.color||'#94a3b8'}">${escapeHtml(repObj.name)}</span> · ` : ''}${wt} · ${srcLabel}</div>
             </div>
-            <!-- Engine output row -->
-            <div style="padding:8px 12px;background:#0a0f1a;border-top:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-              <div>
-                <span style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.04em">Calculated Commission</span><br>
-                <span style="font-size:15px;font-weight:800;color:#fbbf24">${commAmt}</span>${capBadge}
-                <div style="font-size:10px;color:#64748b;margin-top:2px;max-width:260px">${escapeHtml(commResult.note)}</div>
-                ${commResult.retentionBonus > 0 ? `<div style="font-size:10px;color:#4ade80;margin-top:2px">+${fmtM(commResult.retentionBonus)} retention bonus after 90-day active period</div>` : ''}
-              </div>
-              <div style="display:flex;gap:6px;flex-shrink:0">
-                <button onclick="event.stopPropagation();window._adminApproveComm('${o.id}')"
-                  style="background:#16a34a;border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">
-                  ✓ Approve
-                </button>
-                <button onclick="event.stopPropagation();show('pipeline','${o.id}')"
-                  style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">
-                  View Lead →
-                </button>
-              </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:13px;font-weight:800;color:#00d4ff">${fmtM(val)}</div>
+              <div style="font-size:10px;color:${o.collected?'#4ade80':'#f59e0b'}">${o.collected ? '✓ collected' : '⏳ uncollected'}</div>
             </div>
-          </div>`;
-        }).join('')}
-    ${commQueue.length > 0 ? `<p style="font-size:11px;color:#64748b;margin-top:4px">Approving here marks the commission as approved. You can also open any lead → Admin Controls to adjust details first.</p>` : ''}
+          </div>
+          <div style="padding:8px 12px;background:#0a0f1a;border-top:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+              <span style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.04em">Calculated Commission</span><br>
+              <span style="font-size:15px;font-weight:800;color:#fbbf24">${fmtM(cr.amount)}</span>${capBadge}
+              <div style="font-size:10px;color:#64748b;margin-top:2px;max-width:260px">${escapeHtml(cr.note)}</div>
+              ${cr.retentionBonus > 0 ? `<div style="font-size:10px;color:#4ade80;margin-top:2px">+${fmtM(cr.retentionBonus)} retention bonus after 90-day active</div>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+              ${!isApproved ? `
+              <button onclick="event.stopPropagation();window._adminApproveComm('${o.id}')"
+                style="background:#16a34a;border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">✓ Approve</button>
+              <button onclick="event.stopPropagation();window._adminHoldComm('${o.id}')"
+                style="background:#92400e;border:none;color:#fbbf24;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer">Hold</button>
+              <button onclick="event.stopPropagation();window._adminRejectComm('${o.id}')"
+                style="background:#450a0a;border:none;color:#f87171;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer">Reject</button>
+              ` : `
+              <button onclick="event.stopPropagation();window._adminMarkCommPaid('${o.id}')"
+                style="background:#064e3b;border:none;color:#4ade80;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">$ Mark Paid</button>
+              `}
+              <button onclick="event.stopPropagation();show('pipeline','${o.id}')"
+                style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">View →</button>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      let html = commQueue.length === 0
+        ? '<p style="color:#4ade80;font-size:13px">No commissions pending approval. ✓</p>'
+        : commQueue.map(o => queueCard(o, false)).join('');
+      if (commQueue.length > 0) html += `<p style="font-size:11px;color:#64748b;margin-top:4px">Approve → Approved. Mark Paid → closes lifecycle. Hold/Reject for review.</p>`;
+      if (commApproved.length > 0) html += `
+        <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:10px">
+          <div style="font-size:12px;font-weight:700;color:#00d4ff;margin-bottom:8px">Approved — Ready to Pay (${commApproved.length})</div>
+          ${commApproved.map(o => queueCard(o, true)).join('')}
+        </div>`;
+      return html;
+    })()}
 
     <!-- Unassigned opps inline -->
     <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:8px">
@@ -1578,23 +1844,51 @@ function escapeHtml(str = '') {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Assign rep to opportunity ─────────────────────────────────────────────────
-// Quick commission approve from queue — sets commissionApproved + logs action (COMM-12)
+// ── Commission lifecycle actions ──────────────────────────────────────────────
+// COMM-11: Full lifecycle transitions via touchCommissionLifecycle
+
 window._adminApproveComm = function(oppId) {
   try {
-    const key = 'avalonSalesHubStateV3';
-    const s = JSON.parse(localStorage.getItem(key) || '{}');
-    const idx = (s.opportunities || []).findIndex(o => o.id === oppId);
-    if (idx >= 0) {
-      s.opportunities[idx].commissionApproved = true;
-      s.opportunities[idx].commissionApprovedAt = new Date().toISOString();
-      s.opportunities[idx].commissionApprovedBy = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
-      s.opportunities[idx].updatedAt = new Date().toISOString();
-      localStorage.setItem(key, JSON.stringify(s));
+    const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+    const updated = touchCommissionLifecycle(oppId, { newStatus: 'approved', actor, note: 'Approved via commission queue' });
+    if (updated) {
       if (window.showToast) window.showToast('Commission approved ✓');
-      repDashboard(); // refresh queue
+      repDashboard();
     }
   } catch(e) { if (window.showToast) window.showToast('Error approving commission', 'error'); }
+};
+
+window._adminMarkCommPaid = function(oppId) {
+  try {
+    const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+    const updated = touchCommissionLifecycle(oppId, { newStatus: 'paid', actor, note: 'Marked paid by admin' });
+    if (updated) {
+      if (window.showToast) window.showToast('Commission marked as paid ✓');
+      repDashboard();
+    }
+  } catch(e) { if (window.showToast) window.showToast('Error updating commission', 'error'); }
+};
+
+window._adminRejectComm = function(oppId) {
+  try {
+    const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+    const updated = touchCommissionLifecycle(oppId, { newStatus: 'rejected', actor, note: 'Rejected via commission queue' });
+    if (updated) {
+      if (window.showToast) window.showToast('Commission rejected');
+      repDashboard();
+    }
+  } catch(e) { if (window.showToast) window.showToast('Error updating commission', 'error'); }
+};
+
+window._adminHoldComm = function(oppId) {
+  try {
+    const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+    const updated = touchCommissionLifecycle(oppId, { newStatus: 'on_hold', actor, note: 'Placed on hold by admin' });
+    if (updated) {
+      if (window.showToast) window.showToast('Commission placed on hold');
+      repDashboard();
+    }
+  } catch(e) { if (window.showToast) window.showToast('Error updating commission', 'error'); }
 };
 
 window.assignRep = function(oppId, repId) {

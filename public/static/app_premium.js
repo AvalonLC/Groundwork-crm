@@ -2064,7 +2064,39 @@ function selectEdit(name,label,options,value=''){ return `<label><span>${label}<
 function saveOpportunity(id){
   const o = state.opportunities.find(x=>x.id===id); if(!o) return;
   const fd = new FormData(document.getElementById('oppForm'));
+
+  // COMM-14: Track commission-driving fields before save to detect material changes
+  const commFields = ['workType','leadSource','jobValue','repId','collected'];
+  const before = {};
+  commFields.forEach(f => before[f] = o[f]);
+
   Object.assign(o, Object.fromEntries(fd.entries()), {updatedAt:new Date().toISOString()});
+
+  // COMM-14: If this is a sold opp and any commission-driving field changed,
+  // flag for reapproval so Tyler must re-review the commission amount
+  if (o.status === 'Sold / Activation') {
+    const changed = commFields.some(f => String(before[f]||'') !== String(o[f]||''));
+    if (changed) {
+      const lcStatus = window.getCommissionStatus ? window.getCommissionStatus(o) : null;
+      // Only flag if it was previously approved/paid — don't downgrade pending items
+      if (lcStatus === 'approved' || lcStatus === 'paid') {
+        if (o.commissionLifecycle) {
+          o.commissionLifecycle.status = 'pending_reapproval';
+          o.commissionLifecycle.history = [{
+            ts:    new Date().toISOString(),
+            actor: window.getCurrentRep ? (window.getCurrentRep()?.id || 'system') : 'system',
+            from:  lcStatus,
+            to:    'pending_reapproval',
+            note:  `Commission-driving field changed (${commFields.filter(f => String(before[f]||'') !== String(o[f]||'')).join(', ')}) — reapproval required`
+          }, ...(o.commissionLifecycle.history || [])].slice(0, 20);
+        }
+        // Sync legacy boolean
+        o.commissionApproved = false;
+        showToast('Commission flagged for re-approval — key deal fields changed', 'warning');
+      }
+    }
+  }
+
   saveState(); showToast('Opportunity saved'); show('pipeline', id);
 }
 function setOppField(id,field,value){ const o = state.opportunities.find(x=>x.id===id); if(!o) return; o[field]=value; o.updatedAt=new Date().toISOString(); saveState(); showToast('Updated'); show('pipeline', id); }
