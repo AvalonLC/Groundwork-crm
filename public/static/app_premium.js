@@ -397,19 +397,18 @@ function oppCard(o){
     : isStale
     ? `<span class="urgency-badge stale">⏱ STALE ${daysSinceUpdate}d</span>`
     : '';
-  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}">
+  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
     <div class="opp-card-top">
       <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
       ${urgencyBadge}
     </div>
-    <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')} • ${escapeHtml(o.address||'No address')}</p>
+    <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')}${o.address ? ` · ${escapeHtml(o.address)}` : ''}</p>
     <div class="opp-meta">
       ${badge(o.status||'New Lead')}
-      <span>Next: ${prettyDate(o.nextFollowUp)}</span>
-      ${o.jobValue ? `<span style="color:#4ade80;font-weight:600">${money(Number(o.jobValue))}</span>` : ''}
-      ${repObj ? `<span title="${escapeHtml(repObj.name)}">${repObj.avatar}</span>` : ''}
+      ${o.nextFollowUp ? `<span class="opp-next">Next: ${prettyDate(o.nextFollowUp)}</span>` : ''}
+      ${o.jobValue ? `<span class="opp-value">${money(Number(o.jobValue))}</span>` : ''}
+      ${repObj ? `<span class="opp-rep" title="${escapeHtml(repObj.name)}">${repObj.avatar}</span>` : ''}
     </div>
-    <button class="secondary-btn small" onclick="show('pipeline','${o.id}')">Open</button>
   </article>`;
 }
 
@@ -462,55 +461,64 @@ function pipeline(selectedId){
   const filters = data.statuses;
   const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))})).filter(g=>g.items.length || ['New Lead','Contacted','Discovery Scheduled','Proposal / Estimate Sent','Follow-Up','Sold / Activation'].includes(g.status));
 
+  const _repFilterHtml = (()=>{
+    const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
+    const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
+    if (!_ia) return '';
+    return `<div class="pl-filter-group">
+      <span class="pl-filter-label">Rep</span>
+      <button class="pl-filter-btn ${activeRepFilter==='all'?'pl-active':''}" onclick="window._pipelineRepFilter='all';show('pipeline')">All</button>
+      ${(window.REPS||[]).map(r=>`<button class="pl-filter-btn ${activeRepFilter===r.id?'pl-active':''}" onclick="window._pipelineRepFilter='${r.id}';show('pipeline')">${r.name.split(' ')[0]}</button>`).join('')}
+    </div><div class="pl-filter-divider"></div>`;
+  })();
+
   view.innerHTML = `
-    <div class="hero pipeline-hero">
-      <div class="eyebrow">Day-to-Day Sales Tracker</div>
-      <h1>Pipeline</h1>
-      <p class="lede">Track leads from first inquiry through proposal, follow-up, and sold-job activation.</p>
-      <div class="quick-actions">
-        <button class="primary-btn" onclick="show('lead')">+ Add Lead</button>
-        <button class="secondary-btn" onclick="exportCsv()">Export CSV</button>
-        <button class="secondary-btn" onclick="show('forms','follow-up')">Follow-Up Cadence</button>
+    <div class="pl-page-header">
+      <div class="pl-page-title">
+        <h1 class="pl-title">Pipeline</h1>
+        <span class="pl-subtitle">Day-to-day sales tracker</span>
+      </div>
+      <div class="pl-page-actions">
+        <button class="primary-btn small" onclick="show('lead')">+ Add Lead</button>
+        <button class="secondary-btn small" onclick="exportCsv()">Export CSV</button>
+        <button class="secondary-btn small" onclick="show('forms','follow-up')">Follow-Up Cadence</button>
       </div>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;align-items:center">
-      ${(()=>{
-        const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
-        const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
-        if (!_ia) return ''; // Ryan (rep): no rep filter — always sees only his own
-        return `<div style="display:flex;gap:6px;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--muted);align-self:center">Rep:</span>
-          <button class="tab ${activeRepFilter==='all'?'active':''}" onclick="window._pipelineRepFilter='all';show('pipeline')">All</button>
-          ${(window.REPS||[]).map(r=>`<button class="tab ${activeRepFilter===r.id?'active':''}" onclick="window._pipelineRepFilter='${r.id}';show('pipeline')">${r.avatar} ${r.name}</button>`).join('')}
-        </div>`;
-      })()}
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--muted);align-self:center">Client:</span>
-        <button class="tab ${activeTypeFilter==='all'?'active':''}" onclick="window._pipelineTypeFilter='all';show('pipeline')">All</button>
-        <button class="tab ${activeTypeFilter==='Residential'?'active':''}" onclick="window._pipelineTypeFilter='Residential';show('pipeline')">Residential</button>
-        <button class="tab ${activeTypeFilter==='Commercial'?'active':''}" onclick="window._pipelineTypeFilter='Commercial';show('pipeline')">Commercial</button>
+
+    <div class="pl-toolbar">
+      ${_repFilterHtml}
+      <div class="pl-filter-group">
+        <span class="pl-filter-label">Client</span>
+        <button class="pl-filter-btn ${activeTypeFilter==='all'?'pl-active':''}" onclick="window._pipelineTypeFilter='all';show('pipeline')">All</button>
+        <button class="pl-filter-btn ${activeTypeFilter==='Residential'?'pl-active':''}" onclick="window._pipelineTypeFilter='Residential';show('pipeline')">Residential</button>
+        <button class="pl-filter-btn ${activeTypeFilter==='Commercial'?'pl-active':''}" onclick="window._pipelineTypeFilter='Commercial';show('pipeline')">Commercial</button>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--muted);align-self:center">Work:</span>
-        <button class="tab ${activeCatFilter==='all'?'active':''}" onclick="window._pipelineCatFilter='all';show('pipeline')">All Work</button>
-        <button class="tab ${activeCatFilter==='landscape'?'active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">Landscape</button>
-        <button class="tab ${activeCatFilter==='maintenance'?'active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">Maintenance</button>
-        <button class="tab ${activeCatFilter==='snow'?'active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">Snow & Ice</button>
+      <div class="pl-filter-divider"></div>
+      <div class="pl-filter-group">
+        <span class="pl-filter-label">Division</span>
+        <button class="pl-filter-btn ${activeCatFilter==='all'?'pl-active':''}" onclick="window._pipelineCatFilter='all';show('pipeline')">All</button>
+        <button class="pl-filter-btn ${activeCatFilter==='landscape'?'pl-active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">Landscape</button>
+        <button class="pl-filter-btn ${activeCatFilter==='maintenance'?'pl-active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">Maintenance</button>
+        <button class="pl-filter-btn ${activeCatFilter==='snow'?'pl-active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">Snow & Ice</button>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--muted);align-self:center">Sort:</span>
-        <button class="tab ${activeSort==='urgent'?'active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">Urgent</button>
-        <button class="tab ${activeSort==='recent'?'active':''}" onclick="window._pipelineSort='recent';show('pipeline')">Recent</button>
-        <button class="tab ${activeSort==='value'?'active':''}" onclick="window._pipelineSort='value';show('pipeline')">Value</button>
+      <div class="pl-filter-divider"></div>
+      <div class="pl-filter-group">
+        <span class="pl-filter-label">Sort</span>
+        <button class="pl-filter-btn ${activeSort==='urgent'?'pl-active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">Urgent</button>
+        <button class="pl-filter-btn ${activeSort==='recent'?'pl-active':''}" onclick="window._pipelineSort='recent';show('pipeline')">Recent</button>
+        <button class="pl-filter-btn ${activeSort==='value'?'pl-active':''}" onclick="window._pipelineSort='value';show('pipeline')">Value</button>
       </div>
     </div>
-    ${activeStatusFilter ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 14px;background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px">
-      <span style="color:#94a3b8">Filtered: <strong style="color:#e2e8f0">${activeStatusFilter}</strong></span>
-      <button class="secondary-btn small" style="margin-left:auto" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear Filter</button>
+
+    ${activeStatusFilter ? `<div class="pl-active-filter-bar">
+      <span>Showing: <strong>${activeStatusFilter}</strong></span>
+      <button class="pl-clear-filter" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear</button>
     </div>` : ''}
+
     ${statCards()}
+
     <div class="kanban mt">
-      ${grouped.map(g=>`<section class="kanban-col"><h3>${escapeHtml(g.status)} <span>${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+      ${grouped.map(g=>`<section class="kanban-col"><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
     </div>
   `;
 }
