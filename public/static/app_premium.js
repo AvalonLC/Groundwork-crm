@@ -35,9 +35,9 @@ const NAV_PERMS_KEY = 'avalonNavPermissions';
 
 // Default permissions by role. Tyler can override from Settings.
 const DEFAULT_NAV_PERMS = {
-  admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','revenueAdmin'],
-  office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','revenueAdmin'],
-  rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy']
+  admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings'],
+  office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'],
+  rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings']
 };
 
 function loadNavPerms() {
@@ -117,7 +117,7 @@ function show(viewName='today', param){
   // ── Permission gate (admin-configurable) ─────────────────
   if (viewName !== 'settings' && !canViewTab(viewName)) {
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
-    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',integrations:'Integrations',settings:'Settings'};
+    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',revenueAdmin:'Financial Data Hub',integrations:'Integrations',userManagement:'User Management',settings:'Settings'};
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px">
       <div style="font-size:32px;margin-bottom:18px;color:#64748b;font-weight:300;letter-spacing:-2px">&#x2715;</div>
       <h2 style="color:#f87171;margin-bottom:10px">${_viewLabels[viewName] || viewName} — Access Restricted</h2>
@@ -137,7 +137,8 @@ function show(viewName='today', param){
   // repDashboard is loaded from reps.js
   const repRoute = (typeof repDashboard === 'function') ? {myDashboard: repDashboard} : {};
   const revenueRoute = (typeof revenueAdmin === 'function') ? {revenueAdmin} : {};
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute};
+  const umRoute = (typeof userManagement === 'function') ? {userManagement} : {};
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -2870,8 +2871,15 @@ function settings(){
         ${list(['Access via browser — bookmark for quick daily use.','Install via the Install button for app-style access on mobile.','Data is stored locally in this browser — export regularly.','Contact Tyler to transfer data between devices or reps.'])}
       </section>
     </div>
+    <div id="um-my-google-settings" style="margin-top:20px"></div>
+    ${_ia ? `<div style="margin-top:20px"><button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">⚙️ Open User &amp; Access Management</button></div>` : ''}
     ${_ia ? renderPermMatrix() : ''}
   `;
+  // Inject per-user Google connection widget
+  if (typeof window.umRenderMyGoogleConnection === 'function') {
+    const gcDiv = document.getElementById('um-my-google-settings');
+    if (gcDiv) window.umRenderMyGoogleConnection(gcDiv);
+  }
 }
 
 function renderPermMatrix() {
@@ -2892,7 +2900,9 @@ function renderPermMatrix() {
     { key: 'objections',  label: 'Objection Handling', group: 'Sales Toolkit' },
     { key: 'calculator',  label: 'Pricing Tools',      group: 'Sales Toolkit' },
     { key: 'academy',     label: 'Sales Academy',      group: 'Learning' },
+    { key: 'clients',      label: 'Clients & Properties',group: 'Pipeline' },
     { key: 'manager',     label: 'Manager Tools',      group: 'Admin' },
+    { key: 'revenueAdmin',label: 'Financial Data Hub', group: 'Admin' },
     { key: 'integrations',label: 'Integrations',       group: 'Admin' },
     { key: 'settings',    label: 'Settings',           group: 'Admin' }
   ];
@@ -2969,8 +2979,8 @@ window._resetNavPerms = function() {
 };
 
 window._applyPermPreset = function(role, preset) {
-  const ALL_VIEWS = ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'];
-  const STANDARD  = ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings'];
+  const ALL_VIEWS = ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings'];
+  const STANDARD  = ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'];
   const VIEW_ONLY = ['today','pipeline','settings'];
   let views;
   if (preset === 'full')     views = [...ALL_VIEWS];

@@ -118,6 +118,7 @@ function getHtml(): string {
           <button class="nav-item" data-view="manager" onclick="show('manager')">Manager Tools</button>
           <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">Financial Data Hub</button>
           <button class="nav-item" data-view="integrations" onclick="show('integrations')">Integrations</button>
+          <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">User Management</button>
           <button class="nav-item" data-view="settings" onclick="show('settings')">Settings</button>
         </div>
       </details>
@@ -169,6 +170,7 @@ function getHtml(): string {
 <script src="/static/app_premium.js"></script>
 <script src="/static/integrations.js"></script>
 <script src="/static/import_clients_csv.js"></script>
+<script src="/static/user_management.js"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
@@ -199,6 +201,21 @@ function getHtml(): string {
         }
       }, 100);
     }
+  })();
+
+  // Show/hide admin-only nav items based on current rep role
+  (function applyNavVisibility() {
+    function refreshAdminNav() {
+      const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+      const isAdmin = rep && rep.role === 'admin';
+      const umBtn = document.querySelector('[data-view="userManagement"]');
+      if (umBtn) {
+        umBtn.style.display = isAdmin ? '' : 'none';
+      }
+    }
+    // Run on load and expose so login/logout can call it
+    setTimeout(refreshAdminNav, 200);
+    window._refreshAdminNav = refreshAdminNav;
   })();
 </script>
 </body>
