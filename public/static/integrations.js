@@ -616,6 +616,85 @@ async function integrations() {
 <div id="gw-panel-calendar" style="display:${_gwTab==='calendar'?'block':'none'};padding-top:20px"></div>
 <div id="gw-panel-drive"  style="display:${_gwTab==='drive'   ?'block':'none'};padding-top:20px"></div>
 <div id="gw-panel-homeworks" style="display:${_gwTab==='homeworks'?'block':'none'};padding-top:20px"></div>
+
+<!-- ── Compose Email Modal ────────────────────────────────────────────── -->
+<div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;width:100%;max-width:560px;box-shadow:0 24px 64px #000a">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h3 style="margin:0;font-size:17px;font-weight:800;color:#e2e8f0">✉️ New Email</h3>
+      <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">To</label>
+        <input id="int-email-to" type="email" placeholder="recipient@example.com"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Subject</label>
+        <input id="int-email-subject" type="text" placeholder="Email subject"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Message</label>
+        <textarea id="int-email-body" rows="8" placeholder="Write your message…"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn">Cancel</button>
+        <button onclick="intSendEmail()" class="primary-btn">Send via Gmail ✈️</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Create Calendar Event Modal ───────────────────────────────────── -->
+<div id="int-cal-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 24px 64px #000a">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h3 style="margin:0;font-size:17px;font-weight:800;color:#e2e8f0">📅 New Event</h3>
+      <button onclick="document.getElementById('int-cal-modal').style.display='none'" style="background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Title</label>
+        <input id="int-cal-title" type="text" placeholder="Event title"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Date</label>
+          <input id="int-cal-date" type="date"
+            style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Time</label>
+          <input id="int-cal-time" type="time" value="09:00"
+            style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Duration (hours)</label>
+        <input id="int-cal-duration" type="number" min="0.25" max="24" step="0.25" value="1"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Invite (email)</label>
+        <input id="int-cal-attendee" type="email" placeholder="attendee@example.com (optional)"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Notes</label>
+        <textarea id="int-cal-notes" rows="3" placeholder="Description or notes (optional)"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button onclick="document.getElementById('int-cal-modal').style.display='none'" class="secondary-btn">Cancel</button>
+        <button onclick="intSubmitCalEvent()" class="primary-btn">Create Event ✅</button>
+      </div>
+    </div>
+  </div>
+</div>
 `;
 
   // Load active tab
@@ -877,11 +956,16 @@ window.gwSendReply = async function(threadId, lastMessageId) {
 
 // ── Compose modal ──────────────────────────────────────────────────────────────
 window.gwOpenCompose = function(prefillTo='', prefillSubject='') {
-  document.getElementById('int-compose-modal').style.display='flex';
-  const toEl = document.getElementById('int-email-to');
+  const modal = document.getElementById('int-compose-modal');
+  if (!modal) { showIntToast('Compose unavailable — reload the Integrations page', 'warn'); return; }
+  // Clear fields
+  const toEl   = document.getElementById('int-email-to');
   const subjEl = document.getElementById('int-email-subject');
-  if (toEl && prefillTo) toEl.value = prefillTo;
-  if (subjEl && prefillSubject) subjEl.value = prefillSubject;
+  const bodyEl = document.getElementById('int-email-body');
+  if (toEl)   toEl.value   = prefillTo || '';
+  if (subjEl) subjEl.value = prefillSubject || '';
+  if (bodyEl) bodyEl.value = '';
+  modal.style.display = 'flex';
 };
 
 // Keep legacy aliases
@@ -965,7 +1049,10 @@ function gwRenderCalBody() {
   const labelEl = document.getElementById('gw-cal-label');
   if (labelEl) {
     const today = new Date();
-    if (_calView==='agenda') labelEl.textContent = 'All Events';
+    if (_calView==='agenda') {
+    const td = new Date();
+    labelEl.textContent = td.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  }
     else if (_calView==='week') {
       const ws = new Date(today); ws.setDate(today.getDate() - today.getDay() + _calWeekOffset*7);
       const we = new Date(ws); we.setDate(ws.getDate()+6);
@@ -976,7 +1063,7 @@ function gwRenderCalBody() {
     }
   }
 
-  if (_calView==='agenda') el.innerHTML = gwRenderAgendaAll();
+  if (_calView==='agenda') el.innerHTML = gwRenderAgendaDay();
   else if (_calView==='week') el.innerHTML = gwRenderWeek();
   else el.innerHTML = gwRenderMonth();
 }
@@ -988,61 +1075,63 @@ function gwEventColor(ev) {
   return '#00A7E1';
 }
 
-function gwRenderAgendaAll() {
-  // Show ALL events grouped by month, with past events clearly labeled
-  if (!_calEvents.length) return '<div style="text-align:center;padding:40px;color:#475569">No events found in your calendar.</div>';
+function gwRenderAgendaDay() {
+  // Show only today's events (agenda = day view for today)
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const todayEnd = new Date(today); todayEnd.setHours(23,59,59,999);
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  const byMonth = {};
-  _calEvents.forEach(ev => {
+  const todayEvs = _calEvents.filter(ev => {
     const start = ev.start?.dateTime || ev.start?.date || '';
-    if (!start) return;
-    const d = new Date(start);
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    if (!byMonth[key]) byMonth[key] = [];
-    byMonth[key].push(ev);
+    if (!start) return false;
+    // For all-day events the date string is "YYYY-MM-DD"; parse as local midnight
+    let evStart;
+    if (ev.start?.date && !ev.start?.dateTime) {
+      const [yr,mo,dy] = ev.start.date.split('-').map(Number);
+      evStart = new Date(yr, mo-1, dy);
+    } else {
+      evStart = new Date(start);
+    }
+    return evStart >= today && evStart <= todayEnd;
   });
 
-  const keys = Object.keys(byMonth).sort();
-  return `<div style="display:flex;flex-direction:column;gap:24px;max-height:70vh;overflow-y:auto;padding-right:4px">` +
-  keys.map(key => {
-    const [yr, mo] = key.split('-').map(Number);
-    const monthDate = new Date(yr, mo-1, 1);
-    const monthLabel = monthDate.toLocaleDateString(undefined,{month:'long',year:'numeric'});
-    const isPast = new Date(yr, mo, 0) < today; // last day of month < today
-    return `
-    <div>
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${isPast?'#475569':'#94a3b8'};margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #1e293b">
-        ${monthLabel}${isPast?' · Past':''}
-      </div>
-      ${byMonth[key].map(ev => {
-        const start = ev.start?.dateTime || ev.start?.date || '';
-        const end   = ev.end?.dateTime   || ev.end?.date   || '';
-        const isAllDay = !ev.start?.dateTime;
-        const evDate = new Date(start);
-        const isPastEv = evDate < today;
-        const isToday  = evDate.toDateString()===new Date().toDateString();
-        const color = gwEventColor(ev);
-        const timeStr = isAllDay ? 'All day' :
-          new Date(start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) +
-          (end ? ' – '+new Date(end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : '');
-        const dayStr = evDate.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-        return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')"
-          style="display:flex;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;
-          background:${isToday?color+'18':isPastEv?'#0a0f1a':'#0f172a'};
-          border:1px solid ${isToday?color+'60':isPastEv?'#1e293b':'#1e293b'};
-          opacity:${isPastEv&&!isToday?.7:1};transition:background .1s"
-          onmouseover="this.style.background='${color}18'" onmouseout="this.style.background='${isToday?color+'18':isPastEv?'#0a0f1a':'#0f172a'}'">
-          <div style="width:3px;border-radius:2px;background:${color};flex-shrink:0;align-self:stretch;min-height:24px"></div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;color:${isPastEv&&!isToday?'#64748b':'#e2e8f0'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
-            <div style="font-size:11px;color:#475569;margin-top:2px">${dayStr} · ${timeStr}${ev.location?' · '+escapeHtml(ev.location.slice(0,40)):''}</div>
-          </div>
-          ${isToday?`<span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0;align-self:center">TODAY</span>`:''}
-        </div>`;
-      }).join('')}
-    </div>`;
-  }).join('') + '</div>';
+  if (!todayEvs.length) {
+    return '<div style="text-align:center;padding:48px 20px;color:#475569">' +
+           '<div style="font-size:32px;margin-bottom:12px">📅</div>' +
+           '<div style="font-size:14px;font-weight:600;color:#64748b">No events today</div>' +
+           '<div style="font-size:12px;margin-top:4px;color:#334155">Your calendar is clear for today.</div>' +
+           '</div>';
+  }
+
+  // Sort by start time
+  todayEvs.sort((a,b) => {
+    const ta = a.start?.dateTime||a.start?.date||'';
+    const tb = b.start?.dateTime||b.start?.date||'';
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+
+  return `<div style="display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto;padding-right:4px">` +
+    todayEvs.map(ev => {
+      const start = ev.start?.dateTime || ev.start?.date || '';
+      const end   = ev.end?.dateTime   || ev.end?.date   || '';
+      const isAllDay = !ev.start?.dateTime;
+      const color = gwEventColor(ev);
+      const timeStr = isAllDay ? 'All day' :
+        new Date(start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) +
+        (end ? ' – '+new Date(end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : '');
+      return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')"
+        style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;
+        background:${color}14;border:1px solid ${color}40;transition:background .1s"
+        onmouseover="this.style.background='${color}22'" onmouseout="this.style.background='${color}14'">
+        <div style="width:3px;border-radius:2px;background:${color};flex-shrink:0;align-self:stretch;min-height:28px"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:3px">${timeStr}${ev.location?' · 📍'+escapeHtml(ev.location.slice(0,50)):''}</div>
+          ${ev.description?`<div style="font-size:12px;color:#475569;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.description.slice(0,100))}</div>`:''}
+        </div>
+        <span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0;align-self:center">TODAY</span>
+      </div>`;
+    }).join('') + '</div>';
 }
 
 function gwRenderWeek() {
@@ -1071,15 +1160,22 @@ function gwRenderWeek() {
         <div style="padding:2px 4px;text-align:right;font-size:10px;color:#475569;border-top:1px solid #0f172a;line-height:36px;height:36px;box-sizing:border-box;${isCurrentHour?'color:#00A7E1':''}">${label}</div>
         ${days.map(d => {
           const cellEvs = _calEvents.filter(ev => {
-            if (!ev.start?.dateTime) return false;
-            const s = new Date(ev.start.dateTime);
-            return s.getFullYear()===d.getFullYear()&&s.getMonth()===d.getMonth()&&s.getDate()===d.getDate()&&s.getHours()===h;
+            if (ev.start?.dateTime) {
+              const s = new Date(ev.start.dateTime);
+              return s.getFullYear()===d.getFullYear()&&s.getMonth()===d.getMonth()&&s.getDate()===d.getDate()&&s.getHours()===h;
+            }
+            // All-day events: show in the 12 AM (h===0) row for their date
+            if (ev.start?.date && h===0) {
+              const [yr,mo,dy] = ev.start.date.split('-').map(Number);
+              return yr===d.getFullYear()&&(mo-1)===d.getMonth()&&dy===d.getDate();
+            }
+            return false;
           });
           const isNowCell = isCurrentHour && d.toDateString()===today.toDateString();
           return `<div style="border-top:1px solid #0f172a;border-left:1px solid #1e293b;height:36px;position:relative;background:${isNowCell?'#00A7E108':'transparent'}">
             ${cellEvs.map(ev=>{
               const color=gwEventColor(ev);
-              const t=new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+              const t=ev.start?.dateTime?new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):'All day';
               return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}" style="position:absolute;inset:1px 1px auto;background:${color};border-radius:3px;padding:1px 4px;font-size:10px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;z-index:1">${t} ${escapeHtml((ev.summary||'Event').slice(0,18))}</div>`;
             }).join('')}
           </div>`;
@@ -1106,8 +1202,15 @@ function gwRenderMonth() {
       const isToday=cellDate.toDateString()===today.toDateString();
       const isPast=cellDate<new Date(today.getFullYear(),today.getMonth(),today.getDate());
       const dayEvs=_calEvents.filter(ev=>{
-        const s=ev.start?.dateTime||ev.start?.date||''; if(!s) return false;
-        const d=new Date(s); return d.getFullYear()===year&&d.getMonth()===month&&d.getDate()===day;
+        if (ev.start?.dateTime) {
+          const d=new Date(ev.start.dateTime);
+          return d.getFullYear()===year&&d.getMonth()===month&&d.getDate()===day;
+        }
+        if (ev.start?.date) {
+          const [yr,mo,dy]=ev.start.date.split('-').map(Number);
+          return yr===year&&(mo-1)===month&&dy===day;
+        }
+        return false;
       });
       return `<div style="border-right:1px solid #1e293b;border-bottom:1px solid #1e293b;min-height:80px;padding:4px;background:${isToday?'#00A7E108':isPast?'#060a12':'#0a0f1a'}">
         <div style="font-size:13px;font-weight:${isToday?'800':'500'};color:${isToday?'#00A7E1':isPast?'#334155':'#94a3b8'};width:24px;height:24px;border-radius:50%;background:${isToday?'#00A7E133':'transparent'};display:flex;align-items:center;justify-content:center;margin-bottom:3px">${day}</div>
@@ -1413,12 +1516,22 @@ async function intSendEmail() {
 // ── Calendar event create modal ───────────────────────────────────────────────
 function intCreateCalendarEvent(prefill = {}) {
   const modal = document.getElementById('int-cal-modal');
-  if (!modal) return;
+  if (!modal) { showIntToast('Calendar unavailable — reload the Integrations page', 'warn'); return; }
+  // Reset fields
+  const todayStr = new Date().toISOString().slice(0,10);
+  const titleEl    = document.getElementById('int-cal-title');
+  const dateEl     = document.getElementById('int-cal-date');
+  const timeEl     = document.getElementById('int-cal-time');
+  const durEl      = document.getElementById('int-cal-duration');
+  const attendeeEl = document.getElementById('int-cal-attendee');
+  const notesEl    = document.getElementById('int-cal-notes');
+  if (titleEl)    titleEl.value    = prefill.title    || '';
+  if (dateEl)     dateEl.value     = prefill.date     || todayStr;
+  if (timeEl)     timeEl.value     = prefill.time     || '09:00';
+  if (durEl)      durEl.value      = prefill.duration || '1';
+  if (attendeeEl) attendeeEl.value = prefill.attendee || '';
+  if (notesEl)    notesEl.value    = prefill.notes    || '';
   modal.style.display = 'flex';
-  if (prefill.title) { const el = document.getElementById('int-cal-title'); if(el) el.value = prefill.title; }
-  if (prefill.date)  { const el = document.getElementById('int-cal-date');  if(el) el.value = prefill.date; }
-  if (prefill.attendee) { const el = document.getElementById('int-cal-attendee'); if(el) el.value = prefill.attendee; }
-  if (prefill.notes) { const el = document.getElementById('int-cal-notes'); if(el) el.value = prefill.notes; }
 }
 async function intSubmitCalEvent() {
   const summary = document.getElementById('int-cal-title')?.value?.trim();
@@ -1474,6 +1587,123 @@ function intOpenVisitModal(oppId) {
 }
 
 
+
+// ── Zapier / Homeworks UI handlers ────────────────────────────────────────────
+function intSaveZapierUrl() {
+  const url = document.getElementById('zapierWebhookInput')?.value?.trim();
+  if (!url) { showIntToast('Paste a Zapier webhook URL first', 'warn'); return; }
+  saveIntState({ zapierWebhookUrl: url });
+  showIntToast('Webhook URL saved ✅');
+  // Re-render to show connected state
+  if (typeof gwRenderHomeworks === 'function') gwRenderHomeworks();
+}
+
+async function intTestZapier() {
+  try {
+    await sendToHomeworks('test_ping', { message: 'Test ping from Avalon Sales Hub', timestamp: new Date().toISOString() });
+    showIntToast('Test ping sent ✅');
+  } catch(e) { showIntToast(e.message, 'error'); }
+}
+
+async function intPushLead(oppId) {
+  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
+  const opp = opps.find(o => o.id === oppId);
+  if (!opp) { showIntToast('Opportunity not found', 'warn'); return; }
+  try {
+    await pushLeadToHomeworks(opp);
+    showIntToast(`${opp.client} pushed to Homeworks ✅`);
+  } catch(e) { showIntToast(e.message, 'error'); }
+}
+
+// ── renderHwOpps — renders the opportunities list inside the Homeworks panel ──
+function renderHwOpps() {
+  // Pull from multiple possible storage keys for compatibility
+  let opps = [];
+  try {
+    opps = window._avalonState?.opportunities
+        || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]')
+        || JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
+  } catch(e) { opps = []; }
+
+  if (!opps.length) {
+    return '<div style="color:#64748b;font-size:13px;padding:20px 0;text-align:center">No opportunities found. Add leads in Pipeline first.</div>';
+  }
+
+  return `<div style="display:flex;flex-direction:column;gap:6px">` +
+    opps.slice(0, 50).map(opp => {
+      const statusColors = {
+        'New Lead':'#00A7E1','Contacted':'#f59e0b','Proposal':'#8b5cf6',
+        'Negotiation':'#f97316','Closed Won':'#4ade80','Closed Lost':'#f87171'
+      };
+      const color = statusColors[opp.status] || '#64748b';
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(opp.client||opp.name||'(unnamed)')}</div>
+          <div style="font-size:11px;color:#475569;margin-top:2px">${escapeHtml(opp.serviceLine||opp.type||'')}${opp.budget?' · $'+escapeHtml(String(opp.budget)):''}</div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0">${escapeHtml(opp.status||'Unknown')}</span>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="intPushLead('${escapeHtml(opp.id||'')}');this.textContent='Pushed ✅';this.disabled=true"
+            style="padding:5px 10px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer;font-weight:600">
+            Push Lead
+          </button>
+        </div>
+      </div>`;
+    }).join('') +
+  (opps.length > 50 ? `<div style="text-align:center;font-size:12px;color:#475569;padding:8px">Showing first 50 of ${opps.length}</div>` : '') +
+  '</div>';
+}
+
+// ── Visit modal submit ────────────────────────────────────────────────────────
+async function intSubmitVisit() {
+  const oppId   = document.getElementById('int-visit-opp-id')?.value;
+  const title   = document.getElementById('int-visit-title')?.value?.trim();
+  const date    = document.getElementById('int-visit-date')?.value;
+  const time    = document.getElementById('int-visit-time')?.value || '09:00';
+  const notes   = document.getElementById('int-visit-notes')?.value?.trim();
+  const type    = document.getElementById('int-visit-type')?.value || 'Site Walk';
+  if (!title || !date) { showIntToast('Title and date required', 'warn'); return; }
+  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
+  const opp = opps.find(o => o.id === oppId);
+  try {
+    if (isGoogleConnected()) {
+      await calCreateEvent({ summary: title, description: notes, startDate: date, startTime: time, durationHours: 1, attendees: [] });
+    }
+    if (opp && isHomeworksConnected()) {
+      await pushVisitToHomeworks(opp, date, time, notes);
+    }
+    showIntToast('Visit scheduled ✅');
+    const modal = document.getElementById('int-visit-modal');
+    if (modal) modal.style.display = 'none';
+  } catch(e) { showIntToast(e.message, 'error'); }
+}
+
+// ── Estimate modal ────────────────────────────────────────────────────────────
+function intOpenEstimateModal(oppId) {
+  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
+  const opp = opps.find(o => o.id === oppId);
+  if (!opp) { showIntToast('Opportunity not found'); return; }
+  // Simple prompt-based estimate push (no separate modal needed)
+  const confirmed = window.confirm(`Push estimate for "${opp.client}" to Homeworks?`);
+  if (!confirmed) return;
+  pushEstimateToHomeworks(opp)
+    .then(() => showIntToast(`Estimate for ${opp.client} pushed ✅`))
+    .catch(e => showIntToast(e.message, 'error'));
+}
+
+async function intSubmitEstimate() {
+  // Called if a full estimate modal exists
+  const oppId = document.getElementById('int-estimate-opp-id')?.value;
+  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
+  const opp = opps.find(o => o.id === oppId);
+  if (!opp) { showIntToast('Opportunity not found'); return; }
+  try {
+    await pushEstimateToHomeworks(opp);
+    showIntToast('Estimate pushed ✅');
+    const modal = document.getElementById('int-estimate-modal');
+    if (modal) modal.style.display = 'none';
+  } catch(e) { showIntToast(e.message, 'error'); }
+}
 
 // Expose integrations as a view route
 window.integrations = integrations;
