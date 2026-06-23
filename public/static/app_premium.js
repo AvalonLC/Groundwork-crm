@@ -741,9 +741,8 @@ function lead(){
 
   view.innerHTML =
     '<div class="lf-hero">'
-      + '<div class="lf-hero-eyebrow">New Opportunity</div>'
-      + '<h1 class="lf-hero-title">Let\'s capture this lead</h1>'
-      + '<p class="lf-hero-sub">Every great project starts here. Fill in what you know — you can always add more later.</p>'
+      + '<span class="lf-hero-eyebrow">New Opportunity</span>'
+      + '<h1 class="lf-hero-title">Add Lead</h1>'
     + '</div>'
     + '<form id="leadForm">'
 

@@ -572,109 +572,109 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 
 /* Hero header */
 .lf-hero {
-  text-align:center;
-  padding:32px 20px 20px;
+  display:flex;
+  align-items:baseline;
+  gap:10px;
   max-width:680px;
-  margin:0 auto 8px;
+  margin:0 auto 14px;
+  padding:4px 0 0;
 }
 .lf-hero-eyebrow {
-  font-size:11px;
+  font-size:10px;
   font-weight:700;
-  letter-spacing:.12em;
+  letter-spacing:.1em;
   text-transform:uppercase;
   color:#00a7e1;
-  margin-bottom:6px;
 }
 .lf-hero-title {
-  font-size:clamp(22px,4vw,30px);
-  font-weight:800;
-  color:#f0f4f8;
-  margin:0 0 8px;
-  line-height:1.2;
+  font-size:20px;
+  font-weight:700;
+  color:#1e293b;
+  margin:0;
+  line-height:1;
 }
 .lf-hero-sub {
-  font-size:14px;
-  color:#94a3b8;
-  margin:0;
-  line-height:1.6;
+  display:none;
 }
 
 /* Sections */
 .lf-section {
-  background:linear-gradient(135deg,#0d1e35,#0a1628);
-  border:1px solid #1e3a5f;
-  border-radius:16px;
-  padding:24px;
-  margin:0 auto 16px;
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  padding:18px 20px;
+  margin:0 auto 10px;
   max-width:680px;
+  box-shadow:0 1px 4px rgba(7,19,27,.05);
 }
 .lf-section-header {
   display:flex;
-  align-items:flex-start;
-  gap:14px;
-  margin-bottom:20px;
+  align-items:center;
+  gap:10px;
+  margin-bottom:14px;
+  padding-bottom:12px;
+  border-bottom:1px solid #f1f5f9;
 }
 .lf-section-num {
   display:flex;
   align-items:center;
   justify-content:center;
-  min-width:34px;
-  height:34px;
-  border-radius:50%;
-  background:linear-gradient(135deg,#00a7e1,#0077b6);
+  min-width:24px;
+  height:24px;
+  border-radius:6px;
+  background:#00a7e1;
   color:#fff;
-  font-size:15px;
+  font-size:11px;
   font-weight:800;
   flex-shrink:0;
-  box-shadow:0 2px 8px rgba(0,167,225,.35);
 }
 .lf-section-title {
-  font-size:16px;
+  font-size:14px;
   font-weight:700;
-  color:#e2e8f0;
+  color:#1e293b;
   line-height:1.2;
 }
 .lf-section-sub {
-  font-size:12px;
-  color:#64748b;
-  margin-top:2px;
+  font-size:11px;
+  color:#94a3b8;
+  margin-top:1px;
 }
 
 /* Field grid */
 .lf-fields {
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:14px;
+  gap:10px 14px;
 }
 @media (max-width:600px) {
   .lf-fields { grid-template-columns:1fr; }
-  .lf-section { padding:18px 16px; }
+  .lf-section { padding:14px 14px; }
 }
 .lf-field {
   display:flex;
   flex-direction:column;
-  gap:5px;
+  gap:4px;
 }
 .lf-field--full {
   grid-column:1 / -1;
 }
 .lf-label {
-  font-size:12px;
+  font-size:11px;
   font-weight:600;
-  color:#94a3b8;
-  letter-spacing:.03em;
+  color:#64748b;
+  letter-spacing:.02em;
 }
-.lf-required { color:#f87171; }
-.lf-hint { color:#475569; font-weight:400; }
+.lf-required { color:#ef4444; }
+.lf-hint { color:#94a3b8; font-weight:400; }
 
 /* Inputs */
 .lf-input, .lf-select, .lf-textarea {
-  background:#071525;
-  border:1.5px solid #1e3a5f;
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
   border-radius:8px;
-  color:#e2e8f0;
-  font-size:14px;
-  padding:10px 12px;
+  color:#1e293b;
+  font-size:13px;
+  padding:8px 10px;
   outline:none;
   transition:border-color .15s, box-shadow .15s;
   width:100%;
@@ -682,43 +682,44 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 }
 .lf-input:focus, .lf-select:focus, .lf-textarea:focus {
   border-color:#00a7e1;
-  box-shadow:0 0 0 3px rgba(0,167,225,.12);
+  background:#fff;
+  box-shadow:0 0 0 3px rgba(0,167,225,.1);
 }
-.lf-input::placeholder { color:#334155; }
-.lf-input--lg { font-size:16px; padding:12px 14px; font-weight:600; }
-.lf-input--value { font-size:18px; font-weight:700; color:#4ade80; }
-.lf-input--value::placeholder { color:#1e3a2f; font-weight:400; font-size:14px; }
-.lf-textarea { resize:vertical; min-height:80px; font-family:inherit; line-height:1.5; }
+.lf-input::placeholder { color:#94a3b8; }
+.lf-input--lg { font-size:15px; padding:10px 12px; font-weight:600; }
+.lf-input--value { font-size:16px; font-weight:700; color:#16a34a; }
+.lf-input--value::placeholder { color:#94a3b8; font-weight:400; font-size:13px; }
+.lf-textarea { resize:vertical; min-height:72px; font-family:inherit; line-height:1.5; }
 .lf-select { cursor:pointer; }
-.lf-select option { background:#0d1e35; }
+.lf-select option { background:#fff; color:#1e293b; }
 
 /* Client type toggle */
 .lf-toggle-group {
   display:flex;
-  gap:10px;
+  gap:6px;
 }
 .lf-toggle-radio { display:none; }
 .lf-toggle-btn {
   flex:1;
   text-align:center;
-  padding:12px 8px;
-  border:1.5px solid #1e3a5f;
-  border-radius:10px;
+  padding:8px 8px;
+  border:1px solid #e2e8f0;
+  border-radius:8px;
   cursor:pointer;
-  font-size:14px;
+  font-size:13px;
   font-weight:600;
-  color:#94a3b8;
-  background:#071525;
+  color:#64748b;
+  background:#f8fafc;
   transition:all .15s;
   user-select:none;
 }
 .lf-toggle-radio:checked + .lf-toggle-btn {
   border-color:#00a7e1;
-  background:rgba(0,167,225,.1);
-  color:#e2e8f0;
-  box-shadow:0 0 0 2px rgba(0,167,225,.15);
+  background:rgba(0,167,225,.08);
+  color:#0077b6;
+  box-shadow:0 0 0 2px rgba(0,167,225,.12);
 }
-.lf-toggle-btn:hover { border-color:#00a7e1aa; color:#e2e8f0; }
+.lf-toggle-btn:hover { border-color:#00a7e1; color:#0077b6; }
 
 /* Project category tiles */
 .lf-cat-tiles {
@@ -729,40 +730,40 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 .cat-tile {
   display: inline-flex;
   align-items: center;
-  padding: 8px 14px;
-  border: 1.5px solid #1e3a5f;
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
   border-radius: 999px;
-  background: #071525;
+  background: #f8fafc;
   cursor: pointer;
   transition: all .15s;
   font-family: inherit;
   white-space: nowrap;
 }
 .cat-tile:hover {
-  border-color: #00a7e1aa;
-  background: rgba(0,167,225,.07);
+  border-color: #00a7e1;
+  background: rgba(0,167,225,.06);
 }
 .cat-tile--active {
   border-color: #00a7e1;
-  background: rgba(0,167,225,.16);
-  box-shadow: 0 0 0 2px rgba(0,167,225,.18);
+  background: rgba(0,167,225,.1);
+  box-shadow: 0 0 0 2px rgba(0,167,225,.12);
 }
-.cat-tile-label { font-size: 12px; font-weight: 600; color: #94a3b8; letter-spacing: .01em; }
-.cat-tile--active .cat-tile-label { color: #e2e8f0; }
+.cat-tile-label { font-size: 12px; font-weight: 600; color: #475569; letter-spacing: .01em; }
+.cat-tile--active .cat-tile-label { color: #0077b6; font-weight: 700; }
 
 /* Commission preview */
 .lf-comm-preview {
   grid-column:1 / -1;
   display:flex;
   align-items:center;
-  gap:10px;
-  background:linear-gradient(135deg,#052e1a,#04200f);
-  border:1px solid #16a34a50;
-  border-radius:10px;
-  padding:12px 16px;
-  font-size:15px;
+  gap:8px;
+  background:#f0fdf4;
+  border:1px solid #86efac;
+  border-radius:8px;
+  padding:9px 12px;
+  font-size:13px;
   font-weight:700;
-  color:#4ade80;
+  color:#16a34a;
   animation:lf-comm-pop .2s ease;
 }
 .lf-comm-icon { font-size:20px; }
@@ -778,22 +779,23 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
   justify-content:space-between;
   max-width:680px;
   margin:0 auto 0;
-  padding:12px 20px;
+  padding:10px 16px;
   cursor:pointer;
-  color:#475569;
-  font-size:13px;
+  color:#64748b;
+  font-size:12px;
   font-weight:600;
   letter-spacing:.02em;
-  border:1px dashed #1e3a5f;
+  border:1px dashed #e2e8f0;
   border-radius:10px;
   transition:color .15s, border-color .15s;
+  background:#fafafa;
   user-select:none;
 }
-.lf-detail-toggle:hover { color:#94a3b8; border-color:#334155; }
+.lf-detail-toggle:hover { color:#0077b6; border-color:#00a7e1; }
 .lf-detail-chevron {
-  font-size:18px;
+  font-size:16px;
   transition:transform .2s;
-  color:#334155;
+  color:#94a3b8;
 }
 
 /* Detail panel */
@@ -808,16 +810,16 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 .lf-footer {
   display:flex;
   align-items:center;
-  gap:12px;
+  gap:10px;
   max-width:680px;
-  margin:20px auto 32px;
+  margin:14px auto 32px;
   flex-wrap:wrap;
 }
 .lf-save-btn {
-  font-size:15px;
-  padding:13px 28px;
+  font-size:14px;
+  padding:10px 24px;
   font-weight:700;
-  letter-spacing:.02em;
+  letter-spacing:.01em;
 }
 
 /* ── Avalon Internal Icon System ─────────────────────────────────────────── */
