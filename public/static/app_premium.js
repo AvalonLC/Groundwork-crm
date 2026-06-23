@@ -2073,8 +2073,10 @@ function saveOpportunity(id){
   Object.assign(o, Object.fromEntries(fd.entries()), {updatedAt:new Date().toISOString()});
 
   // COMM-14: If this is a sold opp and any commission-driving field changed,
-  // flag for reapproval so Tyler must re-review the commission amount
-  if (o.status === 'Sold / Activation') {
+  // flag for reapproval so Tyler must re-review the commission amount.
+  // Respects COMM-17 feature flag — autoReapprovalEnabled (default: true).
+  const _commFlags = window.getCommissionFlags ? window.getCommissionFlags() : { autoReapprovalEnabled: true };
+  if (o.status === 'Sold / Activation' && _commFlags.autoReapprovalEnabled) {
     const changed = commFields.some(f => String(before[f]||'') !== String(o[f]||''));
     if (changed) {
       const lcStatus = window.getCommissionStatus ? window.getCommissionStatus(o) : null;
@@ -2959,6 +2961,33 @@ function settings(){
     <!-- Commission Rules Manager (COMM-01) -->
     <div style="margin-top:16px" id="comm-rules-panel">
       ${renderCommissionRulesPanel()}
+    </div>
+    <!-- Commission Simulator (COMM-05) -->
+    <div style="margin-top:16px" id="comm-sim-panel">
+      ${renderCommissionSimulator()}
+    </div>
+    <!-- Commission Audit Trail (COMM-04) -->
+    <div style="margin-top:16px" id="comm-audit-panel">
+      ${renderCommissionAuditTrail()}
+    </div>
+    <!-- Commission Admin Tools (COMM-16 migration · COMM-18 QA · COMM-17 flags) -->
+    <div style="margin-top:16px;background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:16px 18px">
+      <div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:12px">⚙️ Commission Admin Tools</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button onclick="window._runMigrationFromUI()"
+          style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">
+          📦 Run Data Migration
+        </button>
+        <button onclick="window._runQAFromUI()"
+          style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">
+          🔍 Run QA Self-Check
+        </button>
+        <button onclick="window._showFlagPanel()"
+          style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">
+          🚩 Feature Flags
+        </button>
+      </div>
+      <div id="comm-tool-result" style="margin-top:10px;font-size:12px;color:#64748b"></div>
     </div>` : ''}
   `;
 }
@@ -3142,6 +3171,239 @@ window._resetCommRules = function() {
   localStorage.removeItem('avalonCommissionRulesV1');
   if (window.showToast) window.showToast('Rules reset to defaults ✓');
   settings();
+};
+
+// ── Commission Admin Tool handlers (COMM-16, 17, 18) ─────────────────────────
+window._runMigrationFromUI = function() {
+  const result = window._migrateCommissionLifecycle ? window._migrateCommissionLifecycle() : null;
+  const el = document.getElementById('comm-tool-result');
+  if (!result) { if (el) el.textContent = '⚠ Migration function not loaded — refresh and try again.'; return; }
+  if (el) el.innerHTML = `<span style="color:#4ade80">✓ Migration complete: ${result.migrated} opps updated, ${result.skipped} already migrated.</span>`;
+  if (window.showToast) window.showToast(`Migration: ${result.migrated} updated, ${result.skipped} skipped ✓`);
+};
+
+window._runQAFromUI = function() {
+  const el = document.getElementById('comm-tool-result');
+  if (!window._commQA) { if (el) el.textContent = '⚠ QA function not loaded — refresh and try again.'; return; }
+  const { passed, failed, warnings, results } = window._commQA();
+  const failItems = results.filter(r => r.status !== 'PASS');
+  const statusColor = failed > 0 ? '#f87171' : warnings > 0 ? '#f59e0b' : '#4ade80';
+  const icon = failed > 0 ? '❌' : warnings > 0 ? '⚠️' : '✅';
+  if (el) {
+    el.innerHTML = `
+      <div style="color:${statusColor};font-weight:700;margin-bottom:4px">${icon} QA: ${passed} passed · ${warnings} warnings · ${failed} failed</div>
+      ${failItems.map(r => `<div style="color:${r.status==='PASS'?'#4ade80':r.status==='WARN'?'#f59e0b':'#f87171'};margin-left:8px">• ${r.name}${r.detail ? ' — ' + r.detail : ''}</div>`).join('')}
+      <div style="color:#475569;margin-top:4px;font-size:10px">Full report in browser console (F12)</div>`;
+  }
+};
+
+window._showFlagPanel = function() {
+  const flags = window.getCommissionFlags ? window.getCommissionFlags() : {};
+  const el    = document.getElementById('comm-tool-result');
+  if (!el) return;
+  const rows = Object.entries(flags).map(([k, v]) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e293b">
+      <span style="font-size:12px;color:#94a3b8">${k}</span>
+      <button onclick="window._setCommFlag('${k}', ${!v}); window._showFlagPanel();"
+        style="background:${v ? '#064e3b' : '#450a0a'};border:none;color:${v ? '#4ade80' : '#f87171'};border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:700">
+        ${v ? 'ON' : 'OFF'}
+      </button>
+    </div>`).join('');
+  el.innerHTML = `
+    <div style="background:#0a0f1a;border:1px solid #1e293b;border-radius:8px;padding:10px;margin-top:4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:700;color:#e2e8f0">Feature Flags</span>
+        <button onclick="window._resetCommFlags();window._showFlagPanel();"
+          style="font-size:10px;color:#f87171;background:none;border:none;cursor:pointer">Reset all</button>
+      </div>
+      ${rows}
+    </div>`;
+};
+
+// ── COMM-05: Commission Simulator ─────────────────────────────────────────────
+// Admin-only hypothetical calculator in Settings. Lets Tyler input any scenario
+// and see exactly what the engine would calculate — rate matched, cap behavior,
+// approval requirement, and note text — without touching any real deal.
+function renderCommissionSimulator() {
+  return `
+  <div style="background:#0f172a;border:1px solid #1e40af;border-radius:14px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#0c1a3a;border-bottom:1px solid #1e40af">
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#e2e8f0">🧮 Commission Simulator</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Hypothetical — no data is saved or changed</div>
+      </div>
+      <button onclick="window._runCommSim()" style="background:#1d4ed8;border:none;color:#fff;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer">Calculate →</button>
+    </div>
+
+    <div style="padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+
+      <!-- Work Type -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Work Type</label>
+        <select id="sim-workType" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+          <option value="landscape">Landscape / Enhancement</option>
+          <option value="maintenance_onetime">Maintenance — One-Time</option>
+          <option value="maintenance_recurring">Maintenance — Recurring</option>
+          <option value="maintenance_upsell">Maintenance — Upsell</option>
+          <option value="hardscape">Hardscape</option>
+          <option value="drainage">Drainage</option>
+          <option value="design_build">Design-Build</option>
+        </select>
+      </div>
+
+      <!-- Lead Source -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Lead Source</label>
+        <select id="sim-leadSource" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+          <option value="company_lead">Company Lead</option>
+          <option value="self_generated">Self-Generated</option>
+          <option value="assisted">Assisted</option>
+        </select>
+      </div>
+
+      <!-- Job Value -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Job Value ($)</label>
+        <input id="sim-jobValue" type="number" min="0" step="100" value="5000"
+          style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      </div>
+
+      <!-- Collected -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Payment Collected?</label>
+        <select id="sim-collected" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+          <option value="yes">Yes — payment received</option>
+          <option value="no">No — pending collection</option>
+        </select>
+      </div>
+
+      <!-- Pre-approved -->
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Tyler Pre-Approved?</label>
+        <select id="sim-approved" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+          <option value="yes">Yes — approved</option>
+          <option value="no">No — not yet approved</option>
+        </select>
+      </div>
+
+    </div>
+
+    <!-- Result panel — populated by _runCommSim() -->
+    <div id="sim-result" style="margin:0 18px 16px;padding:14px;background:#060a12;border:1px solid #1e293b;border-radius:10px;min-height:60px;font-size:13px;color:#64748b">
+      Set your scenario above and click <strong>Calculate →</strong>
+    </div>
+  </div>`;
+}
+window.renderCommissionSimulator = renderCommissionSimulator;
+
+window._runCommSim = function() {
+  const workType   = document.getElementById('sim-workType')?.value   || 'landscape';
+  const leadSource = document.getElementById('sim-leadSource')?.value || 'company_lead';
+  const jobValue   = parseFloat(document.getElementById('sim-jobValue')?.value || 0);
+  const collected  = document.getElementById('sim-collected')?.value  === 'yes';
+  const approved   = document.getElementById('sim-approved')?.value   === 'yes';
+
+  if (!window.calculateCommission) {
+    document.getElementById('sim-result').innerHTML = '<span style="color:#f87171">Engine not loaded — refresh and try again.</span>';
+    return;
+  }
+
+  const r = window.calculateCommission({ planId: 'ryan', workType, leadSource, jobValue, collected, approved, preview: false });
+
+  const fmtC = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtP = n => Math.round(n * 100) + '%';
+
+  const amountColor = r.amount > 0 ? '#4ade80' : (r.requiresApproval ? '#f59e0b' : '#f87171');
+  const capBadge    = r.capApplied ? `<span style="font-size:10px;background:#f87171;color:#fff;border-radius:10px;padding:2px 7px;margin-left:6px">CAPPED at ${fmtC(r.cap)}</span>` : '';
+  const appBadge    = r.requiresApproval ? `<span style="font-size:10px;background:#92400e;color:#fbbf24;border-radius:10px;padding:2px 7px;margin-left:6px">APPROVAL REQUIRED</span>` : '';
+  const bonusEl     = r.retentionBonus > 0 ? `<div style="margin-top:8px;font-size:12px;color:#4ade80">+ ${fmtC(r.retentionBonus)} retention bonus eligible after 90-day active period</div>` : '';
+  const gateEl      = !collected && !r.requiresApproval && r.amount === 0
+    ? `<div style="margin-top:6px;font-size:11px;color:#f59e0b">⚠ Collection gate: commission held until payment is received</div>` : '';
+
+  document.getElementById('sim-result').innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+      <span style="font-size:28px;font-weight:800;color:${amountColor}">${fmtC(r.amount)}</span>
+      ${capBadge}${appBadge}
+      <span style="font-size:13px;color:#64748b">at ${fmtP(r.rate)} effective rate</span>
+    </div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:4px"><strong style="color:#64748b">Rule applied:</strong> ${r.ruleApplied}</div>
+    <div style="font-size:12px;color:#94a3b8"><strong style="color:#64748b">Explanation:</strong> ${r.note}</div>
+    ${r.approvalReason ? `<div style="margin-top:6px;font-size:11px;color:#f59e0b">⚠ ${r.approvalReason}</div>` : ''}
+    ${gateEl}${bonusEl}`;
+};
+
+// ── COMM-04: Commission Audit Trail Viewer ─────────────────────────────────────
+function renderCommissionAuditTrail() {
+  const audit = (typeof window.loadCommissionAudit === 'function') ? window.loadCommissionAudit() : [];
+  if (!audit.length) {
+    return `
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:16px 18px">
+      <div style="font-size:14px;font-weight:800;color:#e2e8f0;margin-bottom:6px">📋 Commission Rule Audit Trail</div>
+      <p style="color:#475569;font-size:13px;margin:0">No rule changes recorded yet. Changes appear here when Tyler edits and saves commission rates.</p>
+    </div>`;
+  }
+
+  const fmt = ts => { try { return new Date(ts).toLocaleString(undefined, { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }); } catch(e) { return ts; } };
+  const rows = audit.slice(0, 10).map((entry, i) => {
+    const isCreate = entry.action === 'rules_created';
+    const color    = isCreate ? '#4ade80' : '#00d4ff';
+    const label    = isCreate ? 'Rules Created' : `Rules Updated → v${entry.after?.version || '?'}`;
+    const actor    = entry.actor || 'admin';
+    return `
+    <div style="padding:10px 0;border-bottom:1px solid #1e293b;display:flex;align-items:flex-start;gap:12px">
+      <div style="width:8px;height:8px;border-radius:50%;background:${color};margin-top:5px;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700;color:${color}">${label}</span>
+          <span style="font-size:11px;color:#475569">by ${actor}</span>
+          <span style="font-size:10px;color:#334155">${fmt(entry.ts)}</span>
+        </div>
+        ${entry.before ? `<div style="font-size:10px;color:#334155;margin-top:2px">Previous version: v${entry.before.version || 0}</div>` : ''}
+      </div>
+      ${i === 0 ? `<button onclick="window._showAuditDiff(${i})" style="font-size:10px;color:#64748b;background:#1e293b;border:none;border-radius:6px;padding:3px 8px;cursor:pointer">View diff</button>` : ''}
+    </div>`;
+  }).join('');
+
+  return `
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b">
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#e2e8f0">📋 Commission Rule Audit Trail</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">${audit.length} change${audit.length !== 1 ? 's' : ''} recorded</div>
+      </div>
+    </div>
+    <div style="padding:4px 18px 14px">${rows}</div>
+    ${audit.length > 10 ? `<div style="padding:0 18px 12px;font-size:11px;color:#475569">Showing 10 of ${audit.length} entries — last 50 retained</div>` : ''}
+  </div>`;
+}
+window.renderCommissionAuditTrail = renderCommissionAuditTrail;
+
+// Show a simple before/after diff modal for the most recent audit entry
+window._showAuditDiff = function(idx) {
+  const audit = (typeof window.loadCommissionAudit === 'function') ? window.loadCommissionAudit() : [];
+  const entry = audit[idx];
+  if (!entry) return;
+  const before = entry.before ? JSON.stringify(entry.before, null, 2) : '(first save — no prior version)';
+  const after  = JSON.stringify(entry.after,  null, 2);
+  const modal  = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#1e293b;border-radius:16px;padding:24px;width:min(700px,95vw);max-height:85vh;overflow-y:auto;position:relative">
+      <button onclick="this.closest('div[style]').remove()"
+        style="position:absolute;top:12px;right:14px;background:transparent;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1">×</button>
+      <h3 style="margin:0 0 16px;font-size:16px;color:#e2e8f0">Rule Change — ${new Date(entry.ts).toLocaleString()}</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:6px;text-transform:uppercase">Before</div>
+          <pre style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;font-size:10px;color:#94a3b8;overflow-x:auto;white-space:pre-wrap;margin:0">${before}</pre>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:6px;text-transform:uppercase">After</div>
+          <pre style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;font-size:10px;color:#94a3b8;overflow-x:auto;white-space:pre-wrap;margin:0">${after}</pre>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
 };
 
 function _renderPermMatrixOld_deleted() {

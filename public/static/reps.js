@@ -770,6 +770,20 @@ function renderRepDashboard(viewEl, rep) {
           const capBadge = result.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
           const bonusBadge = result.retentionBonus > 0 && lcStatus === 'paid'
             ? `<span style="font-size:9px;background:#16a34a;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">+${fmtCurrency(result.retentionBonus)} bonus</span>` : '';
+
+          // COMM-15: Collection gate display — show what they'd earn + clear gate message
+          const gateInfo = window.getCollectionGateInfo ? window.getCollectionGateInfo(opp, result) : null;
+          const gateRow = gateInfo && gateInfo.held ? `
+        <tr>
+          <td colspan="7" style="padding:2px 12px 10px">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:#1c1412;border:1px solid #f59e0b40;border-radius:6px;padding:4px 10px">
+              <span style="font-size:10px;color:#f59e0b">⏳</span>
+              <span style="font-size:10px;color:#f59e0b">${gateInfo.reason}</span>
+              ${gateInfo.preview > 0 ? `<span style="font-size:10px;color:#64748b">Earns ${fmtCurrency(gateInfo.preview)} once collected.</span>` : ''}
+            </div>
+          </td>
+        </tr>` : '';
+
           return `
         <tr style="border-bottom:1px solid #0f172a;cursor:pointer" onclick="show('pipeline','${opp.id}')"
           onmouseover="this.style.background='#0f172a'" onmouseout="this.style.background=''">
@@ -784,8 +798,9 @@ function renderRepDashboard(viewEl, rep) {
           </td>
         </tr>
         <tr>
-          <td colspan="7" style="padding:0 12px 10px;font-size:11px;color:#64748b">${escapeHtml(result.note)}</td>
-        </tr>`;
+          <td colspan="7" style="padding:0 12px 4px;font-size:11px;color:#64748b">${escapeHtml(result.note)}</td>
+        </tr>
+        ${gateRow}`;
         }).join('')}
       </tbody>
     </table></div>`}
@@ -830,14 +845,18 @@ function renderRepDashboard(viewEl, rep) {
       const capBadge = result.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
       const bonusEl = result.retentionBonus > 0
         ? `<div style="font-size:10px;color:#4ade80;margin-top:2px">${s === 'paid' ? '✓' : '○'} ${fmtCurrency(result.retentionBonus)} retention bonus ${s === 'paid' ? 'earned' : 'after 90-day active'}</div>` : '';
+      // COMM-15: collection gate badge on payout cards
+      const gateInfo = window.getCollectionGateInfo ? window.getCollectionGateInfo(opp, result) : null;
+      const gateEl   = gateInfo && gateInfo.held
+        ? `<div style="display:flex;align-items:center;gap:5px;margin-top:4px"><span style="font-size:10px;color:#f59e0b">⏳ ${gateInfo.reason}</span>${gateInfo.preview > 0 ? `<span style="font-size:10px;color:#64748b">Earns ${fmtCurrency(gateInfo.preview)} once collected.</span>` : ''}</div>` : '';
       return `
-    <div onclick="show('pipeline','${opp.id}')" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:5px;cursor:pointer;border:1px solid #1e293b"
-      onmouseover="this.style.borderColor='${color}40'" onmouseout="this.style.borderColor='#1e293b'">
+    <div onclick="show('pipeline','${opp.id}')" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:5px;cursor:pointer;border:1px solid ${gateInfo && gateInfo.held ? '#f59e0b30' : '#1e293b'}"
+      onmouseover="this.style.borderColor='${color}40'" onmouseout="this.style.borderColor='${gateInfo && gateInfo.held ? '#f59e0b30' : '#1e293b'}'">
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">${escapeHtml(opp.client || 'Unnamed')}</div>
         <div style="font-size:11px;color:#64748b;margin-top:2px">${formatWorkType(opp.workType)} · ${formatLeadSource(opp.leadSource)}</div>
         <div style="font-size:10px;color:#475569;margin-top:3px">${escapeHtml(result.note)}</div>
-        ${bonusEl}
+        ${bonusEl}${gateEl}
       </div>
       <div style="text-align:right;flex-shrink:0;margin-left:12px">
         <div style="font-size:14px;font-weight:800;color:${color}">${fmtCurrency(result.amount)}${capBadge}</div>
@@ -1916,6 +1935,279 @@ function initApp() {
   // App is already initialized — just re-render
   location.reload();
 }
+
+// ── COMM-16: Backfill migration ───────────────────────────────────────────────
+// One-time function: initialises commissionLifecycle on every existing sold opp
+// that doesn't already have it. Safe to call multiple times — idempotent.
+// Tyler can trigger from browser console: window._migrateCommissionLifecycle()
+// or from the Settings panel via the "Run Migration" button (if shown).
+function migrateCommissionLifecycle() {
+  const stateKey = 'avalonSalesHubStateV3';
+  let s;
+  try { s = JSON.parse(localStorage.getItem(stateKey) || '{}'); }
+  catch(e) { return { migrated: 0, skipped: 0, error: e.message }; }
+
+  const opps = s.opportunities || [];
+  let migrated = 0;
+  let skipped  = 0;
+
+  opps.forEach((o, idx) => {
+    // Only process sold opps that are missing a lifecycle record
+    if (o.status !== 'Sold / Activation') return;
+    if (o.commissionLifecycle && o.commissionLifecycle.status) { skipped++; return; }
+
+    // Determine correct initial status from legacy fields
+    let initStatus = 'pending_approval';
+    if (o.commissionApproved === true) initStatus = 'approved';
+
+    const repObj = REPS.find(r => r.id === o.repId);
+    const result = calculateCommission({
+      planId:     repObj?.commissionPlan || 'ryan',
+      workType:   o.workType   || 'landscape',
+      leadSource: o.leadSource || 'company_lead',
+      jobValue:   parseFloat(o.jobValue || 0),
+      collected:  !!o.collected,
+      approved:   initStatus === 'approved',
+      preview:    true
+    });
+
+    opps[idx].commissionLifecycle = {
+      status:           initStatus,
+      amount:           result.amount,
+      rate:             result.rate,
+      cap:              result.cap,
+      capApplied:       result.capApplied,
+      requiresApproval: result.requiresApproval,
+      note:             result.note,
+      ruleApplied:      result.ruleApplied,
+      retentionBonus:   result.retentionBonus,
+      retentionBonusPaidAt: null,
+      calculatedAt:     new Date().toISOString(),
+      history: [{
+        ts:    o.commissionApprovedAt || o.updatedAt || new Date().toISOString(),
+        actor: o.commissionApprovedBy || 'migration',
+        from:  'legacy_boolean',
+        to:    initStatus,
+        note:  'Backfill migration from commissionApproved boolean (COMM-16)'
+      }]
+    };
+    migrated++;
+  });
+
+  if (migrated > 0) {
+    s.opportunities = opps;
+    localStorage.setItem(stateKey, JSON.stringify(s));
+  }
+
+  console.log(`[COMM-16 migration] ${migrated} opps migrated, ${skipped} already had lifecycle records.`);
+  return { migrated, skipped };
+}
+window._migrateCommissionLifecycle = migrateCommissionLifecycle;
+
+// Auto-run migration on load — idempotent, only touches opps missing lifecycle records
+(function autoMigrateOnLoad() {
+  try {
+    const stateKey = 'avalonSalesHubStateV3';
+    const s = JSON.parse(localStorage.getItem(stateKey) || '{}');
+    const needsMigration = (s.opportunities || []).some(
+      o => o.status === 'Sold / Activation' && !o.commissionLifecycle
+    );
+    if (needsMigration) migrateCommissionLifecycle();
+  } catch(e) {}
+})();
+
+// ── COMM-15: Collection gate helpers ─────────────────────────────────────────
+// Surface clear messaging when commission is held behind collection gate.
+// Used by rep dashboard and any display that shows commission amounts.
+function getCollectionGateInfo(opp, engineResult) {
+  if (opp.collected) return null; // gate open
+  // Gate applies even in preview mode for display purposes
+  if (engineResult && engineResult.ruleApplied === 'pending_collection') {
+    return {
+      held:    true,
+      reason:  'Commission is held until payment is collected from the client.',
+      preview: engineResult.amount || 0 // what they'd earn once collected
+    };
+  }
+  // Job is sold, uncollected, and engine returned a value (preview mode was used) —
+  // surface the pending amount with a clear gate warning
+  if (!opp.collected && engineResult && engineResult.amount > 0) {
+    return {
+      held:    true,
+      reason:  'Payment not yet collected — commission payout pending collection.',
+      preview: engineResult.amount
+    };
+  }
+  return null;
+}
+window.getCollectionGateInfo = getCollectionGateInfo;
+
+// ── COMM-17: Feature flags ────────────────────────────────────────────────────
+// avalonCommissionFeatureFlagsV1 in localStorage controls optional engine features.
+// Defaults shown below — all on. Tyler can toggle from browser console.
+const COMM_FLAG_DEFAULTS = {
+  lifecycleEnabled:       true,  // COMM-11: track full lifecycle per deal
+  simulatorEnabled:       true,  // COMM-05: show simulator in Settings
+  autoReapprovalEnabled:  true,  // COMM-14: flag reapproval when fields change
+  auditTrailEnabled:      true,  // COMM-04: write audit trail on rule saves
+  backfillAutoRun:        true,  // COMM-16: run migration on page load
+  collectionGateStrict:   true,  // COMM-15: hard-block display when uncollected
+};
+
+function getCommissionFlags() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('avalonCommissionFeatureFlagsV1') || 'null');
+    return saved ? { ...COMM_FLAG_DEFAULTS, ...saved } : COMM_FLAG_DEFAULTS;
+  } catch(e) { return COMM_FLAG_DEFAULTS; }
+}
+window.getCommissionFlags  = getCommissionFlags;
+window.COMM_FLAG_DEFAULTS  = COMM_FLAG_DEFAULTS;
+
+// Toggle a single flag and save
+window._setCommFlag = function(flagName, value) {
+  const flags = getCommissionFlags();
+  flags[flagName] = !!value;
+  localStorage.setItem('avalonCommissionFeatureFlagsV1', JSON.stringify(flags));
+  console.log(`[CommFlag] ${flagName} = ${!!value}`);
+  if (window.showToast) window.showToast(`Flag "${flagName}" set to ${!!value}`);
+};
+
+// Reset all flags to defaults
+window._resetCommFlags = function() {
+  localStorage.removeItem('avalonCommissionFeatureFlagsV1');
+  if (window.showToast) window.showToast('Commission feature flags reset to defaults ✓');
+};
+
+// ── COMM-18: QA Validation ────────────────────────────────────────────────────
+// Runtime self-check: validates engine rule integrity and lifecycle consistency.
+// Run from console: window._commQA()
+// Returns { passed, failed, warnings, results[] }
+function runCommissionQA() {
+  const results  = [];
+  let passed = 0, failed = 0, warnings = 0;
+
+  function check(name, fn) {
+    try {
+      const r = fn();
+      if (r === true)  { results.push({ name, status:'PASS', detail:'' });           passed++; }
+      else if (r.warn) { results.push({ name, status:'WARN', detail:r.warn });        warnings++; }
+      else             { results.push({ name, status:'FAIL', detail:r.fail || r });   failed++; }
+    } catch(e) {
+      results.push({ name, status:'ERROR', detail: e.message }); failed++;
+    }
+  }
+
+  // ── Engine availability ──
+  check('calculateCommission is defined', () => typeof window.calculateCommission === 'function' || { fail:'window.calculateCommission not found' });
+  check('estimateCommission is defined',  () => typeof window.estimateCommission  === 'function' || { fail:'window.estimateCommission not found' });
+  check('COMMISSION_PLANS.ryan exists',   () => !!(window.COMMISSION_PLANS && window.COMMISSION_PLANS.ryan) || { fail:'COMMISSION_PLANS.ryan missing' });
+
+  // ── Engine output shape ──
+  check('Engine returns expected keys', () => {
+    const r = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'company_lead', jobValue:5000, collected:true, approved:true });
+    const keys = ['amount','rate','cap','capApplied','requiresApproval','approvalReason','note','ruleApplied','retentionBonus'];
+    const missing = keys.filter(k => !(k in r));
+    return missing.length === 0 ? true : { fail:`Missing keys: ${missing.join(', ')}` };
+  });
+
+  // ── Rate structure sanity ──
+  check('Landscape tier rates are valid (0 < rate < 1)', () => {
+    const plan = window.COMMISSION_PLANS?.ryan?.landscape;
+    if (!plan) return { fail:'No landscape plan' };
+    const bad = (plan.tiers || []).filter(t => t.selfGen <= 0 || t.selfGen >= 1 || t.companyLead <= 0 || t.companyLead >= 1);
+    return bad.length === 0 ? true : { fail:`${bad.length} tiers have rates out of range` };
+  });
+  check('Landscape soft cap < hard cap', () => {
+    const p = window.COMMISSION_PLANS?.ryan?.landscape;
+    if (!p) return { fail:'No landscape plan' };
+    return p.softApprovalPayoutThreshold < p.hardCapPayout ? true : { fail:`soft=${p.softApprovalPayoutThreshold} >= hard=${p.hardCapPayout}` };
+  });
+  check('Recurring caps are positive', () => {
+    const rec = window.COMMISSION_PLANS?.ryan?.maintenance?.recurring;
+    if (!rec) return { fail:'No recurring plan' };
+    const bad = Object.entries(rec).filter(([,r]) => !r.cap || r.cap <= 0);
+    return bad.length === 0 ? true : { fail:`${bad.length} sources have invalid cap` };
+  });
+
+  // ── Scenario spot-checks ──
+  check('Self-gen landscape $5k > co-lead $5k commission', () => {
+    const sg = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'self_generated', jobValue:5000, collected:true, approved:true });
+    const cl = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'company_lead',   jobValue:5000, collected:true, approved:true });
+    return sg.amount > cl.amount ? true : { fail:`sg=${sg.amount}, cl=${cl.amount} — self-gen should pay more` };
+  });
+  check('Collection gate blocks payout when uncollected (strict mode)', () => {
+    const r = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'company_lead', jobValue:5000, collected:false, approved:true, preview:false });
+    return r.amount === 0 && r.ruleApplied === 'pending_collection' ? true : { fail:`amount=${r.amount}, ruleApplied=${r.ruleApplied}` };
+  });
+  check('Preview mode bypasses collection gate', () => {
+    const r = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'company_lead', jobValue:5000, collected:false, approved:true, preview:true });
+    return r.amount > 0 ? true : { fail:`Preview returned 0 — gate not bypassed` };
+  });
+  check('Hard cap enforced at large job value', () => {
+    const r = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'self_generated', jobValue:50000, collected:true, approved:true });
+    const hardCap = window.COMMISSION_PLANS?.ryan?.landscape?.hardCapPayout || 2500;
+    return r.amount <= hardCap ? true : { fail:`amount=${r.amount} exceeds hardCap=${hardCap}` };
+  });
+  check('Below-minimum job returns 0 commission', () => {
+    const r = window.calculateCommission({ planId:'ryan', workType:'landscape', leadSource:'company_lead', jobValue:100, collected:true, approved:true });
+    return r.amount === 0 && r.ruleApplied === 'below_minimum' ? true : { fail:`amount=${r.amount}, rule=${r.ruleApplied}` };
+  });
+  check('Recurring maintenance respects cap', () => {
+    const r = window.calculateCommission({ planId:'ryan', workType:'maintenance_recurring', leadSource:'company_lead', jobValue:10000, collected:true, approved:true });
+    const cap = window.COMMISSION_PLANS?.ryan?.maintenance?.recurring?.companyLead?.cap || 300;
+    return r.amount <= cap ? true : { fail:`amount=${r.amount} exceeds cap=${cap}` };
+  });
+
+  // ── Lifecycle helpers ──
+  check('getCommissionStatus handles legacy bool', () => {
+    const fn = window.getCommissionStatus;
+    if (!fn) return { fail:'getCommissionStatus not exported' };
+    return fn({ commissionApproved: true }) === 'approved' ? true : { fail:'legacy bool not migrated' };
+  });
+  check('getCommissionStatusColor returns string', () => {
+    const fn = window.getCommissionStatusColor;
+    if (!fn) return { fail:'not exported' };
+    const v = fn('paid');
+    return typeof v === 'string' && v.startsWith('#') ? true : { fail:`returned: ${v}` };
+  });
+
+  // ── Admin override ──
+  check('loadActiveCommissionRules returns null when no override', () => {
+    const savedKey = 'avalonCommissionRulesV1';
+    const was = localStorage.getItem(savedKey);
+    if (was) return { warn:'Custom rules active — skipping this check' };
+    const r = window.loadActiveCommissionRules ? window.loadActiveCommissionRules() : null;
+    return r === null ? true : { fail:`Expected null, got ${typeof r}` };
+  });
+  check('Feature flags return object with expected keys', () => {
+    const flags = window.getCommissionFlags ? window.getCommissionFlags() : null;
+    if (!flags) return { fail:'getCommissionFlags not exported' };
+    const req = ['lifecycleEnabled','simulatorEnabled','autoReapprovalEnabled','auditTrailEnabled'];
+    const missing = req.filter(k => !(k in flags));
+    return missing.length === 0 ? true : { fail:`Missing flags: ${missing.join(', ')}` };
+  });
+
+  // ── Data integrity ──
+  check('No sold opps missing lifecycle after migration', () => {
+    try {
+      const s = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
+      const missing = (s.opportunities || []).filter(o => o.status === 'Sold / Activation' && !o.commissionLifecycle);
+      return missing.length === 0 ? true : { warn:`${missing.length} sold opps still missing lifecycle — run window._migrateCommissionLifecycle()` };
+    } catch(e) { return { fail: e.message }; }
+  });
+
+  // Print summary
+  console.group('[COMM-18 QA]');
+  results.forEach(r => {
+    const icon = r.status === 'PASS' ? '✅' : r.status === 'WARN' ? '⚠️' : r.status === 'ERROR' ? '💥' : '❌';
+    console.log(`${icon} ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
+  });
+  console.groupEnd();
+  console.log(`[COMM-18 QA] ${passed} passed · ${warnings} warnings · ${failed} failed`);
+
+  return { passed, failed, warnings, results };
+}
+window._commQA = runCommissionQA;
 
 // ── Expose globals ────────────────────────────────────────────────────────────
 window.repDashboard = repDashboard;
