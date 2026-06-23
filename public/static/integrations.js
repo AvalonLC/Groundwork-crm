@@ -223,8 +223,56 @@ function gmailComposeUrl(to, subject, body) {
 
 // ── Google Calendar ───────────────────────────────────────────────────────────
 async function calListUpcoming(maxResults = 10) {
+  // Fetch upcoming events only (for quick widgets)
   const now = new Date().toISOString();
   const r = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&timeMin=${encodeURIComponent(now)}&singleEvents=true&orderBy=startTime`);
+  return r.json();
+}
+
+async function calListAll(maxResults = 250) {
+  // Fetch ALL events — past, present, future — ordered by start time.
+  // No timeMin so past events are included. updatedMin not set so cancelled events show.
+  const r = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&singleEvents=true&orderBy=startTime`);
+  return r.json();
+}
+
+async function calDeleteEvent(eventId) {
+  const r = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE'
+  });
+  if (!r.ok && r.status !== 204) {
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.error?.message || 'Failed to delete event');
+  }
+  return true;
+}
+
+async function calUpdateEvent(eventId, fields) {
+  const r = await gFetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields)
+  });
+  if (!r.ok) { const e = await r.json(); throw new Error(e.error?.message || 'Update failed'); }
+  return r.json();
+}
+
+async function gmailGetMessage(messageId) {
+  const r = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`);
+  return r.json();
+}
+
+async function gmailTrashThread(threadId) {
+  const r = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}/trash`, { method: 'POST' });
+  if (!r.ok) { const e = await r.json(); throw new Error(e.error?.message || 'Failed to trash thread'); }
+  return r.json();
+}
+
+async function gmailMarkRead(messageId) {
+  const r = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
+    method: 'POST',
+    body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
+  });
+  if (!r.ok) { const e = await r.json(); throw new Error(e.error?.message || 'Failed to mark read'); }
   return r.json();
 }
 
@@ -450,6 +498,17 @@ function iconBtn(icon, label, onclick) {
 }
 
 // ── MAIN VIEW: integrations() ─────────────────────────────────────────────────
+// State for the workspace hub
+let _gwTab = 'gmail';           // 'gmail' | 'calendar' | 'drive'
+let _calView = 'month';         // 'agenda' | 'week' | 'month'
+let _calEvents = [];
+let _calWeekOffset = 0;
+let _calMonthOffset = 0;
+let _gmailThreads = [];
+let _gmailOpenThread = null;    // currently expanded thread id
+let _gmailLabel = 'INBOX';      // current label
+let _driveFiles = [];
+
 async function integrations() {
   const intView = document.getElementById('view');
   const googleOk = isGoogleConnected();
@@ -460,874 +519,859 @@ async function integrations() {
   const repColor = currentRep ? (currentRep.color || '#00A7E1') : '#00A7E1';
   const clientIdConfigured = !!getGoogleClientId();
 
-  intView.innerHTML = `
+  if (!googleOk) {
+    // ── NOT CONNECTED — show connect screen ───────────────────────────────────
+    intView.innerHTML = `
 <div class="eyebrow">Connected Tools</div>
-<h1>Integrations</h1>
-<p class="lede">Your personal Google Workspace connection is private — only ${escapeHtml(repName)}'s account is used here. All credentials stay in this browser.</p>
+<h1>Google Workspace</h1>
+<p class="lede">Connect <strong>${escapeHtml(repName)}'s</strong> Google account to access Gmail, Calendar, and Drive directly inside the hub. Each team member connects their own account — completely private.</p>
 
-<div class="grid grid-2 mt" style="gap:28px">
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;margin-top:24px">
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <img src="https://www.google.com/favicon.ico" style="width:32px;height:32px" alt="Google">
+      <div>
+        <div style="font-weight:800;font-size:18px;color:#e2e8f0">Connect ${escapeHtml(repName)}'s Google</div>
+        <div style="font-size:12px;color:${repColor};margin-top:2px;font-weight:600">${escapeHtml(repName)}'s workspace — private to you</div>
+      </div>
+    </div>
+    <p style="color:#64748b;font-size:13px;line-height:1.7;margin:0 0 20px">
+      Sign in with your Google account. Your Gmail, Calendar, and Drive are fully accessible inside the hub.
+      Other users connect their own accounts separately — no shared access.
+    </p>
+    ${!clientIdConfigured ? `
+    <div style="padding:12px 14px;background:#1c1a0a;border:1px solid #f59e0b40;border-radius:8px;margin-bottom:16px;font-size:13px;color:#f59e0b">
+      ⚠ Google Client ID not configured. Ask Tyler (Admin) to set it up in
+      <strong>Admin → User Management → Workspace Connections</strong>.
+    </div>` : ''}
+    <button class="primary-btn" style="width:100%;justify-content:center;font-size:14px;padding:12px 20px;${!clientIdConfigured?'opacity:.5;cursor:not-allowed':''}"
+      ${!clientIdConfigured?'disabled':''} onclick="intSaveClientIdAndConnect()">
+      <svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:-3px;margin-right:8px"><path d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6A7.8 7.8 0 0 0 17 9c0-.46-.05-.86-.09-1z" fill="#4285F4"/><path d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2.04c-.71.48-1.62.77-2.7.77-2.08 0-3.84-1.4-4.47-3.28H1.8v2.07A8 8 0 0 0 8.98 17z" fill="#34A853"/><path d="M4.51 10.51A4.8 4.8 0 0 1 4.26 9c0-.53.09-1.04.25-1.51V5.42H1.8A8 8 0 0 0 .98 9c0 1.29.31 2.51.82 3.58l2.71-2.07z" fill="#FBBC05"/><path d="M8.98 3.58c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 8.98 1 8 8 0 0 0 1.8 5.42l2.71 2.07c.63-1.89 2.39-3.91 4.47-3.91z" fill="#EA4335"/></svg>
+      Sign in with Google
+    </button>
 
-  <!-- ── GOOGLE WORKSPACE ────────────────────────────────── -->
-  <section class="card" id="int-google-card">
+    <div style="margin-top:20px;padding:14px;background:#0a0f1a;border:1px solid #1e293b;border-radius:10px">
+      <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">What you'll get access to</div>
+      ${[['✉️','Gmail','Read, compose, reply, and send emails directly inside the hub'],
+         ['📅','Calendar','Full calendar — past, present, future. Create and edit events in-hub'],
+         ['📁','Drive','Browse, search, and open your Drive files without leaving the app']
+        ].map(([ic,nm,desc])=>`
+      <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #1e293b">
+        <span style="font-size:18px;flex-shrink:0">${ic}</span>
+        <div><div style="font-weight:600;font-size:13px;color:#e2e8f0">${nm}</div><div style="font-size:12px;color:#64748b;margin-top:1px">${desc}</div></div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- Homeworks always accessible -->
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <img src="https://www.google.com/favicon.ico" style="width:28px;height:28px" alt="Google">
+      <div style="width:32px;height:32px;background:#1e293b;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">🏗️</div>
       <div>
-        <h2 style="margin:0">Google Workspace</h2>
-        <div style="font-size:11px;color:${repColor};font-weight:600;margin-top:2px">${escapeHtml(repName)}'s connection</div>
-      </div>
-      ${connBadge(googleOk, googleEmail || 'Google')}
-    </div>
-    <p>Access <strong>your</strong> Gmail, Google Calendar, and Google Drive. This connection belongs only to ${escapeHtml(repName)} — other users connect their own accounts separately.</p>
-
-    <div id="int-google-setup" style="${googleOk ? 'display:none' : ''}">
-      ${!clientIdConfigured ? `
-      <div style="padding:12px 14px;background:#1c1a0a;border:1px solid #f59e0b40;border-radius:8px;margin-bottom:14px;font-size:13px;color:#f59e0b">
-        ⚠ Google Client ID not configured yet. Ask Tyler to set it up in
-        <strong>Admin → User Management → Workspace Connections</strong>.
-      </div>` : ''}
-      <h3 style="margin:12px 0 6px">Connect ${escapeHtml(repName)}'s Google Account</h3>
-      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Click below to sign in with your personal Google account. Only your emails and calendar will be visible here.</p>
-      ${clientIdConfigured ? `
-      <button class="primary-btn" onclick="intSaveClientIdAndConnect()" style="margin-top:4px">
-        Connect My Google Account
-      </button>` : `
-      <button class="primary-btn" disabled style="margin-top:4px;opacity:.5;cursor:not-allowed">
-        Connect My Google Account
-      </button>`}
-      <div style="margin-top:14px;padding:12px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:8px">
-        <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Google Client ID (Admin)</div>
-        <input id="gClientIdInput" type="text" placeholder="1234567890-abc...apps.googleusercontent.com"
-          value="${escapeHtml(getGoogleClientId())}"
-          style="width:100%;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;box-sizing:border-box">
-        <div style="font-size:11px;color:#475569;margin-top:5px">Shared across all users. Only Tyler (Admin) needs to set this once.</div>
+        <div style="font-weight:800;font-size:16px;color:#e2e8f0">Homeworks CRM</div>
+        ${hwOk?`<div style="font-size:11px;font-weight:700;color:#4ade80;margin-top:2px">● Connected via Zapier</div>`:`<div style="font-size:11px;color:#64748b;margin-top:2px">Not connected</div>`}
       </div>
     </div>
-
-    <div id="int-google-connected" style="${googleOk ? '' : 'display:none'}">
-      <div class="connected-features" style="margin:12px 0">
-        <div style="font-size:11px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">
-          ● Connected as ${googleEmail||'your Google account'} — ${escapeHtml(repName)} only
-        </div>
-        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Gmail</strong> — Read recent threads, compose follow-up emails from templates</div></div>
-        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Calendar</strong> — View upcoming events, schedule site walks and follow-ups</div></div>
-        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Drive</strong> — Search and link proposal docs, contracts, and site photos</div></div>
-        <div class="cf-row"><span class="cf-icon">&#x2022;</span><div><strong>Template Merge</strong> — Personalize email templates with live lead data and send via Gmail</div></div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-        ${iconBtn('', 'Gmail', "intShowGmail()")}
-        ${iconBtn('', 'Calendar', "intShowCalendar()")}
-        ${iconBtn('', 'Drive', "intShowDrive()")}
-        <button class="danger-btn" onclick="intGoogleDisconnect()" style="margin-left:auto">Disconnect</button>
-      </div>
+    <p style="color:#64748b;font-size:13px;line-height:1.7;margin:0 0 14px">Push leads, estimates, and site visits to Homeworks CRM via Zapier webhook.</p>
+    <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">ZAPIER WEBHOOK URL</label>
+    <input id="zapierWebhookInput" type="url"
+      placeholder="https://hooks.zapier.com/hooks/catch/…"
+      value="${escapeHtml(getZapierWebhookUrl())}"
+      style="width:100%;margin-top:6px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="primary-btn" onclick="intSaveZapierUrl()">Save URL</button>
+      ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Send Test Ping</button>`:''}
     </div>
+  </div>
+</div>`;
+    return;
+  }
 
-    <!-- Gmail panel -->
-    <div id="int-gmail-panel" style="display:none;margin-top:20px;border-top:1px solid #334155;padding-top:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0">Recent Gmail Threads</h3>
-        <button class="secondary-btn" onclick="intComposeFromTemplate()" style="font-size:12px">+ Compose from Template</button>
-      </div>
-      <div id="int-gmail-list"><div class="spinner-wrap"><div class="spinner"></div></div></div>
+  // ── CONNECTED — render full workspace hub ─────────────────────────────────
+  intView.innerHTML = `
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+  <div>
+    <div class="eyebrow">Google Workspace</div>
+    <h1 style="margin:2px 0 0">Workspace Hub</h1>
+    <div style="font-size:13px;color:#64748b;margin-top:3px">
+      Signed in as <strong style="color:${repColor}">${escapeHtml(googleEmail)}</strong> · ${escapeHtml(repName)}'s private connection
     </div>
-
-    <!-- Calendar panel -->
-    <div id="int-cal-panel" style="display:none;margin-top:20px;border-top:1px solid #334155;padding-top:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0">Upcoming Events</h3>
-        <button class="secondary-btn" onclick="intCreateCalendarEvent()" style="font-size:12px">+ New Event</button>
-      </div>
-      <div id="int-cal-list"><div class="spinner-wrap"><div class="spinner"></div></div></div>
-    </div>
-
-    <!-- Drive panel -->
-    <div id="int-drive-panel" style="display:none;margin-top:20px;border-top:1px solid #334155;padding-top:16px">
-      <h3 style="margin:0 0 12px">Google Drive Files</h3>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input id="int-drive-search" type="text" placeholder="Search files…"
-          style="flex:1;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
-        <button class="secondary-btn" onclick="intSearchDrive()">Search</button>
-      </div>
-      <div id="int-drive-list"><div class="spinner-wrap"><div class="spinner"></div></div></div>
-    </div>
-  </section>
-
-  <!-- ── HOMEWORKS / COPILOTCRM ──────────────────────────── -->
-  <section class="card" id="int-hw-card">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      
-      <h2 style="margin:0">Homeworks CRM</h2>
-      ${connBadge(hwOk, 'Homeworks')}
-    </div>
-    <p>Push leads and status updates to your Homeworks (CopilotCRM) account via a Zapier webhook. Set up once — then sync with one click from any opportunity.</p>
-
-    <div style="margin:16px 0">
-      ${!hwOk ? `<div class="int-onboarding-state">
-        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#f59e0b;margin-bottom:8px">Get Started — 4 Steps</div>
-        <div class="setup-steps">
-          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
-            <div class="step-num">1</div>
-            <div><strong>Create a Zapier account</strong> (free tier works) at <a href="https://zapier.com" target="_blank" rel="noopener" style="color:var(--accent)">zapier.com</a></div>
-          </div>
-          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
-            <div class="step-num">2</div>
-            <div><strong>New Zap:</strong> Trigger = <em>Webhooks by Zapier → Catch Hook</em> — copy the webhook URL Zapier gives you</div>
-          </div>
-          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
-            <div class="step-num">3</div>
-            <div><strong>Action:</strong> <em>Homeworks → Create Customer</em> — map: name → data.name, email → data.email, phone → data.phone, address → data.address</div>
-          </div>
-          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">
-            <div class="step-num">4</div>
-            <div><strong>Paste your webhook URL below</strong> and click Save — then one-click push any lead to Homeworks</div>
-          </div>
-        </div>
-      </div>` : ''}
-      <h3 style="margin:0 0 8px">${hwOk ? 'Webhook Settings' : 'Your Zapier Webhook URL'}</h3>
-      <label style="font-size:12px;font-weight:600;color:var(--muted)">ZAPIER WEBHOOK URL</label>
-      <input id="zapierWebhookInput" type="url"
-        placeholder="https://hooks.zapier.com/hooks/catch/XXXXXXX/XXXXXXX/"
-        value="${escapeHtml(getZapierWebhookUrl())}"
-        style="width:100%;margin-top:6px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="primary-btn" onclick="intSaveZapierUrl()">Save Webhook URL</button>
-        ${hwOk ? `<button class="secondary-btn" onclick="intTestZapier()">Send Test Ping</button>` : ''}
-      </div>
-    </div>
-
-      ${hwOk ? `
-    <!-- Homeworks KPI Dashboard Strip -->
-    <div style="border-top:1px solid #334155;padding-top:16px;margin-top:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h3 style="margin:0">Account Standing <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">from Homeworks My Day</span></h3>
-        <a href="https://secure.copilotcrm.com" target="_blank" rel="noopener"
-          style="font-size:11px;color:var(--accent);text-decoration:none">Open Homeworks →</a>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
-        <div style="background:#1a0a0a;border:1px solid #7f1d1d;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#fca5a5;letter-spacing:.05em;text-transform:uppercase">Past Due</div>
-          <div style="font-size:18px;font-weight:800;color:#f87171;margin-top:4px">$11,082</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">Action needed</div>
-        </div>
-        <div style="background:#0c1a2e;border:1px solid #1e3a5f;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#93c5fd;letter-spacing:.05em;text-transform:uppercase">Outstanding</div>
-          <div style="font-size:18px;font-weight:800;color:#60a5fa;margin-top:4px">$78,116</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">Awaiting payment</div>
-        </div>
-        <div style="background:#0a1a0a;border:1px solid #1a3a1a;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#86efac;letter-spacing:.05em;text-transform:uppercase">Credit</div>
-          <div style="font-size:18px;font-weight:800;color:#4ade80;margin-top:4px">$0</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">Customer credits</div>
-        </div>
-        <div style="background:#0a1a0e;border:1px solid #14532d;border-radius:10px;padding:12px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#6ee7b7;letter-spacing:.05em;text-transform:uppercase">Paid</div>
-          <div style="font-size:18px;font-weight:800;color:#34d399;margin-top:4px">$636K</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">Total collected</div>
-        </div>
-      </div>
-
-      <!-- Homeworks Quick Links -->
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
-        <a href="https://secure.copilotcrm.com/customers/add-new-customer" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          Add Customer
-        </a>
-        <a href="https://secure.copilotcrm.com/assets/add-new-asset" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          Add Property
-        </a>
-        <a href="https://secure.copilotcrm.com/finances/estimates/add" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          New Estimate
-        </a>
-        <a href="https://secure.copilotcrm.com/scheduler/addvisit" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          Schedule Visit
-        </a>
-        <a href="https://secure.copilotcrm.com/finances/estimates" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          Estimates List
-        </a>
-        <a href="https://secure.copilotcrm.com/scheduler/month" target="_blank" rel="noopener"
-          style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">
-          Calendar
-        </a>
-      </div>
-
-      <!-- 3-Action Opportunity Sync List -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3 style="margin:0;font-size:14px">Sync Opportunities → Homeworks</h3>
-        <span style="font-size:11px;color:var(--muted)">Push as Customer · Estimate · Visit</span>
-      </div>
-      <div id="int-hw-opps" style="max-height:420px;overflow-y:auto">${renderHwOpps()}</div>
-    </div>
-    ` : ''}
-  </section>
-
-</div>
-
-<!-- ── SCHEDULE VISIT MODAL (Homeworks) ──────────────────────────── -->
-<div id="int-visit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1001;align-items:center;justify-content:center">
-  <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(580px,95vw);max-height:90vh;overflow-y:auto;position:relative">
-    <button onclick="document.getElementById('int-visit-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-      
-      <div>
-        <h2 style="margin:0;font-size:18px">Schedule Site Visit</h2>
-        <div id="int-visit-client-label" style="font-size:13px;color:var(--muted);margin-top:2px"></div>
-      </div>
-    </div>
-    <input type="hidden" id="int-visit-opp-id">
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">VISIT TITLE / DESCRIPTION</label>
-        <input id="int-visit-title" type="text" placeholder="e.g. Site Walk — Landscape Design Consult"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">VISIT DATE</label>
-          <input id="int-visit-date" type="date"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">TIME</label>
-          <input id="int-visit-time" type="time" value="09:00"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">BUDGETED HOURS</label>
-          <input id="int-visit-hours" type="number" value="1" min="0.5" max="8" step="0.5"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">BILLING OPTION</label>
-          <select id="int-visit-billing"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
-            <option value="Invoice services">Invoice services</option>
-            <option value="No charge">No charge</option>
-            <option value="Flat rate">Flat rate</option>
-          </select>
-        </div>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">VISIT TYPE</label>
-        <select id="int-visit-type"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
-          <option value="Site Walk">Site Walk</option>
-          <option value="Consultation">Consultation</option>
-          <option value="Estimate Review">Estimate Review</option>
-          <option value="Follow-up Visit">Follow-up Visit</option>
-          <option value="Maintenance Visit">Maintenance Visit</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">NOTES / DESCRIPTION</label>
-        <textarea id="int-visit-notes" rows="3" placeholder="Scope, property details, what to bring…"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
-      </div>
-      <div id="int-visit-also-gcal" style="display:flex;align-items:center;gap:10px;padding:12px;background:#0f172a;border-radius:8px;border:1px solid #334155">
-        <input type="checkbox" id="int-visit-gcal-check" checked style="width:16px;height:16px;cursor:pointer">
-        <label for="int-visit-gcal-check" style="font-size:13px;cursor:pointer">
-          Also add to <strong>Google Calendar</strong> ${isGoogleConnected() ? '<span style="color:#4ade80;font-size:11px">● Connected</span>' : '<span style="color:#94a3b8;font-size:11px">(connect Google first)</span>'}
-        </label>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
-        <button class="secondary-btn" onclick="document.getElementById('int-visit-modal').style.display='none'">Cancel</button>
-        <button class="primary-btn" onclick="intSubmitVisit()">
-          Push Visit to Homeworks
-        </button>
-      </div>
-    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button class="secondary-btn" style="font-size:12px" onclick="intGoogleDisconnect()">Disconnect Google</button>
   </div>
 </div>
 
-<!-- ── PUSH ESTIMATE MODAL (Homeworks) ──────────────────────────── -->
-<div id="int-estimate-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1001;align-items:center;justify-content:center">
-  <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;position:relative">
-    <button onclick="document.getElementById('int-estimate-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-      
-      <div>
-        <h2 style="margin:0;font-size:18px">Push as Estimate</h2>
-        <div id="int-est-client-label" style="font-size:13px;color:var(--muted);margin-top:2px"></div>
-      </div>
-    </div>
-    <input type="hidden" id="int-est-opp-id">
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">ESTIMATE TITLE / DESCRIPTION</label>
-        <input id="int-est-title" type="text" placeholder="e.g. Landscape Design — Smith Residence"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">ESTIMATE DATE</label>
-          <input id="int-est-date" type="date"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">SERVICE TYPE</label>
-          <select id="int-est-service"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
-            <option value="Landscape Design">Landscape Design</option>
-            <option value="Hardscape">Hardscape</option>
-            <option value="Lawn Maintenance">Lawn Maintenance</option>
-            <option value="Tree & Shrub">Tree &amp; Shrub</option>
-            <option value="Irrigation">Irrigation</option>
-            <option value="Outdoor Lighting">Outdoor Lighting</option>
-            <option value="Drainage">Drainage</option>
-            <option value="Seasonal Cleanup">Seasonal Cleanup</option>
-            <option value="Snow Removal">Snow Removal</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">NOTES VISIBLE TO CUSTOMER</label>
-        <textarea id="int-est-customer-notes" rows="2" placeholder="Scope of work visible to client…"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">INTERNAL NOTES</label>
-        <textarea id="int-est-internal-notes" rows="2" placeholder="Internal context, budget discussed, concerns…"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
-      </div>
-      <div style="padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;font-size:12px;color:var(--muted)">
-        This creates the estimate record in Homeworks. Open Homeworks to add line items, pricing, and send to client.
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
-        <button class="secondary-btn" onclick="document.getElementById('int-estimate-modal').style.display='none'">Cancel</button>
-        <button class="primary-btn" onclick="intSubmitEstimate()">
-          Push Estimate to Homeworks
-        </button>
-      </div>
-    </div>
-  </div>
+<!-- Tab bar -->
+<div style="display:flex;gap:0;border-bottom:2px solid #1e293b;margin-bottom:0">
+  ${[['gmail','✉️ Gmail'],['calendar','📅 Calendar'],['drive','📁 Drive'],['homeworks','🏗️ Homeworks']].map(([id,label])=>`
+  <button id="gw-tab-${id}" onclick="gwSwitchTab('${id}')"
+    style="padding:10px 20px;font-size:13px;font-weight:600;background:none;border:none;cursor:pointer;border-bottom:2px solid ${_gwTab===id?'#00A7E1':'transparent'};color:${_gwTab===id?'#00A7E1':'#64748b'};margin-bottom:-2px;transition:all .15s">
+    ${label}
+  </button>`).join('')}
 </div>
 
-<!-- ── COMPOSE EMAIL MODAL ────────────────────────────────────── -->
-<div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
-  <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(680px,95vw);max-height:90vh;overflow-y:auto;position:relative">
-    <button onclick="document.getElementById('int-compose-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
-    <h2 style="margin:0 0 20px">Compose Email</h2>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">TEMPLATE</label>
-        <select id="int-tmpl-select" onchange="intFillTemplate()" style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
-          <option value="">— Choose a template —</option>
-          ${(window.AVALON_DATA?.templates || []).map((t,i) => `<option value="${i}">${escapeHtml(t.title)}</option>`).join('')}
-        </select>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">TO</label>
-        <input id="int-email-to" type="email" placeholder="client@email.com"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">SUBJECT</label>
-        <input id="int-email-subject" type="text" placeholder="Subject line"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">BODY</label>
-        <textarea id="int-email-body" rows="10" placeholder="Email body…"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="secondary-btn" onclick="intOpenInGmail()">Open in Gmail</button>
-        <button class="primary-btn" onclick="intSendEmail()">Send via Gmail API</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ── CREATE CALENDAR EVENT MODAL ──────────────────────────────── -->
-<div id="int-cal-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
-  <div style="background:#1e293b;border-radius:16px;padding:32px;width:min(560px,95vw);max-height:90vh;overflow-y:auto;position:relative">
-    <button onclick="document.getElementById('int-cal-modal').style.display='none'"
-      style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer">×</button>
-    <h2 style="margin:0 0 20px">Create Calendar Event</h2>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">EVENT TITLE</label>
-        <input id="int-cal-title" type="text" placeholder="e.g. Site Walk — Smith Residence"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">DATE</label>
-          <input id="int-cal-date" type="date"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">TIME</label>
-          <input id="int-cal-time" type="time" value="09:00"
-            style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-        </div>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">DURATION (hours)</label>
-        <input id="int-cal-duration" type="number" value="1" min="0.5" max="8" step="0.5"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">INVITE (optional — client email)</label>
-        <input id="int-cal-attendee" type="email" placeholder="client@email.com"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--muted)">NOTES / DESCRIPTION</label>
-        <textarea id="int-cal-notes" rows="3" placeholder="Job address, scope, etc."
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
-      </div>
-      <button class="primary-btn" onclick="intSubmitCalEvent()">Create Event</button>
-    </div>
-  </div>
-</div>
+<!-- Tab content panels -->
+<div id="gw-panel-gmail"  style="display:${_gwTab==='gmail'   ?'block':'none'};padding-top:20px"></div>
+<div id="gw-panel-calendar" style="display:${_gwTab==='calendar'?'block':'none'};padding-top:20px"></div>
+<div id="gw-panel-drive"  style="display:${_gwTab==='drive'   ?'block':'none'};padding-top:20px"></div>
+<div id="gw-panel-homeworks" style="display:${_gwTab==='homeworks'?'block':'none'};padding-top:20px"></div>
 `;
 
-  // Load Google data if connected
-  if (googleOk) {
-    intLoadGmail();
-    intLoadCalendar();
-    intLoadDrive();
+  // Load active tab
+  gwRenderActiveTab();
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+window.gwSwitchTab = function(tab) {
+  _gwTab = tab;
+  ['gmail','calendar','drive','homeworks'].forEach(id => {
+    const panel = document.getElementById(`gw-panel-${id}`);
+    const btn   = document.getElementById(`gw-tab-${id}`);
+    if (panel) panel.style.display = id === tab ? 'block' : 'none';
+    if (btn)   { btn.style.borderBottomColor = id===tab?'#00A7E1':'transparent'; btn.style.color = id===tab?'#00A7E1':'#64748b'; }
+  });
+  gwRenderActiveTab();
+};
+
+function gwRenderActiveTab() {
+  if (_gwTab === 'gmail')      gwRenderGmail();
+  if (_gwTab === 'calendar')   gwRenderCalendar();
+  if (_gwTab === 'drive')      gwRenderDrive();
+  if (_gwTab === 'homeworks')  gwRenderHomeworks();
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GMAIL PANEL
+// ════════════════════════════════════════════════════════════════════════════════
+function gwRenderGmail() {
+  const el = document.getElementById('gw-panel-gmail');
+  if (!el) return;
+  el.innerHTML = `
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    ${[['INBOX','Inbox'],['SENT','Sent'],['STARRED','Starred'],['UNREAD','Unread'],['DRAFT','Drafts']].map(([l,label])=>`
+    <button onclick="gwGmailSetLabel('${l}')"
+      style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;
+      ${_gmailLabel===l?'background:#00A7E1;color:#fff;border:1.5px solid #00A7E1':'background:#0f172a;color:#94a3b8;border:1.5px solid #1e293b'}">
+      ${label}
+    </button>`).join('')}
+  </div>
+  <button class="primary-btn" style="font-size:12px;padding:7px 14px" onclick="gwOpenCompose()">✉️ Compose</button>
+</div>
+<div id="gw-gmail-list" style="min-height:200px"><div class="spinner-wrap"><div class="spinner"></div></div></div>`;
+
+  gwLoadGmail();
+}
+
+window.gwGmailSetLabel = function(label) {
+  _gmailLabel = label;
+  _gmailOpenThread = null;
+  gwRenderGmail();
+};
+
+async function gwLoadGmail() {
+  const el = document.getElementById('gw-gmail-list');
+  if (!el) return;
+  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const labelParam = _gmailLabel === 'UNREAD' ? '&q=is:unread' : `&labelIds=${_gmailLabel}`;
+    const r = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=20${labelParam}`);
+    const data = await r.json();
+    const threads = data.threads || [];
+    if (!threads.length) { el.innerHTML = `<div style="text-align:center;padding:40px;color:#475569">No messages in ${_gmailLabel.toLowerCase()}.</div>`; return; }
+
+    const metaList = await Promise.all(
+      threads.map(t => gmailGetThread(t.id).catch(() => null))
+    );
+    _gmailThreads = metaList.filter(Boolean);
+    gwRenderThreadList(el);
+  } catch(e) {
+    el.innerHTML = `<div style="color:#f87171;padding:20px;font-size:13px">Error loading Gmail: ${escapeHtml(e.message)}</div>`;
   }
 }
 
-// ── Render Homeworks opportunity list (3-action: Customer | Estimate | Visit) ──
-function renderHwOpps() {
-  const opps = (window._avalonState?.opportunities || []).filter(o =>
-    !['Closed Lost'].includes(o.status)
-  );
-  if (!opps.length) return '<p style="color:var(--muted);font-size:13px">No opportunities yet. Add a lead first.</p>';
+function gwRenderThreadList(el) {
+  if (!el) el = document.getElementById('gw-gmail-list');
+  if (!el) return;
 
-  const stageColor = {
-    'New Lead': '#6366f1',
-    'Contacted': '#8b5cf6',
-    'Meeting Set': '#3b82f6',
-    'Proposal / Estimate Sent': '#f59e0b',
-    'Negotiation': '#ef4444',
-    'Sold / Activation': '#10b981',
-  };
+  if (_gmailOpenThread) {
+    gwRenderThreadDetail(el, _gmailOpenThread);
+    return;
+  }
 
-  return opps.map(o => {
-    const color = stageColor[o.status] || '#64748b';
-    const addr = (o.address || '').split(',')[0] || '—';
-    return `
-    <div style="background:#0f172a;border-radius:10px;margin-bottom:10px;overflow:hidden;border:1px solid #1e293b">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #1e293b">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0">
-          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-          <div style="min-width:0">
-            <div style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:1px">
-              ${escapeHtml(o.serviceLine || '—')} · ${escapeHtml(addr)}
-            </div>
-          </div>
+  el.innerHTML = _gmailThreads.map(thread => {
+    const msg = thread.messages?.[thread.messages.length - 1];
+    const firstMsg = thread.messages?.[0];
+    const headers = msg?.payload?.headers || [];
+    const firstHeaders = firstMsg?.payload?.headers || [];
+    const subj = (firstHeaders.find(h=>h.name==='Subject') || headers.find(h=>h.name==='Subject'))?.value || '(no subject)';
+    const from = headers.find(h=>h.name==='From')?.value || '';
+    const date = headers.find(h=>h.name==='Date')?.value || '';
+    const isUnread = msg?.labelIds?.includes('UNREAD');
+    const count = thread.messages?.length || 1;
+    const sender = from.replace(/<[^>]+>/, '').replace(/"/g,'').trim() || from.match(/<(.+)>/)?.[1] || from;
+    const d = date ? (() => {
+      const dt = new Date(date);
+      const now = new Date();
+      if (dt.toDateString() === now.toDateString()) return dt.toLocaleTimeString(undefined, {hour:'numeric',minute:'2-digit'});
+      return dt.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+    })() : '';
+
+    // Snippet
+    let snippet = '';
+    try {
+      const body = msg?.payload?.parts?.[0]?.body?.data || msg?.payload?.body?.data || '';
+      if (body) snippet = atob(body.replace(/-/g,'+').replace(/_/g,'/')).replace(/<[^>]+>/g,'').trim().slice(0,80);
+      else snippet = msg?.snippet || '';
+    } catch(e) { snippet = msg?.snippet || ''; }
+
+    return `<div onclick="gwOpenThread('${thread.id}')"
+      style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid #1e293b;cursor:pointer;background:${isUnread?'#0f172a':'#0a0f1a'};transition:background .1s"
+      onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='${isUnread?'#0f172a':'#0a0f1a'}'">
+      <div style="width:8px;height:8px;border-radius:50%;background:${isUnread?'#00A7E1':'transparent'};border:${isUnread?'none':'1px solid #334155'};margin-top:6px;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-size:13px;font-weight:${isUnread?'700':'500'};color:${isUnread?'#e2e8f0':'#94a3b8'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sender)}</div>
+          <div style="font-size:11px;color:#475569;flex-shrink:0">${d}${count>1?` <span style="background:#1e293b;border-radius:10px;padding:1px 5px">${count}</span>`:''}</div>
         </div>
-        <span style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;background:${color}22;color:${color};flex-shrink:0;margin-left:8px">
-          ${escapeHtml(o.status)}
-        </span>
+        <div style="font-size:13px;color:${isUnread?'#e2e8f0':'#64748b'};font-weight:${isUnread?'600':'400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${escapeHtml(subj)}</div>
+        <div style="font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">${escapeHtml(snippet)}</div>
       </div>
-      <div style="display:flex;gap:6px;padding:10px 14px;flex-wrap:wrap">
-        <button onclick="intPushLead('${escapeHtml(o.id)}')"
-          style="flex:1;min-width:90px;padding:7px 10px;background:#1e3a5f;border:1px solid #2563eb;border-radius:7px;color:#93c5fd;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-          Customer
-        </button>
-        <button onclick="intOpenEstimateModal('${escapeHtml(o.id)}')"
-          style="flex:1;min-width:90px;padding:7px 10px;background:#1c2a14;border:1px solid #4d7c0f;border-radius:7px;color:#86efac;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-          Estimate
-        </button>
-        <button onclick="intOpenVisitModal('${escapeHtml(o.id)}')"
-          style="flex:1;min-width:90px;padding:7px 10px;background:#1a1030;border:1px solid #6d28d9;border-radius:7px;color:#c4b5fd;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
-          Visit
-        </button>
-        ${o.email ? `<a href="mailto:${escapeHtml(o.email)}"
-          style="flex:none;padding:7px 10px;background:#1a1a1a;border:1px solid #334155;border-radius:7px;color:#94a3b8;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap">
-          Email
-        </a>` : ''}
-      </div>
-    </div>
-    `;
+    </div>`;
   }).join('');
 }
 
-// ── Google interactions ───────────────────────────────────────────────────────
-function intShowGmail() {
-  const gPanel = document.getElementById('int-gmail-panel');
-  const cPanel = document.getElementById('int-cal-panel');
-  const dPanel = document.getElementById('int-drive-panel');
-  const showing = gPanel.style.display !== 'none';
-  gPanel.style.display = showing ? 'none' : 'block';
-  cPanel.style.display = 'none';
-  dPanel.style.display = 'none';
-  if (!showing) intLoadGmail();
-}
-function intShowCalendar() {
-  const gPanel = document.getElementById('int-gmail-panel');
-  const cPanel = document.getElementById('int-cal-panel');
-  const dPanel = document.getElementById('int-drive-panel');
-  const showing = cPanel.style.display !== 'none';
-  cPanel.style.display = showing ? 'none' : 'block';
-  gPanel.style.display = 'none';
-  dPanel.style.display = 'none';
-  if (!showing) intLoadCalendar();
-}
-function intShowDrive() {
-  const gPanel = document.getElementById('int-gmail-panel');
-  const cPanel = document.getElementById('int-cal-panel');
-  const dPanel = document.getElementById('int-drive-panel');
-  const showing = dPanel.style.display !== 'none';
-  dPanel.style.display = showing ? 'none' : 'block';
-  gPanel.style.display = 'none';
-  cPanel.style.display = 'none';
-  if (!showing) intLoadDrive();
-}
-
-async function intLoadGmail() {
-  const el = document.getElementById('int-gmail-list');
+window.gwOpenThread = async function(threadId) {
+  _gmailOpenThread = threadId;
+  const el = document.getElementById('gw-gmail-list');
   if (!el) return;
   el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
   try {
-    const result = await gmailListThreads(8);
-    const threads = result.threads || [];
-    if (!threads.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No recent threads.</p>'; return; }
-    // Fetch metadata for each thread
-    const metaList = await Promise.all(
-      threads.slice(0, 6).map(t => gmailGetThread(t.id).catch(() => null))
-    );
-    el.innerHTML = metaList.filter(Boolean).map(thread => {
-      const msg = thread.messages?.[thread.messages.length - 1];
-      const headers = msg?.payload?.headers || [];
-      const subj = headers.find(h => h.name === 'Subject')?.value || '(no subject)';
-      const from = headers.find(h => h.name === 'From')?.value || '';
-      const date = headers.find(h => h.name === 'Date')?.value || '';
-      const d = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-      const sender = from.split('<')[0].trim().replace(/"/g,'') || from;
-      return `
-        <div class="int-list-row">
-          <div style="min-width:0;flex:1">
-            <div class="int-list-row-title">${escapeHtml(subj)}</div>
-            <div class="int-list-row-meta">From: ${escapeHtml(sender)}${d ? ' · ' + d : ''}</div>
-          </div>
-          <a href="https://mail.google.com/mail/#inbox/${thread.id}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>
-        </div>
-      `;
-    }).join('');
+    const r = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`);
+    const thread = await r.json();
+    gwRenderThreadDetail(el, threadId, thread);
   } catch(e) {
-    el.innerHTML = `<p style="color:#f87171;font-size:13px">Error: ${escapeHtml(e.message)}</p>`;
+    el.innerHTML = `<div style="color:#f87171;padding:20px">${escapeHtml(e.message)}</div>`;
   }
-}
+};
 
-// Calendar view state ('agenda' | 'week' | 'month')
-let _calView = 'agenda';
-let _calEvents = [];
-let _calWeekOffset = 0; // weeks from today
-let _calMonthOffset = 0; // months from today
-
-async function intLoadCalendar() {
-  const el = document.getElementById('int-cal-list');
-  if (!el) return;
-  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+function gwDecodeBody(payload) {
+  // Recursively find the best body part (prefer text/html, fallback text/plain)
+  function findParts(p, type) {
+    if (p.mimeType === type && p.body?.data) return p.body.data;
+    if (p.parts) { for (const sub of p.parts) { const r = findParts(sub, type); if (r) return r; } }
+    return null;
+  }
+  const html = findParts(payload, 'text/html') || findParts(payload, 'text/plain');
+  if (!html) return '';
   try {
-    // Fetch up to 50 events so we have enough for week/month grids
-    const result = await calListUpcoming(50);
-    _calEvents = result.items || [];
-    intRenderCalView(el);
-  } catch(e) {
-    el.innerHTML = `<p style="color:#f87171;font-size:13px">Error: ${escapeHtml(e.message)}</p>`;
-  }
+    return atob(html.replace(/-/g,'+').replace(/_/g,'/'));
+  } catch(e) { return ''; }
 }
 
-function intRenderCalView(el) {
-  if (!el) el = document.getElementById('int-cal-list');
-  if (!el) return;
+function gwRenderThreadDetail(el, threadId, thread) {
+  if (!thread) {
+    // Already have in cache — find from _gmailThreads
+    thread = _gmailThreads.find(t => t.id === threadId);
+    if (!thread) { el.innerHTML = '<div style="color:#f87171;padding:20px">Thread not found</div>'; return; }
+  }
 
-  // Build the view toggle header
-  const navHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-    <div class="cal-view-toggle">
-      <button class="cal-view-btn ${_calView==='month'?'active':''}" onclick="intSetCalView('month')">Month</button>
-      <button class="cal-view-btn ${_calView==='week'?'active':''}" onclick="intSetCalView('week')">Week</button>
-      <button class="cal-view-btn ${_calView==='agenda'?'active':''}" onclick="intSetCalView('agenda')">Agenda</button>
+  const msgs = thread.messages || [];
+  const firstHeaders = msgs[0]?.payload?.headers || [];
+  const subj = firstHeaders.find(h=>h.name==='Subject')?.value || '(no subject)';
+
+  el.innerHTML = `
+<div style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <button onclick="gwBackToList()" style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px">← Back</button>
+  <div style="font-size:16px;font-weight:700;color:#e2e8f0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subj)}</div>
+  <button onclick="gwTrashThread('${threadId}')" style="background:transparent;border:1px solid #7f1d1d;color:#f87171;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px">🗑 Trash</button>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto" id="gw-thread-msgs">
+${msgs.map((msg, idx) => {
+  const h = msg.payload?.headers || [];
+  const from = h.find(x=>x.name==='From')?.value || '';
+  const to   = h.find(x=>x.name==='To')?.value || '';
+  const date = h.find(x=>x.name==='Date')?.value || '';
+  const sender = from.replace(/<[^>]+>/,'').replace(/"/g,'').trim() || from;
+  const dt = date ? new Date(date).toLocaleString(undefined, {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+  const bodyRaw = gwDecodeBody(msg.payload);
+  const isLast = idx === msgs.length - 1;
+  const collapsed = !isLast && msgs.length > 1;
+
+  return `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;${collapsed?'cursor:pointer':''}"
+      ${collapsed?`onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'"`:''}>
+      <div style="width:32px;height:32px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-weight:700;color:#94a3b8;font-size:13px;flex-shrink:0">${escapeHtml(sender[0]?.toUpperCase()||'?')}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;color:#e2e8f0">${escapeHtml(sender)}</div>
+        <div style="font-size:11px;color:#475569">to ${escapeHtml(to)} · ${dt}</div>
+      </div>
+      ${collapsed?'<span style="color:#475569;font-size:12px">click to expand</span>':''}
     </div>
-    <div style="display:flex;gap:6px;align-items:center">
-      <button onclick="intCalPrev()" style="background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px">‹</button>
-      <span id="cal-view-label" style="font-size:12px;font-weight:700;color:#94a3b8;min-width:100px;text-align:center"></span>
-      <button onclick="intCalNext()" style="background:transparent;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px">›</button>
-      <button onclick="intCalToday()" style="background:transparent;border:1px solid #334155;color:#60a5fa;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:700">Today</button>
+    <div style="padding:0 14px 14px;${collapsed?'display:none':''}">
+      ${bodyRaw
+        ? `<iframe srcdoc="${bodyRaw.replace(/"/g,'&quot;').replace(/\n/g,' ')}"
+            style="width:100%;min-height:200px;border:none;background:#fff;border-radius:6px"
+            onload="this.style.height=Math.min(this.contentDocument.body.scrollHeight+20,600)+'px'"></iframe>`
+        : `<div style="font-size:13px;color:#94a3b8;padding:8px 0">${escapeHtml(msg.snippet||'(no content)')}</div>`
+      }
     </div>
   </div>`;
+}).join('')}
+</div>
+<div style="margin-top:16px;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:16px" id="gw-reply-box">
+  <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px">Reply</div>
+  <textarea id="gw-reply-body" rows="4" placeholder="Write your reply…"
+    style="width:100%;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+  <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
+    <button class="secondary-btn" onclick="gwOpenCompose('','${escapeHtml(subj).replace(/'/g,"\\'")}')">New Email</button>
+    <button class="primary-btn" onclick="gwSendReply('${threadId}','${msgs[msgs.length-1]?.id||''}')">Send Reply</button>
+  </div>
+</div>`;
+}
 
-  let bodyHtml = '';
-  if (_calView === 'agenda') bodyHtml = intRenderAgenda();
-  else if (_calView === 'week') bodyHtml = intRenderWeek();
-  else bodyHtml = intRenderMonth();
+window.gwBackToList = function() {
+  _gmailOpenThread = null;
+  const el = document.getElementById('gw-gmail-list');
+  if (el) gwRenderThreadList(el);
+};
 
-  el.innerHTML = navHtml + bodyHtml;
-  // Update the label
-  const labelEl = document.getElementById('cal-view-label');
+window.gwTrashThread = async function(threadId) {
+  if (!confirm('Move this thread to Trash?')) return;
+  try {
+    await gmailTrashThread(threadId);
+    showIntToast('Thread moved to Trash');
+    _gmailOpenThread = null;
+    _gmailThreads = _gmailThreads.filter(t => t.id !== threadId);
+    const el = document.getElementById('gw-gmail-list');
+    if (el) gwRenderThreadList(el);
+  } catch(e) { showIntToast(e.message, 'error'); }
+};
+
+window.gwSendReply = async function(threadId, lastMessageId) {
+  const body = document.getElementById('gw-reply-body')?.value?.trim();
+  if (!body) { showIntToast('Write your reply first', 'warn'); return; }
+  const thread = _gmailThreads.find(t=>t.id===threadId);
+  const msgs = thread?.messages || [];
+  const lastMsg = msgs[msgs.length-1];
+  const headers = lastMsg?.payload?.headers || [];
+  const from = headers.find(h=>h.name==='From')?.value || '';
+  const subj = headers.find(h=>h.name==='Subject')?.value || '';
+  const toAddr = from.match(/<(.+)>/)?.[1] || from;
+  const replySubj = subj.startsWith('Re:') ? subj : `Re: ${subj}`;
+  try {
+    const btn = document.querySelector('#gw-reply-box .primary-btn');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+    await gmailSendEmail({ to: toAddr, subject: replySubj, body: body.replace(/\n/g,'<br>'), replyToMessageId: lastMessageId });
+    showIntToast('Reply sent ✅');
+    document.getElementById('gw-reply-body').value = '';
+    // Refresh the thread
+    setTimeout(() => gwOpenThread(threadId), 800);
+  } catch(e) {
+    showIntToast(e.message, 'error');
+    const btn = document.querySelector('#gw-reply-box .primary-btn');
+    if (btn) { btn.textContent = 'Send Reply'; btn.disabled = false; }
+  }
+};
+
+// ── Compose modal ──────────────────────────────────────────────────────────────
+window.gwOpenCompose = function(prefillTo='', prefillSubject='') {
+  document.getElementById('int-compose-modal').style.display='flex';
+  const toEl = document.getElementById('int-email-to');
+  const subjEl = document.getElementById('int-email-subject');
+  if (toEl && prefillTo) toEl.value = prefillTo;
+  if (subjEl && prefillSubject) subjEl.value = prefillSubject;
+};
+
+// Keep legacy aliases
+function intShowGmail()    { gwSwitchTab('gmail'); }
+function intShowCalendar() { gwSwitchTab('calendar'); }
+function intShowDrive()    { gwSwitchTab('drive'); }
+function intComposeFromTemplate(prefillTo='') { gwOpenCompose(prefillTo); }
+function intLoadGmail()    { gwLoadGmail(); }
+function intLoadCalendar() { gwLoadCalendarEvents(); }
+function intLoadDrive()    { gwLoadDrive(); }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// CALENDAR PANEL
+// ════════════════════════════════════════════════════════════════════════════════
+function gwRenderCalendar() {
+  const el = document.getElementById('gw-panel-calendar');
+  if (!el) return;
+  el.innerHTML = `
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+  <div style="display:flex;gap:4px">
+    ${[['month','Month'],['week','Week'],['agenda','Agenda']].map(([v,l])=>`
+    <button onclick="gwCalSetView('${v}')"
+      style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;
+      ${_calView===v?'background:#00A7E1;color:#fff;border:1.5px solid #00A7E1':'background:#0f172a;color:#94a3b8;border:1.5px solid #1e293b'}">
+      ${l}
+    </button>`).join('')}
+  </div>
+  <div style="display:flex;gap:6px;align-items:center">
+    <button onclick="gwCalPrev()" style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">‹</button>
+    <span id="gw-cal-label" style="font-size:13px;font-weight:700;color:#e2e8f0;min-width:140px;text-align:center"></span>
+    <button onclick="gwCalNext()" style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">›</button>
+    <button onclick="gwCalGoToday()" style="background:#0f172a;border:1px solid #00A7E1;color:#00A7E1;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:700">Today</button>
+  </div>
+  <button class="primary-btn" style="font-size:12px;padding:7px 14px" onclick="intCreateCalendarEvent()">+ New Event</button>
+</div>
+<div id="gw-cal-body" style="min-height:300px"><div class="spinner-wrap"><div class="spinner"></div></div></div>`;
+
+  gwLoadCalendarEvents();
+}
+
+async function gwLoadCalendarEvents() {
+  const el = document.getElementById('gw-cal-body');
+  if (!el) return;
+  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    // Fetch ALL events — past and future
+    const data = await calListAll(250);
+    _calEvents = data.items || [];
+    gwRenderCalBody();
+  } catch(e) {
+    el.innerHTML = `<div style="color:#f87171;padding:20px;font-size:13px">Error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+window.gwCalSetView   = function(v) { _calView=v; gwRenderCalBody(); };
+window.gwCalGoToday   = function() { _calWeekOffset=0; _calMonthOffset=0; gwRenderCalBody(); };
+window.gwCalPrev      = function() { if(_calView==='week') _calWeekOffset--; else if(_calView==='month') _calMonthOffset--; gwRenderCalBody(); };
+window.gwCalNext      = function() { if(_calView==='week') _calWeekOffset++; else if(_calView==='month') _calMonthOffset++; gwRenderCalBody(); };
+
+// Keep legacy aliases
+window.intSetCalView = window.gwCalSetView;
+window.intCalPrev    = window.gwCalPrev;
+window.intCalNext    = window.gwCalNext;
+window.intCalToday   = window.gwCalGoToday;
+
+function gwRenderCalBody() {
+  const el = document.getElementById('gw-cal-body');
+  if (!el) return;
+
+  // Update view toggle active states
+  ['month','week','agenda'].forEach(v => {
+    const btn = document.querySelector(`button[onclick="gwCalSetView('${v}')"]`);
+    if (btn) {
+      btn.style.background = v===_calView?'#00A7E1':'#0f172a';
+      btn.style.color      = v===_calView?'#fff':'#94a3b8';
+      btn.style.borderColor= v===_calView?'#00A7E1':'#1e293b';
+    }
+  });
+
+  // Update label
+  const labelEl = document.getElementById('gw-cal-label');
   if (labelEl) {
     const today = new Date();
-    if (_calView === 'agenda') labelEl.textContent = 'Upcoming';
-    else if (_calView === 'week') {
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - today.getDay() + _calWeekOffset * 7);
-      labelEl.textContent = weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    if (_calView==='agenda') labelEl.textContent = 'All Events';
+    else if (_calView==='week') {
+      const ws = new Date(today); ws.setDate(today.getDate() - today.getDay() + _calWeekOffset*7);
+      const we = new Date(ws); we.setDate(ws.getDate()+6);
+      labelEl.textContent = ws.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' – '+we.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
     } else {
-      const d = new Date(today.getFullYear(), today.getMonth() + _calMonthOffset, 1);
-      labelEl.textContent = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      const d = new Date(today.getFullYear(), today.getMonth()+_calMonthOffset, 1);
+      labelEl.textContent = d.toLocaleDateString(undefined,{month:'long',year:'numeric'});
     }
   }
+
+  if (_calView==='agenda') el.innerHTML = gwRenderAgendaAll();
+  else if (_calView==='week') el.innerHTML = gwRenderWeek();
+  else el.innerHTML = gwRenderMonth();
 }
 
-function intRenderAgenda() {
-  const events = _calEvents;
-  if (!events.length) return '<p style="color:var(--muted);font-size:13px">No upcoming events.</p>';
-  const byDay = {};
-  events.forEach(ev => {
+function gwEventColor(ev) {
+  // Use Google's colorId if present
+  const colors = {1:'#7986cb',2:'#33b679',3:'#8e24aa',4:'#e67c73',5:'#f6c026',6:'#f5511d',7:'#039be5',8:'#616161',9:'#3f51b5',10:'#0b8043',11:'#d60000'};
+  if (ev.colorId && colors[ev.colorId]) return colors[ev.colorId];
+  return '#00A7E1';
+}
+
+function gwRenderAgendaAll() {
+  // Show ALL events grouped by month, with past events clearly labeled
+  if (!_calEvents.length) return '<div style="text-align:center;padding:40px;color:#475569">No events found in your calendar.</div>';
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const byMonth = {};
+  _calEvents.forEach(ev => {
     const start = ev.start?.dateTime || ev.start?.date || '';
-    const dayKey = start ? new Date(start).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'Unknown';
-    if (!byDay[dayKey]) byDay[dayKey] = [];
-    byDay[dayKey].push(ev);
+    if (!start) return;
+    const d = new Date(start);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!byMonth[key]) byMonth[key] = [];
+    byMonth[key].push(ev);
   });
-  return Object.entries(byDay).map(([day, dayEvents]) => `
-    <div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px;padding:0 2px">${day}</div>
-      ${dayEvents.map(ev => {
-        const t = ev.start?.dateTime ? new Date(ev.start.dateTime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'All day';
-        const end = ev.end?.dateTime ? new Date(ev.end.dateTime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
-        return `<div class="int-list-row">
-          <div style="min-width:0;flex:1">
-            <div class="int-list-row-title">${escapeHtml(ev.summary || '(no title)')}</div>
-            <div class="int-list-row-meta">${t}${end ? ' – ' + end : ''}${ev.location ? ' · ' + escapeHtml(ev.location) : ''}</div>
+
+  const keys = Object.keys(byMonth).sort();
+  return `<div style="display:flex;flex-direction:column;gap:24px;max-height:70vh;overflow-y:auto;padding-right:4px">` +
+  keys.map(key => {
+    const [yr, mo] = key.split('-').map(Number);
+    const monthDate = new Date(yr, mo-1, 1);
+    const monthLabel = monthDate.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+    const isPast = new Date(yr, mo, 0) < today; // last day of month < today
+    return `
+    <div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${isPast?'#475569':'#94a3b8'};margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #1e293b">
+        ${monthLabel}${isPast?' · Past':''}
+      </div>
+      ${byMonth[key].map(ev => {
+        const start = ev.start?.dateTime || ev.start?.date || '';
+        const end   = ev.end?.dateTime   || ev.end?.date   || '';
+        const isAllDay = !ev.start?.dateTime;
+        const evDate = new Date(start);
+        const isPastEv = evDate < today;
+        const isToday  = evDate.toDateString()===new Date().toDateString();
+        const color = gwEventColor(ev);
+        const timeStr = isAllDay ? 'All day' :
+          new Date(start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) +
+          (end ? ' – '+new Date(end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : '');
+        const dayStr = evDate.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+        return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')"
+          style="display:flex;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;
+          background:${isToday?color+'18':isPastEv?'#0a0f1a':'#0f172a'};
+          border:1px solid ${isToday?color+'60':isPastEv?'#1e293b':'#1e293b'};
+          opacity:${isPastEv&&!isToday?.7:1};transition:background .1s"
+          onmouseover="this.style.background='${color}18'" onmouseout="this.style.background='${isToday?color+'18':isPastEv?'#0a0f1a':'#0f172a'}'">
+          <div style="width:3px;border-radius:2px;background:${color};flex-shrink:0;align-self:stretch;min-height:24px"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:${isPastEv&&!isToday?'#64748b':'#e2e8f0'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
+            <div style="font-size:11px;color:#475569;margin-top:2px">${dayStr} · ${timeStr}${ev.location?' · '+escapeHtml(ev.location.slice(0,40)):''}</div>
           </div>
-          ${ev.htmlLink ? `<a href="${escapeHtml(ev.htmlLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
+          ${isToday?`<span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0;align-self:center">TODAY</span>`:''}
         </div>`;
       }).join('')}
-    </div>
-  `).join('');
-}
-
-function intRenderWeek() {
-  const today = new Date();
-  const todayNum = today.getDate();
-  const todayMonth = today.getMonth();
-  const todayYear = today.getFullYear();
-  // Week starts Sunday
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - today.getDay() + _calWeekOffset * 7);
-  weekStart.setHours(0,0,0,0);
-
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    days.push(d);
-  }
-  const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const hours = [];
-  for (let h = 7; h <= 19; h++) hours.push(h); // 7am – 7pm
-
-  // Header row
-  let html = `<div class="cal-week-grid">
-    <div class="cal-week-header" style="background:#0a0f1a"></div>
-    ${days.map(d => {
-      const isToday = d.getDate()===todayNum && d.getMonth()===todayMonth && d.getFullYear()===todayYear;
-      const domHtml = isToday
-        ? `<div class="dom today-num">${d.getDate()}</div>`
-        : `<div class="dom">${d.getDate()}</div>`;
-      return `<div class="cal-week-header"><div class="dow">${dowLabels[d.getDay()]}</div>${domHtml}</div>`;
-    }).join('')}`;
-
-  // Time rows
-  hours.forEach(h => {
-    const label = h === 12 ? '12 PM' : h > 12 ? `${h-12} PM` : `${h} AM`;
-    html += `<div class="cal-week-time-label">${label}</div>`;
-    days.forEach(d => {
-      // Find events in this hour
-      const cellEvents = _calEvents.filter(ev => {
-        if (!ev.start?.dateTime) return false;
-        const eStart = new Date(ev.start.dateTime);
-        return eStart.getFullYear()===d.getFullYear() &&
-               eStart.getMonth()===d.getMonth() &&
-               eStart.getDate()===d.getDate() &&
-               eStart.getHours()===h;
-      });
-      const evHtml = cellEvents.map(ev => {
-        const t = new Date(ev.start.dateTime).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
-        return `<a href="${escapeHtml(ev.htmlLink||'#')}" target="_blank" rel="noopener" class="cal-week-event" title="${escapeHtml(ev.summary||'')}">${t} ${escapeHtml((ev.summary||'(no title)').slice(0,20))}</a>`;
-      }).join('');
-      html += `<div class="cal-week-cell">${evHtml}</div>`;
-    });
-  });
-  html += '</div>';
-  return html;
-}
-
-function intRenderMonth() {
-  const today = new Date();
-  const viewDate = new Date(today.getFullYear(), today.getMonth() + _calMonthOffset, 1);
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-  let html = `<div class="cal-month-grid">
-    ${dowLabels.map(d => `<div class="cal-month-day-header">${d}</div>`).join('')}`;
-
-  // Pad empty cells before day 1
-  for (let i = 0; i < firstDay; i++) {
-    html += `<div class="cal-month-cell other-month"></div>`;
-  }
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-    const dayEvents = _calEvents.filter(ev => {
-      const s = ev.start?.dateTime || ev.start?.date;
-      if (!s) return false;
-      const d = new Date(s);
-      return d.getFullYear()===year && d.getMonth()===month && d.getDate()===day;
-    });
-    const evChips = dayEvents.slice(0,3).map(ev =>
-      `<div class="cal-event-chip" title="${escapeHtml(ev.summary||'')}" onclick="window.open('${escapeHtml(ev.htmlLink||'')}','_blank')">${escapeHtml((ev.summary||'Event').slice(0,16))}</div>`
-    ).join('');
-    const moreCount = dayEvents.length - 3;
-    html += `<div class="cal-month-cell${isToday?' today':''}">
-      <div class="cal-month-cell-num">${day}</div>
-      ${evChips}
-      ${moreCount > 0 ? `<div style="font-size:10px;color:#64748b;margin-top:1px">+${moreCount} more</div>` : ''}
     </div>`;
-  }
+  }).join('') + '</div>';
+}
 
-  // Pad to complete final week row
-  const totalCells = firstDay + daysInMonth;
-  const remaining = (7 - (totalCells % 7)) % 7;
-  for (let i = 0; i < remaining; i++) {
-    html += `<div class="cal-month-cell other-month"></div>`;
-  }
-  html += '</div>';
+function gwRenderWeek() {
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay() + _calWeekOffset*7);
+  weekStart.setHours(0,0,0,0);
+  const days = Array.from({length:7}, (_,i) => { const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
+  const hours = Array.from({length:24}, (_,i) => i); // all 24h
+  const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  let html = `<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:52px repeat(7,1fr);min-width:600px">
+    <div style="background:#0a0f1a;border-bottom:1px solid #1e293b"></div>
+    ${days.map(d => {
+      const isToday = d.toDateString()===today.toDateString();
+      const isPast  = d < today && !isToday;
+      return `<div style="padding:8px 4px;text-align:center;border-bottom:1px solid #1e293b;border-left:1px solid #1e293b;background:#0a0f1a">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${isPast?'#334155':'#64748b'}">${dowLabels[d.getDay()]}</div>
+        <div style="font-size:18px;font-weight:800;color:${isToday?'#00A7E1':isPast?'#334155':'#e2e8f0'};width:28px;height:28px;border-radius:50%;background:${isToday?'#00A7E122':'transparent'};display:flex;align-items:center;justify-content:center;margin:2px auto 0">${d.getDate()}</div>
+      </div>`;
+    }).join('')}
+    ${hours.map(h => {
+      const label = h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`;
+      const isCurrentHour = h===today.getHours() && _calWeekOffset===0;
+      return `
+        <div style="padding:2px 4px;text-align:right;font-size:10px;color:#475569;border-top:1px solid #0f172a;line-height:36px;height:36px;box-sizing:border-box;${isCurrentHour?'color:#00A7E1':''}">${label}</div>
+        ${days.map(d => {
+          const cellEvs = _calEvents.filter(ev => {
+            if (!ev.start?.dateTime) return false;
+            const s = new Date(ev.start.dateTime);
+            return s.getFullYear()===d.getFullYear()&&s.getMonth()===d.getMonth()&&s.getDate()===d.getDate()&&s.getHours()===h;
+          });
+          const isNowCell = isCurrentHour && d.toDateString()===today.toDateString();
+          return `<div style="border-top:1px solid #0f172a;border-left:1px solid #1e293b;height:36px;position:relative;background:${isNowCell?'#00A7E108':'transparent'}">
+            ${cellEvs.map(ev=>{
+              const color=gwEventColor(ev);
+              const t=new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+              return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}" style="position:absolute;inset:1px 1px auto;background:${color};border-radius:3px;padding:1px 4px;font-size:10px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;z-index:1">${t} ${escapeHtml((ev.summary||'Event').slice(0,18))}</div>`;
+            }).join('')}
+          </div>`;
+        }).join('')}`;
+    }).join('')}
+  </div></div>`;
   return html;
 }
 
-window.intSetCalView = function(v) { _calView = v; intRenderCalView(); };
-window.intCalPrev = function() {
-  if (_calView === 'week') _calWeekOffset--;
-  else if (_calView === 'month') _calMonthOffset--;
-  intRenderCalView();
-};
-window.intCalNext = function() {
-  if (_calView === 'week') _calWeekOffset++;
-  else if (_calView === 'month') _calMonthOffset++;
-  intRenderCalView();
-};
-window.intCalToday = function() {
-  _calWeekOffset = 0; _calMonthOffset = 0;
-  intRenderCalView();
-};
+function gwRenderMonth() {
+  const today = new Date();
+  const viewDate = new Date(today.getFullYear(), today.getMonth()+_calMonthOffset, 1);
+  const year=viewDate.getFullYear(), month=viewDate.getMonth();
+  const firstDay = new Date(year,month,1).getDay();
+  const daysInMonth = new Date(year,month+1,0).getDate();
+  const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-async function intLoadDrive() {
-  const el = document.getElementById('int-drive-list');
-  if (!el) return;
-  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
-  try {
-    const result = await driveListFiles('', 10);
-    const files = result.files || [];
-    if (!files.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No files found.</p>'; return; }
-    el.innerHTML = files.map(f => {
-      const icon = f.mimeType?.includes('folder') ? '&#x25a1;' :
-        f.mimeType?.includes('pdf') ? 'PDF' :
-        f.mimeType?.includes('sheet') ? 'XLS' :
-        f.mimeType?.includes('document') ? 'DOC' :
-        f.mimeType?.includes('image') ? 'IMG' : 'FILE';
-      const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-      const typeLabel = f.mimeType?.includes('folder') ? 'Folder' : f.mimeType?.split('/').pop()?.replace('vnd.google-apps.','').replace('vnd.openxmlformats-officedocument.','') || 'File';
-      return `
-        <div class="int-list-row">
-          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
-            <span style="font-size:22px;flex-shrink:0">${icon}</span>
-            <div style="min-width:0">
-              <div class="int-list-row-title">${escapeHtml(f.name)}</div>
-              <div class="int-list-row-meta">${typeLabel}${modified ? ' · Modified ' + modified : ''}</div>
-            </div>
-          </div>
-          ${f.webViewLink ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
-        </div>
-      `;
-    }).join('');
-  } catch(e) {
-    el.innerHTML = `<p style="color:#f87171;font-size:13px">Error: ${escapeHtml(e.message)}</p>`;
-  }
+  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid #1e293b;border-top:1px solid #1e293b">
+    ${dowLabels.map(d=>`<div style="padding:6px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;border-right:1px solid #1e293b;border-bottom:1px solid #1e293b">${d}</div>`).join('')}
+    ${Array.from({length:firstDay},()=>`<div style="border-right:1px solid #1e293b;border-bottom:1px solid #1e293b;min-height:80px;background:#060a12"></div>`).join('')}
+    ${Array.from({length:daysInMonth},(_,i)=>{
+      const day=i+1;
+      const cellDate=new Date(year,month,day);
+      const isToday=cellDate.toDateString()===today.toDateString();
+      const isPast=cellDate<new Date(today.getFullYear(),today.getMonth(),today.getDate());
+      const dayEvs=_calEvents.filter(ev=>{
+        const s=ev.start?.dateTime||ev.start?.date||''; if(!s) return false;
+        const d=new Date(s); return d.getFullYear()===year&&d.getMonth()===month&&d.getDate()===day;
+      });
+      return `<div style="border-right:1px solid #1e293b;border-bottom:1px solid #1e293b;min-height:80px;padding:4px;background:${isToday?'#00A7E108':isPast?'#060a12':'#0a0f1a'}">
+        <div style="font-size:13px;font-weight:${isToday?'800':'500'};color:${isToday?'#00A7E1':isPast?'#334155':'#94a3b8'};width:24px;height:24px;border-radius:50%;background:${isToday?'#00A7E133':'transparent'};display:flex;align-items:center;justify-content:center;margin-bottom:3px">${day}</div>
+        ${dayEvs.slice(0,3).map(ev=>{
+          const color=gwEventColor(ev);
+          const isAllDay=!ev.start?.dateTime;
+          const t=isAllDay?'All day':new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+          return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}"
+            style="background:${color}22;border-left:2px solid ${color};border-radius:3px;padding:2px 4px;font-size:10px;font-weight:600;color:${color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;margin-bottom:2px">
+            ${t} ${escapeHtml((ev.summary||'Event').slice(0,16))}
+          </div>`;
+        }).join('')}
+        ${dayEvs.length>3?`<div style="font-size:10px;color:#475569;padding-left:2px">+${dayEvs.length-3} more</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
+  return html;
 }
 
-async function intSearchDrive() {
-  const query = document.getElementById('int-drive-search')?.value || '';
-  const el = document.getElementById('int-drive-list');
-  if (!el) return;
-  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
-  try {
-    const result = await driveListFiles(query, 15);
-    const files = result.files || [];
-    if (!files.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No files matching that search.</p>'; return; }
-    el.innerHTML = files.map(f => {
-      const icon = f.mimeType?.includes('folder') ? '&#x25a1;' :
-        f.mimeType?.includes('pdf') ? 'PDF' :
-        f.mimeType?.includes('sheet') ? 'XLS' :
-        f.mimeType?.includes('document') ? 'DOC' :
-        f.mimeType?.includes('image') ? 'IMG' : 'FILE';
-      return `
-        <div class="int-list-row">
-          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
-            <span style="font-size:20px;flex-shrink:0">${icon}</span>
-            <div style="min-width:0">
-              <div class="int-list-row-title">${escapeHtml(f.name)}</div>
-              <div class="int-list-row-meta">File</div>
-            </div>
-          </div>
-          ${f.webViewLink ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener" class="int-list-row-link">Open →</a>` : ''}
-        </div>
-      `;
-    }).join('');
-  } catch(e) {
-    el.innerHTML = `<p style="color:#f87171;font-size:13px">Error: ${escapeHtml(e.message)}</p>`;
-  }
-}
+window.gwCalEventClick = function(eventId) {
+  const ev = _calEvents.find(e=>e.id===eventId);
+  if (!ev) return;
+  const isAllDay = !ev.start?.dateTime;
+  const start = ev.start?.dateTime||ev.start?.date||'';
+  const end   = ev.end?.dateTime||ev.end?.date||'';
+  const color = gwEventColor(ev);
+  const timeStr = isAllDay ? 'All day' :
+    new Date(start).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+
+    (end?' – '+new Date(end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):'');
 
-// ── Google OAuth connect ──────────────────────────────────────────────────────
-async function intSaveClientIdAndConnect() {
-  const clientId = document.getElementById('gClientIdInput')?.value?.trim();
-  if (!clientId) { showIntToast('Paste your Google Client ID first', 'warn'); return; }
-  saveIntState({ googleClientId: clientId });
-  // Delegate to per-user connect flow from user_management.js
-  if (typeof window._umMyConnect === 'function') {
-    await window._umMyConnect();
-    // _umMyConnect toasts + refreshes on its own; just re-render after a moment
-    setTimeout(() => integrations(), 1200);
+  const modal = document.createElement('div');
+  modal.id = 'gw-event-modal';
+  modal.style.cssText='position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML=`
+<div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:24px;width:min(480px,100%);max-height:85vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <div style="width:4px;background:${color};border-radius:2px;align-self:stretch;min-height:20px"></div>
+      <div>
+        <div style="font-weight:800;font-size:17px;color:#e2e8f0">${escapeHtml(ev.summary||'(No title)')}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px">${timeStr}</div>
+        ${ev.location?`<div style="font-size:12px;color:#94a3b8;margin-top:2px">📍 ${escapeHtml(ev.location)}</div>`:''}
+      </div>
+    </div>
+    <button onclick="document.getElementById('gw-event-modal').remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:20px;padding:0 4px;flex-shrink:0">✕</button>
+  </div>
+  ${ev.description?`<div style="font-size:13px;color:#94a3b8;background:#1e293b;border-radius:8px;padding:12px;margin-bottom:14px;line-height:1.6">${escapeHtml(ev.description)}</div>`:''}
+  ${ev.attendees?.length?`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Attendees</div>
+    ${ev.attendees.map(a=>`<div style="font-size:12px;color:#94a3b8;padding:3px 0">${escapeHtml(a.displayName||a.email)} ${a.responseStatus==='accepted'?'✅':a.responseStatus==='declined'?'❌':a.responseStatus==='tentative'?'🤔':'⏳'}</div>`).join('')}</div>`:''}
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    ${ev.htmlLink?`<a href="${escapeHtml(ev.htmlLink)}" target="_blank" rel="noopener" class="secondary-btn" style="font-size:12px">Open in Google Calendar →</a>`:''}
+    <button class="secondary-btn" style="font-size:12px" onclick="gwEditEvent('${escapeHtml(ev.id)}')">✏️ Edit</button>
+    <button class="danger-btn" style="font-size:12px" onclick="gwDeleteEvent('${escapeHtml(ev.id)}')">🗑 Delete</button>
+  </div>
+</div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+};
+
+window.gwDeleteEvent = async function(eventId) {
+  if (!confirm('Delete this event from your Google Calendar?')) return;
+  try {
+    await calDeleteEvent(eventId);
+    _calEvents = _calEvents.filter(e=>e.id!==eventId);
+    document.getElementById('gw-event-modal')?.remove();
+    showIntToast('Event deleted');
+    gwRenderCalBody();
+  } catch(e) { showIntToast(e.message,'error'); }
+};
+
+window.gwEditEvent = function(eventId) {
+  const ev = _calEvents.find(e=>e.id===eventId);
+  if (!ev) return;
+  document.getElementById('gw-event-modal')?.remove();
+  const isAllDay = !ev.start?.dateTime;
+  const startVal = isAllDay ? (ev.start?.date||'') : new Date(ev.start.dateTime).toISOString().slice(0,16);
+  const endVal   = isAllDay ? (ev.end?.date||'')   : (ev.end?.dateTime ? new Date(ev.end.dateTime).toISOString().slice(0,16) : '');
+  const modal=document.createElement('div');
+  modal.id='gw-edit-modal';
+  modal.style.cssText='position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML=`
+<div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:24px;width:min(480px,100%);max-height:85vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;margin-bottom:18px">
+    <h3 style="margin:0">Edit Event</h3>
+    <button onclick="document.getElementById('gw-edit-modal').remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:20px">✕</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Title</label>
+      <input id="gw-edit-title" class="um-input" type="text" value="${escapeHtml(ev.summary||'')}" style="margin-top:6px"></div>
+    <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">${isAllDay?'Date':'Start'}</label>
+      <input id="gw-edit-start" class="um-input" type="${isAllDay?'date':'datetime-local'}" value="${startVal}" style="margin-top:6px"></div>
+    ${!isAllDay?`<div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">End</label>
+      <input id="gw-edit-end" class="um-input" type="datetime-local" value="${endVal}" style="margin-top:6px"></div>`:''}
+    <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Location</label>
+      <input id="gw-edit-loc" class="um-input" type="text" value="${escapeHtml(ev.location||'')}" style="margin-top:6px"></div>
+    <div><label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Description</label>
+      <textarea id="gw-edit-desc" class="um-input" rows="3" style="margin-top:6px;resize:vertical">${escapeHtml(ev.description||'')}</textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="secondary-btn" onclick="document.getElementById('gw-edit-modal').remove()">Cancel</button>
+      <button class="primary-btn" onclick="gwSubmitEditEvent('${escapeHtml(ev.id)}',${isAllDay})">Save Changes</button>
+    </div>
+  </div>
+</div>`;
+  document.body.appendChild(modal);
+};
+
+window.gwSubmitEditEvent = async function(eventId, isAllDay) {
+  const title = document.getElementById('gw-edit-title')?.value?.trim();
+  const start = document.getElementById('gw-edit-start')?.value;
+  const end   = document.getElementById('gw-edit-end')?.value;
+  const loc   = document.getElementById('gw-edit-loc')?.value?.trim();
+  const desc  = document.getElementById('gw-edit-desc')?.value?.trim();
+  if (!title||!start) { showIntToast('Title and start time required','warn'); return; }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const fields = {
+    summary: title,
+    location: loc||'',
+    description: desc||''
+  };
+  if (isAllDay) {
+    fields.start={date:start}; fields.end={date:end||start};
   } else {
-    // Fallback to old shared flow if user_management not loaded yet
-    const ok = await googleOAuthConnect();
-    if (ok) integrations();
+    fields.start={dateTime:new Date(start).toISOString(),timeZone:tz};
+    fields.end  ={dateTime:new Date(end||start).toISOString(),timeZone:tz};
+  }
+  try {
+    const updated = await calUpdateEvent(eventId, fields);
+    const idx = _calEvents.findIndex(e=>e.id===eventId);
+    if (idx>=0) _calEvents[idx]={..._calEvents[idx],...updated};
+    document.getElementById('gw-edit-modal')?.remove();
+    showIntToast('Event updated ✅');
+    gwRenderCalBody();
+  } catch(e) { showIntToast(e.message,'error'); }
+};
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DRIVE PANEL
+// ════════════════════════════════════════════════════════════════════════════════
+function gwRenderDrive() {
+  const el = document.getElementById('gw-panel-drive');
+  if (!el) return;
+  el.innerHTML = `
+<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+  <input id="gw-drive-search" type="text" placeholder="Search files and folders…"
+    style="flex:1;min-width:200px;padding:9px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px"
+    onkeydown="if(event.key==='Enter')gwSearchDrive()">
+  <button class="primary-btn" style="font-size:12px;padding:9px 16px" onclick="gwSearchDrive()">Search</button>
+  <button class="secondary-btn" style="font-size:12px;padding:9px 14px" onclick="gwLoadDrive()">Recent Files</button>
+</div>
+<div id="gw-drive-list" style="min-height:200px"><div class="spinner-wrap"><div class="spinner"></div></div></div>`;
+  gwLoadDrive();
+}
+
+async function gwLoadDrive(query='') {
+  const el = document.getElementById('gw-drive-list');
+  if (!el) return;
+  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const result = await driveListFiles(query, 30);
+    _driveFiles = result.files || [];
+    gwRenderDriveList(el, _driveFiles);
+  } catch(e) {
+    el.innerHTML = `<div style="color:#f87171;padding:20px;font-size:13px">Error: ${escapeHtml(e.message)}</div>`;
   }
 }
 
-function intGoogleDisconnect() {
-  googleDisconnect();
-  integrations();
+window.gwSearchDrive = async function() {
+  const q = document.getElementById('gw-drive-search')?.value?.trim();
+  gwLoadDrive(q);
+};
+
+const DRIVE_ICONS = {
+  'application/vnd.google-apps.folder':       {icon:'📁',label:'Folder',color:'#f59e0b'},
+  'application/vnd.google-apps.document':     {icon:'📄',label:'Doc',color:'#4285f4'},
+  'application/vnd.google-apps.spreadsheet':  {icon:'📊',label:'Sheet',color:'#0f9d58'},
+  'application/vnd.google-apps.presentation': {icon:'📑',label:'Slides',color:'#f4b400'},
+  'application/vnd.google-apps.form':         {icon:'📝',label:'Form',color:'#7c3aed'},
+  'application/pdf':                           {icon:'📕',label:'PDF',color:'#ef4444'},
+  'image/jpeg':                                {icon:'🖼️',label:'Image',color:'#ec4899'},
+  'image/png':                                 {icon:'🖼️',label:'Image',color:'#ec4899'},
+  'video/mp4':                                 {icon:'🎬',label:'Video',color:'#8b5cf6'},
+};
+
+function gwRenderDriveList(el, files) {
+  if (!files.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:#475569">No files found.</div>'; return; }
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:4px">` +
+  files.map(f => {
+    const mime = f.mimeType || '';
+    const info = DRIVE_ICONS[mime] || {icon:'📎',label:mime.split('/').pop()?.slice(0,6)||'File',color:'#64748b'};
+    const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '';
+    const size = f.size ? (f.size>1048576?(f.size/1048576).toFixed(1)+'MB':f.size>1024?(f.size/1024).toFixed(0)+'KB':f.size+'B') : '';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;transition:background .1s"
+      onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+      <span style="font-size:22px;flex-shrink:0">${info.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.name)}</div>
+        <div style="font-size:11px;color:#475569;margin-top:1px">${info.label}${modified?' · Modified '+modified:''}${size?' · '+size:''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        ${f.webViewLink?`<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener"
+          style="padding:5px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:12px;text-decoration:none;font-weight:600">
+          Open →
+        </a>`:''}
+      </div>
+    </div>`;
+  }).join('') + '</div>';
 }
 
-// ── Compose Email ─────────────────────────────────────────────────────────────
-function intComposeFromTemplate(prefillTo = '') {
+// Expose for legacy call sites
+window.intSearchDrive = window.gwSearchDrive;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// HOMEWORKS PANEL (unchanged from before, just moved into a panel)
+// ════════════════════════════════════════════════════════════════════════════════
+function gwRenderHomeworks() {
+  const el = document.getElementById('gw-panel-homeworks');
+  if (!el) return;
+  const hwOk = isHomeworksConnected();
+  el.innerHTML = `
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:24px">
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px">
+    <h3 style="margin:0 0 12px;font-size:15px">Webhook Settings</h3>
+    <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">ZAPIER WEBHOOK URL</label>
+    <input id="zapierWebhookInput" type="url"
+      placeholder="https://hooks.zapier.com/hooks/catch/…"
+      value="${escapeHtml(getZapierWebhookUrl())}"
+      style="width:100%;margin-top:6px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="primary-btn" onclick="intSaveZapierUrl()">Save URL</button>
+      ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Test Ping</button>`:''}
+    </div>
+  </div>
+  ${hwOk?`
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px">
+    <h3 style="margin:0 0 12px;font-size:15px">Quick Links</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      ${[['Add Customer','https://secure.copilotcrm.com/customers/add-new-customer'],
+         ['Add Property','https://secure.copilotcrm.com/assets/add-new-asset'],
+         ['New Estimate','https://secure.copilotcrm.com/finances/estimates/add'],
+         ['Schedule Visit','https://secure.copilotcrm.com/scheduler/addvisit'],
+         ['Estimates','https://secure.copilotcrm.com/finances/estimates'],
+         ['Calendar','https://secure.copilotcrm.com/scheduler/month']
+        ].map(([l,u])=>`<a href="${u}" target="_blank" rel="noopener"
+          style="padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">${l}</a>`).join('')}
+    </div>
+  </div>`:''}
+</div>
+${hwOk?`
+<h3 style="font-size:15px;margin:0 0 12px">Sync Opportunities → Homeworks</h3>
+<div style="max-height:500px;overflow-y:auto">${renderHwOpps()}</div>`
+:'<div style="color:#64748b;font-size:13px;padding:20px 0">Add your Zapier webhook URL above to enable Homeworks sync.</div>'}
+`;
+}
+
+// ── Google interactions (legacy compat) ───────────────────────────────────────
+function intGoogleDisconnect() { googleDisconnect(); integrations(); }
+
+// ── Compose Email (global modal) ──────────────────────────────────────────────
+function intComposeFromTemplateModal(prefillTo = '') {
   const modal = document.getElementById('int-compose-modal');
   if (!modal) return;
   modal.style.display = 'flex';
   if (prefillTo) { const el = document.getElementById('int-email-to'); if(el) el.value = prefillTo; }
 }
-
 function intFillTemplate() {
   const idx = parseInt(document.getElementById('int-tmpl-select')?.value, 10);
   if (isNaN(idx)) return;
@@ -1338,14 +1382,12 @@ function intFillTemplate() {
   if (subj) subj.value = tmpl.subject || '';
   if (body) body.value = (tmpl.body || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
 }
-
 function intOpenInGmail() {
   const to = document.getElementById('int-email-to')?.value || '';
   const subject = document.getElementById('int-email-subject')?.value || '';
   const body = document.getElementById('int-email-body')?.value || '';
   window.open(gmailComposeUrl(to, subject, body), '_blank', 'width=800,height=600');
 }
-
 async function intSendEmail() {
   const to = document.getElementById('int-email-to')?.value?.trim();
   const subject = document.getElementById('int-email-subject')?.value?.trim();
@@ -1353,27 +1395,31 @@ async function intSendEmail() {
   if (!to || !subject || !body) { showIntToast('Fill in To, Subject, and Body', 'warn'); return; }
   if (!isGoogleConnected()) { showIntToast('Connect Google first', 'warn'); return; }
   try {
+    const btn = document.querySelector('#int-compose-modal .primary-btn');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
     const htmlBody = body.replace(/\n/g, '<br>');
     await gmailSendEmail({ to, subject, body: htmlBody });
-    showIntToast('Email sent', 'success');
+    showIntToast('Email sent ✅');
     document.getElementById('int-compose-modal').style.display = 'none';
-    intLoadGmail();
+    if (_gwTab === 'gmail') gwLoadGmail();
+    if (btn) { btn.textContent = 'Send via Gmail'; btn.disabled = false; }
   } catch(e) {
     showIntToast(e.message, 'error');
+    const btn = document.querySelector('#int-compose-modal .primary-btn');
+    if (btn) { btn.textContent = 'Send via Gmail'; btn.disabled = false; }
   }
 }
 
-// ── Calendar event ────────────────────────────────────────────────────────────
+// ── Calendar event create modal ───────────────────────────────────────────────
 function intCreateCalendarEvent(prefill = {}) {
   const modal = document.getElementById('int-cal-modal');
   if (!modal) return;
   modal.style.display = 'flex';
   if (prefill.title) { const el = document.getElementById('int-cal-title'); if(el) el.value = prefill.title; }
-  if (prefill.date) { const el = document.getElementById('int-cal-date'); if(el) el.value = prefill.date; }
+  if (prefill.date)  { const el = document.getElementById('int-cal-date');  if(el) el.value = prefill.date; }
   if (prefill.attendee) { const el = document.getElementById('int-cal-attendee'); if(el) el.value = prefill.attendee; }
   if (prefill.notes) { const el = document.getElementById('int-cal-notes'); if(el) el.value = prefill.notes; }
 }
-
 async function intSubmitCalEvent() {
   const summary = document.getElementById('int-cal-title')?.value?.trim();
   const startDate = document.getElementById('int-cal-date')?.value;
@@ -1385,292 +1431,49 @@ async function intSubmitCalEvent() {
   if (!isGoogleConnected()) { showIntToast('Connect Google first', 'warn'); return; }
   try {
     const ev = await calCreateEvent({ summary, description, startDate, startTime, durationHours, attendees: attendee ? [attendee] : [] });
-    showIntToast('Event created', 'success');
+    showIntToast('Event created ✅');
     document.getElementById('int-cal-modal').style.display = 'none';
-    if (ev.htmlLink) window.open(ev.htmlLink, '_blank');
-    intLoadCalendar();
-  } catch(e) {
-    showIntToast(e.message, 'error');
-  }
+    // Add to local cache and re-render
+    if (ev.id) {
+      _calEvents.push(ev);
+      _calEvents.sort((a,b) => {
+        const da = a.start?.dateTime||a.start?.date||'';
+        const db = b.start?.dateTime||b.start?.date||'';
+        return da < db ? -1 : da > db ? 1 : 0;
+      });
+    }
+    gwRenderCalBody();
+  } catch(e) { showIntToast(e.message, 'error'); }
 }
 
-// ── Homeworks Visit Modal ─────────────────────────────────────────────────────
+// ── Homeworks visit / estimate handlers (unchanged) ───────────────────────────
 function intOpenVisitModal(oppId) {
   const opps = window._avalonState?.opportunities || [];
   const opp = opps.find(o => o.id === oppId);
   if (!opp) { showIntToast('Opportunity not found'); return; }
-
   const modal = document.getElementById('int-visit-modal');
   if (!modal) return;
-
-  // Pre-fill from opportunity data
-  const titleEl = document.getElementById('int-visit-title');
-  const dateEl = document.getElementById('int-visit-date');
-  const notesEl = document.getElementById('int-visit-notes');
-  const clientLabel = document.getElementById('int-visit-client-label');
-  const oppIdEl = document.getElementById('int-visit-opp-id');
-  const typeEl = document.getElementById('int-visit-type');
-
+  const titleEl    = document.getElementById('int-visit-title');
+  const dateEl     = document.getElementById('int-visit-date');
+  const notesEl    = document.getElementById('int-visit-notes');
+  const clientLabel= document.getElementById('int-visit-client-label');
+  const oppIdEl    = document.getElementById('int-visit-opp-id');
+  const typeEl     = document.getElementById('int-visit-type');
   if (oppIdEl) oppIdEl.value = oppId;
-  if (clientLabel) clientLabel.textContent = `${opp.client} · ${opp.serviceLine || opp.status}`;
+  if (clientLabel) clientLabel.textContent = `${opp.client} · ${opp.serviceLine||opp.status}`;
   if (titleEl) titleEl.value = `Site Walk — ${opp.client}`;
-  if (dateEl) dateEl.value = opp.nextFollowUp ? opp.nextFollowUp.slice(0,10) : todayISO();
+  if (dateEl)  dateEl.value  = opp.nextFollowUp ? opp.nextFollowUp.slice(0,10) : (typeof todayISO === 'function' ? todayISO() : new Date().toISOString().slice(0,10));
   if (notesEl) notesEl.value = [
     opp.project ? `Project: ${opp.project}` : '',
     opp.desiredOutcome ? `Desired outcome: ${opp.desiredOutcome}` : '',
-    opp.address ? `Property: ${opp.address}` : '',
+    opp.urgency ? `Urgency: ${opp.urgency}` : '',
+    opp.source ? `Source: ${opp.source}` : '',
   ].filter(Boolean).join('\n');
   if (typeEl) typeEl.value = 'Site Walk';
-
   modal.style.display = 'flex';
 }
 
-async function intSubmitVisit() {
-  const oppId = document.getElementById('int-visit-opp-id')?.value;
-  const visitTitle = document.getElementById('int-visit-title')?.value?.trim();
-  const visitDate = document.getElementById('int-visit-date')?.value;
-  const visitTime = document.getElementById('int-visit-time')?.value || '09:00';
-  const visitHours = document.getElementById('int-visit-hours')?.value || '1';
-  const visitType = document.getElementById('int-visit-type')?.value || 'Site Walk';
-  const visitBilling = document.getElementById('int-visit-billing')?.value || 'Invoice services';
-  const visitNotes = document.getElementById('int-visit-notes')?.value?.trim();
-  const alsoGcal = document.getElementById('int-visit-gcal-check')?.checked;
 
-  if (!visitDate) { showIntToast('Visit date is required', 'warn'); return; }
-
-  const opps = window._avalonState?.opportunities || [];
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-
-  try {
-    // Push to Homeworks via Zapier with all visit fields
-    await sendToHomeworks('new_visit', {
-      visit_title: visitTitle || `Site Walk — ${opp.client}`,
-      visit_type: visitType,
-      visit_date: visitDate,
-      visit_time: visitTime,
-      budgeted_hours: visitHours,
-      billing_option: visitBilling,
-      // Customer fields (Homeworks "Customer *" and "Property *" dropdowns)
-      customer_name: opp.client,
-      ...splitName(opp.client),
-      customer_email: opp.email || '',
-      customer_phone: opp.phone || '',
-      // Property / Location (maps to Homeworks "Location" field)
-      location: opp.address || '',
-      ...parseAddress(opp.address || ''),
-      // Line item (Homeworks "Name" in Line Items table)
-      service_item: opp.serviceLine || 'Site Walk / Consultation',
-      // Notes (Homeworks "Description" field)
-      description: visitNotes || `Site walk for ${opp.project || opp.serviceLine || 'landscape project'}. ${opp.desiredOutcome || ''}`.trim(),
-      // Color indicator for calendar (green = Visit)
-      color: '#4ade80',
-      // Scheduling type
-      scheduling_type: 'Single Visit',
-      // Avalon meta
-      avalon_id: opp.id,
-      avalon_status: opp.status,
-      avalon_service_line: opp.serviceLine || ''
-    });
-
-    showIntToast(`Visit scheduled for ${opp.client} in Homeworks`, 'success');
-
-    // Optionally also add to Google Calendar
-    if (alsoGcal && isGoogleConnected()) {
-      try {
-        await calCreateEvent({
-          summary: visitTitle || `Site Walk — ${opp.client}`,
-          description: [
-            visitNotes,
-            opp.address ? `Address: ${opp.address}` : '',
-            opp.phone ? `Phone: ${opp.phone}` : '',
-          ].filter(Boolean).join('\n'),
-          startDate: visitDate,
-          startTime: visitTime,
-          durationHours: parseFloat(visitHours),
-          attendees: opp.email ? [opp.email] : []
-        });
-        showIntToast('Also added to Google Calendar', 'success');
-      } catch(gcalErr) {
-        showIntToast(`Homeworks saved but Calendar failed: ${gcalErr.message}`, 'warn');
-      }
-    }
-
-    document.getElementById('int-visit-modal').style.display = 'none';
-  } catch(e) {
-    showIntToast(e.message, 'error');
-  }
-}
-
-// ── Homeworks Estimate Modal ──────────────────────────────────────────────────
-function intOpenEstimateModal(oppId) {
-  const opps = window._avalonState?.opportunities || [];
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-
-  const modal = document.getElementById('int-estimate-modal');
-  if (!modal) return;
-
-  const titleEl = document.getElementById('int-est-title');
-  const dateEl = document.getElementById('int-est-date');
-  const serviceEl = document.getElementById('int-est-service');
-  const customerNotesEl = document.getElementById('int-est-customer-notes');
-  const internalNotesEl = document.getElementById('int-est-internal-notes');
-  const clientLabel = document.getElementById('int-est-client-label');
-  const oppIdEl = document.getElementById('int-est-opp-id');
-
-  if (oppIdEl) oppIdEl.value = oppId;
-  if (clientLabel) clientLabel.textContent = `${opp.client} · ${opp.serviceLine || opp.status}`;
-  if (titleEl) titleEl.value = opp.project || `${opp.serviceLine || 'Landscape'} — ${opp.client}`;
-  if (dateEl) dateEl.value = todayISO();
-  if (serviceEl && opp.serviceLine) serviceEl.value = opp.serviceLine;
-  if (customerNotesEl) customerNotesEl.value = opp.desiredOutcome || '';
-  if (internalNotesEl) internalNotesEl.value = [
-    opp.budget ? `Budget discussed: ${opp.budget}` : '',
-    opp.urgency ? `Urgency: ${opp.urgency}` : '',
-    opp.fitConcerns ? `Fit concerns: ${opp.fitConcerns}` : '',
-    opp.decisionMaker ? `Decision maker: ${opp.decisionMaker}` : '',
-  ].filter(Boolean).join('\n');
-
-  modal.style.display = 'flex';
-}
-
-async function intSubmitEstimate() {
-  const oppId = document.getElementById('int-est-opp-id')?.value;
-  const estTitle = document.getElementById('int-est-title')?.value?.trim();
-  const estDate = document.getElementById('int-est-date')?.value;
-  const estService = document.getElementById('int-est-service')?.value;
-  const customerNotes = document.getElementById('int-est-customer-notes')?.value?.trim();
-  const internalNotes = document.getElementById('int-est-internal-notes')?.value?.trim();
-
-  const opps = window._avalonState?.opportunities || [];
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-
-  try {
-    const { firstName, lastName, businessName } = splitName(opp.client);
-    const { street, city, state, zip } = parseAddress(opp.address || '');
-
-    await sendToHomeworks('new_estimate', {
-      // Homeworks "Estimate Title / Description" field
-      estimate_title: estTitle || `${opp.serviceLine || 'Landscape'} — ${opp.client}`,
-      // Homeworks "Customer" dropdown — looked up by name
-      customer_name: businessName,
-      customer_first_name: firstName,
-      customer_last_name: lastName,
-      customer_email: opp.email || '',
-      customer_phone: opp.phone || '',
-      // Homeworks "Estimate Date" field
-      estimate_date: estDate || todayISO(),
-      // Homeworks "Time Estimate Requested" — defaults to Now
-      time_estimate_requested: 'Now',
-      // Service / item fields
-      service_type: estService || opp.serviceLine || '',
-      service_tag: mapServiceLine(estService || opp.serviceLine || ''),
-      // Property (Homeworks "Property not assigned" → property address)
-      property_address: street,
-      property_city: city || 'Vienna',
-      property_state: state || 'VA',
-      property_zip: zip || '',
-      // Homeworks "Notes Visible for Customer" field
-      customer_notes: customerNotes || opp.desiredOutcome || '',
-      // Internal notes (not shown to customer)
-      internal_notes: internalNotes || [
-        opp.budget ? `Budget discussed: ${opp.budget}` : '',
-        opp.urgency ? `Urgency: ${opp.urgency}` : '',
-        opp.source ? `Source: ${opp.source}` : '',
-      ].filter(Boolean).join('\n'),
-      // Homeworks "Enable Pay in Full Option" — default checked
-      enable_pay_in_full: true,
-      // Discount % — default 0
-      discount_percent: '0.00',
-      // Avalon meta
-      avalon_id: opp.id,
-      avalon_status: opp.status,
-      next_follow_up: opp.nextFollowUp || ''
-    });
-
-    showIntToast(`Estimate pushed to Homeworks for ${opp.client}`, 'success');
-    document.getElementById('int-estimate-modal').style.display = 'none';
-
-    // Open Homeworks estimates list so they can add line items
-    setTimeout(() => {
-      if (confirm('Estimate created! Open Homeworks to add pricing and line items?')) {
-        window.open('https://secure.copilotcrm.com/finances/estimates', '_blank');
-      }
-    }, 500);
-  } catch(e) {
-    showIntToast(e.message, 'error');
-  }
-}
-
-// ── Homeworks interactions ────────────────────────────────────────────────────
-function intSaveZapierUrl() {
-  const url = document.getElementById('zapierWebhookInput')?.value?.trim();
-  if (!url || !url.startsWith('https://hooks.zapier.com')) {
-    showIntToast('Paste a valid Zapier webhook URL (https://hooks.zapier.com/…)', 'warn');
-    return;
-  }
-  saveIntState({ zapierWebhookUrl: url });
-  showIntToast('Webhook URL saved', 'success');
-  setTimeout(() => integrations(), 600);
-}
-
-async function intTestZapier() {
-  try {
-    await sendToHomeworks('test_ping', { message: 'Hello from Avalon Sales Hub!', time: new Date().toISOString() });
-    showIntToast('Test ping sent — check your Zapier task history');
-  } catch(e) {
-    showIntToast(e.message, 'error');
-  }
-}
-
-async function intPushLead(oppId) {
-  const opps = window._avalonState?.opportunities || [];
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-  try {
-    await pushLeadToHomeworks(opp);
-    showIntToast(`${opp.client} pushed to Homeworks CRM`);
-  } catch(e) {
-    showIntToast(e.message, 'error');
-  }
-}
-
-// ── Quick-access functions exposed for use from other views ───────────────────
-// Call these from opportunity cards, email template buttons, etc.
-window.intComposeToLead = function(email, clientName) {
-  show('integrations');
-  setTimeout(() => {
-    if (!isGoogleConnected()) {
-      showIntToast('Connect Google on the Integrations page first');
-      return;
-    }
-    intComposeFromTemplate(email);
-    const subj = document.getElementById('int-email-subject');
-    if (subj && !subj.value) subj.value = `Following up — Avalon Landscape Construction`;
-  }, 100);
-};
-
-window.intScheduleForLead = function(clientName, email, date) {
-  show('integrations');
-  setTimeout(() => {
-    if (!isGoogleConnected()) {
-      showIntToast('Connect Google on the Integrations page first');
-      return;
-    }
-    intCreateCalendarEvent({
-      title: `Follow-up — ${clientName}`,
-      date: date || todayISO(),
-      attendee: email || '',
-      notes: `Sales follow-up for ${clientName}`
-    });
-  }, 100);
-};
-
-window.intPushOppToHomeworks = function(oppId) {
-  intPushLead(oppId);
-};
 
 // Expose integrations as a view route
 window.integrations = integrations;
