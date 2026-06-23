@@ -135,6 +135,23 @@ function getHtml(): string {
         <div id="searchResults" class="search-results" hidden></div>
       </div>
       <button class="install-btn" id="installBtn" hidden>Install App</button>
+
+      <!-- + New quick-create dropdown -->
+      <div class="topbar-new-wrap" id="topbarNewWrap">
+        <button class="topbar-new-btn" id="topbarNewBtn" aria-haspopup="true" aria-expanded="false" aria-label="Create new">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/></svg>
+          New
+          <svg class="topbar-new-caret" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3.5 5,6.5 8,3.5"/></svg>
+        </button>
+        <div class="topbar-new-dropdown" id="topbarNewDropdown" hidden role="menu">
+          <div class="tnd-section-label">Pipeline</div>
+          <button class="tnd-item" onclick="window._closeNewMenu();show('lead')" role="menuitem">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
+            Add Lead
+          </button>
+        </div>
+      </div>
+
       <button class="topbar-settings" onclick="show('settings')" title="Settings"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg>Settings</button>
     </header>
     <div class="view" id="view" role="region" aria-live="polite"></div>

@@ -13,6 +13,61 @@
 /* Settings topbar button */
 .topbar-settings{border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 12px;font-size:13px;font-weight:700;color:var(--blue-dark);cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;transition:background .12s}
 .topbar-settings:hover{background:var(--blue-soft)}
+
+/* ── + New quick-create button & dropdown ── */
+.topbar-new-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.topbar-new-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, box-shadow .12s;
+  box-shadow: 0 2px 8px rgba(0,167,225,.25);
+}
+.topbar-new-btn:hover { background: var(--blue-2); box-shadow: 0 4px 14px rgba(0,167,225,.35); }
+.topbar-new-caret { transition: transform .15s; opacity: .8; }
+.tnd-open .topbar-new-caret { transform: rotate(180deg); }
+.topbar-new-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(7,19,27,.12);
+  padding: 6px;
+  z-index: 50;
+  animation: tnd-in .12s ease;
+}
+@keyframes tnd-in {
+  from { opacity:0; transform:translateY(-4px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.tnd-section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 4px 10px 6px;
+}
+.tnd-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 8px 10px;
+  border: none; background: transparent;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  cursor: pointer; text-align: left;
+  transition: background .1s, color .1s;
+}
+.tnd-item:hover { background: var(--blue-soft); color: var(--blue-dark); }
+.tnd-item svg { flex-shrink: 0; opacity: .7; }
 /* Mark Sold modal */
 .sold-modal-backdrop{position:fixed;inset:0;background:rgba(7,19,27,.7);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
 .sold-modal{background:#fff;border-radius:24px;padding:32px;width:100%;max-width:560px;box-shadow:0 30px 80px rgba(7,19,27,.25);position:relative;max-height:90vh;overflow-y:auto}

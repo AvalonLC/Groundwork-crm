@@ -1352,7 +1352,6 @@ function process(stageId){
     <div class="eyebrow">Operating System</div>
     <h1>Avalon Sales Process</h1>
     <p class="lede">${escapeHtml(sp.subtitle)}</p>
-    <div class="card warn mt" style="text-align:center"><strong style="font-size:1.1rem">${escapeHtml(sp.stat)}</strong></div>
     <h2 class="mt" style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">6-Step Avalon Method</h2>
     <div class="grid grid-3 mt" style="gap:12px">
       ${sp.steps.map((s,i)=>`<article class="card" style="border-top:3px solid ${stepColors[i]};padding:16px">
@@ -2408,6 +2407,25 @@ if (sidebarScrim) sidebarScrim.addEventListener('click', closeSidebar);
 document.addEventListener('click', e => {
   if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) closeSidebar();
 });
+
+// ── + New dropdown ──────────────────────────────────────────────────────────
+const _newBtn  = document.getElementById('topbarNewBtn');
+const _newDrop = document.getElementById('topbarNewDropdown');
+const _newWrap = document.getElementById('topbarNewWrap');
+window._closeNewMenu = function() {
+  if (_newDrop) { _newDrop.hidden = true; _newBtn.setAttribute('aria-expanded','false'); _newWrap.classList.remove('tnd-open'); }
+};
+if (_newBtn && _newDrop) {
+  _newBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !_newDrop.hidden;
+    if (isOpen) { window._closeNewMenu(); }
+    else { _newDrop.hidden = false; _newBtn.setAttribute('aria-expanded','true'); _newWrap.classList.add('tnd-open'); }
+  });
+  document.addEventListener('click', (e) => {
+    if (!_newWrap.contains(e.target)) window._closeNewMenu();
+  });
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // UNIVERSAL EXPORT MODAL — showExportModal(title, buildDataFn)
