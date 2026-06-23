@@ -634,36 +634,33 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 
 /* Project category tiles */
 .lf-cat-tiles {
-  display:grid;
-  grid-template-columns:repeat(auto-fill, minmax(100px,1fr));
-  gap:8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .cat-tile {
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:5px;
-  padding:12px 6px;
-  border:1.5px solid #1e3a5f;
-  border-radius:10px;
-  background:#071525;
-  cursor:pointer;
-  transition:all .15s;
-  font-family:inherit;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 999px;
+  background: #071525;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: inherit;
+  white-space: nowrap;
 }
 .cat-tile:hover {
-  border-color:#00a7e1aa;
-  background:rgba(0,167,225,.06);
-  transform:translateY(-1px);
+  border-color: #00a7e1aa;
+  background: rgba(0,167,225,.07);
 }
 .cat-tile--active {
-  border-color:#00a7e1;
-  background:rgba(0,167,225,.14);
-  box-shadow:0 0 0 2px rgba(0,167,225,.18);
+  border-color: #00a7e1;
+  background: rgba(0,167,225,.16);
+  box-shadow: 0 0 0 2px rgba(0,167,225,.18);
 }
-.cat-tile-icon { font-size:20px; line-height:1; }
-.cat-tile-label { font-size:10px; font-weight:700; color:#94a3b8; text-align:center; letter-spacing:.02em; }
-.cat-tile--active .cat-tile-label { color:#e2e8f0; }
+.cat-tile-label { font-size: 12px; font-weight: 600; color: #94a3b8; letter-spacing: .01em; }
+.cat-tile--active .cat-tile-label { color: #e2e8f0; }
 
 /* Commission preview */
 .lf-comm-preview {
@@ -754,19 +751,7 @@ code{background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-siz
 .timeline-dot.admin   span { color: #64748b; }
 
 /* Category tile icon container */
-.cat-tile-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: rgba(255,255,255,.06);
-  margin-bottom: 2px;
-}
-.cat-tile--active .cat-tile-icon {
-  background: rgba(0,167,225,.12);
-}
+.cat-tile-icon { display: none; } /* icons removed from intake form — text-only pills */
 
 /* Suggested action icon container */
 .sa-icon {

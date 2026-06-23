@@ -718,7 +718,6 @@ function lead(){
   ];
   const catTilesHtml = _cats.map(c =>
     '<button type="button" class="cat-tile" data-cat="' + c.v + '">'
-    + c.icon ? '<span class="cat-tile-icon">' + c.icon + '</span>' : ''
     + '<span class="cat-tile-label">' + c.short + '</span>'
     + '</button>'
   ).join('');
