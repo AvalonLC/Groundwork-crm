@@ -51,20 +51,50 @@ const REPS = [
 ];
 
 // ── Commission Plans ───────────────────────────────────────────────────────────
+// ── Commission Rules Loader ────────────────────────────────────────────────────
+// Admin can override rates via avalonCommissionRulesV1 in localStorage.
+// Falls back to COMMISSION_PLANS defaults if no override exists.
+function loadActiveCommissionRules() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('avalonCommissionRulesV1') || 'null');
+    if (saved && saved.version) return saved;
+  } catch(e) {}
+  return null; // use COMMISSION_PLANS defaults
+}
+window.loadActiveCommissionRules = loadActiveCommissionRules;
+
+function saveCommissionRules(rules) {
+  rules.updatedAt = new Date().toISOString();
+  rules.updatedBy = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+  localStorage.setItem('avalonCommissionRulesV1', JSON.stringify(rules));
+}
+window.saveCommissionRules = saveCommissionRules;
+
 const COMMISSION_PLANS = {
   ryan: {
     landscape: {
+      // REVISED STRUCTURE (COMM-03) — lower than old 10/8% to protect margin
       // [min, max, selfGen%, companyLead%, assisted%]
       tiers: [
-        { min: 500,   max: 2500,  selfGen: 0.10, companyLead: 0.06, assisted: 0.03 },
-        { min: 2501,  max: 10000, selfGen: 0.08, companyLead: 0.05, assisted: 0.02 },
-        { min: 10001, max: null,  selfGen: null, companyLead: null, assisted: null, approvalRequired: true }
-      ]
+        { min: 500,   max: 2500,  selfGen: 0.08, companyLead: 0.05, assisted: 0.025 },
+        { min: 2501,  max: 10000, selfGen: 0.06, companyLead: 0.04, assisted: 0.015 },
+        { min: 10001, max: 25000, selfGen: 0.04, companyLead: 0.03, assisted: 0.010 },
+        { min: 25001, max: null,  selfGen: 0.025, companyLead: 0.02, assisted: 0.005 }
+      ],
+      // Soft approval at $1,500 payout; hard cap at $2,500 unless overridden
+      softApprovalPayoutThreshold: 1500,
+      hardCapPayout: 2500
     },
     maintenance: {
-      oneTime:   { selfGen: 0.08, companyLead: 0.05, assisted: 0.02 },
-      recurring: { selfGen: 0.50, companyLead: 0.25, assisted: 0.10, note: 'of first month' },
-      upsell:    'use_landscape_table'
+      // One-time / seasonal flat rates
+      oneTime: { selfGen: 0.06, companyLead: 0.04, assisted: 0.015, approvalAbove: 750 },
+      // Recurring — tiered first-month payout with caps + retention bonus
+      recurring: {
+        selfGen:     { t1Rate: 0.40, t1Max: 1000, t2Rate: 0.20, t2Max: 1000, t3Rate: 0.05, cap: 600,  retentionBonus: 100 },
+        companyLead: { t1Rate: 0.20, t1Max: 1000, t2Rate: 0.10, t2Max: 1000, t3Rate: 0.03, cap: 300,  retentionBonus: 75  },
+        assisted:    { t1Rate: 0.08, t1Max: 1000, t2Rate: 0.04, t2Max: 1000, t3Rate: 0.015,cap: 125,  retentionBonus: 25  }
+      },
+      upsell: 'use_landscape_table'
     },
     approvalThresholds: {
       under2500: 'self_approve_with_template',
@@ -162,51 +192,98 @@ function logRepActivity(repId, type, data) {
 
 // ── Commission Engine ─────────────────────────────────────────────────────────
 /**
- * Calculate commission for a sold job
+ * Master commission calculation engine (COMM-02).
+ * Reads active rules from localStorage override (avalonCommissionRulesV1) first,
+ * falls back to COMMISSION_PLANS defaults. All app surfaces must call this function
+ * rather than performing local commission math.
+ *
  * @param {Object} opts
- * @param {string} opts.planId - 'ryan' or future plan ids
- * @param {string} opts.workType - 'landscape' | 'maintenance_onetime' | 'maintenance_recurring' | 'maintenance_upsell'
- * @param {string} opts.leadSource - 'self_generated' | 'company_lead' | 'assisted'
- * @param {number} opts.jobValue - Dollar value of job
- * @param {boolean} opts.collected - Has payment been collected?
- * @param {boolean} opts.approved - Has management approved if required?
- * @returns {{ amount: number, rate: number, note: string, requiresApproval: boolean }}
+ * @param {string} opts.planId        - 'ryan' or future plan ids
+ * @param {string} opts.workType      - 'landscape' | 'maintenance_onetime' | 'maintenance_recurring' | 'maintenance_upsell' | 'hardscape' | 'drainage' | 'design_build'
+ * @param {string} opts.leadSource    - 'self_generated' | 'company_lead' | 'assisted'
+ * @param {number} opts.jobValue      - Dollar value of job (first-month value for recurring)
+ * @param {boolean} opts.collected    - Has payment been collected?
+ * @param {boolean} opts.approved     - Has management approved (when required)?
+ * @param {boolean} opts.preview      - If true, skip collection gate (for live UI previews)
+ * @returns {{ amount: number, rate: number, cap: number|null, capApplied: boolean,
+ *             requiresApproval: boolean, approvalReason: string, note: string,
+ *             ruleApplied: string, retentionBonus: number }}
  */
-function calculateCommission({ planId = 'ryan', workType = 'landscape', leadSource = 'company_lead', jobValue = 0, collected = false, approved = true }) {
-  const plan = COMMISSION_PLANS[planId];
-  if (!plan) return { amount: 0, rate: 0, note: 'No plan found', requiresApproval: false };
+function calculateCommission({ planId = 'ryan', workType = 'landscape', leadSource = 'company_lead', jobValue = 0, collected = false, approved = true, preview = false }) {
+  // Load admin-overridden rules if present, else use default plan
+  const override = loadActiveCommissionRules();
+  const plan = (override && override.plans && override.plans[planId]) ? override.plans[planId] : COMMISSION_PLANS[planId];
+  if (!plan) return { amount: 0, rate: 0, cap: null, capApplied: false, requiresApproval: false, approvalReason: '', note: 'No commission plan found', ruleApplied: 'none', retentionBonus: 0 };
 
-  if (!collected) return { amount: 0, rate: 0, note: 'Commission paid after collection', requiresApproval: false };
+  // Collection gate — skip only for UI preview mode
+  if (!collected && !preview) {
+    return { amount: 0, rate: 0, cap: null, capApplied: false, requiresApproval: false, approvalReason: '', note: 'Commission paid after payment is collected', ruleApplied: 'pending_collection', retentionBonus: 0 };
+  }
 
   const srcKey = leadSource === 'self_generated' ? 'selfGen' :
-                 leadSource === 'company_lead' ? 'companyLead' : 'assisted';
+                 leadSource === 'company_lead'   ? 'companyLead' : 'assisted';
+  const srcLabel = leadSource === 'self_generated' ? 'Self-Generated' :
+                   leadSource === 'company_lead'   ? 'Company Lead' : 'Assisted';
 
-  // Maintenance recurring — first month basis
+  // ── Recurring Maintenance — tiered first-month payout with cap ──────────────
   if (workType === 'maintenance_recurring') {
-    const rate = plan.maintenance.recurring[srcKey];
-    const amount = jobValue * rate;
-    return { amount, rate, note: `${Math.round(rate*100)}% of first month — paid after 60-day active period`, requiresApproval: false };
+    const r = plan.maintenance.recurring[srcKey];
+    if (!r) return { amount: 0, rate: 0, cap: null, capApplied: false, requiresApproval: false, approvalReason: '', note: 'No recurring rate configured', ruleApplied: 'maintenance_recurring', retentionBonus: 0 };
+    // Tier 1: first $t1Max of first-month value
+    const t1 = Math.min(jobValue, r.t1Max) * r.t1Rate;
+    // Tier 2: next $t2Max
+    const t2 = Math.max(0, Math.min(jobValue - r.t1Max, r.t2Max)) * r.t2Rate;
+    // Tier 3: everything above t1Max+t2Max
+    const t3 = Math.max(0, jobValue - r.t1Max - r.t2Max) * r.t3Rate;
+    let rawAmount = t1 + t2 + t3;
+    const capApplied = rawAmount > r.cap;
+    const amount = Math.min(rawAmount, r.cap);
+    const effectiveRate = jobValue > 0 ? (amount / jobValue) : 0;
+    const note = `Recurring Maintenance — ${srcLabel}: ${Math.round(r.t1Rate*100)}% first $${r.t1Max.toLocaleString()}, ${Math.round(r.t2Rate*100)}% next $${r.t2Max.toLocaleString()}, ${Math.round(r.t3Rate*100)}% above. Cap: $${r.cap}. +$${r.retentionBonus} retention bonus after 90 days active.`;
+    return { amount, rate: effectiveRate, cap: r.cap, capApplied, requiresApproval: false, approvalReason: '', note, ruleApplied: `maintenance_recurring_${srcKey}`, retentionBonus: r.retentionBonus };
   }
 
-  // Maintenance one-time
-  if (workType === 'maintenance_onetime') {
-    const rate = plan.maintenance.oneTime[srcKey];
-    return { amount: jobValue * rate, rate, note: `${Math.round(rate*100)}% one-time service`, requiresApproval: false };
+  // ── Maintenance One-Time / Seasonal ─────────────────────────────────────────
+  if (workType === 'maintenance_onetime' || workType === 'maintenance_upsell') {
+    const ot = plan.maintenance.oneTime;
+    const rate = ot[srcKey];
+    const rawAmount = jobValue * rate;
+    const approvalAbove = ot.approvalAbove || 750;
+    const requiresApproval = rawAmount > approvalAbove && !approved;
+    const note = `Maintenance One-Time/Seasonal — ${srcLabel}: ${Math.round(rate*100)}%${rawAmount > approvalAbove ? ` (approval required above $${approvalAbove} payout)` : ''}`;
+    return { amount: requiresApproval ? 0 : rawAmount, rate, cap: null, capApplied: false, requiresApproval, approvalReason: requiresApproval ? `Payout $${Math.round(rawAmount).toLocaleString()} exceeds $${approvalAbove} threshold — Tyler approval required` : '', note, ruleApplied: `maintenance_onetime_${srcKey}`, retentionBonus: 0 };
   }
 
-  // Landscape / Enhancement — tiered
-  for (const tier of plan.landscape.tiers) {
+  // ── Landscape / Enhancement / Hardscape / Drainage / Design-Build — tiered ──
+  const tiers = plan.landscape.tiers;
+  const softThreshold = plan.landscape.softApprovalPayoutThreshold || 1500;
+  const hardCap = plan.landscape.hardCapPayout || 2500;
+
+  for (const tier of tiers) {
     const inRange = jobValue >= tier.min && (tier.max === null || jobValue <= tier.max);
     if (!inRange) continue;
-    if (tier.approvalRequired) {
-      if (!approved) return { amount: 0, rate: 0, note: 'Requires Tyler/management approval — pending', requiresApproval: true };
-      return { amount: 0, rate: 0, note: '$10K+ job — commission rate set by management approval. Contact Tyler.', requiresApproval: true };
-    }
     const rate = tier[srcKey];
-    return { amount: jobValue * rate, rate, note: `${Math.round(rate*100)}% (${tier.min === 500 ? '$500-2.5K' : '$2.5K-10K'} ${leadSource.replace(/_/g,' ')} tier)`, requiresApproval: false };
+    if (rate === null || rate === undefined) {
+      return { amount: 0, rate: 0, cap: null, capApplied: false, requiresApproval: true, approvalReason: 'Job value requires Tyler direct approval — rate set by management', note: 'Large job — commission rate set by management approval', ruleApplied: 'landscape_approval_required', retentionBonus: 0 };
+    }
+    const rawAmount = jobValue * rate;
+    // Soft approval gate
+    const needsSoftApproval = rawAmount > softThreshold && !approved;
+    // Hard cap (never exceed $2,500 without override)
+    const capApplied = rawAmount > hardCap;
+    const amount = needsSoftApproval ? 0 : Math.min(rawAmount, hardCap);
+    const tierLabel = tier.max ? `$${tier.min.toLocaleString()}–$${tier.max.toLocaleString()}` : `$${tier.min.toLocaleString()}+`;
+    const note = `Landscape/Enhancement — ${srcLabel}, ${tierLabel} tier: ${Math.round(rate*100)}%${capApplied ? ` (capped at $${hardCap.toLocaleString()})` : ''}${needsSoftApproval ? ' — pending Tyler approval' : ''}`;
+    const approvalReason = needsSoftApproval ? `Payout $${Math.round(rawAmount).toLocaleString()} exceeds $${softThreshold.toLocaleString()} soft threshold — Tyler approval required` : '';
+    return { amount, rate, cap: capApplied ? hardCap : null, capApplied, requiresApproval: needsSoftApproval, approvalReason, note, ruleApplied: `landscape_${srcKey}_${tierLabel}`, retentionBonus: 0 };
   }
 
-  return { amount: 0, rate: 0, note: 'Job value below $500 minimum', requiresApproval: false };
+  return { amount: 0, rate: 0, cap: null, capApplied: false, requiresApproval: false, approvalReason: '', note: 'Job value below $500 minimum — no commission', ruleApplied: 'below_minimum', retentionBonus: 0 };
+}
+
+// Convenience wrapper — preview mode skips collection gate for live UI estimates
+function estimateCommission(opts) {
+  return calculateCommission({ ...opts, preview: true });
 }
 
 /**
@@ -629,61 +706,111 @@ function renderWeeklyScoreboard(repId, actual, targets) {
 
 function renderCommissionPlanRef(planId) {
   if (planId === 'admin') return '<p style="color:var(--muted)">Owner account — no commission plan.</p>';
+  if (!planId) return '<p style="color:var(--muted)">No commission plan assigned.</p>';
+  const override = loadActiveCommissionRules();
+  const plan = (override && override.plans && override.plans[planId]) ? override.plans[planId] : COMMISSION_PLANS[planId];
+  if (!plan) return '<p style="color:var(--muted)">Commission plan not found.</p>';
+
+  const thStyle = 'padding:9px 10px;text-align:center;border-bottom:1px solid #1e293b;font-size:11px;font-weight:700;letter-spacing:.04em';
+  const tdStyle = 'padding:8px 10px;text-align:center;font-weight:700;font-size:13px';
+  const rowStyle = 'border-bottom:1px solid #0f172a';
+  const lStyle = 'padding:8px 10px;font-size:12px;color:#94a3b8';
+
+  // Landscape tiers
+  const lTiers = plan.landscape.tiers;
+  const softCap = plan.landscape.softApprovalPayoutThreshold || 1500;
+  const hardCap = plan.landscape.hardCapPayout || 2500;
+
+  const landscapeRows = lTiers.map(t => {
+    const label = t.max ? `$${t.min.toLocaleString()} – $${t.max.toLocaleString()}` : `$${t.min.toLocaleString()}+`;
+    if (t.selfGen === null || t.selfGen === undefined) {
+      return `<tr style="${rowStyle}"><td style="${lStyle}">${label}</td><td colspan="3" style="${tdStyle};color:#f59e0b">Management approval — contact Tyler</td></tr>`;
+    }
+    return `<tr style="${rowStyle}">
+      <td style="${lStyle}">${label}</td>
+      <td style="${tdStyle};color:#4ade80">${Math.round(t.selfGen*100)}%</td>
+      <td style="${tdStyle};color:#60a5fa">${Math.round(t.companyLead*100)}%</td>
+      <td style="${tdStyle};color:#94a3b8">${Math.round(t.assisted*100)}%</td>
+    </tr>`;
+  }).join('');
+
+  // Maintenance recurring
+  const rec = plan.maintenance.recurring;
+  function recRow(key, label, color) {
+    const r = rec[key];
+    if (!r) return '';
+    return `<tr style="${rowStyle}">
+      <td style="${lStyle}">${label}</td>
+      <td style="${tdStyle};color:${color};font-size:11px">${Math.round(r.t1Rate*100)}% / ${Math.round(r.t2Rate*100)}% / ${Math.round(r.t3Rate*100)}%<br><span style="color:#64748b;font-weight:500">Cap $${r.cap} · +$${r.retentionBonus} bonus</span></td>
+    </tr>`;
+  }
+
+  // Maintenance one-time
+  const ot = plan.maintenance.oneTime;
+
   return `
-  <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
-      <thead>
-        <tr style="background:#0f172a">
-          <th style="padding:10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">LANDSCAPE / ENHANCEMENT</th>
-          <th style="padding:10px;text-align:center;color:#4ade80;border-bottom:1px solid #1e293b">Self-Generated</th>
-          <th style="padding:10px;text-align:center;color:#60a5fa;border-bottom:1px solid #1e293b">Company Lead</th>
-          <th style="padding:10px;text-align:center;color:#94a3b8;border-bottom:1px solid #1e293b">Assisted</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr style="border-bottom:1px solid #0f172a">
-          <td style="padding:10px">$500 – $2,500</td>
-          <td style="padding:10px;text-align:center;color:#4ade80;font-weight:700">10%</td>
-          <td style="padding:10px;text-align:center;color:#60a5fa;font-weight:700">6%</td>
-          <td style="padding:10px;text-align:center;color:#94a3b8;font-weight:700">3%</td>
-        </tr>
-        <tr style="border-bottom:1px solid #0f172a">
-          <td style="padding:10px">$2,501 – $10,000</td>
-          <td style="padding:10px;text-align:center;color:#4ade80;font-weight:700">8%</td>
-          <td style="padding:10px;text-align:center;color:#60a5fa;font-weight:700">5%</td>
-          <td style="padding:10px;text-align:center;color:#94a3b8;font-weight:700">2%</td>
-        </tr>
-        <tr>
-          <td style="padding:10px">$10,001+</td>
-          <td colspan="3" style="padding:10px;text-align:center;color:#f59e0b">By management approval — contact Tyler</td>
-        </tr>
-      </tbody>
-    </table>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>
-        <tr style="background:#0f172a">
-          <th style="padding:10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">MAINTENANCE</th>
-          <th style="padding:10px;text-align:center;color:#4ade80;border-bottom:1px solid #1e293b">Self-Generated</th>
-          <th style="padding:10px;text-align:center;color:#60a5fa;border-bottom:1px solid #1e293b">Company Lead</th>
-          <th style="padding:10px;text-align:center;color:#94a3b8;border-bottom:1px solid #1e293b">Assisted</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr style="border-bottom:1px solid #0f172a">
-          <td style="padding:10px">One-time seasonal</td>
-          <td style="padding:10px;text-align:center;color:#4ade80;font-weight:700">8%</td>
-          <td style="padding:10px;text-align:center;color:#60a5fa;font-weight:700">5%</td>
-          <td style="padding:10px;text-align:center;color:#94a3b8;font-weight:700">2%</td>
-        </tr>
-        <tr>
-          <td style="padding:10px">New recurring client</td>
-          <td style="padding:10px;text-align:center;color:#4ade80;font-weight:700">50% 1st mo</td>
-          <td style="padding:10px;text-align:center;color:#60a5fa;font-weight:700">25% 1st mo</td>
-          <td style="padding:10px;text-align:center;color:#94a3b8;font-weight:700">10% 1st mo</td>
-        </tr>
-      </tbody>
-    </table>
-    <p style="font-size:11px;color:#64748b;margin-top:12px">Commission paid only on approved, sold, and collected work. Pricing must be management-approved. Base: $20/hr training → $21/hr post-training. 90-day review checkpoint.</p>
+  <div style="overflow-x:auto;display:flex;flex-direction:column;gap:16px">
+
+    <!-- Landscape / Enhancement -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Landscape / Enhancement / Hardscape</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#0f172a;border-radius:8px;overflow:hidden">
+        <thead><tr style="background:#1e293b">
+          <th style="${thStyle};text-align:left;color:#64748b">Job Value Range</th>
+          <th style="${thStyle};color:#4ade80">Self-Generated</th>
+          <th style="${thStyle};color:#60a5fa">Company Lead</th>
+          <th style="${thStyle};color:#94a3b8">Assisted</th>
+        </tr></thead>
+        <tbody>${landscapeRows}</tbody>
+      </table>
+      <div style="font-size:11px;color:#475569;margin-top:6px;padding:0 2px">
+        Soft approval at <strong style="color:#f59e0b">$${softCap.toLocaleString()} payout</strong> · Hard cap <strong style="color:#f87171">$${hardCap.toLocaleString()}</strong> unless Tyler overrides
+      </div>
+    </div>
+
+    <!-- Maintenance One-Time -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Maintenance — One-Time / Seasonal</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#0f172a;border-radius:8px;overflow:hidden">
+        <thead><tr style="background:#1e293b">
+          <th style="${thStyle};text-align:left;color:#64748b">Type</th>
+          <th style="${thStyle};color:#4ade80">Self-Generated</th>
+          <th style="${thStyle};color:#60a5fa">Company Lead</th>
+          <th style="${thStyle};color:#94a3b8">Assisted</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td style="${lStyle}">One-time / Seasonal</td>
+            <td style="${tdStyle};color:#4ade80">${Math.round(ot.selfGen*100)}%</td>
+            <td style="${tdStyle};color:#60a5fa">${Math.round(ot.companyLead*100)}%</td>
+            <td style="${tdStyle};color:#94a3b8">${Math.round(ot.assisted*100)}%</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:#475569;margin-top:6px;padding:0 2px">Approval required when payout exceeds <strong style="color:#f59e0b">$${(ot.approvalAbove||750).toLocaleString()}</strong></div>
+    </div>
+
+    <!-- Recurring Maintenance -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Recurring Maintenance — First-Month Tiered Payout</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#0f172a;border-radius:8px;overflow:hidden">
+        <thead><tr style="background:#1e293b">
+          <th style="${thStyle};text-align:left;color:#64748b">Source</th>
+          <th style="${thStyle};color:#e2e8f0">First $1K / Next $1K / Above — Cap · Bonus</th>
+        </tr></thead>
+        <tbody>
+          ${recRow('selfGen',     'Self-Generated',  '#4ade80')}
+          ${recRow('companyLead', 'Company Lead',    '#60a5fa')}
+          ${recRow('assisted',    'Assisted',        '#94a3b8')}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:#475569;margin-top:6px;padding:0 2px">Retention bonus paid after client remains active 90+ days · Paid after 60-day active period</div>
+    </div>
+
+    <p style="font-size:11px;color:#475569;margin:0;padding:10px;background:#0a0f1a;border-radius:8px;border:1px solid #1e293b">
+      Commission paid only on approved, sold, and collected work. Pricing must be management-approved.
+      ${override ? `<span style="color:#f59e0b"> ⚙ Custom rules active (edited ${new Date(override.updatedAt||'').toLocaleDateString()}).</span>` : ''}
+    </p>
   </div>`;
 }
 
@@ -1158,31 +1285,70 @@ ${(()=>{
     </div>` : '<p style="color:#4ade80;font-size:13px;margin-top:8px">No overdue follow-ups.</p>'}
   </section>
 
-  <!-- Commission Approval Queue -->
+  <!-- Commission Approval Queue (COMM-12: engine-aware) -->
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <h2 style="margin:0;font-size:16px">Commission Approval Queue</h2>
       <span style="font-size:11px;color:${commQueue.length > 0 ? '#fbbf24' : '#4ade80'};font-weight:700">${commQueue.length} pending</span>
     </div>
     ${commQueue.length === 0
-      ? '<p style="color:#4ade80;font-size:13px">All sold jobs have commission approved.</p>'
+      ? '<p style="color:#4ade80;font-size:13px">All sold jobs have commission approved. ✓</p>'
       : commQueue.map(o => {
-          const rep = (window.REPS||[]).find(r => r.id === o.repId);
+          const repObj = (window.REPS||[]).find(r => r.id === o.repId);
           const val = parseFloat(o.jobValue || 0);
+          // Run master engine for this item
+          let commResult = { amount: 0, rate: 0, note: '—', ruleApplied: '—', capApplied: false, requiresApproval: false, retentionBonus: 0 };
+          if (typeof calculateCommission === 'function') {
+            commResult = calculateCommission({
+              planId:     repObj?.commissionPlan || 'ryan',
+              workType:   o.workType   || 'landscape',
+              leadSource: o.leadSource || 'company_lead',
+              jobValue:   val,
+              collected:  !!o.collected,
+              approved:   false, // pending approval — show what would be paid
+              preview:    true
+            });
+          }
+          const commAmt = fmtM(commResult.amount);
+          const capBadge = commResult.capApplied ? `<span style="font-size:9px;background:#f87171;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
+          const srcLabel = o.leadSource === 'self_generated' ? 'Self-Gen' : o.leadSource === 'company_lead' ? 'Co. Lead' : o.leadSource === 'assisted' ? 'Assisted' : '—';
+          const wt = o.workType ? o.workType.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—';
           return `
-          <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0f172a;border:1px solid #ca8a0440;border-radius:10px;margin-bottom:8px;cursor:pointer"
-            onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-              <div style="font-size:11px;color:#64748b;margin-top:1px">${rep ? rep.name : 'Unassigned'} · ${escapeHtml(o.serviceLine||o.workType||'—')}</div>
+          <div style="background:#0f172a;border:1px solid #ca8a0440;border-radius:12px;margin-bottom:10px;overflow:hidden">
+            <!-- Header row — clickable to open lead -->
+            <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer"
+              onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='transparent'">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
+                <div style="font-size:11px;color:#64748b;margin-top:1px">${repObj ? `<span style="color:${repObj.color||'#94a3b8'}">${escapeHtml(repObj.name)}</span> · ` : ''}${wt} · ${srcLabel}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:13px;font-weight:800;color:#00d4ff">${fmtM(val)}</div>
+                <div style="font-size:10px;color:${o.collected?'#4ade80':'#f59e0b'}">${o.collected ? '✓ collected' : '⏳ uncollected'}</div>
+              </div>
             </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:13px;font-weight:700;color:#fbbf24">${fmtM(val)}</div>
-              <div style="font-size:10px;color:#64748b">${o.collected ? 'collected' : 'uncollected'}</div>
+            <!-- Engine output row -->
+            <div style="padding:8px 12px;background:#0a0f1a;border-top:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <span style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.04em">Calculated Commission</span><br>
+                <span style="font-size:15px;font-weight:800;color:#fbbf24">${commAmt}</span>${capBadge}
+                <div style="font-size:10px;color:#64748b;margin-top:2px;max-width:260px">${escapeHtml(commResult.note)}</div>
+                ${commResult.retentionBonus > 0 ? `<div style="font-size:10px;color:#4ade80;margin-top:2px">+${fmtM(commResult.retentionBonus)} retention bonus after 90-day active period</div>` : ''}
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                <button onclick="event.stopPropagation();window._adminApproveComm('${o.id}')"
+                  style="background:#16a34a;border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">
+                  ✓ Approve
+                </button>
+                <button onclick="event.stopPropagation();show('pipeline','${o.id}')"
+                  style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">
+                  View Lead →
+                </button>
+              </div>
             </div>
           </div>`;
         }).join('')}
-    ${commQueue.length > 0 ? `<p style="font-size:11px;color:#64748b;margin-top:8px">Open any job above → Admin Controls → check Commission Approved to clear the queue.</p>` : ''}
+    ${commQueue.length > 0 ? `<p style="font-size:11px;color:#64748b;margin-top:4px">Approving here marks the commission as approved. You can also open any lead → Admin Controls to adjust details first.</p>` : ''}
 
     <!-- Unassigned opps inline -->
     <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:8px">
@@ -1413,6 +1579,24 @@ function escapeHtml(str = '') {
 }
 
 // ── Assign rep to opportunity ─────────────────────────────────────────────────
+// Quick commission approve from queue — sets commissionApproved + logs action (COMM-12)
+window._adminApproveComm = function(oppId) {
+  try {
+    const key = 'avalonSalesHubStateV3';
+    const s = JSON.parse(localStorage.getItem(key) || '{}');
+    const idx = (s.opportunities || []).findIndex(o => o.id === oppId);
+    if (idx >= 0) {
+      s.opportunities[idx].commissionApproved = true;
+      s.opportunities[idx].commissionApprovedAt = new Date().toISOString();
+      s.opportunities[idx].commissionApprovedBy = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
+      s.opportunities[idx].updatedAt = new Date().toISOString();
+      localStorage.setItem(key, JSON.stringify(s));
+      if (window.showToast) window.showToast('Commission approved ✓');
+      repDashboard(); // refresh queue
+    }
+  } catch(e) { if (window.showToast) window.showToast('Error approving commission', 'error'); }
+};
+
 window.assignRep = function(oppId, repId) {
   if (!repId) return;
   try {
@@ -1448,7 +1632,9 @@ window.logoutRep = logoutRep;
 window.isAdmin = isAdmin;
 window.REPS = REPS;
 window.calculateCommission = calculateCommission;
-window.calcRepCommissions = calcRepCommissions;
+window.estimateCommission  = estimateCommission;
+window.calcRepCommissions  = calcRepCommissions;
+window.COMMISSION_PLANS    = COMMISSION_PLANS;
 window.getRepOpps = getRepOpps;
 window.formatWorkType = formatWorkType;
 window.formatLeadSource = formatLeadSource;

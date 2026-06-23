@@ -84,10 +84,25 @@ function statusCssClass(status){
   return map[status] || 'pending';
 }
 function estCommission(opp){
+  // Delegate to the master engine (COMM-08: no page-level hardcoded math)
+  if (typeof window.estimateCommission === 'function') {
+    const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+    const planId = rep?.commissionPlan || 'ryan';
+    const result = window.estimateCommission({
+      planId,
+      workType:   opp?.workType   || 'landscape',
+      leadSource: opp?.leadSource || 'company_lead',
+      jobValue:   Number(opp?.jobValue || 0),
+      collected:  !!opp?.collected,
+      approved:   !!opp?.commissionApproved
+    });
+    return result.amount;
+  }
+  // Fallback before reps.js loads
   const val = Number(opp?.jobValue || 0);
   if (!val) return 0;
-  const rates = { landscape:.08, maintenance_onetime:.06, maintenance_recurring:.10, hardscape:.07, drainage:.07, design_build:.07 };
-  return val * (rates[opp?.workType] || .07);
+  const rates = { landscape:.06, maintenance_onetime:.04, maintenance_recurring:.20, hardscape:.06, drainage:.06, design_build:.06 };
+  return val * (rates[opp?.workType] || .06);
 }
 function showToast(message){ toastEl.textContent = message; toastEl.hidden = false; setTimeout(()=>toastEl.hidden=true, 2200); }
 function copyText(text, btnEl){
@@ -1535,26 +1550,57 @@ function lead(){
     });
   }, 50);
 
-  // T35: Commission preview — wire live calc after DOM settles
+  // T35: Commission preview — engine-driven, reads work type + commission source (COMM-07/08)
   setTimeout(() => {
-    const jvInput = document.querySelector('[name="jobValue"]');
+    const jvInput  = document.querySelector('[name="jobValue"]');
     const wtSelect = document.querySelector('[name="workType"]');
-    const preview = document.getElementById('commPreview');
+    const lsSelect = document.querySelector('[name="leadSource"]'); // commission source
+    const preview  = document.getElementById('commPreview');
     const previewText = document.getElementById('commPreviewText');
     function updateCommPreview() {
       if (!preview) return;
       const val = Number(jvInput?.value || 0);
-      const wt  = wtSelect?.value || '';
+      const wt  = wtSelect?.value  || 'landscape';
+      const src = lsSelect?.value  || 'company_lead';
       if (!val) { preview.style.display = 'none'; return; }
-      const rates = { landscape:.08, maintenance_onetime:.06, maintenance_recurring:.10, hardscape:.07, drainage:.07, design_build:.07 };
-      const rate = rates[wt] || .07;
-      const est  = val * rate;
-      const commStr = est.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
-      if (previewText) previewText.textContent = 'Est. commission: ' + commStr + ' (' + Math.round(rate*100) + '%)';
+      // Use master engine in preview mode (no collection gate)
+      let commStr, noteStr;
+      if (typeof window.estimateCommission === 'function') {
+        const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+        const result = window.estimateCommission({
+          planId:     rep?.commissionPlan || 'ryan',
+          workType:   wt,
+          leadSource: src,
+          jobValue:   val,
+          collected:  false,
+          approved:   false,
+          preview:    true
+        });
+        const est = result.amount;
+        commStr = est.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
+        // Build short explanation: rule + cap flag
+        const pct = result.rate > 0 ? ` (${Math.round(result.rate*100)}%)` : '';
+        const capNote = result.capApplied ? ' · capped' : '';
+        const approvalNote = result.requiresApproval ? ' · approval required' : '';
+        noteStr = `Est. commission: ${commStr}${pct}${capNote}${approvalNote}`;
+        // If recurring, show tiered note
+        if (wt === 'maintenance_recurring') {
+          noteStr = `Est. commission: ${commStr} (tiered first-month${capNote})`;
+        }
+      } else {
+        // Fallback pre-load
+        const rates = { landscape:.06, maintenance_onetime:.04, maintenance_recurring:.20, hardscape:.06, drainage:.06, design_build:.06 };
+        const rate = rates[wt] || .06;
+        const est  = val * rate;
+        commStr = est.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
+        noteStr = `Est. commission: ${commStr} (${Math.round(rate*100)}%)`;
+      }
+      if (previewText) previewText.textContent = noteStr;
       preview.style.display = 'flex';
     }
-    if (jvInput)  jvInput.addEventListener('input', updateCommPreview);
+    if (jvInput)  jvInput.addEventListener('input',  updateCommPreview);
     if (wtSelect) wtSelect.addEventListener('change', updateCommPreview);
+    if (lsSelect) lsSelect.addEventListener('change', updateCommPreview);
   }, 150);
 
   document.getElementById('leadForm').addEventListener('submit', e=>{
@@ -2877,6 +2923,10 @@ function settings(){
         <div style="font-size:12px;color:#64748b;margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
       </div>
       <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">⚙️ User &amp; Access Management →</button>
+    </div>
+    <!-- Commission Rules Manager (COMM-01) -->
+    <div style="margin-top:16px" id="comm-rules-panel">
+      ${renderCommissionRulesPanel()}
     </div>` : ''}
   `;
 }
@@ -2885,6 +2935,182 @@ function settings(){
 // User Management → Roles & Permissions tab (user_management.js).
 // Keeping stubs so any stray calls don't throw.
 function renderPermMatrix() { return ''; }
+
+// ── Commission Rules Manager (COMM-01) ────────────────────────────────────────
+// Admin-only panel in Settings. Reads active rules, lets Tyler edit tier rates,
+// caps, and approval thresholds. Saves to avalonCommissionRulesV1.
+function renderCommissionRulesPanel() {
+  const override = (typeof window.loadActiveCommissionRules === 'function') ? window.loadActiveCommissionRules() : null;
+  const basePlan = (typeof window.COMMISSION_PLANS !== 'undefined') ? window.COMMISSION_PLANS.ryan : null;
+  const active = (override && override.plans && override.plans.ryan) ? override.plans.ryan : basePlan;
+  if (!active) return '<p style="color:#64748b;font-size:13px">Commission engine not loaded yet — reload the page.</p>';
+
+  const updatedInfo = override
+    ? `<span style="color:#f59e0b;font-size:12px"> ⚙ Custom rules active — last edited ${new Date(override.updatedAt||'').toLocaleDateString()} by ${override.updatedBy||'admin'}</span>`
+    : `<span style="color:#4ade80;font-size:12px"> ✓ Using default Avalon commission structure</span>`;
+
+  const lTiers = active.landscape.tiers;
+  const ot = active.maintenance.oneTime;
+  const rec = active.maintenance.recurring;
+  const softCap = active.landscape.softApprovalPayoutThreshold || 1500;
+  const hardCap = active.landscape.hardCapPayout || 2500;
+
+  // Build editable tier rows
+  const tierRows = lTiers.map((t, i) => {
+    const label = t.max ? `$${t.min.toLocaleString()}–$${t.max.toLocaleString()}` : `$${t.min.toLocaleString()}+`;
+    if (t.selfGen === null || t.selfGen === undefined) {
+      return `<tr style="border-bottom:1px solid #1e293b">
+        <td style="padding:7px 10px;font-size:12px;color:#94a3b8">${label}</td>
+        <td colspan="3" style="padding:7px 10px;font-size:12px;color:#f59e0b;text-align:center">Management approval required</td>
+      </tr>`;
+    }
+    return `<tr style="border-bottom:1px solid #1e293b">
+      <td style="padding:7px 10px;font-size:12px;color:#94a3b8">${label}</td>
+      <td style="padding:4px 6px"><input type="number" id="cr-ls-sg-${i}" value="${Math.round(t.selfGen*100)}" min="0" max="50" step="0.5"
+        style="width:60px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#4ade80;font-weight:700;font-size:12px;text-align:center"> %</td>
+      <td style="padding:4px 6px"><input type="number" id="cr-ls-cl-${i}" value="${Math.round(t.companyLead*100)}" min="0" max="50" step="0.5"
+        style="width:60px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#60a5fa;font-weight:700;font-size:12px;text-align:center"> %</td>
+      <td style="padding:4px 6px"><input type="number" id="cr-ls-as-${i}" value="${Math.round(t.assisted*100)}" min="0" max="50" step="0.5"
+        style="width:60px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-weight:700;font-size:12px;text-align:center"> %</td>
+    </tr>`;
+  }).join('');
+
+  function recInputs(srcKey, colorClass, idPrefix) {
+    const r = rec[srcKey];
+    if (!r) return '';
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span style="font-size:11px;color:${colorClass};font-weight:700;min-width:90px">${srcKey === 'selfGen' ? 'Self-Generated' : srcKey === 'companyLead' ? 'Company Lead' : 'Assisted'}</span>
+      <label style="font-size:11px;color:#64748b">T1%: <input type="number" id="${idPrefix}-t1" value="${Math.round(r.t1Rate*100)}" min="0" max="100" step="1"
+        style="width:48px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:11px;text-align:center"></label>
+      <label style="font-size:11px;color:#64748b">T2%: <input type="number" id="${idPrefix}-t2" value="${Math.round(r.t2Rate*100)}" min="0" max="100" step="1"
+        style="width:48px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:11px;text-align:center"></label>
+      <label style="font-size:11px;color:#64748b">T3%: <input type="number" id="${idPrefix}-t3" value="${Math.round(r.t3Rate*100)}" min="0" max="100" step="1"
+        style="width:48px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:11px;text-align:center"></label>
+      <label style="font-size:11px;color:#64748b">Cap $: <input type="number" id="${idPrefix}-cap" value="${r.cap}" min="0" max="5000" step="25"
+        style="width:60px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f59e0b;font-size:11px;text-align:center"></label>
+      <label style="font-size:11px;color:#64748b">Bonus $: <input type="number" id="${idPrefix}-bonus" value="${r.retentionBonus}" min="0" max="500" step="5"
+        style="width:55px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#4ade80;font-size:11px;text-align:center"></label>
+    </div>`;
+  }
+
+  return `
+  <div style="background:#0a0f1a;border:1px solid #00A7E140;border-radius:14px;padding:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#e2e8f0">💰 Commission Rules Manager</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px">Edit rates, caps, and thresholds. Changes apply immediately to all commission calculations.${updatedInfo}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="window._saveCommRules()" style="background:#00A7E1;border:none;color:#fff;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer">Save Rules</button>
+        ${override ? `<button onclick="window._resetCommRules()" style="background:#0f172a;border:1px solid #f87171;color:#f87171;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">Reset to Defaults</button>` : ''}
+      </div>
+    </div>
+
+    <!-- Landscape tiers -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Landscape / Enhancement Tiers</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;background:#0f172a;border-radius:8px;overflow:hidden;font-size:12px">
+          <thead><tr style="background:#1e293b">
+            <th style="padding:8px 10px;text-align:left;color:#64748b;font-size:10px;letter-spacing:.05em">RANGE</th>
+            <th style="padding:8px 10px;text-align:center;color:#4ade80;font-size:10px">SELF-GEN %</th>
+            <th style="padding:8px 10px;text-align:center;color:#60a5fa;font-size:10px">CO. LEAD %</th>
+            <th style="padding:8px 10px;text-align:center;color:#94a3b8;font-size:10px">ASSISTED %</th>
+          </tr></thead>
+          <tbody>${tierRows}</tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+        <label style="font-size:11px;color:#64748b">Soft approval at payout $: <input type="number" id="cr-soft-cap" value="${softCap}" min="0" max="10000" step="50"
+          style="width:80px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#f59e0b;font-size:12px;text-align:center"></label>
+        <label style="font-size:11px;color:#64748b">Hard cap $: <input type="number" id="cr-hard-cap" value="${hardCap}" min="0" max="20000" step="100"
+          style="width:80px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#f87171;font-size:12px;text-align:center"></label>
+      </div>
+    </div>
+
+    <!-- Maintenance one-time -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Maintenance — One-Time / Seasonal</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:#4ade80">Self-Gen %: <input type="number" id="cr-ot-sg" value="${Math.round(ot.selfGen*100)}" min="0" max="50" step="0.5"
+          style="width:55px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#4ade80;font-weight:700;font-size:12px;text-align:center"></label>
+        <label style="font-size:11px;color:#60a5fa">Co. Lead %: <input type="number" id="cr-ot-cl" value="${Math.round(ot.companyLead*100)}" min="0" max="50" step="0.5"
+          style="width:55px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#60a5fa;font-weight:700;font-size:12px;text-align:center"></label>
+        <label style="font-size:11px;color:#94a3b8">Assisted %: <input type="number" id="cr-ot-as" value="${Math.round(ot.assisted*100)}" min="0" max="50" step="0.5"
+          style="width:55px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-weight:700;font-size:12px;text-align:center"></label>
+        <label style="font-size:11px;color:#f59e0b">Approval above $: <input type="number" id="cr-ot-approval" value="${ot.approvalAbove || 750}" min="0" max="5000" step="50"
+          style="width:70px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#f59e0b;font-size:12px;text-align:center"></label>
+      </div>
+    </div>
+
+    <!-- Recurring maintenance -->
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Recurring Maintenance — Tiered First-Month</div>
+      ${recInputs('selfGen',     '#4ade80', 'cr-rec-sg')}
+      ${recInputs('companyLead', '#60a5fa', 'cr-rec-cl')}
+      ${recInputs('assisted',    '#94a3b8', 'cr-rec-as')}
+    </div>
+  </div>`;
+}
+window.renderCommissionRulesPanel = renderCommissionRulesPanel;
+
+// Save handler — reads all inputs and writes to avalonCommissionRulesV1
+window._saveCommRules = function() {
+  try {
+    const basePlan = window.COMMISSION_PLANS ? window.COMMISSION_PLANS.ryan : null;
+    if (!basePlan) { if (window.showToast) window.showToast('Engine not loaded', 'error'); return; }
+
+    // Deep clone the base plan
+    const plan = JSON.parse(JSON.stringify(basePlan));
+
+    // Landscape tiers
+    plan.landscape.tiers.forEach((t, i) => {
+      if (t.selfGen !== null && t.selfGen !== undefined) {
+        const sg = parseFloat(document.getElementById(`cr-ls-sg-${i}`)?.value || t.selfGen*100) / 100;
+        const cl = parseFloat(document.getElementById(`cr-ls-cl-${i}`)?.value || t.companyLead*100) / 100;
+        const as = parseFloat(document.getElementById(`cr-ls-as-${i}`)?.value || t.assisted*100) / 100;
+        plan.landscape.tiers[i].selfGen     = sg;
+        plan.landscape.tiers[i].companyLead = cl;
+        plan.landscape.tiers[i].assisted    = as;
+      }
+    });
+    plan.landscape.softApprovalPayoutThreshold = parseFloat(document.getElementById('cr-soft-cap')?.value || 1500);
+    plan.landscape.hardCapPayout = parseFloat(document.getElementById('cr-hard-cap')?.value || 2500);
+
+    // One-time
+    plan.maintenance.oneTime.selfGen     = parseFloat(document.getElementById('cr-ot-sg')?.value || 6) / 100;
+    plan.maintenance.oneTime.companyLead = parseFloat(document.getElementById('cr-ot-cl')?.value || 4) / 100;
+    plan.maintenance.oneTime.assisted    = parseFloat(document.getElementById('cr-ot-as')?.value || 1.5) / 100;
+    plan.maintenance.oneTime.approvalAbove = parseFloat(document.getElementById('cr-ot-approval')?.value || 750);
+
+    // Recurring
+    ['sg','cl','as'].forEach((k, idx) => {
+      const srcKey = ['selfGen','companyLead','assisted'][idx];
+      const prefix = `cr-rec-${k}`;
+      const r = plan.maintenance.recurring[srcKey];
+      if (!r) return;
+      r.t1Rate = parseFloat(document.getElementById(`${prefix}-t1`)?.value || r.t1Rate*100) / 100;
+      r.t2Rate = parseFloat(document.getElementById(`${prefix}-t2`)?.value || r.t2Rate*100) / 100;
+      r.t3Rate = parseFloat(document.getElementById(`${prefix}-t3`)?.value || r.t3Rate*100) / 100;
+      r.cap    = parseFloat(document.getElementById(`${prefix}-cap`)?.value || r.cap);
+      r.retentionBonus = parseFloat(document.getElementById(`${prefix}-bonus`)?.value || r.retentionBonus);
+    });
+
+    // Save to localStorage
+    const rules = { version: 1, plans: { ryan: plan } };
+    if (typeof window.saveCommissionRules === 'function') window.saveCommissionRules(rules);
+    else localStorage.setItem('avalonCommissionRulesV1', JSON.stringify({ ...rules, updatedAt: new Date().toISOString() }));
+    if (window.showToast) window.showToast('Commission rules saved ✓');
+    settings(); // re-render to show "Custom rules active" label
+  } catch(e) { if (window.showToast) window.showToast('Error saving rules: ' + e.message, 'error'); }
+};
+
+window._resetCommRules = function() {
+  if (!confirm('Reset commission rules to Avalon defaults? This removes any custom rates Tyler set.')) return;
+  localStorage.removeItem('avalonCommissionRulesV1');
+  if (window.showToast) window.showToast('Rules reset to defaults ✓');
+  settings();
+};
 
 function _renderPermMatrixOld_deleted() {
   const perms = loadNavPerms();
