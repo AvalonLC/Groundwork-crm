@@ -159,7 +159,7 @@ window.show = show;
           : isOM
           ? `<span style="display:inline-block;background:#f59e0b;color:#0a0f1a;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;letter-spacing:.05em;vertical-align:middle;margin-left:4px">OFFICE MGR</span>`
           : '';
-        footer.innerHTML = `<span style="color:${rep.color};font-weight:700">${rep.avatar} ${rep.name}${roleBadge}</span><br><span style="font-size:11px;color:#64748b">${rep.title}</span><br><button onclick="logoutRep();renderLoginScreen()" style="margin-top:6px;background:none;border:1px solid #334155;border-radius:6px;color:#64748b;font-size:11px;padding:4px 10px;cursor:pointer;width:100%">Switch Account</button>`;
+        footer.innerHTML = `<span style="color:${rep.color};font-weight:700">${rep.name}${roleBadge}</span><br><span style="font-size:11px;color:#64748b">${rep.title}</span><br><button onclick="logoutRep();renderLoginScreen()" style="margin-top:6px;background:none;border:1px solid #334155;border-radius:6px;color:#64748b;font-size:11px;padding:4px 10px;cursor:pointer;width:100%">Switch Account</button>`;
       }
       // Nav items: always fully visible — access controlled by Permission Matrix in Settings
     }
@@ -296,7 +296,7 @@ function renderTodayActivityWidget(){
   const repTargets = targets[currentRep.id];
   if(!repTargets) return '';
   return `<div class="card mt" style="border-left:3px solid ${currentRep.color||'#00d4ff'}">
-    <h3>${currentRep.avatar} ${escapeHtml(currentRep.name)}'s Weekly Activity Targets</h3>
+    <h3>${escapeHtml(currentRep.name)}'s Weekly Activity Targets</h3>
     <p class="muted small-text">Track these weekly — activity creates opportunity. Log in daily.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:12px">
       ${Object.entries(repTargets).map(([k,v])=>`<div style="background:var(--bg2);border-radius:8px;padding:12px">
@@ -328,7 +328,7 @@ function oppMini(o){
   const urgencyDot = isOverdue ? `<span style="display:inline-block;width:7px;height:7px;background:#f87171;border-radius:50%;margin-right:4px;vertical-align:middle;flex-shrink:0"></span>` : '';
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
   const repPill = repObj
-    ? `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:${repObj.color||'#94a3b8'};background:${repObj.color||'#94a3b8'}18;border:1px solid ${repObj.color||'#94a3b8'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${repObj.avatar} ${escapeHtml(repObj.name)}</span>`
+    ? `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:${repObj.color||'#94a3b8'};background:${repObj.color||'#94a3b8'}18;border:1px solid ${repObj.color||'#94a3b8'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${escapeHtml(repObj.name)}</span>`
     : `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:#f59e0b;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">⚠ Unassigned</span>`;
   return `<button class="mini-row ${isOverdue?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
     <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed')}</strong>
@@ -362,7 +362,7 @@ function oppCard(o){
       ${o.nextFollowUp ? `<span class="opp-next">Next: ${prettyDate(o.nextFollowUp)}</span>` : ''}
       ${o.jobValue ? `<span class="opp-value">${money(Number(o.jobValue))}</span>` : ''}
       ${repObj
-        ? `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:${repObj.color||'#94a3b8'};background:${repObj.color||'#94a3b8'}18;border:1px solid ${repObj.color||'#94a3b8'}40;border-radius:20px;padding:1px 8px;white-space:nowrap;margin-left:auto">${repObj.avatar} ${escapeHtml(repObj.name)}</span>`
+        ? `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:${repObj.color||'#94a3b8'};background:${repObj.color||'#94a3b8'}18;border:1px solid ${repObj.color||'#94a3b8'}40;border-radius:20px;padding:1px 8px;white-space:nowrap;margin-left:auto">${escapeHtml(repObj.name)}</span>`
         : `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:#f59e0b;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:20px;padding:1px 8px;white-space:nowrap;margin-left:auto">⚠ Unassigned</span>`}
     </div>
   </article>`;
@@ -1116,7 +1116,7 @@ function clientDetail(id) {
   const oppsHtml = linkedOpps.length ? linkedOpps.map(o => {
     const _repO = (window.REPS||[]).find(r => r.id === o.repId);
     const _repPill = _repO
-      ? `<span style="font-size:10px;font-weight:600;color:${_repO.color||'#94a3b8'};background:${_repO.color||'#94a3b8'}18;border:1px solid ${_repO.color||'#94a3b8'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${_repO.avatar} ${escapeHtml(_repO.name)}</span>`
+      ? `<span style="font-size:10px;font-weight:600;color:${_repO.color||'#94a3b8'};background:${_repO.color||'#94a3b8'}18;border:1px solid ${_repO.color||'#94a3b8'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${escapeHtml(_repO.name)}</span>`
       : `<span style="font-size:10px;font-weight:600;color:#f59e0b;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">⚠ Unassigned</span>`;
     return `<button class="mini-row" onclick="show('pipeline','${o.id}')">
       <strong>${escapeHtml(o.client||'Unnamed')}</strong>
@@ -1265,7 +1265,7 @@ function lead(){
   const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
   const repPickerHtml = _ia
     ? '<label class="lf-field"><span class="lf-label">Assigned Rep</span><select name="repId" class="lf-select"><option value="">— Select rep —</option>'
-        + (window.REPS||[]).map(r=>'<option value="' + r.id + '">' + r.avatar + ' ' + r.name + '</option>').join('')
+        + (window.REPS||[]).map(r=>'<option value="' + r.id + '">' + r.name + '</option>').join('')
         + '</select></label>'
     : '<input type="hidden" name="repId" value="' + (_cr ? _cr.id : '') + '">';
 
@@ -1790,7 +1790,7 @@ function opportunityDetail(id){
     ${(()=>{
       const _repObj = (window.REPS||[]).find(r=>r.id===o.repId);
       const _repName = _repObj ? _repObj.name : null;
-      const _repAvatar = _repObj ? _repObj.avatar : '—';
+      const _repAvatar = '';
       const _isOvd = o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
       const _estComm = estCommission(o);
       return `<div class="lead-header-bar">
@@ -1800,7 +1800,7 @@ function opportunityDetail(id){
         </div>
         <div class="lhb-cell">
           <span class="lhb-label">Rep</span>
-          <span>${_repAvatar} ${escapeHtml(_repName||'Unassigned')}</span>
+          <span>${escapeHtml(_repName||'Unassigned')}</span>
         </div>
         <div class="lhb-cell">
           <span class="lhb-label">Est. Value</span>
@@ -1906,7 +1906,7 @@ function opportunityDetail(id){
             <label style="display:block;font-size:12px;color:#64748b;margin-bottom:6px">Reassign Rep</label>
             <select onchange="setOppField('${o.id}','repId',this.value)" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
               <option value="">— Assign —</option>
-              ${(window.REPS||[]).map(r=>`<option value="${r.id}" ${_ca.repId===r.id?'selected':''}>${r.avatar} ${r.name}</option>`).join('')}
+              ${(window.REPS||[]).map(r=>`<option value="${r.id}" ${_ca.repId===r.id?'selected':''}>${r.name}</option>`).join('')}
             </select>
           </div>
         </div>

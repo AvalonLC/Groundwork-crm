@@ -18,7 +18,7 @@ const REPS = [
     title: 'Owner / Sales Manager',
     role: 'admin',
     pin: '1111',
-    avatar: 'TK',
+    avatar: '',
     color: '#00d4ff',
     base: null, // owner — no base
     commissionPlan: 'admin'
@@ -29,7 +29,7 @@ const REPS = [
     title: 'Client Relations & Enhancement Sales Associate',
     role: 'rep',
     pin: '2222',
-    avatar: 'RV',
+    avatar: '',
     color: '#4ade80',
     base: { rateTraining: 20, ratePostTraining: 21 },
     commissionPlan: 'ryan'
@@ -40,7 +40,7 @@ const REPS = [
     title: 'Office Manager — Sales Operations',
     role: 'office_manager',
     pin: '3333',
-    avatar: 'JM',
+    avatar: '',
     color: '#f59e0b',
     email: 'admin@avalon-lc.com',
     base: null,
@@ -293,7 +293,7 @@ function renderLoginScreen() {
           style="display:flex;align-items:center;gap:16px;padding:16px 20px;background:#0f172a;border:2px solid #1e293b;border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;width:100%"
           onmouseover="this.style.borderColor='${rep.color}';this.style.background='#111827'"
           onmouseout="this.style.borderColor='#1e293b';this.style.background='#0f172a'">
-          <span style="font-size:32px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:#1e293b;border-radius:12px">${rep.avatar}</span>
+          <span style="font-size:18px;font-weight:700;width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:${rep.color}22;border:2px solid ${rep.color}66;border-radius:12px;color:${rep.color}">${rep.name[0]}</span>
           <div>
             <div style="font-weight:700;font-size:16px;color:#e2e8f0">${rep.name}</div>
             <div style="font-size:12px;color:#64748b;margin-top:2px">${rep.title}</div>
@@ -347,7 +347,7 @@ function renderLoginScreen() {
     const rep = REPS.find(r => r.id === repId);
     document.getElementById('repCards').style.display = 'none';
     document.getElementById('pinEntry').style.display = 'block';
-    document.getElementById('pinRepName').textContent = `${rep.avatar} ${rep.name}`;
+    document.getElementById('pinRepName').textContent = rep.name;
     document.getElementById('pinRepName').style.color = REP_COLOR[repId];
     updatePinDisplay();
     document.getElementById('pinError').style.display = 'none';
@@ -436,7 +436,7 @@ function renderRepDashboard(viewEl, rep) {
   const activityLog = (repState.activityLog || []).slice(0, 8);
 
   viewEl.innerHTML = `
-<div class="eyebrow" style="color:${rep.color}">${rep.avatar} ${rep.name}</div>
+<div class="eyebrow" style="color:${rep.color}">${rep.name}</div>
 <h1 style="margin-bottom:4px">My Dashboard</h1>
 <p class="lede" style="margin-bottom:24px">${rep.title} · <button onclick="logoutRep();renderLoginScreen()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;text-decoration:underline">Switch Rep</button></p>
 
@@ -710,7 +710,7 @@ function renderOMDashboard(viewEl, rep) {
   const unassigned = open.filter(o => !o.repId);
 
   viewEl.innerHTML = `
-<div class="eyebrow" style="color:${rep.color}">${rep.avatar} ${rep.name} · Office Manager</div>
+<div class="eyebrow" style="color:${rep.color}">${rep.name} · Office Manager</div>
 <h1 style="margin-bottom:4px">Sales Operations Dashboard</h1>
 <p class="lede" style="margin-bottom:24px">Pipeline health, follow-up queue, lead routing, and proposal status — for the whole team. <button onclick="logoutRep();renderLoginScreen()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;text-decoration:underline">Switch Account</button></p>
 
@@ -778,7 +778,7 @@ function renderOMDashboard(viewEl, rep) {
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
             <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.status)} · Due ${o.nextFollowUp}</div>
           </div>
-          ${(()=>{ const _r=(window.REPS||[]).find(r=>r.id===o.repId); return _r ? `<span style="font-size:10px;font-weight:600;color:${_r.color||'#94a3b8'};background:${_r.color||'#94a3b8'}18;border:1px solid ${_r.color||'#94a3b8'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${_r.avatar} ${escapeHtml(_r.name)}</span>` : `<span style="font-size:10px;font-weight:600;color:#f59e0b;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">⚠ Unassigned</span>`; })()}
+          ${(()=>{ const _r=(window.REPS||[]).find(r=>r.id===o.repId); return _r ? `<span style="font-size:10px;font-weight:600;color:${_r.color||'#94a3b8'};background:${_r.color||'#94a3b8'}18;border:1px solid ${_r.color||'#94a3b8'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${escapeHtml(_r.name)}</span>` : `<span style="font-size:10px;font-weight:600;color:#f59e0b;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">⚠ Unassigned</span>`; })()}
           <span style="font-size:10px;color:#f87171;font-weight:700;white-space:nowrap">OVERDUE</span>
         </div>`).join('')}
     ${overdueList.length > 8 ? `<p style="font-size:12px;color:#64748b;text-align:center;margin-top:8px">+ ${overdueList.length - 8} more — <button class="link-btn" onclick="show('pipeline')" style="color:var(--accent);background:none;border:none;cursor:pointer;font-size:12px;padding:0">Open pipeline</button></p>` : ''}
@@ -797,7 +797,7 @@ function renderOMDashboard(viewEl, rep) {
           onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-            <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.serviceLine||o.status)}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.avatar||'') + ' ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.name||'') : ' · unassigned'}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.serviceLine||o.status)}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.name||'') : ' · unassigned'}</div>
           </div>
           ${o.jobValue ? `<span style="font-size:12px;color:#94a3b8;white-space:nowrap">${fmtCurrency(o.jobValue)}</span>` : ''}
         </div>`).join('')}
@@ -1150,7 +1150,7 @@ ${(()=>{
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
             <div style="font-size:10px;color:#64748b">${escapeHtml(o.status)} · Due ${o.nextFollowUp}</div>
-            ${(()=>{ const _r=(window.REPS||[]).find(r=>r.id===o.repId); return _r ? `<span style="font-size:9px;font-weight:600;color:${_r.color||'#94a3b8'};background:${_r.color||'#94a3b8'}18;border:1px solid ${_r.color||'#94a3b8'}40;border-radius:20px;padding:1px 6px;white-space:nowrap">${_r.avatar} ${escapeHtml(_r.name)}</span>` : `<span style="font-size:9px;font-weight:600;color:#f59e0b;border:1px solid #f59e0b40;border-radius:20px;padding:1px 6px">⚠ Unassigned</span>`; })()}
+            ${(()=>{ const _r=(window.REPS||[]).find(r=>r.id===o.repId); return _r ? `<span style="font-size:9px;font-weight:600;color:${_r.color||'#94a3b8'};background:${_r.color||'#94a3b8'}18;border:1px solid ${_r.color||'#94a3b8'}40;border-radius:20px;padding:1px 6px;white-space:nowrap">${escapeHtml(_r.name)}</span>` : `<span style="font-size:9px;font-weight:600;color:#f59e0b;border:1px solid #f59e0b40;border-radius:20px;padding:1px 6px">⚠ Unassigned</span>`; })()}
           </div>
           <span style="font-size:9px;color:#f87171;font-weight:700">OVERDUE</span>
         </div>`).join('')}
@@ -1174,7 +1174,7 @@ ${(()=>{
             onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
             <div style="flex:1;min-width:0">
               <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-              <div style="font-size:11px;color:#64748b;margin-top:1px">${rep ? rep.avatar + ' ' + rep.name : 'Unassigned'} · ${escapeHtml(o.serviceLine||o.workType||'—')}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:1px">${rep ? rep.name : 'Unassigned'} · ${escapeHtml(o.serviceLine||o.workType||'—')}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="font-size:13px;font-weight:700;color:#fbbf24">${fmtM(val)}</div>
@@ -1216,7 +1216,7 @@ ${(()=>{
     ${repRows.map(({ rep, open, sold, soldValue, totalEarned, pendingCollection, overdue, proposals, closeRate, quotaPct }) => `
     <div class="card" style="border-left:4px solid ${rep.color}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        <span style="font-size:28px">${rep.avatar}</span>
+        <span style="font-size:16px;font-weight:700;width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:${rep.color}22;border:2px solid ${rep.color}66;border-radius:10px;color:${rep.color};flex-shrink:0">${rep.name[0]}</span>
         <div style="flex:1">
           <div style="font-weight:700;font-size:16px;color:${rep.color}">${rep.name}</div>
           <div style="font-size:11px;color:#64748b">${rep.title}</div>
