@@ -2662,7 +2662,7 @@ function scripts(){
         <div class="script-box" style="font-size:.84rem">${nl2br(s.body)}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
           <button class="secondary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(s.body)}',this)">Copy Script</button>
-          <button class="secondary-btn" style="font-size:.78rem" onclick="scriptUseForLead('${escapeForJs(s.title)}','${escapeForJs(s.body)}')">Use for Lead</button>
+          <button class="secondary-btn" style="font-size:.78rem" onclick="scriptUseForLead('${escapeForJs(s.title)}','${escapeForJs(s.body)}')">Link to Lead</button>
           <button class="secondary-btn" style="font-size:.78rem" onclick="scriptToAI('${escapeForJs(s.title)}','${escapeForJs(s.situation||'')}')">✦ AI Coach</button>
         </div>
       </article>`;
@@ -2694,15 +2694,14 @@ function scripts(){
   };
   window.scriptUseForLead = function(title, body){
     openLeadPicker(function(id){
-      show('pipeline',id);
-      setTimeout(()=>{
-        const el=document.getElementById('newNote');
-        if(el){
-          el.value='[Script: '+title+']\n\n'+body.slice(0,400);
-          el.focus();
-          showToast('Script loaded — add your note and save');
-        }
-      },400);
+      const opp = state.opportunities.find(x=>x.id===id);
+      if(!opp) return;
+      const note = { id:'n'+Date.now(), text:'[Script: '+title+']\n\n'+body.slice(0,400), createdAt:new Date().toISOString(), type:'script' };
+      opp.notes = opp.notes || [];
+      opp.notes.push(note);
+      opp.updatedAt = new Date().toISOString();
+      saveState();
+      showToast('Script linked to '+escapeHtml(opp.client||'lead'));
     });
   };
   window.scriptToAI = function(title, situation){
@@ -2751,7 +2750,7 @@ function templates(){
           <button class="secondary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(t.subject)}',this)">Copy Subject</button>
           <button class="primary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(t.body)}',this)">Copy Body</button>
           <button class="secondary-btn" style="font-size:.78rem" onclick="tmplPersonalize('${escapeForJs(t.subject)}','${escapeForJs(t.body)}')">✦ Personalize + Copy</button>
-          <button class="secondary-btn" style="font-size:.78rem" onclick="tmplUseForLead('${escapeForJs(t.subject)}','${escapeForJs(t.body)}')">Load into Lead</button>
+          <button class="secondary-btn" style="font-size:.78rem" onclick="tmplUseForLead('${escapeForJs(t.subject)}','${escapeForJs(t.body)}')">Link to Lead</button>
           <button class="secondary-btn" style="font-size:.78rem" onclick="tmplToAI('${escapeForJs(t.title)}','${escapeForJs(t.category)}')">✦ AI Refine</button>
         </div>
       </article>`).join('');
@@ -2779,15 +2778,14 @@ function templates(){
   };
   window.tmplUseForLead = function(subj, body){
     openLeadPicker(function(id){
-      show('pipeline',id);
-      setTimeout(()=>{
-        const el=document.getElementById('newNote');
-        if(el){
-          el.value='Subject: '+subj+'\n\n'+body.slice(0,400);
-          el.focus();
-          showToast('Template loaded into lead note');
-        }
-      },400);
+      const opp = state.opportunities.find(x=>x.id===id);
+      if(!opp) return;
+      const note = { id:'n'+Date.now(), text:'[Email: '+subj+']\n\n'+body.slice(0,400), createdAt:new Date().toISOString(), type:'template' };
+      opp.notes = opp.notes || [];
+      opp.notes.push(note);
+      opp.updatedAt = new Date().toISOString();
+      saveState();
+      showToast('Template linked to '+escapeHtml(opp.client||'lead'));
     });
   };
   window.tmplToAI = function(title, category){
@@ -2836,7 +2834,7 @@ function objections(){
         <div class="script-box" style="font-size:.84rem">${escapeHtml(o.say)}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
           <button class="secondary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(o.say)}',this)">Copy Response</button>
-          <button class="secondary-btn" style="font-size:.78rem" onclick="objLogToLead('${escapeForJs(o.title)}')">Log to Lead</button>
+          <button class="secondary-btn" style="font-size:.78rem" onclick="objLogToLead('${escapeForJs(o.title)}','${escapeForJs(o.say)}')">Link to Lead</button>
           <button class="secondary-btn" style="font-size:.78rem" onclick="objToAI('${escapeForJs(o.title)}','${escapeForJs(o.say)}')">✦ AI Refine Reply</button>
         </div>
       </article>`;
@@ -2855,16 +2853,17 @@ function objections(){
     });
   });
 
-  window.objLogToLead = function(title){
+  window.objLogToLead = function(title, say){
     openLeadPicker(function(id){
-      const opp=state.opportunities.find(x=>x.id===id);
+      const opp = state.opportunities.find(x=>x.id===id);
       if(!opp) return;
-      const note={id:'n'+Date.now(),text:'Objection raised: '+title,createdAt:new Date().toISOString(),type:'objection'};
-      opp.notes=opp.notes||[];
+      const text = say ? '[Objection: '+title+']\n\nSay this: '+say.slice(0,400) : 'Objection raised: '+title;
+      const note = { id:'n'+Date.now(), text:text, createdAt:new Date().toISOString(), type:'objection' };
+      opp.notes = opp.notes || [];
       opp.notes.push(note);
-      opp.updatedAt=new Date().toISOString();
+      opp.updatedAt = new Date().toISOString();
       saveState();
-      showToast('Objection logged to '+escapeHtml(opp.client||'lead'));
+      showToast('Objection linked to '+escapeHtml(opp.client||'lead'));
     });
   };
   window.objToAI = function(title, say){
