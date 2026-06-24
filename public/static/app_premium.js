@@ -4077,9 +4077,12 @@ function academy(param) {
     return;
   }
   try {
-    if (param && param.startsWith('phase:')) return academyPhaseDetail(param.replace('phase:', ''));
+    if (param && param.startsWith('phase:'))  return academyPhaseDetail(param.replace('phase:', ''));
     if (param && param.startsWith('module:')) return academyModuleWorkspace(param.replace('module:', ''));
-    if (param === 'badges') return academyBadgesView();
+    if (param === 'badges')         return academyBadgesView();
+    if (param === 'practice')       return academyPracticeArena();
+    if (param === 'profile')        return academyRepProfile();
+    if (param === 'certifications') return academyCertificationsPage();
     if (param === 'admin') {
       const rep = window.getCurrentRep ? window.getCurrentRep() : null;
       if (!rep || rep.role !== 'admin') { academy(); return; }
@@ -4096,134 +4099,377 @@ function academy(param) {
   }
 }
 
-// ─── Shared Academy Styles ────────────────────────────────────────────────────
+// ─── Shared Academy Styles (SA-201 through SA-207 design system) ─────────────
 const ACAD_STYLES = `
 <style id="acad-styles">
-/* ── Academy light-mode base ── */
-.acad-header{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 28px;margin-bottom:20px;box-shadow:0 1px 4px rgba(14,23,32,.06)}
-.acad-header-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.acad-level-chip{display:inline-flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:6px 14px;font-size:.85rem;font-weight:600;color:var(--ink)}
-.acad-stats{display:flex;gap:24px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
-.acad-stat{text-align:center}
-.acad-stat-num{font-size:1.5rem;font-weight:700;color:var(--ink)}
-.acad-stat-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:2px}
-.acad-level-bar-wrap{margin-top:14px}
-.acad-level-bar-track{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:4px}
-.acad-level-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
-.acad-section-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px}
-/* ── Phase cards ── */
-.phase-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s;position:relative;overflow:hidden}
-.phase-card:hover:not(.phase-locked){border-color:var(--blue);box-shadow:0 4px 16px rgba(0,167,225,.1);transform:translateY(-2px)}
-.phase-card.phase-locked{opacity:.5;cursor:not-allowed}
-.phase-card-accent{position:absolute;top:0;left:0;width:4px;height:100%}
-.phase-card-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
-.phase-num{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px}
-.phase-title{font-size:1.02rem;font-weight:700;color:var(--ink);margin:0}
-.phase-desc{font-size:.82rem;color:var(--muted);margin:0 0 14px;line-height:1.55}
-.phase-prog-row{display:flex;align-items:center;gap:8px}
-.phase-prog-track{flex:1;height:5px;background:var(--line);border-radius:4px;overflow:hidden}
-.phase-prog-fill{height:100%;border-radius:4px;transition:width .5s}
-.phase-prog-pct{font-size:.75rem;font-weight:700;color:var(--ink);min-width:34px;text-align:right}
-.phase-mod-count{font-size:.71rem;color:var(--muted);margin-top:6px}
-.phase-status-chip{display:inline-flex;align-items:center;gap:5px;font-size:.68rem;font-weight:700;border-radius:99px;padding:3px 9px;margin-top:8px}
-/* ── Next up card ── */
-.acad-next-card{background:var(--card);border:2px solid var(--blue);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px;cursor:pointer;transition:border-color .2s,box-shadow .2s;box-shadow:0 2px 8px rgba(0,167,225,.08)}
-.acad-next-card:hover{box-shadow:0 4px 16px rgba(0,167,225,.18)}
-.acad-next-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);font-weight:700;margin-bottom:3px}
-.acad-next-title{font-size:1rem;font-weight:700;color:var(--ink);margin-bottom:2px}
-.acad-next-sub{font-size:.8rem;color:var(--muted)}
-/* ── Recently completed ── */
-.recently-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s}
-.recently-item:last-child{border-bottom:none}
-.recently-check{width:26px;height:26px;background:rgba(16,185,129,.12);border:1.5px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#10b981;flex-shrink:0}
-/* ── Badge chips ── */
-.badge-upcoming-row{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;background:var(--bg)}
-.badge-upcoming-row:hover{border-color:var(--blue)}
-/* ── Module workspace ── */
-.workspace-layout{display:grid;grid-template-columns:230px 1fr;gap:0;min-height:520px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--bg)}
-@media(max-width:700px){.workspace-layout{grid-template-columns:1fr}}
-.workspace-nav{background:var(--card);border-right:1px solid var(--line);padding:0}
-.workspace-nav-header{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
-.workspace-nav-title{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px}
-.workspace-nav-pct{font-size:1.4rem;font-weight:700;color:var(--ink)}
-.workspace-nav-bar{height:5px;background:var(--line);border-radius:4px;margin-top:6px;overflow:hidden}
-.workspace-nav-fill{height:100%;border-radius:4px;transition:width .4s}
-.ws-nav-item{display:flex;align-items:center;gap:9px;padding:11px 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;font-size:.82rem;color:var(--muted)}
-.ws-nav-item:hover{background:var(--bg);color:var(--ink)}
-.ws-nav-item.active-section{background:var(--bg);border-left-color:var(--blue);color:var(--ink);font-weight:600}
-.ws-nav-item.done-section{color:#10b981}
-.ws-nav-dot{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700;flex-shrink:0;background:var(--line);color:var(--muted);border:1.5px solid var(--line)}
-.ws-nav-dot.done{background:rgba(16,185,129,.12);color:#10b981;border-color:#10b981}
+/* ══ Design tokens ════════════════════════════════════════════════════════════ */
+/* Uses app vars: --bg, --card, --line, --ink, --muted, --blue */
+
+/* ══ SA-101 Academy Home ═══════════════════════════════════════════════════════ */
+
+/* Dashboard hero banner */
+.acad-banner{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 32px 24px;margin-bottom:24px;box-shadow:0 2px 12px rgba(14,23,32,.07);position:relative;overflow:hidden}
+.acad-banner::before{content:'';position:absolute;top:0;right:0;width:260px;height:100%;background:linear-gradient(135deg,transparent 60%,rgba(0,167,225,.04) 100%);pointer-events:none}
+.acad-banner-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.acad-banner-left{flex:1;min-width:0}
+.acad-banner-eyebrow{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--blue);margin-bottom:6px}
+.acad-banner-title{font-size:1.75rem;font-weight:800;color:var(--ink);margin:0 0 6px;line-height:1.1}
+.acad-banner-sub{font-size:.9rem;color:var(--muted);line-height:1.5;margin:0}
+.acad-banner-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0}
+
+/* Level badge */
+.acad-level-badge{display:inline-flex;align-items:center;gap:9px;border-radius:12px;padding:8px 16px;font-size:.88rem;font-weight:700;border:1.5px solid;transition:box-shadow .2s}
+.acad-streak-badge{display:inline-flex;align-items:center;gap:7px;background:rgba(249,115,22,.08);border:1.5px solid rgba(249,115,22,.3);border-radius:99px;padding:6px 14px;font-size:.82rem;font-weight:700;color:#f97316}
+
+/* Stat row */
+.acad-stat-row{display:flex;gap:0;margin-top:20px;padding-top:18px;border-top:1px solid var(--line);flex-wrap:wrap}
+.acad-stat-pill{display:flex;flex-direction:column;align-items:center;padding:0 20px;border-right:1px solid var(--line)}
+.acad-stat-pill:first-child{padding-left:0}
+.acad-stat-pill:last-child{border-right:none}
+.acad-stat-pill-num{font-size:1.6rem;font-weight:800;color:var(--ink);line-height:1}
+.acad-stat-pill-label{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:4px}
+
+/* Level progress strip */
+.acad-level-progress{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.acad-level-progress-labels{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.acad-level-progress-current{font-size:.82rem;font-weight:700}
+.acad-level-progress-next{font-size:.78rem;color:var(--muted)}
+.acad-level-bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden}
+.acad-level-bar-fill{height:100%;border-radius:6px;transition:width .7s cubic-bezier(.4,0,.2,1)}
+
+/* Section headings */
+.acad-sh{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.acad-sh::after{content:'';flex:1;height:1px;background:var(--line)}
+
+/* Continue card (CTA) */
+.acad-continue-card{background:linear-gradient(135deg,rgba(0,167,225,.07) 0%,rgba(99,102,241,.05) 100%);border:1.5px solid rgba(0,167,225,.25);border-radius:14px;padding:18px 22px;display:flex;align-items:center;gap:18px;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s;margin-bottom:24px}
+.acad-continue-card:hover{border-color:var(--blue);box-shadow:0 6px 24px rgba(0,167,225,.12);transform:translateY(-2px)}
+.acad-continue-icon{width:52px;height:52px;border-radius:14px;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 12px rgba(0,167,225,.25)}
+.acad-continue-body{flex:1;min-width:0}
+.acad-continue-eyebrow{font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--blue);margin-bottom:4px}
+.acad-continue-title{font-size:1.02rem;font-weight:700;color:var(--ink);margin-bottom:3px}
+.acad-continue-meta{font-size:.8rem;color:var(--muted)}
+.acad-continue-arrow{color:var(--blue);flex-shrink:0}
+
+/* ══ SA-203 Phase Cards ════════════════════════════════════════════════════════ */
+.acad-phase-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+@media(max-width:900px){.acad-phase-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:580px){.acad-phase-grid{grid-template-columns:1fr}}
+
+.acad-phase-card{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:0;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.acad-phase-card:hover:not(.acad-phase-locked){border-color:var(--blue);box-shadow:0 6px 24px rgba(14,23,32,.1);transform:translateY(-3px)}
+.acad-phase-card.acad-phase-locked{opacity:.55;cursor:not-allowed}
+.acad-phase-card.acad-phase-complete{border-color:rgba(16,185,129,.35)}
+
+/* Color bar top */
+.acad-phase-bar{height:5px;width:100%;border-radius:16px 16px 0 0}
+.acad-phase-body{padding:20px 20px 16px;flex:1;display:flex;flex-direction:column}
+.acad-phase-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.acad-phase-icon-wrap{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.acad-phase-meta{flex:1;min-width:0}
+.acad-phase-eyebrow{font-size:.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;margin-bottom:3px}
+.acad-phase-name{font-size:1.05rem;font-weight:800;color:var(--ink);margin:0;line-height:1.2}
+.acad-phase-desc{font-size:.82rem;color:var(--muted);line-height:1.55;margin:0 0 16px;flex:1}
+
+/* Progress bar in phase card */
+.acad-phase-prog{margin-top:auto}
+.acad-phase-prog-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.acad-phase-prog-label{font-size:.72rem;color:var(--muted)}
+.acad-phase-prog-pct{font-size:.8rem;font-weight:800;color:var(--ink)}
+.acad-phase-prog-track{height:7px;background:var(--line);border-radius:6px;overflow:hidden}
+.acad-phase-prog-fill{height:100%;border-radius:6px;transition:width .6s ease}
+.acad-phase-prog-sub{font-size:.71rem;color:var(--muted);margin-top:6px}
+
+/* Phase CTA row */
+.acad-phase-cta{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);margin-top:0}
+
+/* SA-204 Status chips */
+.sa-chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:3px 10px;font-size:.67rem;font-weight:700;letter-spacing:.03em;white-space:nowrap}
+.sa-chip-not-started{background:var(--line);color:var(--muted)}
+.sa-chip-in-progress{background:rgba(245,158,11,.1);color:#b45309;border:1px solid rgba(245,158,11,.3)}
+.sa-chip-complete{background:rgba(16,185,129,.1);color:#059669;border:1px solid rgba(16,185,129,.3)}
+.sa-chip-locked{background:rgba(100,116,139,.08);color:#94a3b8;border:1px solid rgba(100,116,139,.2)}
+.sa-chip-certified{background:rgba(245,158,11,.12);color:#d97706;border:1px solid rgba(245,158,11,.35)}
+.sa-chip-beginner{background:rgba(99,102,241,.08);color:#6366f1;border:1px solid rgba(99,102,241,.2)}
+.sa-chip-intermediate{background:rgba(14,165,233,.08);color:#0ea5e9;border:1px solid rgba(14,165,233,.2)}
+.sa-chip-advanced{background:rgba(239,68,68,.07);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+
+/* SA-204 CTA Buttons */
+.sa-btn-primary{display:inline-flex;align-items:center;gap:8px;border:none;border-radius:10px;padding:10px 20px;font-size:.88rem;font-weight:700;cursor:pointer;background:var(--blue);color:#fff;transition:opacity .15s,transform .1s,box-shadow .15s;box-shadow:0 2px 8px rgba(0,167,225,.2)}
+.sa-btn-primary:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,167,225,.3)}
+.sa-btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.sa-btn-secondary{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);border-radius:10px;padding:9px 18px;font-size:.85rem;font-weight:600;cursor:pointer;background:var(--card);color:var(--ink);transition:border-color .15s,background .15s}
+.sa-btn-secondary:hover{border-color:var(--blue);background:rgba(0,167,225,.04)}
+.sa-btn-ghost{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:color .15s,background .15s}
+.sa-btn-ghost:hover{background:var(--line);color:var(--ink)}
+
+/* Sidebar cards */
+.acad-sidebar-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
+.acad-sidebar-card-head{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:7px}
+
+/* Badge mini-rows (upcoming) */
+.acad-badge-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1.5px solid var(--line);border-radius:11px;margin-bottom:8px;cursor:pointer;transition:border-color .2s,background .15s;background:var(--bg)}
+.acad-badge-row:hover{border-color:var(--blue);background:rgba(0,167,225,.03)}
+.acad-badge-row-text{flex:1;min-width:0}
+.acad-badge-row-name{font-size:.85rem;font-weight:700;color:var(--ink);margin-bottom:2px}
+.acad-badge-row-desc{font-size:.73rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Recently completed row */
+.acad-recent-row{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer;transition:opacity .15s}
+.acad-recent-row:last-child{border-bottom:none}
+.acad-recent-row:hover{opacity:.78}
+.acad-recent-check{width:28px;height:28px;border-radius:50%;background:rgba(16,185,129,.1);border:1.5px solid #10b981;display:flex;align-items:center;justify-content:center;color:#10b981;flex-shrink:0}
+
+/* Onboarding path */
+.acad-onboarding{background:rgba(0,167,225,.04);border:1.5px solid rgba(0,167,225,.18);border-radius:14px;padding:22px;margin-bottom:0}
+.acad-onboarding-title{font-size:1rem;font-weight:700;color:var(--ink);margin:0 0 14px;display:flex;align-items:center;gap:9px}
+.acad-onboarding-step{display:flex;align-items:flex-start;gap:11px;padding:9px 0;border-bottom:1px solid rgba(0,167,225,.1);font-size:.84rem;color:var(--ink);line-height:1.5}
+.acad-onboarding-step:last-child{border-bottom:none;padding-bottom:0}
+.acad-onboarding-num{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font-size:.67rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+
+/* ══ SA-102 Phase Detail Page ══════════════════════════════════════════════════ */
+
+/* Phase hero */
+.acad-phase-hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 32px;margin-bottom:22px;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(14,23,32,.06)}
+.acad-phase-hero-bar{position:absolute;top:0;left:0;right:0;height:4px}
+.acad-phase-hero-inner{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap}
+.acad-phase-hero-icon{width:60px;height:60px;border-radius:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.acad-phase-hero-body{flex:1;min-width:0}
+.acad-phase-hero-eyebrow{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px}
+.acad-phase-hero-title{font-size:1.6rem;font-weight:800;color:var(--ink);margin:0 0 8px;line-height:1.1}
+.acad-phase-hero-desc{font-size:.9rem;color:var(--muted);line-height:1.6;margin:0}
+
+/* SA-202 Progress card */
+.acad-progress-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin-bottom:22px}
+.acad-progress-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.acad-progress-card-label{font-size:.92rem;font-weight:700;color:var(--ink)}
+.acad-progress-card-pct{font-size:1.4rem;font-weight:800}
+.acad-progress-bar{height:10px;background:var(--line);border-radius:8px;overflow:hidden;margin-bottom:10px}
+.acad-progress-bar-fill{height:100%;border-radius:8px;transition:width .6s ease}
+.acad-progress-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.acad-progress-meta-item{font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:5px}
+
+/* SA-203 Module card (roadmap) */
+.acad-module-card{display:flex;align-items:stretch;gap:0;background:var(--card);border:1.5px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s}
+.acad-module-card:hover:not(.acad-module-locked){border-color:var(--blue);box-shadow:0 4px 18px rgba(14,23,32,.09);transform:translateY(-2px)}
+.acad-module-card.acad-module-locked{opacity:.55;cursor:not-allowed}
+.acad-module-card.acad-module-complete{border-color:rgba(16,185,129,.3)}
+.acad-module-card-accent{width:5px;flex-shrink:0}
+.acad-module-card-step{width:52px;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:20px 0}
+.acad-module-card-num{width:36px;height:36px;border-radius:50%;border:2.5px solid;display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:800}
+.acad-module-card-body{flex:1;min-width:0;padding:18px 16px}
+.acad-module-card-title{font-size:.97rem;font-weight:700;color:var(--ink);margin-bottom:5px}
+.acad-module-card-desc{font-size:.82rem;color:var(--muted);line-height:1.5;margin-bottom:10px}
+.acad-module-card-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.acad-module-card-cta{display:flex;align-items:center;padding:18px 20px 18px 12px;flex-shrink:0}
+
+/* Locked reason tooltip */
+.acad-lock-reason{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:.76rem;color:var(--muted);font-style:italic}
+
+/* ══ SA-103 Module Workspace ═══════════════════════════════════════════════════ */
+
+/* Workspace breadcrumb */
+.acad-breadcrumb{display:flex;align-items:center;gap:7px;margin-bottom:18px;flex-wrap:wrap}
+.acad-breadcrumb-item{font-size:.82rem;color:var(--muted);cursor:pointer;transition:color .15s;white-space:nowrap}
+.acad-breadcrumb-item:hover{color:var(--blue)}
+.acad-breadcrumb-sep{color:var(--line);font-size:.9rem}
+.acad-breadcrumb-current{font-size:.82rem;color:var(--ink);font-weight:600}
+
+/* Module header bar */
+.acad-ws-header{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 24px;margin-bottom:18px}
+.acad-ws-header-inner{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.acad-ws-header-body{flex:1;min-width:0}
+.acad-ws-mod-eyebrow{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;margin-bottom:4px}
+.acad-ws-mod-title{font-size:1.28rem;font-weight:800;color:var(--ink);margin:0 0 4px;line-height:1.2}
+.acad-ws-mod-sub{font-size:.84rem;color:var(--muted);margin:0}
+.acad-ws-header-progress{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.acad-ws-header-pct-label{font-size:.75rem;color:var(--muted);white-space:nowrap}
+.acad-ws-header-pct{font-size:.9rem;font-weight:800;color:var(--ink);white-space:nowrap;min-width:38px;text-align:right}
+.acad-ws-progress-bar{flex:1;height:7px;background:var(--line);border-radius:5px;overflow:hidden}
+.acad-ws-progress-fill{height:100%;border-radius:5px;transition:width .5s ease}
+
+/* Workspace split layout */
+.workspace-layout{display:grid;grid-template-columns:240px 1fr;gap:0;min-height:560px;border:1.5px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg)}
+@media(max-width:760px){.workspace-layout{grid-template-columns:1fr}}
+
+/* Left nav (SA-205) */
+.workspace-nav{background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.workspace-nav-header{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
+.workspace-nav-title{font-size:.63rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:8px}
+.workspace-nav-pct{font-size:1.5rem;font-weight:800;color:var(--ink);line-height:1}
+.workspace-nav-sub{font-size:.72rem;color:var(--muted);margin-top:3px}
+.workspace-nav-bar{height:6px;background:var(--line);border-radius:4px;margin-top:10px;overflow:hidden}
+.workspace-nav-fill{height:100%;border-radius:4px;transition:width .5s ease}
+
+/* Nav items */
+.ws-nav-item{display:flex;align-items:center;gap:10px;padding:11px 14px 11px 12px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;font-size:.82rem;color:var(--muted);line-height:1.3}
+.ws-nav-item:hover{background:rgba(0,167,225,.04);color:var(--ink)}
+.ws-nav-item.active-section{background:rgba(0,167,225,.07);border-left-color:var(--blue);color:var(--ink);font-weight:700}
+.ws-nav-item.done-section{color:#059669}
+.ws-nav-item.done-section:hover{background:rgba(16,185,129,.04)}
+.ws-nav-dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:800;flex-shrink:0;background:var(--line);color:var(--muted);border:2px solid var(--line);transition:all .2s}
+.ws-nav-dot.done{background:rgba(16,185,129,.12);color:#059669;border-color:#10b981}
 .ws-nav-dot.active{background:rgba(0,167,225,.12);color:var(--blue);border-color:var(--blue)}
-.workspace-main{padding:28px 32px;overflow-y:auto;overflow-x:hidden;background:var(--bg);min-width:0;box-sizing:border-box}
-/* ── Lesson content ── */
-.ws-section-type{font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:6px;font-weight:700}
-.ws-section-title{font-size:1.3rem;font-weight:700;color:var(--ink);margin:0 0 16px}
-.ws-body{color:var(--ink);line-height:1.72;font-size:.93rem;margin-bottom:18px}
-.ws-body p{margin:0 0 12px}
-.ws-key-point{display:flex;gap:10px;padding:11px 15px;background:rgba(0,167,225,.06);border-left:3px solid var(--blue);border-radius:0 8px 8px 0;margin-bottom:8px;font-size:.88rem;color:var(--ink);line-height:1.5}
-.ws-callout{border-radius:10px;padding:14px 18px;margin:16px 0;border-left:4px solid}
-.ws-callout.principle{background:rgba(0,167,225,.06);border-color:var(--blue)}
-.ws-callout.warning{background:rgba(239,68,68,.05);border-color:#ef4444}
-.ws-callout.list{background:rgba(16,185,129,.05);border-color:#10b981}
-.ws-callout-title{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.ws-nav-type-badge{font-size:.55rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;opacity:.6}
+
+/* Main content area */
+.workspace-main{padding:30px 34px;overflow-y:auto;overflow-x:hidden;background:var(--bg);min-width:0;box-sizing:border-box}
+
+/* Lesson content */
+.ws-section-type{font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:6px;font-weight:800;display:flex;align-items:center;gap:7px}
+.ws-section-type::before{content:'';display:inline-block;width:18px;height:2px;background:var(--blue);border-radius:2px}
+.ws-section-title{font-size:1.38rem;font-weight:800;color:var(--ink);margin:0 0 20px;line-height:1.2}
+.ws-body{color:var(--ink);line-height:1.78;font-size:.93rem;margin-bottom:20px}
+.ws-body p{margin:0 0 14px}
+.ws-body p:last-child{margin-bottom:0}
+.ws-body strong{font-weight:700;color:var(--ink)}
+
+.ws-key-point{display:flex;gap:11px;padding:12px 16px;background:rgba(0,167,225,.06);border-left:3px solid var(--blue);border-radius:0 10px 10px 0;margin-bottom:9px;font-size:.88rem;color:var(--ink);line-height:1.55}
+.ws-key-point-dot{width:8px;height:8px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:5px}
+
+.ws-callout{border-radius:12px;padding:16px 20px;margin:20px 0;border-left:4px solid}
+.ws-callout.principle{background:rgba(0,167,225,.05);border-color:var(--blue)}
+.ws-callout.warning{background:rgba(239,68,68,.04);border-color:#ef4444}
+.ws-callout.list{background:rgba(16,185,129,.04);border-color:#10b981}
+.ws-callout-title{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:9px}
 .ws-callout.principle .ws-callout-title{color:var(--blue)}
 .ws-callout.warning .ws-callout-title{color:#ef4444}
 .ws-callout.list .ws-callout-title{color:#10b981}
-.ws-callout-body{font-size:.88rem;color:var(--ink);line-height:1.6}
+.ws-callout-body{font-size:.88rem;color:var(--ink);line-height:1.65}
 .ws-callout-list{margin:0;padding-left:0;list-style:none}
-.ws-callout-list li{padding:4px 0 4px 0;font-size:.87rem;color:var(--ink);line-height:1.5;border-bottom:1px solid var(--line)}
+.ws-callout-list li{padding:6px 0;font-size:.87rem;color:var(--ink);line-height:1.55;border-bottom:1px solid rgba(0,0,0,.05);display:flex;align-items:flex-start;gap:8px}
+.ws-callout-list li::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;flex-shrink:0;margin-top:7px}
 .ws-callout-list li:last-child{border-bottom:none}
-.ws-examples{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+
+.ws-examples{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
 @media(max-width:600px){.ws-examples{grid-template-columns:1fr}}
-.ws-example{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:13px 15px}
-.ws-example-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:var(--blue)}
-.ws-example-text{font-size:.85rem;color:var(--ink);line-height:1.55;font-style:italic}
-.ws-note-prompt{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:16px 0}
-.ws-note-prompt-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.ws-note-textarea{width:100%;min-height:90px;border:1.5px solid var(--line);border-radius:7px;padding:10px 12px;font-size:.87rem;color:var(--ink);background:var(--bg);resize:vertical;font-family:inherit;box-sizing:border-box;transition:border-color .2s}
-.ws-note-textarea:focus{outline:none;border-color:var(--blue)}
-.ws-complete-btn{display:inline-flex;align-items:center;gap:8px;border:none;border-radius:10px;padding:11px 22px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:18px;transition:opacity .15s,transform .1s;color:#fff}
-.ws-complete-btn:hover{opacity:.88;transform:translateY(-1px)}
-.ws-complete-btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
-.ws-done-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,.1);border:1.5px solid #10b981;color:#10b981;border-radius:10px;padding:10px 18px;font-size:.88rem;font-weight:600;margin-top:16px}
-/* ── Quiz ── */
-.quiz-container{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;width:100%;box-sizing:border-box}
-.quiz-q{margin-bottom:24px;width:100%}
-.quiz-q-num{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
-.quiz-q-prompt{font-weight:600;color:var(--ink);margin-bottom:12px;line-height:1.45;font-size:.95rem;word-wrap:break-word}
-.quiz-choice{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1.5px solid var(--line);border-radius:9px;cursor:pointer;margin-bottom:8px;transition:border-color .15s,background .15s;background:var(--bg);width:100%;box-sizing:border-box;text-align:left}
+.ws-example{background:var(--card);border:1.5px solid var(--line);border-radius:11px;padding:15px 17px}
+.ws-example-label{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;color:var(--blue)}
+.ws-example-text{font-size:.86rem;color:var(--ink);line-height:1.6;font-style:italic}
+
+.ws-note-prompt{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:16px 18px;margin:20px 0}
+.ws-note-prompt-label{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:9px;display:flex;align-items:center;gap:7px}
+.ws-note-textarea{width:100%;min-height:96px;border:1.5px solid var(--line);border-radius:9px;padding:11px 13px;font-size:.88rem;color:var(--ink);background:var(--bg);resize:vertical;font-family:inherit;box-sizing:border-box;transition:border-color .2s}
+.ws-note-textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,167,225,.08)}
+
+.ws-complete-btn{display:inline-flex;align-items:center;gap:9px;border:none;border-radius:11px;padding:12px 24px;font-size:.92rem;font-weight:700;cursor:pointer;margin-top:22px;transition:opacity .15s,transform .1s,box-shadow .15s;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,.15)}
+.ws-complete-btn:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.ws-complete-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.ws-done-badge{display:inline-flex;align-items:center;gap:9px;background:rgba(16,185,129,.1);border:1.5px solid rgba(16,185,129,.4);color:#059669;border-radius:11px;padding:11px 20px;font-size:.9rem;font-weight:700;margin-top:18px}
+.ws-next-hint{margin-top:26px;padding:14px 18px;background:var(--card);border:1.5px solid var(--line);border-radius:11px;cursor:pointer;transition:border-color .15s,background .15s;display:flex;align-items:center;gap:12px}
+.ws-next-hint:hover{border-color:var(--blue);background:rgba(0,167,225,.03)}
+.ws-next-hint-eyebrow{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:3px}
+.ws-next-hint-title{font-size:.9rem;font-weight:700;color:var(--ink)}
+
+/* ══ SA-303 Quiz redesign ══════════════════════════════════════════════════════ */
+.quiz-container{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:24px;width:100%;box-sizing:border-box}
+.quiz-q{margin-bottom:28px;width:100%}
+.quiz-q-num{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:7px;display:flex;align-items:center;gap:8px}
+.quiz-q-num-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--line);font-size:.6rem;font-weight:800;color:var(--muted)}
+.quiz-q-prompt{font-weight:700;color:var(--ink);margin-bottom:14px;line-height:1.5;font-size:.97rem;word-wrap:break-word}
+.quiz-choice{display:flex;align-items:center;gap:13px;padding:13px 16px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;margin-bottom:9px;transition:border-color .15s,background .15s;background:var(--bg);width:100%;box-sizing:border-box;text-align:left}
 .quiz-choice:hover{border-color:var(--blue);background:rgba(0,167,225,.04)}
 .quiz-choice.selected{border-color:var(--blue);background:rgba(0,167,225,.07)}
 .quiz-choice.correct{border-color:#10b981;background:rgba(16,185,129,.07)}
 .quiz-choice.wrong{border-color:#ef4444;background:rgba(239,68,68,.06)}
 .quiz-choice input[type=radio]{margin:0;flex-shrink:0;width:16px;height:16px;accent-color:var(--blue);cursor:pointer}
 .quiz-choice-text{font-size:.88rem;color:var(--ink);line-height:1.5;flex:1;min-width:0;word-wrap:break-word}
-.quiz-submit-btn{background:var(--blue);color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:18px;transition:opacity .15s,transform .1s}
-.quiz-submit-btn:hover{opacity:.88;transform:translateY(-1px)}
-.quiz-submit-btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
-.quiz-result{border-radius:12px;padding:18px;margin-top:18px}
-.quiz-result.pass{background:rgba(16,185,129,.07);border:1.5px solid rgba(16,185,129,.3)}
-.quiz-result.fail{background:rgba(239,68,68,.05);border:1.5px solid rgba(239,68,68,.2)}
-.quiz-feedback-item{padding:9px 13px;border-radius:8px;margin-bottom:7px;font-size:.84rem;border-left:3px solid}
-.quiz-feedback-item.correct{background:rgba(16,185,129,.07);border-left-color:#10b981}
-.quiz-feedback-item.wrong{background:rgba(239,68,68,.06);border-left-color:#ef4444}
-.quiz-explanation{font-size:.8rem;color:var(--muted);margin-top:4px;line-height:1.45}
-.prev-attempts-chip{display:inline-flex;align-items:center;gap:5px;font-size:.76rem;color:var(--muted);background:var(--line);border-radius:99px;padding:3px 11px;margin-bottom:14px}
-/* ── Admin dashboard ── */
-.admin-rep-card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
-.admin-rep-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s}
-.admin-rep-header:hover{background:var(--bg)}
-.admin-mod-matrix{overflow-x:auto;padding:0 16px 14px}
-.admin-mod-cell{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:58px;min-width:52px;border:1px solid var(--line);border-radius:7px;padding:7px 4px;font-size:.72rem;font-weight:600;text-align:center;background:var(--bg);margin:4px 2px;transition:border-color .15s;cursor:default}
-.admin-mod-cell.completed{background:rgba(16,185,129,.08);border-color:#10b981;color:#10b981}
-.admin-mod-cell.in-progress{background:rgba(245,158,11,.08);border-color:#f59e0b;color:#f59e0b}
-.admin-action-btn{font-size:.75rem;padding:5px 11px;border:1.5px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);cursor:pointer;font-weight:600;transition:border-color .15s,background .15s}
+.quiz-submit-btn{background:var(--blue);color:#fff;border:none;border-radius:11px;padding:13px 30px;font-size:.95rem;font-weight:700;cursor:pointer;margin-top:20px;transition:opacity .15s,transform .1s,box-shadow .15s;box-shadow:0 2px 8px rgba(0,167,225,.2);display:inline-flex;align-items:center;gap:9px}
+.quiz-submit-btn:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,167,225,.3)}
+.quiz-submit-btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.quiz-result{border-radius:14px;padding:20px;margin-top:20px}
+.quiz-result.pass{background:rgba(16,185,129,.06);border:1.5px solid rgba(16,185,129,.3)}
+.quiz-result.fail{background:rgba(239,68,68,.04);border:1.5px solid rgba(239,68,68,.2)}
+.quiz-result-score{font-size:2.2rem;font-weight:800;line-height:1}
+.quiz-feedback-item{padding:10px 14px;border-radius:10px;margin-bottom:8px;font-size:.84rem;border-left:3.5px solid}
+.quiz-feedback-item.correct{background:rgba(16,185,129,.06);border-left-color:#10b981}
+.quiz-feedback-item.wrong{background:rgba(239,68,68,.05);border-left-color:#ef4444}
+.quiz-feedback-verdict{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.quiz-feedback-item.correct .quiz-feedback-verdict{color:#059669}
+.quiz-feedback-item.wrong .quiz-feedback-verdict{color:#ef4444}
+.quiz-explanation{font-size:.82rem;color:var(--muted);margin-top:5px;line-height:1.5}
+.prev-attempts-chip{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;color:var(--muted);background:var(--line);border-radius:99px;padding:4px 12px;margin-bottom:16px}
+
+/* ══ SA-206 Badges & Certifications ══════════════════════════════════════════ */
+.acad-badges-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.acad-badge-card{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:20px 16px;text-align:center;transition:border-color .2s,transform .15s,box-shadow .15s;cursor:default;position:relative;overflow:hidden}
+.acad-badge-card.earned{cursor:pointer}
+.acad-badge-card.earned:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(14,23,32,.1)}
+.acad-badge-card.locked{opacity:.45}
+.acad-badge-card-icon{display:flex;justify-content:center;margin-bottom:12px}
+.acad-badge-card-name{font-size:.88rem;font-weight:700;margin-bottom:5px}
+.acad-badge-card-desc{font-size:.73rem;color:var(--muted);line-height:1.45}
+.acad-badge-card-type{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-top:10px;opacity:.6}
+
+/* ══ SA-401 Admin Dashboard ═══════════════════════════════════════════════════ */
+.admin-rep-card{background:var(--card);border:1.5px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden}
+.admin-rep-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s}
+.admin-rep-header:hover{background:rgba(0,167,225,.03)}
+.admin-mod-matrix{overflow-x:auto;padding:12px 18px 16px;display:flex;flex-wrap:wrap;gap:6px}
+.admin-mod-cell{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:60px;min-width:54px;border:1.5px solid var(--line);border-radius:9px;padding:8px 4px;font-size:.72rem;font-weight:700;text-align:center;background:var(--bg);transition:border-color .15s;cursor:default}
+.admin-mod-cell.completed{background:rgba(16,185,129,.08);border-color:#10b981;color:#059669}
+.admin-mod-cell.in-progress{background:rgba(245,158,11,.08);border-color:#f59e0b;color:#b45309}
+.admin-action-btn{font-size:.76rem;padding:6px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);cursor:pointer;font-weight:600;transition:border-color .15s,background .15s;display:inline-flex;align-items:center;gap:6px}
 .admin-action-btn:hover{border-color:var(--blue);background:rgba(0,167,225,.06)}
-.admin-action-btn.danger:hover{border-color:#ef4444;background:rgba(239,68,68,.06);color:#ef4444}
+.admin-action-btn.danger:hover{border-color:#ef4444;background:rgba(239,68,68,.05);color:#ef4444}
+
+/* Team summary metric cards */
+.admin-metric-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+@media(max-width:760px){.admin-metric-cards{grid-template-columns:repeat(2,1fr)}}
+.admin-metric-card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:18px 20px}
+.admin-metric-val{font-size:1.8rem;font-weight:800;color:var(--ink);line-height:1}
+.admin-metric-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:5px}
+
+/* ══ SA-104 Practice Arena ═══════════════════════════════════════════════════ */
+.acad-practice-challenge{background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:16px;padding:24px 28px;margin-bottom:22px;display:flex;align-items:center;gap:20px;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.acad-practice-challenge-icon{width:56px;height:56px;border-radius:14px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.acad-practice-challenge-body{flex:1;min-width:0}
+.acad-practice-challenge-title{font-size:1.1rem;font-weight:800;margin-bottom:4px}
+.acad-practice-challenge-sub{font-size:.84rem;opacity:.75;line-height:1.4}
+.acad-practice-item{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:15px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:border-color .2s,box-shadow .15s,transform .1s}
+.acad-practice-item:hover{border-color:var(--blue);box-shadow:0 3px 14px rgba(14,23,32,.08);transform:translateY(-1px)}
+.acad-practice-item-icon{width:42px;height:42px;border-radius:11px;background:var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.acad-practice-item-body{flex:1;min-width:0}
+.acad-practice-item-title{font-size:.9rem;font-weight:700;color:var(--ink);margin-bottom:3px}
+.acad-practice-item-meta{font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ══ SA-403 Rep Profile ══════════════════════════════════════════════════════ */
+.acad-profile-hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px 30px;margin-bottom:22px;display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap}
+.acad-profile-avatar{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:800;color:#fff;flex-shrink:0}
+.acad-profile-body{flex:1;min-width:0}
+.acad-profile-name{font-size:1.3rem;font-weight:800;color:var(--ink);margin-bottom:4px}
+.acad-profile-level{display:inline-flex;align-items:center;gap:7px;font-size:.84rem;font-weight:700;margin-bottom:12px}
+.acad-profile-stats{display:flex;gap:0;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--line)}
+.acad-profile-stat{padding:0 18px;border-right:1px solid var(--line);text-align:center}
+.acad-profile-stat:first-child{padding-left:0}
+.acad-profile-stat:last-child{border-right:none}
+.acad-profile-stat-num{font-size:1.5rem;font-weight:800;color:var(--ink)}
+.acad-profile-stat-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-top:3px}
+
+/* ══ SA-207 Empty/Loading/Locked states ══════════════════════════════════════ */
+.acad-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center;background:var(--card);border:1.5px solid var(--line);border-radius:16px}
+.acad-empty-icon{margin-bottom:16px;opacity:.4}
+.acad-empty-title{font-size:1.05rem;font-weight:700;color:var(--ink);margin-bottom:8px}
+.acad-empty-desc{font-size:.86rem;color:var(--muted);line-height:1.55;max-width:320px;margin:0 auto 18px}
+.acad-locked-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:44px 24px;text-align:center;background:rgba(100,116,139,.04);border:1.5px solid rgba(100,116,139,.18);border-radius:16px}
+.acad-locked-title{font-size:1.05rem;font-weight:700;color:var(--ink);margin:14px 0 8px}
+.acad-locked-desc{font-size:.86rem;color:var(--muted);line-height:1.55;max-width:320px;margin:0 auto 18px}
+
+/* Skeleton loader */
+@keyframes acad-shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+.acad-skeleton{border-radius:8px;background:linear-gradient(90deg,var(--line) 25%,rgba(0,0,0,.06) 50%,var(--line) 75%);background-size:800px 100%;animation:acad-shimmer 1.4s infinite linear}
+
+/* ══ SA-501 Visual QA helpers ════════════════════════════════════════════════ */
+/* Responsive: 2-col sidebar layout */
+.acad-home-grid{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
+@media(max-width:1000px){.acad-home-grid{grid-template-columns:1fr}}
+.acad-home-main{min-width:0}
+.acad-home-sidebar{min-width:0}
+@media(max-width:1000px){.acad-home-sidebar{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+@media(max-width:620px){.acad-home-sidebar{grid-template-columns:1fr}}
 </style>`;
 
-// ─── Academy Home ─────────────────────────────────────────────────────────────
+// ─── Academy Home (SA-101) ────────────────────────────────────────────────────
 function academyHome() {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repId = rep ? rep.id : 'ryan';
@@ -4234,163 +4480,221 @@ function academyHome() {
   const levelPct = nextLevel
     ? Math.min(100, Math.round(((hd.points - level.minPoints) / (nextLevel.minPoints - level.minPoints)) * 100))
     : 100;
-  const isAdmin = rep && rep.role === 'admin';
+  const isAdmin = rep && (rep.role === 'admin' || rep.role === 'office_manager');
 
+  // ── SA-203 Phase cards ──
   const phaseCards = hd.phaseProgress.map(ph => {
-    const phIcon = svgPhaseIcon(ph.sort_order, ph.color, 36);
-    const completeChip = ph.pct === 100
-      ? `<span class="phase-status-chip" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.3)">${SVG_CHECK} Complete</span>`
+    const phIcon = svgPhaseIcon(ph.sort_order, ph.color, 26);
+    const statusChip = ph.pct === 100
+      ? `<span class="sa-chip sa-chip-complete">${SVG_CHECK} Complete</span>`
       : ph.inProgress
-      ? `<span class="phase-status-chip" style="background:rgba(245,158,11,.1);color:#b45309;border:1px solid rgba(245,158,11,.3)">In Progress</span>`
-      : '';
-    const lockBadge = ph.locked
-      ? `<span class="phase-status-chip" style="background:var(--line);color:var(--muted);border:none">${SVG_LOCK} Complete Phase ${ph.sort_order - 1} to unlock</span>`
-      : '';
-    return `<article class="phase-card${ph.locked ? ' phase-locked' : ''}" ${ph.locked ? '' : `onclick="show('academy','phase:${ph.id}')"`}>
-      <div class="phase-card-accent" style="background:${ph.color}"></div>
-      <div class="phase-card-header">
-        <div style="flex-shrink:0">${phIcon}</div>
-        <div style="flex:1;min-width:0">
-          <div class="phase-num">Phase ${ph.sort_order}</div>
-          <div class="phase-title">${escapeHtml(ph.title)}</div>
+      ? `<span class="sa-chip sa-chip-in-progress">In Progress</span>`
+      : ph.locked
+      ? `<span class="sa-chip sa-chip-locked">${SVG_LOCK} Locked</span>`
+      : `<span class="sa-chip sa-chip-not-started">Not Started</span>`;
+    const ctaLabel = ph.pct === 100 ? 'Review' : ph.inProgress ? 'Continue' : ph.locked ? 'Locked' : 'Start';
+    const ctaColor = ph.pct === 100 ? '#10b981' : ph.locked ? 'var(--muted)' : ph.color;
+    return `<article class="acad-phase-card${ph.locked?' acad-phase-locked':''}${ph.pct===100?' acad-phase-complete':''}" ${ph.locked?'':` onclick="show('academy','phase:${ph.id}')"`}>
+      <div class="acad-phase-bar" style="background:${ph.color}"></div>
+      <div class="acad-phase-body">
+        <div class="acad-phase-header">
+          <div class="acad-phase-icon-wrap" style="background:${ph.color}18">${phIcon}</div>
+          <div class="acad-phase-meta">
+            <div class="acad-phase-eyebrow" style="color:${ph.color}">Phase ${ph.sort_order}</div>
+            <div class="acad-phase-name">${escapeHtml(ph.title)}</div>
+          </div>
         </div>
-        <div>${completeChip}</div>
+        <p class="acad-phase-desc">${escapeHtml(ph.short_description)}</p>
+        <div class="acad-phase-prog">
+          <div class="acad-phase-prog-top">
+            <span class="acad-phase-prog-label">${ph.modulesCompleted} of ${ph.totalModules} modules</span>
+            <span class="acad-phase-prog-pct" style="color:${ph.color}">${ph.pct}%</span>
+          </div>
+          <div class="acad-phase-prog-track"><div class="acad-phase-prog-fill" style="width:${ph.pct}%;background:${ph.color}"></div></div>
+        </div>
       </div>
-      <p class="phase-desc">${escapeHtml(ph.short_description)}</p>
-      <div class="phase-prog-row">
-        <div class="phase-prog-track"><div class="phase-prog-fill" style="width:${ph.pct}%;background:${ph.color}"></div></div>
-        <span class="phase-prog-pct">${ph.pct}%</span>
+      <div class="acad-phase-cta">
+        ${statusChip}
+        ${!ph.locked ? `<span style="font-size:.8rem;font-weight:700;color:${ctaColor};display:flex;align-items:center;gap:5px">${ctaLabel} ${SVG_ARROW}</span>` : `<span style="font-size:.75rem;color:var(--muted)">Complete Phase ${ph.sort_order-1}</span>`}
       </div>
-      <div class="phase-mod-count">${ph.modulesCompleted} of ${ph.totalModules} modules complete</div>
-      ${lockBadge}
     </article>`;
   }).join('');
 
-  const nextCard = hd.nextModule
-    ? `<div style="margin-bottom:20px">
-        <div class="acad-section-label">Recommended Next</div>
-        <div class="acad-next-card" onclick="show('academy','module:${hd.nextModule.id}')">
-          <div style="flex-shrink:0">${svgPhaseIcon(hd.nextModule.phase_id === 'phase_1' ? 1 : hd.nextModule.phase_id === 'phase_2' ? 2 : 3, 'var(--blue)', 40)}</div>
-          <div style="flex:1;min-width:0">
-            <div class="acad-next-label">Continue Learning</div>
-            <div class="acad-next-title">${escapeHtml(hd.nextModule.title)}</div>
-            <div class="acad-next-sub">${escapeHtml((hd.nextModule.short_description||'').substring(0,90))}…</div>
-          </div>
-          <div style="flex-shrink:0;color:var(--blue)">${SVG_ARROW}</div>
+  // ── Continue card ──
+  const continueCard = hd.nextModule
+    ? `<div class="acad-continue-card" onclick="show('academy','module:${hd.nextModule.id}')">
+        <div class="acad-continue-icon">
+          ${svgPhaseIcon(hd.nextModule.phase_id==='phase_1'?1:hd.nextModule.phase_id==='phase_2'?2:3,'#fff',22)}
         </div>
+        <div class="acad-continue-body">
+          <div class="acad-continue-eyebrow">${(window.Academy.getModuleProgress(repId,hd.nextModule.id)||{}).status==='in_progress'?'Continue where you left off':'Up next in your training'}</div>
+          <div class="acad-continue-title">${escapeHtml(hd.nextModule.title)}</div>
+          <div class="acad-continue-meta">Module ${hd.nextModule.sort_order} · ~${hd.nextModule.estimated_minutes||35} min · ${hd.nextModule.difficulty||'Beginner'}</div>
+        </div>
+        <div class="acad-continue-arrow">${SVG_ARROW}</div>
       </div>`
     : hd.overallPct === 100
-    ? `<div style="margin-bottom:20px">
-        <div class="acad-next-card" style="border-color:#10b981;cursor:default">
-          <div style="flex-shrink:0">${svgBadgeShape('trophy','#10b981',44)}</div>
-          <div>
-            <div class="acad-next-label" style="color:#10b981">Academy Complete</div>
-            <div class="acad-next-title">All 9 modules finished</div>
-            <div class="acad-next-sub">You've mastered the full Avalon Sales Academy curriculum.</div>
-          </div>
+    ? `<div class="acad-continue-card" style="background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(5,150,105,.05));border-color:rgba(16,185,129,.3);cursor:default">
+        <div class="acad-continue-icon" style="background:#10b981">${svgBadgeShape('trophy','#fff',24)}</div>
+        <div class="acad-continue-body">
+          <div class="acad-continue-eyebrow" style="color:#059669">Academy Complete</div>
+          <div class="acad-continue-title">All 9 modules finished</div>
+          <div class="acad-continue-meta">You've mastered the full Avalon Sales Academy curriculum.</div>
         </div>
       </div>`
     : '';
 
+  // ── Upcoming badges ──
   const upcomingBadgesHtml = hd.upcomingBadges.length
     ? hd.upcomingBadges.map(b => `
-      <div class="badge-upcoming-row" onclick="show('academy','badges')">
-        <div style="flex-shrink:0">${svgBadgeShape(b.shape, b.color, 32)}</div>
-        <div>
-          <div style="font-weight:600;font-size:.85rem;color:var(--ink)">${escapeHtml(b.name)}</div>
-          <div style="font-size:.72rem;color:var(--muted)">${escapeHtml(b.desc)}</div>
+      <div class="acad-badge-row" onclick="show('academy','badges')">
+        <div style="flex-shrink:0">${svgBadgeShape(b.shape,b.color,32)}</div>
+        <div class="acad-badge-row-text">
+          <div class="acad-badge-row-name">${escapeHtml(b.name)}</div>
+          <div class="acad-badge-row-desc">${escapeHtml(b.desc)}</div>
         </div>
+        <span style="color:var(--blue);flex-shrink:0">${SVG_ARROW}</span>
       </div>`).join('')
-    : `<p style="color:var(--muted);font-size:.85rem">All badges earned — well done.</p>`;
+    : `<div class="acad-empty" style="padding:24px"><div class="acad-empty-title" style="font-size:.9rem">All badges earned</div></div>`;
 
+  // ── Recently completed ──
   const recentHtml = hd.recentlyCompleted.length
     ? hd.recentlyCompleted.map(m => `
-      <div class="recently-item" onclick="show('academy','module:${m.id}')">
-        <div class="recently-check">${SVG_CHECK}</div>
-        <div>
-          <div style="font-size:.85rem;font-weight:600;color:var(--ink)">${escapeHtml(m.title)}</div>
-          <div style="font-size:.72rem;color:var(--muted)">Module ${m.sort_order}</div>
+      <div class="acad-recent-row" onclick="show('academy','module:${m.id}')">
+        <div class="acad-recent-check">${SVG_CHECK}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.86rem;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.title)}</div>
+          <div style="font-size:.73rem;color:var(--muted)">Module ${m.sort_order} · ${(window.Academy.getModuleProgress(repId,m.id)||{}).quiz_best_score!=null?'Quiz: '+(window.Academy.getModuleProgress(repId,m.id)||{}).quiz_best_score+'%':''}</div>
         </div>
       </div>`).join('')
-    : `<p style="color:var(--muted);font-size:.85rem">No modules completed yet — start with Phase 1.</p>`;
+    : `<p style="color:var(--muted);font-size:.85rem;margin:0">No modules completed yet.</p>`;
+
+  // ── Onboarding steps ──
+  const onboardingSteps = ['Complete all 3 Phase 1 modules to understand the Avalon sales system.','Shadow one intake call, one discovery call, one site walk, and one proposal review.','Pass each module quiz at 75% or higher.','Role-play discovery, budget discussion, proposal delivery, and objection handling.','Build one sample scope and proposal with manager review.','Own a low-complexity opportunity under supervision.','Review first won/lost opportunities in weekly coaching.'];
+  const onboardingHtml = onboardingSteps.map((s,i) => `
+    <div class="acad-onboarding-step">
+      <div class="acad-onboarding-num">${i+1}</div>
+      <span>${escapeHtml(s)}</span>
+    </div>`).join('');
 
   view.innerHTML = ACAD_STYLES + `
-<div class="acad-header">
-  <div class="acad-header-top">
-    <div>
-      <div class="eyebrow" style="margin-bottom:4px">Training Path</div>
-      <h1 style="margin:0;font-size:1.55rem;color:var(--ink)">Avalon Sales Academy</h1>
+
+<!-- ── Dashboard Banner (SA-101) ── -->
+<div class="acad-banner">
+  <div class="acad-banner-row">
+    <div class="acad-banner-left">
+      <div class="acad-banner-eyebrow">Sales Training</div>
+      <h1 class="acad-banner-title">Avalon Sales Academy</h1>
+      <p class="acad-banner-sub">Master consultative selling, close more deals, and earn your certifications.</p>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <div class="acad-level-chip" style="border-color:${level.color};color:${level.color}">
-        ${svgLevelIcon(level.id, level.color, 20)}
+    <div class="acad-banner-right">
+      <div class="acad-level-badge" style="border-color:${level.color}22;background:${level.color}0d;color:${level.color}">
+        ${svgLevelIcon(level.id, level.color, 22)}
         <span>${escapeHtml(level.name)}</span>
       </div>
-      ${hd.streak_days > 0 ? `<div class="acad-level-chip" style="border-color:#f97316;color:#f97316">${svgBadgeShape('flame','#f97316',18)} ${hd.streak_days}-day streak</div>` : ''}
-      ${isAdmin ? `<button class="secondary-btn" style="font-size:.78rem;padding:6px 12px;display:inline-flex;align-items:center;gap:6px" onclick="show('academy','admin')">${SVG_TEAM} Team Progress</button>` : ''}
+      ${hd.streak_days > 0 ? `<div class="acad-streak-badge">${svgBadgeShape('flame','#f97316',16)} ${hd.streak_days}-day streak</div>` : ''}
+      ${isAdmin ? `<button class="sa-btn-secondary" style="font-size:.78rem;padding:7px 14px" onclick="show('academy','admin')">${SVG_TEAM} Team Progress</button>` : ''}
     </div>
   </div>
 
-  <div class="acad-stats">
-    <div class="acad-stat">
-      <div class="acad-stat-num">${hd.overallPct}%</div>
-      <div class="acad-stat-label">Overall</div>
+  <div class="acad-stat-row">
+    <div class="acad-stat-pill">
+      <span class="acad-stat-pill-num">${hd.overallPct}%</span>
+      <span class="acad-stat-pill-label">Complete</span>
     </div>
-    <div class="acad-stat">
-      <div class="acad-stat-num">${hd.completedModules}/${hd.totalModules}</div>
-      <div class="acad-stat-label">Modules</div>
+    <div class="acad-stat-pill">
+      <span class="acad-stat-pill-num">${hd.completedModules}<span style="font-size:1rem;font-weight:600;color:var(--muted)">/${hd.totalModules}</span></span>
+      <span class="acad-stat-pill-label">Modules</span>
     </div>
-    <div class="acad-stat">
-      <div class="acad-stat-num">${hd.points}</div>
-      <div class="acad-stat-label">Points</div>
+    <div class="acad-stat-pill">
+      <span class="acad-stat-pill-num">${hd.points}</span>
+      <span class="acad-stat-pill-label">Points</span>
     </div>
-    <div class="acad-stat">
-      <div class="acad-stat-num">${hd.badgesEarned}</div>
-      <div class="acad-stat-label">Badges</div>
+    <div class="acad-stat-pill">
+      <span class="acad-stat-pill-num">${hd.badgesEarned}<span style="font-size:1rem;font-weight:600;color:var(--muted)">/${hd.totalBadges}</span></span>
+      <span class="acad-stat-pill-label">Badges</span>
     </div>
-    <div class="acad-stat">
-      <div class="acad-stat-num">${hd.quizzesPassed}</div>
-      <div class="acad-stat-label">Quizzes</div>
+    <div class="acad-stat-pill">
+      <span class="acad-stat-pill-num">${hd.quizzesPassed}</span>
+      <span class="acad-stat-pill-label">Quizzes</span>
     </div>
   </div>
 
   ${nextLevel
-    ? `<div class="acad-level-bar-wrap">
-        <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-bottom:4px">
-          <span style="color:${level.color};font-weight:600">${escapeHtml(level.name)}</span>
-          <span>${pointsToNext} pts to <strong style="color:${nextLevel.color}">${escapeHtml(nextLevel.name)}</strong></span>
+    ? `<div class="acad-level-progress">
+        <div class="acad-level-progress-labels">
+          <span class="acad-level-progress-current" style="color:${level.color}">${escapeHtml(level.name)}</span>
+          <span class="acad-level-progress-next">${pointsToNext} pts → <strong style="color:${nextLevel.color}">${escapeHtml(nextLevel.name)}</strong></span>
         </div>
-        <div class="acad-level-bar-track">
-          <div class="acad-level-bar-fill" style="width:${levelPct}%;background:${level.color}"></div>
-        </div>
+        <div class="acad-level-bar"><div class="acad-level-bar-fill" style="width:${levelPct}%;background:linear-gradient(90deg,${level.color},${nextLevel.color})"></div></div>
       </div>`
-    : `<div style="margin-top:12px;font-size:.85rem;color:#f59e0b;font-weight:600;display:inline-flex;align-items:center;gap:6px">${svgBadgeShape('star','#f59e0b',18)} Maximum Level — Mentor</div>`}
+    : `<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:.86rem;color:#f59e0b;font-weight:700;display:inline-flex;align-items:center;gap:7px">${svgBadgeShape('star','#f59e0b',18)} Maximum Level Reached — Mentor</div>`}
 </div>
 
-${nextCard}
+<!-- ── Continue CTA ── -->
+${continueCard}
 
-<div class="acad-section-label">Training Phases</div>
-<div class="grid grid-3 mt" style="margin-top:0;margin-bottom:22px">${phaseCards}</div>
+<!-- ── Two-column home grid ── -->
+<div class="acad-home-grid">
+  <div class="acad-home-main">
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px">
-  <div class="card">
-    <div class="acad-section-label">Upcoming Badges</div>
-    ${upcomingBadgesHtml}
-    <button class="secondary-btn" style="width:100%;margin-top:8px;font-size:.78rem" onclick="show('academy','badges')">View All Badges</button>
+    <div class="acad-sh">Training Phases</div>
+    <div class="acad-phase-grid">${phaseCards}</div>
+
+    <!-- Onboarding path -->
+    <div class="acad-onboarding">
+      <div class="acad-onboarding-title">
+        <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="var(--blue)" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        New Hire Onboarding Path
+      </div>
+      ${onboardingHtml}
+    </div>
   </div>
-  <div class="card">
-    <div class="acad-section-label">Recently Completed</div>
-    ${recentHtml}
-  </div>
-</div>
 
-<div class="card" style="border-color:rgba(0,167,225,.2);background:rgba(0,167,225,.03)">
-  <h3 style="margin-top:0;color:var(--ink)">New Hire Onboarding Path</h3>
-  ${list(['Complete all 3 Phase 1 modules to understand the Avalon sales system.','Shadow one intake call, one discovery call, one site walk, and one proposal review.','Pass each module quiz at 75% or higher.','Role-play discovery, budget discussion, proposal delivery, and objection handling.','Build one sample scope and proposal with manager review.','Own a low-complexity opportunity under supervision.','Review first won/lost opportunities in weekly coaching.'])}
+  <div class="acad-home-sidebar">
+    <!-- Upcoming badges -->
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        Upcoming Badges
+      </div>
+      ${upcomingBadgesHtml}
+      <button class="sa-btn-ghost" style="width:100%;justify-content:center;margin-top:8px" onclick="show('academy','badges')">View All ${hd.totalBadges} Badges ${SVG_ARROW}</button>
+    </div>
+
+    <!-- Recently completed -->
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Recently Completed
+      </div>
+      ${recentHtml}
+    </div>
+
+    <!-- Quick links -->
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Quick Links
+      </div>
+      <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start;margin-bottom:4px" onclick="show('academy','badges')">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        Badges &amp; Achievements
+      </button>
+      <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start;margin-bottom:4px" onclick="show('academy','profile')">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        My Progress Profile
+      </button>
+      <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','practice')">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 2v10l8-5-8-5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Practice Arena
+      </button>
+    </div>
+  </div>
 </div>`;
 }
 
-// ─── Phase Detail ─────────────────────────────────────────────────────────────
+// ─── Phase Detail — SA-102 ─────────────────────────────────────────────────────
 function academyPhaseDetail(phaseId) {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repId = rep ? rep.id : 'ryan';
@@ -4401,86 +4705,154 @@ function academyPhaseDetail(phaseId) {
   const rp = window.Academy.getRepProgress(repId);
   const phaseMods = content.modules.filter(m => m.phase_id === phaseId).sort((a,b) => a.sort_order - b.sort_order);
   const completedCount = phaseMods.filter(m => (rp.modules[m.id] || {}).status === 'completed').length;
-  const pct = Math.round((completedCount / phaseMods.length) * 100);
+  const inProgCount    = phaseMods.filter(m => (rp.modules[m.id] || {}).status === 'in_progress').length;
+  const pct = phaseMods.length ? Math.round((completedCount / phaseMods.length) * 100) : 0;
+  const totalMins = phaseMods.reduce((s, m) => s + (m.estimated_minutes || 0), 0);
+  const doneMins  = phaseMods.filter(m => (rp.modules[m.id]||{}).status==='completed').reduce((s,m)=>s+(m.estimated_minutes||0),0);
+  const remMins   = totalMins - doneMins;
 
-  const moduleRows = phaseMods.map((m, i) => {
-    const mp = rp.modules[m.id] || {};
+  // ── SA-203 Module cards ──────────────────────────────────────────────────────
+  const moduleCards = phaseMods.map((m, i) => {
+    const mp     = rp.modules[m.id] || {};
     const status = mp.status || 'not_started';
     const isLocked = window.Academy.isModuleLocked(m.id, repId);
 
-    let stepEl, stepBg, stepBorder, stepColor;
+    // Step indicator
+    let numHtml, accentColor;
     if (status === 'completed') {
-      stepBg = 'rgba(16,185,129,.12)'; stepBorder = '#10b981'; stepColor = '#10b981';
-      stepEl = SVG_CHECK;
+      accentColor = '#10b981';
+      numHtml = `<div class="acad-module-card-num" style="background:#10b981;border-color:#10b981;color:#fff">${SVG_CHECK}</div>`;
     } else if (status === 'in_progress') {
-      stepBg = 'rgba(245,158,11,.1)'; stepBorder = '#f59e0b'; stepColor = '#f59e0b';
-      stepEl = SVG_PLAY;
+      accentColor = '#f59e0b';
+      numHtml = `<div class="acad-module-card-num" style="background:rgba(245,158,11,.12);border-color:#f59e0b;color:#f59e0b">${SVG_PLAY}</div>`;
     } else if (isLocked) {
-      stepBg = 'var(--line)'; stepBorder = 'var(--line)'; stepColor = 'var(--muted)';
-      stepEl = SVG_LOCK;
+      accentColor = 'var(--line)';
+      numHtml = `<div class="acad-module-card-num" style="background:var(--line);border-color:var(--line);color:var(--muted)">${SVG_LOCK}</div>`;
     } else {
-      stepBg = 'var(--bg)'; stepBorder = 'var(--line)'; stepColor = 'var(--muted)';
-      stepEl = `<span style="font-size:.8rem;font-weight:700">${i+1}</span>`;
+      accentColor = ph.color;
+      numHtml = `<div class="acad-module-card-num" style="background:${ph.color}18;border-color:${ph.color}55;color:${ph.color}"><span style="font-size:.75rem;font-weight:800">${i+1}</span></div>`;
     }
 
-    const statusTag = status === 'completed'
-      ? `<span style="font-size:.7rem;background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.25);border-radius:99px;padding:2px 9px;font-weight:600">Complete</span>`
+    // Status chip
+    const statusChip = status === 'completed'
+      ? `<span class="sa-chip sa-chip-complete">Complete</span>`
       : status === 'in_progress'
-      ? `<span style="font-size:.7rem;background:rgba(245,158,11,.1);color:#b45309;border:1px solid rgba(245,158,11,.3);border-radius:99px;padding:2px 9px;font-weight:600">In Progress</span>`
+      ? `<span class="sa-chip sa-chip-in-progress">In Progress</span>`
       : isLocked
-      ? `<span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">Locked</span>`
-      : `<span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">Not Started</span>`;
+      ? `<span class="sa-chip sa-chip-locked">${SVG_LOCK} Locked</span>`
+      : `<span class="sa-chip sa-chip-not-started">Not Started</span>`;
 
-    const quizTag = mp.quiz_best_score != null
-      ? `<span style="font-size:.7rem;background:${mp.quiz_passed?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)'};color:${mp.quiz_passed?'#10b981':'#ef4444'};border:1px solid ${mp.quiz_passed?'rgba(16,185,129,.25)':'rgba(239,68,68,.25)'};border-radius:99px;padding:2px 9px;font-weight:600">Quiz: ${mp.quiz_best_score}%</span>`
-      : '';
-    const pctTag = status !== 'not_started'
-      ? `<span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">${mp.percent_complete||0}% done</span>`
+    // Difficulty chip
+    const diff = (m.difficulty||'').toLowerCase();
+    const diffChip = diff
+      ? `<span class="sa-chip sa-chip-${diff==='beginner'?'beginner':diff==='intermediate'?'intermediate':'advanced'}">${m.difficulty}</span>`
       : '';
 
-    return `<article style="display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-radius:12px;cursor:${isLocked?'not-allowed':'pointer'};border:1.5px solid var(--line);margin-bottom:8px;background:var(--card);transition:border-color .2s,box-shadow .2s;opacity:${isLocked?.5:1}"
-      ${isLocked ? '' : `onclick="show('academy','module:${m.id}')" onmouseenter="this.style.borderColor='var(--blue)'" onmouseleave="this.style.borderColor='var(--line)'"`}>
-      <div style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${stepBg};border:2px solid ${stepBorder};color:${stepColor}">${stepEl}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;color:var(--ink);margin-bottom:3px">Module ${m.sort_order} — ${escapeHtml(m.title)}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px;line-height:1.45">${escapeHtml(m.short_description||'')}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          ${statusTag}${pctTag}${quizTag}
-          <span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">~${m.estimated_minutes||'?'} min</span>
-          <span style="font-size:.7rem;background:var(--line);color:var(--muted);border-radius:99px;padding:2px 9px">${m.difficulty||''}</span>
-        </div>
+    // Quiz chip
+    const quizChip = mp.quiz_best_score != null
+      ? `<span class="sa-chip" style="background:${mp.quiz_passed?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)'};color:${mp.quiz_passed?'#10b981':'#ef4444'};border-color:${mp.quiz_passed?'rgba(16,185,129,.3)':'rgba(239,68,68,.3)'}">Quiz ${mp.quiz_best_score}%</span>`
+      : '';
+
+    // Time chip
+    const timeChip = m.estimated_minutes
+      ? `<span class="sa-chip">~${m.estimated_minutes} min</span>`
+      : '';
+
+    // Lock reason
+    const lockReason = isLocked
+      ? `<div class="acad-lock-reason">${SVG_LOCK} Complete all modules in the previous phase to unlock</div>`
+      : '';
+
+    // CTA
+    let ctaHtml;
+    if (isLocked) {
+      ctaHtml = `<div class="acad-module-card-cta" style="justify-content:flex-start">
+        <span class="sa-chip sa-chip-locked" style="pointer-events:none">${SVG_LOCK} Locked</span>
+      </div>`;
+    } else if (status === 'completed') {
+      ctaHtml = `<div class="acad-module-card-cta">
+        <span class="sa-chip sa-chip-complete">${SVG_CHECK} Complete</span>
+        <button class="sa-btn-ghost" onclick="show('academy','module:${m.id}')">Review ${SVG_ARROW}</button>
+      </div>`;
+    } else if (status === 'in_progress') {
+      ctaHtml = `<div class="acad-module-card-cta">
+        <button class="sa-btn-primary" style="background:${ph.color}" onclick="show('academy','module:${m.id}')">Resume ${SVG_ARROW}</button>
+        ${mp.percent_complete ? `<span class="sa-chip">${mp.percent_complete}% done</span>` : ''}
+      </div>`;
+    } else {
+      ctaHtml = `<div class="acad-module-card-cta">
+        <button class="sa-btn-primary" style="background:${ph.color}" onclick="show('academy','module:${m.id}')">Start Module ${SVG_ARROW}</button>
+      </div>`;
+    }
+
+    const extraClass = status==='completed' ? ' acad-module-complete' : isLocked ? ' acad-module-locked' : '';
+
+    return `<article class="acad-module-card${extraClass}" style="${isLocked?'cursor:not-allowed;':'cursor:pointer;'}">
+      <div class="acad-module-card-accent" style="background:${accentColor}"></div>
+      <div class="acad-module-card-step">
+        ${numHtml}
       </div>
-      ${isLocked ? '' : `<div style="color:var(--blue);align-self:center;flex-shrink:0">${SVG_ARROW}</div>`}
+      <div class="acad-module-card-body" ${isLocked?'':` onclick="show('academy','module:${m.id}')"`}>
+        <div class="acad-module-card-title">Module ${m.sort_order} — ${escapeHtml(m.title)}</div>
+        <div class="acad-module-card-desc">${escapeHtml(m.short_description||'')}</div>
+        <div class="acad-module-card-chips">
+          ${statusChip}${diffChip}${timeChip}${quizChip}
+        </div>
+        ${lockReason}
+      </div>
+      ${ctaHtml}
     </article>`;
   }).join('');
 
+  // ── Phase status chip ────────────────────────────────────────────────────────
+  const phaseStatusChip = pct === 100
+    ? `<span class="sa-chip sa-chip-complete">${SVG_CHECK} Complete</span>`
+    : inProgCount > 0
+    ? `<span class="sa-chip sa-chip-in-progress">${SVG_PLAY} In Progress</span>`
+    : `<span class="sa-chip sa-chip-not-started">Not Started</span>`;
+
   view.innerHTML = ACAD_STYLES + `
-<button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy')">← Academy Home</button>
-<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
-  <div style="flex-shrink:0">${svgPhaseIcon(ph.sort_order, ph.color, 44)}</div>
-  <div>
-    <div class="eyebrow" style="color:${ph.color}">Phase ${ph.sort_order}</div>
-    <h1 style="margin:0;color:var(--ink)">${escapeHtml(ph.title)}</h1>
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">Phase ${ph.sort_order} — ${escapeHtml(ph.title)}</span>
+</nav>
+
+<!-- SA-201 Phase Hero -->
+<div class="acad-phase-hero" style="border-color:${ph.color}33">
+  <div class="acad-phase-hero-bar" style="background:${ph.color}"></div>
+  <div class="acad-phase-hero-inner">
+    <div class="acad-phase-hero-icon">${svgPhaseIcon(ph.sort_order, ph.color, 48)}</div>
+    <div class="acad-phase-hero-body">
+      <div class="acad-phase-hero-eyebrow" style="color:${ph.color}">Phase ${ph.sort_order} · ${phaseStatusChip}</div>
+      <h1 class="acad-phase-hero-title">${escapeHtml(ph.title)}</h1>
+      <p class="acad-phase-hero-desc">${escapeHtml(ph.long_description)}</p>
+    </div>
   </div>
 </div>
-<p class="lede" style="margin-bottom:18px;color:var(--muted)">${escapeHtml(ph.long_description)}</p>
 
-<div class="card" style="margin-bottom:20px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-    <span style="font-weight:600;color:var(--ink)">Phase Progress</span>
-    <span style="font-weight:700;color:${ph.color}">${pct}%</span>
+<!-- SA-202 Progress Card -->
+<div class="acad-progress-card">
+  <div class="acad-progress-card-top">
+    <div>
+      <div class="acad-progress-card-label">Phase Progress</div>
+      <div class="acad-progress-meta">${completedCount} of ${phaseMods.length} modules complete${remMins > 0 ? ` · ~${remMins} min remaining` : ''}</div>
+    </div>
+    <div class="acad-progress-card-pct" style="color:${ph.color}">${pct}%</div>
   </div>
-  <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
-    <div style="height:100%;width:${pct}%;background:${ph.color};border-radius:4px;transition:width .5s"></div>
+  <div class="acad-progress-bar">
+    <div class="acad-progress-bar-fill" style="width:${pct}%;background:${ph.color}"></div>
   </div>
-  <div style="margin-top:8px;font-size:.8rem;color:var(--muted)">${completedCount} of ${phaseMods.length} modules complete</div>
 </div>
 
-<div class="acad-section-label">Module Roadmap</div>
-${moduleRows}`;
+<!-- SA-203 Module Roadmap -->
+<div class="acad-sh">Module Roadmap</div>
+<div style="display:flex;flex-direction:column;gap:12px;margin-top:4px">
+  ${moduleCards}
+</div>`;
 }
 
-// ─── Module Workspace ─────────────────────────────────────────────────────────
+// ─── Module Workspace — SA-103 ────────────────────────────────────────────────
 function academyModuleWorkspace(moduleId) {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repId = rep ? rep.id : 'ryan';
@@ -4491,15 +4863,25 @@ function academyModuleWorkspace(moduleId) {
   const ph = content.phases.find(p => p.id === mod.phase_id);
   const mp = window.Academy.getModuleProgress(repId, moduleId);
   const isLocked = window.Academy.isModuleLocked(moduleId, repId);
+  const phColor = ph ? ph.color : 'var(--blue)';
 
   if (isLocked) {
     view.innerHTML = ACAD_STYLES + `
-<button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy','phase:${mod.phase_id}')">← ${escapeHtml(ph ? ph.title : 'Phase')}</button>
-<div class="card" style="text-align:center;padding:40px">
-  <div style="margin-bottom:16px">${svgBadgeShape('shield','var(--muted)',52)}</div>
-  <h2 style="color:var(--ink)">Module Locked</h2>
-  <p style="color:var(--muted)">Complete all modules in Phase ${ph ? ph.sort_order - 1 : ''} to unlock this module.</p>
-  <button class="primary-btn" onclick="show('academy')">Back to Academy</button>
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-item" onclick="show('academy','phase:${mod.phase_id}')" style="cursor:pointer">${escapeHtml(ph ? ph.title : 'Phase')}</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">${escapeHtml(mod.title)}</span>
+</nav>
+<div class="acad-locked-state">
+  <div class="acad-empty-icon" style="background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.2)">${SVG_LOCK}</div>
+  <div class="acad-locked-title">Module Locked</div>
+  <div class="acad-locked-desc">Complete all modules in ${ph && ph.sort_order > 1 ? `Phase ${ph.sort_order - 1}` : 'the previous phase'} to unlock this module.</div>
+  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:6px">
+    <button class="sa-btn-primary" style="background:${phColor}" onclick="show('academy','phase:${mod.phase_id}')">View Phase Roadmap</button>
+    <button class="sa-btn-secondary" onclick="show('academy')">Back to Academy</button>
+  </div>
 </div>`;
     return;
   }
@@ -4507,36 +4889,71 @@ function academyModuleWorkspace(moduleId) {
   const _sectionId = `acad_active_${moduleId}`;
   const activeSectionId = localStorage.getItem(_sectionId) || (mod.sections[0] && mod.sections[0].id);
   const activeSection = mod.sections.find(s => s.id === activeSectionId) || mod.sections[0];
-  const phColor = ph ? ph.color : 'var(--blue)';
 
-  const navItems = mod.sections.map(s => {
+  // Determine module-level status for chips
+  const modStatus = mp.status || 'not_started';
+  const statusChip = modStatus === 'completed'
+    ? `<span class="sa-chip sa-chip-complete">${SVG_CHECK} Complete</span>`
+    : modStatus === 'in_progress'
+    ? `<span class="sa-chip sa-chip-in-progress">${SVG_PLAY} In Progress</span>`
+    : `<span class="sa-chip sa-chip-not-started">Not Started</span>`;
+
+  const diffChip = mod.difficulty
+    ? `<span class="sa-chip sa-chip-${mod.difficulty.toLowerCase()==='beginner'?'beginner':mod.difficulty.toLowerCase()==='intermediate'?'intermediate':'advanced'}">${mod.difficulty}</span>`
+    : '';
+  const timeChip = mod.estimated_minutes
+    ? `<span class="sa-chip">~${mod.estimated_minutes} min</span>`
+    : '';
+
+  const navItems = mod.sections.map((s, si) => {
     const done = mp.sections_completed.includes(s.id);
     const isActive = s.id === (activeSection && activeSection.id);
     const typeLabel = s.section_type === 'overview' ? 'OV' : s.section_type === 'lesson' ? 'L' : s.section_type === 'quiz' ? 'Q' : 'S';
     return `<div class="ws-nav-item ${isActive ? 'active-section' : done ? 'done-section' : ''}" onclick="academyShowSection('${moduleId}','${s.id}')" id="ws-nav-${s.id}">
-      <div class="ws-nav-dot ${done ? 'done' : isActive ? 'active' : ''}">
-        ${done ? SVG_CHECK : `<span style="font-size:.6rem;font-weight:700">${typeLabel}</span>`}
+      <div class="ws-nav-dot ${done ? 'done' : isActive ? 'active' : ''}" style="${isActive&&!done?`background:${phColor};border-color:${phColor}`:''}">
+        ${done ? SVG_CHECK : `<span style="font-size:.6rem;font-weight:800">${typeLabel}</span>`}
       </div>
       <span style="line-height:1.35">${escapeHtml(s.title)}</span>
     </div>`;
   }).join('');
 
   view.innerHTML = ACAD_STYLES + `
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-  <button class="secondary-btn" onclick="show('academy','phase:${mod.phase_id}')">← ${escapeHtml(ph ? ph.title : 'Phase')}</button>
-  <span style="color:var(--muted);font-size:.85rem">›</span>
-  <span style="color:var(--muted);font-size:.85rem">Module ${mod.sort_order}</span>
-</div>
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-item" onclick="show('academy','phase:${mod.phase_id}')" style="cursor:pointer">${escapeHtml(ph ? ph.title : 'Phase')}</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">Module ${mod.sort_order}</span>
+</nav>
 
-<h1 style="font-size:1.38rem;margin:0 0 4px;color:var(--ink)">${escapeHtml(mod.title)}</h1>
-<p style="color:var(--muted);font-size:.88rem;margin:0 0 18px">${escapeHtml(mod.short_description||'')}</p>
+<!-- SA-103 Module workspace header -->
+<div class="acad-ws-header" style="border-color:${phColor}33">
+  <div class="acad-ws-header-inner">
+    <div style="flex-shrink:0">${svgPhaseIcon(ph ? ph.sort_order : 1, phColor, 40)}</div>
+    <div class="acad-ws-header-body">
+      <div class="acad-ws-mod-eyebrow" style="color:${phColor}">
+        ${escapeHtml(ph ? ph.title : 'Phase')} · Module ${mod.sort_order}
+        &nbsp;${statusChip}${diffChip}${timeChip}
+      </div>
+      <h1 class="acad-ws-mod-title">${escapeHtml(mod.title)}</h1>
+      <p class="acad-ws-mod-sub">${escapeHtml(mod.short_description||'')}</p>
+    </div>
+    <div class="acad-ws-header-progress">
+      <div id="ws-pct" style="font-size:1.5rem;font-weight:800;color:${phColor};line-height:1">${mp.percent_complete}%</div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:2px">complete</div>
+      <div class="acad-ws-progress-bar" style="margin-top:8px;width:80px">
+        <div class="acad-ws-progress-fill" id="ws-bar" style="width:${mp.percent_complete}%;background:${phColor}"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="workspace-layout">
   <nav class="workspace-nav" id="ws-nav">
     <div class="workspace-nav-header">
-      <div class="workspace-nav-title">Progress</div>
-      <div class="workspace-nav-pct" id="ws-pct">${mp.percent_complete}%</div>
-      <div class="workspace-nav-bar"><div class="workspace-nav-fill" id="ws-bar" style="width:${mp.percent_complete}%;background:${phColor}"></div></div>
+      <div class="workspace-nav-title">${mod.sections.length} Sections</div>
+      <div class="workspace-nav-sub">${mp.sections_completed.length} of ${mod.sections.length} done</div>
+      <div class="workspace-nav-bar"><div class="workspace-nav-fill" style="width:${mp.percent_complete}%;background:${phColor}"></div></div>
     </div>
     ${navItems}
   </nav>
@@ -4808,41 +5225,550 @@ window.academySubmitQuiz = function(moduleId, quizId, repId) {
   }
 };
 
-// ─── Badges View ──────────────────────────────────────────────────────────────
+// ─── Badges View — SA-206 ─────────────────────────────────────────────────────
 function academyBadgesView() {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repId = rep ? rep.id : 'ryan';
   const rp = window.Academy.getRepProgress(repId);
+  const lvlInfo = window.Academy.calcLevel(rp.points || 0);
   const earned = new Set(rp.badges || []);
   const earnedBadges = window.Academy.BADGE_DEFS.filter(b => earned.has(b.id));
   const lockedBadges = window.Academy.BADGE_DEFS.filter(b => !earned.has(b.id));
+  const totalBadges = window.Academy.BADGE_DEFS.length;
+  const earnedPct = Math.round((earnedBadges.length / totalBadges) * 100);
 
   const badgeCard = (b, isEarned) => `
-  <article class="card" style="text-align:center;${isEarned ? `border-color:${b.color}44;background:${b.color}08` : 'opacity:.5'}">
-    <div style="display:flex;justify-content:center;margin-bottom:10px">${svgBadgeShape(b.shape, isEarned ? b.color : 'var(--muted)', 52)}</div>
-    <div style="font-weight:700;font-size:.92rem;color:${isEarned ? b.color : 'var(--muted)'};margin-bottom:5px">${escapeHtml(b.name)}</div>
-    <div style="font-size:.78rem;color:var(--muted);line-height:1.45">${escapeHtml(b.desc)}</div>
-    <div style="font-size:.66rem;margin-top:8px;text-transform:uppercase;letter-spacing:.06em;color:${isEarned ? b.color+'aa' : 'var(--muted)'};font-weight:700">${b.type}</div>
+  <article class="acad-badge-card ${isEarned ? 'earned' : 'locked'}" style="${isEarned ? `border-color:${b.color}44;background:${b.color}06` : ''}">
+    <div style="display:flex;justify-content:center;margin-bottom:14px;position:relative">
+      ${svgBadgeShape(b.shape, isEarned ? b.color : 'var(--muted)', 56)}
+      ${isEarned ? `<div style="position:absolute;bottom:-4px;right:calc(50% - 28px - 4px);width:18px;height:18px;border-radius:50%;background:#10b981;border:2px solid var(--card);display:flex;align-items:center;justify-content:center;color:#fff">${SVG_CHECK}</div>` : ''}
+    </div>
+    <div style="font-weight:700;font-size:.92rem;color:${isEarned ? b.color : 'var(--muted)'};margin-bottom:5px;text-align:center">${escapeHtml(b.name)}</div>
+    <div style="font-size:.76rem;color:var(--muted);line-height:1.5;text-align:center;margin-bottom:10px">${escapeHtml(b.desc)}</div>
+    <div style="display:flex;justify-content:center">
+      <span class="sa-chip" style="${isEarned ? `color:${b.color};border-color:${b.color}44;background:${b.color}10` : ''}">${b.type||'achievement'}</span>
+    </div>
   </article>`;
 
+  const emptyEarned = `
+  <div class="acad-empty" style="grid-column:1/-1;padding:36px 20px">
+    <div class="acad-empty-icon">${svgBadgeShape('bolt','var(--muted)',36)}</div>
+    <div class="acad-empty-title">No badges earned yet</div>
+    <div class="acad-empty-desc">Complete modules, pass quizzes, and maintain streaks to start earning badges.</div>
+    <button class="sa-btn-primary" onclick="show('academy')">Go to Training</button>
+  </div>`;
+
   view.innerHTML = ACAD_STYLES + `
-<button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy')">← Academy Home</button>
-<div class="eyebrow">Achievements</div>
-<h1 style="color:var(--ink)">Badges &amp; Achievements</h1>
-<p class="lede" style="color:var(--muted)">${earnedBadges.length} of ${window.Academy.BADGE_DEFS.length} badges earned</p>
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">Badges &amp; Achievements</span>
+</nav>
+
+<!-- Hero -->
+<div class="acad-phase-hero" style="border-color:rgba(99,102,241,.2)">
+  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div>
+  <div class="acad-phase-hero-inner">
+    <div class="acad-phase-hero-icon">${svgBadgeShape('shield','#6366f1',48)}</div>
+    <div class="acad-phase-hero-body">
+      <div class="acad-phase-hero-eyebrow" style="color:#6366f1">Achievement Center</div>
+      <h1 class="acad-phase-hero-title">Badges &amp; Achievements</h1>
+      <p class="acad-phase-hero-desc">Earn badges by completing modules, passing quizzes, maintaining streaks, and reaching new levels.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Progress summary -->
+<div class="acad-progress-card" style="margin-bottom:28px">
+  <div class="acad-progress-card-top">
+    <div>
+      <div class="acad-progress-card-label">Badge Collection</div>
+      <div class="acad-progress-meta">${earnedBadges.length} of ${totalBadges} badges earned · Level: ${escapeHtml(lvlInfo ? lvlInfo.name : '—')}</div>
+    </div>
+    <div class="acad-progress-card-pct" style="color:#6366f1">${earnedPct}%</div>
+  </div>
+  <div class="acad-progress-bar">
+    <div class="acad-progress-bar-fill" style="width:${earnedPct}%;background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div>
+  </div>
+</div>
 
 ${earnedBadges.length ? `
-<div class="acad-section-label">Earned Badges (${earnedBadges.length})</div>
-<div class="grid grid-3 mt" style="margin-top:0;margin-bottom:26px">
+<div class="acad-sh">Earned Badges (${earnedBadges.length})</div>
+<div class="acad-badges-grid" style="margin-bottom:32px">
   ${earnedBadges.map(b => badgeCard(b, true)).join('')}
-</div>` : `<div class="card" style="text-align:center;padding:30px;margin-bottom:22px">
-  <div style="display:flex;justify-content:center;margin-bottom:12px">${svgBadgeShape('bolt','var(--muted)',44)}</div>
-  <p style="color:var(--muted)">No badges earned yet — complete modules to start earning.</p>
-</div>`}
+</div>` : `<div class="acad-badges-grid" style="margin-bottom:32px">${emptyEarned}</div>`}
 
-<div class="acad-section-label">Locked Badges (${lockedBadges.length})</div>
-<div class="grid grid-3 mt" style="margin-top:0">
+<div class="acad-sh">Locked Badges (${lockedBadges.length})</div>
+<div class="acad-badges-grid">
   ${lockedBadges.map(b => badgeCard(b, false)).join('')}
+</div>`;
+}
+
+// ─── Practice Arena — SA-104 ──────────────────────────────────────────────────
+function academyPracticeArena() {
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const repId = rep ? rep.id : 'ryan';
+  const content = window.Academy.getContent();
+  const rp = window.Academy.getRepProgress(repId);
+
+  // Build drills from modules the rep has started or completed
+  const allMods = content.modules || [];
+  const availableMods = allMods.filter(m => !window.Academy.isModuleLocked(m.id, repId));
+  const startedMods   = availableMods.filter(m => (rp.modules[m.id]||{}).status === 'in_progress');
+  const completedMods = availableMods.filter(m => (rp.modules[m.id]||{}).status === 'completed');
+  const notStarted    = availableMods.filter(m => !(rp.modules[m.id]||{}).status || (rp.modules[m.id]||{}).status === 'not_started');
+
+  // Failed quizzes — prime retry candidates
+  const failedQuizMods = completedMods.filter(m => {
+    const mp = rp.modules[m.id] || {};
+    return mp.quiz_best_score != null && !mp.quiz_passed;
+  });
+
+  // Featured mastery challenge — pick a completed module with the lowest quiz score
+  const masteryCandidate = completedMods
+    .filter(m => (rp.modules[m.id]||{}).quiz_best_score != null)
+    .sort((a,b) => (rp.modules[a.id]||{}).quiz_best_score - (rp.modules[b.id]||{}).quiz_best_score)[0]
+    || completedMods[0] || availableMods[0];
+
+  const ph = masteryCandidate ? content.phases.find(p => p.id === masteryCandidate.phase_id) : null;
+  const masteryScore = masteryCandidate ? ((rp.modules[masteryCandidate.id]||{}).quiz_best_score || 0) : 0;
+
+  const SVG_LIGHTNING = `<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><path d="M13 2L4.5 13.5H11L10 22L20.5 10H14L13 2Z"/></svg>`;
+  const SVG_REPEAT    = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
+  const SVG_BOOK      = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;
+
+  // Practice items from started/unlocked modules
+  const practiceItems = [...startedMods, ...notStarted.slice(0, 3)].slice(0, 6).map(m => {
+    const mp  = rp.modules[m.id] || {};
+    const mph = content.phases.find(p => p.id === m.phase_id);
+    const pct = mp.percent_complete || 0;
+    const isInProg = mp.status === 'in_progress';
+    return `<div class="acad-practice-item" onclick="show('academy','module:${m.id}')">
+      <div class="acad-practice-item-icon" style="background:${mph ? mph.color : 'var(--blue)'}18;color:${mph ? mph.color : 'var(--blue)'}">${svgPhaseIcon(mph ? mph.sort_order : 1, mph ? mph.color : 'var(--blue)', 22)}</div>
+      <div class="acad-practice-item-body">
+        <div class="acad-practice-item-title">${escapeHtml(m.title)}</div>
+        <div class="acad-practice-item-meta">
+          <span class="sa-chip ${isInProg ? 'sa-chip-in-progress' : 'sa-chip-not-started'}">${isInProg ? SVG_PLAY+' Resume' : 'Start'}</span>
+          <span class="sa-chip">~${m.estimated_minutes||'?'} min</span>
+          ${pct > 0 ? `<span class="sa-chip">${pct}% done</span>` : ''}
+        </div>
+      </div>
+      <div style="color:var(--blue);flex-shrink:0">${SVG_ARROW}</div>
+    </div>`;
+  }).join('');
+
+  // Retry candidates
+  const retryItems = failedQuizMods.slice(0, 4).map(m => {
+    const mp  = rp.modules[m.id] || {};
+    const mph = content.phases.find(p => p.id === m.phase_id);
+    return `<div class="acad-practice-item" onclick="show('academy','module:${m.id}')">
+      <div class="acad-practice-item-icon" style="background:rgba(239,68,68,.08);color:#ef4444">${SVG_REPEAT}</div>
+      <div class="acad-practice-item-body">
+        <div class="acad-practice-item-title">Retry Quiz — ${escapeHtml(m.title)}</div>
+        <div class="acad-practice-item-meta">
+          <span class="sa-chip" style="color:#ef4444;border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.07)">Best: ${mp.quiz_best_score}%</span>
+          <span class="sa-chip">${mp.quiz_passed?'Passed':'Not Passed'}</span>
+        </div>
+      </div>
+      <div style="color:var(--blue);flex-shrink:0">${SVG_ARROW}</div>
+    </div>`;
+  }).join('');
+
+  const noItems = `<div class="acad-empty">
+    <div class="acad-empty-icon">${SVG_BOOK}</div>
+    <div class="acad-empty-title">Nothing to practice yet</div>
+    <div class="acad-empty-desc">Start your first module to unlock practice drills here.</div>
+    <button class="sa-btn-primary" onclick="show('academy')">Go to Training</button>
+  </div>`;
+
+  view.innerHTML = ACAD_STYLES + `
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">Practice Arena</span>
+</nav>
+
+<!-- SA-201-style hero -->
+<div class="acad-phase-hero" style="border-color:rgba(245,158,11,.25)">
+  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#f59e0b,#f97316)"></div>
+  <div class="acad-phase-hero-inner">
+    <div class="acad-phase-hero-icon">${SVG_LIGHTNING}</div>
+    <div class="acad-phase-hero-body">
+      <div class="acad-phase-hero-eyebrow" style="color:#f59e0b">Skill Building</div>
+      <h1 class="acad-phase-hero-title">Practice Arena</h1>
+      <p class="acad-phase-hero-desc">Sharpen your skills with drills, quiz retries, and mastery challenges. Focus on the areas that move your numbers.</p>
+    </div>
+  </div>
+</div>
+
+${masteryCandidate ? `
+<!-- Mastery Challenge Banner -->
+<div class="acad-practice-challenge">
+  <div class="acad-practice-challenge-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)">${SVG_LIGHTNING}</div>
+  <div class="acad-practice-challenge-body">
+    <div class="acad-practice-challenge-title">
+      Mastery Challenge
+      <span class="sa-chip" style="background:rgba(245,158,11,.12);color:#f59e0b;border-color:rgba(245,158,11,.3);font-size:.68rem">${masteryScore > 0 ? `Best: ${masteryScore}%` : 'Not attempted'}</span>
+    </div>
+    <div class="acad-practice-challenge-sub">${escapeHtml(masteryCandidate.title)} — ${escapeHtml(masteryCandidate.short_description||'')}</div>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="sa-btn-primary" style="background:#f59e0b" onclick="show('academy','module:${masteryCandidate.id}')">
+        ${masteryScore > 0 ? 'Retry Challenge' : 'Start Challenge'} ${SVG_ARROW}
+      </button>
+      ${ph ? `<button class="sa-btn-ghost" onclick="show('academy','phase:${ph.id}')">View Phase</button>` : ''}
+    </div>
+  </div>
+</div>` : ''}
+
+<div class="acad-home-grid" style="margin-top:0">
+  <div class="acad-home-main">
+    <div class="acad-sh">Continue Practicing</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      ${practiceItems || noItems}
+    </div>
+  </div>
+  <div class="acad-home-sidebar">
+    ${failedQuizMods.length ? `
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <span style="font-size:.78rem;font-weight:700;color:#ef4444">Quiz Retries</span>
+        <span class="sa-chip" style="color:#ef4444;border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.07)">${failedQuizMods.length}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:2px">
+        ${retryItems}
+      </div>
+    </div>` : ''}
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <span style="font-size:.78rem;font-weight:700;color:var(--ink)">Quick Links</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy')">← Academy Home</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','badges')">🏅 Badges &amp; Achievements</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','certifications')">🎓 Certifications</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','profile')">👤 My Progress Profile</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ─── Rep Profile — SA-403 ─────────────────────────────────────────────────────
+function academyRepProfile() {
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const repId = rep ? rep.id : 'ryan';
+  const rp = window.Academy.getRepProgress(repId);
+  const content = window.Academy.getContent();
+
+  const allMods = content.modules || [];
+  const completedMods = allMods.filter(m => (rp.modules[m.id]||{}).status === 'completed').length;
+  const inProgMods    = allMods.filter(m => (rp.modules[m.id]||{}).status === 'in_progress').length;
+  const totalMods     = allMods.length;
+  const overallPct    = totalMods ? Math.round((completedMods / totalMods) * 100) : 0;
+
+  const lvlInfo  = window.Academy.calcLevel(rp.points || 0);
+  const nextLvl  = window.Academy.nextLevel(rp.points || 0);
+  const nextPts  = nextLvl ? nextLvl.min_points : null;
+  const currPts  = rp.points || 0;
+  const lvlFloor = lvlInfo ? lvlInfo.min_points : 0;
+  const lvlRange = nextPts ? nextPts - lvlFloor : 500;
+  const lvlPct   = nextPts ? Math.min(100, Math.round(((currPts - lvlFloor) / lvlRange) * 100)) : 100;
+  const lvlColor = lvlInfo ? lvlInfo.color : 'var(--blue)';
+
+  const earned = new Set(rp.badges || []);
+  const earnedBadges = window.Academy.BADGE_DEFS.filter(b => earned.has(b.id));
+  const nextBadges   = window.Academy.BADGE_DEFS.filter(b => !earned.has(b.id)).slice(0, 3);
+
+  // Quiz performance across all attempted modules
+  const quizAttemptedMods = allMods.filter(m => (rp.modules[m.id]||{}).quiz_best_score != null);
+  const quizAvg = quizAttemptedMods.length
+    ? Math.round(quizAttemptedMods.reduce((s,m)=>s+(rp.modules[m.id].quiz_best_score||0),0)/quizAttemptedMods.length)
+    : null;
+
+  // Recent achievements
+  const recentEvents = (rp.events || []).slice(-5).reverse();
+
+  // Phase progress
+  const phaseProgress = (content.phases||[]).map(ph => {
+    const phMods = allMods.filter(m => m.phase_id === ph.id);
+    const phDone = phMods.filter(m => (rp.modules[m.id]||{}).status === 'completed').length;
+    const phPct  = phMods.length ? Math.round((phDone / phMods.length) * 100) : 0;
+    return { ph, phDone, phTotal: phMods.length, phPct };
+  });
+
+  // Avatar initials
+  const repName = rep && rep.name ? rep.name : 'Rep';
+  const initials = repName.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+
+  const SVG_STAR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+
+  view.innerHTML = ACAD_STYLES + `
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">My Profile</span>
+</nav>
+
+<!-- Profile Hero -->
+<div class="acad-profile-hero">
+  <div class="acad-profile-avatar" style="background:linear-gradient(135deg,${lvlColor},${lvlColor}99)">${initials}</div>
+  <div class="acad-profile-body">
+    <div class="acad-profile-name">${escapeHtml(repName)}</div>
+    <div class="acad-profile-level">
+      ${svgLevelIcon(lvlInfo ? lvlInfo.id : 'rookie', lvlColor, 18)}
+      <span style="color:${lvlColor};font-weight:700">${lvlInfo ? escapeHtml(lvlInfo.name) : 'Rookie'}</span>
+      ${rp.streak_days > 0 ? `<span class="acad-streak-badge" style="font-size:.75rem;padding:3px 10px">${rp.streak_days}-day streak 🔥</span>` : ''}
+    </div>
+    <div class="acad-profile-stats">
+      <div class="acad-profile-stat">
+        <div class="acad-profile-stat-num" style="color:${lvlColor}">${currPts.toLocaleString()}</div>
+        <div class="acad-profile-stat-label">Points</div>
+      </div>
+      <div class="acad-profile-stat">
+        <div class="acad-profile-stat-num">${completedMods}</div>
+        <div class="acad-profile-stat-label">Modules Done</div>
+      </div>
+      <div class="acad-profile-stat">
+        <div class="acad-profile-stat-num">${earnedBadges.length}</div>
+        <div class="acad-profile-stat-label">Badges</div>
+      </div>
+      <div class="acad-profile-stat">
+        <div class="acad-profile-stat-num" style="color:${quizAvg!=null?(quizAvg>=75?'#10b981':'#ef4444'):'var(--muted)'}">${quizAvg != null ? quizAvg+'%' : '—'}</div>
+        <div class="acad-profile-stat-label">Quiz Avg</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Level Progress -->
+<div class="acad-progress-card" style="margin-bottom:24px">
+  <div class="acad-progress-card-top">
+    <div>
+      <div class="acad-progress-card-label">Level Progress — ${lvlInfo ? escapeHtml(lvlInfo.name) : 'Rookie'}</div>
+      <div class="acad-progress-meta">${currPts.toLocaleString()} pts${nextPts ? ` · ${(nextPts - currPts).toLocaleString()} to ${escapeHtml(nextLvl.name)}` : ' · Max level reached'}</div>
+    </div>
+    <div class="acad-progress-card-pct" style="color:${lvlColor}">${lvlPct}%</div>
+  </div>
+  <div class="acad-progress-bar">
+    <div class="acad-progress-bar-fill" style="width:${lvlPct}%;background:${lvlColor}"></div>
+  </div>
+</div>
+
+<div class="acad-home-grid">
+  <div class="acad-home-main">
+    <!-- Overall completion -->
+    <div class="acad-progress-card" style="margin-bottom:20px">
+      <div class="acad-progress-card-top">
+        <div>
+          <div class="acad-progress-card-label">Academy Completion</div>
+          <div class="acad-progress-meta">${completedMods} of ${totalMods} modules · ${inProgMods > 0 ? `${inProgMods} in progress` : 'none in progress'}</div>
+        </div>
+        <div class="acad-progress-card-pct" style="color:var(--blue)">${overallPct}%</div>
+      </div>
+      <div class="acad-progress-bar">
+        <div class="acad-progress-bar-fill" style="width:${overallPct}%;background:var(--blue)"></div>
+      </div>
+    </div>
+
+    <!-- Phase breakdown -->
+    <div class="acad-sh">Phase Progress</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      ${phaseProgress.map(({ph, phDone, phTotal, phPct}) => `
+      <div class="acad-sidebar-card" style="cursor:pointer" onclick="show('academy','phase:${ph.id}')">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          ${svgPhaseIcon(ph.sort_order, ph.color, 28)}
+          <div style="flex:1">
+            <div style="font-size:.88rem;font-weight:700;color:var(--ink)">${escapeHtml(ph.title)}</div>
+            <div style="font-size:.73rem;color:var(--muted)">${phDone} of ${phTotal} modules</div>
+          </div>
+          <span class="sa-chip" style="color:${ph.color};border-color:${ph.color}44;background:${ph.color}10">${phPct}%</span>
+          <div style="color:var(--blue);flex-shrink:0">${SVG_ARROW}</div>
+        </div>
+        <div class="acad-progress-bar" style="margin-top:0">
+          <div class="acad-progress-bar-fill" style="width:${phPct}%;background:${ph.color}"></div>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="acad-home-sidebar">
+    <!-- Earned badges -->
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <span style="font-size:.78rem;font-weight:700;color:var(--ink)">Earned Badges</span>
+        <button class="sa-btn-ghost" style="font-size:.72rem;padding:2px 8px" onclick="show('academy','badges')">View All</button>
+      </div>
+      ${earnedBadges.length ? earnedBadges.slice(0,5).map(b => `
+      <div class="acad-badge-row">
+        <div>${svgBadgeShape(b.shape, b.color, 28)}</div>
+        <div class="acad-badge-row-text">
+          <div class="acad-badge-row-name" style="color:${b.color}">${escapeHtml(b.name)}</div>
+          <div class="acad-badge-row-desc">${escapeHtml(b.desc)}</div>
+        </div>
+      </div>`).join('') : `<p style="font-size:.82rem;color:var(--muted);margin:8px 0 0">No badges yet. Keep training!</p>`}
+    </div>
+
+    <!-- Next badges -->
+    ${nextBadges.length ? `
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head">
+        <span style="font-size:.78rem;font-weight:700;color:var(--ink)">Up Next — Badges</span>
+      </div>
+      ${nextBadges.map(b => `
+      <div class="acad-badge-row" style="opacity:.6">
+        <div>${svgBadgeShape(b.shape, 'var(--muted)', 28)}</div>
+        <div class="acad-badge-row-text">
+          <div class="acad-badge-row-name">${escapeHtml(b.name)}</div>
+          <div class="acad-badge-row-desc">${escapeHtml(b.desc)}</div>
+        </div>
+        <div>${SVG_LOCK}</div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <!-- Quick nav -->
+    <div class="acad-sidebar-card">
+      <div class="acad-sidebar-card-head"><span style="font-size:.78rem;font-weight:700;color:var(--ink)">Quick Links</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy')">← Academy Home</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','practice')">⚡ Practice Arena</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','certifications')">🎓 Certifications</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ─── Certifications Page — SA-105 ─────────────────────────────────────────────
+function academyCertificationsPage() {
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const repId = rep ? rep.id : 'ryan';
+  const content = window.Academy.getContent();
+  const rp = window.Academy.getRepProgress(repId);
+  const allMods = content.modules || [];
+
+  const CERT_KEY = 'avalonAcademyCerts';
+  function loadCerts() { try { return JSON.parse(localStorage.getItem(CERT_KEY)||'{}'); } catch(e){ return {}; } }
+  const certs = loadCerts();
+  const repCerts = certs[repId] || {};
+
+  const SVG_CERT_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/><path d="M8 21l4-2 4 2v-6H8z"/></svg>`;
+  const SVG_SCROLL    = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+  }
+
+  const certCards = (content.phases || []).map(ph => {
+    const phMods    = allMods.filter(m => ph.module_ids && ph.module_ids.includes(m.id));
+    const doneCount = phMods.filter(m => (rp.modules[m.id]||{}).status === 'completed').length;
+    const pct       = phMods.length ? Math.round((doneCount / phMods.length) * 100) : 0;
+    const certData  = repCerts[ph.id] || null;
+    const isEarned  = !!certData;
+    const allDone   = doneCount === phMods.length && phMods.length > 0;
+    const certName  = ph.certification_name || `${ph.title} Certification`;
+
+    let statusBadge, ctaHtml;
+    if (isEarned) {
+      statusBadge = `<span class="sa-chip sa-chip-certified">${SVG_CHECK} Certified</span>`;
+      ctaHtml = `
+        <div style="margin-top:14px;padding:12px 16px;background:rgba(16,185,129,.05);border:1px solid rgba(16,185,129,.2);border-radius:10px">
+          <div style="font-size:.78rem;color:#10b981;font-weight:700;margin-bottom:2px">${SVG_CHECK} Certification Awarded</div>
+          <div style="font-size:.75rem;color:var(--muted)">${fmtDate(certData.at)} · Verified by ${escapeHtml(certData.by||'Admin')}</div>
+        </div>`;
+    } else if (allDone) {
+      statusBadge = `<span class="sa-chip" style="color:#f59e0b;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.08)">Ready for Review</span>`;
+      ctaHtml = `
+        <div style="margin-top:14px;padding:12px 16px;background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);border-radius:10px">
+          <div style="font-size:.78rem;color:#f59e0b;font-weight:700;margin-bottom:2px">⏳ Awaiting Admin Certification</div>
+          <div style="font-size:.75rem;color:var(--muted)">All modules complete — your manager or admin will issue this certification.</div>
+        </div>`;
+    } else {
+      statusBadge = pct > 0
+        ? `<span class="sa-chip sa-chip-in-progress">${SVG_PLAY} In Progress</span>`
+        : `<span class="sa-chip sa-chip-not-started">Not Started</span>`;
+      ctaHtml = `
+        <div style="margin-top:14px">
+          <button class="sa-btn-primary" style="background:${ph.color}" onclick="show('academy','phase:${ph.id}')">
+            ${pct > 0 ? 'Continue Phase' : 'Start Phase'} ${SVG_ARROW}
+          </button>
+        </div>`;
+    }
+
+    return `<div class="acad-sidebar-card" style="${isEarned ? `border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.02)` : ''}padding:20px">
+      <div style="display:flex;align-items:flex-start;gap:14px">
+        <div style="width:52px;height:52px;border-radius:14px;background:${ph.color}18;border:1.5px solid ${ph.color}44;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${ph.color}">
+          ${svgPhaseIcon(ph.sort_order, ph.color, 28)}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:${ph.color}">Phase ${ph.sort_order}</div>
+            ${statusBadge}
+          </div>
+          <div style="font-weight:700;font-size:1rem;color:var(--ink);margin-bottom:4px">${escapeHtml(certName)}</div>
+          <div style="font-size:.82rem;color:var(--muted);line-height:1.5;margin-bottom:10px">${escapeHtml(ph.long_description||ph.description||'')}</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="flex:1">
+              <div class="acad-progress-bar" style="height:6px">
+                <div class="acad-progress-bar-fill" style="width:${pct}%;background:${isEarned?'#10b981':ph.color}"></div>
+              </div>
+            </div>
+            <span style="font-size:.78rem;font-weight:700;color:${isEarned?'#10b981':ph.color};white-space:nowrap">${doneCount}/${phMods.length} modules</span>
+          </div>
+          ${ctaHtml}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const earnedCount = Object.keys(repCerts).length;
+
+  view.innerHTML = ACAD_STYLES + `
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">Certifications</span>
+</nav>
+
+<div class="acad-phase-hero" style="border-color:rgba(245,158,11,.25)">
+  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#f59e0b,#10b981)"></div>
+  <div class="acad-phase-hero-inner">
+    <div class="acad-phase-hero-icon" style="color:#f59e0b">${SVG_CERT_ICON}</div>
+    <div class="acad-phase-hero-body">
+      <div class="acad-phase-hero-eyebrow" style="color:#f59e0b">Achievement Record</div>
+      <h1 class="acad-phase-hero-title">Certifications</h1>
+      <p class="acad-phase-hero-desc">Complete each phase and earn your certification. Certifications are issued by your manager or admin upon phase completion.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Summary progress -->
+<div class="acad-progress-card" style="margin-bottom:28px">
+  <div class="acad-progress-card-top">
+    <div>
+      <div class="acad-progress-card-label">Certification Progress</div>
+      <div class="acad-progress-meta">${earnedCount} of ${(content.phases||[]).length} certifications earned</div>
+    </div>
+    <div class="acad-progress-card-pct" style="color:#f59e0b">${(content.phases||[]).length ? Math.round((earnedCount/(content.phases||[]).length)*100) : 0}%</div>
+  </div>
+  <div class="acad-progress-bar">
+    <div class="acad-progress-bar-fill" style="width:${(content.phases||[]).length ? Math.round((earnedCount/(content.phases||[]).length)*100) : 0}%;background:linear-gradient(90deg,#f59e0b,#10b981)"></div>
+  </div>
+</div>
+
+<div class="acad-sh">Phase Certifications</div>
+<div style="display:flex;flex-direction:column;gap:16px;margin-top:4px">
+  ${certCards || `<div class="acad-empty"><div class="acad-empty-icon">${SVG_SCROLL}</div><div class="acad-empty-title">No certifications available</div><div class="acad-empty-desc">Complete the available phases to unlock certification tracks.</div></div>`}
+</div>
+
+<div style="margin-top:24px;padding:16px 20px;background:rgba(99,102,241,.04);border:1px solid rgba(99,102,241,.15);border-radius:12px">
+  <div style="font-size:.8rem;font-weight:700;color:#6366f1;margin-bottom:6px">${SVG_CERT_ICON} How Certifications Work</div>
+  <div style="font-size:.82rem;color:var(--muted);display:grid;gap:5px">
+    <div>1. Complete all modules in a phase</div>
+    <div>2. Your status changes to "Ready for Review"</div>
+    <div>3. Your manager or admin issues your certification</div>
+    <div>4. The certification is permanently stamped with the date and issuer</div>
+  </div>
 </div>`;
 }
 
@@ -5033,34 +5959,55 @@ function academyAdminDashboard() {
   }).join('');
 
   view.innerHTML = ACAD_STYLES + `
-<button class="secondary-btn" style="margin-bottom:16px" onclick="show('academy')">← Academy Home</button>
-<div class="eyebrow">Admin Dashboard</div>
-<h1 style="color:var(--ink)">Team Academy Progress</h1>
+<nav class="acad-breadcrumb">
+  <span class="acad-breadcrumb-item" onclick="show('academy')" style="cursor:pointer">Academy</span>
+  <span class="acad-breadcrumb-sep">›</span>
+  <span class="acad-breadcrumb-current">Admin Dashboard</span>
+</nav>
 
-<div class="grid grid-3 mt" style="margin-bottom:22px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
-  <div class="card" style="text-align:center">
-    <div style="font-size:1.7rem;font-weight:700;color:var(--ink)">${allReps.length}</div>
-    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Team Members</div>
-  </div>
-  <div class="card" style="text-align:center">
-    <div style="font-size:1.7rem;font-weight:700;color:#10b981">${allReps.filter(r=>r.pct===100).length}</div>
-    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Academy Complete</div>
-  </div>
-  <div class="card" style="text-align:center">
-    <div style="font-size:1.7rem;font-weight:700;color:var(--blue)">${avgPct}%</div>
-    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Avg Completion</div>
-  </div>
-  <div class="card" style="text-align:center">
-    <div style="font-size:1.7rem;font-weight:700;color:#f59e0b">${teamQuizAvg != null ? teamQuizAvg+'%' : '—'}</div>
-    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Team Quiz Avg</div>
-  </div>
-  <div class="card" style="text-align:center">
-    <div style="font-size:1.7rem;font-weight:700;color:#f97316">${activeStreaks}</div>
-    <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Active Streaks</div>
+<!-- SA-401 Phase Hero -->
+<div class="acad-phase-hero" style="border-color:rgba(99,102,241,.2);margin-bottom:20px">
+  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#6366f1,#4f46e5)"></div>
+  <div class="acad-phase-hero-inner">
+    <div class="acad-phase-hero-icon">${SVG_TEAM}</div>
+    <div class="acad-phase-hero-body">
+      <div class="acad-phase-hero-eyebrow" style="color:#6366f1">Admin View</div>
+      <h1 class="acad-phase-hero-title" style="font-size:1.4rem">Team Academy Progress</h1>
+      <p class="acad-phase-hero-desc">Monitor team completion, quiz performance, streaks, and certifications across all reps.</p>
+    </div>
   </div>
 </div>
 
-<div class="acad-section-label" style="margin-top:4px">Rep Progress — click a row to expand</div>
+<!-- SA-401 Metric cards -->
+<div class="admin-metric-cards">
+  <div class="admin-metric-card">
+    <div class="admin-metric-card-num" style="color:var(--ink)">${allReps.length}</div>
+    <div class="admin-metric-card-icon" style="background:rgba(99,102,241,.1);color:#6366f1">${SVG_TEAM}</div>
+    <div class="admin-metric-card-label">Team Members</div>
+  </div>
+  <div class="admin-metric-card">
+    <div class="admin-metric-card-num" style="color:#10b981">${allReps.filter(r=>r.pct===100).length}</div>
+    <div class="admin-metric-card-icon" style="background:rgba(16,185,129,.1);color:#10b981">${SVG_CHECK}</div>
+    <div class="admin-metric-card-label">Academy Complete</div>
+  </div>
+  <div class="admin-metric-card">
+    <div class="admin-metric-card-num" style="color:var(--blue)">${avgPct}%</div>
+    <div class="admin-metric-card-icon" style="background:rgba(0,167,225,.1);color:var(--blue)">${SVG_PLAY}</div>
+    <div class="admin-metric-card-label">Avg Completion</div>
+  </div>
+  <div class="admin-metric-card">
+    <div class="admin-metric-card-num" style="color:#f59e0b">${teamQuizAvg != null ? teamQuizAvg+'%' : '—'}</div>
+    <div class="admin-metric-card-icon" style="background:rgba(245,158,11,.1);color:#f59e0b">${SVG_NOTE}</div>
+    <div class="admin-metric-card-label">Team Quiz Avg</div>
+  </div>
+  <div class="admin-metric-card">
+    <div class="admin-metric-card-num" style="color:#f97316">${activeStreaks}</div>
+    <div class="admin-metric-card-icon" style="background:rgba(249,115,22,.1);color:#f97316">${SVG_FLAME}</div>
+    <div class="admin-metric-card-label">Active Streaks</div>
+  </div>
+</div>
+
+<div class="acad-sh" style="margin-top:8px">Rep Progress — click a row to expand</div>
 ${repCards}
 
 <div class="acad-section-label" style="margin-top:24px">Phase Certifications &amp; Bulk Actions</div>
