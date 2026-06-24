@@ -2101,55 +2101,108 @@ function commsBoardHtml(oppId, opp){
     '</div>';
   }
 
+  // Generate initials for avatar
+  const initials = (clientName||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const msgCount = msgs.length;
+
   const groups = groupByDate(msgs);
   const threadHtml = Object.keys(groups).length === 0
-    ? '<div class="comm-empty"><div class="comm-empty-icon">💬</div><p>No communications yet for '+clientName+'.</p><p class="muted" style="font-size:.82rem">Use the compose bar below to log a call, send a message, draft an email, or attach a proposal.</p></div>'
+    ? '<div class="comm-empty">' +
+        '<div class="comm-empty-icon">💬</div>' +
+        '<p>No communications yet for '+clientName+'.</p>' +
+        '<p style="color:#334155;font-size:12.5px;max-width:320px;line-height:1.6">Use the compose bar below to log a call, send an SMS, draft an email, or attach a proposal.</p>' +
+      '</div>'
     : Object.keys(groups).map(date =>
         '<div class="comm-date-divider"><span>'+date+'</span></div>' +
         groups[date].map(renderMsg).join('')
       ).join('');
 
   return '<div class="comms-board">' +
+    /* ── Header ── */
     '<div class="comms-header">' +
-      '<div class="comms-contact-info">' +
-        '<h2 style="margin:0;font-size:1.05rem;color:var(--ink)">Communications — '+clientName+'</h2>' +
-        '<div class="comms-contact-chips">' +
-          (clientPhone ? '<a class="comm-contact-chip" href="tel:'+opp.phone+'"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg> '+clientPhone+'</a>' : '') +
-          (clientEmail ? '<a class="comm-contact-chip" href="mailto:'+opp.email+'"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg> '+clientEmail+'</a>' : '') +
+      '<div class="comms-header-top">' +
+        '<div class="comms-header-identity">' +
+          '<div class="comms-avatar">'+initials+'</div>' +
+          '<div>' +
+            '<div class="comms-header-name">'+clientName+'</div>' +
+            '<div class="comms-header-sub">'+(clientPhone||clientEmail||'No contact info')+(opp.serviceLine?' &middot; '+escapeHtml(opp.serviceLine):'')+'</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          (msgCount > 0 ? '<div class="comms-header-status"><div class="comms-header-status-dot"></div>'+msgCount+' message'+(msgCount!==1?'s':'')+'</div>' : '') +
         '</div>' +
       '</div>' +
+      '<div class="comms-contact-chips">' +
+        (clientPhone ? '<a class="comm-contact-chip" href="tel:'+opp.phone+'">' +
+          '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' +
+          clientPhone+'</a>' : '') +
+        (clientEmail ? '<a class="comm-contact-chip" href="mailto:'+opp.email+'">' +
+          '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' +
+          clientEmail+'</a>' : '') +
+      '</div>' +
     '</div>' +
+    /* ── Thread ── */
     '<div class="comms-thread" id="commsThread">'+threadHtml+'</div>' +
+    /* ── Compose ── */
     '<div class="comms-compose" id="commsCompose">' +
+      /* Type switcher */
       '<div class="compose-type-tabs" id="composeTypeTabs">' +
-        '<button class="ctype-btn ctype-active" data-ctype="sms">💬 SMS</button>' +
-        '<button class="ctype-btn" data-ctype="email">✉️ Email</button>' +
-        '<button class="ctype-btn" data-ctype="call">📞 Log Call</button>' +
-        '<button class="ctype-btn" data-ctype="note">📋 Internal Note</button>' +
-        '<button class="ctype-btn" data-ctype="proposal">📄 Proposal</button>' +
+        '<button class="ctype-btn ctype-active" data-ctype="sms">' +
+          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>' +
+          'SMS' +
+        '</button>' +
+        '<button class="ctype-btn" data-ctype="email">' +
+          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>' +
+          'Email' +
+        '</button>' +
+        '<button class="ctype-btn" data-ctype="call">' +
+          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>' +
+          'Log Call' +
+        '</button>' +
+        '<button class="ctype-btn" data-ctype="note">' +
+          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' +
+          'Note' +
+        '</button>' +
+        '<button class="ctype-btn" data-ctype="proposal">' +
+          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" opacity=".6"/></svg>' +
+          'Proposal' +
+        '</button>' +
       '</div>' +
-      '<div id="composeSubjectRow" style="display:none;margin-bottom:8px">' +
-        '<input id="composeSubject" type="text" placeholder="Email subject line…" style="width:100%;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">' +
+      /* Subject (email only) */
+      '<div id="composeSubjectRow" style="display:none">' +
+        '<input id="composeSubject" type="text" class="compose-field" placeholder="Subject line…">' +
       '</div>' +
-      '<div id="composeCallDurRow" style="display:none;margin-bottom:8px;display:none">' +
-        '<input id="composeCallDur" type="text" placeholder="Call duration (e.g. 4 min 30 sec)…" style="width:100%;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">' +
+      /* Call duration (call only) */
+      '<div id="composeCallDurRow" style="display:none">' +
+        '<input id="composeCallDur" type="text" class="compose-field" placeholder="Call duration (e.g. 4 min 30 sec)…">' +
       '</div>' +
+      /* Body */
       '<div class="compose-body-row">' +
-        '<textarea id="composeBody" rows="3" placeholder="Type your message, call notes, or proposal details…" style="flex:1;resize:vertical;min-height:72px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:13px;line-height:1.5;box-sizing:border-box;width:100%"></textarea>' +
+        '<textarea id="composeBody" rows="3" placeholder="Type your message…"></textarea>' +
       '</div>' +
+      /* Actions row */
       '<div class="compose-actions-row">' +
-        '<label class="compose-attach-btn" title="Attach file (photo, PDF, DOCX, etc.)">' +
-          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M14 8.5l-6.5 6.5a4.243 4.243 0 01-6-6l7-7a2.5 2.5 0 013.5 3.5L5.5 12A1 1 0 014 10.5l6-6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-          ' Attach' +
+        '<label class="compose-attach-btn" title="Attach file">' +
+          '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M14 8.5l-6.5 6.5a4.243 4.243 0 01-6-6l7-7a2.5 2.5 0 013.5 3.5L5.5 12A1 1 0 014 10.5l6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          'Attach' +
           '<input type="file" id="composeFileInput" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none">' +
         '</label>' +
         '<div id="attachPreview" class="attach-preview-row"></div>' +
-        '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
-          '<select id="composeDirection" style="padding:6px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#94a3b8;font-size:12px">' +
-            '<option value="out">Outbound ↑</option>' +
-            '<option value="in">Inbound ↓</option>' +
+        '<div style="margin-left:auto;display:flex;gap:6px;align-items:center">' +
+          /* Direction toggle */
+          '<div class="compose-dir-toggle" id="composeDirToggle">' +
+            '<button id="dirOutBtn" class="dir-active" onclick="setCommDir(\'out\')">↑ Out</button>' +
+            '<button id="dirInBtn" onclick="setCommDir(\'in\')">↓ In</button>' +
+          '</div>' +
+          /* Hidden select for compatibility */
+          '<select id="composeDirection" style="display:none">' +
+            '<option value="out">out</option>' +
+            '<option value="in">in</option>' +
           '</select>' +
-          '<button class="primary-btn" style="padding:8px 20px;font-size:13px" onclick="sendComm(\''+oppId+'\')">Send / Log</button>' +
+          '<button class="comms-send-btn" onclick="sendComm(\''+oppId+'\')">' +
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-6 12V9L2 8z" fill="currentColor"/></svg>' +
+            'Send / Log' +
+          '</button>' +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -2164,7 +2217,7 @@ function filesTabHtml(oppId, opp){
 
   const fmt = dt => { try{ return new Date(dt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} };
 
-  if(!allFiles.length) return '<div class="comms-board"><div class="comm-empty"><div class="comm-empty-icon">📁</div><p>No files attached yet.</p><p class="muted" style="font-size:.82rem">Attach photos, PDFs, proposals, and documents from the Communications tab.</p></div></div>';
+  if(!allFiles.length) return '<div class="comms-board"><div class="comm-empty"><div class="comm-empty-icon">📁</div><p>No files attached yet.</p><p style="color:#334155;font-size:12.5px;max-width:300px;line-height:1.6">Attach photos, PDFs, proposals, and documents from the Communications tab.</p></div></div>';
 
   const ext2icon = ext => {
     const e = (ext||'').toLowerCase();
@@ -2175,9 +2228,19 @@ function filesTabHtml(oppId, opp){
     return '📎';
   };
 
+  const clientInitials = (opp.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   return '<div class="comms-board">' +
-    '<div class="comms-header"><h2 style="margin:0;font-size:1.05rem;color:var(--ink)">Files & Attachments — '+escapeHtml(opp.client||'Lead')+'</h2>' +
-    '<p class="muted" style="font-size:.82rem;margin:4px 0 0">'+allFiles.length+' file'+( allFiles.length!==1?'s':'')+' attached across all communications</p></div>' +
+    '<div class="comms-header">' +
+      '<div class="comms-header-top">' +
+        '<div class="comms-header-identity">' +
+          '<div class="comms-avatar" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">'+clientInitials+'</div>' +
+          '<div>' +
+            '<div class="comms-header-name">Files &amp; Attachments</div>' +
+            '<div class="comms-header-sub">'+allFiles.length+' file'+(allFiles.length!==1?'s':'')+' &middot; '+escapeHtml(opp.client||'Lead')+'</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
     '<div class="files-grid">' +
     allFiles.map(f=>{
       const ext = (f.name||'').split('.').pop();
@@ -2277,6 +2340,16 @@ function wireCommsCompose(oppId){
 
   window._commsPendingFiles = pendingFiles;
   window._commsCurrentType  = function(){ return currentType; };
+
+  // Direction toggle wiring
+  window.setCommDir = function(dir){
+    const sel = document.getElementById('composeDirection');
+    if(sel) sel.value = dir;
+    const outBtn = document.getElementById('dirOutBtn');
+    const inBtn  = document.getElementById('dirInBtn');
+    if(outBtn) outBtn.classList.toggle('dir-active', dir==='out');
+    if(inBtn)  inBtn.classList.toggle('dir-active', dir==='in');
+  };
 }
 
 window.sendComm = async function(oppId){
@@ -2311,18 +2384,19 @@ window.sendComm = async function(oppId){
         return;
       }
       // Disable send button while sending
-      const sendBtn = document.querySelector('.comms-compose .primary-btn');
-      if(sendBtn){ sendBtn.textContent = 'Sending…'; sendBtn.disabled = true; }
+      const sendBtn = document.querySelector('.comms-send-btn');
+      const origHtml = sendBtn ? sendBtn.innerHTML : '';
+      if(sendBtn){ sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="animation:spin .8s linear infinite"><path d="M8 1.5A6.5 6.5 0 111.5 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Sending…'; sendBtn.disabled = true; }
       try {
         const htmlBody = body.replace(/\n/g,'<br>');
         await gmailSendEmail({ to: toAddr, subject: subject.trim(), body: htmlBody });
         showToast('Email sent via Gmail ✅ — from ' + (getGoogleUserEmail ? getGoogleUserEmail() : 'your Google account'));
       } catch(e){
         showToast('Gmail error: ' + (e.message||'Send failed') + ' — email logged locally.');
-        if(sendBtn){ sendBtn.textContent = 'Send / Log'; sendBtn.disabled = false; }
+        if(sendBtn){ sendBtn.innerHTML = origHtml; sendBtn.disabled = false; }
         // Still log locally even if send fails
       }
-      if(sendBtn){ sendBtn.textContent = 'Send / Log'; sendBtn.disabled = false; }
+      if(sendBtn){ sendBtn.innerHTML = origHtml; sendBtn.disabled = false; }
     }
   }
 
