@@ -2222,6 +2222,66 @@ function wireChecks(){
   });
 }
 
+// ── Lead Picker Modal (shared by Scripts, Templates, Objections, Pricing) ──
+function openLeadPicker(onSelect){
+  const open = state.opportunities.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <h3 style="margin:0 0 12px">Select a Lead</h3>
+      <input id="lpSearch" type="text" placeholder="Search by client or project..."
+        style="width:100%;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;margin-bottom:12px;box-sizing:border-box">
+      <div id="lpList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+      <button class="secondary-btn mt8" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+    </div>`;
+  document.body.appendChild(modal);
+  const listEl = modal.querySelector('#lpList');
+  const searchEl = modal.querySelector('#lpSearch');
+  function renderList(filter){
+    filter = filter || '';
+    const filtered = open.filter(function(o){
+      return !filter ||
+        (o.client||'').toLowerCase().includes(filter.toLowerCase()) ||
+        (o.project||'').toLowerCase().includes(filter.toLowerCase());
+    });
+    listEl.innerHTML = filtered.slice(0,20).map(function(o){
+      return '<button class="mini-row" style="text-align:left;width:100%">' +
+        '<strong>' + escapeHtml(o.client||'Unnamed') + '</strong>' +
+        '<span class="status-chip ' + statusCssClass(o.status||'') + '" style="font-size:10px;padding:1px 6px">' + escapeHtml(o.status||'') + '</span>' +
+        '<em>' + escapeHtml(o.project||'') + '</em>' +
+        '</button>';
+    }).join('') || '<p class="muted" style="padding:12px">No matching leads.</p>';
+    listEl.querySelectorAll('.mini-row').forEach(function(btn, idx){
+      btn.addEventListener('click', function(){
+        const opp = filtered[idx];
+        modal.remove();
+        if(opp) onSelect(opp.id);
+      });
+    });
+  }
+  renderList();
+  searchEl.addEventListener('input', function(e){ renderList(e.target.value); });
+  searchEl.focus();
+}
+window.openLeadPicker = openLeadPicker;
+
+// ── Merge template fields from a live lead ──
+function mergeTemplate(body, opp){
+  const rep = (window.REPS||[]).find(function(r){ return r.id===opp.repId; }) || { name: 'Your Name' };
+  const followDate = opp.nextFollowUp ? prettyDate(opp.nextFollowUp) : 'a time that works for you';
+  return body
+    .replace(/\[Name\]/gi, opp.client||'[Name]')
+    .replace(/\[First Name\]/gi, (opp.client||'').split(' ')[0]||'[Name]')
+    .replace(/\[Your Name\]/gi, rep.name)
+    .replace(/\[service lines?\]/gi, opp.serviceLine||opp.projectCategory||'landscaping services')
+    .replace(/\[project\]/gi, opp.project||'your project')
+    .replace(/\[date\]/gi, followDate)
+    .replace(/\[address\]/gi, opp.address||'[address]')
+    .replace(/\[job value\]/gi, opp.jobValue ? money(Number(opp.jobValue)) : '[amount]');
+}
+window.mergeTemplate = mergeTemplate;
+
 // ─── Sales Process ────────────────────────────────────────────────────────────
 function process(stageId){
   const sp = data.salesProcess;
