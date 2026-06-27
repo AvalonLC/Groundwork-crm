@@ -710,7 +710,7 @@ app.get('/auth/google/callback', (c) => {
 </html>`)
 })
 
-// Main app - serve the Avalon Sales Hub
+// Main app - serve Groundwork CRM
 app.get('/', (c) => {
   return c.html(getHtml())
 })
@@ -721,10 +721,10 @@ function getHtml(): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Avalon Sales Hub</title>
+  <title>Groundwork CRM</title>
   <link rel="icon" type="image/png" href="/static/avalon-logo.png" />
   <meta name="theme-color" content="#00A7E1" />
-  <meta name="description" content="Avalon Landscape Construction internal sales operating hub." />
+  <meta name="description" content="Field sales CRM built for home services teams." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -737,12 +737,12 @@ function getHtml(): string {
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-mark" onclick="show('today')" style="cursor:pointer" title="Go to Today">
-        <img src="/static/avalon-logo.png" alt="Avalon logo" style="width:42px;height:42px;object-fit:contain;">
+        <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:42px;height:42px;object-fit:contain;">
       </div>
       <div>
-        <div class="brand-name">Avalon</div>
-        <div class="brand-subtitle">Landscape Construction</div>
-        <div class="brand-kicker">Sales Hub</div>
+        <div class="brand-name">Groundwork</div>
+        <div class="brand-subtitle">CRM</div>
+        <div class="brand-kicker">Avalon · Sales Hub</div>
       </div>
     </div>
     <nav class="nav" id="mainNav" role="navigation">

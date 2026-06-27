@@ -1,5 +1,5 @@
 /**
- * Avalon Sales Hub — D1 Frontend API Client (db.js)
+ * Groundwork CRM — D1 Frontend API Client (db.js)
  *
  * This module replaces direct localStorage reads/writes with async
  * fetch() calls to the Hono API layer backed by Cloudflare D1.

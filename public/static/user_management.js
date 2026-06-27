@@ -1,5 +1,5 @@
 /**
- * Avalon Sales Hub — User & Access Management Module
+ * Groundwork CRM — User & Access Management Module
  *
  * Provides:
  *  - Admin → Users: create/edit/deactivate users, assign roles, reset PINs

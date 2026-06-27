@@ -62,7 +62,7 @@ function today(){
   view.innerHTML = `
     <div class="hero">
       <div class="eyebrow">Daily Sales Operating Hub</div>
-      <h1>Avalon Sales Hub</h1>
+      <h1>Groundwork CRM</h1>
       <p class="lede">Use this daily to intake leads, prep calls, run site walks, manage proposals, handle objections, activate sold jobs, and coach the sales process.</p>
       <div class="quick-actions">
         <button class="primary-btn" onclick="show('lead')">+ New Lead</button>

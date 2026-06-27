@@ -1,5 +1,5 @@
 /**
- * Avalon Sales Hub — Rep Auth, Commission Tracking & Individual Dashboards
+ * Groundwork CRM — Rep Auth, Commission Tracking & Individual Dashboards
  *
  * ARCHITECTURE:
  *  - "Login" is just a name/PIN selector — no server auth needed (internal tool)
@@ -540,8 +540,8 @@ function renderLoginScreen() {
 
       <!-- Logo / Brand -->
       <div style="text-align:center;margin-bottom:40px">
-        <img src="/static/avalon-logo.png" alt="Avalon" style="width:80px;height:80px;object-fit:contain;border-radius:16px;background:#0f172a;padding:8px;margin-bottom:16px">
-        <h1 style="color:#e2e8f0;font-size:24px;font-weight:800;margin:0">Avalon Sales Hub</h1>
+        <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:80px;height:80px;object-fit:contain;border-radius:16px;background:#0f172a;padding:8px;margin-bottom:16px">
+        <h1 style="color:#e2e8f0;font-size:24px;font-weight:800;margin:0">Groundwork CRM</h1>
         <p style="color:#64748b;font-size:14px;margin:6px 0 0">Select your name to continue</p>
       </div>
 

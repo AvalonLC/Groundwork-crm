@@ -1,5 +1,5 @@
 /**
- * Avalon Sales Hub — Integrations Module
+ * Groundwork CRM — Integrations Module
  * Google Workspace (Gmail, Calendar, Drive) + Homeworks/CopilotCRM (Zapier webhook)
  *
  * ARCHITECTURE:
@@ -359,7 +359,7 @@ async function sendToHomeworks(eventType, payload) {
   if (!url) throw new Error('Homeworks webhook URL not configured');
   const body = {
     event: eventType,
-    source: 'avalon-sales-hub',
+    source: 'groundwork-crm',
     timestamp: new Date().toISOString(),
     data: payload
   };
@@ -1613,7 +1613,7 @@ function intSaveZapierUrl() {
 
 async function intTestZapier() {
   try {
-    await sendToHomeworks('test_ping', { message: 'Test ping from Avalon Sales Hub', timestamp: new Date().toISOString() });
+    await sendToHomeworks('test_ping', { message: 'Test ping from Groundwork CRM', timestamp: new Date().toISOString() });
     showIntToast('Test ping sent ✅');
   } catch(e) { showIntToast(e.message, 'error'); }
 }
