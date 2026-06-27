@@ -535,95 +535,104 @@ function timeAgo(iso) {
 // ── LOGIN SCREEN ──────────────────────────────────────────────────────────────
 function renderLoginScreen() {
   document.body.innerHTML = `
-  <div style="min-height:100vh;background:#0a0f1a;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="min-height:100vh;background:linear-gradient(160deg,#152F26 0%,#1E4638 45%,#152F26 100%);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif">
     <div style="width:min(420px,95vw);padding:0 20px">
 
-      <!-- Logo / Brand -->
+      <!-- Logo / Brand — GW-003 Temporary Wordmark -->
       <div style="text-align:center;margin-bottom:40px">
-        <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:80px;height:80px;object-fit:contain;border-radius:16px;background:#0f172a;padding:8px;margin-bottom:16px">
-        <h1 style="color:#e2e8f0;font-size:24px;font-weight:800;margin:0">Groundwork CRM</h1>
-        <p style="color:#64748b;font-size:14px;margin:6px 0 0">Select your name to continue</p>
+        <div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
+          <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:44px;height:44px;object-fit:contain;filter:brightness(0) invert(1);opacity:.9">
+        </div>
+        <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0;letter-spacing:-.04em">Groundwork</h1>
+        <p style="color:rgba(255,255,255,.5);font-size:13px;margin:5px 0 0;font-weight:600;letter-spacing:.06em;text-transform:uppercase">CRM</p>
+        <p style="color:rgba(255,255,255,.38);font-size:13px;margin:12px 0 0">Select your name to continue</p>
       </div>
 
       <!-- Rep Cards -->
-      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:32px" id="repCards">
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:32px" id="repCards">
         ${REPS.map(rep => `
         <button onclick="selectRep('${rep.id}')"
-          style="display:flex;align-items:center;gap:16px;padding:16px 20px;background:#0f172a;border:2px solid #1e293b;border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;width:100%"
-          onmouseover="this.style.borderColor='${rep.color}';this.style.background='#111827'"
-          onmouseout="this.style.borderColor='#1e293b';this.style.background='#0f172a'">
-          <span style="font-size:18px;font-weight:700;width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:${rep.color}22;border:2px solid ${rep.color}66;border-radius:12px;color:${rep.color}">${rep.name[0]}</span>
-          <div>
-            <div style="font-weight:700;font-size:16px;color:#e2e8f0">${rep.name}</div>
-            <div style="font-size:12px;color:#64748b;margin-top:2px">${rep.title}</div>
+          style="display:flex;align-items:center;gap:16px;padding:14px 18px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;width:100%"
+          onmouseover="this.style.borderColor='rgba(16,185,129,.5)';this.style.background='rgba(255,255,255,.12)'"
+          onmouseout="this.style.borderColor='rgba(255,255,255,.12)';this.style.background='rgba(255,255,255,.07)'">
+          <span style="font-size:16px;font-weight:800;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.22);border-radius:12px;color:#FFFFFF;flex-shrink:0">${rep.name[0]}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:15px;color:#FFFFFF">${rep.name}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.45);margin-top:2px">${rep.title}</div>
           </div>
-          <div style="margin-left:auto;width:10px;height:10px;border-radius:50%;background:${rep.color}"></div>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3 11,8 6,13"/></svg>
         </button>
         `).join('')}
       </div>
 
       <!-- PIN Entry (hidden until rep selected) -->
-      <div id="pinEntry" style="display:none;background:#0f172a;border-radius:16px;padding:24px;border:1px solid #1e293b">
-        <div style="text-align:center;margin-bottom:20px">
-          <div id="pinRepName" style="font-size:18px;font-weight:700;color:#e2e8f0"></div>
-          <div style="font-size:13px;color:#64748b;margin-top:4px">Enter your PIN</div>
+      <div id="pinEntry" style="display:none;background:rgba(255,255,255,.07);border-radius:18px;padding:26px;border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(8px)">
+        <div style="text-align:center;margin-bottom:22px">
+          <div id="pinRepName" style="font-size:18px;font-weight:800;color:#FFFFFF"></div>
+          <div style="font-size:13px;color:rgba(255,255,255,.45);margin-top:4px">Enter your PIN</div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px" id="pinDisplay">
-          <div id="pin0" style="height:12px;border-radius:6px;background:#1e293b"></div>
-          <div id="pin1" style="height:12px;border-radius:6px;background:#1e293b"></div>
-          <div id="pin2" style="height:12px;border-radius:6px;background:#1e293b"></div>
-          <div id="pin3" style="height:12px;border-radius:6px;background:#1e293b"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px" id="pinDisplay">
+          <div id="pin0" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
+          <div id="pin1" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
+          <div id="pin2" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
+          <div id="pin3" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
           ${[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(k => `
             <button onclick="pinKey('${k}')"
-              style="padding:18px;background:#1e293b;border:none;border-radius:12px;color:#e2e8f0;font-size:20px;font-weight:600;cursor:pointer;${k===''?'visibility:hidden':''}"
-              onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">
+              style="padding:18px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#FFFFFF;font-size:20px;font-weight:600;cursor:pointer;${k===''?'visibility:hidden':''};transition:background .12s"
+              onmouseover="this.style.background='rgba(255,255,255,.16)'" onmouseout="this.style.background='rgba(255,255,255,.08)'">
               ${k}
             </button>
           `).join('')}
         </div>
-        <div id="pinError" style="color:#f87171;font-size:13px;text-align:center;margin-top:12px;display:none">Incorrect PIN — try again</div>
-        <button onclick="backToReps()" style="width:100%;margin-top:16px;padding:10px;background:transparent;border:1px solid #334155;border-radius:10px;color:#64748b;font-size:14px;cursor:pointer">
+        <div id="pinError" style="color:#FCA5A5;font-size:13px;text-align:center;margin-top:12px;display:none">Incorrect PIN — try again</div>
+        <button onclick="backToReps()" style="width:100%;margin-top:16px;padding:11px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:rgba(255,255,255,.55);font-size:14px;cursor:pointer;transition:all .12s"
+          onmouseover="this.style.borderColor='rgba(255,255,255,.3)';this.style.color='rgba(255,255,255,.8)'"
+          onmouseout="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='rgba(255,255,255,.55)'">
           ← Back
         </button>
-        <button onclick="showForgotPin()" style="width:100%;margin-top:8px;padding:8px;background:transparent;border:none;color:#475569;font-size:12px;cursor:pointer;text-decoration:underline">
+        <button onclick="showForgotPin()" style="width:100%;margin-top:8px;padding:8px;background:transparent;border:none;color:rgba(255,255,255,.32);font-size:12px;cursor:pointer;text-decoration:underline;transition:color .12s"
+          onmouseover="this.style.color='rgba(255,255,255,.6)'" onmouseout="this.style.color='rgba(255,255,255,.32)'">
           Forgot PIN?
         </button>
       </div>
 
       <!-- Forgot PIN flow (hidden by default) -->
-      <div id="forgotPinPanel" style="display:none;background:#0f172a;border-radius:16px;padding:24px;border:1px solid #f59e0b44;margin-top:16px">
+      <div id="forgotPinPanel" style="display:none;background:rgba(255,255,255,.07);border-radius:18px;padding:26px;border:1px solid rgba(16,185,129,.25);margin-top:16px;backdrop-filter:blur(8px)">
         <div id="forgotPinStep1">
-          <h3 style="color:#e2e8f0;font-size:16px;font-weight:700;margin:0 0 6px">Reset Your PIN</h3>
-          <p style="color:#64748b;font-size:13px;margin:0 0 16px">Enter your email address and we'll send you a 6-digit reset code.</p>
+          <h3 style="color:#FFFFFF;font-size:16px;font-weight:800;margin:0 0 6px">Reset Your PIN</h3>
+          <p style="color:rgba(255,255,255,.45);font-size:13px;margin:0 0 16px">Enter your email address and we'll send you a 6-digit reset code.</p>
           <input id="resetEmail" type="email" placeholder="your@email.com"
-            style="width:100%;box-sizing:border-box;padding:12px 14px;background:#0a0f1a;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:14px;margin-bottom:12px;outline:none">
+            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#FFFFFF;font-size:14px;margin-bottom:12px;outline:none;font-family:inherit">
           <button onclick="sendResetCode()"
-            style="width:100%;padding:12px;background:#f59e0b;border:none;border-radius:10px;color:#0a0f1a;font-size:14px;font-weight:800;cursor:pointer">
+            style="width:100%;padding:13px;background:#10B981;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.01em;transition:background .12s"
+            onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">
             Send Reset Code
           </button>
-          <div id="resetStep1Error" style="color:#f87171;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
+          <div id="resetStep1Error" style="color:#FCA5A5;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
         </div>
         <div id="forgotPinStep2" style="display:none">
-          <h3 style="color:#e2e8f0;font-size:16px;font-weight:700;margin:0 0 6px">Enter Reset Code</h3>
-          <p style="color:#64748b;font-size:13px;margin:0 0 16px">Check your email for the 6-digit code. It expires in 1 hour.</p>
+          <h3 style="color:#FFFFFF;font-size:16px;font-weight:800;margin:0 0 6px">Enter Reset Code</h3>
+          <p style="color:rgba(255,255,255,.45);font-size:13px;margin:0 0 16px">Check your email for the 6-digit code. It expires in 1 hour.</p>
           <input id="resetCode" type="text" inputmode="numeric" maxlength="6" placeholder="123456"
-            style="width:100%;box-sizing:border-box;padding:12px 14px;background:#0a0f1a;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:10px;outline:none">
+            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#FFFFFF;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:10px;outline:none;font-family:inherit">
           <input id="resetNewPin" type="text" inputmode="numeric" maxlength="4" placeholder="New 4-digit PIN"
-            style="width:100%;box-sizing:border-box;padding:12px 14px;background:#0a0f1a;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:12px;outline:none">
+            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#FFFFFF;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:12px;outline:none;font-family:inherit">
           <button onclick="confirmPinReset()"
-            style="width:100%;padding:12px;background:#10b981;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer">
+            style="width:100%;padding:13px;background:#10B981;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;transition:background .12s"
+            onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'">
             Set New PIN
           </button>
-          <div id="resetStep2Error" style="color:#f87171;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
+          <div id="resetStep2Error" style="color:#FCA5A5;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
         </div>
-        <button onclick="hideForgotPin()" style="width:100%;margin-top:12px;padding:8px;background:transparent;border:none;color:#475569;font-size:12px;cursor:pointer">
+        <button onclick="hideForgotPin()" style="width:100%;margin-top:12px;padding:8px;background:transparent;border:none;color:rgba(255,255,255,.32);font-size:12px;cursor:pointer;transition:color .12s"
+          onmouseover="this.style.color='rgba(255,255,255,.6)'" onmouseout="this.style.color='rgba(255,255,255,.32)'">
           ← Cancel
         </button>
       </div>
 
-      <p style="text-align:center;color:#1e293b;font-size:11px;margin-top:24px">Internal use only · Avalon Landscape Construction</p>
+      <p style="text-align:center;color:rgba(255,255,255,.2);font-size:11px;margin-top:28px;letter-spacing:.04em">GROUNDWORK CRM · INTERNAL USE ONLY</p>
     </div>
   </div>
   `;
@@ -670,7 +679,7 @@ function renderLoginScreen() {
       const el = document.getElementById(`pin${i}`);
       if (el) {
         const rep = selectedRepId ? REPS.find(r => r.id === selectedRepId) : null;
-        el.style.background = i < pinBuffer.length ? (rep?.color || '#00d4ff') : '#1e293b';
+        el.style.background = i < pinBuffer.length ? '#10B981' : 'rgba(255,255,255,.12)';
       }
     }
   }
@@ -764,7 +773,7 @@ function renderLoginScreen() {
       document.querySelector('#pinEntry').style.borderColor = '#ef4444';
       setTimeout(() => {
         document.getElementById('pinError').style.display = 'none';
-        document.querySelector('#pinEntry').style.borderColor = '#1e293b';
+        document.querySelector('#pinEntry').style.borderColor = 'rgba(255,255,255,.13)';
       }, 1500);
     }
   }

@@ -1143,8 +1143,8 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css">
-  <link rel="stylesheet" href="/static/styles.css?v=20260624">
+  <link rel="stylesheet" href="/static/premium.css?v=20260627gw">
+  <link rel="stylesheet" href="/static/styles.css?v=20260627gw">
 </head>
 <body>
 <div id="sidebarScrim" class="sidebar-scrim"></div>
@@ -1207,14 +1207,14 @@ function getHtml(): string {
           <button class="nav-item" data-view="integrations" onclick="show('integrations')">Integrations</button>
           <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">User Management</button>
           <button class="nav-item" data-view="settings" onclick="show('settings')">Settings</button>
-          <button class="nav-item" data-view="superAdmin" id="superAdminNavBtn" onclick="show('superAdmin')" style="display:none;color:#f59e0b;font-weight:700;border-top:1px solid #334155;margin-top:6px;padding-top:10px">🛡 Platform Admin</button>
+          <button class="nav-item" data-view="superAdmin" id="superAdminNavBtn" onclick="show('superAdmin')" style="display:none;color:var(--gw-emerald);font-weight:700;border-top:1px solid rgba(255,255,255,.1);margin-top:6px;padding-top:10px">🛡 Platform Admin</button>
         </div>
       </details>
 
     </nav>
     <div class="sidebar-footer">
-      <strong>Avalon Sales OS</strong><br>
-      Consultative. Profitable.<br>Operationally clean. Easy to trust.
+      <strong>Groundwork CRM</strong><br>
+      Built for field sales teams.<br>Every lead. Every follow-up.
     </div>
   </aside>
   <main class="main" role="main">
