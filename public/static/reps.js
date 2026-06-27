@@ -908,22 +908,22 @@ function renderRepDashboard(viewEl, rep) {
 
 <!-- Commission Summary -->
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px">
-  <div style="background:linear-gradient(135deg,#0c2a1a,#0f172a);border:1px solid #16a34a;border-radius:14px;padding:18px;text-align:center">
+  <div class="gw-rep-tile-earned">
     <div style="font-size:11px;font-weight:700;color:#86efac;letter-spacing:.06em;text-transform:uppercase">Commissions Earned</div>
     <div style="font-size:28px;font-weight:800;color:#4ade80;margin-top:8px">${fmtCurrency(totalEarned)}</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px">Collected & confirmed</div>
   </div>
-  <div style="background:linear-gradient(135deg,#1a1a0c,#0f172a);border:1px solid #ca8a04;border-radius:14px;padding:18px;text-align:center">
+  <div class="gw-rep-tile-pending">
     <div style="font-size:11px;font-weight:700;color:#fde68a;letter-spacing:.06em;text-transform:uppercase">Pending Collection</div>
     <div style="font-size:28px;font-weight:800;color:#fbbf24;margin-top:8px">${fmtCurrency(pendingCollection)}</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px">Sold, awaiting payment</div>
   </div>
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:18px;text-align:center">
+  <div class="gw-rep-tile">
     <div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Open Opportunities</div>
     <div style="font-size:28px;font-weight:800;color:#e2e8f0;margin-top:8px">${open.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px">${overdue.length > 0 ? `<span style="color:#f87171">${overdue.length} overdue</span>` : 'All current'}</div>
   </div>
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:18px;text-align:center">
+  <div class="gw-rep-tile">
     <div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Sold This Year</div>
     <div style="font-size:28px;font-weight:800;color:#e2e8f0;margin-top:8px">${sold.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px">${fmtCurrency(sold.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0))} total value</div>
@@ -962,7 +962,7 @@ function renderRepDashboard(viewEl, rep) {
     `<div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
-        <tr style="border-bottom:1px solid #1e293b">
+        <tr class="gw-table-row">
           <th style="text-align:left;padding:8px 12px;color:#64748b;font-weight:600">Client</th>
           <th style="text-align:left;padding:8px 12px;color:#64748b;font-weight:600">Type</th>
           <th style="text-align:left;padding:8px 12px;color:#64748b;font-weight:600">Lead Source</th>
@@ -994,8 +994,8 @@ function renderRepDashboard(viewEl, rep) {
         </tr>` : '';
 
           return `
-        <tr style="border-bottom:1px solid #0f172a;cursor:pointer" onclick="show('pipeline','${opp.id}')"
-          onmouseover="this.style.background='#0f172a'" onmouseout="this.style.background=''">
+        <tr style="border-bottom:1px solid var(--gw-line);cursor:pointer" onclick="show('pipeline','${opp.id}')"
+          onmouseover="this.style.background='var(--gw-surface-2)'" onmouseout="this.style.background=''">
           <td style="padding:10px 12px;font-weight:600">${escapeHtml(opp.client)}</td>
           <td style="padding:10px 12px;color:#94a3b8">${formatWorkType(opp.workType)}</td>
           <td style="padding:10px 12px;color:#94a3b8">${formatLeadSource(opp.leadSource)}</td>
@@ -1059,8 +1059,8 @@ function renderRepDashboard(viewEl, rep) {
       const gateEl   = gateInfo && gateInfo.held
         ? `<div style="display:flex;align-items:center;gap:5px;margin-top:4px"><span style="font-size:10px;color:#f59e0b">⏳ ${gateInfo.reason}</span>${gateInfo.preview > 0 ? `<span style="font-size:10px;color:#64748b">Earns ${fmtCurrency(gateInfo.preview)} once collected.</span>` : ''}</div>` : '';
       return `
-    <div onclick="show('pipeline','${opp.id}')" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#0f172a;border-radius:8px;margin-bottom:5px;cursor:pointer;border:1px solid ${gateInfo && gateInfo.held ? '#f59e0b30' : '#1e293b'}"
-      onmouseover="this.style.borderColor='${color}40'" onmouseout="this.style.borderColor='${gateInfo && gateInfo.held ? '#f59e0b30' : '#1e293b'}'">
+    <div onclick="show('pipeline','${opp.id}')" class="gw-payout-card${gateInfo && gateInfo.held ? ' gate-held' : ''}" 
+      onmouseover="this.style.borderColor='${color}40'" onmouseout="this.style.borderColor='${gateInfo && gateInfo.held ? '#f59e0b30' : 'var(--gw-line)'}'">
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px">${escapeHtml(opp.client || 'Unnamed')}</div>
         <div style="font-size:11px;color:#64748b;margin-top:2px">${formatWorkType(opp.workType)} · ${formatLeadSource(opp.leadSource)}</div>
@@ -1087,7 +1087,7 @@ function renderRepDashboard(viewEl, rep) {
 
 <!-- Weekly Activity Log Modal (hidden) -->
 <div id="weeklyTrackerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
-  <div style="background:#1e293b;border-radius:16px;padding:28px;width:min(480px,95vw);max-height:90vh;overflow-y:auto;position:relative">
+  <div class="gw-diff-modal-box" style="width:min(480px,95vw)">
     <button onclick="document.getElementById('weeklyTrackerModal').style.display='none'"
       style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:#64748b;font-size:20px;cursor:pointer">×</button>
     <h2 style="margin:0 0 20px;font-size:18px">Log This Week's Activity</h2>
@@ -1098,7 +1098,7 @@ function renderRepDashboard(viewEl, rep) {
         <input type="number" id="wa_${key}" min="0"
           value="${weeklyActivity[key] || ''}"
           placeholder="0"
-          style="width:100%;margin-top:6px;padding:10px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:14px;box-sizing:border-box">
+          class="gw-input-sm" style="width:100%;margin-top:6px;font-size:14px;box-sizing:border-box">
       </div>
       `).join('')}
       <button class="primary-btn" onclick="saveWeeklyActivity('${rep.id}')" style="margin-top:8px">Save Activity Log</button>
@@ -1133,8 +1133,8 @@ function repOppMiniCard(o) {
   const color = stageColors[o.status] || '#64748b';
   const overdue = o.nextFollowUp && o.nextFollowUp < todayISO();
   return `
-  <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0f172a;border-radius:10px;margin-bottom:8px;cursor:pointer;border:1px solid ${overdue ? '#7f1d1d' : '#1e293b'}"
-    onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
+  <div onclick="show('pipeline','${o.id}')" class="gw-opp-mini${overdue ? ' overdue' : ''}">
+
     <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
     <div style="flex:1;min-width:0">
       <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client)}</div>
@@ -1166,9 +1166,7 @@ function renderWeeklyScoreboard(repId, actual, targets) {
           <span style="font-size:12px;color:#94a3b8">${label}</span>
           <span style="font-size:12px;font-weight:700;color:${color}">${val} <span style="color:#334155;font-weight:400">/ ${displayTarget}</span></span>
         </div>
-        <div style="height:5px;background:#1e293b;border-radius:3px">
-          <div style="height:5px;width:${pct}%;background:${color};border-radius:3px;transition:width .4s"></div>
-        </div>
+        <div class="gw-score-track"><div class="gw-score-fill" style="width:${pct}%;background:${color}"></div></div>
       </div>`;
     }).join('')}
   </div>`;
@@ -1181,9 +1179,9 @@ function renderCommissionPlanRef(planId) {
   const plan = (override && override.plans && override.plans[planId]) ? override.plans[planId] : COMMISSION_PLANS[planId];
   if (!plan) return '<p style="color:var(--muted)">Commission plan not found.</p>';
 
-  const thStyle = 'padding:9px 10px;text-align:center;border-bottom:1px solid #1e293b;font-size:11px;font-weight:700;letter-spacing:.04em';
+  const thStyle = 'padding:9px 10px;text-align:center;border-bottom:1px solid var(--gw-line);font-size:11px;font-weight:700;letter-spacing:.04em';
   const tdStyle = 'padding:8px 10px;text-align:center;font-weight:700;font-size:13px';
-  const rowStyle = 'border-bottom:1px solid #0f172a';
+  const rowStyle = 'border-bottom:1px solid var(--gw-line)';
   const lStyle = 'padding:8px 10px;font-size:12px;color:#94a3b8';
 
   // Landscape tiers
@@ -1224,8 +1222,8 @@ function renderCommissionPlanRef(planId) {
     <!-- Landscape / Enhancement -->
     <div>
       <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Landscape / Enhancement / Hardscape</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#0f172a;border-radius:8px;overflow:hidden">
-        <thead><tr style="background:#1e293b">
+      <table class="gw-data-table" style="width:100%;border-collapse:collapse;font-size:12px;border-radius:8px;overflow:hidden">
+        <thead><tr style="background:var(--gw-surface-3)">
           <th style="${thStyle};text-align:left;color:#64748b">Job Value Range</th>
           <th style="${thStyle};color:#4ade80">Self-Generated</th>
           <th style="${thStyle};color:#60a5fa">Company Lead</th>
@@ -1241,8 +1239,8 @@ function renderCommissionPlanRef(planId) {
     <!-- Maintenance One-Time -->
     <div>
       <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Maintenance — One-Time / Seasonal</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#0f172a;border-radius:8px;overflow:hidden">
-        <thead><tr style="background:#1e293b">
+      <table class="gw-data-table" style="width:100%;border-collapse:collapse;font-size:12px;border-radius:8px;overflow:hidden">
+        <thead><tr style="background:var(--gw-surface-3)">
           <th style="${thStyle};text-align:left;color:#64748b">Type</th>
           <th style="${thStyle};color:#4ade80">Self-Generated</th>
           <th style="${thStyle};color:#60a5fa">Company Lead</th>
@@ -1263,8 +1261,8 @@ function renderCommissionPlanRef(planId) {
     <!-- Recurring Maintenance -->
     <div>
       <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Recurring Maintenance — First-Month Tiered Payout</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#0f172a;border-radius:8px;overflow:hidden">
-        <thead><tr style="background:#1e293b">
+      <table class="gw-data-table" style="width:100%;border-collapse:collapse;font-size:12px;border-radius:8px;overflow:hidden">
+        <thead><tr style="background:var(--gw-surface-3)">
           <th style="${thStyle};text-align:left;color:#64748b">Source</th>
           <th style="${thStyle};color:#e2e8f0">First $1K / Next $1K / Above — Cap · Bonus</th>
         </tr></thead>
@@ -1277,7 +1275,7 @@ function renderCommissionPlanRef(planId) {
       <div style="font-size:11px;color:#475569;margin-top:6px;padding:0 2px">Retention bonus paid after client remains active 90+ days · Paid after 60-day active period</div>
     </div>
 
-    <p style="font-size:11px;color:#475569;margin:0;padding:10px;background:#0a0f1a;border-radius:8px;border:1px solid #1e293b">
+    <p class="gw-info-strip" style="font-size:11px;color:var(--gw-muted);margin:0;padding:10px">
       Commission paid only on approved, sold, and collected work. Pricing must be management-approved.
       ${override ? `<span style="color:#f59e0b"> ⚙ Custom rules active (edited ${new Date(override.updatedAt||'').toLocaleDateString()}).</span>` : ''}
     </p>
@@ -1314,8 +1312,8 @@ function renderOMDashboard(viewEl, rep) {
 <!-- Pipeline Health Tiles -->
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:28px">
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View all open opportunities"
-    style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
-    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+    style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Open Opps</div>
     <div style="font-size:26px;font-weight:800;color:#e2e8f0;margin-top:6px">${open.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Active pipeline</div>
@@ -1328,22 +1326,22 @@ function renderOMDashboard(viewEl, rep) {
     <div style="font-size:11px;color:#64748b;margin-top:2px">Past follow-up date</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View proposals awaiting response"
-    style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
-    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+    style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Proposals Out</div>
     <div style="font-size:26px;font-weight:800;color:#fbbf24;margin-top:6px">${proposals.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Awaiting response</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View new leads not yet contacted"
-    style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
-    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+    style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">New Leads</div>
     <div style="font-size:26px;font-weight:800;color:#60a5fa;margin-top:6px">${newLeads.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">Not yet contacted</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View unassigned leads"
-    style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
-    onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+    style="background:var(--gw-surface-2);border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : 'var(--gw-line)'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
     <div style="font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.06em;text-transform:uppercase">Unassigned</div>
     <div style="font-size:26px;font-weight:800;color:${unassigned.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:6px">${unassigned.length}</div>
     <div style="font-size:11px;color:#64748b;margin-top:2px">No rep assigned</div>
@@ -1369,8 +1367,8 @@ function renderOMDashboard(viewEl, rep) {
     ${overdueList.length === 0
       ? '<p style="color:#4ade80;font-size:13px">No overdue follow-ups — pipeline is current.</p>'
       : overdueList.slice(0, 8).map(o => `
-        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0f172a;border:1px solid #7f1d1d;border-radius:9px;margin-bottom:7px;cursor:pointer"
-          onmouseover="this.style.background='#1a0a0a'" onmouseout="this.style.background='#0f172a'">
+        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--gw-surface-2);border:1px solid #7f1d1d;border-radius:9px;margin-bottom:7px;cursor:pointer"
+          onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
             <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.status)} · Due ${o.nextFollowUp}</div>
@@ -1390,8 +1388,8 @@ function renderOMDashboard(viewEl, rep) {
     ${chaseList.length === 0
       ? '<p style="color:#4ade80;font-size:13px">All proposals have a follow-up scheduled.</p>'
       : chaseList.map(o => `
-        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0f172a;border:1px solid #1e293b;border-radius:9px;margin-bottom:7px;cursor:pointer"
-          onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
+        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:9px;margin-bottom:7px;cursor:pointer"
+          onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
             <div style="font-size:11px;color:#64748b;margin-top:1px">${escapeHtml(o.serviceLine||o.status)}${o.repId ? ' · ' + ((window.REPS||[]).find(r=>r.id===o.repId)?.name||'') : ' · unassigned'}</div>
@@ -1412,8 +1410,8 @@ function renderOMDashboard(viewEl, rep) {
     ${unassigned.length === 0
       ? '<p style="color:#4ade80;font-size:13px">All open leads have a rep assigned.</p>'
       : unassigned.map(o => `
-        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0f172a;border:1px solid #f59e0b40;border-radius:9px;margin-bottom:7px;cursor:pointer"
-          onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='#0f172a'">
+        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--gw-surface-2);border:1px solid #f59e0b40;border-radius:9px;margin-bottom:7px;cursor:pointer"
+          onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
           
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
@@ -1499,7 +1497,7 @@ function renderAdminDashboard(viewEl) {
   function pbar(actual, target, color) {
     const pct = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0;
     const c = color || (pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171');
-    return `<div style="height:5px;background:#1e293b;border-radius:3px;margin-top:6px"><div style="height:5px;width:${pct}%;background:${c};border-radius:3px;transition:width .5s"></div></div><div style="font-size:10px;color:#64748b;margin-top:2px">${pct}% of target</div>`;
+    return `<div style="height:5px;background:var(--gw-line);border-radius:3px;margin-top:6px"><div style="height:5px;width:${pct}%;background:${c};border-radius:3px;transition:width .5s"></div></div><div style="font-size:10px;color:var(--gw-muted);margin-top:2px">${pct}% of target</div>`;
   }
   const DIV_SVG_ICONS = {
     landscape:   '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -1513,7 +1511,7 @@ function renderAdminDashboard(viewEl) {
     const pct = Math.min(100, Math.round((div.actual / div.target) * 100));
     const barColor = pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171';
     const divIconSvg = DIV_SVG_ICONS[key] || '';
-    return `<div style="background:#0f172a;border:1px solid ${abovePlan ? '#16a34a' : '#1e293b'};border-radius:12px;padding:16px">
+    return `<div style="background:var(--gw-surface-2);border:1px solid ${abovePlan ? '#16a34a' : 'var(--gw-line)'};border-radius:12px;padding:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">${divIconSvg} ${div.name}</div>
         ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px">ABOVE PLAN</span>' : ''}
@@ -1524,7 +1522,7 @@ function renderAdminDashboard(viewEl) {
         <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:.95rem;font-weight:700;color:#f59e0b">${Math.round(div.grossMarginFloor * 100)}%</div></div>
         <div><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:.95rem;font-weight:700;color:${gmOk ? '#4ade80' : '#f87171'}">${Math.round(div.grossMarginPct * 100)}% ${gmOk ? '+' : '!'}</div></div>
       </div>
-      <div style="height:5px;background:#1e293b;border-radius:3px"><div style="height:5px;width:${pct}%;background:${barColor};border-radius:3px;transition:width .5s"></div></div>
+      <div style="height:5px;background:var(--gw-line);border-radius:3px"><div style="height:5px;width:${pct}%;background:${barColor};border-radius:3px;transition:width .5s"></div></div>
       <div style="font-size:10px;color:#64748b;margin-top:4px">${pct}% · ${abovePlan ? '<span style="color:#4ade80">+' + fmtM(Math.abs(div.remaining)) + ' over</span>' : fmtM(div.remaining) + ' remaining'}</div>
     </div>`;
   }
@@ -1585,13 +1583,13 @@ ${(()=>{
   }
 
   const rows = takeaways.map(t => `
-    <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid #1e293b">
+    <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--gw-line)">
       <span style="font-size:1.1rem;min-width:24px">${t.icon}</span>
       <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.5">${t.text}</p>
     </div>`).join('');
 
-  return `<div style="background:linear-gradient(135deg,#0a1020,#0f1a30);border:1px solid #1e4d6b;border-radius:14px;margin-bottom:20px;overflow:hidden">
-    <div style="padding:12px 16px;background:#0a1628;border-bottom:1px solid #1e4d6b;display:flex;align-items:center;justify-content:space-between">
+  return `<div class="gw-sky-card" style="border-radius:14px;margin-bottom:20px;overflow:hidden">
+    <div class="gw-sky-card-header" style="display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#00d4ff">Executive Summary</span>
       <span style="font-size:11px;color:#64748b">Key takeaways as of today</span>
     </div>
@@ -1600,7 +1598,7 @@ ${(()=>{
 })()}
 
 <!-- ── SECTION 1: FY2026 REVENUE BANNER ── -->
-<div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:16px;padding:20px;margin-bottom:24px">
+<div class="gw-sky-card" style="border-radius:16px;padding:20px;margin-bottom:24px">
   <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px">FY2026 · ${fy.budgetVersion || 'v2.2'} · As of ${fy.asOfDate || '—'}</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
     <div style="text-align:center">
@@ -1636,7 +1634,7 @@ ${(()=>{
       <span>YTD Progress to Budget</span>
       <span style="color:${ytdVariance >= 0 ? '#4ade80' : '#f87171'}">${ytdVariance >= 0 ? '+' : ''}${fmtM(ytdVariance)} vs budget</span>
     </div>
-    <div style="height:8px;background:#1e293b;border-radius:4px">
+    <div style="height:8px;background:var(--gw-line);border-radius:4px">
       <div style="height:8px;width:${Math.min(100, Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100))}%;background:linear-gradient(90deg,#00d4ff,#4ade80);border-radius:4px;transition:width .5s"></div>
     </div>
     <div style="font-size:10px;color:#64748b;margin-top:3px">${Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100)}% of annual budget · ${fy.asOfDate || ''}</div>
@@ -1665,12 +1663,12 @@ ${(()=>{
         const hasActual = m.actual != null;
         const varColor = !hasActual ? '#334155' : m.variance >= 0 ? '#4ade80' : '#f87171';
         const barPct = hasActual ? Math.min(100, Math.round((m.actual / m.budgeted) * 100)) : 0;
-        return `<div style="flex:1;min-width:60px;background:#0f172a;border:1px solid ${hasActual ? '#1e4d6b' : '#1e293b'};border-radius:10px;padding:10px 8px;text-align:center">
+        return `<div style="flex:1;min-width:60px;background:var(--gw-surface-2);border:1px solid ${hasActual ? '#1e4d6b' : 'var(--gw-line)'};border-radius:10px;padding:10px 8px;text-align:center">
           <div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:6px">${m.month}</div>
           <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px">${fmtM(m.budgeted)}</div>
           ${hasActual ? `<div style="font-size:12px;font-weight:800;color:#00d4ff">${fmtM(m.actual)}</div>
           <div style="font-size:10px;color:${varColor};font-weight:700;margin-top:2px">${m.variance >= 0 ? '+' : ''}${fmtM(m.variance)}</div>
-          <div style="height:3px;background:#1e293b;border-radius:2px;margin-top:6px"><div style="height:3px;width:${barPct}%;background:${m.variance >= 0 ? '#4ade80' : '#f87171'};border-radius:2px"></div></div>`
+          <div style="height:3px;background:var(--gw-line);border-radius:2px;margin-top:6px"><div style="height:3px;width:${barPct}%;background:${m.variance >= 0 ? '#4ade80' : '#f87171'};border-radius:2px"></div></div>`
           : `<div style="font-size:10px;color:#334155;margin-top:4px">—</div>`}
         </div>`;
       }).join('')}
@@ -1705,8 +1703,8 @@ ${(()=>{
     <h2 style="margin:0 0 14px;font-size:16px">Pipeline Health</h2>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View all open opportunities"
-        style="background:#0f172a;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
-        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+        style="background:var(--gw-surface-2);border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
         <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Open Opps</div>
         <div style="font-size:22px;font-weight:800;color:#e2e8f0;margin-top:4px">${openOpps.length}</div>
         <div style="font-size:10px;color:#64748b">${fmtM(totalPipelineValue)} value</div>
@@ -1719,15 +1717,15 @@ ${(()=>{
         <div style="font-size:10px;color:#64748b">need follow-up</div>
       </div>
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View proposals awaiting decision"
-        style="background:#0f172a;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
-        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+        style="background:var(--gw-surface-2);border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
         <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Proposals Out</div>
         <div style="font-size:22px;font-weight:800;color:#fbbf24;margin-top:4px">${proposals.length}</div>
         <div style="font-size:10px;color:#64748b">awaiting decision</div>
       </div>
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View stale leads with no recent activity"
-        style="background:#0f172a;border:1px solid ${stale.length > 0 ? '#f59e0b40' : '#1e293b'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
-        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+        style="background:var(--gw-surface-2);border:1px solid ${stale.length > 0 ? '#f59e0b40' : 'var(--gw-line)'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
         <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Stale (14d+)</div>
         <div style="font-size:22px;font-weight:800;color:${stale.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:4px">${stale.length}</div>
         <div style="font-size:10px;color:#64748b">no recent activity</div>
@@ -1740,19 +1738,19 @@ ${(()=>{
         <div style="font-size:10px;color:#64748b">${fmtM(soldValue)} value</div>
       </div>
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View unassigned leads"
-        style="background:#0f172a;border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : '#1e293b'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
-        onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+        style="background:var(--gw-surface-2);border:1px solid ${unassigned.length > 0 ? '#f59e0b60' : 'var(--gw-line)'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
         <div style="font-size:9px;color:#94a3b8;font-weight:600;text-transform:uppercase">Unassigned</div>
         <div style="font-size:22px;font-weight:800;color:${unassigned.length > 0 ? '#f59e0b' : '#4ade80'};margin-top:4px">${unassigned.length}</div>
         <div style="font-size:10px;color:#64748b">no rep assigned</div>
       </div>
     </div>
     ${overdueList.length > 0 ? `
-    <div style="border-top:1px solid #1e293b;padding-top:12px">
+    <div style="border-top:1px solid var(--gw-line);padding-top:12px">
       <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:8px">Most Overdue</div>
       ${overdueList.slice(0, 4).map(o => `
-        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#0f172a;border:1px solid #7f1d1d;border-radius:8px;margin-bottom:5px;cursor:pointer"
-          onmouseover="this.style.background='#1a0a0a'" onmouseout="this.style.background='#0f172a'">
+        <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--gw-surface-2);border:1px solid #7f1d1d;border-radius:8px;margin-bottom:5px;cursor:pointer"
+          onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
             <div style="font-size:10px;color:#64748b">${escapeHtml(o.status)} · Due ${o.nextFollowUp}</div>
@@ -1791,9 +1789,9 @@ ${(()=>{
         const srcLabel = o.leadSource === 'self_generated' ? 'Self-Gen' : o.leadSource === 'company_lead' ? 'Co. Lead' : o.leadSource === 'assisted' ? 'Assisted' : '—';
         const wt = o.workType ? o.workType.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '—';
         return `
-        <div style="background:#0f172a;border:1px solid ${scol}40;border-radius:12px;margin-bottom:10px;overflow:hidden">
+        <div style="background:var(--gw-surface-2);border:1px solid ${scol}40;border-radius:12px;margin-bottom:10px;overflow:hidden">
           <div onclick="show('pipeline','${o.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer"
-            onmouseover="this.style.background='#131d2e'" onmouseout="this.style.background='transparent'">
+            onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='transparent'">
             <div style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</span>
@@ -1806,7 +1804,7 @@ ${(()=>{
               <div style="font-size:10px;color:${o.collected?'#4ade80':'#f59e0b'}">${o.collected ? '✓ collected' : '⏳ uncollected'}</div>
             </div>
           </div>
-          <div style="padding:8px 12px;background:#0a0f1a;border-top:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="padding:8px 12px;background:var(--gw-surface);border-top:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <div>
               <span style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.04em">Calculated Commission</span><br>
               <span style="font-size:15px;font-weight:800;color:#fbbf24">${fmtM(cr.amount)}</span>${capBadge}
@@ -1826,7 +1824,7 @@ ${(()=>{
                 style="background:#064e3b;border:none;color:#4ade80;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">$ Mark Paid</button>
               `}
               <button onclick="event.stopPropagation();show('pipeline','${o.id}')"
-                style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">View →</button>
+                style="background:var(--gw-surface-2);border:1px solid var(--gw-line);color:var(--gw-muted);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">View →</button>
             </div>
           </div>
         </div>`;
@@ -1837,7 +1835,7 @@ ${(()=>{
         : commQueue.map(o => queueCard(o, false)).join('');
       if (commQueue.length > 0) html += `<p style="font-size:11px;color:#64748b;margin-top:4px">Approve → Approved. Mark Paid → closes lifecycle. Hold/Reject for review.</p>`;
       if (commApproved.length > 0) html += `
-        <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:10px">
+        <div style="border-top:1px solid var(--gw-line);padding-top:14px;margin-top:10px">
           <div style="font-size:12px;font-weight:700;color:#00d4ff;margin-bottom:8px">Approved — Ready to Pay (${commApproved.length})</div>
           ${commApproved.map(o => queueCard(o, true)).join('')}
         </div>`;
@@ -1845,18 +1843,18 @@ ${(()=>{
     })()}
 
     <!-- Unassigned opps inline -->
-    <div style="border-top:1px solid #1e293b;padding-top:14px;margin-top:8px">
+    <div style="border-top:1px solid var(--gw-line);padding-top:14px;margin-top:8px">
       <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">Unassigned Leads (${unassigned.length})</div>
       ${unassigned.length === 0
         ? '<p style="color:#4ade80;font-size:12px">All leads are assigned.</p>'
         : unassigned.slice(0, 5).map(o => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:#0f172a;border-radius:8px;margin-bottom:5px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--gw-surface-2);border-radius:8px;margin-bottom:5px">
             <div>
               <div style="font-weight:600;font-size:12px">${escapeHtml(o.client||'Unnamed')}</div>
               <div style="font-size:10px;color:#64748b">${escapeHtml(o.serviceLine || o.status)}</div>
             </div>
             <select onchange="assignRep('${o.id}', this.value)"
-              style="padding:5px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:11px;cursor:pointer">
+              style="padding:5px 8px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:6px;color:var(--gw-ink);font-size:11px;cursor:pointer">
               <option value="">— Assign Rep —</option>
               ${REPS.filter(r=>r.role==='rep').map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
             </select>
@@ -1885,37 +1883,37 @@ ${(()=>{
       </div>
       <!-- Stats grid -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
-        <div style="background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+        <div style="background:var(--gw-surface-2);border-radius:8px;padding:10px;text-align:center">
           <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Open</div>
           <div style="font-size:20px;font-weight:800;color:#e2e8f0">${open}</div>
         </div>
-        <div style="background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+        <div style="background:var(--gw-surface-2);border-radius:8px;padding:10px;text-align:center">
           <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Sold</div>
           <div style="font-size:20px;font-weight:800;color:#4ade80">${sold}</div>
         </div>
-        <div style="background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+        <div style="background:var(--gw-surface-2);border-radius:8px;padding:10px;text-align:center">
           <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Proposals</div>
           <div style="font-size:20px;font-weight:800;color:#fbbf24">${proposals}</div>
         </div>
       </div>
       <!-- Sold value + close rate -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <div style="flex:1;background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+        <div style="flex:1;background:var(--gw-surface-2);border-radius:8px;padding:10px;text-align:center">
           <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Sold Value</div>
           <div style="font-size:14px;font-weight:800;color:#e2e8f0;margin-top:3px">${fmtM(soldValue)}</div>
         </div>
-        <div style="flex:1;background:#0f172a;border-radius:8px;padding:10px;text-align:center">
+        <div style="flex:1;background:var(--gw-surface-2);border-radius:8px;padding:10px;text-align:center">
           <div style="font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase">Close Rate</div>
           <div style="font-size:14px;font-weight:800;color:${closeRate !== null ? (closeRate >= 20 ? '#4ade80' : '#fbbf24') : '#334155'};margin-top:3px">${closeRate !== null ? closeRate + '%' : '—'}</div>
         </div>
       </div>
       <!-- Quota progress bar -->
-      <div style="background:#0f172a;border-radius:8px;padding:10px;margin-bottom:12px">
+      <div style="background:var(--gw-surface-2);border-radius:8px;padding:10px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-bottom:5px">
           <span>Landscape Revenue Quota</span>
           <span style="color:${quotaPct >= 100 ? '#4ade80' : '#fbbf24'}">${quotaPct}% · ${fmtM(soldValue)} / ${fmtM(525000)}</span>
         </div>
-        <div style="height:6px;background:#1e293b;border-radius:3px">
+        <div style="height:6px;background:var(--gw-line);border-radius:3px">
           <div style="height:6px;width:${quotaPct}%;background:${quotaPct >= 100 ? '#4ade80' : quotaPct >= 60 ? '#fbbf24' : '#f87171'};border-radius:3px;transition:width .5s"></div>
         </div>
       </div>
@@ -1960,7 +1958,7 @@ ${(()=>{
       var crStr = d.closeRatePct != null ? d.closeRatePct + '%' : '\u2014';
       var avgAgeStr = d.avgEstimateAge != null ? d.avgEstimateAge + 'd' : '\u2014';
       var oldestStr = d.oldestEstimateAge != null ? d.oldestEstimateAge + 'd' : '\u2014';
-      return '<div style="background:linear-gradient(135deg,#0d1e35,#0a1628);border:1px solid #1e3a5f;border-radius:14px;padding:18px">'
+      return '<div class="gw-sky-card" style="border-radius:14px;padding:18px">'
         + '<div style="font-size:13px;font-weight:800;color:' + d.color + ';margin-bottom:12px;text-transform:uppercase;letter-spacing:.06em">' + d.label + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
           + '<div><div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:600">Open Pipeline</div><div style="font-size:15px;font-weight:800;color:#e2e8f0">' + fm(d.openValue) + '</div></div>'
@@ -1975,7 +1973,7 @@ ${(()=>{
           + '<div><div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:600">Close Rate</div><div style="font-size:13px;font-weight:700;color:#00d4ff">' + crStr + '</div></div>'
         + '</div>'
       + '</div>';
-    }).join('') + '<div style="background:linear-gradient(135deg,#0a1628,#071525);border:1px solid #334155;border-radius:14px;padding:18px">'
+    }).join('') + '<div class="gw-sky-card" style="border-radius:14px;padding:18px">'
       + '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:12px;text-transform:uppercase;letter-spacing:.06em">Total</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
         + '<div><div style="font-size:9px;color:#64748b;text-transform:uppercase;font-weight:600">Open Pipeline</div><div style="font-size:15px;font-weight:800;color:#e2e8f0">' + fm(divs.total.openValue) + '</div></div>'
@@ -2003,13 +2001,13 @@ function renderUnassignedOpps(allOpps) {
   const unassigned = allOpps.filter(o => !o.repId && !['Closed Lost'].includes(o.status));
   if (!unassigned.length) return '<p style="color:var(--muted);font-size:13px">All opportunities are assigned to reps.</p>';
   return unassigned.map(o => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;border-radius:10px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--gw-surface-2);border-radius:10px;margin-bottom:8px">
       <div>
         <div style="font-weight:600;font-size:13px">${escapeHtml(o.client)}</div>
         <div style="font-size:11px;color:#64748b">${escapeHtml(o.serviceLine || o.status)}</div>
       </div>
       <select onchange="assignRep('${o.id}', this.value)"
-        style="padding:6px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;cursor:pointer">
+        style="padding:6px 10px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:12px;cursor:pointer">
         <option value="">— Assign Rep —</option>
         ${REPS.filter(r=>r.role==='rep').map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
       </select>

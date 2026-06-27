@@ -4614,3 +4614,445 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 /* ────────────────────────────────────────────────────── */
 /* END Sprint 5 JS Token Adoption Classes                 */
 /* ────────────────────────────────────────────────────── */
+
+/* ══════════════════════════════════════════════════════ */
+/* SPRINT 6 — reps.js / user_management.js / integrations.js */
+/* ══════════════════════════════════════════════════════ */
+
+/* ── Rep Dashboard Commission stat tiles ───────────────── */
+/* Earned (green gradient) */
+.gw-rep-tile-earned {
+  background: linear-gradient(135deg, var(--gw-pine-deep), var(--gw-pine));
+  border: 1px solid var(--gw-emerald);
+  border-radius: var(--gw-r-lg);
+  padding: 18px;
+  text-align: center;
+}
+/* Pending (amber gradient) */
+.gw-rep-tile-pending {
+  background: linear-gradient(135deg, #2d2a06, #1a1600);
+  border: 1px solid #ca8a04;
+  border-radius: var(--gw-r-lg);
+  padding: 18px;
+  text-align: center;
+}
+/* Neutral stat tile */
+.gw-rep-tile {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 18px;
+  text-align: center;
+}
+.gw-rep-tile-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gw-muted);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.gw-rep-tile-val {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--gw-ink);
+  margin-top: 8px;
+}
+.gw-rep-tile-sub {
+  font-size: 11px;
+  color: var(--gw-muted);
+  margin-top: 4px;
+}
+
+/* ── Mini opp card (pipeline list items) ───────────────── */
+.gw-opp-mini {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--gw-surface-2);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  border: 1px solid var(--gw-line);
+  transition: background .12s, border-color .12s;
+}
+.gw-opp-mini:hover { background: var(--gw-surface-3); }
+.gw-opp-mini.overdue { border-color: #7f1d1d; }
+
+/* ── Payout card (commission breakdown list) ────────────── */
+.gw-payout-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--gw-surface-2);
+  border-radius: 8px;
+  margin-bottom: 5px;
+  cursor: pointer;
+  border: 1px solid var(--gw-line);
+  transition: border-color .12s;
+}
+.gw-payout-card:hover { border-color: var(--gw-pine); }
+.gw-payout-card.gate-held { border-color: #f59e0b30; }
+
+/* ── Weekly scoreboard progress bar ────────────────────── */
+.gw-score-track {
+  height: 5px;
+  background: var(--gw-line);
+  border-radius: 3px;
+}
+.gw-score-fill {
+  height: 5px;
+  border-radius: 3px;
+  transition: width .4s;
+}
+
+/* ── Quick-nav action card (today / manager today view) ── */
+.gw-qnav-card {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.gw-qnav-card:hover { background: var(--gw-surface-3); border-color: var(--gw-pine); }
+.gw-qnav-card.alert  { border-color: #7f1d1d; background: linear-gradient(135deg, rgba(42,10,10,.3), var(--gw-surface-2)); }
+.gw-qnav-card.warn   { border-color: rgba(245,158,11,.38); }
+.gw-qnav-card.active { background: linear-gradient(135deg, var(--gw-pine-deep), var(--gw-pine)); border-color: var(--gw-emerald); }
+
+/* ── Manager Today micro-stat tile ─────────────────────── */
+.gw-micro-tile {
+  background: var(--gw-surface-2);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+
+/* ── Commission plan reference tables ──────────────────── */
+/* Reuse .gw-data-table; only the inline thStyle/rowStyle vars need token values */
+/* These are handled by overriding the string variables in the JS migration      */
+
+/* ── Weekly activity tracker modal ─────────────────────── */
+/* Uses .gw-modal-overlay + .gw-diff-modal-box already defined; no new class */
+
+/* ── Commission payout section header ──────────────────── */
+.gw-payout-header {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gw-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── Sky-accented info card (target pipeline, HubSpot sync) */
+.gw-sky-card {
+  background: linear-gradient(135deg, var(--gw-surface-2), var(--gw-surface));
+  border: 1px solid var(--gw-sky);
+  border-radius: var(--gw-r-lg);
+  margin-bottom: 20px;
+}
+.gw-sky-card-header {
+  padding: 12px 16px;
+  background: rgba(0,167,225,.06);
+  border-bottom: 1px solid var(--gw-sky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── Today view — overdue section divider ───────────────── */
+.gw-section-divider {
+  border-top: 1px solid var(--gw-line);
+  padding-top: 12px;
+}
+.gw-section-divider-top {
+  border-top: 1px solid var(--gw-line);
+  padding-top: 14px;
+  margin-top: 10px;
+}
+
+/* ── Note / info strip ──────────────────────────────────── */
+.gw-info-strip {
+  font-size: 11px;
+  color: var(--gw-muted);
+  margin: 0;
+  padding: 10px;
+  background: var(--gw-surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--gw-line);
+}
+
+/* ────────────────────────────────────────────────────── */
+/* User Management classes                                */
+/* ────────────────────────────────────────────────────── */
+
+/* Tab nav border */
+.gw-um-tab-nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--gw-line);
+  padding-bottom: 16px;
+}
+/* Search / filter panel */
+.gw-um-search-panel {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+/* Edit/add user form card */
+.gw-um-form-card {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: 16px;
+  padding: 28px;
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+/* Role description hint box */
+.gw-um-role-desc {
+  font-size: 12px;
+  color: var(--gw-muted);
+  background: var(--gw-surface-2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  line-height: 1.5;
+}
+/* Google workspace integration strip */
+.gw-um-google-strip {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+/* Roles grid card */
+.gw-um-role-card {
+  padding: 16px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+}
+/* Permission table wrapper */
+.gw-um-perm-table {
+  overflow-x: auto;
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+}
+/* Webhook / logs info strip */
+.gw-um-info-strip {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 10px;
+}
+/* User row in table */
+.gw-um-user-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+/* Inline CSS in user_management.js (style tags) → tokenised */
+
+/* ────────────────────────────────────────────────────── */
+/* Integrations classes                                   */
+/* ────────────────────────────────────────────────────── */
+
+/* Generic integration panel card */
+.gw-int-panel {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: 16px;
+  padding: 28px;
+}
+/* Status strip inside integration panel */
+.gw-int-status-strip {
+  margin-top: 20px;
+  padding: 14px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 10px;
+}
+.gw-int-status-row {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--gw-line);
+}
+/* Icon square */
+.gw-int-icon-sq {
+  width: 32px;
+  height: 32px;
+  background: var(--gw-surface-2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+/* Tab nav (integrations sub-tabs) */
+.gw-int-tab-nav {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--gw-line);
+  margin-bottom: 0;
+}
+/* Modal card reuse: .gw-modal-card already defined */
+/* Gmail thread list item */
+.gw-gmail-thread {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--gw-line);
+  cursor: pointer;
+  transition: background .12s;
+}
+.gw-gmail-thread:hover { background: var(--gw-surface-2); }
+/* Reply box */
+.gw-gmail-reply-box {
+  margin-top: 16px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+  padding: 16px;
+}
+/* Email detail panel */
+.gw-email-detail {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+/* Avatar circle */
+.gw-avatar-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gw-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+/* Calendar grid cells */
+.gw-cal-header-row {
+  background: var(--gw-surface-2);
+  border-bottom: 1px solid var(--gw-line);
+}
+.gw-cal-day-header {
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--gw-muted);
+  border-bottom: 1px solid var(--gw-line);
+  border-left: 1px solid var(--gw-line);
+}
+.gw-cal-cell {
+  padding: 2px 6px;
+  text-align: right;
+  font-size: 10px;
+  font-weight: 600;
+  border-top: 1px solid var(--gw-line);
+  border-left: 1px solid var(--gw-line);
+  height: 40px;
+  position: relative;
+  background: var(--gw-surface);
+}
+.gw-cal-cell.other-month { background: var(--gw-surface-2); opacity: .6; }
+.gw-cal-time-block {
+  border-top: 1px solid var(--gw-line);
+  border-left: 1px solid var(--gw-line);
+  height: 40px;
+  position: relative;
+  background: var(--gw-surface);
+}
+.gw-cal-event {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-left-width: 4px;
+  transition: background .15s;
+}
+.gw-cal-event:hover { background: var(--gw-surface-3); }
+/* Calendar nav buttons */
+.gw-cal-nav-btn {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  color: var(--gw-muted);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.gw-cal-nav-btn:hover { background: var(--gw-surface-3); color: var(--gw-ink); }
+/* Calendar today button */
+.gw-cal-today-btn {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-sky);
+  color: var(--gw-sky);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+/* Contact/person list rows */
+.gw-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.gw-contact-row:hover { background: var(--gw-surface-3); }
+/* Event form inputs container */
+.gw-event-form {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: 16px;
+  padding: 24px;
+  width: min(480px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+/* Ghost back button */
+.gw-back-btn {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  color: var(--gw-muted);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color .12s;
+}
+.gw-back-btn:hover { color: var(--gw-ink); }
+
+/* ────────────────────────────────────────────────────── */
+/* END Sprint 6 Classes                                   */
+/* ────────────────────────────────────────────────────── */

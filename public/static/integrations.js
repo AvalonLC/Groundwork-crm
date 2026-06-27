@@ -535,7 +535,7 @@ async function integrations() {
 <p class="lede">Connect <strong>${escapeHtml(repName)}'s</strong> Google account to access Gmail, Calendar, and Drive directly inside the hub. Each team member connects their own account — completely private.</p>
 
 <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;margin-top:24px">
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px">
+  <div class="gw-int-panel" style="border-radius:16px;padding:28px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
       <img src="https://www.google.com/favicon.ico" style="width:32px;height:32px" alt="Google">
       <div>
@@ -558,13 +558,13 @@ async function integrations() {
       Sign in with Google
     </button>
 
-    <div style="margin-top:20px;padding:14px;background:#0a0f1a;border:1px solid #1e293b;border-radius:10px">
+    <div class="gw-info-strip" style="margin-top:20px;border-radius:10px">
       <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">What you'll get access to</div>
       ${[['✉️','Gmail','Read, compose, reply, and send emails directly inside the hub'],
          ['📅','Calendar','Full calendar — past, present, future. Create and edit events in-hub'],
          ['📁','Drive','Browse, search, and open your Drive files without leaving the app']
         ].map(([ic,nm,desc])=>`
-      <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #1e293b">
+      <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--gw-line)">
         <span style="font-size:18px;flex-shrink:0">${ic}</span>
         <div><div style="font-weight:600;font-size:13px;color:#e2e8f0">${nm}</div><div style="font-size:12px;color:#64748b;margin-top:1px">${desc}</div></div>
       </div>`).join('')}
@@ -572,9 +572,9 @@ async function integrations() {
   </div>
 
   <!-- Homeworks always accessible -->
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px">
+  <div class="gw-int-panel" style="border-radius:16px;padding:28px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <div style="width:32px;height:32px;background:#1e293b;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">🏗️</div>
+      <div style="width:32px;height:32px;background:var(--gw-surface-3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">🏗️</div>
       <div>
         <div style="font-weight:800;font-size:16px;color:#e2e8f0">Homeworks CRM</div>
         ${hwOk?`<div style="font-size:11px;font-weight:700;color:#4ade80;margin-top:2px">● Connected via Zapier</div>`:`<div style="font-size:11px;color:#64748b;margin-top:2px">Not connected</div>`}
@@ -585,7 +585,7 @@ async function integrations() {
     <input id="zapierWebhookInput" type="url"
       placeholder="https://hooks.zapier.com/hooks/catch/…"
       value="${escapeHtml(getZapierWebhookUrl())}"
-      style="width:100%;margin-top:6px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      style="width:100%;margin-top:6px;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="primary-btn" onclick="intSaveZapierUrl()">Save URL</button>
       ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Send Test Ping</button>`:''}
@@ -611,7 +611,7 @@ async function integrations() {
 </div>
 
 <!-- Tab bar -->
-<div style="display:flex;gap:0;border-bottom:2px solid #1e293b;margin-bottom:0">
+<div style="display:flex;gap:0;border-bottom:2px solid var(--gw-line);margin-bottom:0">
   ${[['gmail','✉️ Gmail'],['calendar','📅 Calendar'],['drive','📁 Drive'],['homeworks','🏗️ Homeworks']].map(([id,label])=>`
   <button id="gw-tab-${id}" onclick="gwSwitchTab('${id}')"
     style="padding:10px 20px;font-size:13px;font-weight:600;background:none;border:none;cursor:pointer;border-bottom:2px solid ${_gwTab===id?'#00A7E1':'transparent'};color:${_gwTab===id?'#00A7E1':'#64748b'};margin-bottom:-2px;transition:all .15s">
@@ -627,7 +627,7 @@ async function integrations() {
 
 <!-- ── Compose Email Modal ────────────────────────────────────────────── -->
 <div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;width:100%;max-width:560px;box-shadow:0 24px 64px #000a">
+  <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:560px;box-shadow:0 24px 64px #000a">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <h3 style="margin:0;font-size:17px;font-weight:800;color:#e2e8f0">✉️ New Email</h3>
       <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1">×</button>
@@ -636,17 +636,17 @@ async function integrations() {
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">To</label>
         <input id="int-email-to" type="email" placeholder="recipient@example.com"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Subject</label>
         <input id="int-email-subject" type="text" placeholder="Email subject"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Message</label>
         <textarea id="int-email-body" rows="8" placeholder="Write your message…"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn">Cancel</button>
@@ -658,7 +658,7 @@ async function integrations() {
 
 <!-- ── Create Calendar Event Modal ───────────────────────────────────── -->
 <div id="int-cal-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 24px 64px #000a">
+  <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 24px 64px #000a">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <h3 style="margin:0;font-size:17px;font-weight:800;color:#e2e8f0">📅 New Event</h3>
       <button onclick="document.getElementById('int-cal-modal').style.display='none'" style="background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1">×</button>
@@ -667,34 +667,34 @@ async function integrations() {
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Title</label>
         <input id="int-cal-title" type="text" placeholder="Event title"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div>
           <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Date</label>
           <input id="int-cal-date" type="date"
-            style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+            style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
         </div>
         <div>
           <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Time</label>
           <input id="int-cal-time" type="time" value="09:00"
-            style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+            style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
         </div>
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Duration (hours)</label>
         <input id="int-cal-duration" type="number" min="0.25" max="24" step="0.25" value="1"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Invite (email)</label>
         <input id="int-cal-attendee" type="email" placeholder="attendee@example.com (optional)"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Notes</label>
         <textarea id="int-cal-notes" rows="3" placeholder="Description or notes (optional)"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button onclick="document.getElementById('int-cal-modal').style.display='none'" class="secondary-btn">Cancel</button>
@@ -740,7 +740,7 @@ function gwRenderGmail() {
     ${[['INBOX','Inbox'],['SENT','Sent'],['STARRED','Starred'],['UNREAD','Unread'],['DRAFT','Drafts']].map(([l,label])=>`
     <button onclick="gwGmailSetLabel('${l}')"
       style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;
-      ${_gmailLabel===l?'background:#00A7E1;color:#fff;border:1.5px solid #00A7E1':'background:#0f172a;color:#94a3b8;border:1.5px solid #1e293b'}">
+      ${_gmailLabel===l?'background:#00A7E1;color:#fff;border:1.5px solid #00A7E1':'background:var(--gw-surface-2);color:var(--gw-muted);border:1.5px solid var(--gw-line)'}">
       ${label}
     </button>`).join('')}
   </div>
@@ -814,13 +814,13 @@ function gwRenderThreadList(el) {
     } catch(e) { snippet = msg?.snippet || ''; }
 
     return `<div onclick="gwOpenThread('${thread.id}')"
-      style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid #1e293b;cursor:pointer;background:${isUnread?'#0f172a':'#0a0f1a'};transition:background .1s"
-      onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='${isUnread?'#0f172a':'#0a0f1a'}'">
-      <div style="width:8px;height:8px;border-radius:50%;background:${isUnread?'#00A7E1':'transparent'};border:${isUnread?'none':'1px solid #334155'};margin-top:6px;flex-shrink:0"></div>
+      style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid var(--gw-line);cursor:pointer;background:${isUnread?'var(--gw-surface-2)':'var(--gw-surface)'};transition:background .1s"
+      onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='${isUnread?'var(--gw-surface-2)':'var(--gw-surface)'}'">
+      <div style="width:8px;height:8px;border-radius:50%;background:${isUnread?'#00A7E1':'transparent'};border:${isUnread?'none':'1px solid var(--gw-line)'};margin-top:6px;flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
           <div style="font-size:13px;font-weight:${isUnread?'700':'500'};color:${isUnread?'#e2e8f0':'#94a3b8'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sender)}</div>
-          <div style="font-size:11px;color:#475569;flex-shrink:0">${d}${count>1?` <span style="background:#1e293b;border-radius:10px;padding:1px 5px">${count}</span>`:''}</div>
+          <div style="font-size:11px;color:#475569;flex-shrink:0">${d}${count>1?` <span style="background:var(--gw-surface-3);border-radius:10px;padding:1px 5px">${count}</span>`:''}</div>
         </div>
         <div style="font-size:13px;color:${isUnread?'#e2e8f0':'#64748b'};font-weight:${isUnread?'600':'400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${escapeHtml(subj)}</div>
         <div style="font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">${escapeHtml(snippet)}</div>
@@ -870,7 +870,7 @@ function gwRenderThreadDetail(el, threadId, thread) {
 
   el.innerHTML = `
 <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-  <button onclick="gwBackToList()" style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px">← Back</button>
+  <button onclick="gwBackToList()" class="gw-back-btn" style="border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px">← Back</button>
   <div style="font-size:16px;font-weight:700;color:#e2e8f0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subj)}</div>
   <button onclick="gwTrashThread('${threadId}')" style="background:transparent;border:1px solid #7f1d1d;color:#f87171;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px">🗑 Trash</button>
 </div>
@@ -886,10 +886,10 @@ ${msgs.map((msg, idx) => {
   const isLast = idx === msgs.length - 1;
   const collapsed = !isLast && msgs.length > 1;
 
-  return `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">
+  return `<div class="gw-gmail-thread" style="border-radius:10px;overflow:hidden">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;${collapsed?'cursor:pointer':''}"
       ${collapsed?`onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'"`:''}>
-      <div style="width:32px;height:32px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-weight:700;color:#94a3b8;font-size:13px;flex-shrink:0">${escapeHtml(sender[0]?.toUpperCase()||'?')}</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--gw-surface-3);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--gw-muted);font-size:13px;flex-shrink:0">${escapeHtml(sender[0]?.toUpperCase()||'?')}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px;color:#e2e8f0">${escapeHtml(sender)}</div>
         <div style="font-size:11px;color:#475569">to ${escapeHtml(to)} · ${dt}</div>
@@ -907,10 +907,10 @@ ${msgs.map((msg, idx) => {
   </div>`;
 }).join('')}
 </div>
-<div style="margin-top:16px;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:16px" id="gw-reply-box">
+<div class="gw-int-panel" style="border-radius:12px;padding:16px;margin-top:16px" id="gw-reply-box">
   <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px">Reply</div>
   <textarea id="gw-reply-body" rows="4" placeholder="Write your reply…"
-    style="width:100%;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+    style="width:100%;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
   <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
     <button class="secondary-btn" onclick="gwOpenCompose('','${escapeHtml(subj).replace(/'/g,"\\'")}')">New Email</button>
     <button class="primary-btn" onclick="gwSendReply('${threadId}','${msgs[msgs.length-1]?.id||''}')">Send Reply</button>
@@ -997,15 +997,15 @@ function gwRenderCalendar() {
     ${[['month','Month'],['week','Week'],['agenda','Agenda']].map(([v,l])=>`
     <button onclick="gwCalSetView('${v}')"
       style="padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;
-      ${_calView===v?'background:#00A7E1;color:#fff;border:1.5px solid #00A7E1':'background:#0f172a;color:#94a3b8;border:1.5px solid #1e293b'}">
+      ${_calView===v?'background:#00A7E1;color:#fff;border:1.5px solid #00A7E1':'background:var(--gw-surface-2);color:var(--gw-muted);border:1.5px solid var(--gw-line)'}">
       ${l}
     </button>`).join('')}
   </div>
   <div style="display:flex;gap:6px;align-items:center">
-    <button onclick="gwCalPrev()" style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">‹</button>
+    <button onclick="gwCalPrev()" class="gw-cal-nav-btn" style="border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">‹</button>
     <span id="gw-cal-label" style="font-size:13px;font-weight:700;color:#e2e8f0;min-width:140px;text-align:center"></span>
-    <button onclick="gwCalNext()" style="background:#0f172a;border:1px solid #334155;color:#94a3b8;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">›</button>
-    <button onclick="gwCalGoToday()" style="background:#0f172a;border:1px solid #00A7E1;color:#00A7E1;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:700">Today</button>
+    <button onclick="gwCalNext()" class="gw-cal-nav-btn" style="border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">›</button>
+    <button onclick="gwCalGoToday()" class="gw-cal-today-btn" style="border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:700">Today</button>
   </div>
   <button class="primary-btn" style="font-size:12px;padding:7px 14px" onclick="intCreateCalendarEvent()">+ New Event</button>
 </div>
@@ -1047,9 +1047,9 @@ function gwRenderCalBody() {
   ['month','week','agenda'].forEach(v => {
     const btn = document.querySelector(`button[onclick="gwCalSetView('${v}')"]`);
     if (btn) {
-      btn.style.background = v===_calView?'#00A7E1':'#0f172a';
+      btn.style.background = v===_calView?'#00A7E1':'var(--gw-surface-2)';
       btn.style.color      = v===_calView?'#fff':'#94a3b8';
-      btn.style.borderColor= v===_calView?'#00A7E1':'#1e293b';
+      btn.style.borderColor= v===_calView?'#00A7E1':'var(--gw-line)';
     }
   });
 
@@ -1104,7 +1104,7 @@ function gwRenderAgendaDay() {
   });
 
   if (!todayEvs.length) {
-    return '<div style="text-align:center;padding:56px 20px;background:#131f35;border-radius:10px;border:1px solid #334155">' +
+    return '<div style="text-align:center;padding:56px 20px;background:var(--gw-surface-2);border-radius:10px;border:1px solid var(--gw-line)">' +
            '<div style="font-size:36px;margin-bottom:12px">📅</div>' +
            '<div style="font-size:15px;font-weight:700;color:#94a3b8">No events today</div>' +
            '<div style="font-size:13px;margin-top:6px;color:#64748b">Your calendar is clear — enjoy the day.</div>' +
@@ -1129,8 +1129,8 @@ function gwRenderAgendaDay() {
         (end ? ' – '+new Date(end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : '');
       return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')"
         style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;
-        background:#1e293b;border:1px solid #334155;border-left:4px solid ${color};transition:background .15s"
-        onmouseover="this.style.background='#273549'" onmouseout="this.style.background='#1e293b'">
+        background:var(--gw-surface-3);border:1px solid var(--gw-line);border-left:4px solid ${color};transition:background .15s"
+        onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-3)'">
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
           <div style="font-size:12px;color:#94a3b8;margin-top:4px">${timeStr}${ev.location?' · 📍'+escapeHtml(ev.location.slice(0,50)):''}</div>
@@ -1150,12 +1150,12 @@ function gwRenderWeek() {
   const hours = Array.from({length:24}, (_,i) => i); // all 24h
   const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  let html = `<div style="overflow-x:auto;border-radius:8px;border:1px solid #334155;overflow:hidden"><div style="display:grid;grid-template-columns:52px repeat(7,1fr);min-width:600px">
-    <div style="background:#1e293b;border-bottom:1px solid #334155"></div>
+  let html = `<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--gw-line);overflow:hidden"><div style="display:grid;grid-template-columns:52px repeat(7,1fr);min-width:600px">
+    <div style="background:var(--gw-surface-3);border-bottom:1px solid var(--gw-line)"></div>
     ${days.map(d => {
       const isToday = d.toDateString()===today.toDateString();
       const isPast  = d < today && !isToday;
-      return `<div style="padding:8px 4px;text-align:center;border-bottom:1px solid #334155;border-left:1px solid #334155;background:#1e293b">
+      return `<div style="padding:8px 4px;text-align:center;border-bottom:1px solid var(--gw-line);border-left:1px solid var(--gw-line);background:var(--gw-surface-3)">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${isToday?'#00A7E1':isPast?'#3d5068':'#64748b'}">${dowLabels[d.getDay()]}</div>
         <div style="font-size:18px;font-weight:800;color:${isToday?'#fff':isPast?'#3d5068':'#e2e8f0'};width:32px;height:32px;border-radius:50%;background:${isToday?'#00A7E1':'transparent'};display:flex;align-items:center;justify-content:center;margin:2px auto 0">${d.getDate()}</div>
       </div>`;
@@ -1164,7 +1164,7 @@ function gwRenderWeek() {
       const label = h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`;
       const isCurrentHour = h===today.getHours() && _calWeekOffset===0;
       return `
-        <div style="padding:2px 6px;text-align:right;font-size:10px;font-weight:600;border-top:1px solid #1e293b;line-height:40px;height:40px;box-sizing:border-box;color:${isCurrentHour?'#00A7E1':'#475569'};background:#0d1526">${label}</div>
+        <div style="padding:2px 6px;text-align:right;font-size:10px;font-weight:600;border-top:1px solid var(--gw-line);line-height:40px;height:40px;box-sizing:border-box;color:${isCurrentHour?'#00A7E1':'#475569'};background:var(--gw-surface)">${label}</div>
         ${days.map(d => {
           const cellEvs = _calEvents.filter(ev => {
             if (ev.start?.dateTime) {
@@ -1180,8 +1180,8 @@ function gwRenderWeek() {
           });
           const isNowCell = isCurrentHour && d.toDateString()===today.toDateString();
           const isTodayCol = d.toDateString()===today.toDateString();
-          const cellBg = isNowCell ? '#00A7E128' : isTodayCol ? '#131f35' : '#0d1526';
-          return `<div style="border-top:1px solid #1e293b;border-left:1px solid #334155;height:40px;position:relative;background:${cellBg}">
+          const cellBg = isNowCell ? '#00A7E128' : isTodayCol ? 'var(--gw-surface-2)' : 'var(--gw-surface)';
+          return `<div style="border-top:1px solid var(--gw-line);border-left:1px solid var(--gw-line);height:40px;position:relative;background:${cellBg}">
             ${cellEvs.map(ev=>{
               const color=gwEventColor(ev);
               const t=ev.start?.dateTime?new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):'All day';
@@ -1202,9 +1202,9 @@ function gwRenderMonth() {
   const daysInMonth = new Date(year,month+1,0).getDate();
   const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid #334155;border-top:1px solid #334155;border-radius:8px;overflow:hidden">
-    ${dowLabels.map(d=>`<div style="padding:8px 4px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;border-right:1px solid #334155;border-bottom:1px solid #334155;background:#1e293b">${d}</div>`).join('')}
-    ${Array.from({length:firstDay},()=>`<div style="border-right:1px solid #334155;border-bottom:1px solid #334155;min-height:90px;background:#0d1526"></div>`).join('')}
+  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid var(--gw-line);border-top:1px solid var(--gw-line);border-radius:8px;overflow:hidden">
+    ${dowLabels.map(d=>`<div style="padding:8px 4px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gw-muted);border-right:1px solid var(--gw-line);border-bottom:1px solid var(--gw-line);background:var(--gw-surface-3)">${d}</div>`).join('')}
+    ${Array.from({length:firstDay},()=>`<div style="border-right:1px solid var(--gw-line);border-bottom:1px solid var(--gw-line);min-height:90px;background:var(--gw-surface)"></div>`).join('')}
     ${Array.from({length:daysInMonth},(_,i)=>{
       const day=i+1;
       const cellDate=new Date(year,month,day);
@@ -1221,11 +1221,11 @@ function gwRenderMonth() {
         }
         return false;
       });
-      const cellBg = isToday ? '#00A7E118' : isPast ? '#0d1526' : '#131f35';
+      const cellBg = isToday ? '#00A7E118' : isPast ? 'var(--gw-surface)' : 'var(--gw-surface-2)';
       const numColor = isToday ? '#00A7E1' : isPast ? '#3d5068' : '#94a3b8';
       const numBg = isToday ? '#00A7E1' : 'transparent';
       const numTextColor = isToday ? '#fff' : numColor;
-      return `<div style="border-right:1px solid #334155;border-bottom:1px solid #334155;min-height:90px;padding:5px;background:${cellBg}">
+      return `<div style="border-right:1px solid var(--gw-line);border-bottom:1px solid var(--gw-line);min-height:90px;padding:5px;background:${cellBg}">
         <div style="font-size:13px;font-weight:700;color:${numTextColor};width:26px;height:26px;border-radius:50%;background:${numBg};display:flex;align-items:center;justify-content:center;margin-bottom:4px">${day}</div>
         ${dayEvs.slice(0,3).map(ev=>{
           const color=gwEventColor(ev);
@@ -1258,7 +1258,7 @@ window.gwCalEventClick = function(eventId) {
   modal.id = 'gw-event-modal';
   modal.style.cssText='position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   modal.innerHTML=`
-<div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:24px;width:min(480px,100%);max-height:85vh;overflow-y:auto">
+<div class="gw-modal-card" style="border-radius:16px;padding:24px;width:min(480px,100%);max-height:85vh;overflow-y:auto">
   <div style="display:flex;justify-content:space-between;margin-bottom:16px">
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:4px;background:${color};border-radius:2px;align-self:stretch;min-height:20px"></div>
@@ -1270,7 +1270,7 @@ window.gwCalEventClick = function(eventId) {
     </div>
     <button onclick="document.getElementById('gw-event-modal').remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:20px;padding:0 4px;flex-shrink:0">✕</button>
   </div>
-  ${ev.description?`<div style="font-size:13px;color:#94a3b8;background:#1e293b;border-radius:8px;padding:12px;margin-bottom:14px;line-height:1.6">${escapeHtml(ev.description)}</div>`:''}
+  ${ev.description?`<div style="font-size:13px;color:var(--gw-muted);background:var(--gw-surface-3);border-radius:8px;padding:12px;margin-bottom:14px;line-height:1.6">${escapeHtml(ev.description)}</div>`:''}
   ${ev.attendees?.length?`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Attendees</div>
     ${ev.attendees.map(a=>`<div style="font-size:12px;color:#94a3b8;padding:3px 0">${escapeHtml(a.displayName||a.email)} ${a.responseStatus==='accepted'?'✅':a.responseStatus==='declined'?'❌':a.responseStatus==='tentative'?'🤔':'⏳'}</div>`).join('')}</div>`:''}
   <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1305,7 +1305,7 @@ window.gwEditEvent = function(eventId) {
   modal.id='gw-edit-modal';
   modal.style.cssText='position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   modal.innerHTML=`
-<div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:24px;width:min(480px,100%);max-height:85vh;overflow-y:auto">
+<div class="gw-modal-card" style="border-radius:16px;padding:24px;width:min(480px,100%);max-height:85vh;overflow-y:auto">
   <div style="display:flex;justify-content:space-between;margin-bottom:18px">
     <h3 style="margin:0">Edit Event</h3>
     <button onclick="document.getElementById('gw-edit-modal').remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:20px">✕</button>
@@ -1368,7 +1368,7 @@ function gwRenderDrive() {
   el.innerHTML = `
 <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
   <input id="gw-drive-search" type="text" placeholder="Search files and folders…"
-    style="flex:1;min-width:200px;padding:9px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px"
+    style="flex:1;min-width:200px;padding:9px 14px;background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px"
     onkeydown="if(event.key==='Enter')gwSearchDrive()">
   <button class="primary-btn" style="font-size:12px;padding:9px 16px" onclick="gwSearchDrive()">Search</button>
   <button class="secondary-btn" style="font-size:12px;padding:9px 14px" onclick="gwLoadDrive()">Recent Files</button>
@@ -1415,8 +1415,8 @@ function gwRenderDriveList(el, files) {
     const info = DRIVE_ICONS[mime] || {icon:'📎',label:mime.split('/').pop()?.slice(0,6)||'File',color:'#64748b'};
     const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '';
     const size = f.size ? (f.size>1048576?(f.size/1048576).toFixed(1)+'MB':f.size>1024?(f.size/1024).toFixed(0)+'KB':f.size+'B') : '';
-    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;transition:background .1s"
-      onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:8px;transition:background .1s"
+      onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
       <span style="font-size:22px;flex-shrink:0">${info.icon}</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.name)}</div>
@@ -1424,7 +1424,7 @@ function gwRenderDriveList(el, files) {
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         ${f.webViewLink?`<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener"
-          style="padding:5px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:12px;text-decoration:none;font-weight:600">
+          style="padding:5px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:6px;color:var(--gw-muted);font-size:12px;text-decoration:none;font-weight:600">
           Open →
         </a>`:''}
       </div>
@@ -1444,20 +1444,20 @@ function gwRenderHomeworks() {
   const hwOk = isHomeworksConnected();
   el.innerHTML = `
 <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:24px">
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px">
+  <div class="gw-int-panel" style="border-radius:12px;padding:20px">
     <h3 style="margin:0 0 12px;font-size:15px">Webhook Settings</h3>
     <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em">ZAPIER WEBHOOK URL</label>
     <input id="zapierWebhookInput" type="url"
       placeholder="https://hooks.zapier.com/hooks/catch/…"
       value="${escapeHtml(getZapierWebhookUrl())}"
-      style="width:100%;margin-top:6px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+      style="width:100%;margin-top:6px;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="primary-btn" onclick="intSaveZapierUrl()">Save URL</button>
       ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Test Ping</button>`:''}
     </div>
   </div>
   ${hwOk?`
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px">
+  <div class="gw-int-panel" style="border-radius:12px;padding:20px">
     <h3 style="margin:0 0 12px;font-size:15px">Quick Links</h3>
     <div style="display:flex;flex-wrap:wrap;gap:8px">
       ${[['Add Customer','https://secure.copilotcrm.com/customers/add-new-customer'],
@@ -1467,7 +1467,7 @@ function gwRenderHomeworks() {
          ['Estimates','https://secure.copilotcrm.com/finances/estimates'],
          ['Calendar','https://secure.copilotcrm.com/scheduler/month']
         ].map(([l,u])=>`<a href="${u}" target="_blank" rel="noopener"
-          style="padding:7px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;text-decoration:none;font-weight:500">${l}</a>`).join('')}
+          style="padding:7px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:12px;text-decoration:none;font-weight:500">${l}</a>`).join('')}
     </div>
   </div>`:''}
 </div>
@@ -1649,7 +1649,7 @@ function renderHwOpps() {
         'Negotiation':'#f97316','Closed Won':'#4ade80','Closed Lost':'#f87171'
       };
       const color = statusColors[opp.status] || '#64748b';
-      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;flex-wrap:wrap">
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:8px;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(opp.client||opp.name||'(unnamed)')}</div>
           <div style="font-size:11px;color:#475569;margin-top:2px">${escapeHtml(opp.serviceLine||opp.type||'')}${opp.budget?' · $'+escapeHtml(String(opp.budget)):''}</div>
@@ -1657,7 +1657,7 @@ function renderHwOpps() {
         <span style="font-size:11px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0">${escapeHtml(opp.status||'Unknown')}</span>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button onclick="intPushLead('${escapeHtml(opp.id||'')}');this.textContent='Pushed ✅';this.disabled=true"
-            style="padding:5px 10px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:11px;cursor:pointer;font-weight:600">
+            style="padding:5px 10px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:6px;color:var(--gw-muted);font-size:11px;cursor:pointer;font-weight:600">
             Push Lead
           </button>
         </div>

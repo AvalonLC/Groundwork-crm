@@ -9,7 +9,7 @@
    ══════════════════════════════════════════════════════════════════ */
 .lead-tab-bar{
   display:flex;gap:4px;margin:20px 0 0;
-  background:#0d1117;border:1px solid #1e293b;border-radius:14px;
+  background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:14px;
   padding:5px;width:fit-content;
 }
 .lead-tab{
@@ -97,7 +97,7 @@
 }
 .comms-thread::-webkit-scrollbar{width:5px}
 .comms-thread::-webkit-scrollbar-track{background:transparent}
-.comms-thread::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}
+.comms-thread::-webkit-scrollbar-thumb{background:var(--gw-surface-3);border-radius:4px}
 .comms-thread::-webkit-scrollbar-thumb:hover{background:#334155}
 
 /* ── Empty state ── */
@@ -107,7 +107,7 @@
 }
 .comm-empty-icon{
   width:64px;height:64px;border-radius:20px;
-  background:linear-gradient(135deg,#1e293b,#0f172a);
+  background:linear-gradient(135deg,var(--gw-surface-3),var(--gw-surface));
   border:1px solid #1e2d45;
   display:flex;align-items:center;justify-content:center;
   font-size:28px;margin-bottom:18px;
@@ -123,7 +123,7 @@
 }
 .comm-date-divider::before,.comm-date-divider::after{
   content:'';flex:1;height:1px;
-  background:linear-gradient(90deg,transparent,#1e293b,transparent);
+  background:linear-gradient(90deg,transparent,var(--gw-line),transparent);
 }
 .comm-date-divider span{
   font-size:10px;font-weight:700;color:#334155;
