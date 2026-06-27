@@ -650,36 +650,65 @@ function renderLoginScreen() {
         window._d1SessionRep = d1Rep;
         // ── Multi-tenant: set company context from rep's company_id ──
         window._companyId = d1Rep.company_id || 'avalon';
-        window._d1Ready = true;
         loginRep(repId); // also set localStorage for getCurrentRep()
-        // Reload opps from D1 before showing app
+
+        // Helper to map D1 opp row → app camelCase (reuse bootstrap helper if available)
+        const mapOpp = window._mapOpp || function(o) {
+          return {
+            id: o.id, repId: o.rep_id, companyId: o.company_id,
+            client: o.client, phone: o.phone, email: o.email, address: o.address,
+            serviceLine: o.service_line, source: o.source,
+            status: o.status, jobValue: o.job_value,
+            project: o.project, urgency: o.urgency,
+            decisionMaker: o.decision_maker, budgetRange: o.budget_range,
+            nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
+            estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
+            estimateCount: o.estimate_count, workType: o.work_type,
+            clientType: o.client_type, prompt: o.prompt,
+            desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
+            commissionApproved: !!o.commission_approved, collected: !!o.collected,
+            soldDate: o.sold_date, soldAmount: o.sold_amount,
+            leadSource: o.lead_source || '',
+            projectCategory: o.project_category || o.service_line || '',
+            createdAt: o.created_at, updatedAt: o.updated_at,
+            _fromD1: true
+          };
+        };
+
+        // Load opps from D1 — D1 is source of truth
+        const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
         try {
-          const opps = await window.DB.opportunities.list({
-            repId: (d1Rep.role === 'admin' || d1Rep.role === 'office_manager') ? undefined : repId
-          });
+          const opps = await window.DB.opportunities.list({ repId: isAdmin ? undefined : repId });
           if (opps && opps.length > 0 && window.state) {
             const d1Ids = new Set(opps.map(o => o.id));
-            window.state.opportunities = [
-              ...opps.map(o => ({
-                id: o.id, repId: o.rep_id, client: o.client,
-                phone: o.phone, email: o.email, address: o.address,
-                serviceLine: o.service_line, source: o.source,
-                status: o.status, jobValue: o.job_value,
-                project: o.project, urgency: o.urgency,
-                decisionMaker: o.decision_maker, budgetRange: o.budget_range,
-                nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
-                estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
-                estimateCount: o.estimate_count, workType: o.work_type,
-                clientType: o.client_type, prompt: o.prompt,
-                desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
-                commissionApproved: !!o.commission_approved, collected: !!o.collected,
-                soldDate: o.sold_date, soldAmount: o.sold_amount,
-                createdAt: o.created_at, updatedAt: o.updated_at
-              })),
-              ...(window.state.opportunities || []).filter(o => !d1Ids.has(o.id))
-            ];
+            const localOnly = (window.state.opportunities || []).filter(o => !d1Ids.has(o.id) && !o._fromD1);
+            window.state.opportunities = [...opps.map(mapOpp), ...localOnly];
           }
         } catch(e) { console.warn('[Login] D1 opps load failed:', e.message); }
+
+        // Load clients from D1
+        try {
+          const d1Clients = await window.DB.clients.list();
+          if (d1Clients && d1Clients.length > 0) {
+            const localClients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
+            const d1Ids = new Set(d1Clients.map(c => c.id));
+            const localOnly = localClients.filter(c => !d1Ids.has(c.id));
+            const merged = d1Clients.map(dc => {
+              const lc = localClients.find(l => l.id === dc.id);
+              return {
+                id: dc.id, name: dc.name, phone: dc.phone || '', email: dc.email || '',
+                address: dc.address || '', type: dc.type || 'Residential', notes: dc.notes || '',
+                ...(lc ? { firstName: lc.firstName, lastName: lc.lastName,
+                            company: lc.company, status: lc.status, mobile: lc.mobile,
+                            since: lc.since, tags: lc.tags, homeworksId: lc.homeworksId,
+                            properties: lc.properties } : {})
+              };
+            });
+            localStorage.setItem('avalonClientsV1', JSON.stringify([...merged, ...localOnly]));
+          }
+        } catch(e) { console.warn('[Login] D1 clients load failed:', e.message); }
+
+        window._d1Ready = true;
         initApp();
         return;
       } catch(e) {

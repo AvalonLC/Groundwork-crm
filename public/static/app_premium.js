@@ -2361,6 +2361,18 @@ function opportunityDetail(id){
   // Wire up Communications compose after render
   if(_activeTab==='comms') wireCommsCompose(o.id, o);
 
+  // ── Lazy-load D1 notes when Notes tab is active or becomes active ──────────
+  // Fire immediately if notes tab is visible; otherwise wire the tab button click
+  if (_activeTab === 'notes' && window._d1Ready) {
+    _d1LoadNotes(o.id); // async, refreshes #noteList when done
+  }
+  const _notesTabBtn = document.querySelector('[data-tab="notes"]');
+  if (_notesTabBtn && window._d1Ready) {
+    _notesTabBtn.addEventListener('click', () => {
+      setTimeout(() => _d1LoadNotes(o.id), 50);
+    }, { once: true });
+  }
+
   // Sticky header scroll behavior
   const stickyEl = document.getElementById('ldStickyHeader');
   const heroEl   = view.querySelector('.ld-hero');
@@ -2968,6 +2980,33 @@ function ldQualSave(field, oppId){
   document.getElementById('qfview-'+field+'-'+oppId).style.display = 'block';
   showToast('Qualification note saved');
 }
+// ── D1 lazy note loader — called after lead detail renders ────────────────────
+// Fetches notes from D1 for oppId, merges into state.notes, refreshes #noteList
+async function _d1LoadNotes(oppId) {
+  if (!window.DB || !window._d1Ready) return;
+  try {
+    const d1Notes = await window.DB.notes.list(oppId);
+    if (!d1Notes || !d1Notes.length) return;
+    // Merge into state.notes: D1 wins on id conflicts
+    const d1Ids = new Set(d1Notes.map(n => n.id));
+    state.notes = [
+      ...d1Notes.map(n => ({
+        id: n.id, oppId: n.opp_id || oppId,
+        body: n.body || n.text || '',
+        repId: n.rep_id || null,
+        createdAt: n.created_at || new Date().toISOString()
+      })),
+      ...(state.notes || []).filter(n => n.oppId !== oppId || !d1Ids.has(n.id))
+    ];
+    // Refresh the note list DOM if it's still visible for this opp
+    const el = document.getElementById('noteList');
+    if (el) el.innerHTML = renderNotes(oppId);
+  } catch(e) {
+    console.warn('[D1] notes load failed for', oppId, e.message);
+  }
+}
+window._d1LoadNotes = _d1LoadNotes;
+
 function renderNotes(oppId) {
   const opp   = state.opportunities.find(x => x.id === oppId);
   const notes = state.notes.filter(n => n.oppId === oppId);

@@ -891,48 +891,88 @@ function getHtml(): string {
         const AUTH_KEY = 'avalonCurrentRep';
         localStorage.setItem(AUTH_KEY, JSON.stringify({ repId: d1Rep.id, loginAt: new Date().toISOString() }));
 
-        // Run one-time localStorage → D1 migration
+        // Run one-time localStorage → D1 migration (skipped if already done)
         const migrated = await window.DB.migrateFromLocalStorage();
         if (migrated) {
           console.log('[Bootstrap] Migrated localStorage data to D1');
         }
 
-        // Load opportunities from D1 into state
+        // ── D1 is source of truth: load opps, notes, clients in parallel ──────
+        const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
+
+        // Helper: map a D1 opportunity row (snake_case) → app camelCase shape
+        function mapOpp(o) {
+          return {
+            id: o.id, repId: o.rep_id, companyId: o.company_id,
+            client: o.client, phone: o.phone, email: o.email, address: o.address,
+            serviceLine: o.service_line, source: o.source,
+            status: o.status, jobValue: o.job_value,
+            project: o.project, urgency: o.urgency,
+            decisionMaker: o.decision_maker, budgetRange: o.budget_range,
+            nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
+            estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
+            estimateCount: o.estimate_count, workType: o.work_type,
+            clientType: o.client_type, prompt: o.prompt,
+            desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
+            commissionApproved: !!o.commission_approved, collected: !!o.collected,
+            soldDate: o.sold_date, soldAmount: o.sold_amount,
+            leadSource: o.lead_source || '',
+            projectCategory: o.project_category || o.service_line || '',
+            createdAt: o.created_at, updatedAt: o.updated_at
+          };
+        }
+
+        // Load opportunities — D1 is authoritative, localStorage used only as offline fallback
         try {
-          const opps = await window.DB.opportunities.list({ repId: d1Rep.role === 'admin' || d1Rep.role === 'office_manager' ? undefined : d1Rep.id });
+          const opps = await window.DB.opportunities.list({ repId: isAdmin ? undefined : d1Rep.id });
           if (opps && opps.length > 0) {
-            // Merge D1 data: D1 wins on conflicts (more up-to-date)
+            // D1 wins entirely — replace state, keep any local-only opps not yet synced
             const d1Ids = new Set(opps.map(o => o.id));
+            const localOnly = (state.opportunities || []).filter(o => !d1Ids.has(o.id) && !o._fromD1);
             state.opportunities = [
-              ...opps.map(o => ({
-                // Map snake_case D1 fields to camelCase for app compatibility
-                id: o.id, repId: o.rep_id, client: o.client,
-                phone: o.phone, email: o.email, address: o.address,
-                serviceLine: o.service_line, source: o.source,
-                status: o.status, jobValue: o.job_value,
-                project: o.project, urgency: o.urgency,
-                decisionMaker: o.decision_maker, budgetRange: o.budget_range,
-                nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
-                estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
-                estimateCount: o.estimate_count, workType: o.work_type,
-                clientType: o.client_type, prompt: o.prompt,
-                desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
-                commissionApproved: !!o.commission_approved, collected: !!o.collected,
-                soldDate: o.sold_date, soldAmount: o.sold_amount,
-                createdAt: o.created_at, updatedAt: o.updated_at
-              })),
-              ...(state.opportunities || []).filter(o => !d1Ids.has(o.id))
+              ...opps.map(mapOpp).map(o => ({...o, _fromD1: true})),
+              ...localOnly
             ];
+            // Persist into localStorage so offline works and saveState() is non-destructive
+            saveState();
             console.log('[Bootstrap] Loaded', opps.length, 'opportunities from D1');
           }
         } catch(e) {
           console.warn('[Bootstrap] Could not load D1 opportunities:', e.message);
         }
 
-        // Load notes from D1 (we'll load per-opp lazily, but pre-load all here)
-        // Note: notes are loaded lazily per opp in show('pipeline', oppId)
+        // Load clients from D1 → write into localStorage so loadClients() returns D1 data
+        try {
+          const d1Clients = await window.DB.clients.list();
+          if (d1Clients && d1Clients.length > 0) {
+            // Map D1 client rows to app client shape (D1 stores flat; app stores rich objects)
+            // Merge: D1 wins on shared ids, keep local-only clients
+            const localClients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
+            const d1Ids = new Set(d1Clients.map(c => c.id));
+            const localOnly = localClients.filter(c => !d1Ids.has(c.id));
+            // D1 clients may lack rich fields (properties[], tags[]) — preserve local enrichment
+            const merged = d1Clients.map(dc => {
+              const lc = localClients.find(l => l.id === dc.id);
+              return {
+                id: dc.id, name: dc.name, phone: dc.phone || '', email: dc.email || '',
+                address: dc.address || '', type: dc.type || 'Residential',
+                notes: dc.notes || '',
+                // Preserve local-only rich fields if they exist
+                ...(lc ? { firstName: lc.firstName, lastName: lc.lastName,
+                            company: lc.company, status: lc.status, mobile: lc.mobile,
+                            since: lc.since, tags: lc.tags, homeworksId: lc.homeworksId,
+                            properties: lc.properties } : {})
+              };
+            });
+            localStorage.setItem('avalonClientsV1', JSON.stringify([...merged, ...localOnly]));
+            console.log('[Bootstrap] Loaded', d1Clients.length, 'clients from D1');
+          }
+        } catch(e) {
+          console.warn('[Bootstrap] Could not load D1 clients:', e.message);
+        }
 
         window._d1Ready = true;
+        window._mapOpp = mapOpp; // expose for login flow reuse
         console.log('[Bootstrap] D1 session active for', d1Rep.name);
         return; // Don't show login screen
       }
