@@ -3225,10 +3225,10 @@ function openLeadPicker(onSelect){
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:80px';
   modal.innerHTML = `
-    <div style="background:#0f172a;border:1px solid #1e4d6b;border-radius:14px;padding:24px;width:100%;max-width:480px;box-shadow:0 25px 60px rgba(0,0,0,0.6);margin:0 16px">
+    <div class="gw-modal-card" style="max-width:480px;margin:0 16px;border-color:var(--gw-sky)">
       <h3 style="margin:0 0 14px;color:#f1f5f9;font-size:1.1rem">Select a Lead</h3>
       <input id="lpSearch" type="text" placeholder="Search by client or project..."
-        style="width:100%;padding:9px 12px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;margin-bottom:12px;box-sizing:border-box;font-size:14px;outline:none">
+        class="gw-input-sm" style="width:100%;margin-bottom:12px;box-sizing:border-box;font-size:14px;outline:none">
       <div id="lpList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
       <button class="secondary-btn mt8" style="margin-top:14px;width:100%" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
     </div>`;
@@ -6442,8 +6442,8 @@ function manager(){
 
   function pbar(actual, target){
     const pct = target > 0 ? Math.min(100, Math.round((actual/target)*100)) : 0;
-    const barColor = pct >= 100 ? '#4ade80' : pct >= 70 ? '#fbbf24' : '#f87171';
-    return `<div style="height:6px;background:#1e293b;border-radius:4px;margin-top:6px"><div style="height:6px;width:${pct}%;background:${barColor};border-radius:4px;transition:width .5s"></div></div><div style="font-size:10px;color:#64748b;margin-top:3px">${pct}% of target</div>`;
+    const fillClass = pct >= 100 ? '' : pct >= 70 ? ' warn' : ' alert';
+    return `<div class="gw-pbar-track"><div class="gw-pbar-fill${fillClass}" style="width:${pct}%"></div></div><div class="gw-pbar-pct">${pct}% of target</div>`;
   }
 
   const DIV_SVG = {
@@ -6456,18 +6456,18 @@ function manager(){
     const gmOk = div.grossMarginPct >= div.grossMarginFloor;
     const divKey = div.name ? div.name.toLowerCase().replace(/[^a-z]/g,'') : '';
     const divSvg = divKey.includes('landscape') ? DIV_SVG.landscape : divKey.includes('snow') ? DIV_SVG.snow : divKey.includes('maint') ? DIV_SVG.maintenance : '';
-    return `<article style="background:#0f172a;border:1px solid ${abovePlan?'#16a34a':'#1e293b'};border-radius:14px;padding:20px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">${divSvg} <span style="font-weight:700;font-size:1rem">${div.name}</span>
-        ${abovePlan ? '<span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:8px">\u2713 ABOVE PLAN</span>' : ''}
+    return `<article class="gw-div-tile${abovePlan?' above-plan':''}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;margin-top:4px">${divSvg} <span style="font-weight:700;font-size:1rem">${div.name}</span>
+        ${abovePlan ? '<span style="background:var(--gw-emerald);color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:8px">\u2713 ABOVE PLAN</span>' : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
-        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Target</div><div style="font-size:1.3rem;font-weight:800;color:#e2e8f0">${fmtM(div.target)}</div></div>
-        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual (5/21)</div><div style="font-size:1.3rem;font-weight:800;color:${abovePlan?'#4ade80':'#00d4ff'}">${fmtM(div.actual)}</div></div>
-        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:1rem;font-weight:700;color:#f59e0b">${Math.round(div.grossMarginFloor*100)}%</div></div>
-        <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:1rem;font-weight:700;color:${gmOk?'#4ade80':'#f87171'}">${Math.round(div.grossMarginPct*100)}%</div></div>
+        <div><div class="gw-div-tile-meta">Target</div><div class="gw-div-tile-val">${fmtM(div.target)}</div></div>
+        <div><div class="gw-div-tile-meta">Actual (5/21)</div><div class="gw-div-tile-val" style="color:${abovePlan?'var(--gw-emerald)':'var(--gw-sky)'}">${fmtM(div.actual)}</div></div>
+        <div><div class="gw-div-tile-meta">GM Floor</div><div style="font-size:1rem;font-weight:700;color:#f59e0b">${Math.round(div.grossMarginFloor*100)}%</div></div>
+        <div><div class="gw-div-tile-meta">Actual GM</div><div style="font-size:1rem;font-weight:700;color:${gmOk?'var(--gw-emerald)':'#ef4444'}">${Math.round(div.grossMarginPct*100)}%</div></div>
       </div>
       ${pbar(div.actual, div.target)}
-      ${div.remaining > 0 ? `<div style="font-size:11px;color:#64748b;margin-top:6px">Remaining: <strong style="color:#e2e8f0">${fmtM(div.remaining)}</strong></div>` : `<div style="font-size:11px;color:#4ade80;margin-top:6px;font-weight:700">+${fmtM(Math.abs(div.remaining))} over plan</div>`}
+      ${div.remaining > 0 ? `<div class="gw-div-tile-remaining">Remaining: <strong>${fmtM(div.remaining)}</strong></div>` : `<div class="gw-div-tile-over">+${fmtM(Math.abs(div.remaining))} over plan</div>`}
     </article>`;
   }
 
@@ -6492,10 +6492,10 @@ function manager(){
     const mIdx2 = allMonthNames.indexOf(m.month.slice(0,3));
     const isPastMonth = mIdx2 >= 0 && new Date(2026, mIdx2, 1) < todayM;
     const missingBadge = !hasActual && isPastMonth ? '<span class="missing-data-badge">Missing</span>' : '';
-    return `<tr style="border-bottom:1px solid #0f172a">
-      <td style="padding:8px 10px;color:#e2e8f0;font-weight:600">${m.month} ${missingBadge}</td>
+    return `<tr>
+      <td style="padding:8px 10px;font-weight:600">${m.month} ${missingBadge}</td>
       <td style="padding:8px 10px;text-align:right">${fmtM(m.budgeted)}</td>
-      <td style="padding:8px 10px;text-align:right;color:${hasActual?'#00d4ff':'#334155'}">${hasActual ? fmtM(m.actual) : '\u2014'}</td>
+      <td style="padding:8px 10px;text-align:right;color:${hasActual?'var(--gw-sky)':'var(--gw-line)'}">${hasActual ? fmtM(m.actual) : '\u2014'}</td>
       <td style="padding:8px 10px;text-align:right;color:${varColor}">${m.variance != null ? varSign+fmtM(m.variance) : '\u2014'}</td>
     </tr>`;
   }).join('');
@@ -6505,38 +6505,38 @@ function manager(){
     <h1>Manager Tools <span style="font-size:13px;color:#64748b;font-weight:400;margin-left:8px">${escapeHtml(fy.budgetVersion)}</span>${(()=>{ const _cr = window.getCurrentRep ? window.getCurrentRep() : null; return (_cr && _cr.role === 'office_manager') ? '<span style="font-size:12px;color:#f59e0b;font-weight:400;margin-left:10px;vertical-align:middle;background:#f59e0b18;border:1px solid #f59e0b40;border-radius:8px;padding:2px 8px">Office Manager View — Read Only</span>' : ''; })()}</h1>
     <p class="lede">Real division P&amp;L, monthly actuals, HubSpot pipeline gates, pricing discipline, and team scorecard.</p>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:28px;background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:20px">
-      <div style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">FY2026 Budget</div>
-        <div style="font-size:1.9rem;font-weight:900;color:#e2e8f0">${fmtM(annual.budgetedRevenue)}</div>
+    <div class="gw-kpi-banner">
+      <div class="gw-kpi-banner-cell">
+        <div class="gw-kpi-banner-label">FY2026 Budget</div>
+        <div class="gw-kpi-banner-val">${fmtM(annual.budgetedRevenue)}</div>
       </div>
-      <div style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Actual (5/21)</div>
-        <div style="font-size:1.9rem;font-weight:900;color:#00d4ff">${fmtM(annual.actualRevenue)}</div>
+      <div class="gw-kpi-banner-cell">
+        <div class="gw-kpi-banner-label">Actual (5/21)</div>
+        <div class="gw-kpi-banner-val" style="color:var(--gw-sky)">${fmtM(annual.actualRevenue)}</div>
       </div>
-      <div style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Remaining</div>
-        <div style="font-size:1.9rem;font-weight:900;color:#f87171">${fmtM(annual.remaining)}</div>
+      <div class="gw-kpi-banner-cell">
+        <div class="gw-kpi-banner-label">Remaining</div>
+        <div class="gw-kpi-banner-val" style="color:#ef4444">${fmtM(annual.remaining)}</div>
       </div>
-      <div style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Needed / Month</div>
-        <div style="font-size:1.9rem;font-weight:900;color:#f59e0b">${fmtM(annual.avgNeededPerMonth)}</div>
-        <div style="font-size:10px;color:#64748b">${annual.monthsLeft} months remaining</div>
+      <div class="gw-kpi-banner-cell">
+        <div class="gw-kpi-banner-label">Needed / Month</div>
+        <div class="gw-kpi-banner-val" style="color:#f59e0b">${fmtM(annual.avgNeededPerMonth)}</div>
+        <div class="gw-kpi-banner-sub">${annual.monthsLeft} months remaining</div>
       </div>
-      <div style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Operating GM</div>
-        <div style="font-size:1.9rem;font-weight:900;color:#a78bfa">${Math.round(annual.grossMarginPct*100)}%</div>
+      <div class="gw-kpi-banner-cell">
+        <div class="gw-kpi-banner-label">Operating GM</div>
+        <div class="gw-kpi-banner-val" style="color:#a78bfa">${Math.round(annual.grossMarginPct*100)}%</div>
       </div>
-      <div style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">True Net Income</div>
-        <div style="font-size:1.5rem;font-weight:900;color:#4ade80">${fmtM(annual.trueNetIncome)}</div>
-        <div style="font-size:10px;color:#64748b">after ${fmtM(annual.loanMonthly)}/mo loans</div>
+      <div class="gw-kpi-banner-cell">
+        <div class="gw-kpi-banner-label">True Net Income</div>
+        <div class="gw-kpi-banner-val" style="font-size:1.5rem;color:var(--gw-emerald)">${fmtM(annual.trueNetIncome)}</div>
+        <div class="gw-kpi-banner-sub">after ${fmtM(annual.loanMonthly)}/mo loans</div>
       </div>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:28px;margin-bottom:0">
       <h2 style="font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0">Division P&amp;L \u2014 Actual vs Target</h2>
-      <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,#1d4ed8,#1e40af)">Edit Monthly Revenue</button>
+      <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,var(--gw-pine),var(--gw-pine-light))">Edit Monthly Revenue</button>
     </div>
     <div class="grid grid-3 mt" style="gap:16px">
       ${divTile(divs.landscape)}
@@ -6549,8 +6549,8 @@ function manager(){
       <p class="muted small-text">Contracted base entering 2026: ${fmtM(divs.maintenance.contractedBase)} (${divs.maintenance.contractedCommercialAccounts} comm + ${divs.maintenance.contractedResidentialAccounts} res accounts). Additional ${fmtM(divs.maintenance.growthTarget)} to sell.</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#0f172a"><th style="padding:8px 12px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Growth Bucket</th><th style="padding:8px 12px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Segment</th><th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Target</th></tr></thead>
-          <tbody>${(divs.maintenance.growthPipeline||[]).map(b=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:8px 12px">${escapeHtml(b.bucket)}</td><td style="padding:8px 12px;text-align:center">${escapeHtml(b.segment)}</td><td style="padding:8px 12px;text-align:right;font-weight:700;color:#4ade80">${fmtM(b.target)}</td></tr>`).join('')}</tbody>
+          <thead><tr><th style="padding:8px 12px;text-align:left">Growth Bucket</th><th style="padding:8px 12px;text-align:center">Segment</th><th style="padding:8px 12px;text-align:right">Target</th></tr></thead>
+          <tbody>${(divs.maintenance.growthPipeline||[]).map(b=>`<tr><td style="padding:8px 12px">${escapeHtml(b.bucket)}</td><td style="padding:8px 12px;text-align:center">${escapeHtml(b.segment)}</td><td style="padding:8px 12px;text-align:right;font-weight:700;color:var(--gw-emerald)">${fmtM(b.target)}</td></tr>`).join('')}</tbody>
         </table>
       </div>
     </div>
@@ -6561,18 +6561,18 @@ function manager(){
       <p class="muted small-text">Actuals through 5/21/2026. Remaining months show budget target only.</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#0f172a">
-            <th style="padding:8px 12px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Month</th>
-            <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Budgeted</th>
-            <th style="padding:8px 12px;text-align:right;color:#00d4ff;border-bottom:1px solid #1e293b">Actual</th>
-            <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Variance</th>
+          <thead><tr>
+            <th style="padding:8px 12px;text-align:left">Month</th>
+            <th style="padding:8px 12px;text-align:right">Budgeted</th>
+            <th style="padding:8px 12px;text-align:right;color:var(--gw-sky)">Actual</th>
+            <th style="padding:8px 12px;text-align:right">Variance</th>
           </tr></thead>
           <tbody>${monthRows}</tbody>
-          <tfoot><tr style="background:#0f172a;font-weight:700">
-            <td style="padding:10px 12px;color:#e2e8f0">YTD Total</td>
-            <td style="padding:10px 12px;text-align:right">${fmtM(ytdBudgeted)}</td>
-            <td style="padding:10px 12px;text-align:right;color:#00d4ff">${fmtM(annual.actualRevenue)}</td>
-            <td style="padding:10px 12px;text-align:right;color:${ytdVariance>=0?'#4ade80':'#f87171'}">${ytdVariance>=0?'+':''}${fmtM(ytdVariance)}</td>
+          <tfoot><tr>
+            <td style="padding:10px 12px;font-weight:700">YTD Total</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:700">${fmtM(ytdBudgeted)}</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--gw-sky)">${fmtM(annual.actualRevenue)}</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:700;color:${ytdVariance>=0?'var(--gw-emerald)':'#ef4444'}">${ytdVariance>=0?'+':''}${fmtM(ytdVariance)}</td>
           </tr></tfoot>
         </table>
       </div>
@@ -6589,11 +6589,11 @@ function manager(){
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <select id="dpRepFilter" onchange="window._renderDpTable&&window._renderDpTable()" style="padding:5px 10px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#e2e8f0;font-size:11px">
+          <select id="dpRepFilter" onchange="window._renderDpTable&&window._renderDpTable()" class="gw-select">
             <option value="">All Reps</option>
             ${(window.REPS||[]).filter(r=>r.role==='rep').map(r=>'<option value="'+r.id+'">'+r.name+'</option>').join('')}
           </select>
-          <select id="dpEstFilter" onchange="window._renderDpTable&&window._renderDpTable()" style="padding:5px 10px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#e2e8f0;font-size:11px">
+          <select id="dpEstFilter" onchange="window._renderDpTable&&window._renderDpTable()" class="gw-select">
             <option value="">All Estimate Statuses</option>
             <option value="sent">Sent</option>
             <option value="revised">Revised</option>
@@ -6605,7 +6605,7 @@ function manager(){
 
       <div id="dpTableWrap" style="overflow-x:auto;margin-top:8px"></div>
 
-      <div style="margin-top:20px;border-top:1px solid #1e293b;padding-top:16px">
+      <div style="margin-top:20px;border-top:1px solid var(--gw-line);padding-top:16px">
         <h3 style="font-size:13px;font-weight:700;color:#94a3b8;margin:0 0 10px;text-transform:uppercase;letter-spacing:.08em">Estimate Aging — Open Paper</h3>
         <div id="dpAgingWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px"></div>
       </div>
@@ -6617,25 +6617,25 @@ function manager(){
       <p class="muted small-text">${escapeHtml((data.hubspotPipeline||{}).description||'')}</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="background:#0f172a">
-            <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">#</th>
-            <th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Stage Name</th>
-            <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Win %</th>
-            <th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Mandatory Gate Fields</th>
+          <thead><tr>
+            <th style="padding:8px 10px;text-align:center">#</th>
+            <th style="padding:8px 10px;text-align:left">Stage Name</th>
+            <th style="padding:8px 10px;text-align:center">Win %</th>
+            <th style="padding:8px 10px;text-align:left">Mandatory Gate Fields</th>
           </tr></thead>
           <tbody>${((data.hubspotPipeline||{}).stages||[]).map(s=>{
             const pct = Math.round(s.winProb*100);
             const barC = pct>=80?'#4ade80':pct>=60?'#fbbf24':pct>=40?'#60a5fa':'#94a3b8';
-            return `<tr style="border-bottom:1px solid #0f172a">
+            return `<tr>
               <td style="padding:8px 10px;text-align:center;font-weight:800;color:${barC}">${s.num}</td>
-              <td style="padding:8px 10px;font-weight:600;color:#e2e8f0">${escapeHtml(s.name)}</td>
+              <td style="padding:8px 10px;font-weight:600">${escapeHtml(s.name)}</td>
               <td style="padding:8px 10px;text-align:center">
                 <div style="display:flex;align-items:center;gap:6px;justify-content:center">
-                  <div style="width:48px;height:5px;background:#1e293b;border-radius:3px"><div style="width:${pct}%;height:5px;background:${barC};border-radius:3px"></div></div>
+<div style="width:48px;height:5px;background:var(--gw-line);border-radius:3px"><div style="width:${pct}%;height:5px;background:${barC};border-radius:3px"></div></div>
                   <span style="font-weight:700;color:${barC};font-size:11px">${pct}%</span>
                 </div>
               </td>
-              <td style="padding:8px 10px;font-size:11px;color:#94a3b8">${(s.gates||[]).join(' \u00b7 ')}</td>
+              <td style="padding:8px 10px;font-size:11px;color:var(--gw-muted)">${(s.gates||[]).join(' \u00b7 ')}</td>
             </tr>`;
           }).join('')}</tbody>
         </table>
@@ -6647,8 +6647,8 @@ function manager(){
       <div class="card">
         <h2>\ud83d\udcb2 Pricing Discipline \u2014 GM Floors</h2>
         <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
-          <thead><tr style="background:#0f172a"><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Division</th><th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Floor</th><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Current Status</th></tr></thead>
-          <tbody>${(pd.grossMarginFloors||[]).map(g=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:8px 10px;font-weight:600">${escapeHtml(g.division)}</td><td style="padding:8px 10px;text-align:center;font-weight:800;color:#4ade80">${escapeHtml(g.floor)}</td><td style="padding:8px 10px;font-size:11px;color:#94a3b8">${escapeHtml(g.current)}</td></tr>`).join('')}</tbody>
+          <thead><tr><th style="padding:8px 10px;text-align:left">Division</th><th style="padding:8px 10px;text-align:center">Floor</th><th style="padding:8px 10px;text-align:left">Current Status</th></tr></thead>
+          <tbody>${(pd.grossMarginFloors||[]).map(g=>`<tr><td style="padding:8px 10px;font-weight:600">${escapeHtml(g.division)}</td><td style="padding:8px 10px;text-align:center;font-weight:800;color:var(--gw-emerald)">${escapeHtml(g.floor)}</td><td style="padding:8px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(g.current)}</td></tr>`).join('')}</tbody>
         </table>
         <h4 style="font-size:12px;color:#64748b;margin-top:16px;margin-bottom:6px">Labor Recovery Rules</h4>
         ${list(pd.laborRecoveryRules||[])}
@@ -6657,8 +6657,8 @@ function manager(){
         <h2>\ud83d\udccb Cost Recovery by Division</h2>
         <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:8px">
-            <thead><tr style="background:#0f172a"><th style="padding:6px 8px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Category</th><th style="padding:6px 8px;text-align:center;color:#22d3ee;border-bottom:1px solid #1e293b">Landscape</th><th style="padding:6px 8px;text-align:center;color:#4ade80;border-bottom:1px solid #1e293b">Maintenance</th><th style="padding:6px 8px;text-align:center;color:#60a5fa;border-bottom:1px solid #1e293b">Snow</th></tr></thead>
-            <tbody>${(pd.activityCostRecovery||[]).map(r=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:6px 8px;color:#94a3b8">${escapeHtml(r.category)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.landscape)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.maintenance)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.snow)}</td></tr>`).join('')}</tbody>
+            <thead><tr><th style="padding:6px 8px;text-align:left">Category</th><th style="padding:6px 8px;text-align:center;color:#22d3ee">Landscape</th><th style="padding:6px 8px;text-align:center;color:var(--gw-emerald)">Maintenance</th><th style="padding:6px 8px;text-align:center;color:#93c5fd">Snow</th></tr></thead>
+            <tbody>${(pd.activityCostRecovery||[]).map(r=>`<tr><td style="padding:6px 8px;color:var(--gw-muted)">${escapeHtml(r.category)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.landscape)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.maintenance)}</td><td style="padding:6px 8px;text-align:center;font-weight:600">${escapeHtml(r.snow)}</td></tr>`).join('')}</tbody>
           </table>
         </div>
       </div>
@@ -6669,8 +6669,8 @@ function manager(){
         <h2>\ud83d\udc64 Tyler \u2014 Leadership Scorecard</h2>
         <p class="muted small-text">Owner / CEO \u00b7 Total cost: $${((tylerCard&&tylerCard.totalEmployeeCost)||0).toLocaleString()}/yr</p>
         <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">
-          <thead><tr style="background:#0f172a"><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Metric</th><th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Target</th><th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b">Cadence</th></tr></thead>
-          <tbody>${((tylerCard&&tylerCard.leadershipScorecard)||[]).map(sc=>`<tr style="border-bottom:1px solid #0f172a"><td style="padding:8px 10px;font-weight:600;color:#e2e8f0">${escapeHtml(sc.metric)}</td><td style="padding:8px 10px;color:#4ade80;font-weight:700">${escapeHtml(sc.target)}</td><td style="padding:8px 10px;text-align:center;color:#94a3b8;font-size:11px">${escapeHtml(sc.cadence)}</td></tr>`).join('')}</tbody>
+          <thead><tr><th style="padding:8px 10px;text-align:left">Metric</th><th style="padding:8px 10px;text-align:left">Target</th><th style="padding:8px 10px;text-align:center">Cadence</th></tr></thead>
+          <tbody>${((tylerCard&&tylerCard.leadershipScorecard)||[]).map(sc=>`<tr><td style="padding:8px 10px;font-weight:600">${escapeHtml(sc.metric)}</td><td style="padding:8px 10px;color:var(--gw-emerald);font-weight:700">${escapeHtml(sc.target)}</td><td style="padding:8px 10px;text-align:center;color:var(--gw-muted);font-size:11px">${escapeHtml(sc.cadence)}</td></tr>`).join('')}</tbody>
         </table>
       </div>
       <div class="card">
@@ -6770,24 +6770,24 @@ window._renderDpTable = function() {
       soldMo:KEYS.reduce((a,k)=>a+stats[k].soldMo,0),
     };
 
-    const headerRow = `<tr style="background:#0f172a">
-      <th style="padding:8px 10px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Division</th>
-      <th style="padding:8px 10px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Open Pipeline</th>
-      <th style="padding:8px 10px;text-align:right;color:#a78bfa;border-bottom:1px solid #1e293b;font-size:11px" title="Active quoted/proposed value in front of customers, not yet sold or lost">Paper on the Street</th>
-      <th style="padding:8px 10px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Open Est. Value</th>
-      <th style="padding:8px 10px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Weighted</th>
-      <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Active Opps</th>
-      <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Open Ests</th>
-      <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Avg Age</th>
-      <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Oldest</th>
-      <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">7d Risk</th>
-      <th style="padding:8px 10px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Sold Mo.</th>
-      <th style="padding:8px 10px;text-align:center;color:#64748b;border-bottom:1px solid #1e293b;font-size:11px">Close Rate</th>
+    const headerRow = `<tr>
+      <th style="padding:8px 10px;text-align:left;font-size:11px">Division</th>
+      <th style="padding:8px 10px;text-align:right;font-size:11px">Open Pipeline</th>
+      <th style="padding:8px 10px;text-align:right;color:#a78bfa;font-size:11px" title="Active quoted/proposed value in front of customers, not yet sold or lost">Paper on the Street</th>
+      <th style="padding:8px 10px;text-align:right;font-size:11px">Open Est. Value</th>
+      <th style="padding:8px 10px;text-align:right;font-size:11px">Weighted</th>
+      <th style="padding:8px 10px;text-align:center;font-size:11px">Active Opps</th>
+      <th style="padding:8px 10px;text-align:center;font-size:11px">Open Ests</th>
+      <th style="padding:8px 10px;text-align:center;font-size:11px">Avg Age</th>
+      <th style="padding:8px 10px;text-align:center;font-size:11px">Oldest</th>
+      <th style="padding:8px 10px;text-align:center;font-size:11px">7d Risk</th>
+      <th style="padding:8px 10px;text-align:right;font-size:11px">Sold Mo.</th>
+      <th style="padding:8px 10px;text-align:center;font-size:11px">Close Rate</th>
     </tr>`;
 
     const divRows = KEYS.map(k => {
       const d = stats[k]; const avg=avgAge(d); const mx=maxAge(d);
-      return `<tr style="border-bottom:1px solid #0f172a">
+      return `<tr>
         <td style="padding:8px 10px;font-weight:700;color:${COLORS[k]}">${LABELS[k]}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:600">${fm(d.openVal)}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:800;color:#a78bfa">${fm(d.pots)}</td>
@@ -6803,12 +6803,12 @@ window._renderDpTable = function() {
       </tr>`;
     }).join('');
 
-    const totRow = `<tr style="background:#0d1829;border-top:2px solid #1e293b">
-      <td style="padding:9px 10px;font-weight:800;color:#e2e8f0">Total</td>
-      <td style="padding:9px 10px;text-align:right;font-weight:800;color:#e2e8f0">${fm(totals.openVal)}</td>
+    const totRow = `<tr style="border-top:2px solid var(--gw-line)">
+      <td style="padding:9px 10px;font-weight:800">Total</td>
+      <td style="padding:9px 10px;text-align:right;font-weight:800">${fm(totals.openVal)}</td>
       <td style="padding:9px 10px;text-align:right;font-weight:900;color:#a78bfa">${fm(totals.pots)}</td>
-      <td style="padding:9px 10px;text-align:right;font-weight:700;color:#94a3b8">${fm(totals.estVal)}</td>
-      <td style="padding:9px 10px;text-align:right;color:#94a3b8">${fm(totals.weighted)}</td>
+      <td style="padding:9px 10px;text-align:right;font-weight:700;color:var(--gw-muted)">${fm(totals.estVal)}</td>
+      <td style="padding:9px 10px;text-align:right;color:var(--gw-muted)">${fm(totals.weighted)}</td>
       <td style="padding:9px 10px;text-align:center;font-weight:700">${totals.openCt}</td>
       <td style="padding:9px 10px;text-align:center;font-weight:700">${totals.estCt}</td>
       <td colspan="2" style="padding:9px 10px;text-align:center;color:#475569">—</td>
@@ -6819,7 +6819,7 @@ window._renderDpTable = function() {
 
     const tableWrap = document.getElementById('dpTableWrap');
     if (tableWrap) {
-      tableWrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px">
+      tableWrap.innerHTML = `<table class="gw-data-table" style="min-width:700px">
         <thead>${headerRow}</thead>
         <tbody>${divRows}${totRow}</tbody>
       </table>`;
@@ -6852,10 +6852,10 @@ window._renderDpTable = function() {
     const agingWrap = document.getElementById('dpAgingWrap');
     if (agingWrap) {
       agingWrap.innerHTML = buckets.map(b => `
-        <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">${b.label}</div>
-          <div style="font-size:22px;font-weight:800;color:${b.color}">${b.count}</div>
-          <div style="font-size:12px;color:#94a3b8;margin-top:2px">estimates</div>
+        <div class="gw-aging-bucket">
+          <div class="gw-aging-bucket-label">${b.label}</div>
+          <div class="gw-aging-bucket-count" style="color:${b.color}">${b.count}</div>
+          <div class="gw-aging-bucket-sub">estimates</div>
           <div style="font-size:13px;font-weight:700;color:${b.color};margin-top:4px">${b.val>0?b.val.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}):'—'}</div>
         </div>`).join('');
     }
@@ -6877,11 +6877,11 @@ function settings(){
       <p>Clears all opportunities, notes, and checklist progress on this browser. <strong style="color:#f87171">Admin only — cannot be undone.</strong></p>
       <button class="danger-btn" onclick="confirmReset()">Reset All Local Data</button>
     </section>` : _iom ? `
-    <section class="card" style="background:#0a0f1a;border:1px solid #f59e0b30;opacity:.75">
+    <section class="card" style="border:1px solid #f59e0b30;opacity:.75">
       <h2>Import / Reset</h2>
       <p class="muted">Import and data reset are restricted to Tyler (Owner / Admin). Contact Tyler if a data restore is needed.</p>
     </section>` : `
-    <section class="card" style="background:#0a0f1a;border:1px solid #1e293b;opacity:.6">
+    <section class="card" style="opacity:.6">
       <h2>Import / Reset</h2>
       <p class="muted">Import and data reset are restricted to Tyler (Admin).</p>
     </section>`;
@@ -6911,10 +6911,10 @@ function settings(){
         ${list(['Access via browser — bookmark for quick daily use.','Install via the Install button for app-style access on mobile.','Data is stored locally in this browser — export regularly.','Contact Tyler to transfer data between devices or reps.'])}
       </section>
     </div>
-    ${_ia ? `<div style="margin-top:20px;padding:14px 18px;background:#0a0f1a;border:1px solid #1e293b;border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    ${_ia ? `<div class="gw-comm-tools" style="margin-top:20px">
       <div>
-        <div style="font-size:13px;font-weight:700;color:#e2e8f0">Admin Controls</div>
-        <div style="font-size:12px;color:#64748b;margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
+        <div class="gw-comm-tools-title" style="margin-bottom:2px">Admin Controls</div>
+        <div style="font-size:12px;color:var(--gw-muted);margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
       </div>
       <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">⚙️ User &amp; Access Management →</button>
     </div>
@@ -6931,23 +6931,20 @@ function settings(){
       ${renderCommissionAuditTrail()}
     </div>
     <!-- Commission Admin Tools (COMM-16 migration · COMM-18 QA · COMM-17 flags) -->
-    <div style="margin-top:16px;background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:16px 18px">
-      <div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:12px">⚙️ Commission Admin Tools</div>
+    <div class="gw-comm-tools" style="margin-top:16px">
+      <div class="gw-comm-tools-title">⚙️ Commission Admin Tools</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
-        <button onclick="window._runMigrationFromUI()"
-          style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">
+        <button onclick="window._runMigrationFromUI()" class="gw-admin-btn">
           📦 Run Data Migration
         </button>
-        <button onclick="window._runQAFromUI()"
-          style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">
+        <button onclick="window._runQAFromUI()" class="gw-admin-btn">
           🔍 Run QA Self-Check
         </button>
-        <button onclick="window._showFlagPanel()"
-          style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">
+        <button onclick="window._showFlagPanel()" class="gw-admin-btn">
           🚩 Feature Flags
         </button>
       </div>
-      <div id="comm-tool-result" style="margin-top:10px;font-size:12px;color:#64748b"></div>
+      <div id="comm-tool-result" class="gw-tool-result"></div>
     </div>` : ''}
   `;
 }
@@ -6980,19 +6977,19 @@ function renderCommissionRulesPanel() {
   const tierRows = lTiers.map((t, i) => {
     const label = t.max ? `$${t.min.toLocaleString()}–$${t.max.toLocaleString()}` : `$${t.min.toLocaleString()}+`;
     if (t.selfGen === null || t.selfGen === undefined) {
-      return `<tr style="border-bottom:1px solid #1e293b">
-        <td style="padding:7px 10px;font-size:12px;color:#94a3b8">${label}</td>
+      return `<tr class="gw-table-row">
+        <td style="padding:7px 10px;font-size:12px;color:var(--gw-muted)">${label}</td>
         <td colspan="3" style="padding:7px 10px;font-size:12px;color:#f59e0b;text-align:center">Management approval required</td>
       </tr>`;
     }
-    return `<tr style="border-bottom:1px solid #1e293b">
-      <td style="padding:7px 10px;font-size:12px;color:#94a3b8">${label}</td>
+    return `<tr class="gw-table-row">
+      <td style="padding:7px 10px;font-size:12px;color:var(--gw-muted)">${label}</td>
       <td style="padding:4px 6px"><input type="number" id="cr-ls-sg-${i}" value="${Math.round(t.selfGen*100)}" min="0" max="50" step="0.5"
-        style="width:60px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#4ade80;font-weight:700;font-size:12px;text-align:center"> %</td>
+        class="gw-input-sm" style="width:60px;color:var(--gw-emerald);font-weight:700;text-align:center"> %</td>
       <td style="padding:4px 6px"><input type="number" id="cr-ls-cl-${i}" value="${Math.round(t.companyLead*100)}" min="0" max="50" step="0.5"
-        style="width:60px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#60a5fa;font-weight:700;font-size:12px;text-align:center"> %</td>
+        class="gw-input-sm" style="width:60px;color:#60a5fa;font-weight:700;text-align:center"> %</td>
       <td style="padding:4px 6px"><input type="number" id="cr-ls-as-${i}" value="${Math.round(t.assisted*100)}" min="0" max="50" step="0.5"
-        style="width:60px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-weight:700;font-size:12px;text-align:center"> %</td>
+        class="gw-input-sm" style="width:60px;font-weight:700;text-align:center"> %</td>
     </tr>`;
   }).join('');
 
@@ -7001,29 +6998,29 @@ function renderCommissionRulesPanel() {
     if (!r) return '';
     return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <span style="font-size:11px;color:${colorClass};font-weight:700;min-width:90px">${srcKey === 'selfGen' ? 'Self-Generated' : srcKey === 'companyLead' ? 'Company Lead' : 'Assisted'}</span>
-      <label style="font-size:11px;color:#64748b">T1%: <input type="number" id="${idPrefix}-t1" value="${Math.round(r.t1Rate*100)}" min="0" max="100" step="1"
-        style="width:48px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:11px;text-align:center"></label>
-      <label style="font-size:11px;color:#64748b">T2%: <input type="number" id="${idPrefix}-t2" value="${Math.round(r.t2Rate*100)}" min="0" max="100" step="1"
-        style="width:48px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:11px;text-align:center"></label>
-      <label style="font-size:11px;color:#64748b">T3%: <input type="number" id="${idPrefix}-t3" value="${Math.round(r.t3Rate*100)}" min="0" max="100" step="1"
-        style="width:48px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#e2e8f0;font-size:11px;text-align:center"></label>
-      <label style="font-size:11px;color:#64748b">Cap $: <input type="number" id="${idPrefix}-cap" value="${r.cap}" min="0" max="5000" step="25"
-        style="width:60px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#f59e0b;font-size:11px;text-align:center"></label>
-      <label style="font-size:11px;color:#64748b">Bonus $: <input type="number" id="${idPrefix}-bonus" value="${r.retentionBonus}" min="0" max="500" step="5"
-        style="width:55px;padding:3px 5px;background:#1e293b;border:1px solid #334155;border-radius:5px;color:#4ade80;font-size:11px;text-align:center"></label>
+      <label class="gw-label">T1%: <input type="number" id="${idPrefix}-t1" value="${Math.round(r.t1Rate*100)}" min="0" max="100" step="1"
+        class="gw-input-sm" style="width:48px;text-align:center"></label>
+      <label class="gw-label">T2%: <input type="number" id="${idPrefix}-t2" value="${Math.round(r.t2Rate*100)}" min="0" max="100" step="1"
+        class="gw-input-sm" style="width:48px;text-align:center"></label>
+      <label class="gw-label">T3%: <input type="number" id="${idPrefix}-t3" value="${Math.round(r.t3Rate*100)}" min="0" max="100" step="1"
+        class="gw-input-sm" style="width:48px;text-align:center"></label>
+      <label class="gw-label">Cap $: <input type="number" id="${idPrefix}-cap" value="${r.cap}" min="0" max="5000" step="25"
+        class="gw-input-sm" style="width:60px;color:#f59e0b;text-align:center"></label>
+      <label class="gw-label">Bonus $: <input type="number" id="${idPrefix}-bonus" value="${r.retentionBonus}" min="0" max="500" step="5"
+        class="gw-input-sm" style="width:55px;color:var(--gw-emerald);text-align:center"></label>
     </div>`;
   }
 
   return `
-  <div style="background:#0a0f1a;border:1px solid #00A7E140;border-radius:14px;padding:20px">
+  <div class="gw-comm-panel">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
       <div>
         <div style="font-size:14px;font-weight:800;color:#e2e8f0">💰 Commission Rules Manager</div>
         <div style="font-size:12px;color:#64748b;margin-top:2px">Edit rates, caps, and thresholds. Changes apply immediately to all commission calculations.${updatedInfo}</div>
       </div>
       <div style="display:flex;gap:8px">
-        <button onclick="window._saveCommRules()" style="background:#00A7E1;border:none;color:#fff;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer">Save Rules</button>
-        ${override ? `<button onclick="window._resetCommRules()" style="background:#0f172a;border:1px solid #f87171;color:#f87171;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer">Reset to Defaults</button>` : ''}
+        <button onclick="window._saveCommRules()" class="gw-btn-primary">Save Rules</button>
+        ${override ? `<button onclick="window._resetCommRules()" class="gw-btn-danger-ghost">Reset to Defaults</button>` : ''}
       </div>
     </div>
 
@@ -7031,21 +7028,21 @@ function renderCommissionRulesPanel() {
     <div style="margin-bottom:16px">
       <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Landscape / Enhancement Tiers</div>
       <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;background:#0f172a;border-radius:8px;overflow:hidden;font-size:12px">
-          <thead><tr style="background:#1e293b">
-            <th style="padding:8px 10px;text-align:left;color:#64748b;font-size:10px;letter-spacing:.05em">RANGE</th>
-            <th style="padding:8px 10px;text-align:center;color:#4ade80;font-size:10px">SELF-GEN %</th>
+        <table class="gw-data-table" style="border-radius:8px;overflow:hidden;font-size:12px">
+          <thead><tr>
+            <th style="padding:8px 10px;text-align:left;font-size:10px;letter-spacing:.05em">RANGE</th>
+            <th style="padding:8px 10px;text-align:center;color:var(--gw-emerald);font-size:10px">SELF-GEN %</th>
             <th style="padding:8px 10px;text-align:center;color:#60a5fa;font-size:10px">CO. LEAD %</th>
-            <th style="padding:8px 10px;text-align:center;color:#94a3b8;font-size:10px">ASSISTED %</th>
+            <th style="padding:8px 10px;text-align:center;font-size:10px">ASSISTED %</th>
           </tr></thead>
           <tbody>${tierRows}</tbody>
         </table>
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
-        <label style="font-size:11px;color:#64748b">Soft approval at payout $: <input type="number" id="cr-soft-cap" value="${softCap}" min="0" max="10000" step="50"
-          style="width:80px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#f59e0b;font-size:12px;text-align:center"></label>
-        <label style="font-size:11px;color:#64748b">Hard cap $: <input type="number" id="cr-hard-cap" value="${hardCap}" min="0" max="20000" step="100"
-          style="width:80px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#f87171;font-size:12px;text-align:center"></label>
+        <label class="gw-label">Soft approval at payout $: <input type="number" id="cr-soft-cap" value="${softCap}" min="0" max="10000" step="50"
+          class="gw-input-sm" style="width:80px;color:#f59e0b;text-align:center"></label>
+        <label class="gw-label">Hard cap $: <input type="number" id="cr-hard-cap" value="${hardCap}" min="0" max="20000" step="100"
+          class="gw-input-sm" style="width:80px;color:#f87171;text-align:center"></label>
       </div>
     </div>
 
@@ -7053,14 +7050,14 @@ function renderCommissionRulesPanel() {
     <div style="margin-bottom:16px">
       <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Maintenance — One-Time / Seasonal</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
-        <label style="font-size:11px;color:#4ade80">Self-Gen %: <input type="number" id="cr-ot-sg" value="${Math.round(ot.selfGen*100)}" min="0" max="50" step="0.5"
-          style="width:55px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#4ade80;font-weight:700;font-size:12px;text-align:center"></label>
+        <label style="font-size:11px;color:var(--gw-emerald)">Self-Gen %: <input type="number" id="cr-ot-sg" value="${Math.round(ot.selfGen*100)}" min="0" max="50" step="0.5"
+          class="gw-input-sm" style="width:55px;color:var(--gw-emerald);font-weight:700;text-align:center"></label>
         <label style="font-size:11px;color:#60a5fa">Co. Lead %: <input type="number" id="cr-ot-cl" value="${Math.round(ot.companyLead*100)}" min="0" max="50" step="0.5"
-          style="width:55px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#60a5fa;font-weight:700;font-size:12px;text-align:center"></label>
-        <label style="font-size:11px;color:#94a3b8">Assisted %: <input type="number" id="cr-ot-as" value="${Math.round(ot.assisted*100)}" min="0" max="50" step="0.5"
-          style="width:55px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-weight:700;font-size:12px;text-align:center"></label>
+          class="gw-input-sm" style="width:55px;color:#60a5fa;font-weight:700;text-align:center"></label>
+        <label style="font-size:11px;color:var(--gw-muted)">Assisted %: <input type="number" id="cr-ot-as" value="${Math.round(ot.assisted*100)}" min="0" max="50" step="0.5"
+          class="gw-input-sm" style="width:55px;font-weight:700;text-align:center"></label>
         <label style="font-size:11px;color:#f59e0b">Approval above $: <input type="number" id="cr-ot-approval" value="${ot.approvalAbove || 750}" min="0" max="5000" step="50"
-          style="width:70px;padding:4px 6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#f59e0b;font-size:12px;text-align:center"></label>
+          class="gw-input-sm" style="width:70px;color:#f59e0b;text-align:center"></label>
       </div>
     </div>
 
@@ -7162,7 +7159,7 @@ window._showFlagPanel = function() {
   const el    = document.getElementById('comm-tool-result');
   if (!el) return;
   const rows = Object.entries(flags).map(([k, v]) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e293b">
+    <div class="gw-flag-row">
       <span style="font-size:12px;color:#94a3b8">${k}</span>
       <button onclick="window._setCommFlag('${k}', ${!v}); window._showFlagPanel();"
         style="background:${v ? '#064e3b' : '#450a0a'};border:none;color:${v ? '#4ade80' : '#f87171'};border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:700">
@@ -7170,7 +7167,7 @@ window._showFlagPanel = function() {
       </button>
     </div>`).join('');
   el.innerHTML = `
-    <div style="background:#0a0f1a;border:1px solid #1e293b;border-radius:8px;padding:10px;margin-top:4px">
+    <div class="gw-flag-panel">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <span style="font-size:12px;font-weight:700;color:#e2e8f0">Feature Flags</span>
         <button onclick="window._resetCommFlags();window._showFlagPanel();"
@@ -7186,13 +7183,13 @@ window._showFlagPanel = function() {
 // approval requirement, and note text — without touching any real deal.
 function renderCommissionSimulator() {
   return `
-  <div style="background:#0f172a;border:1px solid #1e40af;border-radius:14px;overflow:hidden">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#0c1a3a;border-bottom:1px solid #1e40af">
+  <div class="gw-sim-panel">
+    <div class="gw-sim-header">
       <div>
         <div style="font-size:14px;font-weight:800;color:#e2e8f0">🧮 Commission Simulator</div>
         <div style="font-size:11px;color:#64748b;margin-top:2px">Hypothetical — no data is saved or changed</div>
       </div>
-      <button onclick="window._runCommSim()" style="background:#1d4ed8;border:none;color:#fff;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer">Calculate →</button>
+      <button onclick="window._runCommSim()" class="gw-btn-primary">Calculate →</button>
     </div>
 
     <div style="padding:16px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
@@ -7200,7 +7197,7 @@ function renderCommissionSimulator() {
       <!-- Work Type -->
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Work Type</label>
-        <select id="sim-workType" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+        <select id="sim-workType" class="gw-select" style="width:100%;margin-top:5px">
           <option value="landscape">Landscape / Enhancement</option>
           <option value="maintenance_onetime">Maintenance — One-Time</option>
           <option value="maintenance_recurring">Maintenance — Recurring</option>
@@ -7214,7 +7211,7 @@ function renderCommissionSimulator() {
       <!-- Lead Source -->
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Lead Source</label>
-        <select id="sim-leadSource" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+        <select id="sim-leadSource" class="gw-select" style="width:100%;margin-top:5px">
           <option value="company_lead">Company Lead</option>
           <option value="self_generated">Self-Generated</option>
           <option value="assisted">Assisted</option>
@@ -7225,13 +7222,13 @@ function renderCommissionSimulator() {
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Job Value ($)</label>
         <input id="sim-jobValue" type="number" min="0" step="100" value="5000"
-          style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box">
+          class="gw-select" style="width:100%;margin-top:5px;box-sizing:border-box">
       </div>
 
       <!-- Collected -->
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Payment Collected?</label>
-        <select id="sim-collected" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+        <select id="sim-collected" class="gw-select" style="width:100%;margin-top:5px">
           <option value="yes">Yes — payment received</option>
           <option value="no">No — pending collection</option>
         </select>
@@ -7240,7 +7237,7 @@ function renderCommissionSimulator() {
       <!-- Pre-approved -->
       <div>
         <label style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Tyler Pre-Approved?</label>
-        <select id="sim-approved" style="width:100%;margin-top:5px;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px">
+        <select id="sim-approved" class="gw-select" style="width:100%;margin-top:5px">
           <option value="yes">Yes — approved</option>
           <option value="no">No — not yet approved</option>
         </select>
@@ -7249,7 +7246,7 @@ function renderCommissionSimulator() {
     </div>
 
     <!-- Result panel — populated by _runCommSim() -->
-    <div id="sim-result" style="margin:0 18px 16px;padding:14px;background:#060a12;border:1px solid #1e293b;border-radius:10px;min-height:60px;font-size:13px;color:#64748b">
+    <div id="sim-result" class="gw-sim-result">
       Set your scenario above and click <strong>Calculate →</strong>
     </div>
   </div>`;
@@ -7297,9 +7294,9 @@ function renderCommissionAuditTrail() {
   const audit = (typeof window.loadCommissionAudit === 'function') ? window.loadCommissionAudit() : [];
   if (!audit.length) {
     return `
-    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:16px 18px">
-      <div style="font-size:14px;font-weight:800;color:#e2e8f0;margin-bottom:6px">📋 Commission Rule Audit Trail</div>
-      <p style="color:#475569;font-size:13px;margin:0">No rule changes recorded yet. Changes appear here when Tyler edits and saves commission rates.</p>
+    <div class="gw-audit-panel" style="padding:16px 18px">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px">📋 Commission Rule Audit Trail</div>
+      <p style="color:var(--gw-muted);font-size:13px;margin:0">No rule changes recorded yet. Changes appear here when Tyler edits and saves commission rates.</p>
     </div>`;
   }
 
@@ -7310,7 +7307,7 @@ function renderCommissionAuditTrail() {
     const label    = isCreate ? 'Rules Created' : `Rules Updated → v${entry.after?.version || '?'}`;
     const actor    = entry.actor || 'admin';
     return `
-    <div style="padding:10px 0;border-bottom:1px solid #1e293b;display:flex;align-items:flex-start;gap:12px">
+    <div class="gw-audit-entry">
       <div style="width:8px;height:8px;border-radius:50%;background:${color};margin-top:5px;flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -7320,13 +7317,13 @@ function renderCommissionAuditTrail() {
         </div>
         ${entry.before ? `<div style="font-size:10px;color:#334155;margin-top:2px">Previous version: v${entry.before.version || 0}</div>` : ''}
       </div>
-      ${i === 0 ? `<button onclick="window._showAuditDiff(${i})" style="font-size:10px;color:#64748b;background:#1e293b;border:none;border-radius:6px;padding:3px 8px;cursor:pointer">View diff</button>` : ''}
+      ${i === 0 ? `<button onclick="window._showAuditDiff(${i})" class="gw-ghost-btn">View diff</button>` : ''}
     </div>`;
   }).join('');
 
   return `
-  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;overflow:hidden">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b">
+  <div class="gw-audit-panel">
+    <div class="gw-audit-panel-header">
       <div>
         <div style="font-size:14px;font-weight:800;color:#e2e8f0">📋 Commission Rule Audit Trail</div>
         <div style="font-size:11px;color:#64748b;margin-top:2px">${audit.length} change${audit.length !== 1 ? 's' : ''} recorded</div>
@@ -7346,20 +7343,20 @@ window._showAuditDiff = function(idx) {
   const before = entry.before ? JSON.stringify(entry.before, null, 2) : '(first save — no prior version)';
   const after  = JSON.stringify(entry.after,  null, 2);
   const modal  = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.className = 'gw-modal-overlay';
   modal.innerHTML = `
-    <div style="background:#1e293b;border-radius:16px;padding:24px;width:min(700px,95vw);max-height:85vh;overflow-y:auto;position:relative">
+    <div class="gw-diff-modal-box">
       <button onclick="this.closest('div[style]').remove()"
         style="position:absolute;top:12px;right:14px;background:transparent;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1">×</button>
       <h3 style="margin:0 0 16px;font-size:16px;color:#e2e8f0">Rule Change — ${new Date(entry.ts).toLocaleString()}</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:6px;text-transform:uppercase">Before</div>
-          <pre style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;font-size:10px;color:#94a3b8;overflow-x:auto;white-space:pre-wrap;margin:0">${before}</pre>
+          <pre class="gw-diff-pre">${before}</pre>
         </div>
         <div>
           <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:6px;text-transform:uppercase">After</div>
-          <pre style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;font-size:10px;color:#94a3b8;overflow-x:auto;white-space:pre-wrap;margin:0">${after}</pre>
+          <pre class="gw-diff-pre">${after}</pre>
         </div>
       </div>
     </div>`;
@@ -7398,7 +7395,7 @@ function _renderPermMatrixOld_deleted() {
     return `
       <tr class=\"perm-group-row\"><td colspan=\"${roles.length + 1}\">${group}</td></tr>
       ${groupViews.map(v => `
-      <tr style="border-bottom:1px solid #0f172a">
+      <tr style="border-bottom:1px solid var(--gw-line)">
         <td class="perm-section">${v.label}</td>
         ${roles.map(r => {
           const checked = (perms[r.key] || DEFAULT_NAV_PERMS[r.key] || []).includes(v.key);
@@ -7561,7 +7558,7 @@ window.confirmReset = function(){
       <p style="font-size:13px;color:#94a3b8;text-align:center;margin:0 0 20px">This will delete <strong style="color:#f87171">all pipeline leads, notes, financials, and settings</strong> permanently. There is no undo.</p>
       <p style="font-size:12px;color:#64748b;margin:0 0 8px">Type <strong style="color:#e2e8f0">RESET</strong> to confirm:</p>
       <input id="resetConfirmInput" type="text" placeholder="Type RESET here"
-        style="width:100%;padding:10px 12px;background:#1e293b;border:1px solid #7f1d1d;border-radius:8px;color:#f87171;font-size:14px;font-weight:700;letter-spacing:.1em;box-sizing:border-box;margin-bottom:14px">
+        class="gw-input-sm" style="width:100%;border-color:#7f1d1d;color:#f87171;font-size:14px;font-weight:700;letter-spacing:.1em;box-sizing:border-box;margin-bottom:14px;padding:10px 12px">
       <div style="display:flex;gap:8px">
         <button class="secondary-btn" style="flex:1" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
         <button class="danger-btn" id="resetConfirmBtn" style="flex:1;opacity:.4;pointer-events:none" onclick="window.doResetAll()">Reset All Data</button>
@@ -7657,20 +7654,20 @@ window.showExportModal = function(title, buildDataFn) {
     display:flex;align-items:center;justify-content:center;padding:20px
   `;
   overlay.innerHTML = `
-    <div style="background:#0f172a;border:1px solid #1e4d6b;border-radius:16px;padding:28px;width:100%;max-width:400px;box-shadow:0 25px 60px rgba(0,0,0,0.6)">
+    <div class="gw-modal-card" style="max-width:400px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <div>
           <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Export Data</div>
           <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">${escapeHtml(title)}</h2>
         </div>
         <button onclick="document.getElementById('exportModalOverlay').remove()"
-          style="background:#1e293b;border:1px solid #334155;border-radius:8px;color:#94a3b8;cursor:pointer;padding:6px 10px;font-size:16px;line-height:1">×</button>
+          class="gw-ghost-btn" style="padding:6px 10px;font-size:16px;line-height:1">×</button>
       </div>
       <p style="color:#64748b;font-size:13px;margin:0 0 20px">Choose your preferred format:</p>
       <div style="display:grid;gap:10px">
         <button onclick="exportAsCSV('${escapeHtml(title)}', window._exportDataFn)"
-          style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#0a1628;border:1px solid #1e293b;border-radius:12px;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:600;text-align:left;transition:border-color .15s"
-          onmouseover="this.style.borderColor='#22d3ee'" onmouseout="this.style.borderColor='#1e293b'">
+          class="gw-export-btn"
+          onmouseover="this.style.borderColor='var(--gw-sky)'" onmouseout="this.style.borderColor='var(--gw-line)'">
           
           <div>
             <div>CSV</div>
@@ -7678,8 +7675,8 @@ window.showExportModal = function(title, buildDataFn) {
           </div>
         </button>
         <button onclick="exportAsXLSX('${escapeHtml(title)}', window._exportDataFn)"
-          style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#0a1628;border:1px solid #1e293b;border-radius:12px;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:600;text-align:left;transition:border-color .15s"
-          onmouseover="this.style.borderColor='#4ade80'" onmouseout="this.style.borderColor='#1e293b'">
+          class="gw-export-btn"
+          onmouseover="this.style.borderColor='var(--gw-emerald)'" onmouseout="this.style.borderColor='var(--gw-line)'">
           
           <div>
             <div>Excel (.xlsx)</div>
@@ -7687,8 +7684,8 @@ window.showExportModal = function(title, buildDataFn) {
           </div>
         </button>
         <button onclick="exportAsPDF('${escapeHtml(title)}', window._exportDataFn)"
-          style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#0a1628;border:1px solid #1e293b;border-radius:12px;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:600;text-align:left;transition:border-color .15s"
-          onmouseover="this.style.borderColor='#f87171'" onmouseout="this.style.borderColor='#1e293b'">
+          class="gw-export-btn"
+          onmouseover="this.style.borderColor='#f87171'" onmouseout="this.style.borderColor='var(--gw-line)'">
           
           <div>
             <div>PDF</div>
@@ -8077,7 +8074,7 @@ window.showMonthDrilldown = function(monthKey) {
     const cogs = entry.cogs ?? null;
     const gm = (rev != null && cogs != null) ? rev - cogs : null;
     const gmPct = (gm != null && rev > 0) ? Math.round((gm/rev)*100) : null;
-    return `<tr style="border-bottom:1px solid #1e293b">
+    return `<tr class="gw-table-row">
       <td style="padding:10px 12px;font-weight:600">${d.icon} ${d.label}</td>
       <td style="padding:10px 12px;text-align:right;color:${d.color};font-weight:700">${fmtM(rev)}</td>
       <td style="padding:10px 12px;text-align:right;color:#64748b">${fmtM(cogs)}</td>
@@ -8098,20 +8095,20 @@ window.showMonthDrilldown = function(monthKey) {
         <div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Variance</div><div style="font-size:1.3rem;font-weight:800;color:${(monthBudget.variance||0)>=0?'#4ade80':'#f87171'}">${monthBudget.variance!=null?((monthBudget.variance>=0?'+':'')+fmtM(monthBudget.variance)):'—'}</div></div>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
-        <thead><tr style="background:#0f172a">
-          <th style="padding:8px 12px;text-align:left;color:#64748b;border-bottom:1px solid #1e293b">Division</th>
-          <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">Revenue</th>
-          <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">COGS</th>
-          <th style="padding:8px 12px;text-align:right;color:#64748b;border-bottom:1px solid #1e293b">GM%</th>
+        <thead><tr>
+          <th style="padding:8px 12px;text-align:left">Division</th>
+          <th style="padding:8px 12px;text-align:right">Revenue</th>
+          <th style="padding:8px 12px;text-align:right">COGS</th>
+          <th style="padding:8px 12px;text-align:right">GM%</th>
         </tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
-          <td style="padding:10px 12px;color:#e2e8f0">Total</td>
+        <tfoot><tr style="border-top:2px solid var(--gw-line)">
+          <td style="padding:10px 12px;font-weight:700">Total</td>
           <td style="padding:10px 12px;text-align:right;color:#22d3ee">${fmtM(total)}</td>
           <td colspan="2"></td>
         </tr></tfoot>
       </table>
-      ${notes ? `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;font-size:13px;color:#94a3b8"><strong style="color:#e2e8f0">Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
+      ${notes ? `<div class="gw-ann-field" style="font-size:13px;color:var(--gw-muted)"><strong>Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:16px">
         <button class="primary-btn" onclick="this.closest('.modal-overlay').remove();revenueAdmin('division')">Edit Division Data</button>
         <button class="secondary-btn" onclick="this.closest('.modal-overlay').remove()">Close</button>
@@ -8139,40 +8136,40 @@ function revenueAdmin(tab) {
 
   // ── Tab Nav ──
   const tabNav = `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+    <div class="gw-tab-nav">
       ${[['monthly','Monthly Totals'],['division','Division Entry'],['annuals','Annual Financials'],['pnl','P&L Files']].map(([t,label]) =>
-        `<button onclick="revenueAdmin('${t}')" style="padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid ${_revTab===t?'#22d3ee':'#1e293b'};background:${_revTab===t?'#0e3044':'#0f172a'};color:${_revTab===t?'#22d3ee':'#94a3b8'}">${label}</button>`
+        `<button onclick="revenueAdmin('${t}')" class="gw-tab-pill${_revTab===t?' active':''}">${label}</button>`
       ).join('')}
     </div>`;
 
   // ── Summary Banner (always shown) ──
   const banner = `
-    <div style="background:linear-gradient(135deg,#0a1628,#0f172a);border:1px solid #1e4d6b;border-radius:14px;padding:18px;margin-bottom:20px">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Budget</div>
-          <div id="rev_ytd_budget" style="font-size:1.4rem;font-weight:900;color:#e2e8f0">${fmtM(ytdBudget)}</div>
+    <div class="gw-rev-banner">
+      <div class="gw-rev-banner-grid">
+        <div class="gw-rev-banner-cell">
+          <div class="gw-kpi-banner-label">YTD Budget</div>
+          <div id="rev_ytd_budget" class="gw-kpi-banner-val">${fmtM(ytdBudget)}</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Actual</div>
-          <div id="rev_ytd_actual" style="font-size:1.4rem;font-weight:900;color:#22d3ee">${fmtM(ytdActual)}</div>
+        <div class="gw-rev-banner-cell">
+          <div class="gw-kpi-banner-label">YTD Actual</div>
+          <div id="rev_ytd_actual" class="gw-kpi-banner-val" style="color:var(--gw-sky)">${fmtM(ytdActual)}</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">YTD Variance</div>
-          <div id="rev_ytd_var" style="font-size:1.4rem;font-weight:900;color:${ytdVarColor}">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</div>
+        <div class="gw-rev-banner-cell">
+          <div class="gw-kpi-banner-label">YTD Variance</div>
+          <div id="rev_ytd_var" class="gw-kpi-banner-val" style="color:${ytdVarColor}">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Remaining</div>
-          <div style="font-size:1.4rem;font-weight:900;color:#f87171">${fmtM(fy.annual.remaining)}</div>
+        <div class="gw-rev-banner-cell">
+          <div class="gw-kpi-banner-label">Remaining</div>
+          <div class="gw-kpi-banner-val" style="color:#ef4444">${fmtM(fy.annual.remaining)}</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Needed / Mo</div>
-          <div style="font-size:1.4rem;font-weight:900;color:#f59e0b">${fmtM(fy.annual.avgNeededPerMonth)}</div>
-          <div style="font-size:9px;color:#64748b">${dynamicMonthsLeft} months left</div>
+        <div class="gw-rev-banner-cell">
+          <div class="gw-kpi-banner-label">Needed / Mo</div>
+          <div class="gw-kpi-banner-val" style="color:#f59e0b">${fmtM(fy.annual.avgNeededPerMonth)}</div>
+          <div class="gw-kpi-banner-sub">${dynamicMonthsLeft} months left</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em">Annual Budget</div>
-          <div style="font-size:1.4rem;font-weight:900;color:#a78bfa">${fmtM(fy.annual.budgetedRevenue)}</div>
+        <div class="gw-rev-banner-cell">
+          <div class="gw-kpi-banner-label">Annual Budget</div>
+          <div class="gw-kpi-banner-val" style="color:#a78bfa">${fmtM(fy.annual.budgetedRevenue)}</div>
         </div>
       </div>
     </div>`;
@@ -8206,7 +8203,7 @@ function revenueAdmin(tab) {
         </td>
         <td class="right" style="color:${varColor};font-weight:700">${m.variance != null ? varSign + fmtM(m.variance) : '—'}</td>
         <td>
-          <input style="background:transparent;border:none;border-bottom:1px solid #1e293b;width:100%;color:#94a3b8;font-size:12px;padding:4px 0"
+          <input style="background:transparent;border:none;border-bottom:1px solid var(--gw-line);width:100%;color:var(--gw-muted);font-size:12px;padding:4px 0"
             placeholder="notes…"
             id="rev_note_text_${m.idx}"
             value="${escapeHtml(savedNotes['note_'+m.month]||'')}">
@@ -8215,9 +8212,9 @@ function revenueAdmin(tab) {
     }).join('');
 
     return `
-      <div class="card" style="background:#0a0f1a;border:1px solid #1e293b;padding:0;overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b">
-          <h2 style="margin:0;color:#f1f5f9;font-size:1rem">Budget vs Actual — Jan–Dec 2026</h2>
+      <div class="gw-admin-panel">
+        <div class="gw-admin-panel-header">
+          <h2 style="margin:0;font-size:1rem">Budget vs Actual — Jan–Dec 2026</h2>
           <div style="display:flex;gap:8px">
             <button class="secondary-btn small" onclick="revSaveNotes()" style="background:#16a34a;border-color:#16a34a;color:#fff">Save Notes</button>
             <button class="secondary-btn small" onclick="showExportModal('Monthly Revenue', buildMonthlyExportData)">Export</button>
@@ -8230,10 +8227,10 @@ function revenueAdmin(tab) {
             </tr></thead>
             <tbody>${tableRows}</tbody>
             <tfoot>
-              <tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
-                <td style="padding:12px;color:#e2e8f0">YTD Total</td>
-                <td class="right" style="padding:12px;color:#64748b">${fmtM(ytdBudget)}</td>
-                <td class="right" style="padding:12px;color:#22d3ee">${fmtM(ytdActual)}</td>
+              <tr>
+                <td style="padding:12px;font-weight:700">YTD Total</td>
+                <td class="right" style="padding:12px;color:var(--gw-muted)">${fmtM(ytdBudget)}</td>
+                <td class="right" style="padding:12px;color:var(--gw-sky)">${fmtM(ytdActual)}</td>
                 <td class="right" style="padding:12px;color:${ytdVarColor}">${ytdVar >= 0 ? '+' : ''}${fmtM(ytdVar)}</td>
                 <td></td>
               </tr>
@@ -8291,8 +8288,8 @@ function revenueAdmin(tab) {
       const divObj = fy.divisions[div.key] || {};
 
       return `
-        <div class="card" style="background:#0a0f1a;border:1px solid #1e293b;padding:0;overflow:hidden;margin-bottom:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1e293b;background:linear-gradient(90deg,#0a1628,#0f172a)">
+        <div class="gw-div-section">
+          <div class="gw-div-section-header">
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-size:20px">${div.icon}</span>
               <div>
@@ -8312,9 +8309,9 @@ function revenueAdmin(tab) {
               </tr></thead>
               <tbody>${rows}</tbody>
               <tfoot>
-                <tr style="background:#0f172a;font-weight:700;border-top:2px solid #1e293b">
-                  <td style="padding:10px;color:#e2e8f0">Totals</td>
-                  <td class="right" style="padding:10px;color:#22d3ee" id="div_${div.key}_total_rev">${fmtM(totalRev||null)}</td>
+                <tr>
+                  <td style="padding:10px;font-weight:700">Totals</td>
+                  <td class="right" style="padding:10px;color:var(--gw-sky)" id="div_${div.key}_total_rev">${fmtM(totalRev||null)}</td>
                   <td class="right" style="padding:10px;color:#64748b" id="div_${div.key}_total_cogs">${fmtM(totalCogs||null)}</td>
                   <td class="right" style="padding:10px;color:${totalGm >= 30 ? '#4ade80' : '#f87171'};font-weight:700" id="div_${div.key}_total_gm">${totalRev > 0 ? totalGm + '%' : '—'}</td>
                 </tr>
@@ -8351,8 +8348,8 @@ function revenueAdmin(tab) {
     const divFinancials = DIVISIONS_META.map(div => {
       const d = fy.divisions[div.key] || {};
       return `
-        <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px;margin-bottom:12px">
-          <div style="font-weight:700;font-size:14px;color:#e2e8f0;margin-bottom:12px">${div.icon} ${div.label} Division</div>
+        <div class="gw-ann-field" style="margin-bottom:12px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:12px">${div.icon} ${div.label} Division</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
             <div>
               <label style="font-size:11px;color:#64748b;display:block;margin-bottom:4px">Revenue Target</label>
@@ -8360,7 +8357,7 @@ function revenueAdmin(tab) {
             </div>
             <div>
               <label style="font-size:11px;color:#64748b;display:block;margin-bottom:4px">Actual YTD Revenue <span style="font-size:9px;color:#475569">(auto)</span></label>
-              <div style="padding:8px 10px;background:#0a0f1a;border:1px solid #0f172a;border-radius:8px;color:#22d3ee;font-weight:700;font-size:14px">${d.actual != null ? d.actual.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'}</div>
+              <div style="padding:8px 10px;background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-sky);font-weight:700;font-size:14px">${d.actual != null ? d.actual.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'}</div>
             </div>
             <div>
               <label style="font-size:11px;color:#64748b;display:block;margin-bottom:4px">GM Floor %</label>
@@ -8385,8 +8382,8 @@ function revenueAdmin(tab) {
         <h3 style="color:#f1f5f9;font-size:14px;margin-bottom:12px">Company Annual Figures</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
           ${fields.map(f => `
-          <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:12px">
-            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:4px">${f.label}</label>
+          <div class="gw-ann-field">
+            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:4px">${f.label}</label>
             <div style="display:flex;align-items:center;gap:6px">
               ${f.unit === '$' ? '<span style="color:#64748b;font-size:13px">$</span>' : ''}
               <input class="rev-editor-input" type="number" id="ann_${f.key}"
@@ -8416,7 +8413,7 @@ function revenueAdmin(tab) {
     const fileList = pnlFiles.length === 0
       ? '<p style="color:#64748b;font-size:13px">No files uploaded yet. Upload a monthly P&L CSV or PDF below.</p>'
       : pnlFiles.map(f => `
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;margin-bottom:8px">
+        <div class="gw-pnl-file-row">
           <span style="font-size:20px">${f.type === 'csv' ? 'CSV' : 'DOC'}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.name)}</div>
@@ -8432,31 +8429,31 @@ function revenueAdmin(tab) {
     return `
       <p class="lede" style="margin-bottom:16px">Upload monthly P&L statements or financial reports. CSV files can be auto-imported into division actuals.</p>
 
-      <div class="card" style="background:#0a0f1a;border:2px dashed #1e4d6b;border-radius:14px;padding:24px;text-align:center;margin-bottom:20px">
+      <div class="gw-upload-zone">
         
         <div style="color:#e2e8f0;font-weight:600;margin-bottom:4px">Upload P&L File</div>
         <div style="color:#64748b;font-size:12px;margin-bottom:16px">CSV (auto-parsed) or PDF (stored as attachment) · Max 5MB</div>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:14px">
           <div>
-            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:4px">Period Label</label>
-            <input id="pnl_period" placeholder="e.g. June 2026" style="padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:13px;width:160px">
+            <label class="gw-label">Period Label</label>
+            <input id="pnl_period" placeholder="e.g. June 2026" class="gw-input-sm" style="width:160px">
           </div>
         </div>
         <label style="cursor:pointer;display:inline-block">
           <input type="file" id="pnlFileInput" accept=".csv,.pdf" style="display:none" onchange="pnlHandleUpload(this)">
-          <span style="display:inline-block;padding:10px 24px;background:#1e4d6b;border:1px solid #22d3ee;border-radius:8px;color:#22d3ee;font-weight:600;font-size:13px">Choose File</span>
+          <span class="gw-upload-choose">Choose File</span>
         </label>
       </div>
 
       <div style="margin-bottom:20px">
-        <h3 style="color:#f1f5f9;font-size:14px;margin-bottom:12px">Uploaded Files (${pnlFiles.length})</h3>
+        <h3 class="gw-section-label" style="font-size:14px;margin-bottom:12px">Uploaded Files (${pnlFiles.length})</h3>
         ${fileList}
       </div>
 
-      <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:16px">
-        <h3 style="color:#f1f5f9;font-size:13px;margin-top:0;margin-bottom:8px">CSV Import Format</h3>
+      <div class="gw-ann-field">
+        <h3 style="font-size:13px;margin-top:0;margin-bottom:8px">CSV Import Format</h3>
         <p style="color:#64748b;font-size:12px;margin:0 0 8px">For auto-import to work, your CSV should include these columns:</p>
-        <code style="display:block;background:#0a0f1a;padding:10px 12px;border-radius:6px;color:#22d3ee;font-size:11px;line-height:1.6">
+        <code class="gw-code-block">
           Month, Division, Revenue, COGS<br>
           Jan, Landscape, 25000, 14500<br>
           Jan, Maintenance, 40000, 28400<br>
@@ -8884,7 +8881,7 @@ async function superAdmin() {
   };
 
   const companyRows = companies.map(co => `
-    <tr style="border-bottom:1px solid #1e293b">
+    <tr class="gw-table-row">
       <td style="padding:14px 12px">
         <div style="font-weight:700;color:#e2e8f0;margin-bottom:2px">${co.name || '—'}</div>
         <div style="font-size:11px;color:#475569">${co.slug || ''}</div>
@@ -8915,7 +8912,7 @@ async function superAdmin() {
         <h1 style="font-size:28px;font-weight:800;color:#e2e8f0;margin:0 0 4px">🛡 Platform Admin</h1>
         <p style="color:#64748b;margin:0;font-size:14px">Groundwork CRM · All tenants · Super-admin view</p>
       </div>
-      <button onclick="superAdmin()" style="padding:8px 18px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#94a3b8;font-size:13px;cursor:pointer">↺ Refresh</button>
+      <button onclick="superAdmin()" class="gw-admin-btn" style="padding:8px 18px">↺ Refresh</button>
     </div>
 
     <!-- Stat Cards -->
@@ -8927,7 +8924,7 @@ async function superAdmin() {
         { label:'Opportunities',  value: fmt(stats.opportunities),     icon:'📊', color:'#f59e0b' },
         { label:'Notes',          value: fmt(stats.notes),             icon:'📝', color:'#a78bfa' },
       ].map(s => `
-        <div style="background:#0f172a;border:1px solid ${s.color}22;border-radius:16px;padding:20px 18px">
+        <div class="gw-div-tile" style="border-color:${s.color}44">
           <div style="font-size:24px;margin-bottom:8px">${s.icon}</div>
           <div style="font-size:28px;font-weight:800;color:${s.color};margin-bottom:4px">${s.value}</div>
           <div style="font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em">${s.label}</div>
@@ -8936,15 +8933,15 @@ async function superAdmin() {
     </div>
 
     <!-- Companies Table -->
-    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;overflow:hidden">
-      <div style="padding:20px 20px 16px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between">
+    <div class="gw-admin-panel" style="border-radius:16px">
+      <div class="gw-admin-panel-header" style="padding:20px 20px 16px">
         <h2 style="font-size:16px;font-weight:700;color:#e2e8f0;margin:0">All Companies (${companies.length})</h2>
         <a href="/onboard" target="_blank" style="padding:7px 16px;background:#00d4ff22;border:1px solid #00d4ff44;border-radius:8px;color:#00d4ff;font-size:12px;font-weight:700;text-decoration:none">+ New Company</a>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
-            <tr style="background:#0a0f1a;border-bottom:1px solid #1e293b">
+            <tr>
               <th style="padding:12px;text-align:left;color:#475569;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em">Company</th>
               <th style="padding:12px;text-align:center;color:#475569;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em">Plan</th>
               <th style="padding:12px;text-align:center;color:#475569;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em">Status</th>
@@ -8962,7 +8959,7 @@ async function superAdmin() {
     </div>
 
     <!-- Quick Actions -->
-    <div style="margin-top:24px;padding:20px;background:#0f172a;border:1px solid #1e293b;border-radius:16px">
+    <div class="gw-admin-panel" style="margin-top:24px;padding:20px;border-radius:16px">
       <h3 style="font-size:14px;font-weight:700;color:#94a3b8;margin:0 0 14px;text-transform:uppercase;letter-spacing:.05em">Quick Actions</h3>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <a href="/onboard" target="_blank"
@@ -8970,24 +8967,24 @@ async function superAdmin() {
           🏢 New Company Onboarding
         </a>
         <button onclick="superAdmin()"
-          style="padding:10px 20px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#94a3b8;font-size:13px;font-weight:700;cursor:pointer">
+          class="gw-admin-btn" style="padding:10px 20px">
           ↺ Reload Data
         </button>
       </div>
     </div>
 
     <!-- Impersonate confirm overlay -->
-    <div id="saImpersonateOverlay" style="display:none;position:fixed;inset:0;background:#00000099;z-index:9999;align-items:center;justify-content:center">
-      <div style="background:#0f172a;border:1px solid #334155;border-radius:20px;padding:32px;width:min(420px,90vw)">
+    <div id="saImpersonateOverlay" class="gw-modal-overlay" style="display:none">
+      <div class="gw-modal-card" style="border-radius:20px">
         <h2 style="color:#e2e8f0;margin:0 0 8px;font-size:20px;font-weight:800">Impersonate Company</h2>
         <p id="saImpersonateMsg" style="color:#94a3b8;margin:0 0 24px;font-size:14px"></p>
         <div style="display:flex;gap:12px">
           <button id="saImpersonateConfirmBtn"
-            style="flex:1;padding:12px;background:#f59e0b;border:none;border-radius:10px;color:#0a0f1a;font-size:14px;font-weight:800;cursor:pointer">
+            style="flex:1;padding:12px;background:#f59e0b;border:none;border-radius:10px;color:#1a1a1a;font-size:14px;font-weight:800;cursor:pointer">
             Confirm Impersonate
           </button>
           <button onclick="document.getElementById('saImpersonateOverlay').style.display='none'"
-            style="padding:12px 20px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#94a3b8;font-size:14px;cursor:pointer">
+            class="gw-admin-btn" style="padding:12px 20px">
             Cancel
           </button>
         </div>

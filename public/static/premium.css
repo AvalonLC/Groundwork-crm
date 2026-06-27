@@ -4004,3 +4004,613 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 /* ────────────────────────────────────────────────────── */
 /* END Groundwork Sprint 3 Theme                          */
 /* ────────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════ */
+/* Groundwork Sprint 5 — JS Token Adoption Classes        */
+/* Replaces all hardcoded #0f172a dark inline styles      */
+/* ═══════════════════════════════════════════════════════ */
+
+/* ── KPI Banner (manager() top strip) ─────────────────── */
+.gw-kpi-banner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 20px;
+}
+.gw-kpi-banner-cell { text-align: center; }
+.gw-kpi-banner-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gw-muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.gw-kpi-banner-val {
+  font-size: 1.9rem;
+  font-weight: 900;
+  color: var(--gw-ink);
+  line-height: 1.1;
+}
+.gw-kpi-banner-sub { font-size: 10px; color: var(--gw-muted); }
+
+/* ── Division Tile (divTile helper) ────────────────────── */
+.gw-div-tile {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.gw-div-tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--gw-pine), var(--gw-emerald));
+}
+.gw-div-tile.above-plan {
+  border-color: var(--gw-emerald);
+}
+.gw-div-tile-meta {
+  font-size: 10px;
+  color: var(--gw-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.gw-div-tile-val {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--gw-ink);
+}
+.gw-div-tile-remaining {
+  font-size: 11px;
+  color: var(--gw-muted);
+  margin-top: 6px;
+}
+.gw-div-tile-over {
+  font-size: 11px;
+  color: var(--gw-emerald);
+  margin-top: 6px;
+  font-weight: 700;
+}
+
+/* ── Progress Bar (pbar helper) ────────────────────────── */
+.gw-pbar-track {
+  height: 6px;
+  background: var(--gw-line);
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.gw-pbar-fill {
+  height: 6px;
+  border-radius: 4px;
+  transition: width .5s;
+  background: linear-gradient(90deg, var(--gw-pine), var(--gw-emerald));
+}
+.gw-pbar-fill.warn  { background: #f59e0b; }
+.gw-pbar-fill.alert { background: #ef4444; }
+.gw-pbar-pct {
+  font-size: 10px;
+  color: var(--gw-muted);
+  margin-top: 3px;
+}
+
+/* ── Data Tables (all manager/revenue tables) ──────────── */
+.gw-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.gw-data-table thead tr {
+  background: var(--gw-surface-2);
+}
+.gw-data-table th {
+  padding: 8px 10px;
+  color: var(--gw-muted);
+  border-bottom: 1px solid var(--gw-line);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.gw-data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--gw-surface-2);
+  color: var(--gw-ink);
+}
+.gw-data-table tbody tr:hover {
+  background: var(--gw-surface-2);
+}
+.gw-data-table tfoot tr {
+  background: var(--gw-surface-2);
+  font-weight: 700;
+  border-top: 2px solid var(--gw-line);
+}
+.gw-data-table tfoot td { color: var(--gw-ink); }
+.gw-data-table .right { text-align: right; }
+.gw-data-table .center { text-align: center; }
+
+/* ── Admin Panel Card (settings/comm panels) ───────────── */
+.gw-admin-panel {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.gw-admin-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--gw-line);
+  background: var(--gw-surface-2);
+}
+.gw-admin-panel-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--gw-ink);
+}
+.gw-admin-panel-sub {
+  font-size: 11px;
+  color: var(--gw-muted);
+  margin-top: 2px;
+}
+.gw-admin-panel-body { padding: 16px 18px; }
+
+/* ── Select / Input (form controls in manager/comm) ─────── */
+.gw-select {
+  padding: 5px 10px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 8px;
+  color: var(--gw-ink);
+  font-size: 11px;
+  font-family: inherit;
+}
+.gw-select:focus {
+  outline: none;
+  border-color: var(--gw-pine);
+  box-shadow: 0 0 0 3px rgba(30,70,56,.1);
+}
+.gw-input-sm {
+  padding: 4px 6px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 6px;
+  color: var(--gw-ink);
+  font-size: 12px;
+  text-align: center;
+  font-family: inherit;
+}
+.gw-input-sm:focus {
+  outline: none;
+  border-color: var(--gw-pine);
+}
+
+/* ── Aging Bucket Tile ─────────────────────────────────── */
+.gw-aging-bucket {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-md);
+  padding: 14px;
+  text-align: center;
+}
+.gw-aging-bucket-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gw-muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 6px;
+}
+.gw-aging-bucket-count {
+  font-size: 22px;
+  font-weight: 800;
+}
+.gw-aging-bucket-sub {
+  font-size: 12px;
+  color: var(--gw-muted);
+  margin-top: 2px;
+}
+
+/* ── Revenue Admin Banner ──────────────────────────────── */
+.gw-rev-banner {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 18px;
+  margin-bottom: 20px;
+}
+.gw-rev-banner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+.gw-rev-banner-cell { text-align: center; }
+
+/* ── Tab Nav (revenueAdmin tab pills) ──────────────────── */
+.gw-tab-nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.gw-tab-pill {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--gw-line);
+  background: var(--gw-surface-2);
+  color: var(--gw-muted);
+  transition: all .15s;
+}
+.gw-tab-pill:hover {
+  border-color: var(--gw-pine-muted);
+  color: var(--gw-pine);
+}
+.gw-tab-pill.active {
+  background: var(--gw-pine);
+  border-color: var(--gw-pine);
+  color: #fff;
+}
+
+/* ── Division Section Header (revenueAdmin div entry) ──── */
+.gw-div-section {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.gw-div-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gw-line);
+  background: var(--gw-surface-2);
+}
+
+/* ── Annual Field Card (annuals tab) ───────────────────── */
+.gw-ann-field {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-md);
+  padding: 12px;
+}
+
+/* ── P&L Upload Zone ───────────────────────────────────── */
+.gw-upload-zone {
+  background: var(--gw-surface);
+  border: 2px dashed var(--gw-pine-muted);
+  border-radius: var(--gw-r-lg);
+  padding: 24px;
+  text-align: center;
+  margin-bottom: 20px;
+  transition: border-color .15s;
+}
+.gw-upload-zone:hover { border-color: var(--gw-pine); }
+.gw-upload-choose {
+  display: inline-block;
+  padding: 10px 24px;
+  background: var(--gw-pine);
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.gw-upload-choose:hover { background: var(--gw-pine-light); }
+
+/* ── P&L File Row ──────────────────────────────────────── */
+.gw-pnl-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-md);
+  margin-bottom: 8px;
+}
+
+/* ── Commission Panel ──────────────────────────────────── */
+.gw-comm-panel {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  overflow: hidden;
+}
+.gw-comm-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--gw-surface-2);
+  border-bottom: 1px solid var(--gw-line);
+}
+.gw-comm-tools {
+  margin-top: 16px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  padding: 16px 18px;
+}
+
+/* ── Audit Trail ───────────────────────────────────────── */
+.gw-audit-panel {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  overflow: hidden;
+}
+.gw-audit-entry {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gw-surface-2);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.gw-audit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+/* ── Audit Diff Modal ──────────────────────────────────── */
+.gw-diff-modal-box {
+  background: var(--gw-surface);
+  border-radius: var(--gw-r-xl);
+  padding: 24px;
+  width: min(700px, 95vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  border: 1px solid var(--gw-line);
+}
+.gw-diff-pre {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 10px;
+  color: var(--gw-muted);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+/* ── Feature Flag Panel ────────────────────────────────── */
+.gw-flag-panel {
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 4px;
+}
+.gw-flag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--gw-line);
+}
+
+/* ── Simulator Panel (Commission) ──────────────────────── */
+.gw-sim-panel {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-lg);
+  overflow: hidden;
+}
+.gw-sim-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--gw-surface-2);
+  border-bottom: 1px solid var(--gw-line);
+}
+.gw-sim-body {
+  padding: 16px 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.gw-sim-result {
+  margin: 0 18px 16px;
+  padding: 14px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-md);
+  min-height: 60px;
+  font-size: 13px;
+  color: var(--gw-muted);
+}
+
+/* ── Confirm Modal (new-lead / delete modals) ──────────── */
+.gw-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gw-modal-card {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-r-xl);
+  padding: 28px;
+  width: min(420px, 90vw);
+  box-shadow: var(--gw-shadow-lg);
+}
+
+/* ── Code/PRE blocks ───────────────────────────────────── */
+.gw-code-block {
+  display: block;
+  background: var(--gw-surface-2);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--gw-pine);
+  font-size: 11px;
+  line-height: 1.6;
+  font-family: 'Courier New', monospace;
+}
+
+/* ── Academy Practice Challenge (GW token override) ─────── */
+.acad-practice-challenge {
+  background: linear-gradient(135deg, var(--gw-pine-deep) 0%, var(--gw-pine) 100%);
+  border-radius: 16px;
+  padding: 24px 28px;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(30,70,56,.18);
+}
+
+/* ── Acad Practice icon area ───────────────────────────── */
+.acad-practice-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.2));
+}
+
+/* ── Export format buttons (CSV / XLSX / PDF picker) ──── */
+.gw-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--gw-ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  width: 100%;
+  transition: border-color .15s;
+}
+.gw-export-btn:hover { border-color: var(--gw-pine); }
+
+/* ── Comm panel — layout helpers ──────────────────────── */
+.gw-comm-panel {
+  /* Override: use padding instead of overflow:hidden so inputs aren't clipped */
+  padding: 20px;
+}
+.gw-comm-tools {
+  /* flex layout for admin controls strip */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.gw-comm-tools-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gw-ink);
+  margin-bottom: 12px;
+}
+.gw-admin-btn {
+  background: var(--gw-surface-3);
+  border: 1px solid var(--gw-line);
+  color: var(--gw-ink);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.gw-admin-btn:hover { background: var(--gw-pine-light); color: #fff; border-color: var(--gw-pine-light); }
+.gw-tool-result {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--gw-muted);
+}
+
+/* ── Audit panel header ────────────────────────────────── */
+.gw-audit-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--gw-line);
+}
+
+/* ── Ghost / outline buttons ───────────────────────────── */
+.gw-ghost-btn {
+  font-size: 10px;
+  color: var(--gw-muted);
+  background: var(--gw-surface-2);
+  border: 1px solid var(--gw-line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color .15s;
+}
+.gw-ghost-btn:hover { color: var(--gw-ink); }
+
+/* ── Primary action button (GW pine) ──────────────────── */
+.gw-btn-primary {
+  background: var(--gw-pine);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+.gw-btn-primary:hover { background: var(--gw-pine-light); }
+
+/* ── Danger ghost button (destructive action outline) ──── */
+.gw-btn-danger-ghost {
+  background: transparent;
+  border: 1px solid #f87171;
+  color: #f87171;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.gw-btn-danger-ghost:hover { background: rgba(248,113,113,.08); }
+
+/* ── Table row separator ───────────────────────────────── */
+.gw-table-row {
+  border-bottom: 1px solid var(--gw-line);
+}
+
+/* ── Form label (small, muted) ─────────────────────────── */
+.gw-label {
+  font-size: 11px;
+  color: var(--gw-muted);
+}
+
+/* ── Section heading label ─────────────────────────────── */
+.gw-section-label {
+  color: var(--gw-ink);
+}
+
+/* ────────────────────────────────────────────────────── */
+/* END Sprint 5 JS Token Adoption Classes                 */
+/* ────────────────────────────────────────────────────── */
