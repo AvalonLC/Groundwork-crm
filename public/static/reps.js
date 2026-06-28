@@ -911,22 +911,22 @@ function renderRepDashboard(viewEl, rep) {
   <div class="gw-rep-tile-earned">
     <div style="font-size:11px;font-weight:700;color:#B8DEC9;letter-spacing:.06em;text-transform:uppercase">Commissions Earned</div>
     <div style="font-size:28px;font-weight:800;color:#2D7A55;margin-top:8px">${fmtCurrency(totalEarned)}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:4px">Collected & confirmed</div>
+    <div style="font-size:11px;color:#B8DEC9;margin-top:4px">Collected & confirmed</div>
   </div>
   <div class="gw-rep-tile-pending">
     <div style="font-size:11px;font-weight:700;color:#F5E8C0;letter-spacing:.06em;text-transform:uppercase">Pending Collection</div>
     <div style="font-size:28px;font-weight:800;color:#8B6914;margin-top:8px">${fmtCurrency(pendingCollection)}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:4px">Sold, awaiting payment</div>
+    <div style="font-size:11px;color:#F5E8C0;margin-top:4px">Sold, awaiting payment</div>
   </div>
   <div class="gw-rep-tile">
-    <div style="font-size:11px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">Open Opportunities</div>
-    <div style="font-size:28px;font-weight:800;color:#E8E4D9;margin-top:8px">${open.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:4px">${overdue.length > 0 ? `<span style="color:#C97B6A">${overdue.length} overdue</span>` : 'All current'}</div>
+    <div style="font-size:11px;font-weight:700;color:var(--gw-muted);letter-spacing:.06em;text-transform:uppercase">Open Opportunities</div>
+    <div style="font-size:28px;font-weight:800;color:var(--gw-ink);margin-top:8px">${open.length}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:4px">${overdue.length > 0 ? `<span style="color:#8B3A2A">${overdue.length} overdue</span>` : 'All current'}</div>
   </div>
   <div class="gw-rep-tile">
-    <div style="font-size:11px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">Sold This Year</div>
-    <div style="font-size:28px;font-weight:800;color:#E8E4D9;margin-top:8px">${sold.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:4px">${fmtCurrency(sold.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0))} total value</div>
+    <div style="font-size:11px;font-weight:700;color:var(--gw-muted);letter-spacing:.06em;text-transform:uppercase">Sold This Year</div>
+    <div style="font-size:28px;font-weight:800;color:var(--gw-ink);margin-top:8px">${sold.length}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:4px">${fmtCurrency(sold.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0))} total value</div>
   </div>
 </div>
 
@@ -963,13 +963,13 @@ function renderRepDashboard(viewEl, rep) {
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
         <tr class="gw-table-row">
-          <th style="text-align:left;padding:8px 12px;color:#6F7E6A;font-weight:600">Client</th>
-          <th style="text-align:left;padding:8px 12px;color:#6F7E6A;font-weight:600">Type</th>
-          <th style="text-align:left;padding:8px 12px;color:#6F7E6A;font-weight:600">Lead Source</th>
-          <th style="text-align:right;padding:8px 12px;color:#6F7E6A;font-weight:600">Job Value</th>
-          <th style="text-align:right;padding:8px 12px;color:#6F7E6A;font-weight:600">Rate</th>
-          <th style="text-align:right;padding:8px 12px;color:#6F7E6A;font-weight:600">Commission</th>
-          <th style="text-align:center;padding:8px 12px;color:#6F7E6A;font-weight:600">Status</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gw-muted);font-weight:600">Client</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gw-muted);font-weight:600">Type</th>
+          <th style="text-align:left;padding:8px 12px;color:var(--gw-muted);font-weight:600">Lead Source</th>
+          <th style="text-align:right;padding:8px 12px;color:var(--gw-muted);font-weight:600">Job Value</th>
+          <th style="text-align:right;padding:8px 12px;color:var(--gw-muted);font-weight:600">Rate</th>
+          <th style="text-align:right;padding:8px 12px;color:var(--gw-muted);font-weight:600">Commission</th>
+          <th style="text-align:center;padding:8px 12px;color:var(--gw-muted);font-weight:600">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -1314,44 +1314,44 @@ function renderOMDashboard(viewEl, rep) {
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View all open opportunities"
     style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
-    <div style="font-size:10px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">Open Opps</div>
-    <div style="font-size:26px;font-weight:800;color:#E8E4D9;margin-top:6px">${open.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:2px">Active pipeline</div>
+    <div style="font-size:10px;font-weight:700;color:var(--gw-muted);letter-spacing:.06em;text-transform:uppercase">Open Opps</div>
+    <div style="font-size:26px;font-weight:800;color:var(--gw-ink);margin-top:6px">${open.length}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Active pipeline</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View overdue follow-ups"
     style="background:${overdue.length > 0 ? 'linear-gradient(135deg,#1F2A2B,#1F2A2B)' : '#1F2A2B'};border:1px solid ${overdue.length > 0 ? '#5C2318' : '#1F2A2B'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-    <div style="font-size:10px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">Overdue</div>
-    <div style="font-size:26px;font-weight:800;color:${overdue.length > 0 ? '#C97B6A' : '#2D7A55'};margin-top:6px">${overdue.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:2px">Past follow-up date</div>
+    <div style="font-size:10px;font-weight:700;color:#B8DEC9;letter-spacing:.06em;text-transform:uppercase">Overdue</div>
+    <div style="font-size:26px;font-weight:800;color:${overdue.length > 0 ? '#E8A090' : '#4DB87A'};margin-top:6px">${overdue.length}</div>
+    <div style="font-size:11px;color:#B8DEC9;margin-top:2px">Past follow-up date</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View proposals awaiting response"
     style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
-    <div style="font-size:10px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">Proposals Out</div>
-    <div style="font-size:26px;font-weight:800;color:#8B6914;margin-top:6px">${proposals.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:2px">Awaiting response</div>
+    <div style="font-size:10px;font-weight:700;color:var(--gw-muted);letter-spacing:.06em;text-transform:uppercase">Proposals Out</div>
+    <div style="font-size:26px;font-weight:800;color:#6B4D0A;margin-top:6px">${proposals.length}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Awaiting response</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View new leads not yet contacted"
     style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
-    <div style="font-size:10px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">New Leads</div>
-    <div style="font-size:26px;font-weight:800;color:#4D8A86;margin-top:6px">${newLeads.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:2px">Not yet contacted</div>
+    <div style="font-size:10px;font-weight:700;color:var(--gw-muted);letter-spacing:.06em;text-transform:uppercase">New Leads</div>
+    <div style="font-size:26px;font-weight:800;color:#3A726E;margin-top:6px">${newLeads.length}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Not yet contacted</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View unassigned leads"
     style="background:var(--gw-surface-2);border:1px solid ${unassigned.length > 0 ? '#8B691460' : 'var(--gw-line)'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
-    <div style="font-size:10px;font-weight:700;color:#6F7E6A;letter-spacing:.06em;text-transform:uppercase">Unassigned</div>
-    <div style="font-size:26px;font-weight:800;color:${unassigned.length > 0 ? '#8B6914' : '#2D7A55'};margin-top:6px">${unassigned.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:2px">No rep assigned</div>
+    <div style="font-size:10px;font-weight:700;color:var(--gw-muted);letter-spacing:.06em;text-transform:uppercase">Unassigned</div>
+    <div style="font-size:26px;font-weight:800;color:${unassigned.length > 0 ? '#6B4D0A' : '#2D7A55'};margin-top:6px">${unassigned.length}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">No rep assigned</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View sold opportunities"
     style="background:linear-gradient(135deg,#1F2A2B,#1F2A2B);border:1px solid #2D7A55;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
     <div style="font-size:10px;font-weight:700;color:#B8DEC9;letter-spacing:.06em;text-transform:uppercase">Sold</div>
-    <div style="font-size:26px;font-weight:800;color:#2D7A55;margin-top:6px">${sold.length}</div>
-    <div style="font-size:11px;color:#6F7E6A;margin-top:2px">${fmtCurrency(sold.reduce((a,o)=>a+parseFloat(o.jobValue||0),0))}</div>
+    <div style="font-size:26px;font-weight:800;color:#4DB87A;margin-top:6px">${sold.length}</div>
+    <div style="font-size:11px;color:#B8DEC9;margin-top:2px">${fmtCurrency(sold.reduce((a,o)=>a+parseFloat(o.jobValue||0),0))}</div>
   </div>
 </div>
 
@@ -1371,7 +1371,7 @@ function renderOMDashboard(viewEl, rep) {
           onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-2)'">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Unnamed')}</div>
-            <div style="font-size:11px;color:#6F7E6A;margin-top:1px">${escapeHtml(o.status)} · Due ${o.nextFollowUp}</div>
+            <div style="font-size:11px;color:var(--gw-muted);margin-top:1px">${escapeHtml(o.status)} · Due ${o.nextFollowUp}</div>
           </div>
           ${(()=>{ const _r=(window.REPS||[]).find(r=>r.id===o.repId); return _r ? `<span style="font-size:10px;font-weight:600;color:${_r.color||'#6F7E6A'};background:${_r.color||'#6F7E6A'}18;border:1px solid ${_r.color||'#6F7E6A'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${escapeHtml(_r.name)}</span>` : `<span style="font-size:10px;font-weight:600;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">⚠ Unassigned</span>`; })()}
           <span style="font-size:10px;color:#C97B6A;font-weight:700;white-space:nowrap">OVERDUE</span>
@@ -1511,19 +1511,19 @@ function renderAdminDashboard(viewEl) {
     const pct = Math.min(100, Math.round((div.actual / div.target) * 100));
     const barColor = pct >= 100 ? '#2D7A55' : pct >= 70 ? '#8B6914' : '#C97B6A';
     const divIconSvg = DIV_SVG_ICONS[key] || '';
-    return `<div style="background:var(--gw-surface-2);border:1px solid ${abovePlan ? '#2D7A55' : 'var(--gw-line)'};border-radius:12px;padding:16px">
+    return `<div style="background:var(--gw-surface);border:1.5px solid ${abovePlan ? '#2D7A55' : 'var(--gw-line)'};border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(31,42,43,.06)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">${divIconSvg} ${div.name}</div>
-        ${abovePlan ? '<span style="background:#2D7A55;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px">ABOVE PLAN</span>' : ''}
+        <div style="font-weight:700;font-size:14px;color:var(--gw-ink);display:flex;align-items:center;gap:8px">${divIconSvg} ${div.name}</div>
+        ${abovePlan ? '<span style="background:#2D7A55;color:#fff;font-size:9px;font-weight:700;border-radius:20px;padding:2px 7px;letter-spacing:.04em">ABOVE PLAN</span>' : ''}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
-        <div><div style="font-size:9px;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Target</div><div style="font-size:1.1rem;font-weight:800;color:#E8E4D9">${fmtM(div.target)}</div></div>
-        <div><div style="font-size:9px;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Actual</div><div style="font-size:1.1rem;font-weight:800;color:${abovePlan ? '#2D7A55' : '#4D8A86'}">${fmtM(div.actual)}</div></div>
-        <div><div style="font-size:9px;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:.95rem;font-weight:700;color:#8B6914">${Math.round(div.grossMarginFloor * 100)}%</div></div>
-        <div><div style="font-size:9px;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:.95rem;font-weight:700;color:${gmOk ? '#2D7A55' : '#C97B6A'}">${Math.round(div.grossMarginPct * 100)}% ${gmOk ? '+' : '!'}</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+        <div><div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.05em">Target</div><div style="font-size:1.1rem;font-weight:800;color:var(--gw-ink)">${fmtM(div.target)}</div></div>
+        <div><div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.05em">Actual</div><div style="font-size:1.1rem;font-weight:800;color:${abovePlan ? '#2D7A55' : '#4D8A86'}">${fmtM(div.actual)}</div></div>
+        <div><div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.05em">GM Floor</div><div style="font-size:.95rem;font-weight:700;color:var(--gw-ink)">${Math.round(div.grossMarginFloor * 100)}%</div></div>
+        <div><div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.05em">Actual GM</div><div style="font-size:.95rem;font-weight:700;color:${gmOk ? '#2D7A55' : '#8B3A2A'}">${Math.round(div.grossMarginPct * 100)}% ${gmOk ? '+' : '!'}</div></div>
       </div>
-      <div style="height:5px;background:var(--gw-line);border-radius:3px"><div style="height:5px;width:${pct}%;background:${barColor};border-radius:3px;transition:width .5s"></div></div>
-      <div style="font-size:10px;color:#6F7E6A;margin-top:4px">${pct}% · ${abovePlan ? '<span style="color:#2D7A55">+' + fmtM(Math.abs(div.remaining)) + ' over</span>' : fmtM(div.remaining) + ' remaining'}</div>
+      <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden"><div style="height:6px;width:${pct}%;background:${barColor};border-radius:3px;transition:width .5s"></div></div>
+      <div style="font-size:11px;font-weight:600;color:var(--gw-muted);margin-top:5px">${pct}% of target · ${abovePlan ? '<span style="color:#2D7A55;font-weight:700">+' + fmtM(Math.abs(div.remaining)) + ' over plan</span>' : '<span style="color:var(--gw-ink)">' + fmtM(div.remaining) + ' remaining</span>'}</div>
     </div>`;
   }
 
@@ -1585,13 +1585,13 @@ ${(()=>{
   const rows = takeaways.map(t => `
     <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--gw-line)">
       <span style="font-size:1.1rem;min-width:24px">${t.icon}</span>
-      <p style="margin:0;font-size:13px;color:#E8E4D9;line-height:1.5">${t.text}</p>
+      <p style="margin:0;font-size:13px;color:var(--gw-ink);line-height:1.5">${t.text}</p>
     </div>`).join('');
 
   return `<div class="gw-sky-card" style="border-radius:14px;margin-bottom:20px;overflow:hidden">
     <div class="gw-sky-card-header" style="display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#4D8A86">Executive Summary</span>
-      <span style="font-size:11px;color:#6F7E6A">Key takeaways as of today</span>
+      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#204A43">Executive Summary</span>
+      <span style="font-size:11px;color:var(--gw-muted)">Key takeaways as of today</span>
     </div>
     ${rows}
   </div>`;
@@ -1599,45 +1599,45 @@ ${(()=>{
 
 <!-- ── SECTION 1: FY2026 REVENUE BANNER ── -->
 <div class="gw-sky-card" style="border-radius:16px;padding:20px;margin-bottom:24px">
-  <div style="font-size:11px;font-weight:700;color:#6F7E6A;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px">FY2026 · ${fy.budgetVersion || 'v2.2'} · As of ${fy.asOfDate || '—'}</div>
+  <div style="font-size:11px;font-weight:700;color:var(--gw-muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px">FY2026 · ${fy.budgetVersion || 'v2.2'} · As of ${fy.asOfDate || '—'}</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
     <div style="text-align:center">
-      <div style="font-size:9px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">Annual Budget</div>
-      <div style="font-size:1.6rem;font-weight:900;color:#E8E4D9">${fmtM(annual.budgetedRevenue)}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Annual Budget</div>
+      <div style="font-size:1.6rem;font-weight:900;color:var(--gw-ink)">${fmtM(annual.budgetedRevenue)}</div>
     </div>
     <div style="text-align:center">
-      <div style="font-size:9px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">Actual Revenue</div>
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Actual Revenue</div>
       <div style="font-size:1.6rem;font-weight:900;color:#4D8A86">${fmtM(annual.actualRevenue)}</div>
     </div>
     <div style="text-align:center">
-      <div style="font-size:9px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">Remaining</div>
-      <div style="font-size:1.6rem;font-weight:900;color:#C97B6A">${fmtM(annual.remaining)}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Remaining</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#8B3A2A">${fmtM(annual.remaining)}</div>
     </div>
     <div style="text-align:center">
-      <div style="font-size:9px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">Needed / Mo</div>
-      <div style="font-size:1.6rem;font-weight:900;color:#8B6914">${fmtM(annual.avgNeededPerMonth)}</div>
-      <div style="font-size:9px;color:#6F7E6A">${annual.monthsLeft != null ? annual.monthsLeft : 7} months left (dynamic)</div>
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Needed / Mo</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#1F2A2B">${fmtM(annual.avgNeededPerMonth)}</div>
+      <div style="font-size:11px;color:var(--gw-muted)">${annual.monthsLeft != null ? annual.monthsLeft : 7} months left (dynamic)</div>
     </div>
     <div style="text-align:center">
-      <div style="font-size:9px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">Operating GM</div>
-      <div style="font-size:1.6rem;font-weight:900;color:#4D8A86">${annual.grossMarginPct ? Math.round(annual.grossMarginPct * 100) + '%' : '—'}</div>
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Operating GM</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#204A43">${annual.grossMarginPct ? Math.round(annual.grossMarginPct * 100) + '%' : '—'}</div>
     </div>
     <div style="text-align:center">
-      <div style="font-size:9px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">True Net Income</div>
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">True Net Income</div>
       <div style="font-size:1.3rem;font-weight:900;color:#2D7A55">${fmtM(annual.trueNetIncome)}</div>
-      <div style="font-size:9px;color:#6F7E6A">after ${fmtM(annual.loanMonthly)}/mo loans</div>
+      <div style="font-size:11px;color:var(--gw-muted)">after ${fmtM(annual.loanMonthly)}/mo loans</div>
     </div>
   </div>
   <!-- YTD progress bar -->
   <div style="margin-top:16px">
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:#6F7E6A;margin-bottom:4px">
+    <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;color:var(--gw-muted);margin-bottom:4px">
       <span>YTD Progress to Budget</span>
       <span style="color:${ytdVariance >= 0 ? '#2D7A55' : '#C97B6A'}">${ytdVariance >= 0 ? '+' : ''}${fmtM(ytdVariance)} vs budget</span>
     </div>
     <div style="height:8px;background:var(--gw-line);border-radius:4px">
       <div style="height:8px;width:${Math.min(100, Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100))}%;background:linear-gradient(90deg,#4D8A86,#2D7A55);border-radius:4px;transition:width .5s"></div>
     </div>
-    <div style="font-size:10px;color:#6F7E6A;margin-top:3px">${Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100)}% of annual budget · ${fy.asOfDate || ''}</div>
+    <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${Math.round(((annual.actualRevenue||0)/(annual.budgetedRevenue||1))*100)}% of annual budget · ${fy.asOfDate || ''}</div>
   </div>
 </div>
 

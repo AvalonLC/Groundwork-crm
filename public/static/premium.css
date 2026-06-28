@@ -4016,16 +4016,17 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
   gap: 12px;
   margin-bottom: 28px;
-  background: var(--gw-surface-2);
+  background: var(--gw-surface);   /* white card — clear contrast for all text */
   border: 1px solid var(--gw-line);
   border-radius: var(--gw-r-lg);
   padding: 20px;
+  box-shadow: var(--gw-shadow-sm);
 }
 .gw-kpi-banner-cell { text-align: center; }
 .gw-kpi-banner-label {
-  font-size: 10px;
+  font-size: 11px;        /* bumped from 10px — more legible */
   font-weight: 700;
-  color: var(--gw-muted);
+  color: var(--gw-muted); /* now #4A5947 — sufficient contrast on white */
   text-transform: uppercase;
   letter-spacing: .07em;
 }
@@ -4035,7 +4036,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   color: var(--gw-ink);
   line-height: 1.1;
 }
-.gw-kpi-banner-sub { font-size: 10px; color: var(--gw-muted); }
+.gw-kpi-banner-sub { font-size: 11px; color: var(--gw-muted); margin-top: 2px; }
 
 /* ── Division Tile (divTile helper) ────────────────────── */
 .gw-div-tile {
@@ -5081,20 +5082,20 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   --gw-sky-soft:     #E5F0EF;   /* teal tint                               */
 
   /* Text */
-  --gw-ink:          #1F2A2B;   /* Dark Text                               */
+  --gw-ink:          #1F2A2B;   /* Dark Text — primary                     */
   --gw-ink-2:        #2D3E3F;   /* secondary text                          */
-  --gw-muted:        #6F7E6A;   /* Secondary / muted                       */
-  --gw-subtle:       #6F7E6A;   /* placeholder / disabled                  */
+  --gw-muted:        #4A5947;   /* Muted — boosted for legibility on cream */
+  --gw-subtle:       #6F7E6A;   /* placeholder / truly disabled only       */
 
   /* Surfaces */
   --gw-bg:           #EDEAE0;   /* Warm cream — distinctly warm page bg    */
   --gw-surface:      #FDFCF9;   /* card / panel — off-white warm           */
-  --gw-surface-2:    #E8E4D9;   /* secondary surface / alt row             */
-  --gw-surface-3:    #D6D1C4;   /* tertiary / hover                        */
+  --gw-surface-2:    #F0EDE4;   /* secondary surface — lighter, less clash */
+  --gw-surface-3:    #E4E0D6;   /* tertiary / hover                        */
 
   /* Borders */
-  --gw-line:         #D6D1C4;   /* Soft Neutral border — more visible      */
-  --gw-line-strong:  #D6D1C4;   /* stronger divider                        */
+  --gw-line:         #C8C3B6;   /* Stronger border — clearly visible       */
+  --gw-line-strong:  #B4AFA3;   /* stronger divider                        */
 
   /* Shadows — richer, warmer depth */
   --gw-shadow-xs:  0 1px 3px rgba(31,42,43,.08), 0 1px 2px rgba(31,42,43,.05);
@@ -5597,7 +5598,7 @@ h3 { font-size: 15px; letter-spacing: -.015em; margin: 0 0 8px; font-weight: 700
 .secondary-btn {
   background: var(--gw-surface);
   color: var(--gw-ink);
-  border: 1px solid var(--gw-line);
+  border: 1.5px solid var(--gw-line-strong);  /* stronger border — readable on cream bg */
   border-radius: 8px;
   padding: 8px 16px;
   font-size: 13px;
@@ -5606,9 +5607,13 @@ h3 { font-size: 15px; letter-spacing: -.015em; margin: 0 0 8px; font-weight: 700
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: background .12s, border-color .12s;
+  transition: background .12s, border-color .12s, box-shadow .12s;
 }
-.secondary-btn:hover { background: var(--gw-surface-2); border-color: var(--gw-line-strong); }
+.secondary-btn:hover {
+  background: var(--gw-surface-2);
+  border-color: var(--gw-pine);
+  box-shadow: 0 2px 8px rgba(32,74,67,.10);
+}
 
 .danger-btn {
   background: #FAE8E4;
@@ -5739,8 +5744,8 @@ input:focus, select:focus, textarea:focus,
 .badge-purple { background: #E8E4D9; color: #204A43; }
 .badge-gray   { background: var(--gw-surface-2); color: var(--gw-muted); }
 
-/* warn-badge / blue badge rewrite */
-.warn-badge { background: #FAF6E8; color: #7A5C10; border: none; }
+/* warn-badge / blue badge rewrite — solid amber bg with white text for legibility */
+.warn-badge { background: #8B6914; color: #FFFFFF; border: none; font-weight: 700; }
 
 /* ── Legacy pill/badge used in various views ─── */
 .pill {
@@ -5965,7 +5970,9 @@ input:focus, select:focus, textarea:focus,
 .stat:after { display: none; }
 .stat span  { display: block; color: var(--gw-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .stat strong { font-size: 32px; letter-spacing: -.05em; color: var(--gw-ink); font-weight: 900; }
-.stat.bad { border-color: #F5D5C8; background: #FAE8E4; }
+.stat.bad { border-color: #E8C4BA; background: #FAE8E4; }
+.stat.bad span   { color: #8B3A2A; }   /* overdue label — readable on pink bg */
+.stat.bad strong { color: #8B3A2A; }   /* overdue count — strong red */
 
 /* ════════════════════════════════════════════════════════════════════════════
    23. ACTIVITY LOG ROWS
@@ -6237,5 +6244,79 @@ code {
   font-size: 12px;
 }
 .gw-input-sm:focus { border-color: var(--gw-pine); outline: none; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   32. CONTRAST FIX PASS — Warm Cream Theme Legibility
+   All elements where text was blending into the cream/white surface.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Checklist progress bar track — was too faint on white card */
+.ld-cl-bar-track { background: var(--gw-line-strong) !important; }
+/* Checklist count text — always dark enough to read */
+.ld-cl-count { color: var(--gw-ink) !important; }
+
+/* Warn-badge text in section-heads needs to pop on cream bg */
+.warn-badge { font-weight: 700 !important; }
+
+/* Secondary buttons on cream page bg — stronger border treatment */
+.pl-page-actions .secondary-btn,
+.section-head .secondary-btn,
+.detail-actions .secondary-btn {
+  border-color: var(--gw-line-strong);
+}
+
+/* neutral-badge (All clear) */
+.neutral-badge {
+  background: var(--gw-surface-2);
+  color: var(--gw-pine);
+  border: 1px solid var(--gw-line-strong);
+  font-weight: 700;
+}
+
+/* Table headers — clearer label text */
+table th { color: var(--gw-muted); }
+
+/* Topbar search input on warm bg */
+#searchInput { color: var(--gw-ink); }
+#searchInput::placeholder { color: var(--gw-subtle); }
+
+/* Owner Dashboard: section headers on gw-sky-card (now white) */
+.gw-sky-card .eyebrow { color: var(--gw-pine); }
+
+/* Overdue badge on stat.bad — stronger red */
+.stat.bad strong { color: #8B3A2A; }
+
+/* KPI banner: ensure Needed/Month amber on white has enough contrast */
+.gw-kpi-banner-val[style*="8B6914"] { color: #6B4D0A !important; }
+
+/* Stat card label text inherits muted which is now #4A5947 — good */
+/* But if any inline styles override, catch them */
+.stat > span[style*="#6F7E6A"] { color: var(--gw-muted) !important; }
+
+/* ── Section 33: app_premium.js dark-card text overrides ───────────────────
+   These catch inline color:#E8E4D9 (cream) text that appears on light panels
+   such as .gw-comm-panel (white surface) and .gw-flag-panel (surface-2).      */
+
+/* Commission Rules Manager title — was cream on white panel */
+.gw-comm-panel [style*="color:#E8E4D9"],
+.gw-comm-panel [style*="color: #E8E4D9"] { color: var(--gw-ink) !important; }
+
+/* Feature Flags panel title — was cream on surface-2 */
+.gw-flag-panel [style*="color:#E8E4D9"],
+.gw-flag-panel [style*="color: #E8E4D9"] { color: var(--gw-ink) !important; }
+
+/* Review Cadence meeting titles — was cream on var(--bg2) row */
+.card [style*="color:#E8E4D9"],
+article [style*="color:#E8E4D9"] { color: var(--gw-ink) !important; }
+
+/* Commission rate table header — was cream on white table */
+.gw-data-table th[style*="color:#E8E4D9"] { color: var(--gw-muted) !important; }
+
+/* Any remaining #6F7E6A inline style on light cards → boosted muted */
+.gw-comm-panel [style*="color:#6F7E6A"],
+.gw-flag-panel [style*="color:#6F7E6A"] { color: var(--gw-muted) !important; }
+
+/* Access restricted modal — was cream text on light modal surface */
+.modal-body [style*="color:#E8E4D9"] { color: var(--gw-ink) !important; }
 
 /* ── END SPRINT 7 ─────────────────────────────────────────────────────────── */
