@@ -2,7 +2,7 @@
  * Groundwork CRM — User & Access Management Module
  *
  * Provides:
- *  - Admin → Users: create/edit/deactivate users, assign roles, reset PINs
+ *  - Admin → Users: create/edit/deactivate users, assign roles, reset passwords
  *  - Admin → Roles & Permissions: role templates + per-view access matrix
  *  - Admin → Users & Workspace: per-user Google OAuth status + Client ID config
  *  - Login audit log (last login, failed attempts)
@@ -97,7 +97,7 @@ function umBootstrapUsersFromReps() {
     role: r.role,
     color: r.color,
     status: 'active',
-    pin: r.pin || '',
+    password: '',   // never expose hash — admin sets a new password when needed
     mustResetPin: false,
     failedLoginCount: 0,
     lastLoginAt: null,
@@ -123,7 +123,6 @@ function umSyncRepsFromUsers(users) {
     const u = activeUsers.find(u => u.id === rep.id);
     if (u) {
       rep.name  = u.displayName || u.name;
-      rep.pin   = u.pin;
       rep.role  = u.role;
       rep.color = u.color;
       rep.title = u.position;
@@ -137,7 +136,6 @@ function umSyncRepsFromUsers(users) {
         name: u.displayName || u.name,
         title: u.position,
         role: u.role,
-        pin: u.pin,
         avatar: '',
         color: u.color,
         base: null,
@@ -446,11 +444,10 @@ function umRenderUsers(container) {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div>
-        <label class="um-label">Login PIN (4 digits) *</label>
-        <input id="um-f-pin" class="um-input" type="text" maxlength="4" pattern="[0-9]{4}"
-          value="${umEscape(u?.pin||'')}" placeholder="1234" inputmode="numeric"
-          oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
-        <div style="font-size:11px;color:#5C6B58;margin-top:4px">Used for quick login. Keep it private.</div>
+        <label class="um-label">Password${isEdit ? '' : ' *'}</label>
+        <input id="um-f-password" class="um-input" type="password"
+          placeholder="${isEdit ? 'Leave blank to keep current' : 'Min 4 characters'}" autocomplete="new-password">
+        <div style="font-size:11px;color:#5C6B58;margin-top:4px">${isEdit ? 'Leave blank to keep the existing password.' : 'User logs in with their email + this password.'}</div>
       </div>
       <div>
         <label class="um-label">Status</label>
@@ -483,7 +480,7 @@ function umRenderUsers(container) {
     <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#6F7E6A">
         <input type="checkbox" id="um-f-reset-pin" ${u?.mustResetPin?'checked':''} style="accent-color:#4D8A86">
-        Require PIN reset on next login
+        Require password reset on next login
       </label>
     </div>
   </div>
@@ -521,14 +518,14 @@ function umRenderUsers(container) {
       const phone   = document.getElementById('um-f-phone')?.value?.trim() || '';
       const pos     = document.getElementById('um-f-position')?.value || 'Sales Rep';
       const role    = document.getElementById('um-f-role')?.value || 'rep';
-      const pin     = document.getElementById('um-f-pin')?.value?.trim() || '';
+      const password = document.getElementById('um-f-password')?.value || '';
       const status  = document.getElementById('um-f-status')?.value || 'active';
       const color   = document.getElementById('um-f-color')?.value || '#2D7A55';
       const notes   = document.getElementById('um-f-notes')?.value?.trim() || '';
       const mustReset = document.getElementById('um-f-reset-pin')?.checked || false;
 
       if (!name) { umToast('Full name is required'); return; }
-      if (!pin || pin.length !== 4) { umToast('PIN must be exactly 4 digits'); return; }
+      if (!existingId && password.length < 4) { umToast('Password must be at least 4 characters'); return; }
 
       const users = umLoadUsers();
       const userId = existingId || umGenId();
@@ -545,7 +542,7 @@ function umRenderUsers(container) {
         role,
         color,
         status,
-        pin,
+        ...(password ? { password } : {}),
         mustResetPin: mustReset,
         failedLoginCount: existingIdx >= 0 ? (users[existingIdx].failedLoginCount || 0) : 0,
         lastLoginAt: existingIdx >= 0 ? users[existingIdx].lastLoginAt : null,
@@ -562,6 +559,21 @@ function umRenderUsers(container) {
 
       umSaveUsers(users);
       umAddAuditEntry({ type: existingId ? 'user_updated' : 'user_created', userId, userName: name, by: window.getCurrentRep?.()?.name || 'Admin' });
+
+      // Persist to D1 so email+password auth works server-side
+      const apiPayload = {
+        name,
+        email,
+        role,
+        color,
+        active: status === 'active' ? 1 : 0,
+        ...(password ? { password } : {})
+      };
+      const apiCall = existingId
+        ? window.API?.reps?.update?.(existingId, apiPayload) || fetch(`/api/reps/${existingId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(apiPayload) })
+        : window.API?.reps?.create?.({ ...apiPayload, id: userId }) || fetch('/api/reps', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...apiPayload, id: userId }) });
+      apiCall.then(r => (r.ok ? null : r.json().then(d => umToast(`Server sync: ${d?.error || 'error'}`)))).catch(() => {});
+
       document.getElementById('um-user-modal')?.remove();
       umToast(existingId ? `${name} updated` : `${name} added`);
       userManagement('users');
@@ -578,6 +590,9 @@ function umRenderUsers(container) {
       u.updatedAt = new Date().toISOString();
       umSaveUsers(users);
       umAddAuditEntry({ type: newStatus === 'inactive' ? 'user_deactivated' : 'user_reactivated', userId, userName: u.name, by: window.getCurrentRep?.()?.name || 'Admin' });
+      // Sync active state to D1
+      fetch(`/api/reps/${userId}`, { method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ active: newStatus === 'active' ? 1 : 0 }) }).catch(() => {});
       document.getElementById('um-user-modal')?.remove();
       umToast(`${u.name} ${newStatus === 'active' ? 'reactivated' : 'deactivated'}`);
       userManagement('users');
@@ -588,16 +603,19 @@ function umRenderUsers(container) {
     const users = umLoadUsers();
     const u = users.find(u => u.id === userId);
     if (!u) return;
-    const newPin = prompt(`Reset PIN for ${u.name}. Enter new 4-digit PIN:`, '');
-    if (!newPin) return;
-    if (!/^\d{4}$/.test(newPin)) { umToast('PIN must be exactly 4 digits (numbers only)'); return; }
-    u.pin = newPin;
+    const newPw = prompt(`Reset password for ${u.name}.\nEnter a new password (min 4 characters):`, '');
+    if (newPw === null) return; // cancelled
+    if (!newPw || newPw.length < 4) { umToast('Password must be at least 4 characters'); return; }
+    u.password = newPw;
     u.mustResetPin = false;
     u.failedLoginCount = 0;
     u.updatedAt = new Date().toISOString();
     umSaveUsers(users);
     umAddAuditEntry({ type: 'pin_reset', userId, userName: u.name, by: window.getCurrentRep?.()?.name || 'Admin' });
-    umToast(`PIN reset for ${u.name}`);
+    // Sync new password to D1
+    fetch(`/api/reps/${userId}`, { method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ password: newPw }) }).catch(() => {});
+    umToast(`Password reset for ${u.name}`);
     userManagement('users');
   };
 }
@@ -621,10 +639,10 @@ function umUserRow(u, gc) {
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:700;color:${role.color};background:${role.color}18;border:1px solid ${role.color}40;border-radius:20px;padding:2px 10px">${role.label}</span>
       ${umStatusPill(u.status)}
-      ${u.mustResetPin ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">⚠ PIN Reset</span>` : ''}
+      ${u.mustResetPin ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">⚠ Pw Reset</span>` : ''}
     </div>
     <div style="display:flex;gap:8px;margin-left:auto">
-      <button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umResetPin('${u.id}')">Reset PIN</button>
+      <button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umResetPin('${u.id}')">Reset Password</button>
       <button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
     </div>
   </div>
@@ -891,7 +909,7 @@ function umRenderAudit(container) {
     user_updated:             { icon:'edit', label:'User Updated',             color:'#4D8A86' },
     user_deactivated:         { icon:'off',  label:'User Deactivated',         color:'#8B3A2A' },
     user_reactivated:         { icon:'on',   label:'User Reactivated',         color:'#2D7A55' },
-    pin_reset:                { icon:'pin',  label:'PIN Reset',                color:'#5E6E6F' },
+    pin_reset:                { icon:'pw',   label:'Password Reset',           color:'#5E6E6F' },
     google_disconnected_by_admin: { icon:'dc', label:'Google Disconnected (Admin)', color:'#8B3A2A' },
     google_connected:         { icon:'gc',   label:'Google Connected',         color:'#2D7A55' }
   };

@@ -538,97 +538,93 @@ function renderLoginScreen() {
   <div style="min-height:100vh;background:linear-gradient(160deg,#1A4740 0%,#113931 45%,#1A4740 100%);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif">
     <div style="width:min(420px,95vw);padding:0 20px">
 
-      <!-- Logo / Brand — GW-003 Temporary Wordmark -->
-      <div style="text-align:center;margin-bottom:40px">
+      <!-- Logo / Brand -->
+      <div style="text-align:center;margin-bottom:36px">
         <div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
           <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:52px;height:52px;object-fit:cover;border-radius:10px;opacity:.95">
         </div>
         <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0;letter-spacing:-.04em">Groundwork</h1>
         <p style="color:rgba(255,255,255,.5);font-size:13px;margin:5px 0 0;font-weight:600;letter-spacing:.06em;text-transform:uppercase">CRM</p>
-        <p style="color:rgba(255,255,255,.38);font-size:13px;margin:12px 0 0">Select your name to continue</p>
+        <p style="color:rgba(255,255,255,.38);font-size:13px;margin:12px 0 0">Sign in to your account</p>
       </div>
 
-      <!-- Rep Cards -->
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:32px" id="repCards">
-        ${REPS.map(rep => `
-        <button onclick="selectRep('${rep.id}')"
-          style="display:flex;align-items:center;gap:16px;padding:14px 18px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;width:100%"
-          onmouseover="this.style.borderColor='rgba(16,185,129,.5)';this.style.background='rgba(255,255,255,.12)'"
-          onmouseout="this.style.borderColor='rgba(255,255,255,.12)';this.style.background='rgba(255,255,255,.07)'">
-          <span style="font-size:16px;font-weight:800;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.22);border-radius:12px;color:#FFFFFF;flex-shrink:0">${rep.name[0]}</span>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:15px;color:#FFFFFF">${rep.name}</div>
-            <div style="font-size:12px;color:rgba(255,255,255,.45);margin-top:2px">${rep.title}</div>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3 11,8 6,13"/></svg>
-        </button>
-        `).join('')}
-      </div>
+      <!-- ── Sign In Form ── -->
+      <div id="loginForm" style="background:rgba(255,255,255,.07);border-radius:18px;padding:28px;border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(8px)">
 
-      <!-- PIN Entry (hidden until rep selected) -->
-      <div id="pinEntry" style="display:none;background:rgba(255,255,255,.07);border-radius:18px;padding:26px;border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(8px)">
-        <div style="text-align:center;margin-bottom:22px">
-          <div id="pinRepName" style="font-size:18px;font-weight:800;color:#FFFFFF"></div>
-          <div style="font-size:13px;color:rgba(255,255,255,.45);margin-top:4px">Enter your PIN</div>
+        <div style="margin-bottom:16px">
+          <label style="display:block;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:7px">Email</label>
+          <input id="loginEmail" type="email" autocomplete="username email" placeholder="you@yourcompany.com"
+            style="width:100%;box-sizing:border-box;padding:13px 14px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.14);border-radius:11px;color:#FFFFFF;font-size:15px;outline:none;font-family:inherit;transition:border-color .15s"
+            onfocus="this.style.borderColor='rgba(77,138,134,.7)'" onblur="this.style.borderColor='rgba(255,255,255,.14)'"
+            onkeydown="if(event.key==='Enter')document.getElementById('loginPassword').focus()">
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px" id="pinDisplay">
-          <div id="pin0" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
-          <div id="pin1" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
-          <div id="pin2" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
-          <div id="pin3" style="height:10px;border-radius:6px;background:rgba(255,255,255,.12)"></div>
+
+        <div style="margin-bottom:20px;position:relative">
+          <label style="display:block;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:7px">Password</label>
+          <input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••"
+            style="width:100%;box-sizing:border-box;padding:13px 44px 13px 14px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.14);border-radius:11px;color:#FFFFFF;font-size:15px;outline:none;font-family:inherit;transition:border-color .15s"
+            onfocus="this.style.borderColor='rgba(77,138,134,.7)'" onblur="this.style.borderColor='rgba(255,255,255,.14)'"
+            onkeydown="if(event.key==='Enter')_doLogin()">
+          <!-- Show/hide toggle -->
+          <button type="button" onclick="_togglePwVis()" tabindex="-1"
+            style="position:absolute;right:12px;bottom:13px;background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;padding:0;line-height:1" title="Show/hide password" id="pwVisBtn">
+            <svg id="eyeIcon" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="10" cy="10" rx="8" ry="5"/>
+              <circle cx="10" cy="10" r="2.5"/>
+            </svg>
+          </button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-          ${[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(k => `
-            <button onclick="pinKey('${k}')"
-              style="padding:18px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#FFFFFF;font-size:20px;font-weight:600;cursor:pointer;${k===''?'visibility:hidden':''};transition:background .12s"
-              onmouseover="this.style.background='rgba(255,255,255,.16)'" onmouseout="this.style.background='rgba(255,255,255,.08)'">
-              ${k}
-            </button>
-          `).join('')}
-        </div>
-        <div id="pinError" style="color:#F5D5C8;font-size:13px;text-align:center;margin-top:12px;display:none">Incorrect PIN — try again</div>
-        <button onclick="backToReps()" style="width:100%;margin-top:16px;padding:11px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:rgba(255,255,255,.55);font-size:14px;cursor:pointer;transition:all .12s"
-          onmouseover="this.style.borderColor='rgba(255,255,255,.3)';this.style.color='rgba(255,255,255,.8)'"
-          onmouseout="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='rgba(255,255,255,.55)'">
-          ← Back
+
+        <button onclick="_doLogin()" id="loginBtn"
+          style="width:100%;padding:14px;background:#2D7A55;border:none;border-radius:11px;color:#fff;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:.01em;transition:opacity .15s">
+          Sign In
         </button>
-        <button onclick="showForgotPin()" style="width:100%;margin-top:8px;padding:8px;background:transparent;border:none;color:rgba(255,255,255,.32);font-size:12px;cursor:pointer;text-decoration:underline;transition:color .12s"
-          onmouseover="this.style.color='rgba(255,255,255,.6)'" onmouseout="this.style.color='rgba(255,255,255,.32)'">
-          Forgot PIN?
+
+        <div id="loginError" style="color:#F5C8C0;font-size:13px;text-align:center;margin-top:14px;display:none"></div>
+
+        <button onclick="_showForgotPassword()"
+          style="display:block;width:100%;margin-top:14px;padding:8px;background:transparent;border:none;color:rgba(255,255,255,.32);font-size:12px;cursor:pointer;text-decoration:underline;transition:color .15s"
+          onmouseover="this.style.color='rgba(255,255,255,.65)'" onmouseout="this.style.color='rgba(255,255,255,.32)'">
+          Forgot password?
         </button>
       </div>
 
-      <!-- Forgot PIN flow (hidden by default) -->
-      <div id="forgotPinPanel" style="display:none;background:rgba(255,255,255,.07);border-radius:18px;padding:26px;border:1px solid rgba(16,185,129,.25);margin-top:16px;backdrop-filter:blur(8px)">
-        <div id="forgotPinStep1">
-          <h3 style="color:#FFFFFF;font-size:16px;font-weight:800;margin:0 0 6px">Reset Your PIN</h3>
-          <p style="color:rgba(255,255,255,.45);font-size:13px;margin:0 0 16px">Enter your email address and we'll send you a 6-digit reset code.</p>
-          <input id="resetEmail" type="email" placeholder="your@email.com"
-            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#FFFFFF;font-size:14px;margin-bottom:12px;outline:none;font-family:inherit">
-          <button onclick="sendResetCode()"
-            style="width:100%;padding:13px;background:#2D7A55;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.01em;transition:background .12s"
-            onmouseover="this.style.background='#2D7A55'" onmouseout="this.style.background='#2D7A55'">
+      <!-- ── Forgot Password flow ── -->
+      <div id="forgotPanel" style="display:none;background:rgba(255,255,255,.07);border-radius:18px;padding:28px;border:1px solid rgba(16,185,129,.22);backdrop-filter:blur(8px)">
+
+        <!-- Step 1: enter email -->
+        <div id="fgStep1">
+          <h3 style="color:#FFFFFF;font-size:16px;font-weight:800;margin:0 0 6px">Reset your password</h3>
+          <p style="color:rgba(255,255,255,.45);font-size:13px;margin:0 0 18px;line-height:1.5">Enter your account email — we'll send you a 6-digit reset code.</p>
+          <input id="fgEmail" type="email" placeholder="you@yourcompany.com"
+            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#FFFFFF;font-size:14px;margin-bottom:12px;outline:none;font-family:inherit"
+            onkeydown="if(event.key==='Enter')_sendResetCode()">
+          <button onclick="_sendResetCode()"
+            style="width:100%;padding:13px;background:#2D7A55;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer" id="fgSendBtn">
             Send Reset Code
           </button>
-          <div id="resetStep1Error" style="color:#F5D5C8;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
+          <div id="fgStep1Error" style="color:#F5C8C0;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
         </div>
-        <div id="forgotPinStep2" style="display:none">
-          <h3 style="color:#FFFFFF;font-size:16px;font-weight:800;margin:0 0 6px">Enter Reset Code</h3>
-          <p style="color:rgba(255,255,255,.45);font-size:13px;margin:0 0 16px">Check your email for the 6-digit code. It expires in 1 hour.</p>
-          <input id="resetCode" type="text" inputmode="numeric" maxlength="6" placeholder="123456"
-            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#FFFFFF;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:10px;outline:none;font-family:inherit">
-          <input id="resetNewPin" type="text" inputmode="numeric" maxlength="4" placeholder="New 4-digit PIN"
-            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#FFFFFF;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:12px;outline:none;font-family:inherit">
-          <button onclick="confirmPinReset()"
-            style="width:100%;padding:13px;background:#2D7A55;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;transition:background .12s"
-            onmouseover="this.style.background='#2D7A55'" onmouseout="this.style.background='#2D7A55'">
-            Set New PIN
+
+        <!-- Step 2: enter code + new password -->
+        <div id="fgStep2" style="display:none">
+          <h3 style="color:#FFFFFF;font-size:16px;font-weight:800;margin:0 0 6px">Enter your reset code</h3>
+          <p style="color:rgba(255,255,255,.45);font-size:13px;margin:0 0 18px;line-height:1.5">Check your email for the 6-digit code. It expires in 1 hour.</p>
+          <input id="fgCode" type="text" inputmode="numeric" maxlength="6" placeholder="123456"
+            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#FFFFFF;font-size:18px;letter-spacing:.2em;text-align:center;margin-bottom:10px;outline:none;font-family:inherit">
+          <input id="fgNewPassword" type="password" placeholder="New password"
+            style="width:100%;box-sizing:border-box;padding:12px 14px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#FFFFFF;font-size:14px;margin-bottom:12px;outline:none;font-family:inherit">
+          <button onclick="_confirmReset()"
+            style="width:100%;padding:13px;background:#2D7A55;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer" id="fgConfirmBtn">
+            Set New Password
           </button>
-          <div id="resetStep2Error" style="color:#F5D5C8;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
+          <div id="fgStep2Error" style="color:#F5C8C0;font-size:12px;text-align:center;margin-top:10px;display:none"></div>
         </div>
-        <button onclick="hideForgotPin()" style="width:100%;margin-top:12px;padding:8px;background:transparent;border:none;color:rgba(255,255,255,.32);font-size:12px;cursor:pointer;transition:color .12s"
+
+        <button onclick="_hideForgotPassword()"
+          style="display:block;width:100%;margin-top:12px;padding:8px;background:transparent;border:none;color:rgba(255,255,255,.32);font-size:12px;cursor:pointer;transition:color .15s"
           onmouseover="this.style.color='rgba(255,255,255,.6)'" onmouseout="this.style.color='rgba(255,255,255,.32)'">
-          ← Cancel
+          ← Back to sign in
         </button>
       </div>
 
@@ -637,231 +633,216 @@ function renderLoginScreen() {
   </div>
   `;
 
-  // PIN logic
-  let selectedRepId = null;
-  let pinBuffer = '';
-  const REP_COLOR = {};
-  REPS.forEach(r => REP_COLOR[r.id] = r.color);
-
-  window.selectRep = function(repId) {
-    selectedRepId = repId;
-    pinBuffer = '';
-    const rep = REPS.find(r => r.id === repId);
-    document.getElementById('repCards').style.display = 'none';
-    document.getElementById('pinEntry').style.display = 'block';
-    document.getElementById('pinRepName').textContent = rep.name;
-    document.getElementById('pinRepName').style.color = REP_COLOR[repId];
-    updatePinDisplay();
-    document.getElementById('pinError').style.display = 'none';
+  // ── Show/hide password toggle ──────────────────────────────────────────────
+  window._togglePwVis = function() {
+    const inp = document.getElementById('loginPassword');
+    const ico = document.getElementById('eyeIcon');
+    if (!inp) return;
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    // Switch icon between open-eye and crossed-eye
+    ico.innerHTML = show
+      ? `<ellipse cx="10" cy="10" rx="8" ry="5"/><circle cx="10" cy="10" r="2.5"/><line x1="3" y1="3" x2="17" y2="17"/>`
+      : `<ellipse cx="10" cy="10" rx="8" ry="5"/><circle cx="10" cy="10" r="2.5"/>`;
   };
 
-  window.backToReps = function() {
-    document.getElementById('repCards').style.display = 'flex';
-    document.getElementById('repCards').style.flexDirection = 'column';
-    document.getElementById('pinEntry').style.display = 'none';
-    selectedRepId = null;
-    pinBuffer = '';
-  };
+  // ── Sign In ────────────────────────────────────────────────────────────────
+  window._doLogin = async function() {
+    const email    = (document.getElementById('loginEmail')?.value || '').trim().toLowerCase();
+    const password = (document.getElementById('loginPassword')?.value || '');
+    const errEl    = document.getElementById('loginError');
+    const btn      = document.getElementById('loginBtn');
 
-  window.pinKey = function(k) {
-    if (k === '') return;
-    if (k === '⌫') { pinBuffer = pinBuffer.slice(0, -1); updatePinDisplay(); return; }
-    if (pinBuffer.length >= 4) return;
-    pinBuffer += k;
-    updatePinDisplay();
-    if (pinBuffer.length === 4) {
-      setTimeout(() => attemptLogin(selectedRepId, pinBuffer), 300);
-    }
-  };
+    if (!email)    { _loginError('Please enter your email address.'); return; }
+    if (!password) { _loginError('Please enter your password.'); return; }
 
-  function updatePinDisplay() {
-    for (let i = 0; i < 4; i++) {
-      const el = document.getElementById(`pin${i}`);
-      if (el) {
-        const rep = selectedRepId ? REPS.find(r => r.id === selectedRepId) : null;
-        el.style.background = i < pinBuffer.length ? '#2D7A55' : 'rgba(255,255,255,.12)';
-      }
-    }
-  }
-
-  async function attemptLogin(repId, pin) {
-    // Try D1 API first (cloud auth), fall back to local REPS check
-    if (window.DB) {
-      try {
-        const d1Rep = await window.DB.auth.login(repId, pin, 'avalon');
-        // D1 login success — sets session cookie
-        window._d1SessionRep = d1Rep;
-        // ── Multi-tenant: set company context from rep's company_id ──
-        window._companyId = d1Rep.company_id || 'avalon';
-        loginRep(repId); // also set localStorage for getCurrentRep()
-
-        // Helper to map D1 opp row → app camelCase (reuse bootstrap helper if available)
-        const mapOpp = window._mapOpp || function(o) {
-          return {
-            id: o.id, repId: o.rep_id, companyId: o.company_id,
-            client: o.client, phone: o.phone, email: o.email, address: o.address,
-            serviceLine: o.service_line, source: o.source,
-            status: o.status, jobValue: o.job_value,
-            project: o.project, urgency: o.urgency,
-            decisionMaker: o.decision_maker, budgetRange: o.budget_range,
-            nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
-            estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
-            estimateCount: o.estimate_count, workType: o.work_type,
-            clientType: o.client_type, prompt: o.prompt,
-            desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
-            commissionApproved: !!o.commission_approved, collected: !!o.collected,
-            soldDate: o.sold_date, soldAmount: o.sold_amount,
-            leadSource: o.lead_source || '',
-            projectCategory: o.project_category || o.service_line || '',
-            createdAt: o.created_at, updatedAt: o.updated_at,
-            _fromD1: true
-          };
-        };
-
-        // Load opps from D1 — D1 is source of truth
-        const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
-        try {
-          const opps = await window.DB.opportunities.list({ repId: isAdmin ? undefined : repId });
-          if (opps && opps.length > 0 && window.state) {
-            const d1Ids = new Set(opps.map(o => o.id));
-            const localOnly = (window.state.opportunities || []).filter(o => !d1Ids.has(o.id) && !o._fromD1);
-            window.state.opportunities = [...opps.map(mapOpp), ...localOnly];
-          }
-        } catch(e) { console.warn('[Login] D1 opps load failed:', e.message); }
-
-        // Load clients from D1
-        try {
-          const d1Clients = await window.DB.clients.list();
-          if (d1Clients && d1Clients.length > 0) {
-            const localClients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
-            const d1Ids = new Set(d1Clients.map(c => c.id));
-            const localOnly = localClients.filter(c => !d1Ids.has(c.id));
-            const merged = d1Clients.map(dc => {
-              const lc = localClients.find(l => l.id === dc.id);
-              return {
-                id: dc.id, name: dc.name, phone: dc.phone || '', email: dc.email || '',
-                address: dc.address || '', type: dc.type || 'Residential', notes: dc.notes || '',
-                ...(lc ? { firstName: lc.firstName, lastName: lc.lastName,
-                            company: lc.company, status: lc.status, mobile: lc.mobile,
-                            since: lc.since, tags: lc.tags, homeworksId: lc.homeworksId,
-                            properties: lc.properties } : {})
-              };
-            });
-            localStorage.setItem('avalonClientsV1', JSON.stringify([...merged, ...localOnly]));
-          }
-        } catch(e) { console.warn('[Login] D1 clients load failed:', e.message); }
-
-        window._d1Ready = true;
-        // Flush any writes that were queued before D1 was ready
-        if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
-        initApp();
-        return;
-      } catch(e) {
-        // D1 auth failed — fall through to local check (offline fallback)
-        console.warn('[Login] D1 auth failed, trying local:', e.message);
-      }
-    }
-    // Local fallback (offline or D1 unavailable)
-    const rep = REPS.find(r => r.id === repId);
-    if (rep && rep.pin === pin) {
-      loginRep(repId);
-      initApp();
-    } else {
-      pinBuffer = '';
-      updatePinDisplay();
-      document.getElementById('pinError').style.display = 'block';
-      document.querySelector('#pinEntry').style.borderColor = '#8B3A2A';
-      setTimeout(() => {
-        document.getElementById('pinError').style.display = 'none';
-        document.querySelector('#pinEntry').style.borderColor = 'rgba(255,255,255,.13)';
-      }, 1500);
-    }
-  }
-
-  // ── Forgot PIN helpers (closured inside renderLoginScreen) ──────────────────
-  window.showForgotPin = function() {
-    document.getElementById('pinEntry').style.display = 'none';
-    document.getElementById('forgotPinPanel').style.display = 'block';
-    document.getElementById('forgotPinStep1').style.display = 'block';
-    document.getElementById('forgotPinStep2').style.display = 'none';
-    document.getElementById('resetStep1Error').style.display = 'none';
-  };
-
-  window.hideForgotPin = function() {
-    document.getElementById('forgotPinPanel').style.display = 'none';
-    if (selectedRepId) {
-      document.getElementById('pinEntry').style.display = 'block';
-    } else {
-      document.getElementById('repCards').style.display = 'flex';
-      document.getElementById('repCards').style.flexDirection = 'column';
-    }
-  };
-
-  window.sendResetCode = async function() {
-    const email = (document.getElementById('resetEmail')?.value || '').trim();
-    const errEl = document.getElementById('resetStep1Error');
-    if (!email) { errEl.textContent = 'Please enter your email address.'; errEl.style.display = 'block'; return; }
     errEl.style.display = 'none';
-    const btn = document.querySelector('#forgotPinStep1 button');
-    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+    btn.textContent = 'Signing in…'; btn.disabled = true; btn.style.opacity = '.7';
+
     try {
-      const res = await fetch('/api/auth/reset-request', {
+      // Primary: D1 email+password auth
+      const d1Rep = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      }).then(async r => {
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'Invalid email or password');
+        return j.data;
+      });
+
+      // Session cookie is now set — store identity in memory
+      window._d1SessionRep = d1Rep;
+      window._companyId    = d1Rep.company_id || 'avalon';
+      loginRep(d1Rep.id); // write to localStorage so getCurrentRep() works
+
+      // Load opps + clients in background (same as before)
+      await _postLoginDataLoad(d1Rep);
+
+      window._d1Ready = true;
+      if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
+      initApp();
+
+    } catch(e) {
+      _loginError(e.message || 'Invalid email or password');
+      btn.textContent = 'Sign In'; btn.disabled = false; btn.style.opacity = '1';
+    }
+  };
+
+  function _loginError(msg) {
+    const errEl = document.getElementById('loginError');
+    if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+    // Shake the card
+    const card = document.getElementById('loginForm');
+    if (card) {
+      card.style.transform = 'translateX(-6px)';
+      setTimeout(() => { card.style.transform = 'translateX(6px)'; }, 80);
+      setTimeout(() => { card.style.transform = ''; }, 160);
+    }
+  }
+
+  // ── Post-login data load (opps + clients from D1) ─────────────────────────
+  async function _postLoginDataLoad(d1Rep) {
+    const mapOpp = window._mapOpp || function(o) {
+      return {
+        id: o.id, repId: o.rep_id, companyId: o.company_id,
+        client: o.client, phone: o.phone, email: o.email, address: o.address,
+        serviceLine: o.service_line, source: o.source,
+        status: o.status, jobValue: o.job_value,
+        project: o.project, urgency: o.urgency,
+        decisionMaker: o.decision_maker, budgetRange: o.budget_range,
+        nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
+        estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
+        estimateCount: o.estimate_count, workType: o.work_type,
+        clientType: o.client_type, prompt: o.prompt,
+        desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
+        commissionApproved: !!o.commission_approved, collected: !!o.collected,
+        soldDate: o.sold_date, soldAmount: o.sold_amount,
+        leadSource: o.lead_source || '',
+        projectCategory: o.project_category || o.service_line || '',
+        createdAt: o.created_at, updatedAt: o.updated_at,
+        _fromD1: true
+      };
+    };
+    const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
+    try {
+      const opps = await window.DB.opportunities.list({ repId: isAdmin ? undefined : d1Rep.id });
+      if (opps && opps.length > 0 && window.state) {
+        const d1Ids = new Set(opps.map(o => o.id));
+        const localOnly = (window.state.opportunities || []).filter(o => !d1Ids.has(o.id) && !o._fromD1);
+        window.state.opportunities = [...opps.map(mapOpp), ...localOnly];
+      }
+    } catch(e) { console.warn('[Login] D1 opps load failed:', e.message); }
+    try {
+      const d1Clients = await window.DB.clients.list();
+      if (d1Clients && d1Clients.length > 0) {
+        const localClients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
+        const d1Ids = new Set(d1Clients.map(c => c.id));
+        const localOnly = localClients.filter(c => !d1Ids.has(c.id));
+        const merged = d1Clients.map(dc => {
+          const lc = localClients.find(l => l.id === dc.id);
+          return {
+            id: dc.id, name: dc.name, phone: dc.phone || '', email: dc.email || '',
+            address: dc.address || '', type: dc.type || 'Residential', notes: dc.notes || '',
+            ...(lc ? { firstName: lc.firstName, lastName: lc.lastName,
+                        company: lc.company, status: lc.status, mobile: lc.mobile,
+                        since: lc.since, tags: lc.tags, homeworksId: lc.homeworksId,
+                        properties: lc.properties } : {})
+          };
+        });
+        localStorage.setItem('avalonClientsV1', JSON.stringify([...merged, ...localOnly]));
+      }
+    } catch(e) { console.warn('[Login] D1 clients load failed:', e.message); }
+  }
+
+  // ── Forgot Password ────────────────────────────────────────────────────────
+  window._showForgotPassword = function() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('forgotPanel').style.display = 'block';
+    // Pre-fill the email if already typed
+    const typed = (document.getElementById('loginEmail')?.value || '').trim();
+    if (typed) { const fg = document.getElementById('fgEmail'); if (fg) fg.value = typed; }
+    setTimeout(() => document.getElementById('fgEmail')?.focus(), 50);
+  };
+
+  window._hideForgotPassword = function() {
+    document.getElementById('forgotPanel').style.display = 'none';
+    document.getElementById('loginForm').style.display = 'block';
+    // Reset forgot panel to step 1
+    document.getElementById('fgStep1').style.display = 'block';
+    document.getElementById('fgStep2').style.display = 'none';
+    document.getElementById('fgStep1Error').style.display = 'none';
+    document.getElementById('fgStep2Error').style.display = 'none';
+    setTimeout(() => document.getElementById('loginEmail')?.focus(), 50);
+  };
+
+  window._sendResetCode = async function() {
+    const email = (document.getElementById('fgEmail')?.value || '').trim().toLowerCase();
+    const errEl = document.getElementById('fgStep1Error');
+    const btn   = document.getElementById('fgSendBtn');
+    if (!email) { errEl.textContent = 'Please enter your email address.'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none';
+    btn.textContent = 'Sending…'; btn.disabled = true;
+    try {
+      const res  = await fetch('/api/auth/reset-request', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send code');
-      // Move to step 2
-      document.getElementById('forgotPinStep1').style.display = 'none';
-      document.getElementById('forgotPinStep2').style.display = 'block';
-      document.getElementById('resetStep2Error').style.display = 'none';
+      // Always show step 2 — don't reveal whether email exists
+      document.getElementById('fgStep1').style.display = 'none';
+      document.getElementById('fgStep2').style.display = 'block';
+      document.getElementById('fgStep2Error').style.display = 'none';
+      setTimeout(() => document.getElementById('fgCode')?.focus(), 50);
     } catch(e) {
-      errEl.textContent = e.message;
-      errEl.style.display = 'block';
+      errEl.textContent = e.message; errEl.style.display = 'block';
     } finally {
-      if (btn) { btn.textContent = 'Send Reset Code'; btn.disabled = false; }
+      btn.textContent = 'Send Reset Code'; btn.disabled = false;
     }
   };
 
-  window.confirmPinReset = async function() {
-    const code   = (document.getElementById('resetCode')?.value || '').trim();
-    const newPin = (document.getElementById('resetNewPin')?.value || '').trim();
-    const email  = (document.getElementById('resetEmail')?.value || '').trim();
-    const errEl  = document.getElementById('resetStep2Error');
-    if (!code || code.length !== 6) { errEl.textContent = 'Enter the 6-digit code from your email.'; errEl.style.display = 'block'; return; }
-    if (!newPin || !/^\d{4}$/.test(newPin)) { errEl.textContent = 'New PIN must be exactly 4 digits.'; errEl.style.display = 'block'; return; }
+  window._confirmReset = async function() {
+    const code     = (document.getElementById('fgCode')?.value || '').trim();
+    const newPw    = (document.getElementById('fgNewPassword')?.value || '').trim();
+    const email    = (document.getElementById('fgEmail')?.value || '').trim().toLowerCase();
+    const errEl    = document.getElementById('fgStep2Error');
+    const btn      = document.getElementById('fgConfirmBtn');
+    if (!code || code.length !== 6) {
+      errEl.textContent = 'Enter the 6-digit code from your email.'; errEl.style.display = 'block'; return;
+    }
+    if (!newPw || newPw.length < 4) {
+      errEl.textContent = 'Password must be at least 4 characters.'; errEl.style.display = 'block'; return;
+    }
     errEl.style.display = 'none';
-    const btn = document.querySelector('#forgotPinStep2 button');
-    if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+    btn.textContent = 'Saving…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/auth/reset-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, token: code, new_pin: newPin })
+      const res  = await fetch('/api/auth/reset-pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, token: code, new_password: newPw })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Reset failed');
-      // Success — hide panel, show login
-      document.getElementById('forgotPinPanel').style.display = 'none';
-      document.getElementById('repCards').style.display = 'flex';
-      document.getElementById('repCards').style.flexDirection = 'column';
-      document.getElementById('pinEntry').style.display = 'none';
-      // Show brief success message
-      const successBanner = document.createElement('div');
-      successBanner.style.cssText = 'background:#2D7A5522;border:1px solid #2D7A5544;border-radius:10px;color:#2D7A55;padding:12px 16px;font-size:13px;text-align:center;margin-top:12px;font-weight:600';
-      successBanner.textContent = '✓ PIN reset successfully — you can now log in.';
-      document.querySelector('.app-shell') || document.body;
-      const container = document.getElementById('repCards')?.parentNode;
-      if (container) container.appendChild(successBanner);
-      setTimeout(() => successBanner.remove(), 4000);
+      // Return to sign-in with success message
+      _hideForgotPassword();
+      const loginEmailEl = document.getElementById('loginEmail');
+      if (loginEmailEl) loginEmailEl.value = email;
+      const errLogin = document.getElementById('loginError');
+      if (errLogin) {
+        errLogin.textContent = '✓ Password updated — sign in with your new password';
+        errLogin.style.color = '#7FC5BB';
+        errLogin.style.display = 'block';
+      }
     } catch(e) {
-      errEl.textContent = e.message;
-      errEl.style.display = 'block';
+      errEl.textContent = e.message; errEl.style.display = 'block';
     } finally {
-      if (btn) { btn.textContent = 'Set New PIN'; btn.disabled = false; }
+      btn.textContent = 'Set New Password'; btn.disabled = false;
     }
   };
+
+  // Auto-focus email on load
+  setTimeout(() => document.getElementById('loginEmail')?.focus(), 80);
 }
 
 // ── REP DASHBOARD VIEW ────────────────────────────────────────────────────────

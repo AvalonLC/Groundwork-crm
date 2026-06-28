@@ -51,9 +51,15 @@ const DB = (() => {
 
   // ── AUTH ─────────────────────────────────────────────────────────────────────
   const auth = {
-    /** Login with repId + PIN + optional companyId. Returns rep object (no pin) on success. */
-    login(repId, pin, companyId) {
-      return post('/auth/login', { repId, pin, companyId: companyId || cid() });
+    /** Login with email + password. Returns rep object on success.
+     *  Legacy repId+pin shape is also accepted (falls through to server). */
+    login(emailOrRepId, password, companyId) {
+      // Detect email vs legacy repId (email contains '@')
+      if (emailOrRepId && emailOrRepId.includes('@')) {
+        return post('/auth/login', { email: emailOrRepId.toLowerCase().trim(), password });
+      }
+      // Legacy: repId + pin (offline path)
+      return post('/auth/login', { repId: emailOrRepId, password, companyId: companyId || cid() });
     },
     /** Logout — clears session cookie. */
     logout() {

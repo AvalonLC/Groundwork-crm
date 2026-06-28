@@ -110,45 +110,61 @@ async function requireSuperAdmin(c: any, next: any) {
 // AUTH ROUTES  (no requireAuth — these establish identity)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// POST /api/auth/login  { repId, pin, companyId? }
+// POST /api/auth/login  { email, password }
+// Primary login: looks up rep by email (unique), verifies PBKDF2 password hash.
+// Legacy shape { repId, pin, companyId } is also accepted as offline fallback.
 app.post('/api/auth/login', async (c) => {
-  const { repId, pin, companyId } = await c.req.json()
-  if (!repId || !pin) return err(c, 'repId and pin required')
-  // Fetch rep row — look up by id + companyId (or id alone for single-tenant)
+  const body = await c.req.json()
+  const email    = (body.email    || '').toLowerCase().trim()
+  const password = body.password  || body.pin   // accept both field names
+  const repId    = body.repId
+  const companyId = body.companyId
+
+  if (!password) return err(c, 'password required')
+
   let rep: any
-  if (companyId) {
+  if (email) {
+    // Primary path: email-based lookup (unique across all tenants)
     rep = await c.env.DB.prepare(
-      'SELECT * FROM reps WHERE id = ? AND company_id = ? AND active = 1 LIMIT 1'
-    ).bind(repId, companyId).first()
+      'SELECT * FROM reps WHERE email = ? AND active = 1 LIMIT 1'
+    ).bind(email).first()
+  } else if (repId) {
+    // Legacy / offline fallback: repId + optional companyId
+    if (companyId) {
+      rep = await c.env.DB.prepare(
+        'SELECT * FROM reps WHERE id = ? AND company_id = ? AND active = 1 LIMIT 1'
+      ).bind(repId, companyId).first()
+    } else {
+      rep = await c.env.DB.prepare(
+        'SELECT * FROM reps WHERE id = ? AND active = 1 LIMIT 1'
+      ).bind(repId).first()
+    }
   } else {
-    rep = await c.env.DB.prepare(
-      'SELECT * FROM reps WHERE id = ? AND active = 1 LIMIT 1'
-    ).bind(repId).first()
+    return err(c, 'email required')
   }
   if (!rep) return err(c, 'Invalid credentials', 401)
 
-  // Dual-mode PIN check: prefer hashed, fall back to plain during rollout
-  let pinOk = false
+  // Dual-mode password check: prefer hashed, fall back to plain-text legacy PIN
+  let ok = false
   if (rep.pin_hash) {
-    pinOk = await verifyPin(String(pin), rep.pin_hash)
-    // Auto-upgrade plain pin column if hash matches
-    if (pinOk && rep.pin) {
+    ok = await verifyPin(String(password), rep.pin_hash)
+    // Clear any residual plain-text PIN column
+    if (ok && rep.pin) {
       await c.env.DB.prepare("UPDATE reps SET pin = '' WHERE id = ? AND company_id = ?")
         .bind(rep.id, rep.company_id).run()
     }
   } else if (rep.pin) {
-    // Legacy plain-text PIN — verify then upgrade to hash
-    pinOk = String(pin) === String(rep.pin)
-    if (pinOk) {
-      const hash = await hashPin(String(pin))
+    // Legacy plain-text PIN — verify then upgrade to hash immediately
+    ok = String(password) === String(rep.pin)
+    if (ok) {
+      const hash = await hashPin(String(password))
       await c.env.DB.prepare("UPDATE reps SET pin_hash = ?, pin = '' WHERE id = ? AND company_id = ?")
         .bind(hash, rep.id, rep.company_id).run()
     }
   }
-  if (!pinOk) return err(c, 'Invalid credentials', 401)
+  if (!ok) return err(c, 'Invalid credentials', 401)
+
   const token = uid() + uid()
-  // Store session: key = session_{token}, value = repId
-  // We also store company_id in a second key for fast lookup
   await c.env.DB.batch([
     c.env.DB.prepare(
       "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
@@ -160,7 +176,7 @@ app.post('/api/auth/login', async (c) => {
   setCookie(c, 'avalon_session', token, {
     httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 30
   })
-  const { pin: _p, ...safeRep } = rep as any
+  const { pin: _p, pin_hash: _ph, ...safeRep } = rep as any
   return json(c, safeRep)
 })
 
@@ -259,14 +275,17 @@ app.get('/api/reps/:id', async (c) => {
 })
 
 // POST /api/reps  — add a rep to a company
+// Accepts password (preferred) or pin (legacy) for the initial credential
 app.post('/api/reps', async (c) => {
   const b = await c.req.json()
-  if (!b.id || !b.name || !b.pin || !b.companyId) return err(c, 'id, name, pin, companyId required')
-  const pinHash = await hashPin(String(b.pin))
+  const credential = b.password || b.pin
+  if (!b.id || !b.name || !credential || !b.companyId) return err(c, 'id, name, password, companyId required')
+  if (!b.email) return err(c, 'email required — users log in with their email address')
+  const pinHash = await hashPin(String(credential))
   await c.env.DB.prepare(`
     INSERT INTO reps (id, name, title, role, pin, pin_hash, email, color, commission_plan, company_id, active)
     VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, 1)
-  `).bind(b.id, b.name, b.title||'', b.role||'rep', pinHash, b.email||'', b.color||'#6366f1', b.commissionPlan||'standard', b.companyId).run()
+  `).bind(b.id, b.name, b.title||'', b.role||'rep', pinHash, b.email, b.color||'#6366f1', b.commissionPlan||'standard', b.companyId).run()
   return json(c, { id: b.id }, 201)
 })
 
@@ -281,9 +300,10 @@ app.put('/api/reps/:id', async (c) => {
   for (const f of fields) {
     if (b[f] !== undefined) { updates.push(`${f} = ?`); vals.push(b[f]) }
   }
-  // Hash new PIN if provided
-  if (b.pin) {
-    const pinHash = await hashPin(String(b.pin))
+  // Hash new password if provided (accept both 'password' and legacy 'pin')
+  const newCred = b.password || b.pin
+  if (newCred) {
+    const pinHash = await hashPin(String(newCred))
     updates.push("pin_hash = ?"); vals.push(pinHash)
     updates.push("pin = ''")     // clear legacy plain pin
   }
@@ -797,7 +817,7 @@ app.post('/api/auth/reset-request', async (c) => {
 
   const sent = c.env.SENDGRID_API_KEY ? await sendEmail(
     c.env.SENDGRID_API_KEY, rep.email,
-    'Your Groundwork CRM login code',
+    'Your Groundwork CRM password reset code',
     `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#F5F9F7;font-family:Inter,Arial,sans-serif">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F9F7;padding:48px 20px">
       <tr><td align="center">
@@ -808,18 +828,18 @@ app.post('/api/auth/reset-request', async (c) => {
               <span style="font-size:20px;font-weight:900;color:#ffffff;letter-spacing:-.04em">Groundwork</span>
               <span style="font-size:11px;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.12em;text-transform:uppercase;display:block;margin-top:1px">CRM</span>
             </div>
-            <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-.03em">Your login code</h1>
-            <p style="margin:8px 0 0;color:rgba(255,255,255,.55);font-size:14px">Use this to reset your PIN</p>
+            <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-.03em">Your password reset code</h1>
+            <p style="margin:8px 0 0;color:rgba(255,255,255,.55);font-size:14px">Use this to set a new password</p>
           </td></tr>
           <!-- Body -->
           <tr><td style="padding:36px 40px 20px">
-            <p style="margin:0 0 28px;font-size:15px;color:#5A6B79;line-height:1.6">Hi <strong style="color:#0F1C14">${rep.name}</strong>, here is your one-time login code for Groundwork CRM:</p>
+            <p style="margin:0 0 28px;font-size:15px;color:#5A6B79;line-height:1.6">Hi <strong style="color:#0F1C14">${rep.name}</strong>, here is your one-time reset code for Groundwork CRM:</p>
             <!-- OTP block -->
             <div style="background:#F5F9F7;border:1.5px solid #E2EBE8;border-radius:14px;padding:28px;text-align:center;margin-bottom:28px">
               <span style="font-size:52px;font-weight:900;letter-spacing:10px;color:#113931;display:block;line-height:1">${otp}</span>
               <p style="margin:12px 0 0;font-size:12px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.1em">One-time code · expires in 1 hour</p>
             </div>
-            <p style="margin:0 0 12px;font-size:13px;color:#94A3B8;line-height:1.6">Enter this code in the Groundwork CRM app when prompted. If you didn't request this, you can safely ignore this email — your account remains secure.</p>
+            <p style="margin:0 0 12px;font-size:13px;color:#94A3B8;line-height:1.6">Enter this code in the Groundwork CRM app when prompted to set your new password. If you didn't request this, you can safely ignore this email — your account remains secure.</p>
           </td></tr>
           <!-- Footer -->
           <tr><td style="padding:20px 40px 36px;border-top:1px solid #E2EBE8;text-align:center">
@@ -834,13 +854,13 @@ app.post('/api/auth/reset-request', async (c) => {
   return json(c, { sent, email: rep.email.replace(/(.{2}).+(@.+)/, '$1***$2') })
 })
 
-// POST /api/auth/reset-pin  { email, token, new_pin } OR { repId, companyId, otp, newPin }
+// POST /api/auth/reset-pin  { email, token, new_pin|new_password } OR { repId, companyId, otp, newPin }
 app.post('/api/auth/reset-pin', async (c) => {
   const body = await c.req.json()
-  // Support both frontend shape (email, token, new_pin) and legacy (repId, companyId, otp, newPin)
+  // Support email+password shape, and legacy repId+PIN shape
   const email  = body.email
-  const otp    = body.token    || body.otp
-  const newPin = body.new_pin  || body.newPin
+  const otp    = body.token       || body.otp
+  const newPin = body.new_password || body.new_pin  || body.newPin
   const repId  = body.repId
   const companyId = body.companyId
   if (!otp || !newPin) return err(c, 'token and new_pin required')
@@ -1256,30 +1276,35 @@ app.get('/platform-login', (c) => {
     .card-title{color:rgba(255,255,255,.65);font-size:12px;font-weight:700;
                 letter-spacing:.07em;text-transform:uppercase;margin-bottom:20px;
                 text-align:center}
-    /* Email field */
-    .field{margin-bottom:14px}
+    /* Fields */
+    .field{margin-bottom:16px}
     .field label{display:block;color:rgba(255,255,255,.5);font-size:11px;
                  font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
     .email-display{padding:12px 14px;background:rgba(255,255,255,.04);
                    border:1px solid rgba(255,255,255,.1);border-radius:10px;
                    color:rgba(255,255,255,.6);font-size:13px;font-family:monospace}
-    /* PIN pad */
-    .pin-dots{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0 14px}
-    .pin-dot{height:10px;border-radius:6px;background:rgba(255,255,255,.1);transition:background .15s}
-    .pin-dot.filled{background:#4D8A86}
-    .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-    .pin-key{padding:18px 8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);
-             border-radius:12px;color:#fff;font-size:20px;font-weight:600;
-             cursor:pointer;transition:background .12s;font-family:inherit;width:100%}
-    .pin-key:hover{background:rgba(255,255,255,.15)}
-    .pin-key.ghost{visibility:hidden}
+    .pw-wrap{position:relative}
+    .pw-input{width:100%;padding:12px 44px 12px 14px;background:rgba(255,255,255,.07);
+              border:1px solid rgba(255,255,255,.18);border-radius:10px;
+              color:#fff;font-size:15px;font-family:inherit;outline:none;
+              transition:border-color .15s}
+    .pw-input:focus{border-color:#4D8A86}
+    .pw-input::placeholder{color:rgba(255,255,255,.25)}
+    .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);
+               background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;
+               font-size:15px;padding:4px;line-height:1}
+    .pw-toggle:hover{color:rgba(255,255,255,.75)}
+    /* Sign in button */
+    .signin-btn{width:100%;padding:14px;background:#4D8A86;border:none;border-radius:12px;
+                color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+                transition:background .15s;margin-top:6px;letter-spacing:.01em}
+    .signin-btn:hover{background:#3d7a76}
+    .signin-btn:disabled{opacity:.5;cursor:default}
     /* Error */
-    .error-msg{color:#F5C8C0;font-size:13px;text-align:center;margin-top:14px;display:none}
+    .error-msg{color:#F5C8C0;font-size:13px;text-align:center;margin-top:12px;display:none}
     /* Footer */
     .footer{text-align:center;color:rgba(255,255,255,.18);font-size:11px;
             margin-top:28px;letter-spacing:.04em}
-    /* Spinner for submit feedback */
-    .submitting .pin-key{opacity:.5;pointer-events:none}
   </style>
 </head>
 <body>
@@ -1311,111 +1336,107 @@ app.get('/platform-login', (c) => {
     </div>
 
     <div class="field">
-      <label>PIN</label>
-      <div class="pin-dots" id="pinDots">
-        <div class="pin-dot" id="pd0"></div>
-        <div class="pin-dot" id="pd1"></div>
-        <div class="pin-dot" id="pd2"></div>
-        <div class="pin-dot" id="pd3"></div>
+      <label>Password</label>
+      <div class="pw-wrap">
+        <input id="pwInput" class="pw-input" type="password"
+               placeholder="Enter your password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doSignIn()">
+        <button class="pw-toggle" type="button" onclick="togglePw()" tabindex="-1" title="Show/hide password">
+          <span id="pwEye">👁</span>
+        </button>
       </div>
     </div>
 
-    <div class="pin-grid" id="pinGrid">
-      ${[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(k =>
-        k === ''
-          ? '<button class="pin-key ghost" tabindex="-1" aria-hidden="true"></button>'
-          : `<button class="pin-key" data-key="${k}" onclick="pinKey('${k}')">${k}</button>`
-      ).join('')}
-    </div>
+    <button class="signin-btn" id="signinBtn" onclick="doSignIn()">Sign In</button>
 
-    <div class="error-msg" id="errMsg">Incorrect PIN — please try again</div>
+    <div class="error-msg" id="errMsg"></div>
   </div>
 
   <p class="footer">GROUNDWORK CRM · PLATFORM ADMIN · RESTRICTED</p>
 </div>
 
 <script>
-  let buf = '';
-  function updateDots() {
-    for (let i = 0; i < 4; i++) {
-      document.getElementById('pd' + i).className = 'pin-dot' + (i < buf.length ? ' filled' : '');
-    }
+  function togglePw() {
+    const inp = document.getElementById('pwInput');
+    const eye = document.getElementById('pwEye');
+    if (inp.type === 'password') { inp.type = 'text'; eye.textContent = '🙈'; }
+    else                         { inp.type = 'password'; eye.textContent = '👁'; }
   }
-  function pinKey(k) {
-    const err = document.getElementById('errMsg');
-    if (k === '⌫') { buf = buf.slice(0,-1); updateDots(); err.style.display='none'; return; }
-    if (buf.length >= 4) return;
-    buf += k;
-    updateDots();
-    if (buf.length === 4) setTimeout(submit, 300);
-  }
-  // Keyboard support
-  document.addEventListener('keydown', e => {
-    if (e.key >= '0' && e.key <= '9') pinKey(e.key);
-    else if (e.key === 'Backspace') pinKey('⌫');
-  });
-  async function submit() {
-    const card = document.getElementById('loginCard');
+
+  async function doSignIn() {
+    const password = document.getElementById('pwInput').value;
+    const btn  = document.getElementById('signinBtn');
     const err  = document.getElementById('errMsg');
-    card.classList.add('submitting');
+
     err.style.display = 'none';
+    if (!password) { err.textContent = 'Please enter your password'; err.style.display = 'block'; return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+
     try {
       const res  = await fetch('/api/auth/platform-login', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ pin: buf })
+        body: JSON.stringify({ password })
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Login failed');
-      // Success — redirect to main app; post-login routing handles show('superAdmin')
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Incorrect password — please try again');
+      // Success — redirect to main app; _initialRoute() detects platform admin
       window.location.href = '/';
     } catch(e) {
-      buf = '';
-      updateDots();
-      err.textContent = e.message || 'Incorrect PIN — please try again';
+      err.textContent = e.message || 'Incorrect password — please try again';
       err.style.display = 'block';
-      card.classList.remove('submitting');
-      // Shake effect
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      // Subtle shake on the card
+      const card = document.getElementById('loginCard');
+      card.style.transition = 'transform .08s';
       card.style.transform = 'translateX(-6px)';
       setTimeout(() => card.style.transform = 'translateX(6px)', 80);
-      setTimeout(() => card.style.transform = '', 160);
+      setTimeout(() => { card.style.transform = ''; card.style.transition = ''; }, 160);
+      document.getElementById('pwInput').focus();
     }
   }
+
+  // Focus password field on load
+  window.addEventListener('load', () => document.getElementById('pwInput').focus());
 </script>
 </body>
 </html>`)
 })
 
-// POST /api/auth/platform-login  { pin }
+// POST /api/auth/platform-login  { password }
 // Email is fixed as tyler@groundwork-crm.com (id='gw_tyler', company='groundwork_platform').
 // On success sets the same avalon_session cookie as normal login.
-// The client-side initApp() detects is_super_admin=1 + company_id='groundwork_platform'
+// The client-side _initialRoute() detects is_super_admin=1 + company_id='groundwork_platform'
 // and auto-navigates to superAdmin() instead of today().
 app.post('/api/auth/platform-login', async (c) => {
   const body = await c.req.json().catch(() => ({}))
-  const { pin } = body as any
-  if (!pin) return err(c, 'PIN required')
+  // Accept 'password' (new) or 'pin' (legacy fallback) field name
+  const credential = (body as any).password || (body as any).pin
+  if (!credential) return err(c, 'Password required')
   // Always look up the single platform-owner rep — no picker needed
   const rep = await c.env.DB.prepare(
     "SELECT * FROM reps WHERE id = 'gw_tyler' AND company_id = 'groundwork_platform' AND is_super_admin = 1 AND active = 1 LIMIT 1"
   ).first<any>()
   if (!rep) return err(c, 'Platform account not found', 401)
-  // Dual-mode PIN check (same logic as /api/auth/login)
-  let pinOk = false
+  // Dual-mode credential check: PBKDF2 hash first, then plain-text migration path
+  let credOk = false
   if (rep.pin_hash) {
-    pinOk = await verifyPin(String(pin), rep.pin_hash)
-    if (pinOk && rep.pin) {
+    credOk = await verifyPin(String(credential), rep.pin_hash)
+    if (credOk && rep.pin) {
       await c.env.DB.prepare("UPDATE reps SET pin = '' WHERE id = 'gw_tyler'").run()
     }
   } else if (rep.pin) {
-    pinOk = String(pin) === String(rep.pin)
-    if (pinOk) {
-      const hash = await hashPin(String(pin))
+    credOk = String(credential) === String(rep.pin)
+    if (credOk) {
+      const hash = await hashPin(String(credential))
       await c.env.DB.prepare("UPDATE reps SET pin_hash = ?, pin = '' WHERE id = 'gw_tyler'")
         .bind(hash).run()
     }
   }
-  if (!pinOk) return err(c, 'Incorrect PIN', 401)
+  if (!credOk) return err(c, 'Incorrect password', 401)
   const token = uid() + uid()
   await c.env.DB.batch([
     c.env.DB.prepare(
