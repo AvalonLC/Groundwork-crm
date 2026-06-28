@@ -1397,7 +1397,7 @@ window.gwSearchDrive = async function() {
 
 const DRIVE_ICONS = {
   'application/vnd.google-apps.folder':       {icon:'📁',label:'Folder',color:'#8B6914'},
-  'application/vnd.google-apps.document':     {icon:'📄',label:'Doc',color:'#4285f4'},
+  'application/vnd.google-apps.document':     {icon:'📄',label:'Doc',color:'#4D8A86'},
   'application/vnd.google-apps.spreadsheet':  {icon:'📊',label:'Sheet',color:'#2D7A55'},
   'application/vnd.google-apps.presentation': {icon:'📑',label:'Slides',color:'#8B6914'},
   'application/vnd.google-apps.form':         {icon:'📝',label:'Form',color:'#B8744F'},

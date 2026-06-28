@@ -1220,11 +1220,12 @@ app.get('/auth/google/callback', (c) => {
 <head>
   <title>Connecting to Google…</title>
   <style>
-    body { font-family: Inter, sans-serif; background: linear-gradient(160deg,#152F26,#1E4638); color: #e2e8f0;
+    /* Groundwork brand palette — #204A43 Evergreen Slate, #1B3F38 Deep Pine, #4D8A86 UI Accent, #DDD5C8 Soft Neutral */
+    body { font-family: 'Satoshi', Inter, sans-serif; background: linear-gradient(160deg,#1B3F38,#204A43); color: #DDD5C8;
            display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; flex-direction: column; gap: 16px; }
-    .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,.2); border-top-color: #10B981; border-radius: 50%; animation: spin .8s linear infinite; }
+    .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,.15); border-top-color: #4D8A86; border-radius: 50%; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    p { color: #94a3b8; font-size: 14px; margin: 0; }
+    p { color: #6F7E6A; font-size: 14px; margin: 0; }
   </style>
 </head>
 <body>
@@ -1232,13 +1233,12 @@ app.get('/auth/google/callback', (c) => {
   <p>Connecting to Google — you can close this window if it doesn't close automatically.</p>
   <script>
     // The access token arrives in the URL hash via Google's implicit flow.
-    // The opener (integrations.js) polls this page's location.hash to read it.
+    // The opener (user_management.js) polls this page's location.hash to read it.
     // Nothing needs to happen here — just stay open so the polling can read the hash.
-    
-    // Auto-close after 5 seconds as a fallback
+
+    // Auto-close after 10 seconds as a fallback (gives the opener enough poll cycles)
     if (window.opener) {
-      // Let the opener read our hash, then close
-      setTimeout(() => window.close(), 5000);
+      setTimeout(() => window.close(), 10000);
     }
   </script>
 </body>

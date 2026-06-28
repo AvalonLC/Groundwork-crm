@@ -1041,7 +1041,7 @@ async function umMyConnect() {
       const expiresIn   = parseInt(hp.get('expires_in') || '3600');
       if (!accessToken) return;
       clearInterval(timer);
-      popup.close();
+      if (!popup.closed) popup.close();
 
       // Fetch the Google account email for this token
       let googleEmail = '';
@@ -1075,6 +1075,12 @@ async function umMyConnect() {
       else if (typeof window.show === 'function') window.show('settings');
     } catch(e) {}
   }, 800);
+
+  // Safety: kill the poller after 2 minutes regardless
+  setTimeout(() => {
+    clearInterval(timer);
+    if (!popup.closed) popup.close();
+  }, 120000);
 }
 
 function umMyDisconnect() {
