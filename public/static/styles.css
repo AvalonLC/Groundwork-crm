@@ -969,3 +969,27 @@ h1.pl-title {
 }
 
 /* ── END KANBAN DEFINITIVE FIX ───────────────────────────────────── */
+
+/* ── KANBAN FLEX OVERRIDE (Section 37 companion) ── */
+/* Must override the grid declarations set earlier in this file */
+.kanban {
+  display: flex !important;
+  flex-direction: row !important;
+  overflow-x: auto !important;
+  align-items: flex-start !important;
+  gap: 14px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+.kanban-col {
+  flex: 0 0 300px !important;
+  width: 300px !important;
+  max-width: 300px !important;
+  min-width: auto !important;
+}
+/* Let the view scroll, don't hide kanban overflow */
+.view {
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+/* ── END KANBAN FLEX OVERRIDE ─────────────────────────────────── */

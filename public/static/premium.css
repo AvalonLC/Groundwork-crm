@@ -6789,3 +6789,219 @@ h1.pl-title,
    The actual fix is in styles.css STYLES-OVERRIDE block above.
    This block just documents the intent. */
 /* ── END SECTION 36-B ────────────────────────────────────────────── */
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 37 — Card Layout Redesign (June 2026)
+   Fixes: Due Now oppCard blank space, kanban column width/overflow, overdue
+   indicator clipping, column header wrapping.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Kanban: definitive column sizing fix ── */
+/* Override ALL prior grid declarations. Use a scrollable parent wrapper. */
+.kanban {
+  display: flex !important;           /* switch from grid to flex for clean column layout */
+  flex-direction: row !important;
+  gap: 14px !important;
+  align-items: flex-start !important;
+  overflow-x: auto !important;
+  padding-bottom: 10px !important;
+  /* Custom scrollbar — subtle */
+  scrollbar-width: thin;
+  scrollbar-color: var(--gw-line) transparent;
+}
+.kanban::-webkit-scrollbar { height: 5px; }
+.kanban::-webkit-scrollbar-track { background: transparent; }
+.kanban::-webkit-scrollbar-thumb { background: var(--gw-line); border-radius: 3px; }
+
+/* Each column: fixed min-width so headers never wrap */
+.kanban-col {
+  flex: 0 0 300px !important;         /* fixed 300px — never shrinks, never bloats */
+  width: 300px !important;
+  max-width: 300px !important;
+  min-width: 0 !important;            /* flex child min-width override */
+  box-sizing: border-box !important;
+  background: var(--gw-surface-2) !important;
+  border: 1px solid var(--gw-line) !important;
+  border-radius: 14px !important;
+  padding: 14px 12px !important;
+}
+
+/* Column header: single line, compact */
+.kanban-col > h3 {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  color: var(--gw-muted) !important;
+  margin: 0 0 10px !important;
+  gap: 6px !important;
+  white-space: nowrap !important;     /* NEVER let stage name wrap to 2 lines */
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* ── 2. Opp card: clean block layout, no ::before clip ── */
+.opp-card {
+  display: block !important;
+  position: relative !important;
+  background: var(--gw-surface) !important;
+  border: 1px solid var(--gw-line) !important;
+  border-radius: 10px !important;
+  padding: 12px 13px !important;
+  margin-bottom: 8px !important;
+  cursor: pointer !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  transition: box-shadow .13s, border-color .13s, transform .1s !important;
+  overflow: hidden !important;         /* needed for ::before accent bar */
+}
+.opp-card:last-child { margin-bottom: 0 !important; }
+.opp-card:hover {
+  box-shadow: var(--gw-shadow-sm) !important;
+  border-color: var(--gw-pine-muted) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Accent bar — via ::before stays INSIDE rounded corners */
+.opp-card::before {
+  content: '' !important;
+  position: absolute !important;
+  left: 0 !important; top: 0 !important; bottom: 0 !important;
+  width: 3px !important;
+  background: transparent !important;
+  border-radius: 10px 0 0 10px !important;
+  transition: background .13s !important;
+}
+.opp-card:hover::before            { background: var(--gw-emerald) !important; }
+.opp-card.opp-overdue::before      { background: #C97B6A !important; }
+.opp-card.opp-stale::before        { background: var(--gw-amber, #C4922A) !important; }
+
+/* Remove old border-left overdue/stale — use ::before instead */
+.opp-overdue,
+.opp-stale {
+  border-left-width: 1px !important;  /* reset to normal border, ::before handles accent */
+}
+
+/* Opp card internal layout */
+.opp-card-top {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 6px !important;
+  margin-bottom: 3px !important;
+  flex-wrap: nowrap !important;
+}
+.opp-card h3 {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: var(--gw-ink) !important;
+  margin: 0 !important;
+  line-height: 1.3 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  word-break: break-word !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+.urgency-badge {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  letter-spacing: .05em !important;
+  padding: 2px 6px !important;
+  border-radius: 20px !important;
+  margin-top: 1px !important;
+}
+.urgency-badge.overdue { background: #FAE8E4 !important; color: #8B3A2A !important; border: 1px solid #F5D5C8 !important; }
+.urgency-badge.stale   { background: #FAF6E8 !important; color: #7A5C10 !important; border: 1px solid #F5E8C0 !important; }
+.opp-project {
+  font-size: 11.5px !important;
+  color: var(--gw-muted) !important;
+  margin: 0 0 8px !important;
+  line-height: 1.4 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  word-break: break-word !important;
+}
+.opp-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 5px !important;
+  margin: 0 !important;
+}
+.opp-value {
+  margin-left: auto !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: var(--gw-emerald) !important;
+}
+
+/* ── 3. Due Now section: compact oppCard styling ── */
+/* When oppCard appears inside the Today "Due Now" card, make it leaner */
+.card .opp-card {
+  border-radius: 10px !important;
+  margin-bottom: 8px !important;
+  padding: 12px 14px 12px 16px !important;
+}
+.card .opp-card:last-child { margin-bottom: 0 !important; }
+
+/* ── 4. Fix mini-row blank space — tighten the grid ── */
+/* The blank space comes from mini-row-meta being placed at grid-row:3
+   while col 2 of row 2 is empty. Fix: use align-items:start not center. */
+.mini-row {
+  align-items: start !important;
+  gap: 2px 10px !important;
+  padding: 10px 14px !important;
+}
+
+/* meta row: no forced grid-row, just flow naturally */
+.mini-row-meta {
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;         /* remove forced row 3 — flow naturally */
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-top: 4px !important;
+  justify-content: flex-end !important;
+  flex-wrap: wrap !important;
+}
+
+/* Strong (name) and status-chip on same row */
+.mini-row strong {
+  align-self: center !important;
+}
+.mini-row .status-chip {
+  align-self: center !important;
+  margin-top: 0 !important;
+}
+
+/* Overdue indicator: left accent bar instead of border-left (no corner clash) */
+.mini-row.mini-row-overdue {
+  border-left: none !important;      /* remove the misaligned 3px border */
+  border: 1px solid rgba(201,123,106,.35) !important;
+  background: rgba(201,123,106,.04) !important;
+  position: relative !important;
+}
+.mini-row.mini-row-overdue::before {
+  content: '' !important;
+  position: absolute !important;
+  left: 0 !important; top: 0 !important; bottom: 0 !important;
+  width: 3px !important;
+  background: #C97B6A !important;
+  border-radius: 3px 0 0 3px !important;
+}
+
+/* ── END SECTION 37 ───────────────────────────────────────────────────────── */
