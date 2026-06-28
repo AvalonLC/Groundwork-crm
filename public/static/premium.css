@@ -6775,3 +6775,17 @@ article [style*="color:#E8E4D9"] { color: var(--gw-ink) !important; }
 }
 
 /* ── END SECTION 36 ───────────────────────────────────────────────────────── */
+
+/* ── SECTION 36-B — Pipeline heading & primary heading color fix ── */
+/* .pl-title uses var(--gw-ink) which = #113931 (forest green) — override to near-black */
+.pl-title,
+h1.pl-title,
+.view h1,
+.view .pl-title {
+  color: #0F1C14 !important;
+}
+
+/* ── Sidebar override guard (styles.css loads after, so re-assert here isn't enough) ──
+   The actual fix is in styles.css STYLES-OVERRIDE block above.
+   This block just documents the intent. */
+/* ── END SECTION 36-B ────────────────────────────────────────────── */

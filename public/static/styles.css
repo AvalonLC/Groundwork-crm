@@ -816,3 +816,156 @@
 .ld-qa-btn.ld-qa-loading{pointer-events:none;opacity:.7}
 .ld-qa-btn.ld-qa-success svg{color:#2D7A55}
 .ld-qa-btn.ld-qa-success{border-color:rgba(45,122,85,.25);background:#EAF1EE}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   STYLES-OVERRIDE — Fix styles.css cascade overrides (June 2026)
+   This block must stay at the END of styles.css so it wins the cascade.
+   Corrects: sidebar background (was #fff), nav item colors, brand name
+   visibility, kanban overflow, pipeline heading color.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar: restore dark evergreen background ── */
+.sidebar {
+  background: #113931 !important;
+  border-right: none !important;
+  padding: 0 !important;
+}
+
+/* ── Nav summary (group headers): light on dark sidebar ── */
+.nav-summary {
+  color: rgba(255,255,255,.55) !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: .09em !important;
+  text-transform: uppercase !important;
+}
+.nav-summary:hover { background: rgba(255,255,255,.06) !important; }
+.nav-group[open] > .nav-summary { color: rgba(255,255,255,.75) !important; }
+.nav-summary::after { color: rgba(255,255,255,.35) !important; }
+
+/* ── Nav items: readable on dark ── */
+.nav-item {
+  color: rgba(255,255,255,.60) !important;
+  font-size: 13px !important;
+}
+.nav-item:hover {
+  background: rgba(255,255,255,.07) !important;
+  color: rgba(255,255,255,.92) !important;
+}
+.nav-item.active {
+  color: #ffffff !important;
+  font-weight: 650 !important;
+  background: rgba(255,255,255,.10) !important;
+}
+
+/* ── Brand name / subtitle: always white on dark sidebar ── */
+.brand-name {
+  color: #ffffff !important;
+  font-size: 16px !important;
+  font-weight: 900 !important;
+  letter-spacing: -.025em !important;
+}
+.brand-subtitle {
+  color: rgba(255,255,255,.50) !important;
+  font-size: 11px !important;
+}
+
+/* ── Pipeline / page heading: near-black, not forest green ── */
+.pl-title,
+h1.pl-title {
+  color: #0F1C14 !important;   /* near-black — max legibility on cream bg */
+}
+
+/* ── Kanban: scroll horizontally, never squish ── */
+.kanban {
+  overflow-x: auto !important;
+}
+.kanban-col {
+  min-width: 260px !important;
+}
+
+/* ── Opp card headings: wrap cleanly in narrow columns ── */
+.opp-card h3 {
+  white-space: normal !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  word-break: break-word !important;
+}
+
+/* ── END STYLES-OVERRIDE ───────────────────────────────────────────────────── */
+
+/* ── Kanban inner grid: force proper column sizing ── */
+.kanban {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+  overflow-x: auto !important;
+  gap: 14px !important;
+  align-items: start !important;
+  padding-bottom: 8px !important; /* space for scrollbar */
+}
+
+/* Ensure view container doesn't clip kanban */
+.view {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* Kanban wrapper: allow horizontal scroll */
+.kanban-col {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* ── END kanban fix ─────────────────────────────────────────────── */
+
+/* ── KANBAN DEFINITIVE FIX — fixed column widths with horizontal scroll ── */
+/* Override the auto-fill/auto-fit approach — use explicit column count */
+.kanban {
+  /* For up to 5 pipeline stages, each column is exactly 280px min */
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)) !important;
+  overflow-x: visible !important; /* let parent scroll */
+  min-width: max-content !important; /* force grid to its natural width */
+  width: 100% !important;
+  gap: 14px !important;
+}
+
+/* Wrap .kanban in an auto-scrolling container via the .mt class trick
+   OR ensure .view scrolls (but view has overflow-x:hidden above — revert) */
+.view {
+  overflow-x: auto !important; /* allow kanban to scroll if too wide */
+}
+
+/* Each kanban column: do NOT collapse below 272px */
+.kanban-col {
+  min-width: 272px !important;
+  max-width: 400px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+/* opp-card: ensure it fills its column and wraps text */
+.opp-card {
+  display: block !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.opp-card h3 {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  word-break: break-word !important;
+  line-height: 1.35 !important;
+  margin: 0 0 3px !important;
+}
+
+/* ── END KANBAN DEFINITIVE FIX ───────────────────────────────────── */
