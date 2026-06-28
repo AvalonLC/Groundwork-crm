@@ -535,13 +535,13 @@ function timeAgo(iso) {
 // ── LOGIN SCREEN ──────────────────────────────────────────────────────────────
 function renderLoginScreen() {
   document.body.innerHTML = `
-  <div style="min-height:100vh;background:linear-gradient(160deg,#204A43 0%,#1B3F38 45%,#204A43 100%);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif">
+  <div style="min-height:100vh;background:linear-gradient(160deg,#1A4740 0%,#113931 45%,#1A4740 100%);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif">
     <div style="width:min(420px,95vw);padding:0 20px">
 
       <!-- Logo / Brand — GW-003 Temporary Wordmark -->
       <div style="text-align:center;margin-bottom:40px">
         <div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
-          <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:44px;height:44px;object-fit:contain;filter:brightness(0) invert(1);opacity:.9">
+          <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:52px;height:52px;object-fit:cover;border-radius:10px;opacity:.95">
         </div>
         <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0;letter-spacing:-.04em">Groundwork</h1>
         <p style="color:rgba(255,255,255,.5);font-size:13px;margin:5px 0 0;font-weight:600;letter-spacing:.06em;text-transform:uppercase">CRM</p>
@@ -985,7 +985,7 @@ function renderRepDashboard(viewEl, rep) {
           const gateRow = gateInfo && gateInfo.held ? `
         <tr>
           <td colspan="7" style="padding:2px 12px 10px">
-            <div style="display:inline-flex;align-items:center;gap:6px;background:#1F2A2B;border:1px solid rgba(139,105,20,.25);border-radius:6px;padding:4px 10px">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:#113931;border:1px solid rgba(139,105,20,.25);border-radius:6px;padding:4px 10px">
               <span style="font-size:10px;color:#8B6914">⏳</span>
               <span style="font-size:10px;color:#8B6914">${gateInfo.reason}</span>
               ${gateInfo.preview > 0 ? `<span style="font-size:10px;color:#6F7E6A">Earns ${fmtCurrency(gateInfo.preview)} once collected.</span>` : ''}
@@ -1127,7 +1127,7 @@ function renderRepDashboard(viewEl, rep) {
 
 function repOppMiniCard(o) {
   const stageColors = {
-    'New Lead': '#204A43', 'Contacted': '#4D8A86', 'Meeting Set': '#4D8A86',
+    'New Lead': '#1A4740', 'Contacted': '#4D8A86', 'Meeting Set': '#4D8A86',
     'Proposal / Estimate Sent': '#8B6914', 'Negotiation': '#8B3A2A', 'Sold / Activation': '#2D7A55'
   };
   const color = stageColors[o.status] || '#6F7E6A';
@@ -1319,7 +1319,7 @@ function renderOMDashboard(viewEl, rep) {
     <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Active pipeline</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View overdue follow-ups"
-    style="background:${overdue.length > 0 ? 'linear-gradient(135deg,#1F2A2B,#1F2A2B)' : '#1F2A2B'};border:1px solid ${overdue.length > 0 ? '#5C2318' : '#1F2A2B'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    style="background:${overdue.length > 0 ? 'linear-gradient(135deg,#113931,#113931)' : '#113931'};border:1px solid ${overdue.length > 0 ? '#5C2318' : '#113931'};border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
     <div style="font-size:10px;font-weight:700;color:#B8DEC9;letter-spacing:.06em;text-transform:uppercase">Overdue</div>
     <div style="font-size:26px;font-weight:800;color:${overdue.length > 0 ? '#E8A090' : '#4DB87A'};margin-top:6px">${overdue.length}</div>
@@ -1347,7 +1347,7 @@ function renderOMDashboard(viewEl, rep) {
     <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">No rep assigned</div>
   </div>
   <div class="dash-card-clickable" onclick="show('pipeline')" title="View sold opportunities"
-    style="background:linear-gradient(135deg,#1F2A2B,#1F2A2B);border:1px solid #2D7A55;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
+    style="background:linear-gradient(135deg,#113931,#113931);border:1px solid #2D7A55;border-radius:12px;padding:16px;text-align:center;cursor:pointer"
     onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
     <div style="font-size:10px;font-weight:700;color:#B8DEC9;letter-spacing:.06em;text-transform:uppercase">Sold</div>
     <div style="font-size:26px;font-weight:800;color:#4DB87A;margin-top:6px">${sold.length}</div>
@@ -1590,7 +1590,7 @@ ${(()=>{
 
   return `<div class="gw-sky-card" style="border-radius:14px;margin-bottom:20px;overflow:hidden">
     <div class="gw-sky-card-header" style="display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#204A43">Executive Summary</span>
+      <span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1A4740">Executive Summary</span>
       <span style="font-size:11px;color:var(--gw-muted)">Key takeaways as of today</span>
     </div>
     ${rows}
@@ -1615,12 +1615,12 @@ ${(()=>{
     </div>
     <div style="text-align:center">
       <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Needed / Mo</div>
-      <div style="font-size:1.6rem;font-weight:900;color:#1F2A2B">${fmtM(annual.avgNeededPerMonth)}</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#113931">${fmtM(annual.avgNeededPerMonth)}</div>
       <div style="font-size:11px;color:var(--gw-muted)">${annual.monthsLeft != null ? annual.monthsLeft : 7} months left (dynamic)</div>
     </div>
     <div style="text-align:center">
       <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Operating GM</div>
-      <div style="font-size:1.6rem;font-weight:900;color:#204A43">${annual.grossMarginPct ? Math.round(annual.grossMarginPct * 100) + '%' : '—'}</div>
+      <div style="font-size:1.6rem;font-weight:900;color:#1A4740">${annual.grossMarginPct ? Math.round(annual.grossMarginPct * 100) + '%' : '—'}</div>
     </div>
     <div style="text-align:center">
       <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">True Net Income</div>
@@ -1663,7 +1663,7 @@ ${(()=>{
         const hasActual = m.actual != null;
         const varColor = !hasActual ? '#4A5947' : m.variance >= 0 ? '#2D7A55' : '#C97B6A';
         const barPct = hasActual ? Math.min(100, Math.round((m.actual / m.budgeted) * 100)) : 0;
-        return `<div style="flex:1;min-width:60px;background:var(--gw-surface-2);border:1px solid ${hasActual ? '#204A43' : 'var(--gw-line)'};border-radius:10px;padding:10px 8px;text-align:center">
+        return `<div style="flex:1;min-width:60px;background:var(--gw-surface-2);border:1px solid ${hasActual ? '#1A4740' : 'var(--gw-line)'};border-radius:10px;padding:10px 8px;text-align:center">
           <div style="font-size:10px;font-weight:700;color:#6F7E6A;margin-bottom:6px">${m.month}</div>
           <div style="font-size:11px;font-weight:600;color:#6F7E6A;margin-bottom:2px">${fmtM(m.budgeted)}</div>
           ${hasActual ? `<div style="font-size:12px;font-weight:800;color:#4D8A86">${fmtM(m.actual)}</div>
@@ -1710,7 +1710,7 @@ ${(()=>{
         <div style="font-size:10px;color:#6F7E6A">${fmtM(totalPipelineValue)} value</div>
       </div>
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View overdue follow-ups"
-        style="background:${overdueList.length > 0 ? '#1F2A2B' : '#1F2A2B'};border:1px solid ${overdueList.length > 0 ? '#5C2318' : '#1F2A2B'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        style="background:${overdueList.length > 0 ? '#113931' : '#113931'};border:1px solid ${overdueList.length > 0 ? '#5C2318' : '#113931'};border-radius:10px;padding:12px;text-align:center;cursor:pointer"
         onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
         <div style="font-size:9px;color:#6F7E6A;font-weight:600;text-transform:uppercase">Overdue</div>
         <div style="font-size:22px;font-weight:800;color:${overdueList.length > 0 ? '#C97B6A' : '#2D7A55'};margin-top:4px">${overdueList.length}</div>
@@ -1731,7 +1731,7 @@ ${(()=>{
         <div style="font-size:10px;color:#6F7E6A">no recent activity</div>
       </div>
       <div class="dash-card-clickable" onclick="show('pipeline')" title="View sold opportunities"
-        style="background:linear-gradient(135deg,#1F2A2B,#1F2A2B);border:1px solid #2D7A55;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
+        style="background:linear-gradient(135deg,#113931,#113931);border:1px solid #2D7A55;border-radius:10px;padding:12px;text-align:center;cursor:pointer"
         onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
         <div style="font-size:9px;color:#B8DEC9;font-weight:600;text-transform:uppercase">Sold</div>
         <div style="font-size:22px;font-weight:800;color:#2D7A55;margin-top:4px">${soldOpps.length}</div>
@@ -1821,7 +1821,7 @@ ${(()=>{
                 style="background:#5C2318;border:none;color:#C97B6A;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer">Reject</button>
               ` : `
               <button onclick="event.stopPropagation();window._adminMarkCommPaid('${o.id}')"
-                style="background:#1B3F38;border:none;color:#2D7A55;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">$ Mark Paid</button>
+                style="background:#113931;border:none;color:#2D7A55;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">$ Mark Paid</button>
               `}
               <button onclick="event.stopPropagation();show('pipeline','${o.id}')"
                 style="background:var(--gw-surface-2);border:1px solid var(--gw-line);color:var(--gw-muted);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">View →</button>
@@ -1918,7 +1918,7 @@ ${(()=>{
         </div>
       </div>
       <!-- Commission -->
-      <div style="background:#1F2A2B;border:1px solid #2D7A55;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="background:#113931;border:1px solid #2D7A55;border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
         <div style="text-align:center">
           <div style="font-size:9px;color:#B8DEC9;font-weight:600;text-transform:uppercase">Earned</div>
           <div style="font-size:15px;font-weight:800;color:#2D7A55;margin-top:2px">${fmtM(totalEarned)}</div>

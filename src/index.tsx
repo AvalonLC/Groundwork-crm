@@ -803,7 +803,7 @@ app.post('/api/auth/reset-request', async (c) => {
       <tr><td align="center">
         <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(30,70,56,.10)">
           <!-- Header -->
-          <tr><td style="background:linear-gradient(135deg,#152F26 0%,#1E4638 60%,#255A47 100%);padding:36px 40px 32px;text-align:center">
+          <tr><td style="background:linear-gradient(135deg,#0E372F 0%,#113931 60%,#1A4740 100%);padding:36px 40px 32px;text-align:center">
             <div style="display:inline-block;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:10px 18px;margin-bottom:18px">
               <span style="font-size:20px;font-weight:900;color:#ffffff;letter-spacing:-.04em">Groundwork</span>
               <span style="font-size:11px;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.12em;text-transform:uppercase;display:block;margin-top:1px">CRM</span>
@@ -816,7 +816,7 @@ app.post('/api/auth/reset-request', async (c) => {
             <p style="margin:0 0 28px;font-size:15px;color:#5A6B79;line-height:1.6">Hi <strong style="color:#0F1C14">${rep.name}</strong>, here is your one-time login code for Groundwork CRM:</p>
             <!-- OTP block -->
             <div style="background:#F5F9F7;border:1.5px solid #E2EBE8;border-radius:14px;padding:28px;text-align:center;margin-bottom:28px">
-              <span style="font-size:52px;font-weight:900;letter-spacing:10px;color:#1E4638;display:block;line-height:1">${otp}</span>
+              <span style="font-size:52px;font-weight:900;letter-spacing:10px;color:#113931;display:block;line-height:1">${otp}</span>
               <p style="margin:12px 0 0;font-size:12px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:.1em">One-time code · expires in 1 hour</p>
             </div>
             <p style="margin:0 0 12px;font-size:13px;color:#94A3B8;line-height:1.6">Enter this code in the Groundwork CRM app when prompted. If you didn't request this, you can safely ignore this email — your account remains secure.</p>
@@ -879,15 +879,16 @@ app.get('/onboard', (c) => {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Get Started — Groundwork CRM</title>
-  <meta name="theme-color" content="#1E4638" />
+  <meta name="theme-color" content="#113931" />
   <meta name="description" content="Set up your team on Groundwork CRM in 2 minutes." />
   <link rel="icon" type="image/png" href="/static/avalon-logo.png" />
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{
       font-family:Inter,sans-serif;
-      background:linear-gradient(160deg,#152F26 0%,#1E4638 45%,#152F26 100%);
+      background:linear-gradient(160deg,#0E372F 0%,#113931 45%,#0E372F 100%);
       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
     }
     /* Decorative ring behind card */
@@ -908,7 +909,7 @@ app.get('/onboard', (c) => {
     }
     /* Pine header strip */
     .card-header{
-      background:linear-gradient(135deg,#152F26 0%,#1E4638 60%,#255A47 100%);
+      background:linear-gradient(135deg,#0E372F 0%,#113931 60%,#1A4740 100%);
       padding:30px 36px 28px;
       text-align:center;
     }
@@ -932,28 +933,28 @@ app.get('/onboard', (c) => {
       border-radius:10px;color:#0F1C14;font-size:14px;
       font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s;
     }
-    input:focus,select:focus{border-color:#1E4638;box-shadow:0 0 0 3px rgba(30,70,56,.12)}
+    input:focus,select:focus{border-color:#113931;box-shadow:0 0 0 3px rgba(30,70,56,.12)}
     input::placeholder{color:#94A3B8}
     .field{margin-bottom:16px}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
     .hint{font-size:11px;color:#94A3B8;margin-top:4px}
-    .slug-preview{font-size:12px;color:#1E4638;margin-top:4px;font-weight:700}
+    .slug-preview{font-size:12px;color:#113931;margin-top:4px;font-weight:700}
     button[type=submit]{
       width:100%;padding:13px;
-      background:#1E4638;color:#fff;
+      background:#113931;color:#fff;
       font-size:15px;font-weight:700;
       border:none;border-radius:12px;cursor:pointer;
       margin-top:6px;transition:background .15s,box-shadow .15s;
       font-family:inherit;
       box-shadow:0 4px 16px rgba(30,70,56,.3);
     }
-    button[type=submit]:hover{background:#255A47;box-shadow:0 6px 22px rgba(30,70,56,.38)}
+    button[type=submit]:hover{background:#1A4740;box-shadow:0 6px 22px rgba(30,70,56,.38)}
     button[type=submit]:disabled{background:#C8D8D3;box-shadow:none;cursor:not-allowed}
     .step{display:none}.step.active{display:block}
     /* Success state */
     .success-ring{
       width:68px;height:68px;border-radius:50%;
-      background:linear-gradient(135deg,#1E4638,#10B981);
+      background:linear-gradient(135deg,#113931,#10B981);
       display:flex;align-items:center;justify-content:center;
       font-size:28px;margin:0 auto 18px;
       box-shadow:0 8px 24px rgba(16,185,129,.3);
@@ -972,13 +973,13 @@ app.get('/onboard', (c) => {
     .creds .cred-val{font-size:14px;font-weight:700;color:#0F1C14;font-family:monospace}
     .open-btn{
       display:block;width:100%;padding:13px;
-      background:#1E4638;color:#fff;
+      background:#113931;color:#fff;
       font-size:15px;font-weight:700;border-radius:12px;
       text-align:center;text-decoration:none;
       box-shadow:0 4px 16px rgba(30,70,56,.3);
       transition:background .15s;
     }
-    .open-btn:hover{background:#255A47}
+    .open-btn:hover{background:#1A4740}
     .error{
       background:#FEF2F2;border:1px solid #FECACA;
       color:#991B1B;padding:11px 14px;border-radius:10px;
@@ -1220,12 +1221,12 @@ app.get('/auth/google/callback', (c) => {
 <head>
   <title>Connecting to Google…</title>
   <style>
-    /* Groundwork brand palette — #204A43 Evergreen Slate, #1B3F38 Deep Pine, #4D8A86 UI Accent, #DDD5C8 Soft Neutral */
-    body { font-family: 'Satoshi', Inter, sans-serif; background: linear-gradient(160deg,#1B3F38,#204A43); color: #DDD5C8;
+    /* Groundwork brand palette — #113931 Brand Primary, #0E372F Deep Pine, #4D8A86 UI Accent */
+    body { font-family: 'Satoshi', Inter, sans-serif; background: linear-gradient(160deg,#113931,#0E372F); color: #DDD5C8;
            display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; flex-direction: column; gap: 16px; }
     .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,.15); border-top-color: #4D8A86; border-radius: 50%; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    p { color: #6F7E6A; font-size: 14px; margin: 0; }
+    p { color: #8FB8B2; font-size: 14px; margin: 0; }
   </style>
 </head>
 <body>
@@ -1258,7 +1259,8 @@ function getHtml(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Groundwork CRM</title>
   <link rel="icon" type="image/png" href="/static/avalon-logo.png" />
-  <meta name="theme-color" content="#1E4638" />
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+  <meta name="theme-color" content="#113931" />
   <meta name="description" content="Field sales CRM built for home services teams." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1271,13 +1273,8 @@ function getHtml(): string {
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <div class="brand-mark" onclick="show('today')" style="cursor:pointer;width:34px;height:34px;" title="Go to Today">
-        <!-- Groundwork Contour Mark SVG -->
-        <svg width="22" height="18" viewBox="0 0 22 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M11 1L20 6.5L11 12L2 6.5L11 1Z" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
-          <path d="M2 9.5L11 15L20 9.5" stroke="rgba(255,255,255,0.65)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <path d="M2 12.5L11 18L20 12.5" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
+      <div class="brand-mark" onclick="show('today')" style="cursor:pointer;width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;" title="Go to Today">
+        <img src="/static/avalon-logo.png" alt="Groundwork" style="width:36px;height:36px;object-fit:cover;display:block;" />
       </div>
       <div>
         <div class="brand-name">Groundwork</div>

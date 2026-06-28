@@ -548,7 +548,7 @@ async function integrations() {
       Other users connect their own accounts separately — no shared access.
     </p>
     ${!clientIdConfigured ? `
-    <div style="padding:12px 14px;background:#1F2A2B;border:1px solid rgba(139,105,20,.25);border-radius:8px;margin-bottom:16px;font-size:13px;color:#8B6914">
+    <div style="padding:12px 14px;background:#113931;border:1px solid rgba(139,105,20,.25);border-radius:8px;margin-bottom:16px;font-size:13px;color:#8B6914">
       ⚠ Google Client ID not configured. Ask Tyler (Admin) to set it up in
       <strong>Admin → User Management → Users &amp; Workspace tab</strong>.
     </div>` : ''}
@@ -1078,7 +1078,7 @@ function gwRenderCalBody() {
 
 function gwEventColor(ev) {
   // Use Google's colorId if present
-  const colors = {1:'#4D8A86',2:'#2D7A55',3:'#B8744F',4:'#C97B6A',5:'#8B6914',6:'#8B3A2A',7:'#4D8A86',8:'#6F7E6A',9:'#204A43',10:'#2D7A55',11:'#8B3A2A'};
+  const colors = {1:'#4D8A86',2:'#2D7A55',3:'#B8744F',4:'#C97B6A',5:'#8B6914',6:'#8B3A2A',7:'#4D8A86',8:'#6F7E6A',9:'#1A4740',10:'#2D7A55',11:'#8B3A2A'};
   if (ev.colorId && colors[ev.colorId]) return colors[ev.colorId];
   return '#4D8A86';
 }

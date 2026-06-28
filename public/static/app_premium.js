@@ -317,7 +317,7 @@ function buildSuggestedActions(currentRep){
   const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && !['Sold / Activation','Closed Lost'].includes(o.status)) : [];
 
   if(staleOpps.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="10" r="6" stroke="#8B6914" stroke-width="1.5"/><path d="M9 7v4l2 1.5" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 2h6" stroke="#8B6914" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg>',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
-  if(proposalsPending.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#4D8A86" stroke-width="1.5"/><path d="M2 8h14" stroke="#4D8A86" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#4D8A86" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><circle cx="13" cy="13" r="2.5" fill="#C97B6A" stroke="#1F2A2B" stroke-width="1"/><path d="M13 11.5v1.5M13 14h.01" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/></svg>',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
+  if(proposalsPending.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#4D8A86" stroke-width="1.5"/><path d="M2 8h14" stroke="#4D8A86" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#4D8A86" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><circle cx="13" cy="13" r="2.5" fill="#C97B6A" stroke="#113931" stroke-width="1"/><path d="M13 11.5v1.5M13 14h.01" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/></svg>',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
   if(noNextStep.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#8B6914" stroke-width="1.5"/><path d="M2 8h14" stroke="#8B6914" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><path d="M7 12h4M9 10v4" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round" opacity=".7"/></svg>',title:`${noNextStep.length} lead${noNextStep.length>1?'s':''} missing a next follow-up date`,cta:'Set Follow-Up',onclick:`show('pipeline')`});
   if(unassigned.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="7" r="3" stroke="#6F7E6A" stroke-width="1.5"/><path d="M3 16c0-3 2.7-5 6-5s6 2 6 5" stroke="#6F7E6A" stroke-width="1.5" stroke-linecap="round"/><path d="M14 4v4M12 6h4" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round"/></svg>',title:`${unassigned.length} unassigned lead${unassigned.length>1?'s':''} with no rep`,cta:'Assign Now',onclick:`show('pipeline')`});
 
@@ -1562,7 +1562,7 @@ function lead(){
       // ── Section 4: Estimate (optional, collapsible) ──
       + '<div class="lf-section">'  
         + '<div class="lf-section-header">'  
-          + '<span class="lf-section-num" style="background:linear-gradient(135deg,#B8744F,#204A43)">4</span>'  
+          + '<span class="lf-section-num" style="background:linear-gradient(135deg,#B8744F,#1A4740)">4</span>'  
           + '<div>'  
             + '<div class="lf-section-title">Estimate</div>'  
             + '<div class="lf-section-sub">Track what\'s on the street — formal quotes and proposals</div>'  
@@ -2338,7 +2338,7 @@ function opportunityDetail(id){
               .sort((a,b)=>new Date(b.ts)-new Date(a.ts))
               .map(m => {
                 const fmt = dt => { try{ return new Date(dt).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} };
-                const typeColors = {sms:'#2D7A55',email:'#204A43',call:'#8B6914',note:'#6F7E6A',proposal:'#B8744F'};
+                const typeColors = {sms:'#2D7A55',email:'#1A4740',call:'#8B6914',note:'#6F7E6A',proposal:'#B8744F'};
                 const tc = typeColors[m.type]||'#6F7E6A';
                 return `<div class="ld-activity-item">
                   <div class="ld-act-dot" style="background:${tc}22;border-color:${tc}44;color:${tc}">${TYPE_ICON[m.type]||'📋'}</div>
@@ -2468,7 +2468,7 @@ function commsBoardHtml(oppId, opp){
 
   const TYPE_META = {
     sms:   { label:'SMS',      color:'#2D7A55', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
-    email: { label:'Email',    color:'#204A43', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' },
+    email: { label:'Email',    color:'#1A4740', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' },
     call:  { label:'Call',     color:'#8B6914', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
     note:  { label:'Note',     color:'#6F7E6A', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
     proposal:{ label:'Proposal', color:'#B8744F', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".6"/></svg>' },
@@ -3156,7 +3156,7 @@ function renderChecklist(c, persist=false, scopeId=''){
   const pct   = total ? Math.round((done/total)*100) : 0;
   const barColor = pct===100?'#2D7A55':pct>=50?'#8B6914':'#4D8A86';
   const chipBg   = pct===100?'#EAF1EE':pct>=50?'#FAF6E8':'#E5F0EF';
-  const chipTxt  = pct===100?'#204A43':pct>=50?'#7A5C10':'#204A43';
+  const chipTxt  = pct===100?'#1A4740':pct>=50?'#7A5C10':'#1A4740';
 
   const progressBlock = persist ? `
     <div class="ld-cl-progress">
@@ -3208,7 +3208,7 @@ function wireChecks(){
       const pct   = Math.round((done/total)*100);
       const color = pct===100?'#2D7A55':pct>=50?'#8B6914':'#4D8A86';
       const chipBg  = pct===100?'#EAF1EE':pct>=50?'#FAF6E8':'#E5F0EF';
-      const chipTxt = pct===100?'#204A43':pct>=50?'#7A5C10':'#204A43';
+      const chipTxt = pct===100?'#1A4740':pct>=50?'#7A5C10':'#1A4740';
       const barEl   = document.getElementById('cpbar-'+prefix);
       const lblEl   = document.getElementById('cplabel-'+prefix);
       const progress = barEl ? barEl.closest('.ld-cl-progress') : null;
@@ -3285,7 +3285,7 @@ window.mergeTemplate = mergeTemplate;
 function process(stageId){
   const sp = data.salesProcess;
   if(stageId){ const s = data.stages.find(x=>x.id===Number(stageId)); if(s) return renderStage(s); }
-  const stepColors = ['#204A43','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
+  const stepColors = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
   view.innerHTML = `
 <div class="eyebrow">Operating System</div>
 <h1 style="color:var(--ink)">Avalon Sales Process</h1>
@@ -3341,7 +3341,7 @@ ${data.stages.map(s=>{
 }).join('')}
 </div>`;
 
-  const stepColors2 = ['#204A43','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
+  const stepColors2 = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
   window.processShowStep = function(idx){
     const s = sp.steps[idx];
     const panel = document.getElementById('stepDetailPanel');
@@ -3656,7 +3656,7 @@ function scripts(){
         ${verbatim?`<div style="display:inline-block;font-size:.68rem;font-weight:700;background:#8B691422;color:#8B6914;border:1px solid #8B691444;border-radius:4px;padding:2px 7px;margin-bottom:6px">VERBATIM — Do Not Deviate</div>`:''}
         <span class="badge" style="display:block;margin-bottom:6px">${escapeHtml(s.category)}</span>
         <h3 style="color:var(--ink);margin:0 0 6px;padding-right:28px">${escapeHtml(s.title)}</h3>
-        ${s.situation?`<p style="font-size:.8rem;color:#204A43;font-weight:600;margin:0 0 8px;font-style:italic">When: ${escapeHtml(s.situation)}</p>`:''}
+        ${s.situation?`<p style="font-size:.8rem;color:#1A4740;font-weight:600;margin:0 0 8px;font-style:italic">When: ${escapeHtml(s.situation)}</p>`:''}
         <div class="script-box" style="font-size:.84rem">${nl2br(s.body)}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
           <button class="secondary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(s.body)}',this)">Copy Script</button>
@@ -3939,7 +3939,7 @@ function ai(){
   window._aiPreload = null; // consume
 
   const SITUATIONS = [
-    { id:'reply_email',     label:'Reply to a Client Email',        icon:'✉️',  color:'#204A43' },
+    { id:'reply_email',     label:'Reply to a Client Email',        icon:'✉️',  color:'#1A4740' },
     { id:'follow_up',       label:'Follow-Up After No Response',    icon:'🔄',  color:'#4D8A86' },
     { id:'proposal_intro',  label:'Proposal Introduction Email',    icon:'📋',  color:'#2D7A55' },
     { id:'objection_reply', label:'Handle an Objection',            icon:'🛡️',  color:'#8B6914' },
@@ -4021,7 +4021,7 @@ function ai(){
     </div>
 
     <div class="card" style="padding:14px;background:rgba(99,102,241,.04);border-color:rgba(99,102,241,.2)" id="aiPromptCard">
-      <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#204A43;margin-bottom:8px">Prompt Preview</div>
+      <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#1A4740;margin-bottom:8px">Prompt Preview</div>
       <div id="aiPromptPreview" style="font-size:.78rem;color:var(--muted);font-family:monospace;white-space:pre-wrap;max-height:160px;overflow:auto">
         Your prompt will appear here before generation. You can copy and paste it into ChatGPT, Claude, or any AI tool.
       </div>
@@ -4089,7 +4089,7 @@ function ai(){
       if(sitId===id){
         btn.classList.add('ai-sit-active');
         btn.style.borderColor = sit?.color||'var(--blue)';
-        btn.style.background  = (sit?.color||'#204A43')+'18';
+        btn.style.background  = (sit?.color||'#1A4740')+'18';
         btn.style.fontWeight  = '700';
       } else {
         btn.classList.remove('ai-sit-active');
@@ -4484,7 +4484,7 @@ const ACAD_STYLES = `
 .sa-chip-complete{background:rgba(16,185,129,.1);color:#2D7A55;border:1px solid rgba(16,185,129,.3)}
 .sa-chip-locked{background:rgba(100,116,139,.08);color:#6F7E6A;border:1px solid rgba(100,116,139,.2)}
 .sa-chip-certified{background:rgba(245,158,11,.12);color:#7A5C10;border:1px solid rgba(245,158,11,.35)}
-.sa-chip-beginner{background:rgba(99,102,241,.08);color:#204A43;border:1px solid rgba(99,102,241,.2)}
+.sa-chip-beginner{background:rgba(99,102,241,.08);color:#1A4740;border:1px solid rgba(99,102,241,.2)}
 .sa-chip-intermediate{background:rgba(14,165,233,.08);color:#4D8A86;border:1px solid rgba(14,165,233,.2)}
 .sa-chip-advanced{background:rgba(239,68,68,.07);color:#8B3A2A;border:1px solid rgba(239,68,68,.2)}
 
@@ -4715,7 +4715,7 @@ const ACAD_STYLES = `
 .admin-metric-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:5px}
 
 /* ══ SA-104 Practice Arena ═══════════════════════════════════════════════════ */
-.acad-practice-challenge{background:linear-gradient(135deg,#1F2A2B 0%,#1F2A2B 100%);border-radius:16px;padding:24px 28px;margin-bottom:22px;display:flex;align-items:center;gap:20px;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.acad-practice-challenge{background:linear-gradient(135deg,#113931 0%,#113931 100%);border-radius:16px;padding:24px 28px;margin-bottom:22px;display:flex;align-items:center;gap:20px;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.15)}
 .acad-practice-challenge-icon{width:56px;height:56px;border-radius:14px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .acad-practice-challenge-body{flex:1;min-width:0}
 .acad-practice-challenge-title{font-size:1.1rem;font-weight:800;margin-bottom:4px}
@@ -5561,11 +5561,11 @@ function academyBadgesView() {
 
 <!-- Hero -->
 <div class="acad-phase-hero" style="border-color:rgba(99,102,241,.2)">
-  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#204A43,#4D8A86)"></div>
+  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#1A4740,#4D8A86)"></div>
   <div class="acad-phase-hero-inner">
-    <div class="acad-phase-hero-icon">${svgBadgeShape('shield','#204A43',48)}</div>
+    <div class="acad-phase-hero-icon">${svgBadgeShape('shield','#1A4740',48)}</div>
     <div class="acad-phase-hero-body">
-      <div class="acad-phase-hero-eyebrow" style="color:#204A43">Achievement Center</div>
+      <div class="acad-phase-hero-eyebrow" style="color:#1A4740">Achievement Center</div>
       <h1 class="acad-phase-hero-title">Badges &amp; Achievements</h1>
       <p class="acad-phase-hero-desc">Earn badges by completing modules, passing quizzes, maintaining streaks, and reaching new levels.</p>
     </div>
@@ -5579,10 +5579,10 @@ function academyBadgesView() {
       <div class="acad-progress-card-label">Badge Collection</div>
       <div class="acad-progress-meta">${earnedBadges.length} of ${totalBadges} badges earned · Level: ${escapeHtml(lvlInfo ? lvlInfo.name : '—')}</div>
     </div>
-    <div class="acad-progress-card-pct" style="color:#204A43">${earnedPct}%</div>
+    <div class="acad-progress-card-pct" style="color:#1A4740">${earnedPct}%</div>
   </div>
   <div class="acad-progress-bar">
-    <div class="acad-progress-bar-fill" style="width:${earnedPct}%;background:linear-gradient(90deg,#204A43,#4D8A86)"></div>
+    <div class="acad-progress-bar-fill" style="width:${earnedPct}%;background:linear-gradient(90deg,#1A4740,#4D8A86)"></div>
   </div>
 </div>
 
@@ -6056,7 +6056,7 @@ function academyCertificationsPage() {
 </div>
 
 <div style="margin-top:24px;padding:16px 20px;background:rgba(99,102,241,.04);border:1px solid rgba(99,102,241,.15);border-radius:12px">
-  <div style="font-size:.8rem;font-weight:700;color:#204A43;margin-bottom:6px">${SVG_CERT_ICON} How Certifications Work</div>
+  <div style="font-size:.8rem;font-weight:700;color:#1A4740;margin-bottom:6px">${SVG_CERT_ICON} How Certifications Work</div>
   <div style="font-size:.82rem;color:var(--muted);display:grid;gap:5px">
     <div>1. Complete all modules in a phase</div>
     <div>2. Your status changes to "Ready for Review"</div>
@@ -6261,11 +6261,11 @@ function academyAdminDashboard() {
 
 <!-- SA-401 Phase Hero -->
 <div class="acad-phase-hero" style="border-color:rgba(99,102,241,.2);margin-bottom:20px">
-  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#204A43,#204A43)"></div>
+  <div class="acad-phase-hero-bar" style="background:linear-gradient(90deg,#1A4740,#1A4740)"></div>
   <div class="acad-phase-hero-inner">
     <div class="acad-phase-hero-icon">${SVG_TEAM}</div>
     <div class="acad-phase-hero-body">
-      <div class="acad-phase-hero-eyebrow" style="color:#204A43">Admin View</div>
+      <div class="acad-phase-hero-eyebrow" style="color:#1A4740">Admin View</div>
       <h1 class="acad-phase-hero-title" style="font-size:1.4rem">Team Academy Progress</h1>
       <p class="acad-phase-hero-desc">Monitor team completion, quiz performance, streaks, and certifications across all reps.</p>
     </div>
@@ -6276,7 +6276,7 @@ function academyAdminDashboard() {
 <div class="admin-metric-cards">
   <div class="admin-metric-card">
     <div class="admin-metric-card-num" style="color:var(--ink)">${allReps.length}</div>
-    <div class="admin-metric-card-icon" style="background:rgba(99,102,241,.1);color:#204A43">${SVG_TEAM}</div>
+    <div class="admin-metric-card-icon" style="background:rgba(99,102,241,.1);color:#1A4740">${SVG_TEAM}</div>
     <div class="admin-metric-card-label">Team Members</div>
   </div>
   <div class="admin-metric-card">
@@ -6308,7 +6308,7 @@ ${repCards}
 ${phaseRows}
 
 <div class="card" style="margin-top:18px;border-color:rgba(99,102,241,.2);background:rgba(99,102,241,.03)">
-  <div style="font-size:.78rem;font-weight:700;color:#204A43;margin-bottom:8px">Admin Controls Guide</div>
+  <div style="font-size:.78rem;font-weight:700;color:#1A4740;margin-bottom:8px">Admin Controls Guide</div>
   <div style="font-size:.82rem;color:var(--muted);display:grid;gap:6px">
     <div><strong style="color:var(--ink)">Module cells</strong> — click any cell that shows a quiz score to see the full question-by-question drill-down for that rep.</div>
     <div><strong style="color:var(--ink)">Mark Complete</strong> — credit a specific module for a rep (e.g. after an in-person session). Shows full module title so you know exactly what you're marking.</div>
@@ -7164,7 +7164,7 @@ window._showFlagPanel = function() {
     <div class="gw-flag-row">
       <span style="font-size:12px;color:#6F7E6A">${k}</span>
       <button onclick="window._setCommFlag('${k}', ${!v}); window._showFlagPanel();"
-        style="background:${v ? '#1B3F38' : '#5C2318'};border:none;color:${v ? '#2D7A55' : '#C97B6A'};border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:700">
+        style="background:${v ? '#113931' : '#5C2318'};border:none;color:${v ? '#2D7A55' : '#C97B6A'};border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-weight:700">
         ${v ? 'ON' : 'OFF'}
       </button>
     </div>`).join('');
@@ -7875,25 +7875,25 @@ window.exportAsPDF = function(title, buildDataFn) {
 
   const tableRows = rows.map((r, ri) => `
     <tr style="background:${ri % 2 === 0 ? '#FDFCF9' : '#ffffff'}">
-      ${r.map(cell => `<td style="padding:7px 10px;border:1px solid #E8E4D9;font-size:12px;color:#1F2A2B">${xe(cell)}</td>`).join('')}
+      ${r.map(cell => `<td style="padding:7px 10px;border:1px solid #E8E4D9;font-size:12px;color:#113931">${xe(cell)}</td>`).join('')}
     </tr>`).join('');
 
   const printDiv = document.createElement('div');
   printDiv.id = 'avalonPrintArea';
   printDiv.innerHTML = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;padding:24px;max-width:900px;margin:0 auto">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #1F2A2B">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #113931">
         <div>
           <div style="font-size:10px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px">Avalon Landscaping</div>
-          <h1 style="margin:0;font-size:20px;color:#1F2A2B;font-weight:800">${xe(title)}</h1>
+          <h1 style="margin:0;font-size:20px;color:#113931;font-weight:800">${xe(title)}</h1>
           <div style="font-size:11px;color:#6F7E6A;margin-top:4px">Generated ${new Date().toLocaleDateString('en-US',{weekday:'short',year:'numeric',month:'long',day:'numeric'})}</div>
         </div>
         <div style="font-size:10px;color:#6F7E6A;text-align:right">FY 2026</div>
       </div>
       <table style="width:100%;border-collapse:collapse;font-family:inherit">
         <thead>
-          <tr style="background:#1F2A2B">
-            ${headers.map(h => `<th style="padding:9px 10px;text-align:left;color:#fff;font-size:12px;font-weight:700;border:1px solid #204A43">${xe(h)}</th>`).join('')}
+          <tr style="background:#113931">
+            ${headers.map(h => `<th style="padding:9px 10px;text-align:left;color:#fff;font-size:12px;font-weight:700;border:1px solid #1A4740">${xe(h)}</th>`).join('')}
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>
@@ -8301,7 +8301,7 @@ function revenueAdmin(tab) {
             </div>
             <div style="display:flex;gap:8px;align-items:center">
               <span style="font-size:11px;font-weight:700;color:${div.color}">${totalGm}% GM</span>
-              <button class="secondary-btn small" onclick="divSaveDivision('${div.key}')" style="background:#204A43;border-color:#204A43;color:#4D8A86;font-size:11px">Save ${div.label}</button>
+              <button class="secondary-btn small" onclick="divSaveDivision('${div.key}')" style="background:#1A4740;border-color:#1A4740;color:#4D8A86;font-size:11px">Save ${div.label}</button>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -8877,7 +8877,7 @@ async function superAdmin() {
   const fmt = n => (n ?? 0).toLocaleString();
   const dateStr = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
   const planBadge = p => {
-    const colors = { trial:'#8B6914', starter:'#204A43', pro:'#4D8A86', enterprise:'#2D7A55' };
+    const colors = { trial:'#8B6914', starter:'#1A4740', pro:'#4D8A86', enterprise:'#2D7A55' };
     const c = colors[p] || '#6F7E6A';
     return `<span style="display:inline-block;background:${c}22;color:${c};border:1px solid ${c}44;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.05em;text-transform:uppercase">${p || 'free'}</span>`;
   };
@@ -8920,7 +8920,7 @@ async function superAdmin() {
     <!-- Stat Cards -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:36px">
       ${[
-        { label:'Companies',      value: fmt(stats.companies),        icon:'🏢', color:'#204A43' },
+        { label:'Companies',      value: fmt(stats.companies),        icon:'🏢', color:'#1A4740' },
         { label:'Active Tenants', value: fmt(stats.active_companies),  icon:'✅', color:'#2D7A55' },
         { label:'Total Reps',     value: fmt(stats.reps),              icon:'👥', color:'#4D8A86' },
         { label:'Opportunities',  value: fmt(stats.opportunities),     icon:'📊', color:'#8B6914' },
@@ -8965,7 +8965,7 @@ async function superAdmin() {
       <h3 style="font-size:14px;font-weight:700;color:#6F7E6A;margin:0 0 14px;text-transform:uppercase;letter-spacing:.05em">Quick Actions</h3>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <a href="/onboard" target="_blank"
-          style="padding:10px 20px;background:rgba(32,74,67,.13);border:1px solid #204A4344;border-radius:10px;color:#204A43;font-size:13px;font-weight:700;text-decoration:none">
+          style="padding:10px 20px;background:rgba(32,74,67,.13);border:1px solid #1A474044;border-radius:10px;color:#1A4740;font-size:13px;font-weight:700;text-decoration:none">
           🏢 New Company Onboarding
         </a>
         <button onclick="superAdmin()"
@@ -8982,7 +8982,7 @@ async function superAdmin() {
         <p id="saImpersonateMsg" style="color:#6F7E6A;margin:0 0 24px;font-size:14px"></p>
         <div style="display:flex;gap:12px">
           <button id="saImpersonateConfirmBtn"
-            style="flex:1;padding:12px;background:#8B6914;border:none;border-radius:10px;color:#1F2A2B;font-size:14px;font-weight:800;cursor:pointer">
+            style="flex:1;padding:12px;background:#8B6914;border:none;border-radius:10px;color:#113931;font-size:14px;font-weight:800;cursor:pointer">
             Confirm Impersonate
           </button>
           <button onclick="document.getElementById('saImpersonateOverlay').style.display='none'"
