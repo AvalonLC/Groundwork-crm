@@ -1273,8 +1273,8 @@ function getHtml(): string {
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <div class="brand-mark" onclick="show('today')" style="cursor:pointer;width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;" title="Go to Today">
-        <img src="/static/avalon-logo.png" alt="Groundwork" style="width:36px;height:36px;object-fit:cover;display:block;" />
+      <div class="brand-mark" onclick="show('today')" style="cursor:pointer;" title="Go to Today">
+        <img src="/static/avalon-logo.png" alt="Groundwork" />
       </div>
       <div>
         <div class="brand-name">Groundwork</div>

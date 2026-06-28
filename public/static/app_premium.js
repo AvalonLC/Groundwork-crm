@@ -437,19 +437,24 @@ function oppMini(o){
   const _today = todayISO();
   const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
   const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : null;
-  const urgencyDot = isOverdue ? `<span style="display:inline-block;width:7px;height:7px;background:#C97B6A;border-radius:50%;margin-right:4px;vertical-align:middle;flex-shrink:0"></span>` : '';
+  // Urgency dot inline — small colored dot before client name
+  const urgencyDot = isOverdue
+    ? `<span style="display:inline-block;width:6px;height:6px;background:#C97B6A;border-radius:50%;flex-shrink:0;margin-top:1px"></span>`
+    : '';
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
+  // Rep pill — color-coded, uses class + minimal inline for the brand color
   const repPill = repObj
-    ? `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:${repObj.color||'#6F7E6A'};background:${repObj.color||'#6F7E6A'}18;border:1px solid ${repObj.color||'#6F7E6A'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${escapeHtml(repObj.name)}</span>`
-    : `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">gwIcon('warning',16) Unassigned</span>`;
+    ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40">${escapeHtml(repObj.name)}</span>`
+    : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22)">Unassigned</span>`;
+  // Time label
+  const timeLabel = daysSince !== null
+    ? `<span class="mini-row-time">${daysSince===0?'Today':daysSince===1?'Yesterday':daysSince+'d ago'}</span>`
+    : '';
   return `<button class="mini-row ${isOverdue?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
-    <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed')}</strong>
-    <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px;padding:1px 6px">${escapeHtml(o.status||'New Lead')}</span>
+    <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed Lead')}</strong>
+    <span class="status-chip ${statusCssClass(o.status||'')}">${escapeHtml(o.status||'New Lead')}</span>
     <em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em>
-    <span style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
-      ${repPill}
-      ${daysSince !== null ? `<span style="font-size:10px;color:#5C6B58">${daysSince===0?'Today':daysSince+'d ago'}</span>` : ''}
-    </span>
+    <span class="mini-row-meta">${repPill}${timeLabel}</span>
   </button>`;
 }
 function oppCard(o){
@@ -461,7 +466,7 @@ function oppCard(o){
   const urgencyBadge = isOverdue
     ? `<span class="urgency-badge overdue">OVERDUE</span>`
     : isStale
-    ? `<span class="urgency-badge stale">⏱ STALE ${daysSinceUpdate}d</span>`
+    ? `<span class="urgency-badge stale">STALE ${daysSinceUpdate}d</span>`
     : '';
   return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
     <div class="opp-card-top">
@@ -474,8 +479,8 @@ function oppCard(o){
       ${o.nextFollowUp ? `<span class="opp-next">Next: ${prettyDate(o.nextFollowUp)}</span>` : ''}
       ${o.jobValue ? `<span class="opp-value">${money(Number(o.jobValue))}</span>` : ''}
       ${repObj
-        ? `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:${repObj.color||'#6F7E6A'};background:${repObj.color||'#6F7E6A'}18;border:1px solid ${repObj.color||'#6F7E6A'}40;border-radius:20px;padding:1px 8px;white-space:nowrap;margin-left:auto">${escapeHtml(repObj.name)}</span>`
-        : `<span class="opp-rep-pill" style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:1px 8px;white-space:nowrap;margin-left:auto">gwIcon('warning',16) Unassigned</span>`}
+        ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40;margin-left:auto">${escapeHtml(repObj.name)}</span>`
+        : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22);margin-left:auto">Unassigned</span>`}
     </div>
   </article>`;
 }
