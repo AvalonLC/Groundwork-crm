@@ -423,6 +423,18 @@ p  { line-height: 1.6; margin: 0 0 10px; }
 }
 
 /* ─── 8. PAGE HEADER PATTERN ─────────────────────────────────────────────── */
+/* Constrain h1 inside the main view — the monolithic CSS has 58px max which
+   makes page titles overflow the top edge at wide viewports */
+.view h1 {
+  font-size: clamp(22px, 2.8vw, 32px) !important;
+  line-height: 1.15 !important;
+  letter-spacing: -.03em !important;
+  margin: 0 0 6px !important;
+}
+.view .eyebrow {
+  margin-top: 0 !important;
+  margin-bottom: 4px !important;
+}
 .pl-title,
 h1.pl-title,
 [class*="page-title"] {

@@ -560,13 +560,13 @@ async function integrations() {
 
     <div class="gw-info-strip" style="margin-top:20px;border-radius:10px">
       <div style="font-size:11px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">What you'll get access to</div>
-      ${[[gwIcon('email',16,'#113931'),'Gmail','Read, compose, reply, and send emails directly inside the hub'],
-         [gwIcon('calendar',16,'#113931'),'Calendar','Full calendar — past, present, future. Create and edit events in-hub'],
+      ${[[gwIcon('email',16,'#204A43'),'Gmail','Read, compose, reply, and send emails directly inside the hub'],
+         [gwIcon('calendar',16,'#204A43'),'Calendar','Full calendar — past, present, future. Create and edit events in-hub'],
          [gwIcon('folder',16),'Drive','Browse, search, and open your Drive files without leaving the app']
         ].map(([ic,nm,desc])=>`
       <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--gw-line)">
         <span style="font-size:18px;flex-shrink:0">${ic}</span>
-        <div><div style="font-weight:600;font-size:13px;color:#E8E4D9">${nm}</div><div style="font-size:12px;color:#6F7E6A;margin-top:1px">${desc}</div></div>
+        <div><div style="font-weight:600;font-size:13px;color:var(--gds-pine,#204A43)">${nm}</div><div style="font-size:12px;color:var(--gds-muted,#5E6E6F);margin-top:1px">${desc}</div></div>
       </div>`).join('')}
     </div>
   </div>
@@ -576,7 +576,7 @@ async function integrations() {
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;min-width:0">
       <div style="width:32px;height:32px;flex-shrink:0;background:var(--gw-surface-3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">${gwIcon('construction',16)}</div>
       <div style="min-width:0;overflow:hidden">
-        <div style="font-weight:800;font-size:16px;color:#E8E4D9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Homeworks CRM</div>
+        <div style="font-weight:800;font-size:16px;color:var(--gds-ink,#1F2A2B);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Homeworks CRM</div>
         ${hwOk?`<div style="font-size:11px;font-weight:700;color:#2D7A55;margin-top:2px"> Connected via Zapier</div>`:`<div style="font-size:11px;color:#6F7E6A;margin-top:2px">Not connected</div>`}
       </div>
     </div>
@@ -629,7 +629,7 @@ async function integrations() {
 <div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:560px;box-shadow:0 24px 64px #000a">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <h3 style="margin:0;font-size:17px;font-weight:800;color:#E8E4D9">gwIcon('email',16) New Email</h3>
+      <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">${gwIcon('email',16)} New Email</h3>
       <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
@@ -650,7 +650,7 @@ async function integrations() {
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn">Cancel</button>
-        <button onclick="intSendEmail()" class="primary-btn">Send via Gmail gwIcon('plane',16)</button>
+        <button onclick="intSendEmail()" class="primary-btn">${gwIcon('plane',16)} Send via Gmail</button>
       </div>
     </div>
   </div>
@@ -660,7 +660,7 @@ async function integrations() {
 <div id="int-cal-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
   <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 24px 64px #000a">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <h3 style="margin:0;font-size:17px;font-weight:800;color:#E8E4D9">gwIcon('calendar',16) New Event</h3>
+      <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">${gwIcon('calendar',16)} New Event</h3>
       <button onclick="document.getElementById('int-cal-modal').style.display='none'" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
@@ -698,7 +698,7 @@ async function integrations() {
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
         <button onclick="document.getElementById('int-cal-modal').style.display='none'" class="secondary-btn">Cancel</button>
-        <button onclick="intSubmitCalEvent()" class="primary-btn">Create Event gwIcon('success',16)</button>
+        <button onclick="intSubmitCalEvent()" class="primary-btn">Create Event ${gwIcon('success',16)}</button>
       </div>
     </div>
   </div>
@@ -744,7 +744,7 @@ function gwRenderGmail() {
       ${label}
     </button>`).join('')}
   </div>
-  <button class="primary-btn" style="font-size:12px;padding:7px 14px" onclick="gwOpenCompose()">gwIcon('email',16) Compose</button>
+  <button class="primary-btn" style="font-size:12px;padding:7px 14px" onclick="gwOpenCompose()">${gwIcon('email',16)} Compose</button>
 </div>
 <div id="gw-gmail-list" style="min-height:200px"><div class="spinner-wrap"><div class="spinner"></div></div></div>`;
 
@@ -819,11 +819,11 @@ function gwRenderThreadList(el) {
       <div style="width:8px;height:8px;border-radius:50%;background:${isUnread?'#4D8A86':'transparent'};border:${isUnread?'none':'1px solid var(--gw-line)'};margin-top:6px;flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-          <div style="font-size:13px;font-weight:${isUnread?'700':'500'};color:${isUnread?'#E8E4D9':'#6F7E6A'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sender)}</div>
+          <div style="font-size:13px;font-weight:${isUnread?'700':'500'};color:${isUnread?'var(--gds-ink,#1F2A2B)':'var(--gds-muted,#5E6E6F)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(sender)}</div>
           <div style="font-size:11px;color:#5C6B58;flex-shrink:0">${d}${count>1?` <span style="background:var(--gw-surface-3);border-radius:10px;padding:1px 5px">${count}</span>`:''}</div>
         </div>
-        <div style="font-size:13px;color:${isUnread?'#E8E4D9':'#6F7E6A'};font-weight:${isUnread?'600':'400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${escapeHtml(subj)}</div>
-        <div style="font-size:12px;color:#5C6B58;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">${escapeHtml(snippet)}</div>
+        <div style="font-size:13px;color:${isUnread?'var(--gds-ink,#1F2A2B)':'var(--gds-muted,#5E6E6F)'};font-weight:${isUnread?'600':'400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${escapeHtml(subj)}</div>
+        <div style="font-size:12px;color:var(--gds-muted,#5E6E6F);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">${escapeHtml(snippet)}</div>
       </div>
     </div>`;
   }).join('');
@@ -871,8 +871,8 @@ function gwRenderThreadDetail(el, threadId, thread) {
   el.innerHTML = `
 <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
   <button onclick="gwBackToList()" class="gw-back-btn" style="border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px">← Back</button>
-  <div style="font-size:16px;font-weight:700;color:#E8E4D9;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subj)}</div>
-  <button onclick="gwTrashThread('${threadId}')" style="background:transparent;border:1px solid #5C2318;color:#C97B6A;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px">gwIcon('trash',16) Trash</button>
+  <div style="font-size:16px;font-weight:700;color:var(--gds-ink,#1F2A2B);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subj)}</div>
+  <button onclick="gwTrashThread('${threadId}')" style="background:transparent;border:1px solid #F5D5C8;color:#C97B6A;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px">${gwIcon('trash',16)} Trash</button>
 </div>
 <div style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto" id="gw-thread-msgs">
 ${msgs.map((msg, idx) => {
@@ -891,8 +891,8 @@ ${msgs.map((msg, idx) => {
       ${collapsed?`onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'"`:''}>
       <div style="width:32px;height:32px;border-radius:50%;background:var(--gw-surface-3);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--gw-muted);font-size:13px;flex-shrink:0">${escapeHtml(sender[0]?.toUpperCase()||'?')}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:13px;color:#E8E4D9">${escapeHtml(sender)}</div>
-        <div style="font-size:11px;color:#5C6B58">to ${escapeHtml(to)} · ${dt}</div>
+        <div style="font-weight:600;font-size:13px;color:var(--gds-ink,#1F2A2B)">${escapeHtml(sender)}</div>
+        <div style="font-size:11px;color:var(--gds-muted,#5E6E6F)">to ${escapeHtml(to)} · ${dt}</div>
       </div>
       ${collapsed?'<span style="color:#5C6B58;font-size:12px">click to expand</span>':''}
     </div>
@@ -901,14 +901,14 @@ ${msgs.map((msg, idx) => {
         ? `<iframe srcdoc="${bodyRaw.replace(/"/g,'&quot;').replace(/\n/g,' ')}"
             style="width:100%;min-height:200px;border:none;background:#fff;border-radius:6px"
             onload="this.style.height=Math.min(this.contentDocument.body.scrollHeight+20,600)+'px'"></iframe>`
-        : `<div style="font-size:13px;color:#6F7E6A;padding:8px 0">${escapeHtml(msg.snippet||'(no content)')}</div>`
+        : `<div style="font-size:13px;color:var(--gds-muted,#5E6E6F);padding:8px 0">${escapeHtml(msg.snippet||'(no content)')}</div>`
       }
     </div>
   </div>`;
 }).join('')}
 </div>
 <div class="gw-int-panel" style="border-radius:12px;padding:16px;margin-top:16px" id="gw-reply-box">
-  <div style="font-size:12px;font-weight:600;color:#6F7E6A;margin-bottom:8px">Reply</div>
+  <div style="font-size:12px;font-weight:600;color:var(--gds-muted,#5E6E6F);margin-bottom:8px">Reply</div>
   <textarea id="gw-reply-body" rows="4" placeholder="Write your reply…"
     style="width:100%;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
   <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">

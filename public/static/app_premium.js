@@ -87,7 +87,7 @@ async function _d1FlushQueue() {
       } else {
         console.error(`[D1 ✗✗] ${item.op} ${item.entityId} DROPPED after 3 attempts — ${e.message}`);
         // Show subtle persistent toast so user knows to re-save
-        showToast(`gwIcon('warning',16) Cloud sync failed for ${item.entityId} — check connection`, 6000);
+        showToast(`${gwIcon('warning',16)} Cloud sync failed for ${item.entityId} — check connection`, 6000);
       }
     }
   }
@@ -1241,7 +1241,7 @@ function clientDetail(id) {
     const _repO = (window.REPS||[]).find(r => r.id === o.repId);
     const _repPill = _repO
       ? `<span style="font-size:10px;font-weight:600;color:${_repO.color||'#6F7E6A'};background:${_repO.color||'#6F7E6A'}18;border:1px solid ${_repO.color||'#6F7E6A'}40;border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${escapeHtml(_repO.name)}</span>`
-      : `<span style="font-size:10px;font-weight:600;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">gwIcon('warning',16) Unassigned</span>`;
+      : `<span style="font-size:10px;font-weight:600;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${gwIcon('warning',16)} Unassigned</span>`;
     return `<button class="mini-row" onclick="show('pipeline','${o.id}')">
       <strong>${escapeHtml(o.client||'Unnamed')}</strong>
       <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px">${escapeHtml(o.status||'New Lead')}</span>
@@ -5744,9 +5744,9 @@ ${masteryCandidate ? `
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
         <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy')">← Academy Home</button>
-        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','badges')">gwIcon('badge',16) Badges &amp; Achievements</button>
-        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','certifications')">gwIcon('academy',16) Certifications</button>
-        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','profile')">gwIcon('user',16) My Progress Profile</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','badges')">${gwIcon('badge',16)} Badges &amp; Achievements</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','certifications')">${gwIcon('academy',16)} Certifications</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','profile')">${gwIcon('user',16)} My Progress Profile</button>
       </div>
     </div>
   </div>
@@ -5817,7 +5817,7 @@ function academyRepProfile() {
     <div class="acad-profile-level">
       ${svgLevelIcon(lvlInfo ? lvlInfo.id : 'rookie', lvlColor, 18)}
       <span style="color:${lvlColor};font-weight:700">${lvlInfo ? escapeHtml(lvlInfo.name) : 'Rookie'}</span>
-      ${rp.streak_days > 0 ? `<span class="acad-streak-badge" style="font-size:.75rem;padding:3px 10px">${rp.streak_days}-day streak gwIcon('streak',16)</span>` : ''}
+      ${rp.streak_days > 0 ? `<span class="acad-streak-badge" style="font-size:.75rem;padding:3px 10px">${rp.streak_days}-day streak ${gwIcon('streak',16)}</span>` : ''}
     </div>
     <div class="acad-profile-stats">
       <div class="acad-profile-stat">
@@ -5930,8 +5930,8 @@ function academyRepProfile() {
       <div class="acad-sidebar-card-head"><span style="font-size:.78rem;font-weight:700;color:var(--ink)">Quick Links</span></div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
         <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy')">← Academy Home</button>
-        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','practice')">gwIcon('streak',16) Practice Arena</button>
-        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','certifications')">gwIcon('academy',16) Certifications</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','practice')">${gwIcon('streak',16)} Practice Arena</button>
+        <button class="sa-btn-ghost" style="width:100%;justify-content:flex-start" onclick="show('academy','certifications')">${gwIcon('academy',16)} Certifications</button>
       </div>
     </div>
   </div>
@@ -6924,7 +6924,7 @@ function settings(){
         <div class="gw-comm-tools-title" style="margin-bottom:2px">Admin Controls</div>
         <div style="font-size:12px;color:var(--gw-muted);margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
       </div>
-      <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">gwIcon('settings',16)️ User &amp; Access Management →</button>
+      <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">${gwIcon('settings',16)} User &amp; Access Management →</button>
     </div>
     <!-- Commission Rules Manager (COMM-01) -->
     <div style="margin-top:16px" id="comm-rules-panel">
@@ -6940,16 +6940,16 @@ function settings(){
     </div>
     <!-- Commission Admin Tools (COMM-16 migration · COMM-18 QA · COMM-17 flags) -->
     <div class="gw-comm-tools" style="margin-top:16px">
-      <div class="gw-comm-tools-title">gwIcon('settings',16)️ Commission Admin Tools</div>
+      <div class="gw-comm-tools-title">${gwIcon('settings',16)} Commission Admin Tools</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         <button onclick="window._runMigrationFromUI()" class="gw-admin-btn">
-          gwIcon('package',16) Run Data Migration
+          ${gwIcon('package',16)} Run Data Migration
         </button>
         <button onclick="window._runQAFromUI()" class="gw-admin-btn">
-          gwIcon('search',16) Run QA Self-Check
+          ${gwIcon('search',16)} Run QA Self-Check
         </button>
         <button onclick="window._showFlagPanel()" class="gw-admin-btn">
-          gwIcon('flag',16) Feature Flags
+          ${gwIcon('flag',16)} Feature Flags
         </button>
       </div>
       <div id="comm-tool-result" class="gw-tool-result"></div>
@@ -7283,7 +7283,7 @@ window._runCommSim = function() {
   const appBadge    = r.requiresApproval ? `<span style="font-size:10px;background:#7A5C10;color:#8B6914;border-radius:10px;padding:2px 7px;margin-left:6px">APPROVAL REQUIRED</span>` : '';
   const bonusEl     = r.retentionBonus > 0 ? `<div style="margin-top:8px;font-size:12px;color:#2D7A55">+ ${fmtC(r.retentionBonus)} retention bonus eligible after 90-day active period</div>` : '';
   const gateEl      = !collected && !r.requiresApproval && r.amount === 0
-    ? `<div style="margin-top:6px;font-size:11px;color:#8B6914">gwIcon('warning',16) Collection gate: commission held until payment is received</div>` : '';
+    ? `<div style="margin-top:6px;font-size:11px;color:#8B6914">${gwIcon('warning',16)} Collection gate: commission held until payment is received</div>` : '';
 
   document.getElementById('sim-result').innerHTML = `
     <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
@@ -7293,7 +7293,7 @@ window._runCommSim = function() {
     </div>
     <div style="font-size:12px;color:#6F7E6A;margin-bottom:4px"><strong style="color:#6F7E6A">Rule applied:</strong> ${r.ruleApplied}</div>
     <div style="font-size:12px;color:#6F7E6A"><strong style="color:#6F7E6A">Explanation:</strong> ${r.note}</div>
-    ${r.approvalReason ? `<div style="margin-top:6px;font-size:11px;color:#8B6914">gwIcon('warning',16) ${r.approvalReason}</div>` : ''}
+    ${r.approvalReason ? `<div style="margin-top:6px;font-size:11px;color:#8B6914">${gwIcon('warning',16)} ${r.approvalReason}</div>` : ''}
     ${gateEl}${bonusEl}`;
 };
 
@@ -7303,7 +7303,7 @@ function renderCommissionAuditTrail() {
   if (!audit.length) {
     return `
     <div class="gw-audit-panel" style="padding:16px 18px">
-      <div style="font-size:14px;font-weight:800;margin-bottom:6px">gwIcon('checklist',16) Commission Rule Audit Trail</div>
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px">${gwIcon('checklist',16)} Commission Rule Audit Trail</div>
       <p style="color:var(--gw-muted);font-size:13px;margin:0">No rule changes recorded yet. Changes appear here when Tyler edits and saves commission rates.</p>
     </div>`;
   }
@@ -7333,7 +7333,7 @@ function renderCommissionAuditTrail() {
   <div class="gw-audit-panel">
     <div class="gw-audit-panel-header">
       <div>
-        <div style="font-size:14px;font-weight:800;color:#E8E4D9">gwIcon('checklist',16) Commission Rule Audit Trail</div>
+        <div style="font-size:14px;font-weight:800;color:var(--gds-ink,#1F2A2B)">${gwIcon('checklist',16)} Commission Rule Audit Trail</div>
         <div style="font-size:11px;color:#6F7E6A;margin-top:2px">${audit.length} change${audit.length !== 1 ? 's' : ''} recorded</div>
       </div>
     </div>
@@ -8843,7 +8843,7 @@ async function superAdmin() {
   const isSA = d1Rep && (d1Rep.is_super_admin === 1 || d1Rep.is_super_admin === true);
   if (!isSA) {
     view.innerHTML = `<div style="text-align:center;padding:80px 24px">
-      <div style="font-size:48px;margin-bottom:16px">gwIcon('lock',16)</div>
+      <div style="width:52px;height:52px;background:#EEF4F3;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">${gwIcon('lock',22,'#204A43')}</div>
       <h2 style="color:#C97B6A;margin-bottom:8px">Access Denied</h2>
       <p style="color:#6F7E6A">Platform Admin is restricted to super-administrators.</p>
       <button class="secondary-btn" style="margin-top:24px" onclick="show('today')">← Back to Today</button>
@@ -8972,7 +8972,7 @@ async function superAdmin() {
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <a href="/onboard" target="_blank"
           style="padding:10px 20px;background:rgba(32,74,67,.13);border:1px solid #1A474044;border-radius:10px;color:#1A4740;font-size:13px;font-weight:700;text-decoration:none">
-          gwIcon('building',16) New Company Onboarding
+          ${gwIcon('building',16)} New Company Onboarding
         </a>
         <button onclick="superAdmin()"
           class="gw-admin-btn" style="padding:10px 20px">
