@@ -17,7 +17,7 @@ const REPS = [
     name: 'Tyler',
     title: 'Owner / Sales Manager',
     role: 'admin',
-    pin: '1111',
+    email: 'tyler@avalon-lc.com',
     avatar: '',
     color: '#4D8A86',
     base: null, // owner — no base
@@ -28,7 +28,7 @@ const REPS = [
     name: 'Ryan',
     title: 'Client Relations & Enhancement Sales Associate',
     role: 'rep',
-    pin: '2222',
+    email: 'ryan@avalon-lc.com',
     avatar: '',
     color: '#2D7A55',
     base: { rateTraining: 20, ratePostTraining: 21 },
@@ -39,15 +39,14 @@ const REPS = [
     name: 'Jen',
     title: 'Office Manager — Sales Operations',
     role: 'office_manager',
-    pin: '3333',
+    email: 'jen@avalon-lc.com',
     avatar: '',
     color: '#8B6914',
-    email: 'admin@avalon-lc.com',
     base: null,
     commissionPlan: null
   }
   // Add new reps here — copy the Ryan structure and give them a unique id/pin
-  // { id: 'sarah', name: 'Sarah', title: 'Account Manager', role: 'rep', pin: '4444', avatar: '', color: '#4D8A86', base: { rateTraining: 20, ratePostTraining: 21 }, commissionPlan: 'ryan' }
+  // { id: 'sarah', name: 'Sarah', title: 'Account Manager', role: 'rep', email: 'sarah@avalon-lc.com', avatar: '', color: '#4D8A86', base: { rateTraining: 20, ratePostTraining: 21 }, commissionPlan: 'ryan' }
 ];
 
 // ── Commission Plans ───────────────────────────────────────────────────────────
