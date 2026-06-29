@@ -691,6 +691,9 @@ function renderLoginScreen() {
       if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
       initApp();
 
+      // Boot the Time Tracker (load active entry, render sidebar widget)
+      if (typeof window.ttInit === 'function') window.ttInit();
+
     } catch(e) {
       _loginError(e.message || 'Invalid email or password');
       btn.textContent = 'Sign In'; btn.disabled = false; btn.style.opacity = '1';

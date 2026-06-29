@@ -129,9 +129,9 @@ const NAV_PERMS_KEY = 'avalonNavPermissions';
 
 // Default permissions by role. Tyler can override from Settings.
 const DEFAULT_NAV_PERMS = {
-  admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai'],
-  office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai'],
-  rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','integrations','settings','ai']
+  admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker'],
+  office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker'],
+  rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','integrations','settings','ai','timeTracker']
 };
 
 function loadNavPerms() {
@@ -243,7 +243,7 @@ function show(viewName='today', param){
     _d1.company_id === 'groundwork_platform';
   if (!_isPlatformSA && viewName !== 'settings' && !canViewTab(viewName)) {
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
-    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',revenueAdmin:'Financial Data Hub',integrations:'Integrations',userManagement:'User Management',settings:'Settings',ai:'AI Sales Assistant',ai:'AI Sales Assistant',ai:'AI Sales Assistant'};
+    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',revenueAdmin:'Financial Data Hub',integrations:'Integrations',userManagement:'User Management',settings:'Settings',ai:'AI Sales Assistant',timeTracker:'Time Tracker'};
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px;max-width:520px;margin-left:auto;margin-right:auto">
       <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
       <h2 style="color:#1F2A2B;margin-bottom:10px;font-size:20px">${_viewLabels[viewName] || viewName}</h2>
@@ -275,7 +275,8 @@ function show(viewName='today', param){
         gwBilling: () => window.gwPlatformAdmin.billing(),
         gwPlatformSettings: () => window.gwPlatformAdmin.platformSettings() }
     : {};
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ai};
+  const ttRoute = (typeof window.timeTracker === 'function') ? {timeTracker: window.timeTracker} : {};
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;

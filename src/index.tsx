@@ -1474,6 +1474,181 @@ app.get('/onboard', (c) => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TIME TRACKING  — clock-in/out, weekly timesheets, payroll approval
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/time/active?companyId=   — currently open entry for logged-in rep
+app.get('/api/time/active', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const row = await c.env.DB.prepare(
+    `SELECT * FROM time_entries WHERE rep_id=? AND company_id=? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1`
+  ).bind(repId, companyId).first()
+  return json(c, row || null)
+})
+
+// POST /api/time/clock-in   { jobType?, notes? }
+app.post('/api/time/clock-in', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  // Check not already clocked in
+  const open = await c.env.DB.prepare(
+    `SELECT id FROM time_entries WHERE rep_id=? AND company_id=? AND clock_out IS NULL LIMIT 1`
+  ).bind(repId, companyId).first<{ id: string }>()
+  if (open) return err(c, 'Already clocked in', 409)
+  const b = await c.req.json().catch(() => ({})) as any
+  const id = 'te_' + uid()
+  const now = new Date().toISOString()
+  await c.env.DB.prepare(
+    `INSERT INTO time_entries (id,rep_id,company_id,clock_in,job_type,notes,approved)
+     VALUES (?,?,?,?,?,?,0)`
+  ).bind(id, repId, companyId, now, b.jobType||'General Work', b.notes||'').run()
+  return json(c, { id, clock_in: now }, 201)
+})
+
+// POST /api/time/clock-out   { entryId?, notes? }
+app.post('/api/time/clock-out', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const b = await c.req.json().catch(() => ({})) as any
+  const entry = await c.env.DB.prepare(
+    `SELECT * FROM time_entries WHERE rep_id=? AND company_id=? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1`
+  ).bind(repId, companyId).first<any>()
+  if (!entry) return err(c, 'Not clocked in', 404)
+  const now    = new Date()
+  const clockIn = new Date(entry.clock_in)
+  const durMin = Math.round((now.getTime() - clockIn.getTime()) / 60000)
+  await c.env.DB.prepare(
+    `UPDATE time_entries SET clock_out=?, duration_min=?, notes=?, updated_at=datetime('now')
+     WHERE id=? AND company_id=?`
+  ).bind(now.toISOString(), durMin, b.notes ?? entry.notes, entry.id, companyId).run()
+  return json(c, { id: entry.id, duration_min: durMin })
+})
+
+// GET /api/time/entries?companyId=&repId=&from=&to=&approved=
+app.get('/api/time/entries', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  const myRepId   = c.var.repId as string
+  // Non-admins can only see their own entries
+  const targetRep = (role === 'admin' || role === 'office_manager')
+    ? (c.req.query('repId') || null)
+    : myRepId
+  const from = c.req.query('from') || new Date(Date.now() - 7*86400000).toISOString().slice(0,10)
+  const to   = c.req.query('to')   || new Date(Date.now() + 86400000).toISOString().slice(0,10)
+  const approved = c.req.query('approved')
+
+  let q = `SELECT te.*, r.name as rep_name, r.color as rep_color
+            FROM time_entries te
+            LEFT JOIN reps r ON r.id=te.rep_id AND r.company_id=te.company_id
+            WHERE te.company_id=? AND date(te.clock_in)>=? AND date(te.clock_in)<=?`
+  const params: any[] = [companyId, from, to]
+  if (targetRep) { q += ' AND te.rep_id=?'; params.push(targetRep) }
+  if (approved !== undefined && approved !== '') { q += ' AND te.approved=?'; params.push(Number(approved)) }
+  q += ' ORDER BY te.clock_in DESC'
+  const rows = await c.env.DB.prepare(q).bind(...params).all()
+  return json(c, rows.results)
+})
+
+// GET /api/time/weekly-summary?from=&to=   — hours per rep for payroll
+app.get('/api/time/weekly-summary', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  const from = c.req.query('from') || new Date(Date.now() - 7*86400000).toISOString().slice(0,10)
+  const to   = c.req.query('to')   || new Date().toISOString().slice(0,10)
+  const rows = await c.env.DB.prepare(`
+    SELECT te.rep_id, r.name as rep_name, r.color as rep_color,
+           COUNT(*) as entry_count,
+           SUM(CASE WHEN te.clock_out IS NOT NULL THEN te.duration_min ELSE 0 END) as total_min,
+           SUM(CASE WHEN te.approved=1 AND te.clock_out IS NOT NULL THEN te.duration_min ELSE 0 END) as approved_min,
+           SUM(CASE WHEN te.approved=0 AND te.clock_out IS NOT NULL THEN te.duration_min ELSE 0 END) as pending_min
+    FROM time_entries te
+    LEFT JOIN reps r ON r.id=te.rep_id AND r.company_id=te.company_id
+    WHERE te.company_id=? AND date(te.clock_in)>=? AND date(te.clock_in)<=?
+    GROUP BY te.rep_id ORDER BY r.name
+  `).bind(companyId, from, to).all()
+  return json(c, rows.results)
+})
+
+// PUT /api/time/entries/:id   — edit notes/jobType (own entry) or approve (admin)
+app.put('/api/time/entries/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  const repId     = c.var.repId as string
+  const id        = c.req.param('id')
+  const b = await c.req.json() as any
+
+  const entry = await c.env.DB.prepare(
+    `SELECT * FROM time_entries WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(id, companyId).first<any>()
+  if (!entry) return err(c, 'Entry not found', 404)
+  // Non-admins can only edit their own entries
+  if (role !== 'admin' && role !== 'office_manager' && entry.rep_id !== repId)
+    return err(c, 'Forbidden', 403)
+
+  const updates: string[] = []
+  const vals: any[] = []
+  if (b.notes     !== undefined) { updates.push('notes=?');    vals.push(b.notes) }
+  if (b.jobType   !== undefined) { updates.push('job_type=?'); vals.push(b.jobType) }
+  if (b.clockIn   !== undefined && (role==='admin'||role==='office_manager')) {
+    updates.push('clock_in=?'); vals.push(b.clockIn)
+  }
+  if (b.clockOut  !== undefined && (role==='admin'||role==='office_manager')) {
+    updates.push('clock_out=?'); vals.push(b.clockOut || null)
+    // Recompute duration
+    if (b.clockOut && b.clockIn) {
+      const dur = Math.round((new Date(b.clockOut).getTime() - new Date(b.clockIn).getTime()) / 60000)
+      updates.push('duration_min=?'); vals.push(dur)
+    }
+  }
+  // Approval — admin only
+  if (b.approved !== undefined && (role==='admin'||role==='office_manager')) {
+    updates.push('approved=?', 'approved_by=?', 'approved_at=datetime(\'now\')');
+    vals.push(Number(b.approved), repId)
+  }
+  if (!updates.length) return err(c, 'Nothing to update')
+  updates.push("updated_at=datetime('now')")
+  await c.env.DB.prepare(
+    `UPDATE time_entries SET ${updates.join(',')} WHERE id=? AND company_id=?`
+  ).bind(...vals, id, companyId).run()
+  return json(c, { updated: id })
+})
+
+// DELETE /api/time/entries/:id
+app.delete('/api/time/entries/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  const repId     = c.var.repId as string
+  const id        = c.req.param('id')
+  const entry = await c.env.DB.prepare(
+    `SELECT rep_id, approved FROM time_entries WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(id, companyId).first<{ rep_id: string; approved: number }>()
+  if (!entry) return err(c, 'Not found', 404)
+  if (role !== 'admin' && role !== 'office_manager' && entry.rep_id !== repId)
+    return err(c, 'Forbidden', 403)
+  if (entry.approved === 1 && role !== 'admin') return err(c, 'Cannot delete approved entry', 403)
+  await c.env.DB.prepare(`DELETE FROM time_entries WHERE id=? AND company_id=?`).bind(id, companyId).run()
+  return json(c, { deleted: id })
+})
+
+// POST /api/time/approve-batch   { ids: string[], approved: 0|1|2 }  — admin bulk approve
+app.post('/api/time/approve-batch', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  const repId     = c.var.repId as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  const { ids, approved } = await c.req.json() as { ids: string[]; approved: number }
+  if (!ids?.length) return err(c, 'No ids provided')
+  const placeholders = ids.map(() => '?').join(',')
+  await c.env.DB.prepare(
+    `UPDATE time_entries SET approved=?, approved_by=?, approved_at=datetime('now'), updated_at=datetime('now')
+     WHERE id IN (${placeholders}) AND company_id=?`
+  ).bind(Number(approved), repId, ...ids, companyId).run()
+  return json(c, { updated: ids.length })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SUPER-ADMIN API  (is_super_admin = 1 required)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1972,6 +2147,10 @@ function getHtml(): string {
         <div class="nav-items">
           <button class="nav-item active" data-view="today" onclick="show('today')">Today</button>
           <button class="nav-item" data-view="myDashboard" onclick="show('myDashboard')">My Dashboard</button>
+          <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
+            Time Tracker
+          </button>
         </div>
       </details>
 
@@ -2051,6 +2230,9 @@ function getHtml(): string {
       </div>
 
     </nav>
+    <!-- ── Time Tracker sidebar widget ── -->
+    <div id="tt-sidebar-widget" class="tenant-nav" style="padding:10px 12px 0"></div>
+
     <div class="sidebar-footer" id="sidebarUserFooter">
       <div id="sidebarAvatarInitials">TJ</div>
       <div style="min-width:0;flex:1">
@@ -2105,6 +2287,7 @@ function getHtml(): string {
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260628gw9"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
+<script src="/static/time_tracker.js?v=20260629tt1"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
