@@ -274,10 +274,25 @@ function getCurrentRep() {
     const d = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
     if (!d.repId) return null;
     // Primary: find in REPS array (tenant reps loaded at boot)
+    // Prefer REPS entry because it has D1 fields merged onto it at login
     const inReps = REPS.find(r => r.id === d.repId);
-    if (inReps) return inReps;
+    if (inReps) {
+      // If we have a fresher D1 session record for this rep, merge any
+      // server-side fields not yet in the static entry
+      if (window._d1SessionRep && window._d1SessionRep.id === d.repId) {
+        const dr = window._d1SessionRep;
+        if (dr.name  && !inReps.name)  inReps.name  = dr.name;
+        if (dr.email && !inReps.email) inReps.email = dr.email;
+        if (dr.color && !inReps.color) inReps.color = dr.color;
+        if (dr.title && !inReps.title) inReps.title = dr.title;
+        if (dr.role)                    inReps.role  = dr.role;
+        if (dr.company_id)              inReps.company_id = dr.company_id;
+        if (dr.email_signature !== undefined) inReps.email_signature = dr.email_signature;
+      }
+      return inReps;
+    }
     // Fallback: use D1 session rep directly (e.g. platform super-admin who
-    // is not in the tenant REPS array)
+    // is not in the tenant REPS array, or a newly-invited rep)
     if (window._d1SessionRep && window._d1SessionRep.id === d.repId) {
       return window._d1SessionRep;
     }
@@ -293,6 +308,8 @@ function logoutRep() {
   localStorage.removeItem(AUTH_KEY);
   window._d1SessionRep = null;
   window._d1Ready = false;
+  // Stop background sync poll
+  if (typeof window._stopSyncPoll === 'function') window._stopSyncPoll();
   // Also clear D1 session cookie (fire-and-forget, don't await)
   if (window.DB) window.DB.auth.logout().catch(() => {});
 }
@@ -705,6 +722,12 @@ function renderLoginScreen() {
       // Boot the Time Tracker (load active entry, render sidebar widget)
       if (typeof window.ttInit === 'function') window.ttInit();
 
+      // Seed the "known IDs" set so first background sync only toasts truly new ones
+      window._lastSyncOppIds = new Set((window.state?.opportunities || []).map(o => o.id));
+
+      // Start background sync poll (pulls Jen's data into Tyler's view, etc.)
+      _startSyncPoll();
+
     } catch(e) {
       _loginError(e.message || 'Invalid email or password');
       btn.textContent = 'Sign In'; btn.disabled = false; btn.style.opacity = '1';
@@ -723,39 +746,101 @@ function renderLoginScreen() {
     }
   }
 
+  // ── D1 data mapper (shared by login load + background sync) ──────────────
+  const _mapOppFromD1 = function(o) {
+    return {
+      id: o.id, repId: o.rep_id, companyId: o.company_id,
+      client: o.client, phone: o.phone, email: o.email, address: o.address,
+      serviceLine: o.service_line, source: o.source,
+      status: o.status, jobValue: o.job_value,
+      project: o.project, urgency: o.urgency,
+      decisionMaker: o.decision_maker, budgetRange: o.budget_range,
+      nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
+      estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
+      estimateCount: o.estimate_count, workType: o.work_type,
+      clientType: o.client_type, prompt: o.prompt,
+      desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
+      commissionApproved: !!o.commission_approved, collected: !!o.collected,
+      soldDate: o.sold_date, soldAmount: o.sold_amount,
+      leadSource: o.lead_source || '',
+      projectCategory: o.project_category || o.service_line || '',
+      createdAt: o.created_at, updatedAt: o.updated_at,
+      _fromD1: true
+    };
+  };
+  // Expose so db.js / other modules can reuse it
+  window._mapOpp = _mapOppFromD1;
+
   // ── Post-login data load (opps + clients from D1) ─────────────────────────
   async function _postLoginDataLoad(d1Rep) {
-    const mapOpp = window._mapOpp || function(o) {
-      return {
-        id: o.id, repId: o.rep_id, companyId: o.company_id,
-        client: o.client, phone: o.phone, email: o.email, address: o.address,
-        serviceLine: o.service_line, source: o.source,
-        status: o.status, jobValue: o.job_value,
-        project: o.project, urgency: o.urgency,
-        decisionMaker: o.decision_maker, budgetRange: o.budget_range,
-        nextFollowUp: o.next_follow_up, pipelineStage: o.pipeline_stage,
-        estimateAmount: o.estimate_amount, estimateSentDate: o.estimate_sent_date,
-        estimateCount: o.estimate_count, workType: o.work_type,
-        clientType: o.client_type, prompt: o.prompt,
-        desiredOutcome: o.desired_outcome, fitConcerns: o.fit_concerns,
-        commissionApproved: !!o.commission_approved, collected: !!o.collected,
-        soldDate: o.sold_date, soldAmount: o.sold_amount,
-        leadSource: o.lead_source || '',
-        projectCategory: o.project_category || o.service_line || '',
-        createdAt: o.created_at, updatedAt: o.updated_at,
-        _fromD1: true
-      };
-    };
+    await _syncFromD1(d1Rep, { silent: true });
+  }
+
+  // ── Background sync: pull latest D1 data into window.state ───────────────
+  // Can be called any time after login. Shows a subtle status indicator.
+  // Called automatically every 60 s and whenever user navigates to Today / Pipeline.
+  let _syncInProgress = false;
+  window._syncFromD1 = async function _syncFromD1(repOverride, opts = {}) {
+    if (_syncInProgress) return;
+    _syncInProgress = true;
+    const silent = opts.silent === true;
+    if (!silent) _setSyncStatus('syncing');
+
+    const d1Rep = repOverride || window._d1SessionRep;
+    if (!d1Rep || !window.DB) { _syncInProgress = false; if (!silent) _setSyncStatus('idle'); return; }
+
     const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
+    let newOppCount = 0;
+
     try {
+      // ── Opportunities ────────────────────────────────────────────────────
       const opps = await window.DB.opportunities.list({ repId: isAdmin ? undefined : d1Rep.id });
-      if (opps && opps.length > 0 && window.state) {
+      if (opps && window.state) {
         const d1Ids = new Set(opps.map(o => o.id));
+        // Keep local-only entries that haven't been D1-synced yet
         const localOnly = (window.state.opportunities || []).filter(o => !d1Ids.has(o.id) && !o._fromD1);
-        window.state.opportunities = [...opps.map(mapOpp), ...localOnly];
+        const prevIds   = new Set((window.state.opportunities || []).map(o => o.id));
+        const mapped    = opps.map(_mapOppFromD1);
+        newOppCount     = mapped.filter(o => !prevIds.has(o.id)).length;
+        window.state.opportunities = [...mapped, ...localOnly];
       }
-    } catch(e) { console.warn('[Login] D1 opps load failed:', e.message); }
-    try {
+
+      // ── Reps list — pull all company reps so Jen/Ryan appear in Tyler's lists
+      // and Tyler appears in Jen's lists (everyone sees the full team)
+      try {
+        const d1Reps = await fetch('/api/reps', { credentials: 'include' }).then(r => r.ok ? r.json() : null);
+        if (d1Reps?.data) {
+          d1Reps.data.forEach(dr => {
+            const existing = REPS.find(r => r.id === dr.id);
+            if (existing) {
+              // Sync any server-side fields back onto the static entry
+              if (dr.name)  existing.name  = dr.name;
+              if (dr.color) existing.color = dr.color;
+              if (dr.email) existing.email = dr.email;
+              if (dr.title) existing.title = dr.title;
+              if (dr.role)  existing.role  = dr.role;
+              existing.email_signature = dr.email_signature || '';
+            } else {
+              // Rep exists in D1 but not in static array — add them
+              REPS.push({
+                id:             dr.id,
+                name:           dr.name || dr.id,
+                title:          dr.title || '',
+                role:           dr.role  || 'rep',
+                email:          dr.email || '',
+                color:          dr.color || '#6F7E6A',
+                avatar:         '',
+                base:           null,
+                commissionPlan: dr.commission_plan || null,
+                email_signature: dr.email_signature || '',
+                _fromD1:        true
+              });
+            }
+          });
+        }
+      } catch(_) {}
+
+      // ── Clients ────────────────────────────────────────────────────────
       const d1Clients = await window.DB.clients.list();
       if (d1Clients && d1Clients.length > 0) {
         const localClients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
@@ -774,8 +859,83 @@ function renderLoginScreen() {
         });
         localStorage.setItem('avalonClientsV1', JSON.stringify([...merged, ...localOnly]));
       }
-    } catch(e) { console.warn('[Login] D1 clients load failed:', e.message); }
+
+      if (!silent) {
+        _setSyncStatus('ok', newOppCount);
+        // If new data arrived and user is on a data-heavy view, re-render it
+        if (newOppCount > 0) {
+          _refreshCurrentView();
+          // Toast: notify about newly assigned leads
+          const myId = d1Rep.id;
+          const newAssigned = (window.state?.opportunities || [])
+            .filter(o => o.repId === myId && o._fromD1)
+            .filter(o => {
+              // Check if this ID wasn't in the previous snapshot
+              const prev = window._lastSyncOppIds || new Set();
+              return !prev.has(o.id);
+            });
+          if (newAssigned.length > 0 && window.showToast) {
+            const names = newAssigned.map(o => o.client).join(', ');
+            window.showToast(`${newAssigned.length === 1 ? 'New lead assigned to you' : `${newAssigned.length} new leads assigned to you`}: ${names}`);
+          }
+        }
+        // Remember current IDs for next cycle's "new" detection
+        window._lastSyncOppIds = new Set((window.state?.opportunities || []).map(o => o.id));
+      }
+    } catch(e) {
+      console.warn('[Sync] D1 sync failed:', e.message);
+      if (!silent) _setSyncStatus('error');
+    } finally {
+      _syncInProgress = false;
+    }
+  };
+
+  // ── Sync status indicator (small pill in the sidebar / top of view) ───────
+  function _setSyncStatus(state, newCount) {
+    const el = document.getElementById('gw-sync-status');
+    if (!el) return;
+    if (state === 'syncing') {
+      el.innerHTML = `<span style="color:#6F7E6A;font-size:11px">⟳ Syncing…</span>`;
+      el.style.display = 'flex';
+    } else if (state === 'ok') {
+      const msg = newCount > 0 ? `✓ ${newCount} new` : '✓ Up to date';
+      el.innerHTML = `<span style="color:#2D7A55;font-size:11px">${msg}</span>`;
+      el.style.display = 'flex';
+      setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
+    } else if (state === 'error') {
+      el.innerHTML = `<span style="color:#C97B6A;font-size:11px">⚠ Sync failed</span>`;
+      el.style.display = 'flex';
+      setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
+    } else {
+      el.style.display = 'none';
+    }
   }
+
+  // ── Re-render current view after background sync delivers new data ─────────
+  function _refreshCurrentView() {
+    try {
+      const viewEl = document.getElementById('view');
+      if (!viewEl) return;
+      // Re-render the current route if it's a data-heavy one
+      const current = window._currentView || '';
+      if (['today','pipeline','myDashboard','revenueAdmin'].includes(current) && window.show) {
+        window.show(current);
+      }
+    } catch(_) {}
+  }
+
+  // ── Auto-poll: refresh D1 data every 60 seconds while logged in ───────────
+  let _syncPollTimer = null;
+  function _startSyncPoll() {
+    if (_syncPollTimer) clearInterval(_syncPollTimer);
+    _syncPollTimer = setInterval(() => {
+      if (window._d1Ready && window._d1SessionRep) {
+        window._syncFromD1(null, { silent: false });
+      }
+    }, 60000); // every 60 seconds
+  }
+  window._startSyncPoll = _startSyncPoll;
+  window._stopSyncPoll  = function() { if (_syncPollTimer) clearInterval(_syncPollTimer); };
 
   // ── Forgot Password ────────────────────────────────────────────────────────
   window._showForgotPassword = function() {

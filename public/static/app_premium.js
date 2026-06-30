@@ -280,8 +280,34 @@ function show(viewName='today', param){
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
+
+  // Track current view so background sync can re-render after data arrives
+  window._currentView = viewName;
+
+  // On data-heavy views, trigger a background sync so data is always fresh
+  // (non-blocking — runs after render, re-renders only if new data arrives)
+  if (['today','pipeline','myDashboard','revenueAdmin','clients'].includes(viewName)) {
+    if (window._d1Ready && window._syncFromD1) {
+      setTimeout(() => window._syncFromD1(null, { silent: false }), 500);
+    }
+  }
 }
 window.show = show;
+
+// Manual sync — triggered by the ⟳ button in sidebar footer or sync status pill
+window._manualSync = async function() {
+  if (!window._d1Ready || !window._syncFromD1) {
+    if (window.showToast) window.showToast('Not logged in — please sign in first');
+    return;
+  }
+  const btn = document.getElementById('gw-sync-btn');
+  if (btn) { btn.textContent = '⟳'; btn.style.opacity = '.5'; btn.disabled = true; }
+  try {
+    await window._syncFromD1(null, { silent: false });
+  } finally {
+    if (btn) { btn.textContent = '⟳'; btn.style.opacity = '1'; btn.disabled = false; }
+  }
+};
 
 // Inject current rep name into sidebar
 (function updateSidebarRep() {
@@ -317,7 +343,9 @@ window.show = show;
           <div style="min-width:0;flex:1">
             <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:13px;color:#ffffff">${displayName}</strong>
             <span style="font-size:11px;color:rgba(255,255,255,.50)">${displayRole}</span>
-          </div>`;
+          </div>
+          <button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server"
+            style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">⟳</button>`;
       }
       // Nav items: always fully visible — access controlled by Permission Matrix in Settings
     }
