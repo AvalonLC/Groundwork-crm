@@ -216,10 +216,24 @@ async function gFetch(url, options = {}) {
 // Fetch the user's Gmail sendAs signature via the Gmail Settings API.
 // Requires gmail.settings.basic scope.
 // Returns the HTML string, or '' if not available / scope missing.
+// Sets window._gmailSigScopeError = true if a 403 is returned (scope not granted).
+window._gmailSigScopeError = false;
+
 async function gmailFetchSendAsSignature() {
   try {
     const r = await gFetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs');
-    if (!r.ok) return '';
+    if (r.status === 403) {
+      // Scope not granted — existing token predates gmail.settings.basic being added.
+      // User needs to reconnect to get the new scope.
+      window._gmailSigScopeError = true;
+      console.warn('[Groundwork] Gmail signature: 403 — token missing gmail.settings.basic scope. User needs to reconnect Google.');
+      return '';
+    }
+    if (!r.ok) {
+      console.warn('[Groundwork] Gmail signature: HTTP', r.status);
+      return '';
+    }
+    window._gmailSigScopeError = false;
     const j = await r.json();
     const sendAsEntries = j.sendAs || [];
     // Prefer the "default" / verified sender; fall back to first entry
@@ -719,57 +733,7 @@ async function integrations() {
 <div id="gw-panel-homeworks" style="display:${_gwTab==='homeworks'?'block':'none'};padding-top:20px"></div>
 
 <!-- ── Compose Email Modal ────────────────────────────────────────────── -->
-<div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:600px;box-shadow:0 24px 64px #000a;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">${gwIcon('email',16)} New Email</h3>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div id="int-sig-status" style="font-size:10px;color:#6F7E6A"></div>
-        <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1">×</button>
-      </div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">To</label>
-        <input id="int-email-to" type="email" placeholder="recipient@example.com"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
-      </div>
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Subject</label>
-        <input id="int-email-subject" type="text" placeholder="Email subject"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
-      </div>
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Message</label>
-        <textarea id="int-email-body" rows="7" placeholder="Write your message…"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
-      </div>
-      <!-- Signature preview section — shown when a signature is loaded -->
-      <div id="int-sig-section" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div style="display:flex;align-items:center;gap:6px">
-            <div style="width:28px;height:1px;background:var(--gw-line)"></div>
-            <span style="font-size:10px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Signature</span>
-            <div style="flex:1;height:1px;background:var(--gw-line)"></div>
-          </div>
-          <button onclick="intToggleSig()" id="int-sig-toggle-btn"
-            style="font-size:10px;font-weight:700;color:#6F7E6A;background:none;border:1px solid var(--gw-line);border-radius:5px;padding:2px 8px;cursor:pointer;margin-left:10px">
-            Remove
-          </button>
-        </div>
-        <!-- Rendered HTML signature preview -->
-        <div id="int-sig-preview"
-          style="padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;line-height:1.5;color:var(--gw-ink,#1F2A2B);overflow:hidden;max-height:160px;overflow-y:auto">
-        </div>
-        <div style="font-size:10px;color:#6F7E6A;margin-top:4px" id="int-sig-source-label"></div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
-        <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn">Cancel</button>
-        <button onclick="intSendEmail()" class="primary-btn" id="int-send-btn">${gwIcon('plane',16)} Send via Gmail</button>
-      </div>
-    </div>
-  </div>
-</div>
+${_buildComposeModalHTML()}
 
 <!-- ── Create Calendar Event Modal ───────────────────────────────────── -->
 <div id="int-cal-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
@@ -864,6 +828,29 @@ function gwRenderGmail() {
 <div id="gw-gmail-list" style="min-height:200px"><div class="spinner-wrap"><div class="spinner"></div></div></div>`;
 
   gwLoadGmail();
+
+  // Pre-warm the Gmail signature in the background so compose opens instantly.
+  // Clears any stale cached value first so we always get a fresh check on page load.
+  if (isGoogleConnected()) {
+    (async () => {
+      try {
+        const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+        if (rep) {
+          // Clear stale signature cache so we re-fetch on this page load
+          const m = JSON.parse(localStorage.getItem('avalonUserGoogleV1') || '{}');
+          if (m[rep.id]) { delete m[rep.id].signature; localStorage.setItem('avalonUserGoogleV1', JSON.stringify(m)); }
+        }
+        window._gmailSigScopeError = false;
+        const sig = await gmailFetchSendAsSignature();
+        if (rep && sig !== undefined) {
+          const m2 = JSON.parse(localStorage.getItem('avalonUserGoogleV1') || '{}');
+          if (!m2[rep.id]) m2[rep.id] = {};
+          m2[rep.id].signature = sig;
+          localStorage.setItem('avalonUserGoogleV1', JSON.stringify(m2));
+        }
+      } catch(_) {}
+    })();
+  }
 }
 
 window.gwGmailSetLabel = function(label) {
@@ -1083,15 +1070,88 @@ window._intSigActive   = false;
 window._intSigHtml     = '';
 window._intSigSource   = '';  // 'gmail' | 'manual' | ''
 
+// Build the compose modal HTML string (used both by integrations() template
+// and by gwEnsureComposeModal for self-contained injection)
+function _buildComposeModalHTML() {
+  return `
+<div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:600px;box-shadow:0 24px 64px #000a;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">${gwIcon('email',16)} New Email</h3>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="int-sig-status" style="font-size:10px;color:#6F7E6A"></div>
+        <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1">×</button>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">To</label>
+        <input id="int-email-to" type="email" placeholder="recipient@example.com"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Subject</label>
+        <input id="int-email-subject" type="text" placeholder="Email subject"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Message</label>
+        <textarea id="int-email-body" rows="7" placeholder="Write your message…"
+          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+      </div>
+      <!-- Signature section — always rendered, content varies by state -->
+      <div id="int-sig-section" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:6px;flex:1">
+            <div style="width:28px;height:1px;background:var(--gw-line)"></div>
+            <span style="font-size:10px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Signature</span>
+            <div style="flex:1;height:1px;background:var(--gw-line)"></div>
+          </div>
+          <button onclick="intToggleSig()" id="int-sig-toggle-btn"
+            style="font-size:10px;font-weight:700;color:#6F7E6A;background:none;border:1px solid var(--gw-line);border-radius:5px;padding:2px 8px;cursor:pointer;margin-left:10px">
+            Remove
+          </button>
+        </div>
+        <!-- Rendered HTML signature preview -->
+        <div id="int-sig-preview"
+          style="padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;line-height:1.5;color:var(--gw-ink,#1F2A2B);overflow:hidden;max-height:160px;overflow-y:auto">
+        </div>
+        <!-- CTA shown when sig is empty or needs reconnect -->
+        <div id="int-sig-cta" style="display:none;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;color:#6F7E6A"></div>
+        <div style="font-size:10px;color:#6F7E6A;margin-top:4px" id="int-sig-source-label"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn">Cancel</button>
+        <button onclick="intSendEmail()" class="primary-btn" id="int-send-btn">${gwIcon('plane',16)} Send via Gmail</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+// Ensure the compose modal exists in the DOM — inject into body if not yet rendered
+// (handles calls from outside the Integrations view)
+function gwEnsureComposeModal() {
+  if (document.getElementById('int-compose-modal')) return;
+  const div = document.createElement('div');
+  div.innerHTML = _buildComposeModalHTML();
+  document.body.appendChild(div.firstElementChild);
+}
+
 window.gwOpenCompose = async function(prefillTo='', prefillSubject='') {
+  // Self-heal: inject modal into DOM if integrations() hasn't been called yet
+  gwEnsureComposeModal();
+
   const modal = document.getElementById('int-compose-modal');
-  if (!modal) { showIntToast('Compose unavailable — reload the Integrations page', 'warn'); return; }
+  if (!modal) { showIntToast('Could not open compose window', 'warn'); return; }
+
   // Reset fields
   const toEl       = document.getElementById('int-email-to');
   const subjEl     = document.getElementById('int-email-subject');
   const bodyEl     = document.getElementById('int-email-body');
   const sigSection = document.getElementById('int-sig-section');
   const sigPreview = document.getElementById('int-sig-preview');
+  const sigCta     = document.getElementById('int-sig-cta');
   const sigStatus  = document.getElementById('int-sig-status');
   const sigSrcLbl  = document.getElementById('int-sig-source-label');
   const sigToggle  = document.getElementById('int-sig-toggle-btn');
@@ -1100,58 +1160,156 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='') {
   if (subjEl) subjEl.value = prefillSubject || '';
   if (bodyEl) bodyEl.value = '';
 
-  // Hide signature section initially while loading
+  // Reset sig state while loading
   if (sigSection) sigSection.style.display = 'none';
+  if (sigPreview) sigPreview.innerHTML = '';
+  if (sigCta)     { sigCta.style.display = 'none'; sigCta.innerHTML = ''; }
   if (sigStatus)  sigStatus.textContent = '⏳ Loading signature…';
+  if (sigSrcLbl)  sigSrcLbl.textContent = '';
+  if (sigToggle)  sigToggle.textContent = 'Remove';
   window._intSigActive = false;
   window._intSigHtml   = '';
   window._intSigSource = '';
 
+  // Show modal immediately — signature loads async below
   modal.style.display = 'flex';
 
-  // Async: load signature (Gmail API → manual fallback)
+  // ── Async: load signature (Gmail API → manual fallback) ──────────────────
   try {
-    let sig = '';
+    let sig    = '';
     let source = '';
 
     if (isGoogleConnected()) {
-      // Try Gmail API first
+      // Reset scope-error flag before each attempt so reconnected users get a
+      // fresh result instead of seeing a stale error state
+      window._gmailSigScopeError = false;
       const apiSig = await gmailFetchSendAsSignature();
       if (apiSig) {
         sig    = apiSig;
         source = 'gmail';
+        // Cache in per-user record for future opens
+        try {
+          const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+          if (rep) {
+            const m = JSON.parse(localStorage.getItem('avalonUserGoogleV1') || '{}');
+            if (!m[rep.id]) m[rep.id] = {};
+            m[rep.id].signature = apiSig;
+            localStorage.setItem('avalonUserGoogleV1', JSON.stringify(m));
+          }
+        } catch(_) {}
       }
     }
 
-    // Fall back to D1 rep record signature if Gmail API returned nothing
+    // Fall back to manual D1 rep signature
     if (!sig) {
       const rep = window.getCurrentRep ? window.getCurrentRep() : null;
       const manualSig = rep?.email_signature || '';
-      if (manualSig) {
-        sig    = manualSig;
-        source = 'manual';
-      }
+      if (manualSig) { sig = manualSig; source = 'manual'; }
     }
 
+    if (sigStatus) sigStatus.textContent = '';
+
     if (sig) {
+      // ── Happy path: we have a signature ──────────────────────────────────
       window._intSigHtml   = sig;
       window._intSigSource = source;
       window._intSigActive = true;
 
-      if (sigPreview) sigPreview.innerHTML = sig;
+      if (sigPreview) { sigPreview.style.display = 'block'; sigPreview.innerHTML = sig; }
+      if (sigCta)     sigCta.style.display = 'none';
       if (sigSection) sigSection.style.display = 'block';
       if (sigToggle)  sigToggle.textContent = 'Remove';
       if (sigSrcLbl)  sigSrcLbl.textContent = source === 'gmail'
         ? '✓ Synced from your Gmail signature'
         : '✓ Using your saved email signature';
-      if (sigStatus)  sigStatus.textContent = '';
+
+    } else if (isGoogleConnected() && window._gmailSigScopeError) {
+      // ── Scope error: token lacks gmail.settings.basic — show reconnect CTA
+      if (sigPreview) sigPreview.style.display = 'none';
+      if (sigCta) {
+        sigCta.style.display = 'block';
+        sigCta.innerHTML = `
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font-size:16px;flex-shrink:0">🔄</span>
+            <div>
+              <div style="font-weight:700;color:var(--gds-ink,#1F2A2B);margin-bottom:4px">Reconnect Google to sync your Gmail signature</div>
+              <div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Your Google connection was made before email signature access was added. A quick reconnect grants the new permission — takes 5 seconds.</div>
+              <button onclick="gwSigReconnect()" style="font-size:11px;font-weight:700;padding:5px 12px;background:#4D8A86;color:#fff;border:none;border-radius:6px;cursor:pointer">Reconnect Google →</button>
+            </div>
+          </div>`;
+      }
+      if (sigSection) sigSection.style.display = 'block';
+      if (sigToggle)  sigToggle.style.display = 'none';
+      if (sigSrcLbl)  sigSrcLbl.textContent = '';
+
     } else {
-      if (sigStatus) sigStatus.textContent = '';
+      // ── No signature at all: show a setup CTA so user knows the feature exists
+      if (sigPreview) sigPreview.style.display = 'none';
+      if (sigCta) {
+        sigCta.style.display = 'block';
+        if (isGoogleConnected()) {
+          sigCta.innerHTML = `
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span style="font-size:16px;flex-shrink:0">✍️</span>
+              <div>
+                <div style="font-weight:700;color:var(--gds-ink,#1F2A2B);margin-bottom:4px">No signature found</div>
+                <div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Your Gmail account has no default signature set, or it's empty. Add one in Gmail settings, or set a manual signature in Groundwork Settings.</div>
+                <button onclick="gwSigRefreshAndReopen('${(prefillTo||'').replace(/'/g,"\\'")}','${(prefillSubject||'').replace(/'/g,"\\'")}'); document.getElementById('int-compose-modal').style.display='none';" style="font-size:11px;font-weight:700;padding:5px 12px;background:var(--gw-surface-3);color:#6F7E6A;border:1px solid var(--gw-line);border-radius:6px;cursor:pointer">Retry sync</button>
+              </div>
+            </div>`;
+        } else {
+          sigCta.innerHTML = `
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span style="font-size:16px;flex-shrink:0">✍️</span>
+              <div>
+                <div style="font-weight:700;color:var(--gds-ink,#1F2A2B);margin-bottom:4px">Add your email signature</div>
+                <div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Set up a signature in <strong>Settings → Google &amp; Signature</strong> to have it auto-added to every email you send from Groundwork.</div>
+                <button onclick="window.navigate&&window.navigate('settings');document.getElementById('int-compose-modal').style.display='none'" style="font-size:11px;font-weight:700;padding:5px 12px;background:#4D8A86;color:#fff;border:none;border-radius:6px;cursor:pointer">Go to Settings →</button>
+              </div>
+            </div>`;
+        }
+      }
+      if (sigSection) sigSection.style.display = 'block';
+      if (sigToggle)  sigToggle.style.display = 'none';
+      if (sigSrcLbl)  sigSrcLbl.textContent = '';
     }
   } catch(e) {
     if (sigStatus) sigStatus.textContent = '';
     console.warn('[Groundwork] Signature load failed:', e.message);
   }
+};
+
+// Reconnect Google — re-runs OAuth to pick up gmail.settings.basic scope
+window.gwSigReconnect = async function() {
+  const cta = document.getElementById('int-sig-cta');
+  if (cta) cta.innerHTML = '<div style="color:#6F7E6A;font-size:12px">⏳ Opening Google sign-in…</div>';
+  const ok = await googleOAuthConnect();
+  if (ok) {
+    showIntToast('Google reconnected ✓', 'success');
+    // Re-trigger the signature load in the currently open compose window
+    const toEl   = document.getElementById('int-email-to');
+    const subjEl = document.getElementById('int-email-subject');
+    const to     = toEl?.value || '';
+    const subj   = subjEl?.value || '';
+    // Brief pause then reopen
+    setTimeout(() => window.gwOpenCompose(to, subj), 300);
+  } else {
+    showIntToast('Could not reconnect Google', 'warn');
+    if (cta) cta.innerHTML = '<div style="color:#c0392b;font-size:12px">⚠️ Reconnect failed — please try again</div>';
+  }
+};
+
+// Refresh signature from Gmail and re-open compose
+window.gwSigRefreshAndReopen = async function(to='', subj='') {
+  window._gmailSigScopeError = false;
+  try {
+    const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+    if (rep) {
+      const m = JSON.parse(localStorage.getItem('avalonUserGoogleV1') || '{}');
+      if (m[rep.id]) { delete m[rep.id].signature; localStorage.setItem('avalonUserGoogleV1', JSON.stringify(m)); }
+    }
+  } catch(_) {}
+  await window.gwOpenCompose(to, subj);
 };
 
 function intToggleSig() {
