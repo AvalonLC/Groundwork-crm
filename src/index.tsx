@@ -2894,11 +2894,11 @@ function getHtml(): string {
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
 <script src="/static/gw-icons.js?v=20260628gw1"></script>
-<script src="/static/db.js?v=20260630gw11"></script>
+<script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
-<script src="/static/reps.js?v=20260630gw11"></script>
+<script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260630gw11"></script>
+<script src="/static/app_premium.js?v=20260630gw12"></script>
 <script src="/static/integrations.js?v=20260628gw9"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260628gw9"></script>
@@ -2990,7 +2990,7 @@ function getHtml(): string {
             const isOM    = d1Rep.role === 'office_manager';
             const displayName = d1Rep.name || 'User';
             const displayRole = isAdmin ? 'Owner / Admin' : isOM ? 'Office Manager' : (d1Rep.title || 'Sales Rep');
-            const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+            const initials = displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
             footer.innerHTML =
               '<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;letter-spacing:-.01em" onclick="logoutRep();renderLoginScreen()" title="Sign out">' + initials + '</div>' +
               '<div style="min-width:0;flex:1">' +
@@ -3013,17 +3013,17 @@ function getHtml(): string {
         try {
           const migrated = await window.DB.migrateFromLocalStorage();
           if (migrated) console.log('[Bootstrap] Migrated localStorage data to D1');
-        } catch(_e: any) {}
+        } catch(_e) {}
 
         // Safety-net recovery: push localStorage-only leads not yet in D1
         try {
           const _rawState = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
-          const _localOnly = (_rawState.opportunities || []).filter((o: any) => !o._fromD1);
+          const _localOnly = (_rawState.opportunities || []).filter(o => !o._fromD1);
           if (_localOnly.length > 0) {
             const _r = await window.DB.opportunities.bulkUpsert(_localOnly);
             if (_r.inserted > 0) console.info('[Bootstrap] Recovery pushed ' + _r.inserted + ' lead(s) to D1');
           }
-        } catch(_e: any) {}
+        } catch(_e) {}
 
         // Load opps + clients from D1
         const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
