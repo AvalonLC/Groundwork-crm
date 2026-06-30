@@ -1,5 +1,27 @@
 const data = window.AVALON_DATA;
 const view = document.getElementById('view');
+
+// ── Company-Configurable Pipeline Stages ─────────────────────────────────────
+// Returns the active pipeline stages for the logged-in company.
+// Priority: 1) D1-sourced stages from bootstrap (_gwPipelineStages)
+//           2) AVALON_DATA.statuses (static default)
+//           3) Built-in 9-stage default
+// This function is the single source of truth for pipeline stage lists.
+// All views should call getPipelineStages() instead of data.statuses directly.
+function getPipelineStages() {
+  if (window._gwPipelineStages && window._gwPipelineStages.length > 0) {
+    return window._gwPipelineStages;
+  }
+  if (data && data.statuses && data.statuses.length > 0) {
+    return data.statuses;
+  }
+  return [
+    'Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered',
+    'Budget & Investment Qualified','Decision Process Qualified',
+    'Presentation & SOW Pitch','Deal Closed / Won','On Hold','Closed Lost'
+  ];
+}
+window.getPipelineStages = getPipelineStages;
 // navItems re-queried each call so dynamically added platform nav buttons are included
 function activateNav(viewName) {
   document.querySelectorAll('.nav-item').forEach(b => {
@@ -135,23 +157,47 @@ const DEFAULT_NAV_PERMS = {
 };
 
 function loadNavPerms() {
-  try { return JSON.parse(localStorage.getItem(NAV_PERMS_KEY)) || structuredClone(DEFAULT_NAV_PERMS); }
-  catch(e) { return structuredClone(DEFAULT_NAV_PERMS); }
+  // Priority 1: D1-sourced perms loaded at login (window._gwNavPerms)
+  if (window._gwNavPerms) return window._gwNavPerms;
+  // Priority 2: localStorage cache (written at login as offline fallback)
+  try {
+    const saved = JSON.parse(localStorage.getItem(NAV_PERMS_KEY) || 'null');
+    if (saved && typeof saved === 'object') return { ...DEFAULT_NAV_PERMS, ...saved };
+  } catch(e) {}
+  // Priority 3: hardcoded defaults (used before login completes)
+  return structuredClone(DEFAULT_NAV_PERMS);
 }
-function saveNavPerms(perms) { localStorage.setItem(NAV_PERMS_KEY, JSON.stringify(perms)); }
+function saveNavPerms(perms) {
+  // Update the in-memory D1 cache
+  window._gwNavPerms = perms;
+  // Also persist to localStorage as offline fallback
+  try { localStorage.setItem(NAV_PERMS_KEY, JSON.stringify(perms)); } catch(_) {}
+  // Persist to D1 (fire-and-forget)
+  if (window._d1Ready) {
+    fetch('/api/nav-perms', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ perms })
+    }).catch(e => console.warn('[NavPerms] D1 save failed:', e.message));
+  }
+}
 function canViewTab(viewName) {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   if (!rep) return false;
-  // Admin always has full access (bypass localStorage perms for admin role)
+  // Admin always has full access (no permission gate for admin role)
   if (rep.role === 'admin') return true;
   const perms = loadNavPerms();
-  // If this viewName is new and not in saved perms, fall back to DEFAULT_NAV_PERMS
-  const savedAllowed = perms[rep.role] || [];
-  const defaultAllowed = DEFAULT_NAV_PERMS[rep.role] || [];
-  // A view is allowed if either saved perms include it, OR
-  // saved perms don't have it listed at all (new view — use default)
-  if (savedAllowed.includes(viewName)) return true;
-  if (!savedAllowed.includes(viewName) && defaultAllowed.includes(viewName)) return true;
+  // Check role-specific permissions; fall back to DEFAULT_NAV_PERMS for unknown roles
+  const roleAllowed = perms[rep.role] || DEFAULT_NAV_PERMS[rep.role] || [];
+  if (roleAllowed.includes(viewName)) return true;
+  // For custom roles not in DEFAULT_NAV_PERMS, check D1-sourced role permissions
+  if (window._gwRoles) {
+    const roleDef = window._gwRoles.find(r => r.id === rep.role);
+    if (roleDef && roleDef.permissions && Array.isArray(roleDef.permissions.views)) {
+      return roleDef.permissions.views.includes(viewName);
+    }
+  }
   return false;
 }
 window.loadNavPerms = loadNavPerms;
@@ -248,7 +294,7 @@ function show(viewName='today', param){
       <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
       <h2 style="color:#1F2A2B;margin-bottom:10px;font-size:20px">${_viewLabels[viewName] || viewName}</h2>
       <p style="font-size:14px;margin-bottom:8px;color:#1F2A2B;font-weight:600">Access Restricted</p>
-      <p style="color:#5E6E6F;max-width:380px;margin:0 auto 24px;font-size:13px;line-height:1.6">Tyler (Owner) has restricted access to this section for your role. Ask Tyler to enable it in <strong>Settings → Permission Controls</strong>.</p>
+      <p style="color:#5E6E6F;max-width:380px;margin:0 auto 24px;font-size:13px;line-height:1.6">Your account role doesn't have access to this section. Ask your company admin to enable it in <strong>Settings → Permission Controls</strong>.</p>
       <button class="secondary-btn" onclick="show('today')">Back to Today</button>
     </div>`;
     activateNav(viewName);
@@ -657,7 +703,7 @@ function pipeline(selectedId){
     });
   }
 
-  const filters = data.statuses;
+  const filters = getPipelineStages();
   // Build kanban columns for all known statuses
   const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))})).filter(g=>g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
   // Catch-all: leads with legacy/unknown status get bucketed into the first stage
@@ -1561,7 +1607,8 @@ function lead(){
   const slOptions = (data.serviceLines||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
 
   // Status options
-  const stOptions = (data.statuses||[]).map(o => '<option' + (o==='New Lead'?' selected':'') + '>' + escapeHtml(o) + '</option>').join('');
+  const _stages = getPipelineStages();
+  const stOptions = _stages.map(o => '<option' + (o===(_stages[0]||'')?' selected':'') + '>' + escapeHtml(o) + '</option>').join('');
 
   // Lead source options
   const lsOptions = (data.leadSources||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
@@ -1862,7 +1909,7 @@ function lead(){
     const fd = new FormData(e.target);
     const opp = Object.fromEntries(fd.entries());
     opp.id = uid('opp'); opp.createdAt = new Date().toISOString(); opp.updatedAt = opp.createdAt;
-    if(!opp.status) opp.status = data.statuses ? data.statuses[0] : 'Lead Intake / Rapport';
+    if(!opp.status) { const _st = getPipelineStages(); opp.status = _st[0] || 'Lead Intake / Rapport'; }
     if(!opp.repId && currentRep) opp.repId = currentRep.id;
 
     // ── Client record: link existing or create new ─────────────────────────
@@ -2088,7 +2135,7 @@ function textarea(name,label,value=''){ return `<label class="full"><span>${labe
 function opportunityDetail(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o){ return pipeline(); }
-  const stageGuess   = Math.max(1, data.statuses.indexOf(o.status)+1);
+  const stageGuess   = Math.max(1, getPipelineStages().indexOf(o.status)+1);
   const _activeTab   = window._leadTab || 'overview';
   const _repObj      = (window.REPS||[]).find(r=>r.id===o.repId);
   const _repName     = _repObj ? _repObj.name : 'Unassigned';
@@ -2298,7 +2345,7 @@ function opportunityDetail(id){
         <div class="ld-card-row">
           <div class="ld-card ld-card-sm">
             <div class="ld-card-label">Pipeline Stage</div>
-            ${selectWithId('statusEdit',data.statuses,o.status)}
+            ${selectWithId('statusEdit',getPipelineStages(),o.status)}
             <button class="ld-inline-btn" onclick="setOppField('${o.id}','status',document.getElementById('statusEdit').value)">Update Stage</button>
           </div>
           <div class="ld-card ld-card-sm">

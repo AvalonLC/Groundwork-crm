@@ -211,6 +211,12 @@ app.post('/api/auth/login', async (c) => {
   setCookie(c, 'avalon_session', token, {
     httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 30
   })
+  // Log login activity (non-blocking)
+  c.executionCtx?.waitUntil?.(logActivity(c.env.DB, {
+    companyId: rep.company_id, actorId: rep.id, actorName: rep.name || rep.id,
+    entityType: 'session', entityId: rep.id, entityLabel: rep.name || rep.id,
+    action: 'login', afterJson: { email: rep.email, role: rep.role }
+  }))
   const { pin: _p, pin_hash: _ph, ...safeRep } = rep as any
   return json(c, safeRep)
 })
@@ -241,6 +247,63 @@ app.get('/api/auth/me', async (c) => {
   ).bind(sess.value).first()
   if (!rep) return err(c, 'Rep not found', 404)
   return json(c, rep)
+})
+
+// GET /api/auth/bootstrap  — single call on login to hydrate all company config
+// Returns: rep list, roles, pipeline stages, nav perms — everything the
+// frontend needs to initialize without hardcoded static arrays.
+// This is the key endpoint that replaces the static REPS array approach.
+app.get('/api/auth/bootstrap', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+
+  // Run all 4 queries in parallel
+  const [repsResult, rolesResult, stagesRow, navPermsRow] = await Promise.all([
+    c.env.DB.prepare(
+      'SELECT id, name, title, role, color, commission_plan, active, email, email_signature, invite_accepted FROM reps WHERE company_id = ? ORDER BY active DESC, name'
+    ).bind(companyId).all(),
+    c.env.DB.prepare(
+      'SELECT id, label, color, description, permissions, is_system, sort_order FROM roles WHERE company_id = ? ORDER BY sort_order, label'
+    ).bind(companyId).all(),
+    c.env.DB.prepare(
+      "SELECT value FROM settings WHERE key = ? LIMIT 1"
+    ).bind(`${companyId}:pipeline_stages`).first<{ value: string }>(),
+    c.env.DB.prepare(
+      "SELECT value FROM settings WHERE key = ? LIMIT 1"
+    ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
+  ])
+
+  const defaultStages = [
+    "Lead Intake / Rapport","Mutual Agreement Set","Discovery / CBR Uncovered",
+    "Budget & Investment Qualified","Decision Process Qualified",
+    "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
+  ]
+  const defaultNavPerms = {
+    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker'],
+    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker'],
+    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker'],
+    estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
+    view_only: ['today','pipeline','settings']
+  }
+
+  let stages = defaultStages
+  try { if (stagesRow?.value) stages = JSON.parse(stagesRow.value) } catch(_) {}
+
+  let navPerms = defaultNavPerms
+  try { if (navPermsRow?.value) navPerms = { ...defaultNavPerms, ...JSON.parse(navPermsRow.value) } } catch(_) {}
+
+  // Parse permissions JSON in roles
+  const roles = (rolesResult.results || []).map((r: any) => {
+    let perms = {}
+    try { perms = JSON.parse(r.permissions || '{}') } catch(_) {}
+    return { ...r, permissions: perms }
+  })
+
+  return json(c, {
+    reps: repsResult.results || [],
+    roles,
+    pipelineStages: stages,
+    navPerms
+  })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -366,6 +429,233 @@ app.put('/api/reps/:id', requireAuth, async (c) => {
     `UPDATE reps SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ? AND company_id = ?`
   ).bind(...vals, id, companyId).run()
   return json(c, { updated: id })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ROLES  — per-company role definitions (generic, not hardcoded to any company)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/roles  — returns all roles for the session's company
+// Used at login to hydrate the frontend role system dynamically.
+app.get('/api/roles', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const rows = await c.env.DB.prepare(
+    'SELECT id, company_id, label, color, description, permissions, is_system, sort_order FROM roles WHERE company_id = ? ORDER BY sort_order, label'
+  ).bind(companyId).all()
+  return json(c, rows.results)
+})
+
+// POST /api/roles  — create a custom role (admin only)
+app.post('/api/roles', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin') return err(c, 'Only admins can create roles', 403)
+  const b = await c.req.json()
+  if (!b.id || !b.label) return err(c, 'id and label required')
+  // Prevent collisions with system role IDs
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM roles WHERE id = ? AND company_id = ? LIMIT 1'
+  ).bind(b.id, companyId).first()
+  if (existing) return err(c, 'A role with that ID already exists', 409)
+  await c.env.DB.prepare(`
+    INSERT INTO roles (id, company_id, label, color, description, permissions, is_system, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+  `).bind(
+    b.id, companyId, b.label,
+    b.color || '#6F7E6A',
+    b.description || '',
+    b.permissions ? JSON.stringify(b.permissions) : '{"views":["today","pipeline","settings"],"can_see_all_leads":false,"can_manage_users":false,"can_view_financials":false,"can_edit_roles":false,"can_export":false}',
+    b.sort_order ?? 99
+  ).run()
+  return json(c, { id: b.id, company_id: companyId }, 201)
+})
+
+// PUT /api/roles/:id  — update a role's label, color, description, or permissions
+app.put('/api/roles/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin') return err(c, 'Only admins can edit roles', 403)
+  const roleId = c.req.param('id')
+  const b = await c.req.json()
+  const allowed = ['label','color','description','sort_order']
+  const updates: string[] = []
+  const vals: any[] = []
+  for (const f of allowed) {
+    if (b[f] !== undefined) { updates.push(`${f} = ?`); vals.push(b[f]) }
+  }
+  if (b.permissions !== undefined) {
+    updates.push('permissions = ?')
+    vals.push(typeof b.permissions === 'string' ? b.permissions : JSON.stringify(b.permissions))
+  }
+  if (!updates.length) return err(c, 'Nothing to update')
+  updates.push("updated_at = datetime('now')")
+  await c.env.DB.prepare(
+    `UPDATE roles SET ${updates.join(', ')} WHERE id = ? AND company_id = ?`
+  ).bind(...vals, roleId, companyId).run()
+  return json(c, { updated: roleId })
+})
+
+// DELETE /api/roles/:id  — delete a custom role (cannot delete system roles)
+app.delete('/api/roles/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin') return err(c, 'Only admins can delete roles', 403)
+  const roleId = c.req.param('id')
+  // Block deletion of system roles
+  const row = await c.env.DB.prepare(
+    'SELECT is_system FROM roles WHERE id = ? AND company_id = ? LIMIT 1'
+  ).bind(roleId, companyId).first<{ is_system: number }>()
+  if (!row) return err(c, 'Role not found', 404)
+  if (row.is_system) return err(c, 'System roles cannot be deleted. You can edit their permissions instead.', 403)
+  // Check no reps are currently using this role
+  const repCount = await c.env.DB.prepare(
+    'SELECT COUNT(*) as n FROM reps WHERE role = ? AND company_id = ? AND active = 1'
+  ).bind(roleId, companyId).first<{ n: number }>()
+  if (repCount && repCount.n > 0) return err(c, `Cannot delete: ${repCount.n} active user(s) have this role. Reassign them first.`, 409)
+  await c.env.DB.prepare('DELETE FROM roles WHERE id = ? AND company_id = ?').bind(roleId, companyId).run()
+  return json(c, { deleted: roleId })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACTIVITY LOG  — append-only audit trail for all company mutations
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/activity-log  — paginated activity log for the session's company
+// ?limit=50&offset=0&entity_type=opportunity&entity_id=opp_abc&actor_id=tyler
+app.get('/api/activity-log', requireAuth, async (c) => {
+  const companyId  = c.var.companyId as string
+  const role       = c.var.role as string
+  // Only admin and office_manager can read the full audit log
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Access restricted', 403)
+  const limit      = Math.min(parseInt(c.req.query('limit') || '50'), 200)
+  const offset     = parseInt(c.req.query('offset') || '0')
+  const entityType = c.req.query('entity_type') || ''
+  const entityId   = c.req.query('entity_id') || ''
+  const actorId    = c.req.query('actor_id') || ''
+
+  let q = 'SELECT * FROM activity_log WHERE company_id = ?'
+  const params: any[] = [companyId]
+  if (entityType) { q += ' AND entity_type = ?'; params.push(entityType) }
+  if (entityId)   { q += ' AND entity_id = ?';   params.push(entityId) }
+  if (actorId)    { q += ' AND actor_id = ?';     params.push(actorId) }
+  q += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(limit, offset)
+  const rows = await c.env.DB.prepare(q).bind(...params).all()
+  return json(c, rows.results)
+})
+
+// POST /api/activity-log  — internal only; called by server-side write operations
+// Clients CANNOT post to this endpoint directly — they call regular mutation endpoints
+// which call logActivity() internally.
+// Exposed here for Cloudflare Queue consumers or future server-to-server logging.
+async function logActivity(
+  db: D1Database,
+  { companyId, actorId, actorName, entityType, entityId, entityLabel, action, beforeJson, afterJson }: {
+    companyId: string; actorId: string; actorName: string;
+    entityType: string; entityId: string; entityLabel: string;
+    action: string; beforeJson?: any; afterJson?: any
+  }
+) {
+  try {
+    const id = 'act_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    await db.prepare(`
+      INSERT INTO activity_log
+        (id, company_id, actor_id, actor_name, entity_type, entity_id, entity_label, action, before_json, after_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, companyId, actorId, actorName,
+      entityType, entityId, entityLabel, action,
+      beforeJson ? JSON.stringify(beforeJson) : '',
+      afterJson  ? JSON.stringify(afterJson)  : ''
+    ).run()
+  } catch (_) {
+    // Activity log failures must never break the main operation
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PIPELINE STAGES  — per-company pipeline stage configuration
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/pipeline-stages  — returns ordered stage list for session's company
+// Falls back to the 9-stage default if company hasn't customized yet.
+app.get('/api/pipeline-stages', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const row = await c.env.DB.prepare(
+    "SELECT value FROM settings WHERE key = ? LIMIT 1"
+  ).bind(`${companyId}:pipeline_stages`).first<{ value: string }>()
+  const defaultStages = [
+    "Lead Intake / Rapport","Mutual Agreement Set","Discovery / CBR Uncovered",
+    "Budget & Investment Qualified","Decision Process Qualified",
+    "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
+  ]
+  let stages = defaultStages
+  if (row?.value) {
+    try { stages = JSON.parse(row.value) } catch(_) {}
+  } else {
+    // Seed the default for this company if it doesn't exist yet
+    await c.env.DB.prepare(
+      "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+    ).bind(`${companyId}:pipeline_stages`, JSON.stringify(defaultStages)).run()
+  }
+  return json(c, stages)
+})
+
+// PUT /api/pipeline-stages  — admin only — update company's pipeline stages
+app.put('/api/pipeline-stages', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin access required', 403)
+  const b = await c.req.json()
+  if (!Array.isArray(b.stages) || b.stages.length < 2) return err(c, 'stages must be an array with at least 2 items')
+  const stages = (b.stages as any[]).map(s => String(s).trim()).filter(Boolean)
+  await c.env.DB.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+  ).bind(`${companyId}:pipeline_stages`, JSON.stringify(stages)).run()
+  // Log the change
+  await logActivity(c.env.DB, {
+    companyId, actorId: c.var.repId, actorName: c.var.repId,
+    entityType: 'pipeline_stage', entityId: companyId, entityLabel: 'Pipeline Stages',
+    action: 'updated', afterJson: stages
+  })
+  return json(c, { stages })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NAV PERMISSIONS  — per-company per-role nav tab access (replaces localStorage)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/nav-perms  — returns nav permissions JSON for session's company
+app.get('/api/nav-perms', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const row = await c.env.DB.prepare(
+    "SELECT value FROM settings WHERE key = ? LIMIT 1"
+  ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
+  const defaultPerms = {
+    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker'],
+    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker'],
+    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker'],
+    estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
+    view_only: ['today','pipeline','settings']
+  }
+  let perms = defaultPerms
+  if (row?.value) {
+    try { perms = { ...defaultPerms, ...JSON.parse(row.value) } } catch(_) {}
+  }
+  return json(c, perms)
+})
+
+// PUT /api/nav-perms  — admin only — update nav permissions per role
+app.put('/api/nav-perms', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin') return err(c, 'Only admins can edit permissions', 403)
+  const b = await c.req.json()
+  if (!b.perms || typeof b.perms !== 'object') return err(c, 'perms object required')
+  await c.env.DB.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+  ).bind(`${companyId}:nav_perms`, JSON.stringify(b.perms)).run()
+  return json(c, { saved: true })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -757,10 +1047,18 @@ app.post('/api/opportunities', requireAuth, async (c) => {
     b.collected?1:0, b.soldDate||b.sold_date||'',
     Number(b.soldAmount||b.sold_amount||0)
   ).run()
-  // Broadcast to all company users so their browsers sync immediately
-  c.executionCtx?.waitUntil?.(c.env.DB.prepare(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
-  ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run())
+  // Broadcast + activity log (non-blocking)
+  c.executionCtx?.waitUntil?.(Promise.all([
+    c.env.DB.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+    ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run(),
+    logActivity(c.env.DB, {
+      companyId, actorId: c.var.repId, actorName: c.var.repId,
+      entityType: 'opportunity', entityId: id,
+      entityLabel: b.client || id,
+      action: 'created', afterJson: { client: b.client, status: b.status || 'Lead Intake / Rapport', repId: effRepId }
+    })
+  ]))
   return json(c, { id }, 201)
 })
 
@@ -802,10 +1100,18 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
   await c.env.DB.prepare(
     `UPDATE opportunities SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ? AND company_id = ?`
   ).bind(...vals, id, companyId).run()
-  // Broadcast to all company users
-  c.executionCtx?.waitUntil?.(c.env.DB.prepare(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
-  ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run())
+  // Broadcast + activity log (non-blocking)
+  c.executionCtx?.waitUntil?.(Promise.all([
+    c.env.DB.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+    ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run(),
+    logActivity(c.env.DB, {
+      companyId, actorId: c.var.repId, actorName: c.var.repId,
+      entityType: 'opportunity', entityId: id, entityLabel: id,
+      action: b.status ? 'status_changed' : 'updated',
+      afterJson: { fields: Object.keys(b).filter(k => k !== 'companyId') }
+    })
+  ]))
   return json(c, { updated: id })
 })
 
@@ -814,10 +1120,17 @@ app.delete('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
   await c.env.DB.prepare('DELETE FROM opportunities WHERE id = ? AND company_id = ?').bind(id, companyId).run()
-  // Broadcast to all company users
-  c.executionCtx?.waitUntil?.(c.env.DB.prepare(
-    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
-  ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run())
+  // Broadcast + activity log (non-blocking)
+  c.executionCtx?.waitUntil?.(Promise.all([
+    c.env.DB.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+    ).bind(`${companyId}:last_write`, `${new Date().toISOString()}|${c.var.repId}`).run(),
+    logActivity(c.env.DB, {
+      companyId, actorId: c.var.repId, actorName: c.var.repId,
+      entityType: 'opportunity', entityId: id, entityLabel: id,
+      action: 'deleted', afterJson: {}
+    })
+  ]))
   return json(c, { deleted: id })
 })
 

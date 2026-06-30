@@ -356,19 +356,50 @@ const DB = (() => {
 
   // ── EVENTS (real-time peer-change detection) ─────────────────────────────────
   const events = {
+    poll() { return get('/events/poll'); },
+    ping()  { return post('/events/ping', {}).catch(() => {}); }
+  };
+
+  // ── ROLES (per-company generic role system) ───────────────────────────────────
+  const roles = {
+    /** List all roles for this company */
+    list() { return get('/roles'); },
+    /** Create a custom role */
+    create(role) { return post('/roles', role); },
+    /** Update a role's label, color, description, or permissions */
+    update(id, patch) { return put(`/roles/${id}`, patch); },
+    /** Delete a custom role */
+    delete(id) { return del(`/roles/${id}`); }
+  };
+
+  // ── PIPELINE STAGES (per-company configurable) ────────────────────────────────
+  const pipelineStages = {
+    /** Get ordered stage list for this company */
+    list() { return get('/pipeline-stages'); },
+    /** Update the stage list (admin only) */
+    save(stages) { return put('/pipeline-stages', { stages }); }
+  };
+
+  // ── NAV PERMISSIONS (per-company per-role access) ────────────────────────────
+  const navPerms = {
+    /** Get nav perms for this company */
+    get() { return get('/nav-perms'); },
+    /** Save updated nav perms (admin only) */
+    save(perms) { return put('/nav-perms', { perms }); }
+  };
+
+  // ── ACTIVITY LOG (append-only audit trail) ────────────────────────────────────
+  const activityLog = {
     /**
-     * Poll for latest peer write timestamp.
-     * Returns { lastWrite: "<iso>|<repId>" | null }
+     * Get paginated activity log.
+     * opts: { limit, offset, entity_type, entity_id, actor_id }
      */
-    poll() {
-      return get('/events/poll');
-    },
-    /**
-     * Ping after a local write so peers know something changed.
-     * Fire-and-forget — ignore errors.
-     */
-    ping() {
-      return post('/events/ping', {}).catch(() => {});
+    list(opts = {}) {
+      const qs = Object.entries(opts)
+        .filter(([,v]) => v !== undefined && v !== '')
+        .map(([k,v]) => `${k}=${encodeURIComponent(v)}`)
+        .join('&');
+      return get('/activity-log' + (qs ? '?' + qs : ''));
     }
   };
 
@@ -385,6 +416,10 @@ const DB = (() => {
     revenue,
     academy,
     events,
+    roles,
+    pipelineStages,
+    navPerms,
+    activityLog,
     sync,
     migrateFromLocalStorage,
     getSession,

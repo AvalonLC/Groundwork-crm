@@ -24,8 +24,13 @@ const UM_USERS_KEY   = 'avalonUsersV1';
 const UM_AUDIT_KEY   = 'avalonLoginAuditV1';
 const UM_GOOGLE_KEY  = 'avalonUserGoogleV1';
 
-// ── Role definitions (built-in) ────────────────────────────────────────────────
-const UM_ROLE_DEFS = [
+// ── Role definitions ────────────────────────────────────────────────────────────
+// These are the BUILT-IN fallback role definitions. They are used when:
+//   1. The company hasn't loaded from D1 yet (pre-login)
+//   2. D1 bootstrap failed (network error)
+// At login, window._gwRoles is populated from D1 with this company's roles.
+// getRoleDefs() always returns the most current source.
+const _UM_ROLE_DEFS_DEFAULT = [
   {
     id: 'admin',
     label: 'Owner / Admin',
@@ -37,15 +42,15 @@ const UM_ROLE_DEFS = [
     id: 'office_manager',
     label: 'Office Manager',
     color: '#8B6914',
-    description: 'Operations and admin access. Can see pipeline, clients, and most admin tools.',
-    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings']
+    description: 'Operations and admin access. Sees ALL leads across all reps. Can manage most settings.',
+    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker']
   },
   {
     id: 'rep',
     label: 'Sales Rep',
     color: '#2D7A55',
-    description: 'Standard rep access. Today, pipeline, clients, and sales toolkit.',
-    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings']
+    description: 'Standard rep access. Today, pipeline (own leads), clients, and full sales toolkit.',
+    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker']
   },
   {
     id: 'estimator',
@@ -63,6 +68,50 @@ const UM_ROLE_DEFS = [
   }
 ];
 
+/**
+ * Returns the active role definitions for the current company.
+ * Priority: D1-sourced window._gwRoles → built-in defaults.
+ * This function is the single source of truth for role definitions.
+ */
+function getRoleDefs() {
+  if (window._gwRoles && window._gwRoles.length > 0) {
+    // Map D1 role format to UM format (add defaultViews from permissions.views)
+    return window._gwRoles.map(r => ({
+      id:           r.id,
+      label:        r.label,
+      color:        r.color || '#6F7E6A',
+      description:  r.description || '',
+      defaultViews: (r.permissions && Array.isArray(r.permissions.views))
+                      ? r.permissions.views
+                      : (_UM_ROLE_DEFS_DEFAULT.find(d => d.id === r.id)?.defaultViews || []),
+      // Pass through D1-specific permission flags
+      can_see_all_leads:   r.permissions?.can_see_all_leads || false,
+      can_manage_users:    r.permissions?.can_manage_users  || false,
+      can_view_financials: r.permissions?.can_view_financials || false,
+      is_system:           r.is_system || false
+    }));
+  }
+  return _UM_ROLE_DEFS_DEFAULT;
+}
+window.getRoleDefs = getRoleDefs;
+
+// Legacy alias — existing code referencing UM_ROLE_DEFS still works.
+// It reads from getRoleDefs() dynamically so it always reflects D1 data.
+const UM_ROLE_DEFS = new Proxy([], {
+  get(_, prop) {
+    const arr = getRoleDefs();
+    if (prop === 'length') return arr.length;
+    if (prop === 'find') return arr.find.bind(arr);
+    if (prop === 'filter') return arr.filter.bind(arr);
+    if (prop === 'map') return arr.map.bind(arr);
+    if (prop === 'forEach') return arr.forEach.bind(arr);
+    if (prop === 'some') return arr.some.bind(arr);
+    if (typeof prop === 'string' && !isNaN(Number(prop))) return arr[Number(prop)];
+    return arr[prop];
+  },
+  has(_, prop) { return prop in getRoleDefs(); }
+});
+
 // ── Positions list ─────────────────────────────────────────────────────────────
 const UM_POSITIONS = [
   'Owner',
@@ -77,35 +126,52 @@ const UM_POSITIONS = [
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function umLoadUsers() {
+  // Priority 1: D1-sourced REPS array (populated at login from /api/auth/bootstrap)
+  // REPS is now the canonical user list — not localStorage.
+  const reps = window.REPS || [];
+  if (reps.length > 0) {
+    return umBootstrapUsersFromReps();
+  }
+  // Priority 2: localStorage cache (only used before D1 is ready)
   try {
     const stored = JSON.parse(localStorage.getItem(UM_USERS_KEY) || '[]');
     if (stored.length) return stored;
   } catch(e) {}
-  // Bootstrap from REPS array on first run
-  return umBootstrapUsersFromReps();
+  return [];
 }
 
 function umBootstrapUsersFromReps() {
+  // Maps the D1-hydrated REPS array → user management user objects.
+  // This is called every time the user management view opens so it always
+  // reflects the current D1 team list — including newly invited reps.
   const reps = window.REPS || [];
+  const positionForRole = r =>
+    r.role === 'admin' ? 'Owner' :
+    r.role === 'office_manager' ? 'Office Manager' :
+    r.role === 'estimator' ? 'Estimator' :
+    r.role === 'view_only' ? 'View Only' : 'Sales Rep';
+
   const users = reps.map(r => ({
     id: r.id,
     name: r.name,
     displayName: r.name,
     email: r.email || '',
     phone: '',
-    position: r.role === 'admin' ? 'Owner' : r.role === 'office_manager' ? 'Office Manager' : 'Sales Rep',
+    position: positionForRole(r),
     role: r.role,
-    color: r.color,
-    status: 'active',
-    password: '',   // never expose hash — admin sets a new password when needed
+    color: r.color || '#6F7E6A',
+    status: r.active === false ? 'inactive' : 'active',
+    password: '',   // never expose hash
     mustResetPin: false,
     failedLoginCount: 0,
     lastLoginAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    notes: ''
+    notes: '',
+    _fromD1: true
   }));
-  localStorage.setItem(UM_USERS_KEY, JSON.stringify(users));
+  // Also write to localStorage as a cache
+  try { localStorage.setItem(UM_USERS_KEY, JSON.stringify(users)); } catch(_) {}
   return users;
 }
 

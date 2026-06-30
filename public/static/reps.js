@@ -10,44 +10,56 @@
  */
 
 // ── Rep Registry ──────────────────────────────────────────────────────────────
-// Admin can add reps by updating this list and redeploying
-const REPS = [
-  {
-    id: 'tyler',
-    name: 'Tyler',
-    title: 'Owner / Sales Manager',
-    role: 'admin',
-    email: 'tyler@avalon-lc.com',
-    avatar: '',
-    color: '#4D8A86',
-    base: null, // owner — no base
-    commissionPlan: 'admin'
-  },
-  {
-    id: 'ryan',
-    name: 'Ryan',
-    title: 'Client Relations & Enhancement Sales Associate',
-    role: 'rep',
-    email: 'ryan@avalon-lc.com',
-    avatar: '',
-    color: '#2D7A55',
-    base: { rateTraining: 20, ratePostTraining: 21 },
-    commissionPlan: 'ryan'
-  },
-  {
-    id: 'jen',
-    name: 'Jen',
-    title: 'Office Manager — Sales Operations',
-    role: 'office_manager',
-    email: 'admin@avalon-lc.com',
-    avatar: '',
-    color: '#8B6914',
-    base: null,
-    commissionPlan: null
-  }
-  // Add new reps here — copy the Ryan structure and give them a unique id/pin
-  // { id: 'sarah', name: 'Sarah', title: 'Account Manager', role: 'rep', email: 'sarah@avalon-lc.com', avatar: '', color: '#4D8A86', base: { rateTraining: 20, ratePostTraining: 21 }, commissionPlan: 'ryan' }
-];
+// IMPORTANT: REPS is now a DYNAMIC array populated from D1 at login.
+// It is intentionally empty on page load — no company or user data is
+// hardcoded here. Any company that onboards will get their own rep list.
+//
+// How it works:
+//   1. On login, _doLogin() calls GET /api/auth/bootstrap
+//   2. Bootstrap returns { reps, roles, pipelineStages, navPerms }
+//   3. _hydrateRepsFromBootstrap() fills REPS from bootstrap.reps
+//   4. getCurrentRep() finds the logged-in rep in REPS
+//   5. _syncFromD1() already has logic to push new D1 reps into REPS
+//
+// DO NOT add any specific user data back to this array.
+let REPS = [];
+
+// Expose globally so user_management.js and other modules can reference it
+window.REPS = REPS;
+
+// ── Company Bootstrap Cache ────────────────────────────────────────────────────
+// Cached on login — contains roles, pipelineStages, navPerms for the session's company.
+// Reset on logout.
+window._gwBootstrap = null;
+
+/**
+ * Hydrate the REPS array from a bootstrap rep list (from D1).
+ * Called on login and whenever rep list changes.
+ * Maps D1 column names → client-side camelCase fields.
+ */
+function _hydrateRepsFromBootstrap(d1Reps) {
+  // Clear existing entries (splice keeps the same array reference)
+  REPS.splice(0, REPS.length);
+  (d1Reps || []).forEach(dr => {
+    REPS.push({
+      id:             dr.id,
+      name:           dr.name || dr.id,
+      title:          dr.title || '',
+      role:           dr.role  || 'rep',
+      email:          dr.email || '',
+      color:          dr.color || '#6F7E6A',
+      avatar:         '',
+      base:           null,  // commission base loaded from D1 commission_plan
+      commissionPlan: dr.commission_plan || 'standard',
+      email_signature: dr.email_signature || '',
+      active:         dr.active !== 0,  // 0 = deactivated
+      _fromD1:        true
+    });
+  });
+  // Keep window.REPS in sync (user_management.js reads window.REPS)
+  window.REPS = REPS;
+}
+window._hydrateRepsFromBootstrap = _hydrateRepsFromBootstrap;
 
 // ── Commission Plans ───────────────────────────────────────────────────────────
 // ── Commission Rules Loader ────────────────────────────────────────────────────
@@ -308,6 +320,14 @@ function logoutRep() {
   localStorage.removeItem(AUTH_KEY);
   window._d1SessionRep = null;
   window._d1Ready = false;
+  // Clear the bootstrap cache so next login re-hydrates from D1
+  window._gwBootstrap    = null;
+  window._gwRoles        = null;
+  window._gwPipelineStages = null;
+  window._gwNavPerms     = null;
+  // Clear REPS so next login hydrates fresh from D1
+  REPS.splice(0, REPS.length);
+  window.REPS = REPS;
   // Stop background sync poll
   if (typeof window._stopSyncPoll === 'function') window._stopSyncPoll();
   // Also clear D1 session cookie (fire-and-forget, don't await)
@@ -701,12 +721,72 @@ function renderLoginScreen() {
       window._companyId    = d1Rep.company_id || 'avalon';
       loginRep(d1Rep.id); // write to localStorage so getCurrentRep() works
 
-      // Merge D1 fields (email_signature, etc.) onto the in-memory REPS entry
-      // so getCurrentRep() returns them without requiring a separate fetch.
+      // ── BOOTSTRAP: load all company config in one shot ──────────────────
+      // Hydrates REPS array, roles, pipeline stages, nav perms from D1.
+      // This replaces the old static REPS array — every company gets their
+      // own team list, role definitions, and pipeline configuration.
+      try {
+        const bsRes = await fetch('/api/auth/bootstrap', { credentials: 'include' });
+        if (bsRes.ok) {
+          const bs = await bsRes.json();
+          if (bs.ok && bs.data) {
+            window._gwBootstrap = bs.data;
+
+            // 1. Hydrate REPS from D1 (replaces static array)
+            if (bs.data.reps && bs.data.reps.length > 0) {
+              _hydrateRepsFromBootstrap(bs.data.reps);
+            }
+
+            // 2. Store role definitions globally (replaces UM_ROLE_DEFS hardcode)
+            if (bs.data.roles && bs.data.roles.length > 0) {
+              window._gwRoles = bs.data.roles;
+            }
+
+            // 3. Store pipeline stages globally (replaces data.statuses hardcode)
+            if (bs.data.pipelineStages && bs.data.pipelineStages.length > 0) {
+              window._gwPipelineStages = bs.data.pipelineStages;
+              // Patch AVALON_DATA.statuses so all pipeline views use D1 stages
+              if (window.AVALON_DATA) {
+                window.AVALON_DATA.statuses = bs.data.pipelineStages;
+              }
+            }
+
+            // 4. Store nav perms globally (replaces localStorage avalonNavPermissions)
+            if (bs.data.navPerms) {
+              window._gwNavPerms = bs.data.navPerms;
+              // Also write to localStorage as fallback cache for offline use
+              try { localStorage.setItem('avalonNavPermissions', JSON.stringify(bs.data.navPerms)); } catch(_) {}
+            }
+          }
+        }
+      } catch(bsErr) {
+        console.warn('[Bootstrap] Failed to load company config — using defaults:', bsErr.message);
+        // Non-fatal: REPS stays empty, getCurrentRep() will fall back to _d1SessionRep
+      }
+
+      // Ensure the logged-in rep is always in REPS (even if bootstrap failed)
+      if (!REPS.find(r => r.id === d1Rep.id)) {
+        REPS.push({
+          id:             d1Rep.id,
+          name:           d1Rep.name || d1Rep.id,
+          title:          d1Rep.title || '',
+          role:           d1Rep.role  || 'rep',
+          email:          d1Rep.email || '',
+          color:          d1Rep.color || '#4D8A86',
+          avatar:         '',
+          base:           null,
+          commissionPlan: d1Rep.commission_plan || 'standard',
+          email_signature: d1Rep.email_signature || '',
+          active:         true,
+          _fromD1:        true
+        });
+        window.REPS = REPS;
+      }
+
+      // Merge D1 fields onto the REPS entry (email_signature, etc.)
       const localRep = REPS.find(r => r.id === d1Rep.id);
       if (localRep) {
         localRep.email_signature = d1Rep.email_signature || '';
-        // Sync any other D1-sourced fields the static array may not have
         if (d1Rep.title)  localRep.title  = d1Rep.title;
         if (d1Rep.color)  localRep.color  = d1Rep.color;
         if (d1Rep.email)  localRep.email  = d1Rep.email;
@@ -823,38 +903,25 @@ function renderLoginScreen() {
         if (typeof window.saveState === 'function') window.saveState();
       }
 
-      // ── Reps list — pull all company reps so Jen/Ryan appear in Tyler's lists
-      // and Tyler appears in Jen's lists (everyone sees the full team)
+      // ── Reps list — always pull full company rep list from D1 on every sync
+      // This keeps REPS up-to-date if admin adds/removes users between syncs.
+      // Uses _hydrateRepsFromBootstrap() which merges D1 data cleanly.
       try {
         const d1Reps = await fetch('/api/reps', { credentials: 'include' }).then(r => r.ok ? r.json() : null);
-        if (d1Reps?.data) {
-          d1Reps.data.forEach(dr => {
-            const existing = REPS.find(r => r.id === dr.id);
-            if (existing) {
-              // Sync any server-side fields back onto the static entry
-              if (dr.name)  existing.name  = dr.name;
-              if (dr.color) existing.color = dr.color;
-              if (dr.email) existing.email = dr.email;
-              if (dr.title) existing.title = dr.title;
-              if (dr.role)  existing.role  = dr.role;
-              existing.email_signature = dr.email_signature || '';
-            } else {
-              // Rep exists in D1 but not in static array — add them
-              REPS.push({
-                id:             dr.id,
-                name:           dr.name || dr.id,
-                title:          dr.title || '',
-                role:           dr.role  || 'rep',
-                email:          dr.email || '',
-                color:          dr.color || '#6F7E6A',
-                avatar:         '',
-                base:           null,
-                commissionPlan: dr.commission_plan || null,
-                email_signature: dr.email_signature || '',
-                _fromD1:        true
-              });
-            }
-          });
+        if (d1Reps?.data && d1Reps.data.length > 0) {
+          // Full re-hydration keeps REPS accurate — no stale static entries
+          _hydrateRepsFromBootstrap(d1Reps.data);
+          // Ensure currently logged-in rep stays in REPS even if deactivated
+          const currentRep = window._d1SessionRep;
+          if (currentRep && !REPS.find(r => r.id === currentRep.id)) {
+            REPS.push({
+              id: currentRep.id, name: currentRep.name || currentRep.id,
+              title: currentRep.title || '', role: currentRep.role || 'rep',
+              email: currentRep.email || '', color: currentRep.color || '#4D8A86',
+              avatar: '', base: null, commissionPlan: currentRep.commission_plan || 'standard',
+              email_signature: currentRep.email_signature || '', active: true, _fromD1: true
+            });
+          }
         }
       } catch(_) {}
 
