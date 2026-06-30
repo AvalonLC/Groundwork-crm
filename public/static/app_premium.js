@@ -443,6 +443,16 @@ function buildSuggestedActions(currentRep){
 function today(){
   const _todayRep = window.getCurrentRep ? window.getCurrentRep() : null;
   const _isOM = _todayRep && _todayRep.role === 'office_manager';
+  // Check for unsynced localStorage leads
+  const _localOnlyOpps = state.opportunities.filter(o => !o._fromD1);
+  const _unsyncedBanner = _localOnlyOpps.length > 0 ? `
+    <div style="background:#FFF3CD;border:1px solid #FFD60A;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L1 16h16L9 2z" stroke="#8B6914" stroke-width="1.5" stroke-linejoin="round" fill="#FFF3CD"/><path d="M9 7v4" stroke="#8B6914" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="13.5" r="1" fill="#8B6914"/></svg>
+      <div style="flex:1">
+        <strong style="color:#8B6914">${_localOnlyOpps.length} lead${_localOnlyOpps.length>1?'s are':' is'} only saved locally</strong> — not yet synced to the cloud. Teammates can't see them yet.
+      </div>
+      <button onclick="window._recoverLocalLeads&&window._recoverLocalLeads()" style="background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">↑ Sync Now</button>
+    </div>` : '';
   const due = state.opportunities
     .filter(o=>o.nextFollowUp && o.nextFollowUp <= todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status))
     .sort((a,b)=>a.nextFollowUp.localeCompare(b.nextFollowUp));
@@ -475,6 +485,7 @@ function today(){
       </div>
     </div>`;
   view.innerHTML = `${_heroBlock}
+    ${_unsyncedBanner}
     ${statCards()}
     <div class="grid grid-2 mt">
       <section class="card app-card">
@@ -620,10 +631,11 @@ function pipeline(selectedId){
 
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
-  if (activeStatusFilter === 'open') opps = opps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-  else if (activeStatusFilter === 'proposals') opps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Follow-Up'].includes(o.status));
-  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status));
-  else if (activeStatusFilter === 'sold') opps = opps.filter(o => o.status === 'Sold / Activation');
+  const _closedStatuses = ['Sold / Activation','Deal Closed / Won','Closed Lost'];
+  if (activeStatusFilter === 'open') opps = opps.filter(o => !_closedStatuses.includes(o.status));
+  else if (activeStatusFilter === 'proposals') opps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Follow-Up','Presentation & SOW Pitch'].includes(o.status));
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !_closedStatuses.includes(o.status));
+  else if (activeStatusFilter === 'sold') opps = opps.filter(o => ['Sold / Activation','Deal Closed / Won'].includes(o.status));
 
   // T47: Sort
   const activeSort = window._pipelineSort || 'urgent';
@@ -639,7 +651,16 @@ function pipeline(selectedId){
   }
 
   const filters = data.statuses;
-  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))})).filter(g=>g.items.length || ['New Lead','Contacted','Discovery Scheduled','Proposal / Estimate Sent','Follow-Up','Sold / Activation'].includes(g.status));
+  // Build kanban columns for all known statuses
+  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))})).filter(g=>g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
+  // Catch-all: leads with legacy/unknown status get bucketed into the first stage
+  const knownStatuses = new Set(filters);
+  const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)));
+  if (orphanOpps.length) {
+    const firstGroup = grouped.find(g => g.status === filters[0]);
+    if (firstGroup) firstGroup.items = sortOpps([...orphanOpps, ...firstGroup.items]);
+    else grouped.unshift({status: filters[0], items: orphanOpps});
+  }
 
   const _repFilterHtml = (()=>{
     const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
@@ -652,7 +673,19 @@ function pipeline(selectedId){
     </div><div class="pl-filter-divider"></div>`;
   })();
 
+  // Unsent-leads banner for pipeline view
+  const _plLocalOnly = state.opportunities.filter(o => !o._fromD1);
+  const _plUnsyncedBanner = _plLocalOnly.length > 0 ? `
+    <div style="background:#FFF3CD;border:1px solid #FFD60A;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L1 16h16L9 2z" stroke="#8B6914" stroke-width="1.5" stroke-linejoin="round" fill="#FFF3CD"/><path d="M9 7v4" stroke="#8B6914" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="13.5" r="1" fill="#8B6914"/></svg>
+      <div style="flex:1">
+        <strong style="color:#8B6914">${_plLocalOnly.length} lead${_plLocalOnly.length>1?'s are':' is'} only saved locally</strong> — not yet synced to the cloud. Teammates can't see them yet.
+      </div>
+      <button onclick="window._recoverLocalLeads&&window._recoverLocalLeads()" style="background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">↑ Sync Now</button>
+    </div>` : '';
+
   view.innerHTML = `
+    ${_plUnsyncedBanner}
     <div class="pl-page-header">
       <div class="pl-page-title">
         <h1 class="pl-title">Pipeline</h1>
@@ -1822,7 +1855,7 @@ function lead(){
     const fd = new FormData(e.target);
     const opp = Object.fromEntries(fd.entries());
     opp.id = uid('opp'); opp.createdAt = new Date().toISOString(); opp.updatedAt = opp.createdAt;
-    if(!opp.status) opp.status = 'New Lead';
+    if(!opp.status) opp.status = data.statuses ? data.statuses[0] : 'Lead Intake / Rapport';
     if(!opp.repId && currentRep) opp.repId = currentRep.id;
 
     // ── Client record: link existing or create new ─────────────────────────

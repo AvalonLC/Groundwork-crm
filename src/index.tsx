@@ -2164,6 +2164,156 @@ app.get('/auth/google/callback', (c) => {
 </html>`)
 })
 
+// ── /recover — Standalone lead-recovery page ──────────────────────────────
+// Tyler can share this URL with Jen: https://groundwork-crm.com/recover
+// Jen opens it on her device → her localStorage leads are pushed to D1
+app.get('/recover', (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead Recovery — Groundwork CRM</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F5F6F3;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+    .card{background:#fff;border-radius:16px;padding:36px;max-width:480px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+    .logo{font-size:22px;font-weight:700;color:#113931;margin-bottom:24px;display:flex;align-items:center;gap:10px}
+    .logo svg{flex-shrink:0}
+    h1{font-size:20px;font-weight:700;color:#1C3829;margin-bottom:8px}
+    p{font-size:14px;color:#5C6B58;line-height:1.6;margin-bottom:20px}
+    #status{background:#F0F4F0;border-radius:10px;padding:14px;font-size:14px;color:#1C3829;margin-bottom:20px;min-height:52px;display:none}
+    #status.show{display:block}
+    #status.success{background:#E8F5EF;color:#1C6B40;border:1px solid #A8D9BF}
+    #status.error{background:#FDECEA;color:#8B2020;border:1px solid #F5AAAA}
+    #status.info{background:#E8F0F8;color:#1C3A6B;border:1px solid #A8C5F0}
+    button{width:100%;background:#4D8A86;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;transition:opacity .15s}
+    button:hover{opacity:.88}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .step{display:flex;gap:10px;font-size:13px;color:#5C6B58;padding:8px 0;border-bottom:1px solid #F0F0EE}
+    .step:last-child{border-bottom:none}
+    .step-num{width:22px;height:22px;background:#4D8A86;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
+    .steps{background:#F8F9F7;border-radius:10px;padding:12px 14px;margin-bottom:20px}
+    .note{font-size:12px;color:#8A9680;text-align:center;margin-top:16px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="7" fill="#113931"/><path d="M6 20V10l8-5 8 5v10H17v-5h-6v5H6z" fill="#7DB98A"/></svg>
+      Groundwork CRM
+    </div>
+    <h1>Lead Recovery</h1>
+    <p>This page pushes any leads saved on this device to the cloud so your teammates can see them. Safe to run anytime — it won't create duplicates.</p>
+
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div>Reads all leads saved on this device (browser storage)</div></div>
+      <div class="step"><div class="step-num">2</div><div>Sends any that aren't already in the cloud to the server</div></div>
+      <div class="step"><div class="step-num">3</div><div>Shows you how many were recovered</div></div>
+    </div>
+
+    <div id="status"></div>
+    <button id="recoverBtn" onclick="recover()">↑ Recover My Leads Now</button>
+    <div class="note">You must be signed in to Groundwork CRM for this to work.<br>After recovery, <a href="/" style="color:#4D8A86">return to the app</a> and sync.</div>
+  </div>
+
+  <script>
+  async function recover() {
+    const btn = document.getElementById('recoverBtn');
+    const status = document.getElementById('status');
+
+    function setStatus(msg, type) {
+      status.textContent = msg;
+      status.className = 'show ' + (type || 'info');
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Scanning local storage…';
+    setStatus('Reading leads from this device…', 'info');
+
+    try {
+      // Read localStorage
+      const rawState = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
+      const allOpps = rawState.opportunities || [];
+      const localOnly = allOpps.filter(o => !o._fromD1);
+
+      if (allOpps.length === 0) {
+        setStatus('No leads found in local storage on this device. If your leads are on a different device, open this page there.', 'info');
+        btn.textContent = '↑ Recover My Leads Now';
+        btn.disabled = false;
+        return;
+      }
+
+      if (localOnly.length === 0) {
+        setStatus('✅ All ' + allOpps.length + ' lead' + (allOpps.length !== 1 ? 's are' : ' is') + ' already synced to the cloud. Nothing to recover!', 'success');
+        btn.textContent = '↑ Recover My Leads Now';
+        btn.disabled = false;
+        return;
+      }
+
+      btn.textContent = '⏳ Syncing ' + localOnly.length + ' lead' + (localOnly.length !== 1 ? 's' : '') + '…';
+      setStatus('Sending ' + localOnly.length + ' local lead' + (localOnly.length !== 1 ? 's' : '') + ' to the cloud…', 'info');
+
+      // Call bulk-upsert endpoint
+      const res = await fetch('/api/opportunities/bulk-upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ opps: localOnly })
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 401) {
+          setStatus('❌ You are not signed in. Please sign in to Groundwork CRM first, then come back to this page.', 'error');
+        } else {
+          setStatus('❌ Server error (' + res.status + '): ' + errText.slice(0, 200), 'error');
+        }
+        btn.textContent = '↑ Try Again';
+        btn.disabled = false;
+        return;
+      }
+
+      const result = await res.json();
+      const inserted = result.data?.inserted ?? result.inserted ?? 0;
+      const skipped  = result.data?.skipped  ?? result.skipped  ?? 0;
+
+      // Mark recovered leads as synced in localStorage
+      if (inserted > 0 && rawState.opportunities) {
+        const recoveredIds = new Set(localOnly.map(o => o.id));
+        rawState.opportunities = rawState.opportunities.map(o =>
+          recoveredIds.has(o.id) ? { ...o, _fromD1: true } : o
+        );
+        localStorage.setItem('avalonSalesHubStateV3', JSON.stringify(rawState));
+      }
+
+      if (inserted > 0) {
+        setStatus('✅ Success! ' + inserted + ' lead' + (inserted !== 1 ? 's' : '') + ' recovered to the cloud.' +
+          (skipped > 0 ? ' (' + skipped + ' already existed, skipped)' : '') +
+          ' Return to the app and hit ⟳ to see them.', 'success');
+        btn.textContent = '✅ Recovery Complete — Return to App';
+        btn.onclick = function(){ window.location.href = '/'; };
+      } else if (skipped > 0) {
+        setStatus('✅ All ' + skipped + ' lead' + (skipped !== 1 ? 's were' : ' was') + ' already in the cloud. Nothing new to sync!', 'success');
+        btn.textContent = '↑ Recover My Leads Now';
+        btn.disabled = false;
+      } else {
+        setStatus('Nothing was synced. The server returned 0 inserted and 0 skipped. Try signing in to the app again then return here.', 'info');
+        btn.textContent = '↑ Try Again';
+        btn.disabled = false;
+      }
+
+    } catch (err) {
+      setStatus('❌ Unexpected error: ' + err.message, 'error');
+      btn.textContent = '↑ Try Again';
+      btn.disabled = false;
+    }
+  }
+  </script>
+</body>
+</html>`)
+})
+
 // Main app - serve Groundwork CRM
 app.get('/', (c) => {
   return c.html(getHtml())
