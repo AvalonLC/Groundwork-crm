@@ -431,3 +431,11 @@ const DB = (() => {
 
 // Make available globally
 window.DB = DB;
+
+// ── Bootstrap synchronization promise ────────────────────────────────────────
+// Created here (db.js loads first) so app_premium.js can safely await it
+// before calling show(). Resolved by bootstrapD1Auth() in the inline <script>
+// at the bottom of index.tsx after session check + REPS hydration completes.
+window._d1BootstrapReady = new Promise(function(resolve) {
+  window._d1BootstrapResolve = resolve;
+});

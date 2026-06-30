@@ -2894,7 +2894,7 @@ function getHtml(): string {
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
 <script src="/static/gw-icons.js?v=20260628gw1"></script>
-<script src="/static/db.js?v=20260628gw9"></script>
+<script src="/static/db.js?v=20260630gw10"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260630gw10"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
@@ -2931,10 +2931,9 @@ function getHtml(): string {
   // 4. Signal _initialRoute() via window._d1BootstrapReady promise
   // 5. If no D1 session, fall back to localStorage auth (reps.js getCurrentRep)
 
-  // Create a promise that _initialRoute() will await before calling show()
-  window._d1BootstrapReady = new Promise(function(resolve) {
-    window._d1BootstrapResolve = resolve;
-  });
+  // NOTE: window._d1BootstrapReady promise is created in db.js (loads first)
+  // so _initialRoute() in app_premium.js can safely await it.
+  // We only need to call window._d1BootstrapResolve() here when session check completes.
 
   (async function bootstrapD1Auth() {
     try {
