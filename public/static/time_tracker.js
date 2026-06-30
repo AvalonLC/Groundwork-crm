@@ -491,7 +491,7 @@ function ttBuildDateSlider(offset, selectedDate) {
         return `
           <button onclick="ttSelectDate('${iso}')" style="flex-shrink:0;min-width:52px;padding:10px 8px;border-radius:12px;border:2px solid ${isSel ? '#2563EB' : isToday ? '#4ade8040' : 'var(--gw-line,#2a3a30)'};background:${isSel ? '#2563EB' : isToday ? '#4ade8008' : 'var(--gw-surface-2,#1a2820)'};cursor:pointer;transition:all .15s;text-align:center">
             <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:${isSel ? 'rgba(255,255,255,.7)' : isToday ? '#4ade80' : 'var(--gw-muted,#9a9a8a)'};margin-bottom:3px">${dayName}</div>
-            <div style="font-size:18px;font-weight:900;color:${isSel ? '#fff' : 'var(--gw-text,#E8E4D9)';};line-height:1">${dayNum}</div>
+            <div style="font-size:18px;font-weight:900;color:${isSel ? '#fff' : 'var(--gw-text,#E8E4D9)'};line-height:1">${dayNum}</div>
             <div style="font-size:9px;color:${isSel ? 'rgba(255,255,255,.6)' : 'var(--gw-muted,#9a9a8a)'};margin-top:2px">${month}</div>
           </button>`;
       }).join('')}

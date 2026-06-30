@@ -2903,7 +2903,7 @@ function getHtml(): string {
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260628gw9"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
-<script src="/static/time_tracker.js?v=20260629tt1"></script>
+<script src="/static/time_tracker.js?v=20260630tt2"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
