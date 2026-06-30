@@ -201,9 +201,9 @@ function ttRenderSidebarWidget() {
     if (window._ttState.timerInterval) { clearInterval(window._ttState.timerInterval); window._ttState.timerInterval = null; }
     widget.innerHTML = `
       <button onclick="ttQuickClockIn()"
-        style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 14px;background:var(--gw-surface-2,#1e2a22);border:1.5px dashed #4D8A8660;border-radius:10px;color:var(--gw-muted,#7a9080);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;margin-bottom:6px"
+        style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 14px;background:var(--gw-surface-2,#FAFAF8);border:1.5px dashed #4D8A8660;border-radius:10px;color:var(--gw-muted,#5E6E6F);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;margin-bottom:6px"
         onmouseover="this.style.borderColor='#4D8A86';this.style.color='#4D8A86';this.style.background='#4D8A8610'"
-        onmouseout="this.style.borderColor='#4D8A8660';this.style.color='var(--gw-muted,#7a9080)';this.style.background='var(--gw-surface-2,#1e2a22)'">
+        onmouseout="this.style.borderColor='#4D8A8660';this.style.color='var(--gw-muted,#5E6E6F)';this.style.background='var(--gw-surface-2,#FAFAF8)'">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Clock In
       </button>`;
@@ -298,24 +298,24 @@ function ttShowClockInModal() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </div>
         <div>
-          <div style="font-size:16px;font-weight:800;color:var(--gw-text,#E8E4D9)">Clock In</div>
-          <div style="font-size:11px;color:var(--gw-muted,#9a9a8a)">Start tracking your time</div>
+          <div style="font-size:16px;font-weight:800;color:var(--gw-ink,#1F2A2B)">Clock In</div>
+          <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Start tracking your time</div>
         </div>
       </div>
       <div style="display:grid;gap:14px">
         <div>
-          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
-          <select id="tt-ci-job" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;font-weight:600">
+          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
+          <select id="tt-ci-job" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;font-weight:600">
             ${jobOpts}
           </select>
         </div>
         <div>
-          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Start Time</label>
-          <input type="datetime-local" id="tt-ci-start" value="${isoLocal}" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;box-sizing:border-box">
+          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Start Time</label>
+          <input type="datetime-local" id="tt-ci-start" value="${isoLocal}" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;box-sizing:border-box">
         </div>
         <div>
-          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Notes <span style="opacity:.5;font-weight:400">(optional)</span></label>
-          <textarea id="tt-ci-notes" rows="2" placeholder="What are you working on?" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>
+          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Notes <span style="opacity:.5;font-weight:400">(optional)</span></label>
+          <textarea id="tt-ci-notes" rows="2" placeholder="What are you working on?" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>
         </div>
         <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#4ade8010;border:1px solid #4ade8030;border-radius:8px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -330,7 +330,7 @@ function ttShowClockInModal() {
         </div>
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
-        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-muted,#9a9a8a);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-muted,#5E6E6F);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         <button onclick="ttDoClockIn()" style="flex:2;padding:10px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 12px #22c55e40">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:5px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           Clock In Now
@@ -391,28 +391,28 @@ function ttShowClockOutModal() {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
         </div>
         <div>
-          <div style="font-size:16px;font-weight:800;color:var(--gw-text,#E8E4D9)">Clock Out</div>
-          <div style="font-size:11px;color:var(--gw-muted,#9a9a8a)">Elapsed: <strong style="color:#f87171">${elapsed}</strong></div>
+          <div style="font-size:16px;font-weight:800;color:var(--gw-ink,#1F2A2B)">Clock Out</div>
+          <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Elapsed: <strong style="color:#f87171">${elapsed}</strong></div>
         </div>
       </div>
       <div style="display:grid;gap:14px">
         <div>
-          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">End Time</label>
-          <input type="datetime-local" id="tt-co-end" value="${isoLocal}" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;box-sizing:border-box">
+          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">End Time</label>
+          <input type="datetime-local" id="tt-co-end" value="${isoLocal}" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;box-sizing:border-box">
         </div>
         <div>
-          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
-          <select id="tt-co-job" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;font-weight:600">
+          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
+          <select id="tt-co-job" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;font-weight:600">
             ${TT_JOB_TYPES.map(j => `<option value="${ttE(j)}" ${j === st.activeEntry.job_type ? 'selected' : ''}>${ttE(j)}</option>`).join('')}
           </select>
         </div>
         <div>
-          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
-          <textarea id="tt-co-notes" rows="2" placeholder="What did you work on?" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box">${ttE(st.activeEntry.notes||'')}</textarea>
+          <label style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
+          <textarea id="tt-co-notes" rows="2" placeholder="What did you work on?" style="width:100%;padding:9px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box">${ttE(st.activeEntry.notes||'')}</textarea>
         </div>
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
-        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-muted,#9a9a8a);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-muted,#5E6E6F);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         <button onclick="ttDoClockOut()" style="flex:2;padding:10px;background:linear-gradient(135deg,#f87171,#dc2626);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 12px #dc262640">
           Clock Out Now
         </button>
@@ -461,7 +461,7 @@ function ttShowModal(html) {
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = `
-    <div style="background:var(--gw-surface,#141f1a);border:1px solid var(--gw-line,#2a3a30);border-radius:16px;min-width:340px;max-width:460px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:tt-modal-in .15s ease-out">
+    <div style="background:var(--gw-surface,#FFFFFF);border:1px solid var(--gw-line,#E0DDD5);border-radius:16px;min-width:340px;max-width:460px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:tt-modal-in .15s ease-out">
       ${html}
     </div>`;
   overlay.style.display = 'flex';
@@ -489,10 +489,10 @@ function ttBuildDateSlider(offset, selectedDate) {
         const dayNum  = d.getDate();
         const month   = d.toLocaleDateString('en-US',{month:'short'});
         return `
-          <button onclick="ttSelectDate('${iso}')" style="flex-shrink:0;min-width:52px;padding:10px 8px;border-radius:12px;border:2px solid ${isSel ? '#2563EB' : isToday ? '#4ade8040' : 'var(--gw-line,#2a3a30)'};background:${isSel ? '#2563EB' : isToday ? '#4ade8008' : 'var(--gw-surface-2,#1a2820)'};cursor:pointer;transition:all .15s;text-align:center">
-            <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:${isSel ? 'rgba(255,255,255,.7)' : isToday ? '#4ade80' : 'var(--gw-muted,#9a9a8a)'};margin-bottom:3px">${dayName}</div>
-            <div style="font-size:18px;font-weight:900;color:${isSel ? '#fff' : 'var(--gw-text,#E8E4D9)'};line-height:1">${dayNum}</div>
-            <div style="font-size:9px;color:${isSel ? 'rgba(255,255,255,.6)' : 'var(--gw-muted,#9a9a8a)'};margin-top:2px">${month}</div>
+          <button onclick="ttSelectDate('${iso}')" style="flex-shrink:0;min-width:52px;padding:10px 8px;border-radius:12px;border:2px solid ${isSel ? '#2563EB' : isToday ? '#4ade8040' : 'var(--gw-line,#E0DDD5)'};background:${isSel ? '#2563EB' : isToday ? '#4ade8008' : 'var(--gw-surface-2,#FAFAF8)'};cursor:pointer;transition:all .15s;text-align:center">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:${isSel ? 'rgba(255,255,255,.7)' : isToday ? '#4ade80' : 'var(--gw-muted,#5E6E6F)'};margin-bottom:3px">${dayName}</div>
+            <div style="font-size:18px;font-weight:900;color:${isSel ? '#fff' : 'var(--gw-ink,#1F2A2B)'};line-height:1">${dayNum}</div>
+            <div style="font-size:9px;color:${isSel ? 'rgba(255,255,255,.6)' : 'var(--gw-muted,#5E6E6F)'};margin-top:2px">${month}</div>
           </button>`;
       }).join('')}
     </div>`;
@@ -514,9 +514,9 @@ function ttTabNav(active) {
     { id:'insights',  label:'Insights',     icon:'<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>' },
   ];
   return `
-    <div style="display:flex;gap:4px;background:var(--gw-surface-2,#1a2820);border-radius:12px;padding:4px;margin-bottom:20px;border:1px solid var(--gw-line,#2a3a30)">
+    <div style="display:flex;gap:4px;background:var(--gw-surface-2,#FAFAF8);border-radius:12px;padding:4px;margin-bottom:20px;border:1px solid var(--gw-line,#E0DDD5)">
       ${tabs.map(t => `
-        <button onclick="ttSwitchTab('${t.id}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 8px;border-radius:9px;border:none;background:${active===t.id ? 'var(--gw-surface,#141f1a)' : 'transparent'};color:${active===t.id ? 'var(--gw-text,#E8E4D9)' : 'var(--gw-muted,#9a9a8a)'};font-size:12px;font-weight:${active===t.id ? '700' : '500'};cursor:pointer;transition:all .15s;white-space:nowrap;box-shadow:${active===t.id ? '0 1px 4px rgba(0,0,0,.3)' : 'none'}">
+        <button onclick="ttSwitchTab('${t.id}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 8px;border-radius:9px;border:none;background:${active===t.id ? 'var(--gw-surface,#FFFFFF)' : 'transparent'};color:${active===t.id ? 'var(--gw-ink,#1F2A2B)' : 'var(--gw-muted,#5E6E6F)'};font-size:12px;font-weight:${active===t.id ? '700' : '500'};cursor:pointer;transition:all .15s;white-space:nowrap;box-shadow:${active===t.id ? '0 1px 4px rgba(0,0,0,.3)' : 'none'}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${t.icon}</svg>
           <span style="display:none" class="tt-tab-label">${t.label}</span>
         </button>`).join('')}
@@ -550,8 +550,8 @@ window.timeTracker = function timeTracker(tab) {
         <!-- Header row -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px;flex-wrap:wrap">
           <div>
-            <h1 style="font-size:20px;font-weight:900;color:var(--gw-text,#E8E4D9);margin:0;letter-spacing:-.02em">Time Tracker</h1>
-            <div style="font-size:11px;color:var(--gw-muted,#9a9a8a);margin-top:2px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
+            <h1 style="font-size:20px;font-weight:900;color:var(--gw-ink,#1F2A2B);margin:0;letter-spacing:-.02em">Time Tracker</h1>
+            <div style="font-size:11px;color:var(--gw-muted,#5E6E6F);margin-top:2px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center" id="tt-header-actions">
             <!-- Filled by tab -->
@@ -561,12 +561,12 @@ window.timeTracker = function timeTracker(tab) {
         ${ttTabNav(tab)}
         <!-- Tab content -->
         <div id="tt-tab-content">
-          <div style="text-align:center;padding:40px 0;color:var(--gw-muted,#9a9a8a)">Loading…</div>
+          <div style="text-align:center;padding:40px 0;color:var(--gw-muted,#5E6E6F)">Loading…</div>
         </div>
       </div>
 
       <!-- Right: Ring timer panel -->
-      <div id="tt-ring-panel" style="width:220px;flex-shrink:0;background:var(--gw-surface-2,#0f1a15);border-left:1px solid var(--gw-line,#2a3a30);padding:20px 16px;display:flex;flex-direction:column;align-items:center;overflow-y:auto">
+      <div id="tt-ring-panel" style="width:220px;flex-shrink:0;background:var(--gw-surface-2,#FAFAF8);border-left:1px solid var(--gw-line,#E0DDD5);padding:20px 16px;display:flex;flex-direction:column;align-items:center;overflow-y:auto">
         ${ttBuildRingPanel()}
       </div>
     </div>`;
@@ -596,7 +596,7 @@ function ttBuildRingPanel() {
 
   return `
     <div style="width:100%;text-align:center">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;margin-bottom:14px">
         ${isClockedIn ? 'Live Timer' : 'Ready'}
       </div>
 
@@ -641,7 +641,7 @@ function ttBuildRingPanel() {
         ${[['#60a5fa','Hours'],['#4ade80','Minutes'],['#f472b6','Seconds']].map(([c,l]) => `
           <div style="display:flex;align-items:center;gap:7px">
             <div style="width:10px;height:10px;border-radius:50%;background:${c};flex-shrink:0"></div>
-            <span style="font-size:10px;color:var(--gw-muted,#9a9a8a)">${l}</span>
+            <span style="font-size:10px;color:var(--gw-muted,#5E6E6F)">${l}</span>
           </div>`).join('')}
       </div>
 
@@ -667,28 +667,28 @@ function ttBuildRingPanel() {
           <button onclick="ttShowClockInModal()" style="width:100%;padding:11px 0;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px #22c55e40;letter-spacing:.02em">
             ▶ Clock In
           </button>
-          <button onclick="ttShowManualModal()" style="width:100%;padding:9px 0;background:var(--gw-surface,#141f1a);border:1px solid var(--gw-line,#2a3a30);border-radius:10px;color:var(--gw-muted,#9a9a8a);font-size:12px;font-weight:700;cursor:pointer">
+          <button onclick="ttShowManualModal()" style="width:100%;padding:9px 0;background:var(--gw-surface,#FFFFFF);border:1px solid var(--gw-line,#E0DDD5);border-radius:10px;color:var(--gw-muted,#5E6E6F);font-size:12px;font-weight:700;cursor:pointer">
             + Add Entry
           </button>
         `}
       </div>
 
       <!-- Today summary -->
-      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--gw-line,#2a3a30);width:100%">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;margin-bottom:10px">Today</div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--gw-line,#E0DDD5);width:100%">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;margin-bottom:10px">Today</div>
         <div id="tt-today-summary" style="display:flex;flex-direction:column;gap:7px">
-          <div style="text-align:center;font-size:10px;color:var(--gw-muted,#9a9a8a)">Loading…</div>
+          <div style="text-align:center;font-size:10px;color:var(--gw-muted,#5E6E6F)">Loading…</div>
         </div>
       </div>
 
       <!-- Week progress bar -->
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--gw-line,#2a3a30);width:100%">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;margin-bottom:8px">This Week</div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--gw-line,#E0DDD5);width:100%">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;margin-bottom:8px">This Week</div>
         <div id="tt-week-progress-wrap">
           <div style="height:6px;background:#ffffff10;border-radius:3px;overflow:hidden;margin-bottom:6px">
             <div id="tt-week-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#4ade80,#22d3ee);border-radius:3px;transition:width 1s ease"></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gw-muted,#9a9a8a)">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gw-muted,#5E6E6F)">
             <span id="tt-week-total">0h 00m</span>
             <span style="opacity:.5">Goal: 40h</span>
           </div>
@@ -725,16 +725,16 @@ async function ttLoadRingPanelData() {
     const todaySummEl = document.getElementById('tt-today-summary');
     if (todaySummEl) {
       if (todayMin === 0) {
-        todaySummEl.innerHTML = `<div style="text-align:center;font-size:11px;color:var(--gw-muted,#9a9a8a)">No time logged</div>`;
+        todaySummEl.innerHTML = `<div style="text-align:center;font-size:11px;color:var(--gw-muted,#5E6E6F)">No time logged</div>`;
       } else {
         todaySummEl.innerHTML = `
-          <div style="font-size:22px;font-weight:900;color:var(--gw-text,#E8E4D9);text-align:center;margin-bottom:6px">${ttFmt(todayMin)}</div>
+          <div style="font-size:22px;font-weight:900;color:var(--gw-ink,#1F2A2B);text-align:center;margin-bottom:6px">${ttFmt(todayMin)}</div>
           ${Object.entries(byJob).slice(0,3).map(([job, min]) => {
             const col = ttColorForJob(job);
             return `<div style="display:flex;align-items:center;gap:6px">
               <div style="width:8px;height:8px;border-radius:50%;background:${col.border};flex-shrink:0"></div>
-              <span style="font-size:10px;color:var(--gw-muted,#9a9a8a);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(job)}</span>
-              <span style="font-size:10px;font-weight:700;color:var(--gw-text,#E8E4D9)">${ttFmt(min)}</span>
+              <span style="font-size:10px;color:var(--gw-muted,#5E6E6F);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(job)}</span>
+              <span style="font-size:10px;font-weight:700;color:var(--gw-ink,#1F2A2B)">${ttFmt(min)}</span>
             </div>`;
           }).join('')}`;
       }
@@ -765,7 +765,7 @@ async function ttLoadTimesheet() {
       <button onclick="window._ttState.weekOffset--;ttLoadTimesheet()" style="${ttNavBtnStyle()}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
       </button>
-      <span style="font-size:12px;font-weight:700;color:var(--gw-text,#E8E4D9);white-space:nowrap">${label}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--gw-ink,#1F2A2B);white-space:nowrap">${label}</span>
       <button onclick="window._ttState.weekOffset++;ttLoadTimesheet()" style="${ttNavBtnStyle()}" ${st.weekOffset >= 0 ? 'disabled style="'+ttNavBtnStyle()+';opacity:.3"' : ''}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
       </button>
@@ -776,7 +776,7 @@ async function ttLoadTimesheet() {
       </button>`;
   }
 
-  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#9a9a8a)">
+  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#5E6E6F)">
     <div style="width:28px;height:28px;border:3px solid #4ade8030;border-top-color:#4ade80;border-radius:50%;animation:tt-spin 1s linear infinite;margin:0 auto 12px"></div>
     Loading…
   </div>`;
@@ -799,10 +799,10 @@ async function ttLoadTimesheet() {
 }
 
 function ttNavBtnStyle() {
-  return 'padding:7px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);cursor:pointer;display:inline-flex;align-items:center;gap:4px';
+  return 'padding:7px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);cursor:pointer;display:inline-flex;align-items:center;gap:4px';
 }
 function ttSecondaryBtnStyle() {
-  return 'padding:7px 12px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-muted,#9a9a8a);cursor:pointer;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px';
+  return 'padding:7px 12px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-muted,#5E6E6F);cursor:pointer;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px';
 }
 
 function ttBuildTimesheetHTML(entries, offset) {
@@ -849,8 +849,8 @@ function ttBuildTimesheetHTML(entries, offset) {
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div>
-            <div style="font-size:13px;font-weight:800;color:var(--gw-text,#E8E4D9)">${ttFmtDateFull(new Date(selDate + 'T12:00:00'))}</div>
-            <div style="font-size:11px;color:var(--gw-muted,#9a9a8a);margin-top:2px">${selEntries.length} ${selEntries.length===1?'entry':'entries'} · ${ttFmt(selTotal)}</div>
+            <div style="font-size:13px;font-weight:800;color:var(--gw-ink,#1F2A2B)">${ttFmtDateFull(new Date(selDate + 'T12:00:00'))}</div>
+            <div style="font-size:11px;color:var(--gw-muted,#5E6E6F);margin-top:2px">${selEntries.length} ${selEntries.length===1?'entry':'entries'} · ${ttFmt(selTotal)}</div>
           </div>
           <button onclick="ttShowManualModalForDate('${selDate}')" style="padding:8px 14px;background:linear-gradient(135deg,#2563EB,#1d4ed8);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 8px #2563eb40">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -859,10 +859,10 @@ function ttBuildTimesheetHTML(entries, offset) {
         </div>
 
         ${selEntries.length === 0 ? `
-          <div style="text-align:center;padding:32px 20px;background:var(--gw-surface-2,#1a2820);border:2px dashed var(--gw-line,#2a3a30);border-radius:14px">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--gw-muted,#9a9a8a)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <div style="font-size:13px;font-weight:600;color:var(--gw-muted,#9a9a8a);margin-bottom:4px">No time logged</div>
-            <div style="font-size:11px;color:var(--gw-muted,#9a9a8a);opacity:.6">Click "Add Entry" or Clock In to start</div>
+          <div style="text-align:center;padding:32px 20px;background:var(--gw-surface-2,#FAFAF8);border:2px dashed var(--gw-line,#E0DDD5);border-radius:14px">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--gw-muted,#5E6E6F)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <div style="font-size:13px;font-weight:600;color:var(--gw-muted,#5E6E6F);margin-bottom:4px">No time logged</div>
+            <div style="font-size:11px;color:var(--gw-muted,#5E6E6F);opacity:.6">Click "Add Entry" or Clock In to start</div>
           </div>
         ` : `
           <div style="display:flex;flex-direction:column;gap:8px">
@@ -871,10 +871,10 @@ function ttBuildTimesheetHTML(entries, offset) {
       </div>
 
       <!-- Right: Week Summary Grid -->
-      <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:14px;padding:14px;position:sticky;top:0">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;margin-bottom:12px">Week Summary</div>
-        <div style="font-size:24px;font-weight:900;color:var(--gw-text,#E8E4D9);margin-bottom:4px">${ttFmt(weekTotal)}</div>
-        <div style="font-size:10px;color:var(--gw-muted,#9a9a8a);margin-bottom:14px">${ttFmtDecimal(weekTotal)} hrs billed</div>
+      <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;padding:14px;position:sticky;top:0">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;margin-bottom:12px">Week Summary</div>
+        <div style="font-size:24px;font-weight:900;color:var(--gw-ink,#1F2A2B);margin-bottom:4px">${ttFmt(weekTotal)}</div>
+        <div style="font-size:10px;color:var(--gw-muted,#5E6E6F);margin-bottom:14px">${ttFmtDecimal(weekTotal)} hrs billed</div>
 
         <!-- Daily bars -->
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
@@ -887,27 +887,27 @@ function ttBuildTimesheetHTML(entries, offset) {
             const dayLbl = d.toLocaleDateString('en-US',{weekday:'short'});
             return `
               <div onclick="ttSelectDate('${key}')" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:6px;background:${isSel?'#2563EB15':'transparent'};transition:background .1s">
-                <div style="font-size:10px;font-weight:${isToday?'800':'500'};color:${isToday?'#4ade80':isSel?'#60a5fa':'var(--gw-muted,#9a9a8a)'};width:26px;flex-shrink:0">${dayLbl}</div>
+                <div style="font-size:10px;font-weight:${isToday?'800':'500'};color:${isToday?'#4ade80':isSel?'#60a5fa':'var(--gw-muted,#5E6E6F)'};width:26px;flex-shrink:0">${dayLbl}</div>
                 <div style="flex:1;height:6px;background:#ffffff0a;border-radius:3px;overflow:hidden">
                   <div style="height:100%;width:${pct}%;background:${isSel?'#2563EB':'#4ade80'};border-radius:3px;transition:width .5s ease"></div>
                 </div>
-                <div style="font-size:10px;font-weight:700;color:${min>0?'var(--gw-text,#E8E4D9)':'var(--gw-muted,#9a9a8a)'};width:42px;text-align:right;flex-shrink:0">${min>0?ttFmt(min):'—'}</div>
+                <div style="font-size:10px;font-weight:700;color:${min>0?'var(--gw-ink,#1F2A2B)':'var(--gw-muted,#5E6E6F)'};width:42px;text-align:right;flex-shrink:0">${min>0?ttFmt(min):'—'}</div>
               </div>`;
           }).join('')}
         </div>
 
         <!-- Job type breakdown -->
         ${Object.entries(jobTotals).length > 0 ? `
-          <div style="border-top:1px solid var(--gw-line,#2a3a30);padding-top:12px">
-            <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;margin-bottom:8px">By Job Type</div>
+          <div style="border-top:1px solid var(--gw-line,#E0DDD5);padding-top:12px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;margin-bottom:8px">By Job Type</div>
             ${Object.entries(jobTotals).slice(0,5).map(([job,min]) => {
               const col = ttColorForJob(job);
               const pct = weekTotal > 0 ? (min/weekTotal*100).toFixed(0) : 0;
               return `
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
                   <div style="width:8px;height:8px;border-radius:50%;background:${col.border};flex-shrink:0"></div>
-                  <div style="font-size:9px;color:var(--gw-muted,#9a9a8a);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(job)}</div>
-                  <div style="font-size:9px;font-weight:700;color:var(--gw-text,#E8E4D9)">${pct}%</div>
+                  <div style="font-size:9px;color:var(--gw-muted,#5E6E6F);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(job)}</div>
+                  <div style="font-size:9px;font-weight:700;color:var(--gw-ink,#1F2A2B)">${pct}%</div>
                 </div>`;
             }).join('')}
           </div>` : ''}
@@ -935,8 +935,8 @@ function ttBuildEntryCard(e) {
     : `<span style="font-size:9px;font-weight:700;color:#fbbf24;background:#fbbf2415;border:1px solid #fbbf2430;border-radius:20px;padding:2px 7px">⏳ Pending</span>`;
 
   return `
-    <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:12px;padding:12px 14px;transition:border-color .15s;position:relative;overflow:hidden"
-      onmouseover="this.style.borderColor='${col.border}40'" onmouseout="this.style.borderColor='var(--gw-line,#2a3a30)'">
+    <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:12px;padding:12px 14px;transition:border-color .15s;position:relative;overflow:hidden"
+      onmouseover="this.style.borderColor='${col.border}40'" onmouseout="this.style.borderColor='var(--gw-line,#E0DDD5)'">
       <!-- Left accent bar -->
       <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${col.border};border-radius:12px 0 0 12px"></div>
       <div style="padding-left:8px">
@@ -948,16 +948,16 @@ function ttBuildEntryCard(e) {
             ${approvalBadge}
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0">
-            <button onclick="ttEditEntry('${ttE(e.id)}')" style="padding:4px 8px;background:transparent;border:1px solid var(--gw-line,#2a3a30);border-radius:6px;color:var(--gw-muted,#9a9a8a);font-size:10px;font-weight:600;cursor:pointer">Edit</button>
+            <button onclick="ttEditEntry('${ttE(e.id)}')" style="padding:4px 8px;background:transparent;border:1px solid var(--gw-line,#E0DDD5);border-radius:6px;color:var(--gw-muted,#5E6E6F);font-size:10px;font-weight:600;cursor:pointer">Edit</button>
             <button onclick="ttDeleteEntry('${ttE(e.id)}')" style="padding:4px 8px;background:transparent;border:1px solid #f8717130;border-radius:6px;color:#f87171;font-size:10px;font-weight:600;cursor:pointer">✕</button>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
           <div>
-            <div style="font-size:18px;font-weight:900;color:var(--gw-text,#E8E4D9);font-variant-numeric:tabular-nums">${isOpen ? `<span id="tt-entry-timer-${ttE(e.id)}" style="color:#4ade80">${ttElapsedStr(e.clock_in)}</span>` : ttFmt(e.duration_min)}</div>
-            <div style="font-size:10px;color:var(--gw-muted,#9a9a8a);margin-top:1px">${ttFmtTime(e.clock_in)} → ${isOpen ? 'Now' : ttFmtTime(e.clock_out)}</div>
+            <div style="font-size:18px;font-weight:900;color:var(--gw-ink,#1F2A2B);font-variant-numeric:tabular-nums">${isOpen ? `<span id="tt-entry-timer-${ttE(e.id)}" style="color:#4ade80">${ttElapsedStr(e.clock_in)}</span>` : ttFmt(e.duration_min)}</div>
+            <div style="font-size:10px;color:var(--gw-muted,#5E6E6F);margin-top:1px">${ttFmtTime(e.clock_in)} → ${isOpen ? 'Now' : ttFmtTime(e.clock_out)}</div>
           </div>
-          ${e.notes ? `<div style="font-size:11px;color:var(--gw-muted,#9a9a8a);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-left:1px solid var(--gw-line,#2a3a30);padding-left:12px">${ttE(e.notes)}</div>` : ''}
+          ${e.notes ? `<div style="font-size:11px;color:var(--gw-muted,#5E6E6F);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-left:1px solid var(--gw-line,#E0DDD5);padding-left:12px">${ttE(e.notes)}</div>` : ''}
         </div>
       </div>
     </div>`;
@@ -982,51 +982,51 @@ function ttShowManualModalForDate(date) {
         <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#2563EB,#1d4ed8);display:flex;align-items:center;justify-content:center">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </div>
-        <div style="font-size:15px;font-weight:800;color:var(--gw-text,#E8E4D9)">Add Time Entry</div>
+        <div style="font-size:15px;font-weight:800;color:var(--gw-ink,#1F2A2B)">Add Time Entry</div>
       </div>
 
       <!-- Increment buttons -->
       <div style="margin-bottom:14px">
-        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:8px">Quick Adjust Duration</label>
+        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:8px">Quick Adjust Duration</label>
         <div style="display:flex;gap:6px">
           ${['-1h','-15m','+15m','+1h'].map(lbl => `
-            <button onclick="ttAdjustTime('${lbl}')" style="flex:1;padding:8px 6px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:11px;font-weight:700;cursor:pointer;transition:all .1s"
+            <button onclick="ttAdjustTime('${lbl}')" style="flex:1;padding:8px 6px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:11px;font-weight:700;cursor:pointer;transition:all .1s"
               onmouseover="this.style.background='#2563EB20';this.style.borderColor='#2563EB50'"
-              onmouseout="this.style.background='var(--gw-surface-2,#1a2820)';this.style.borderColor='var(--gw-line,#2a3a30)'">${lbl}</button>`).join('')}
+              onmouseout="this.style.background='var(--gw-surface-2,#FAFAF8)';this.style.borderColor='var(--gw-line,#E0DDD5)'">${lbl}</button>`).join('')}
         </div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div>
-          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Start</label>
-          <input type="datetime-local" id="tt-me-start" value="${startVal}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:12px;box-sizing:border-box">
+          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Start</label>
+          <input type="datetime-local" id="tt-me-start" value="${startVal}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:12px;box-sizing:border-box">
         </div>
         <div>
-          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">End</label>
-          <input type="datetime-local" id="tt-me-end" value="${endVal}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:12px;box-sizing:border-box">
+          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">End</label>
+          <input type="datetime-local" id="tt-me-end" value="${endVal}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:12px;box-sizing:border-box">
         </div>
       </div>
       <div style="margin-bottom:12px">
-        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
-        <select id="tt-me-job" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px;font-weight:600">${jobOpts}</select>
+        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
+        <select id="tt-me-job" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px;font-weight:600">${jobOpts}</select>
       </div>
 
       <!-- Tag pills -->
       <div style="margin-bottom:12px">
-        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:6px">Tags</label>
+        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:6px">Tags</label>
         <div style="display:flex;flex-wrap:wrap;gap:5px" id="tt-me-tags">
           ${['Billable','Internal','Overtime','Remote','On-site'].map(tag => `
-            <button onclick="this.classList.toggle('active');this.style.background=this.classList.contains('active')?'#2563EB':'var(--gw-surface-2,#1a2820)';this.style.color=this.classList.contains('active')?'#fff':'var(--gw-muted,#9a9a8a)';this.style.borderColor=this.classList.contains('active')?'#2563EB':'var(--gw-line,#2a3a30)'"
-              style="padding:4px 10px;border-radius:20px;border:1px solid var(--gw-line,#2a3a30);background:var(--gw-surface-2,#1a2820);color:var(--gw-muted,#9a9a8a);font-size:11px;font-weight:600;cursor:pointer;transition:all .1s" data-tag="${ttE(tag)}">${ttE(tag)}</button>`).join('')}
+            <button onclick="this.classList.toggle('active');this.style.background=this.classList.contains('active')?'#2563EB':'var(--gw-surface-2,#FAFAF8)';this.style.color=this.classList.contains('active')?'#fff':'var(--gw-muted,#5E6E6F)';this.style.borderColor=this.classList.contains('active')?'#2563EB':'var(--gw-line,#E0DDD5)'"
+              style="padding:4px 10px;border-radius:20px;border:1px solid var(--gw-line,#E0DDD5);background:var(--gw-surface-2,#FAFAF8);color:var(--gw-muted,#5E6E6F);font-size:11px;font-weight:600;cursor:pointer;transition:all .1s" data-tag="${ttE(tag)}">${ttE(tag)}</button>`).join('')}
         </div>
       </div>
 
       <div style="margin-bottom:14px">
-        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
-        <textarea id="tt-me-notes" rows="2" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:12px;resize:vertical;font-family:inherit;box-sizing:border-box" placeholder="Optional notes…"></textarea>
+        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
+        <textarea id="tt-me-notes" rows="2" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:12px;resize:vertical;font-family:inherit;box-sizing:border-box" placeholder="Optional notes…"></textarea>
       </div>
       <div style="display:flex;gap:8px">
-        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-muted,#9a9a8a);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-muted,#5E6E6F);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         <button onclick="ttDoManualEntry()" style="flex:2;padding:10px;background:linear-gradient(135deg,#2563EB,#1d4ed8);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save Entry</button>
       </div>
     </div>`);
@@ -1093,32 +1093,32 @@ async function ttEditEntry(id) {
 
   ttShowModal(`
     <div style="padding:24px 24px 20px">
-      <div style="font-size:15px;font-weight:800;color:var(--gw-text,#E8E4D9);margin-bottom:16px">Edit Entry</div>
+      <div style="font-size:15px;font-weight:800;color:var(--gw-ink,#1F2A2B);margin-bottom:16px">Edit Entry</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
-          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Start</label>
-          <input type="datetime-local" id="tt-ed-start" value="${toLocal(entry.clock_in)}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:12px;box-sizing:border-box">
+          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Start</label>
+          <input type="datetime-local" id="tt-ed-start" value="${toLocal(entry.clock_in)}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:12px;box-sizing:border-box">
         </div>
         <div>
-          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">End</label>
-          <input type="datetime-local" id="tt-ed-end" value="${toLocal(entry.clock_out)}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:12px;box-sizing:border-box">
+          <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">End</label>
+          <input type="datetime-local" id="tt-ed-end" value="${toLocal(entry.clock_out)}" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:12px;box-sizing:border-box">
         </div>
       </div>
       <!-- Increment buttons -->
       <div style="display:flex;gap:5px;margin-bottom:10px">
         ${['-1h','-15m','+15m','+1h'].map(lbl => `
-          <button onclick="ttAdjustTimeEd('${lbl}')" style="flex:1;padding:7px 4px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:7px;color:var(--gw-text,#E8E4D9);font-size:10px;font-weight:700;cursor:pointer">${lbl}</button>`).join('')}
+          <button onclick="ttAdjustTimeEd('${lbl}')" style="flex:1;padding:7px 4px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:7px;color:var(--gw-ink,#1F2A2B);font-size:10px;font-weight:700;cursor:pointer">${lbl}</button>`).join('')}
       </div>
       <div style="margin-bottom:10px">
-        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
-        <select id="tt-ed-job" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:13px">${jobOpts}</select>
+        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Job Type</label>
+        <select id="tt-ed-job" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:13px">${jobOpts}</select>
       </div>
       <div style="margin-bottom:14px">
-        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
-        <textarea id="tt-ed-notes" rows="2" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-text,#E8E4D9);font-size:12px;resize:vertical;font-family:inherit;box-sizing:border-box">${ttE(entry.notes||'')}</textarea>
+        <label style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;display:block;margin-bottom:5px">Notes</label>
+        <textarea id="tt-ed-notes" rows="2" style="width:100%;padding:8px 10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-ink,#1F2A2B);font-size:12px;resize:vertical;font-family:inherit;box-sizing:border-box">${ttE(entry.notes||'')}</textarea>
       </div>
       <div style="display:flex;gap:8px">
-        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:8px;color:var(--gw-muted,#9a9a8a);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onclick="ttCloseModal()" style="flex:1;padding:10px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;color:var(--gw-muted,#5E6E6F);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         <button onclick="ttDoEditEntry('${ttE(id)}')" style="flex:2;padding:10px;background:linear-gradient(135deg,#2563EB,#1d4ed8);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save Changes</button>
       </div>
     </div>`);
@@ -1185,14 +1185,14 @@ async function ttLoadCalendar() {
       <button onclick="window._ttState.calOffset--;ttLoadCalendar()" style="${ttNavBtnStyle()}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
       </button>
-      <span style="font-size:12px;font-weight:700;color:var(--gw-text,#E8E4D9);white-space:nowrap">${label}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--gw-ink,#1F2A2B);white-space:nowrap">${label}</span>
       <button onclick="window._ttState.calOffset++;ttLoadCalendar()" style="${ttNavBtnStyle()}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
       </button>
       <button onclick="window._ttState.calOffset=0;ttLoadCalendar()" style="${ttSecondaryBtnStyle()}">This Week</button>`;
   }
 
-  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#9a9a8a)">
+  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#5E6E6F)">
     <div style="width:28px;height:28px;border:3px solid #4ade8030;border-top-color:#4ade80;border-radius:50%;animation:tt-spin 1s linear infinite;margin:0 auto 12px"></div>
     Loading calendar…
   </div>`;
@@ -1236,25 +1236,25 @@ function ttBuildCalendarHTML(entries, offset) {
   return `
     <div style="overflow-x:auto">
       <!-- Week total bar -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:10px;margin-bottom:14px">
-        <div style="font-size:12px;color:var(--gw-muted,#9a9a8a)">Week Total</div>
-        <div style="font-size:16px;font-weight:900;color:var(--gw-text,#E8E4D9)">${ttFmt(weekTotal)}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:10px;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">Week Total</div>
+        <div style="font-size:16px;font-weight:900;color:var(--gw-ink,#1F2A2B)">${ttFmt(weekTotal)}</div>
       </div>
 
-      <div style="display:grid;grid-template-columns:50px ${days.map(()=>'1fr').join(' ')};border:1px solid var(--gw-line,#2a3a30);border-radius:12px;overflow:hidden;background:var(--gw-surface-2,#1a2820);min-width:600px">
+      <div style="display:grid;grid-template-columns:50px ${days.map(()=>'1fr').join(' ')};border:1px solid var(--gw-line,#E0DDD5);border-radius:12px;overflow:hidden;background:var(--gw-surface-2,#FAFAF8);min-width:600px">
         <!-- Header row -->
-        <div style="background:var(--gw-surface,#141f1a);border-bottom:1px solid var(--gw-line,#2a3a30);padding:10px 6px;text-align:center">
-          <div style="font-size:9px;color:var(--gw-muted,#9a9a8a)">TIME</div>
+        <div style="background:var(--gw-surface,#FFFFFF);border-bottom:1px solid var(--gw-line,#E0DDD5);padding:10px 6px;text-align:center">
+          <div style="font-size:9px;color:var(--gw-muted,#5E6E6F)">TIME</div>
         </div>
         ${days.map(d => {
           const iso = d.toISOString().slice(0,10);
           const isToday = ttIsToday(d);
           const tot = dayTotals[iso] || 0;
           return `
-            <div style="background:${isToday?'#4ade8008':'var(--gw-surface,#141f1a)'};border-bottom:1px solid var(--gw-line,#2a3a30);border-left:1px solid var(--gw-line,#2a3a30);padding:10px 8px;text-align:center">
-              <div style="font-size:10px;font-weight:700;color:${isToday?'#4ade80':'var(--gw-muted,#9a9a8a)'}">${d.toLocaleDateString('en-US',{weekday:'short'})}</div>
-              <div style="font-size:16px;font-weight:900;color:${isToday?'#4ade80':'var(--gw-text,#E8E4D9)'}">${d.getDate()}</div>
-              <div style="font-size:10px;color:var(--gw-muted,#9a9a8a);margin-top:2px">${tot > 0 ? ttFmt(tot) : '—'}</div>
+            <div style="background:${isToday?'#4ade8008':'var(--gw-surface,#FFFFFF)'};border-bottom:1px solid var(--gw-line,#E0DDD5);border-left:1px solid var(--gw-line,#E0DDD5);padding:10px 8px;text-align:center">
+              <div style="font-size:10px;font-weight:700;color:${isToday?'#4ade80':'var(--gw-muted,#5E6E6F)'}">${d.toLocaleDateString('en-US',{weekday:'short'})}</div>
+              <div style="font-size:16px;font-weight:900;color:${isToday?'#4ade80':'var(--gw-ink,#1F2A2B)'}">${d.getDate()}</div>
+              <div style="font-size:10px;color:var(--gw-muted,#5E6E6F);margin-top:2px">${tot > 0 ? ttFmt(tot) : '—'}</div>
             </div>`;
         }).join('')}
 
@@ -1262,8 +1262,8 @@ function ttBuildCalendarHTML(entries, offset) {
         ${HOURS.map(hour => {
           const label12 = hour > 12 ? `${hour-12} PM` : hour === 12 ? `12 PM` : `${hour} AM`;
           return `
-            <div style="border-top:1px solid var(--gw-line,#2a3a30);padding:0 4px;display:flex;align-items:flex-start;justify-content:flex-end;padding-top:6px;min-height:56px">
-              <span style="font-size:9px;color:var(--gw-muted,#9a9a8a);white-space:nowrap">${label12}</span>
+            <div style="border-top:1px solid var(--gw-line,#E0DDD5);padding:0 4px;display:flex;align-items:flex-start;justify-content:flex-end;padding-top:6px;min-height:56px">
+              <span style="font-size:9px;color:var(--gw-muted,#5E6E6F);white-space:nowrap">${label12}</span>
             </div>
             ${days.map(d => {
               const iso = d.toISOString().slice(0,10);
@@ -1277,7 +1277,7 @@ function ttBuildCalendarHTML(entries, offset) {
               });
 
               return `
-                <div style="border-top:1px solid var(--gw-line,#2a3a30);border-left:1px solid var(--gw-line,#2a3a30);min-height:56px;position:relative;padding:3px">
+                <div style="border-top:1px solid var(--gw-line,#E0DDD5);border-left:1px solid var(--gw-line,#E0DDD5);min-height:56px;position:relative;padding:3px">
                   ${hourEntries.map(e => {
                     const col = ttColorForJob(e.job_type);
                     const isOpen = !e.clock_out;
@@ -1314,7 +1314,7 @@ async function ttLoadPayroll() {
       <button onclick="window._ttState.payrollOffset--;ttLoadPayroll()" style="${ttNavBtnStyle()}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
       </button>
-      <span style="font-size:12px;font-weight:700;color:var(--gw-text,#E8E4D9);white-space:nowrap">${label}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--gw-ink,#1F2A2B);white-space:nowrap">${label}</span>
       <button onclick="window._ttState.payrollOffset++;ttLoadPayroll()" style="${ttNavBtnStyle()}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
       </button>
@@ -1325,7 +1325,7 @@ async function ttLoadPayroll() {
       </button>`;
   }
 
-  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#9a9a8a)">
+  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#5E6E6F)">
     <div style="width:28px;height:28px;border:3px solid #4ade8030;border-top-color:#4ade80;border-radius:50%;animation:tt-spin 1s linear infinite;margin:0 auto 12px"></div>
     Loading payroll data…
   </div>`;
@@ -1361,21 +1361,21 @@ function ttBuildPayrollHTML(users) {
         { label:'Pending Approval', val: users.reduce((s,u)=>(u.entries||[]).filter(e=>e.approved===0).length + s,0), color:'#fbbf24', icon:'<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>' },
         { label:'Approved', val: users.reduce((s,u)=>(u.entries||[]).filter(e=>e.approved===1).length + s,0),         color:'#4ade80', icon:'<polyline points="20 6 9 17 4 12"></polyline>' },
       ].map(stat => `
-        <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:12px;padding:14px">
+        <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:12px;padding:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <div style="width:28px;height:28px;border-radius:8px;background:${stat.color}18;display:flex;align-items:center;justify-content:center;flex-shrink:0">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${stat.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${stat.icon}</svg>
             </div>
-            <div style="font-size:10px;font-weight:600;color:var(--gw-muted,#9a9a8a)">${stat.label}</div>
+            <div style="font-size:10px;font-weight:600;color:var(--gw-muted,#5E6E6F)">${stat.label}</div>
           </div>
-          <div style="font-size:22px;font-weight:900;color:var(--gw-text,#E8E4D9)">${stat.val}</div>
+          <div style="font-size:22px;font-weight:900;color:var(--gw-ink,#1F2A2B)">${stat.val}</div>
         </div>`).join('')}
     </div>
 
     <!-- Leaderboard -->
-    <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:14px;overflow:hidden;margin-bottom:16px">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--gw-line,#2a3a30);display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:13px;font-weight:800;color:var(--gw-text,#E8E4D9)">Team Leaderboard</div>
+    <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;overflow:hidden;margin-bottom:16px">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--gw-line,#E0DDD5);display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:13px;font-weight:800;color:var(--gw-ink,#1F2A2B)">Team Leaderboard</div>
         <div style="display:flex;gap:6px" id="tt-payroll-batch-btns" style="display:none">
           <button onclick="ttBatchApprove()" style="padding:6px 12px;background:#4ade8020;border:1px solid #4ade8050;border-radius:7px;color:#4ade80;font-size:11px;font-weight:700;cursor:pointer">✓ Approve Selected</button>
           <button onclick="ttBatchReject()" style="padding:6px 12px;background:#f8717120;border:1px solid #f8717150;border-radius:7px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer">✗ Reject Selected</button>
@@ -1383,7 +1383,7 @@ function ttBuildPayrollHTML(users) {
       </div>
 
       ${users.length === 0 ? `
-        <div style="text-align:center;padding:32px;color:var(--gw-muted,#9a9a8a)">No time data for this week</div>
+        <div style="text-align:center;padding:32px;color:var(--gw-muted,#5E6E6F)">No time data for this week</div>
       ` : users.map((u, idx) => {
         const pct = (u.total_min || 0) / maxMin * 100;
         const goalPct = Math.min(100, (u.total_min||0) / goalMin * 100);
@@ -1392,16 +1392,16 @@ function ttBuildPayrollHTML(users) {
         const approvedCount = (u.entries||[]).filter(e=>e.approved===1).length;
 
         return `
-          <div style="padding:14px 16px;border-bottom:1px solid var(--gw-line,#2a3a30);display:grid;grid-template-columns:24px auto 1fr auto;gap:12px;align-items:center">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--gw-line,#E0DDD5);display:grid;grid-template-columns:24px auto 1fr auto;gap:12px;align-items:center">
             <!-- Rank -->
-            <div style="width:22px;height:22px;border-radius:50%;background:${idx===0?'#fbbf24':idx===1?'#d1d5db':idx===2?'#a78028':'#ffffff10'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:${idx<3?'#000':'var(--gw-muted,#9a9a8a)'};flex-shrink:0">${idx+1}</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:${idx===0?'#fbbf24':idx===1?'#d1d5db':idx===2?'#a78028':'#ffffff10'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:${idx<3?'#000':'var(--gw-muted,#5E6E6F)'};flex-shrink:0">${idx+1}</div>
             <!-- Avatar + Name -->
             <div style="min-width:100px;max-width:130px">
               <div style="display:flex;align-items:center;gap:7px">
                 <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#2563EB,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0">${(u.name||'?')[0].toUpperCase()}</div>
                 <div>
-                  <div style="font-size:12px;font-weight:700;color:var(--gw-text,#E8E4D9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">${ttE(u.name||u.rep_id)}</div>
-                  <div style="font-size:9px;color:var(--gw-muted,#9a9a8a)">${pendCount} pending · ${approvedCount} approved</div>
+                  <div style="font-size:12px;font-weight:700;color:var(--gw-ink,#1F2A2B);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">${ttE(u.name||u.rep_id)}</div>
+                  <div style="font-size:9px;color:var(--gw-muted,#5E6E6F)">${pendCount} pending · ${approvedCount} approved</div>
                 </div>
               </div>
             </div>
@@ -1419,8 +1419,8 @@ function ttBuildPayrollHTML(users) {
             </div>
             <!-- Hours + actions -->
             <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:18px;font-weight:900;color:var(--gw-text,#E8E4D9);font-variant-numeric:tabular-nums">${ttFmt(u.total_min||0)}</div>
-              <div style="font-size:9px;color:var(--gw-muted,#9a9a8a)">${ttFmtDecimal(u.total_min||0)} hrs</div>
+              <div style="font-size:18px;font-weight:900;color:var(--gw-ink,#1F2A2B);font-variant-numeric:tabular-nums">${ttFmt(u.total_min||0)}</div>
+              <div style="font-size:9px;color:var(--gw-muted,#5E6E6F)">${ttFmtDecimal(u.total_min||0)} hrs</div>
               ${pendCount > 0 ? `
                 <div style="display:flex;gap:4px;justify-content:flex-end;margin-top:6px">
                   <button onclick="ttApproveUser('${ttE(u.rep_id)}')" style="padding:4px 8px;background:#4ade8015;border:1px solid #4ade8040;border-radius:6px;color:#4ade80;font-size:9px;font-weight:700;cursor:pointer">✓ All</button>
@@ -1430,35 +1430,35 @@ function ttBuildPayrollHTML(users) {
 
           <!-- Expandable entry rows -->
           ${(u.entries||[]).length > 0 ? `
-            <div style="margin:0 16px 12px;padding:10px;background:var(--gw-surface,#141f1a);border:1px solid var(--gw-line,#2a3a30);border-radius:10px;display:flex;flex-direction:column;gap:6px">
+            <div style="margin:0 16px 12px;padding:10px;background:var(--gw-surface,#FFFFFF);border:1px solid var(--gw-line,#E0DDD5);border-radius:10px;display:flex;flex-direction:column;gap:6px">
               ${(u.entries||[]).slice(0,5).map(e => `
                 <div style="display:flex;align-items:center;gap:8px">
                   <input type="checkbox" id="tt-chk-${ttE(e.id)}" onchange="ttToggleSelect('${ttE(e.id)}')" style="accent-color:#2563EB;flex-shrink:0">
                   <div style="flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <span style="font-size:10px;font-weight:700;color:${ttColorForJob(e.job_type).text};background:${ttColorForJob(e.job_type).bg};border:1px solid ${ttColorForJob(e.job_type).border}40;border-radius:20px;padding:2px 7px">${ttE(e.job_type||'General Work')}</span>
-                    <span style="font-size:10px;color:var(--gw-muted,#9a9a8a)">${ttFmtDate(e.clock_in)}</span>
-                    <span style="font-size:10px;color:var(--gw-muted,#9a9a8a)">${ttFmtTime(e.clock_in)} → ${ttFmtTime(e.clock_out)}</span>
-                    ${e.notes ? `<span style="font-size:10px;color:var(--gw-muted,#9a9a8a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${ttE(e.notes)}</span>` : ''}
+                    <span style="font-size:10px;color:var(--gw-muted,#5E6E6F)">${ttFmtDate(e.clock_in)}</span>
+                    <span style="font-size:10px;color:var(--gw-muted,#5E6E6F)">${ttFmtTime(e.clock_in)} → ${ttFmtTime(e.clock_out)}</span>
+                    ${e.notes ? `<span style="font-size:10px;color:var(--gw-muted,#5E6E6F);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${ttE(e.notes)}</span>` : ''}
                   </div>
-                  <div style="font-size:11px;font-weight:700;color:var(--gw-text,#E8E4D9);white-space:nowrap">${ttFmt(e.duration_min)}</div>
+                  <div style="font-size:11px;font-weight:700;color:var(--gw-ink,#1F2A2B);white-space:nowrap">${ttFmt(e.duration_min)}</div>
                   ${e.approved === 0 ? `
                     <button onclick="ttApproveEntry('${ttE(e.id)}')" style="padding:3px 7px;background:#4ade8015;border:1px solid #4ade8040;border-radius:5px;color:#4ade80;font-size:9px;font-weight:700;cursor:pointer">✓</button>
                     <button onclick="ttRejectEntry('${ttE(e.id)}')" style="padding:3px 7px;background:#f8717115;border:1px solid #f8717140;border-radius:5px;color:#f87171;font-size:9px;font-weight:700;cursor:pointer">✗</button>
                   ` : `<span style="font-size:9px;font-weight:700;color:${e.approved===1?'#4ade80':'#f87171'}">${e.approved===1?'✓ OK':'✗ Rej'}</span>`}
                 </div>`).join('')}
-              ${(u.entries||[]).length > 5 ? `<div style="font-size:10px;color:var(--gw-muted,#9a9a8a);text-align:center;padding-top:4px">+${(u.entries||[]).length-5} more entries</div>` : ''}
+              ${(u.entries||[]).length > 5 ? `<div style="font-size:10px;color:var(--gw-muted,#5E6E6F);text-align:center;padding-top:4px">+${(u.entries||[]).length-5} more entries</div>` : ''}
             </div>` : ''}`;
       }).join('')}
     </div>
 
     <!-- Floating batch action bar -->
-    <div id="tt-float-bar" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;background:#1a2820;border:1px solid #2a3a30;border-radius:30px;padding:10px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;align-items:center;gap:12px">
+    <div id="tt-float-bar" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;background:var(--gw-surface,#FFFFFF);border:1px solid var(--gw-line,#E0DDD5);border-radius:30px;padding:10px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;align-items:center;gap:12px">
       <span id="tt-float-count" style="font-size:12px;font-weight:700;color:#fff">0 selected</span>
-      <div style="width:1px;height:20px;background:#2a3a30"></div>
+      <div style="width:1px;height:20px;background:var(--gw-line,#E0DDD5)"></div>
       <button onclick="ttBatchApprove()" style="padding:7px 16px;background:#4ade8020;border:1px solid #4ade8050;border-radius:20px;color:#4ade80;font-size:11px;font-weight:700;cursor:pointer">✓ Approve</button>
       <button onclick="ttBatchReject()" style="padding:7px 16px;background:#f8717120;border:1px solid #f8717150;border-radius:20px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer">✗ Reject</button>
       <button onclick="ttExportCSVSelected()" style="padding:7px 16px;background:#60a5fa20;border:1px solid #60a5fa50;border-radius:20px;color:#60a5fa;font-size:11px;font-weight:700;cursor:pointer">↓ Export</button>
-      <button onclick="ttClearSelection()" style="padding:4px 8px;background:transparent;border:none;color:var(--gw-muted,#9a9a8a);font-size:16px;cursor:pointer;line-height:1">×</button>
+      <button onclick="ttClearSelection()" style="padding:4px 8px;background:transparent;border:none;color:var(--gw-muted,#5E6E6F);font-size:16px;cursor:pointer;line-height:1">×</button>
     </div>`;
 }
 
@@ -1567,7 +1567,7 @@ async function ttLoadInsights() {
       <button onclick="window._ttState.weekOffset=0;ttLoadInsights()" style="${ttSecondaryBtnStyle()}">Current Month</button>`;
   }
 
-  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#9a9a8a)">
+  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gw-muted,#5E6E6F)">
     <div style="width:28px;height:28px;border:3px solid #4ade8030;border-top-color:#4ade80;border-radius:50%;animation:tt-spin 1s linear infinite;margin:0 auto 12px"></div>
     Loading insights…
   </div>`;
@@ -1633,16 +1633,16 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
       <div style="display:flex;flex-direction:column;gap:14px">
 
         <!-- Line chart: daily hours (4-week trend) -->
-        <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:14px;padding:16px">
-          <div style="font-size:12px;font-weight:800;color:var(--gw-text,#E8E4D9);margin-bottom:4px">4-Week Trend</div>
-          <div style="font-size:10px;color:var(--gw-muted,#9a9a8a);margin-bottom:14px">Daily hours logged</div>
+        <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;padding:16px">
+          <div style="font-size:12px;font-weight:800;color:var(--gw-ink,#1F2A2B);margin-bottom:4px">4-Week Trend</div>
+          <div style="font-size:10px;color:var(--gw-muted,#5E6E6F);margin-bottom:14px">Daily hours logged</div>
           <canvas id="tt-line-chart" height="140" style="width:100%"></canvas>
         </div>
 
         <!-- Stacked bar chart: by job type per week -->
-        <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:14px;padding:16px">
-          <div style="font-size:12px;font-weight:800;color:var(--gw-text,#E8E4D9);margin-bottom:4px">Hours by Job Type</div>
-          <div style="font-size:10px;color:var(--gw-muted,#9a9a8a);margin-bottom:14px">Weekly breakdown</div>
+        <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;padding:16px">
+          <div style="font-size:12px;font-weight:800;color:var(--gw-ink,#1F2A2B);margin-bottom:4px">Hours by Job Type</div>
+          <div style="font-size:10px;color:var(--gw-muted,#5E6E6F);margin-bottom:14px">Weekly breakdown</div>
           <canvas id="tt-bar-chart" height="160" style="width:100%"></canvas>
           <!-- Legend -->
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
@@ -1650,15 +1650,15 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
               const col = ttColorForJob(job);
               return `<div style="display:flex;align-items:center;gap:5px">
                 <div style="width:10px;height:10px;border-radius:2px;background:${col.border}"></div>
-                <span style="font-size:10px;color:var(--gw-muted,#9a9a8a)">${ttE(job)}</span>
+                <span style="font-size:10px;color:var(--gw-muted,#5E6E6F)">${ttE(job)}</span>
               </div>`;
             }).join('')}
           </div>
         </div>
 
         <!-- Job type breakdown pills -->
-        <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:14px;padding:16px">
-          <div style="font-size:12px;font-weight:800;color:var(--gw-text,#E8E4D9);margin-bottom:14px">By Job Type</div>
+        <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;padding:16px">
+          <div style="font-size:12px;font-weight:800;color:var(--gw-ink,#1F2A2B);margin-bottom:14px">By Job Type</div>
           <div style="display:flex;flex-direction:column;gap:10px">
             ${Object.entries(jobTotals).sort((a,b)=>b[1]-a[1]).map(([job,min]) => {
               const col = ttColorForJob(job);
@@ -1672,12 +1672,12 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
                   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
                     <div style="display:flex;align-items:center;gap:7px">
                       <div style="width:10px;height:10px;border-radius:50%;background:${col.border};flex-shrink:0"></div>
-                      <span style="font-size:12px;font-weight:600;color:var(--gw-text,#E8E4D9)">${ttE(job)}</span>
+                      <span style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B)">${ttE(job)}</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                       <!-- Budget badge -->
                       <span style="font-size:9px;font-weight:700;color:${budgetColor};background:${budgetBg};border:1px solid ${budgetBorder};border-radius:20px;padding:2px 7px">${pct}%</span>
-                      <span style="font-size:11px;font-weight:700;color:var(--gw-text,#E8E4D9)">${ttFmt(min)}</span>
+                      <span style="font-size:11px;font-weight:700;color:var(--gw-ink,#1F2A2B)">${ttFmt(min)}</span>
                     </div>
                   </div>
                   <div style="height:5px;background:#ffffff08;border-radius:3px;overflow:hidden">
@@ -1690,8 +1690,8 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
       </div>
 
       <!-- Right: User leaderboard -->
-      <div style="background:var(--gw-surface-2,#1a2820);border:1px solid var(--gw-line,#2a3a30);border-radius:14px;padding:14px;position:sticky;top:0">
-        <div style="font-size:11px;font-weight:800;color:var(--gw-text,#E8E4D9);margin-bottom:14px">${teamData.length} Users</div>
+      <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;padding:14px;position:sticky;top:0">
+        <div style="font-size:11px;font-weight:800;color:var(--gw-ink,#1F2A2B);margin-bottom:14px">${teamData.length} Users</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           ${teamData.sort((a,b)=>(b.total_min||0)-(a.total_min||0)).map((u,i) => {
             const pct = (u.total_min||0)/maxUserMin*100;
@@ -1700,9 +1700,9 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
                 <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
                   <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#2563EB,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0">${(u.name||'?')[0].toUpperCase()}</div>
                   <div style="flex:1;min-width:0">
-                    <div style="font-size:11px;font-weight:700;color:var(--gw-text,#E8E4D9);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(u.name||u.rep_id)}</div>
+                    <div style="font-size:11px;font-weight:700;color:var(--gw-ink,#1F2A2B);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(u.name||u.rep_id)}</div>
                   </div>
-                  <div style="font-size:12px;font-weight:800;color:var(--gw-text,#E8E4D9);white-space:nowrap">${ttFmt(u.total_min||0)}</div>
+                  <div style="font-size:12px;font-weight:800;color:var(--gw-ink,#1F2A2B);white-space:nowrap">${ttFmt(u.total_min||0)}</div>
                 </div>
                 <div style="height:6px;background:#ffffff0a;border-radius:3px;overflow:hidden">
                   <div style="height:100%;width:${pct.toFixed(1)}%;background:linear-gradient(90deg,#2563EB,#4ade80);border-radius:3px;transition:width 1s ease"></div>
@@ -1712,8 +1712,8 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
         </div>
 
         <!-- Projects section -->
-        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--gw-line,#2a3a30)">
-          <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#9a9a8a);text-transform:uppercase;margin-bottom:10px">${teamData.length} Projects</div>
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--gw-line,#E0DDD5)">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;margin-bottom:10px">${teamData.length} Projects</div>
           <div style="display:flex;flex-direction:column;gap:5px">
             ${Object.entries(jobTotals).slice(0,4).map(([job,min]) => {
               const col = ttColorForJob(job);
@@ -1721,8 +1721,8 @@ function ttBuildInsightsHTML(allEntries, weeks, teamData) {
               return `
                 <div style="display:flex;align-items:center;gap:6px;padding:4px 0">
                   <div style="width:8px;height:8px;border-radius:2px;background:${col.border};flex-shrink:0"></div>
-                  <div style="font-size:10px;color:var(--gw-muted,#9a9a8a);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(job)}</div>
-                  <div style="font-size:10px;font-weight:700;color:var(--gw-text,#E8E4D9)">${ttFmt(min)}</div>
+                  <div style="font-size:10px;color:var(--gw-muted,#5E6E6F);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttE(job)}</div>
+                  <div style="font-size:10px;font-weight:700;color:var(--gw-ink,#1F2A2B)">${ttFmt(min)}</div>
                 </div>`;
             }).join('')}
           </div>
