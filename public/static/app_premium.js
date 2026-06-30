@@ -294,6 +294,39 @@ function show(viewName='today', param){
 }
 window.show = show;
 
+// Recovery: push all localStorage-only leads to D1 (one-time fix for leads created
+// before password was corrected / before D1 was reachable).
+window._recoverLocalLeads = async function() {
+  const btn    = document.getElementById('gw-recover-btn');
+  const status = document.getElementById('gw-recover-status');
+  if (!window._d1Ready || !window.DB) {
+    if (status) { status.textContent = '⚠ Not logged in — please sign in first'; status.style.color = '#C97B6A'; status.style.display = 'block'; }
+    return;
+  }
+  if (btn) { btn.textContent = 'Recovering…'; btn.disabled = true; btn.style.opacity = '.6'; }
+  if (status) { status.textContent = 'Pushing local leads to cloud…'; status.style.color = '#4D8A86'; status.style.display = 'block'; }
+  try {
+    const localState = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
+    const allLocalOpps = (localState.opportunities || []);
+    // Push ALL local opps — server will skip ones already in D1
+    if (allLocalOpps.length === 0) {
+      if (status) { status.textContent = '✓ No local leads to recover — you\'re all synced up!'; status.style.color = '#2D7A55'; }
+    } else {
+      const result = await window.DB.opportunities.bulkUpsert(allLocalOpps);
+      const msg = `✓ Done! ${result.inserted} lead${result.inserted !== 1 ? 's' : ''} pushed to cloud (${result.skipped} already synced).`;
+      if (status) { status.textContent = msg; status.style.color = '#2D7A55'; }
+      // Now pull from D1 to refresh local state
+      if (window._syncFromD1) await window._syncFromD1(null, { silent: false });
+      if (window.showToast) window.showToast(`Cloud sync complete: ${result.inserted} lead${result.inserted !== 1 ? 's' : ''} recovered`);
+    }
+  } catch(e) {
+    if (status) { status.textContent = `⚠ Error: ${e.message}`; status.style.color = '#C97B6A'; }
+    if (window.showToast) window.showToast('Recovery failed — check your connection');
+  } finally {
+    if (btn) { btn.textContent = '↑ Recover My Leads to Cloud'; btn.disabled = false; btn.style.opacity = '1'; }
+  }
+};
+
 // Manual sync — triggered by the ⟳ button in sidebar footer or sync status pill
 window._manualSync = async function() {
   if (!window._d1Ready || !window._syncFromD1) {
@@ -6992,6 +7025,23 @@ function settings(){
         ${list(['Access via browser — bookmark for quick daily use.','Install via the Install button for app-style access on mobile.','Data is stored locally in this browser — export regularly.','Contact Tyler to transfer data between devices or reps.'])}
       </section>
     </div>
+
+      <!-- ── Cloud Sync & Recovery ── always shown ── -->
+      <section class="card" style="border:1px solid rgba(77,138,134,.35)">
+        <h2>Cloud Sync & Data Recovery</h2>
+        <p style="font-size:13px;color:var(--gw-muted);line-height:1.6;margin-bottom:12px">
+          If leads you created aren't showing up for teammates, use <strong>Recover My Leads</strong> to push all your local data to the cloud. This is safe to run anytime — it won't create duplicates.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="primary-btn" onclick="window._recoverLocalLeads()" id="gw-recover-btn" style="background:#4D8A86">
+            ↑ Recover My Leads to Cloud
+          </button>
+          <button class="secondary-btn" onclick="window._manualSync && window._manualSync()">
+            ⟳ Sync from Cloud Now
+          </button>
+        </div>
+        <div id="gw-recover-status" style="margin-top:10px;font-size:13px;display:none"></div>
+      </section>
 
     <!-- ── My Google Connection + Email Signature ── always shown to all reps ── -->
     <div id="gw-settings-google-wrap" style="margin-top:20px"></div>

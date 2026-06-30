@@ -111,6 +111,15 @@ const DB = (() => {
     /** Delete an opportunity and all child records. */
     delete(id) {
       return del(`/opportunities/${id}?companyId=${encodeURIComponent(cid())}`);
+    },
+
+    /**
+     * Bulk-upsert from localStorage array — used on first D1 login to push
+     * any leads that were created before D1 was reachable.
+     * Skips opps already in D1 (server checks by id).
+     */
+    bulkUpsert(opps) {
+      return post('/opportunities/bulk-upsert', { opps, companyId: cid() });
     }
   };
 

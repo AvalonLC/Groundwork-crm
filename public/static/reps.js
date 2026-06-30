@@ -772,7 +772,22 @@ function renderLoginScreen() {
   window._mapOpp = _mapOppFromD1;
 
   // ── Post-login data load (opps + clients from D1) ─────────────────────────
+  // Also pushes any localStorage-only leads to D1 (recovery for leads created
+  // while _d1Ready was false — e.g. before password fix or during login issues).
   async function _postLoginDataLoad(d1Rep) {
+    // Step 1: Push localStorage leads that never made it to D1
+    try {
+      const localState = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
+      const localOpps  = (localState.opportunities || []).filter(o => !o._fromD1);
+      if (localOpps.length > 0 && window.DB) {
+        console.info(`[D1 ↑] Pushing ${localOpps.length} localStorage-only lead(s) to D1…`);
+        const result = await window.DB.opportunities.bulkUpsert(localOpps);
+        console.info(`[D1 ↑] Bulk-upsert done: ${result.inserted} inserted, ${result.skipped} skipped`);
+      }
+    } catch(e) {
+      console.warn('[D1 ↑] Bulk-upsert failed (non-fatal):', e.message);
+    }
+    // Step 2: Pull latest from D1 (overwrites local with authoritative server data)
     await _syncFromD1(d1Rep, { silent: true });
   }
 
@@ -803,6 +818,8 @@ function renderLoginScreen() {
         const mapped    = opps.map(_mapOppFromD1);
         newOppCount     = mapped.filter(o => !prevIds.has(o.id)).length;
         window.state.opportunities = [...mapped, ...localOnly];
+        // Persist merged state to localStorage so next page load is instant
+        if (typeof window.saveState === 'function') window.saveState();
       }
 
       // ── Reps list — pull all company reps so Jen/Ryan appear in Tyler's lists
@@ -862,15 +879,16 @@ function renderLoginScreen() {
 
       if (!silent) {
         _setSyncStatus('ok', newOppCount);
-        // If new data arrived and user is on a data-heavy view, re-render it
+        // Always refresh the view after a non-silent sync so newly arrived data renders.
+        // (newOppCount only counts truly new IDs, but pipeline may still need a re-render
+        //  after first login when local state was empty.)
+        _refreshCurrentView();
         if (newOppCount > 0) {
-          _refreshCurrentView();
-          // Toast: notify about newly assigned leads
+          // Toast: notify about newly assigned leads (not your own)
           const myId = d1Rep.id;
           const newAssigned = (window.state?.opportunities || [])
             .filter(o => o.repId === myId && o._fromD1)
             .filter(o => {
-              // Check if this ID wasn't in the previous snapshot
               const prev = window._lastSyncOppIds || new Set();
               return !prev.has(o.id);
             });

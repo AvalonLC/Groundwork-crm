@@ -633,8 +633,11 @@ app.post('/api/auth/accept-invite', async (c) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/opportunities?companyId=&repId=&status=
-app.get('/api/opportunities', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+// PREFERRED: Use session cookie for company scoping (requireAuth sets c.var.companyId).
+// Falls back to ?companyId= query param for unauthenticated/legacy callers.
+app.get('/api/opportunities', requireAuth, async (c) => {
+  // Session-authenticated company takes precedence over query param
+  const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
   const repId     = c.req.query('repId')
   const status    = c.req.query('status')
   let q = 'SELECT * FROM opportunities WHERE company_id = ?'
@@ -657,10 +660,12 @@ app.get('/api/opportunities/:id', async (c) => {
 })
 
 // POST /api/opportunities
-app.post('/api/opportunities', async (c) => {
+// Uses session cookie company_id as authoritative source — prevents cross-tenant writes.
+app.post('/api/opportunities', requireAuth, async (c) => {
   const b = await c.req.json()
   const id        = b.id || ('opp_' + uid())
-  const companyId = b.companyId || b.company_id || 'avalon'
+  // Session company_id is authoritative — body companyId is a hint only
+  const companyId = (c.var.companyId as string) || b.companyId || b.company_id || 'avalon'
   await c.env.DB.prepare(`
     INSERT INTO opportunities (
       id, company_id, rep_id, client, phone, email, address, service_line, source, status,
@@ -691,10 +696,10 @@ app.post('/api/opportunities', async (c) => {
 })
 
 // PUT /api/opportunities/:id
-app.put('/api/opportunities/:id', async (c) => {
+app.put('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const b         = await c.req.json()
-  const companyId = b.companyId || b.company_id || 'avalon'
+  const companyId = (c.var.companyId as string) || b.companyId || b.company_id || 'avalon'
   const fieldMap: Record<string,string> = {
     repId:'rep_id', client:'client', phone:'phone', email:'email',
     address:'address', serviceLine:'service_line', source:'source',
@@ -730,11 +735,67 @@ app.put('/api/opportunities/:id', async (c) => {
 })
 
 // DELETE /api/opportunities/:id?companyId=
-app.delete('/api/opportunities/:id', async (c) => {
+app.delete('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
-  const companyId = c.req.query('companyId') || 'avalon'
+  const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
   await c.env.DB.prepare('DELETE FROM opportunities WHERE id = ? AND company_id = ?').bind(id, companyId).run()
   return json(c, { deleted: id })
+})
+
+// POST /api/opportunities/bulk-upsert
+// Used on login to push localStorage-only leads to D1 (one-time migration / recovery).
+// Accepts array of opp objects. Uses session company_id. Skips opps already in D1.
+app.post('/api/opportunities/bulk-upsert', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string || 'avalon'
+  const repId     = c.var.repId as string
+  const b = await c.req.json()
+  const opps: any[] = Array.isArray(b.opps) ? b.opps : []
+  if (!opps.length) return json(c, { inserted: 0, skipped: 0 })
+
+  // Fetch IDs already in D1 for this company to avoid duplicates
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM opportunities WHERE company_id = ?'
+  ).bind(companyId).all()
+  const existingIds = new Set((existing.results as any[]).map((r: any) => r.id))
+
+  let inserted = 0
+  let skipped  = 0
+  for (const opp of opps) {
+    if (!opp.id) { skipped++; continue }
+    if (existingIds.has(opp.id)) { skipped++; continue }
+    const effRepId = opp.repId || opp.rep_id || repId || null
+    await c.env.DB.prepare(`
+      INSERT INTO opportunities (
+        id, company_id, rep_id, client, phone, email, address, service_line, source, status,
+        job_value, project, urgency, decision_maker, budget_range, next_follow_up,
+        pipeline_stage, estimate_amount, estimate_sent_date, estimate_count,
+        work_type, client_type, prompt, desired_outcome, fit_concerns,
+        commission_approved, collected, sold_date, sold_amount,
+        created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+        COALESCE(?,datetime('now')), COALESCE(?,datetime('now')))
+    `).bind(
+      opp.id, companyId, effRepId, opp.client||'', opp.phone||'', opp.email||'',
+      opp.address||'', opp.serviceLine||opp.service_line||'', opp.source||'',
+      opp.status||'New Lead', Number(opp.jobValue||opp.job_value||0),
+      opp.project||'', opp.urgency||'', opp.decisionMaker||opp.decision_maker||'',
+      opp.budgetRange||opp.budget_range||'', opp.nextFollowUp||opp.next_follow_up||'',
+      opp.pipelineStage||opp.pipeline_stage||'',
+      Number(opp.estimateAmount||opp.estimate_amount||0),
+      opp.estimateSentDate||opp.estimate_sent_date||'',
+      Number(opp.estimateCount||opp.estimate_count||0),
+      opp.workType||opp.work_type||'', opp.clientType||opp.client_type||'',
+      opp.prompt||'', opp.desiredOutcome||opp.desired_outcome||'',
+      opp.fitConcerns||opp.fit_concerns||'',
+      opp.commissionApproved||opp.commission_approved?1:0,
+      opp.collected?1:0, opp.soldDate||opp.sold_date||'',
+      Number(opp.soldAmount||opp.sold_amount||0),
+      opp.createdAt||opp.created_at||null,
+      opp.updatedAt||opp.updated_at||null
+    ).run()
+    inserted++
+  }
+  return json(c, { inserted, skipped })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
