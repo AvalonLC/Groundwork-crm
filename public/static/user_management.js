@@ -4,7 +4,7 @@
  * Provides:
  *  - Admin → Users: create/edit/deactivate users, assign roles, reset passwords
  *  - Admin → Roles & Permissions: role templates + per-view access matrix
- *  - Admin → Users & Workspace: per-user Google OAuth status + Client ID config
+ *  - Admin → Team Members: manage users, roles, permissions, invite flow
  *  - Login audit log (last login, failed attempts)
  *
  * Storage keys:
@@ -320,7 +320,7 @@ function userManagement(tab) {
 
   const activeTab = tab || 'users';
   const tabs = [
-    { id:'users',  label:'Users & Workspace' },
+    { id:'users',  label:'Team Members' },
     { id:'roles',  label:'Roles & Permissions' },
     { id:'audit',  label:'Login Audit' }
   ];
@@ -328,7 +328,7 @@ function userManagement(tab) {
   viewEl.innerHTML = `
 <div class="eyebrow">Admin</div>
 <h1>User &amp; Access Management</h1>
-<p class="lede" style="margin-bottom:20px">Manage team accounts, roles, permissions, and Google Workspace connections. Changes take effect immediately.</p>
+<p class="lede" style="margin-bottom:20px">Manage team accounts, roles, and permissions. Changes take effect immediately. Google Workspace connections are configured in <button onclick="show('integrations')" style="background:none;border:none;padding:0;color:var(--gds-teal,#4D8A86);font-weight:600;font-size:inherit;cursor:pointer;text-decoration:underline">Integrations</button>.</p>
 
 <div class="gw-um-tab-nav">
   ${tabs.map(t => `
@@ -404,65 +404,8 @@ function umRenderUsers(container) {
       }
     }).catch(()=>{});
 
-  // ── Shared Client ID config (Google OAuth app credentials) ──────────────
-  let globalIntState = {};
-  try { globalIntState = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
-  const sharedClientId = globalIntState.googleClientId || '';
-
-  // ── My Google Connection (for whoever is logged in right now) ─────────────
-  const myGc       = currentRep ? googleMap[currentRep.id] : null;
-  const myConnected = myGc && myGc.token && Date.now() < (myGc.expiry || 0);
-  const myEmail     = myGc?.email || '';
-
   container.innerHTML = `
-
-<!-- ── My Google Connection ──────────────────────────────────────────────── -->
-<div class="gw-um-form-card" style="border-radius:14px;padding:20px;margin-bottom:24px">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-    <img src="https://www.google.com/favicon.ico" style="width:20px;height:20px" alt="Google">
-    <div style="font-weight:700;font-size:15px;color:#E8E4D9">My Google Workspace</div>
-    ${myConnected
-      ? `<span style="margin-left:auto;font-size:11px;font-weight:700;color:#2D7A55;background:#2D7A5515;border:1px solid #2D7A5540;border-radius:20px;padding:2px 10px">● Connected</span>`
-      : `<span style="margin-left:auto;font-size:11px;font-weight:700;color:#C97B6A;background:#C97B6A15;border:1px solid #C97B6A40;border-radius:20px;padding:2px 10px">○ Not Connected</span>`}
-  </div>
-  ${myConnected
-    ? `<div style="font-size:13px;color:#2D7A55;margin-bottom:10px">Signed in as <strong>${umEscape(myEmail)}</strong></div>
-       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-         ${[{l:'Gmail'},{l:'Calendar'},{l:'Drive'}].map(s=>`
-         <span style="font-size:12px;background:#2D7A5515;border:1px solid #2D7A5540;border-radius:6px;padding:3px 10px;color:#2D7A55">${s.l}</span>`).join('')}
-       </div>
-       <div style="display:flex;gap:8px;flex-wrap:wrap">
-         <button class="secondary-btn" style="font-size:12px" onclick="show('integrations')">Open Workspace Hub →</button>
-         <button class="danger-btn" style="font-size:12px" onclick="window._umMyDisconnect&&window._umMyDisconnect();userManagement('users')">Disconnect</button>
-       </div>`
-    : `<p style="color:#6F7E6A;font-size:13px;margin:0 0 12px">Connect your personal Google account to access Gmail, Calendar, and Drive inside the hub.</p>
-       ${!sharedClientId
-         ? `<div style="font-size:12px;color:#8B6914;background:rgba(139,105,20,.09);border:1px solid rgba(139,105,20,.25);border-radius:8px;padding:10px">
-              ⚠ Google Client ID not configured yet. Set it below under <strong>Google OAuth Setup</strong>.
-            </div>`
-         : `<button class="primary-btn" style="font-size:13px" onclick="window._umMyConnect&&window._umMyConnect().then(()=>userManagement('users'))">Connect My Google Account</button>`
-       }`
-  }
-</div>
-
-<!-- ── Google OAuth Setup (Client ID) ────────────────────────────────────── -->
-<div class="gw-info-strip" style="border-radius:12px;padding:16px 18px;margin-bottom:24px">
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-    <div>
-      <div style="font-size:13px;font-weight:700;color:#E8E4D9;margin-bottom:2px">Google OAuth Client ID</div>
-      <div style="font-size:11px;color:#5C6B58">Shared across all users. Set once — everyone can then connect their own account.</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1;min-width:260px;justify-content:flex-end">
-      <input id="um-ws-client-id" type="text"
-        value="${umEscape(sharedClientId)}"
-        placeholder="1234…apps.googleusercontent.com"
-        style="flex:1;min-width:220px;padding:8px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:12px;box-sizing:border-box">
-      <button class="primary-btn" style="font-size:12px;padding:8px 14px;flex-shrink:0" onclick="window._umSaveClientId()">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Team Users ─────────────────────────────────────────────────────────── -->
+<!-- ── Team Members ──────────────────────────────────────────────────────── -->
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
   <div style="font-size:13px;font-weight:700;color:#E8E4D9">
     Team Members
@@ -481,18 +424,6 @@ function umRenderUsers(container) {
   ${users.length ? users.map(u => umUserRow(u, googleMap[u.id])).join('') : `<div style="text-align:center;padding:40px;color:#6F7E6A">No users yet. Add your first team member.</div>`}
 </div>
 `;
-
-  // ── Save Client ID ────────────────────────────────────────────────────────
-  window._umSaveClientId = function() {
-    const val = document.getElementById('um-ws-client-id')?.value?.trim();
-    if (!val) { umToast('Paste a valid Google Client ID first'); return; }
-    let st = {};
-    try { st = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
-    st.googleClientId = val;
-    localStorage.setItem('avalonIntegrationsV1', JSON.stringify(st));
-    umToast('Google Client ID saved');
-    umRenderUsers(container);
-  };
 
   // Form logic
   window._umOpenUserForm = function(userId) {
@@ -1294,7 +1225,7 @@ function umRenderMyGoogleConnection(container) {
     : `<p style="color:#6F7E6A;font-size:13px;margin:0 0 14px">Connect your personal Google account to use Gmail, Calendar, and Drive directly from the Sales Hub.</p>
        ${!clientId
          ? `<div style="font-size:13px;color:#8B6914;background:rgba(139,105,20,.09);border:1px solid rgba(139,105,20,.25);border-radius:8px;padding:12px">
-              ⚠ Google Client ID not configured. Ask Tyler (Admin) to set it up in <strong>Admin → User Management → Users &amp; Workspace tab</strong>.
+              ⚠ Google Client ID not configured. Ask your Admin to set it up in <strong>Integrations</strong>.
             </div>`
          : `<button class="primary-btn" onclick="window._umMyConnect()">Connect My Google Account</button>`
        }`
@@ -1555,7 +1486,7 @@ async function umMyConnect() {
     try { return JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}').googleClientId || ''; } catch(e) { return ''; }
   })();
   if (!clientId) {
-    umToast('Google Client ID not configured. Ask Tyler (Admin) to set it up in User Management → Users & Workspace tab.', 'warn');
+    umToast('Google Client ID not configured. Ask your Admin to set it up in Integrations.', 'warn');
     return;
   }
 

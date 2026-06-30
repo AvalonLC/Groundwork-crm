@@ -646,7 +646,7 @@ async function integrations() {
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
       <img src="https://www.google.com/favicon.ico" style="width:32px;height:32px" alt="Google">
       <div>
-        <div style="font-weight:800;font-size:18px;color:#E8E4D9">Connect ${escapeHtml(repName)}'s Google</div>
+        <div style="font-weight:800;font-size:18px;color:var(--gds-ink,#1F2A2B)">Connect ${escapeHtml(repName)}'s Google</div>
         <div style="font-size:12px;color:${repColor};margin-top:2px;font-weight:600">${escapeHtml(repName)}'s workspace — private to you</div>
       </div>
     </div>
@@ -655,9 +655,8 @@ async function integrations() {
       Other users connect their own accounts separately — no shared access.
     </p>
     ${!clientIdConfigured ? `
-    <div style="padding:12px 14px;background:#113931;border:1px solid rgba(139,105,20,.25);border-radius:8px;margin-bottom:16px;font-size:13px;color:#8B6914">
-      ${gwIcon('warning',16)} Google Client ID not configured. Ask Tyler (Admin) to set it up in
-      <strong>Admin → User Management → Users &amp; Workspace tab</strong>.
+    <div style="padding:12px 14px;background:rgba(139,105,20,.07);border:1px solid rgba(139,105,20,.25);border-radius:8px;margin-bottom:16px;font-size:13px;color:var(--gds-amber,#7A5C10)">
+      ${gwIcon('warning',16)} Google Client ID not configured yet — set it up in the <strong>Admin Setup</strong> panel below.
     </div>` : ''}
     <button class="primary-btn" style="width:100%;justify-content:center;font-size:14px;padding:12px 20px;${!clientIdConfigured?'opacity:.5;cursor:not-allowed':''}"
       ${!clientIdConfigured?'disabled':''} onclick="intSaveClientIdAndConnect()">
@@ -678,8 +677,32 @@ async function integrations() {
     </div>
   </div>
 
-  <!-- Homeworks always accessible -->
+  <!-- Admin: Google OAuth Client ID setup -->
   <div class="gw-int-panel" style="border-radius:16px;padding:28px;min-width:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--gds-pine,#204A43)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+      <div style="font-size:15px;font-weight:800;color:var(--gds-ink,#1F2A2B)">Admin Setup</div>
+      <span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gds-muted,#5E6E6F);background:var(--gds-surface-3,#F2EFE9);border:1px solid var(--gds-line,#E0DDD5);border-radius:4px;padding:2px 7px">Admin only</span>
+    </div>
+    <p style="font-size:13px;color:var(--gds-muted,#5E6E6F);line-height:1.6;margin:0 0 16px">
+      Set the shared Google OAuth Client ID once here. All team members can then connect their own individual Google accounts via this page.
+    </p>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Google OAuth Client ID</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="int-admin-client-id" type="text"
+        value="${escapeHtml(getGoogleClientId())}"
+        placeholder="523041…apps.googleusercontent.com"
+        style="flex:1;padding:9px 12px;background:var(--gds-surface,#FFFFFF);border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;color:var(--gds-ink,#1F2A2B);font-size:12px;font-family:monospace;box-sizing:border-box">
+      <button class="primary-btn" style="font-size:12px;padding:8px 14px;flex-shrink:0" onclick="intAdminSaveClientId()">
+        Save
+      </button>
+    </div>
+    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);margin-bottom:20px">Get your Client ID at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gds-teal,#4D8A86)">Google Cloud Console → Credentials</a>.</div>
+
+    <div style="border-top:1px solid var(--gds-line,#E0DDD5);padding-top:16px;margin-top:4px">
+      <div style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Homeworks CRM (Zapier)</div>
+  <!-- Homeworks always accessible -->
+  <div style="min-width:0;overflow:hidden">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;min-width:0">
       <div style="width:32px;height:32px;flex-shrink:0;background:var(--gw-surface-3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">${gwIcon('construction',16)}</div>
       <div style="min-width:0;overflow:hidden">
@@ -698,6 +721,8 @@ async function integrations() {
       ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Send Test Ping</button>`:''}
     </div>
   </div>
+    </div><!-- /Homeworks section inside Admin panel -->
+  </div><!-- /Admin Setup gw-int-panel -->
 </div>`;
     return;
   }
@@ -2090,6 +2115,20 @@ async function intSaveClientIdAndConnect() {
     if (ok) integrations();
   }
 }
+
+// ── intAdminSaveClientId — saves Google OAuth Client ID from Integrations page ──
+function intAdminSaveClientId() {
+  const val = document.getElementById('int-admin-client-id')?.value?.trim();
+  if (!val) { showIntToast('Paste a valid Google Client ID first', 'warn'); return; }
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
+  st.googleClientId = val;
+  localStorage.setItem('avalonIntegrationsV1', JSON.stringify(st));
+  showIntToast('Google Client ID saved ✓', 'success');
+  // Re-render so the connect button becomes active
+  setTimeout(() => integrations(), 400);
+}
+window.intAdminSaveClientId = intAdminSaveClientId;
 
 // ── intComposeToLead — called from Quick Actions "Compose Email" on a lead ─────
 // Pre-fills the Gmail compose modal with the lead's email address, or falls back

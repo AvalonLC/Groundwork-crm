@@ -2899,9 +2899,9 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/app_premium.js?v=20260630gw12"></script>
-<script src="/static/integrations.js?v=20260628gw9"></script>
+<script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260628gw9"></script>
+<script src="/static/user_management.js?v=20260630gw13"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
 <script>
