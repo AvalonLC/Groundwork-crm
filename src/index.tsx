@@ -2405,6 +2405,22 @@ function getHtml(): string {
           console.log('[Bootstrap] Migrated localStorage data to D1');
         }
 
+        // ── Safety-net recovery: push any localStorage-only leads not yet in D1 ──
+        // Runs every boot (non-destructive — server skips existing IDs).
+        // Catches leads created while _d1Ready was false (e.g. during auth issues).
+        try {
+          const _rawState = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
+          const _localOnly = (_rawState.opportunities || []).filter((o: any) => !o._fromD1);
+          if (_localOnly.length > 0) {
+            const _r = await window.DB.opportunities.bulkUpsert(_localOnly);
+            if (_r.inserted > 0) {
+              console.info('[Bootstrap] Recovery pushed ' + _r.inserted + ' localStorage-only lead(s) to D1');
+            }
+          }
+        } catch(_e: any) {
+          console.warn('[Bootstrap] Recovery upsert skipped:', _e?.message);
+        }
+
         // ── D1 is source of truth: load opps, notes, clients in parallel ──────
         const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
 
