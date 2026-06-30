@@ -389,7 +389,11 @@ window._manualSync = async function() {
 };
 
 // Inject current rep name into sidebar
-(function updateSidebarRep() {
+// updateSidebarRep: exposed as window._updateSidebarRep so bootstrapD1Auth and
+// _doLogin() can call it after the session / REPS are ready.
+// It no longer runs as an IIFE at script-load time because _d1SessionRep and
+// REPS are not populated yet — the sidebar is updated by bootstrapD1Auth() instead.
+window._updateSidebarRep = function updateSidebarRep() {
   try {
     const rep = window.getCurrentRep ? window.getCurrentRep() : null;
     const d1Rep = window._d1SessionRep;
@@ -429,7 +433,7 @@ window._manualSync = async function() {
       // Nav items: always fully visible — access controlled by Permission Matrix in Settings
     }
   } catch(e) {}
-})();
+};
 
 function statCards(){
   const openOpps = state.opportunities.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
@@ -9263,30 +9267,27 @@ async function superAdmin() {
 window.superAdmin = superAdmin;
 
 // ── Platform-owner vs tenant post-login routing ───────────────────────────────
-// On every page load, check /api/auth/me to determine session identity.
-// If is_super_admin=1 AND company_id='groundwork_platform' → Platform Admin mode.
-// Otherwise → standard tenant flow (show 'today').
-//
-// This async bootstrap runs FIRST and handles both:
-//   (a) fresh redirect from /platform-login (no _d1SessionRep in memory yet)
-//   (b) normal tenant login returning from location.reload() in initApp()
+// On every page load, determine session identity and route to the correct view.
+// IMPORTANT: We await window._d1BootstrapReady before calling show() so that
+// the bootstrapD1Auth() in the inline <script> has already:
+//   - verified the session cookie
+//   - called /api/auth/bootstrap (hydrated REPS, _gwRoles, _gwNavPerms, _gwPipelineStages)
+//   - updated the sidebar footer with the real user's name/role
+// This eliminates the race condition where show('today') fires before getCurrentRep()
+// returns a valid rep, causing canViewTab() to return false and show "Access Restricted".
 (async function _initialRoute() {
-  // 1. Try to hydrate session from server if not already set
-  let d1Rep = window._d1SessionRep;
-  if (!d1Rep && window.DB) {
+  // Wait for bootstrapD1Auth() to finish (max 8s safety timeout)
+  if (window._d1BootstrapReady) {
     try {
-      // DB.auth.me() returns the rep object directly (unwrapped from {ok,data})
-      const me = await window.DB.auth.me();
-      if (me && me.id) {
-        d1Rep = me;
-        window._d1SessionRep = d1Rep;
-        // Also set company context
-        if (d1Rep.company_id) window._companyId = d1Rep.company_id;
-      }
-    } catch(e) {
-      // No active session or session expired — fall through to tenant login flow
-    }
+      await Promise.race([
+        window._d1BootstrapReady,
+        new Promise(r => setTimeout(() => r({ authed: false, timeout: true }), 8000))
+      ]);
+    } catch(e) { /* ignore — proceed anyway */ }
   }
+
+  // After bootstrap, d1Rep is already in window._d1SessionRep
+  const d1Rep = window._d1SessionRep;
 
   const isPlatformAdmin = d1Rep &&
     (d1Rep.is_super_admin === 1 || d1Rep.is_super_admin === true) &&
@@ -9294,16 +9295,14 @@ window.superAdmin = superAdmin;
 
   if (isPlatformAdmin) {
     // ── Platform Admin mode ──────────────────────────────────────────────────
-    // Show Platform Admin nav, hide all Avalon tenant nav groups
     const platformNav = document.getElementById('platformAdminNav');
     if (platformNav) platformNav.style.display = '';
     document.querySelectorAll('.tenant-nav').forEach(el => {
       el.style.display = 'none';
     });
-    // Update brand subtitle to reflect platform context
     const brandSubtitle = document.querySelector('.brand-subtitle');
     if (brandSubtitle) brandSubtitle.textContent = 'Platform Admin';
-    // Update sidebar footer with platform admin identity
+    // Update sidebar footer for platform admin
     try {
       const footer = document.querySelector('.sidebar-footer');
       if (footer) {
@@ -9316,10 +9315,17 @@ window.superAdmin = superAdmin;
           </div>`;
       }
     } catch(e) {}
-    // Navigate to Platform Admin dashboard
     show('superAdmin');
-  } else {
-    // ── Standard tenant flow ─────────────────────────────────────────────────
+  } else if (d1Rep) {
+    // ── Standard authenticated tenant flow ───────────────────────────────────
+    // Bootstrap complete: REPS hydrated, _gwNavPerms set, getCurrentRep() works.
+    // Refresh admin nav visibility then show Today.
+    if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
     show('today');
+  } else {
+    // ── No session (unauthenticated) — show login screen ────────────────────
+    if (typeof window.renderLoginScreen === 'function') {
+      window.renderLoginScreen();
+    }
   }
 })();

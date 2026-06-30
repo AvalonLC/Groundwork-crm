@@ -2847,10 +2847,10 @@ function getHtml(): string {
     <div id="tt-sidebar-widget" class="tenant-nav" style="padding:10px 12px 0"></div>
 
     <div class="sidebar-footer" id="sidebarUserFooter">
-      <div id="sidebarAvatarInitials">TJ</div>
+      <div id="sidebarAvatarInitials" style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">…</div>
       <div style="min-width:0;flex:1">
-        <strong id="sidebarUserName">Tyler Jones</strong>
-        <span id="sidebarUserRole">Operations Director</span>
+        <strong id="sidebarUserName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:13px;color:#ffffff">Loading…</strong>
+        <span id="sidebarUserRole" style="font-size:11px;color:rgba(255,255,255,.50)"></span>
       </div>
     </div>
   </aside>
@@ -2896,9 +2896,9 @@ function getHtml(): string {
 <script src="/static/gw-icons.js?v=20260628gw1"></script>
 <script src="/static/db.js?v=20260628gw9"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
-<script src="/static/reps.js?v=20260628gw9"></script>
+<script src="/static/reps.js?v=20260630gw10"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260628gw9"></script>
+<script src="/static/app_premium.js?v=20260630gw10"></script>
 <script src="/static/integrations.js?v=20260628gw9"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260628gw9"></script>
@@ -2926,8 +2926,16 @@ function getHtml(): string {
 
   // ── D1 + Auth Bootstrap ───────────────────────────────────────────────────
   // 1. Check D1 session cookie → if valid, set window._d1Rep and load D1 state
-  // 2. If no D1 session, fall back to localStorage auth (reps.js getCurrentRep)
-  // 3. One-time migration: push localStorage data → D1 on first D1-enabled load
+  // 2. Call /api/auth/bootstrap to hydrate REPS + roles + navPerms + pipelineStages
+  // 3. Update sidebar footer with real user identity
+  // 4. Signal _initialRoute() via window._d1BootstrapReady promise
+  // 5. If no D1 session, fall back to localStorage auth (reps.js getCurrentRep)
+
+  // Create a promise that _initialRoute() will await before calling show()
+  window._d1BootstrapReady = new Promise(function(resolve) {
+    window._d1BootstrapResolve = resolve;
+  });
+
   (async function bootstrapD1Auth() {
     try {
       // Check if D1 session is active
@@ -2950,6 +2958,54 @@ function getHtml(): string {
         // Set localStorage auth so getCurrentRep() works
         const AUTH_KEY = 'avalonCurrentRep';
         localStorage.setItem(AUTH_KEY, JSON.stringify({ repId: d1Rep.id, loginAt: new Date().toISOString() }));
+
+        // ── Call /api/auth/bootstrap to hydrate REPS + roles + navPerms + pipeline ──
+        // This is the same call _doLogin() makes; doing it here ensures page-reload
+        // works identically to fresh login (REPS populated, roles/perms in memory).
+        try {
+          const bsRes = await fetch('/api/auth/bootstrap', { credentials: 'include' });
+          if (bsRes.ok) {
+            const bs = await bsRes.json();
+            if (bs.ok && bs.data) {
+              window._gwBootstrap       = bs.data;
+              window._gwRoles           = bs.data.roles;
+              window._gwPipelineStages  = bs.data.pipelineStages;
+              window._gwNavPerms        = bs.data.navPerms;
+              // Hydrate the REPS array so getCurrentRep() returns a full rep object
+              if (typeof window._hydrateRepsFromBootstrap === 'function') {
+                window._hydrateRepsFromBootstrap(bs.data.reps);
+              }
+              // Propagate pipeline stages to AVALON_DATA if available
+              if (window.AVALON_DATA && bs.data.pipelineStages) {
+                window.AVALON_DATA.statuses = bs.data.pipelineStages;
+              }
+            }
+          }
+        } catch(bsErr) {
+          console.warn('[Bootstrap] /api/auth/bootstrap failed:', bsErr.message);
+        }
+
+        // ── Update sidebar footer with real user identity ──────────────────────
+        try {
+          const footer = document.querySelector('.sidebar-footer');
+          if (footer) {
+            const isAdmin = d1Rep.role === 'admin';
+            const isOM    = d1Rep.role === 'office_manager';
+            const displayName = d1Rep.name || 'User';
+            const displayRole = isAdmin ? 'Owner / Admin' : isOM ? 'Office Manager' : (d1Rep.title || 'Sales Rep');
+            const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+            const logoutAction = 'logoutRep();renderLoginScreen()';
+            footer.innerHTML =
+              '<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;letter-spacing:-.01em" onclick="' + logoutAction + '" title="Sign out">' + initials + '</div>' +
+              '<div style="min-width:0;flex:1">' +
+              '<strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:13px;color:#ffffff">' + displayName + '</strong>' +
+              '<span style="font-size:11px;color:rgba(255,255,255,.50)">' + displayRole + '</span>' +
+              '</div>' +
+              '<button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server" style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">⟳</button>';
+          }
+        } catch(sfErr) {
+          console.warn('[Bootstrap] Sidebar update failed:', sfErr);
+        }
 
         // Run one-time localStorage → D1 migration (skipped if already done)
         const migrated = await window.DB.migrateFromLocalStorage();
@@ -3069,18 +3125,17 @@ function getHtml(): string {
           console.warn('[Bootstrap] Could not load company name:', e.message);
         }
         console.log('[Bootstrap] D1 session active for', d1Rep.name);
+        // Signal _initialRoute() that bootstrap is complete — safe to call show()
+        if (typeof window._d1BootstrapResolve === 'function') window._d1BootstrapResolve({ authed: true });
         return; // Don't show login screen
       }
     } catch(e) {
       console.warn('[Bootstrap] D1 session check failed, falling back to localStorage:', e.message);
     }
 
-    // Fall back: check localStorage auth (reps.js)
-    setTimeout(() => {
-      if (!window.getCurrentRep()) {
-        window.renderLoginScreen();
-      }
-    }, 100);
+    // No active D1 session — resolve bootstrap promise so _initialRoute doesn't hang
+    // _initialRoute() will detect no d1Rep and call renderLoginScreen() itself.
+    if (typeof window._d1BootstrapResolve === 'function') window._d1BootstrapResolve({ authed: false });
   })();
 
   // Show/hide admin-only nav items based on current rep role

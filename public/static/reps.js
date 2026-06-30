@@ -797,6 +797,8 @@ function renderLoginScreen() {
 
       window._d1Ready = true;
       if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
+      // Update sidebar footer with real user identity (post-login)
+      if (typeof window._updateSidebarRep === 'function') window._updateSidebarRep();
       initApp();
 
       // Boot the Time Tracker (load active entry, render sidebar widget)
