@@ -536,7 +536,7 @@ window.timeTracker = function timeTracker(tab) {
   tab = tab || st.currentTab || 'timesheet';
   st.currentTab = tab;
 
-  const container = document.getElementById('main-content') || document.getElementById('view-content');
+  const container = document.getElementById('view') || document.getElementById('main-content') || document.getElementById('view-content');
   if (!container) return;
 
   // Inject global styles
