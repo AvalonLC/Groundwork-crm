@@ -2417,14 +2417,26 @@ window.assignRep = function(oppId, repId) {
 };
 
 // ── Auth guard for app startup ────────────────────────────────────────────────
+// Called by _doLogin() after successful login + data load.
+// If the app shell still exists (page was NOT replaced by renderLoginScreen),
+// navigate directly to Today. If the shell was destroyed (came from login screen),
+// reload the page — bootstrapD1Auth will handle it with the valid session cookie.
 function initApp() {
   const rep = getCurrentRep();
   if (!rep) {
     renderLoginScreen();
     return;
   }
-  // App is already initialized — just re-render
-  location.reload();
+  // Check if the app shell <main> element still exists
+  const mainEl = document.querySelector('main.main, main[role="main"]');
+  if (mainEl) {
+    // App shell intact — navigate directly
+    if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
+    if (typeof window.show === 'function') window.show('today');
+  } else {
+    // Login screen replaced the DOM — reload so bootstrapD1Auth rebuilds the shell
+    location.reload();
+  }
 }
 
 // ── COMM-16: Backfill migration ───────────────────────────────────────────────

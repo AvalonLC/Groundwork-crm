@@ -2894,11 +2894,11 @@ function getHtml(): string {
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
 <script src="/static/gw-icons.js?v=20260628gw1"></script>
-<script src="/static/db.js?v=20260630gw10"></script>
+<script src="/static/db.js?v=20260630gw11"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
-<script src="/static/reps.js?v=20260630gw10"></script>
+<script src="/static/reps.js?v=20260630gw11"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260630gw10"></script>
+<script src="/static/app_premium.js?v=20260630gw11"></script>
 <script src="/static/integrations.js?v=20260628gw9"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260628gw9"></script>
@@ -2958,9 +2958,9 @@ function getHtml(): string {
         const AUTH_KEY = 'avalonCurrentRep';
         localStorage.setItem(AUTH_KEY, JSON.stringify({ repId: d1Rep.id, loginAt: new Date().toISOString() }));
 
-        // ── Call /api/auth/bootstrap to hydrate REPS + roles + navPerms + pipeline ──
-        // This is the same call _doLogin() makes; doing it here ensures page-reload
-        // works identically to fresh login (REPS populated, roles/perms in memory).
+        // ── STEP 1: Hydrate REPS + roles + navPerms + pipeline stages ────────────
+        // Do this FIRST and resolve the bootstrap promise immediately so
+        // _initialRoute() can call show('today') without waiting for data loading.
         try {
           const bsRes = await fetch('/api/auth/bootstrap', { credentials: 'include' });
           if (bsRes.ok) {
@@ -2970,11 +2970,9 @@ function getHtml(): string {
               window._gwRoles           = bs.data.roles;
               window._gwPipelineStages  = bs.data.pipelineStages;
               window._gwNavPerms        = bs.data.navPerms;
-              // Hydrate the REPS array so getCurrentRep() returns a full rep object
               if (typeof window._hydrateRepsFromBootstrap === 'function') {
                 window._hydrateRepsFromBootstrap(bs.data.reps);
               }
-              // Propagate pipeline stages to AVALON_DATA if available
               if (window.AVALON_DATA && bs.data.pipelineStages) {
                 window.AVALON_DATA.statuses = bs.data.pipelineStages;
               }
@@ -2984,7 +2982,7 @@ function getHtml(): string {
           console.warn('[Bootstrap] /api/auth/bootstrap failed:', bsErr.message);
         }
 
-        // ── Update sidebar footer with real user identity ──────────────────────
+        // ── STEP 2: Update sidebar footer ─────────────────────────────────────
         try {
           const footer = document.querySelector('.sidebar-footer');
           if (footer) {
@@ -2993,42 +2991,41 @@ function getHtml(): string {
             const displayName = d1Rep.name || 'User';
             const displayRole = isAdmin ? 'Owner / Admin' : isOM ? 'Office Manager' : (d1Rep.title || 'Sales Rep');
             const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
-            const logoutAction = 'logoutRep();renderLoginScreen()';
             footer.innerHTML =
-              '<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;letter-spacing:-.01em" onclick="' + logoutAction + '" title="Sign out">' + initials + '</div>' +
+              '<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;letter-spacing:-.01em" onclick="logoutRep();renderLoginScreen()" title="Sign out">' + initials + '</div>' +
               '<div style="min-width:0;flex:1">' +
               '<strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:13px;color:#ffffff">' + displayName + '</strong>' +
               '<span style="font-size:11px;color:rgba(255,255,255,.50)">' + displayRole + '</span>' +
               '</div>' +
-              '<button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server" style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">⟳</button>';
+              '<button id="gw-sync-btn" onclick="window._manualSync()" title="Sync" style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0">⟳</button>';
           }
-        } catch(sfErr) {
-          console.warn('[Bootstrap] Sidebar update failed:', sfErr);
-        }
+        } catch(sfErr) {}
 
-        // Run one-time localStorage → D1 migration (skipped if already done)
-        const migrated = await window.DB.migrateFromLocalStorage();
-        if (migrated) {
-          console.log('[Bootstrap] Migrated localStorage data to D1');
-        }
+        // ── STEP 3: Signal _initialRoute() — REPS ready, safe to show() ───────
+        // This must happen BEFORE the slow data loading below.
+        window._d1Ready = true;
+        if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
+        if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
+        if (typeof window._d1BootstrapResolve === 'function') window._d1BootstrapResolve({ authed: true });
 
-        // ── Safety-net recovery: push any localStorage-only leads not yet in D1 ──
-        // Runs every boot (non-destructive — server skips existing IDs).
-        // Catches leads created while _d1Ready was false (e.g. during auth issues).
+        // ── STEP 4: Load data in background (after UI is already shown) ───────
+        // Run one-time localStorage → D1 migration
+        try {
+          const migrated = await window.DB.migrateFromLocalStorage();
+          if (migrated) console.log('[Bootstrap] Migrated localStorage data to D1');
+        } catch(_e: any) {}
+
+        // Safety-net recovery: push localStorage-only leads not yet in D1
         try {
           const _rawState = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
           const _localOnly = (_rawState.opportunities || []).filter((o: any) => !o._fromD1);
           if (_localOnly.length > 0) {
             const _r = await window.DB.opportunities.bulkUpsert(_localOnly);
-            if (_r.inserted > 0) {
-              console.info('[Bootstrap] Recovery pushed ' + _r.inserted + ' localStorage-only lead(s) to D1');
-            }
+            if (_r.inserted > 0) console.info('[Bootstrap] Recovery pushed ' + _r.inserted + ' lead(s) to D1');
           }
-        } catch(_e: any) {
-          console.warn('[Bootstrap] Recovery upsert skipped:', _e?.message);
-        }
+        } catch(_e: any) {}
 
-        // ── D1 is source of truth: load opps, notes, clients in parallel ──────
+        // Load opps + clients from D1
         const isAdmin = d1Rep.role === 'admin' || d1Rep.role === 'office_manager';
 
         // Helper: map a D1 opportunity row (snake_case) → app camelCase shape
@@ -3102,31 +3099,21 @@ function getHtml(): string {
           console.warn('[Bootstrap] Could not load D1 clients:', e.message);
         }
 
-        window._d1Ready = true;
-        window._mapOpp = mapOpp; // expose for login flow reuse
-        // Flush any writes that were queued before D1 was ready
-        if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
-        // Refresh nav visibility now that super-admin status is known
-        if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
-        // ── Dynamic brand kicker: show real company name from D1 ──
-        try {
-          const compRes = await fetch('/api/companies/' + d1Rep.company_id);
-          if (compRes.ok) {
-            const compJson = await compRes.json();
-            const compName = (compJson.data ?? compJson)?.name;
-            if (compName) {
+        // Expose mapOpp for other modules
+        window._mapOpp = mapOpp;
+        // Update brand kicker with real company name (background, non-blocking)
+        fetch('/api/companies/' + d1Rep.company_id)
+          .then(r => r.ok ? r.json() : null)
+          .then(j => {
+            const name = j && (j.data ?? j)?.name;
+            if (name) {
               const kicker = document.getElementById('brandKicker');
-              if (kicker) kicker.textContent = compName;
-              window._companyName = compName;
+              if (kicker) kicker.textContent = name;
+              window._companyName = name;
             }
-          }
-        } catch(e) {
-          console.warn('[Bootstrap] Could not load company name:', e.message);
-        }
-        console.log('[Bootstrap] D1 session active for', d1Rep.name);
-        // Signal _initialRoute() that bootstrap is complete — safe to call show()
-        if (typeof window._d1BootstrapResolve === 'function') window._d1BootstrapResolve({ authed: true });
-        return; // Don't show login screen
+          }).catch(() => {});
+        console.log('[Bootstrap] D1 data loaded for', d1Rep.name);
+        return; // Done — promise already resolved in Step 3
       }
     } catch(e) {
       console.warn('[Bootstrap] D1 session check failed, falling back to localStorage:', e.message);
