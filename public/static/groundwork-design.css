@@ -1612,4 +1612,234 @@ a:hover { color: var(--gds-pine); text-decoration: underline; }
 }
 .gw-admin-panel table tr:hover { background: var(--gds-surface-2) !important; }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GROUNDWORK COLOR CONTRAST RULESET
+   Updated: 2026-06-30
+   
+   ── PROBLEM ROOT CAUSE ─────────────────────────────────────────────────
+   Groundwork has TWO CSS variable systems. Any inline style that references
+   a --gw- variable with a DARK fallback will be invisible on the light page.
+
+   System 1  →  --gds-*   (groundwork-design.css, THIS file)   LIGHT THEME ✅
+   System 2  →  --gw-*    (premium.css, older layer)           LIGHT THEME ✅
+   
+   ⚠️  time_tracker.js uses --gw-text (DOES NOT EXIST IN EITHER SYSTEM)
+       and uses dark hex fallbacks (#1a2820, #E8E4D9, #9a9a8a, #0f1a15)
+       left over from an earlier dark-mode prototype. The --gw- variables
+       resolve at runtime (light values from premium.css), but the FALLBACK
+       values are dark — meaning ANY missing/misspelled variable shows
+       dark-on-dark or invisible-on-light.
+
+   ── CONTRAST RULES — THE LAW ───────────────────────────────────────────
+   RULE 1  Never use a hardcoded hex fallback of #1a2820, #141f1a, #0f1a15,
+           #0f2419, #1A3A2A, #1e2a22 or any dark green/grey hex in an
+           inline style. These are dark-mode surface colors.
+
+   RULE 2  Never use --gw-text. It does not exist. Use:
+             • Primary text   → var(--gds-ink)      or  var(--gw-ink)
+             • Muted text     → var(--gds-muted)    or  var(--gw-muted)
+             • Subtle/hint    → var(--gds-subtle)   or  var(--gw-subtle)
+
+   RULE 3  Never use a hardcoded hex fallback of #E8E4D9 for text color.
+           That is an off-white — invisible on white/cream backgrounds.
+           Use var(--gds-ink, #1F2A2B) for text instead.
+
+   RULE 4  Never use a hardcoded hex fallback of #9a9a8a for muted text.
+           Use var(--gds-muted, #5E6E6F) instead.
+
+   RULE 5  For inline styles in JS-rendered HTML, ALWAYS use light fallbacks:
+             background  → var(--gds-surface, #FFFFFF)
+             alt surface → var(--gds-surface-2, #FAFAF8)
+             border      → var(--gds-line, #E0DDD5)
+             body text   → var(--gds-ink, #1F2A2B)
+             muted text  → var(--gds-muted, #5E6E6F)
+             subtle text → var(--gds-subtle, #8C9E9E)
+
+   RULE 6  The right-column ring panel (#tt-ring-panel) is the ONLY area
+           intentionally using a dark bg (#0f1a15 fallback). It is overridden
+           below to use the light surface. If a dark panel is ever desired,
+           it MUST use var(--gds-pine) or var(--gds-ink) as the bg, and
+           MUST pair it with color:#FFFFFF or rgba(255,255,255,.85) for text.
+
+   RULE 7  Semantic color usage (never mix these up):
+             Success/positive  → var(--gds-emerald, #2D7A55)
+             Warning/caution   → var(--gds-amber,   #7A5C10)
+             Error/danger      → var(--gds-rose,    #7A2E20)
+             Interactive/links → var(--gds-teal,    #4D8A86)
+             Brand/primary     → var(--gds-pine,    #204A43)
+
+   RULE 8  Status chips MUST use the semantic chip classes from Section 12:
+           .status-chip.sold / .active / .overdue / .pending / .lost
+           Never hardcode status colors in JS.
+
+   RULE 9  Dark-background text (sidebar, pine CTAs, dark modals) MUST use:
+             Primary text → #FFFFFF
+             Muted text   → rgba(255,255,255,.65)
+             Subtle text  → rgba(255,255,255,.38)
+           Never use a warm cream (#E8E4D9, #EDEAE0) on white/cream bg.
+
+   RULE 10 Before adding any new section/view, run this mental checklist:
+           ☐ Did I use --gds-* or --gw-* variables (no raw hex for color)?
+           ☐ If raw hex is unavoidable, is it dark-on-light or light-on-dark?
+           ☐ Does every var() have a LIGHT-THEME fallback value?
+           ☐ Did I test the background/text pair at the element level?
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 71. TOKEN BRIDGE — --gw-text alias ────────────────────────────────── */
+/* --gw-text was never defined in either token system.
+   This bridge defines it so any JS using var(--gw-text,...) resolves cleanly. */
+:root {
+  --gw-text: var(--gds-ink);  /* #1F2A2B in light theme */
+}
+
+/* ─── 72. TIME TRACKER LIGHT-THEME RESCUE ───────────────────────────────── */
+/* time_tracker.js was prototyped with dark fallbacks. The --gw- vars resolve
+   at runtime to light values (from premium.css), but any new element added
+   by copy-paste might bring dark fallbacks back. These rules win via
+   specificity on the structural containers. */
+
+/* Outer root — no dark background */
+#tt-root {
+  background: var(--gds-bg) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* Main scrollable area */
+#tt-main {
+  background: transparent !important;
+  color: var(--gds-ink) !important;
+}
+
+/* Right ring panel — light surface, not dark */
+#tt-ring-panel {
+  background: var(--gds-surface) !important;
+  border-left: 1px solid var(--gds-line) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* "READY" label and ring panel section labels */
+#tt-ring-panel [style*="color:var(--gw-muted"] {
+  color: var(--gds-muted) !important;
+}
+
+/* Page title "Time Tracker" — rescue from off-white fallback */
+#tt-main h1[style*="color:var(--gw-text"] {
+  color: var(--gds-ink) !important;
+}
+
+/* Date subtitle */
+#tt-main [style*="color:var(--gw-muted"] {
+  color: var(--gds-muted) !important;
+}
+
+/* Tab switcher pill container */
+#tt-root [style*="background:var(--gw-surface-2"] {
+  background: var(--gds-surface-2) !important;
+  border-color: var(--gds-line) !important;
+}
+
+/* Tab switcher active button */
+#tt-root [style*="background:var(--gw-surface,#141f1a)"] {
+  background: var(--gds-surface) !important;
+  color: var(--gds-ink) !important;
+  box-shadow: 0 1px 4px rgba(31,42,43,.1) !important;
+}
+
+/* Clock In / Clock Out modal overlays — dark overlay is intentional,
+   but inner modal content should use light surface */
+#tt-modal-overlay [style*="background:var(--gw-surface,"] {
+  background: var(--gds-surface) !important;
+  border-color: var(--gds-line) !important;
+  color: var(--gds-ink) !important;
+}
+#tt-modal-overlay [style*="background:var(--gw-surface-2,"] {
+  background: var(--gds-surface-2) !important;
+  border-color: var(--gds-line) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* Modal form inputs */
+#tt-modal-overlay input,
+#tt-modal-overlay select,
+#tt-modal-overlay textarea {
+  background: var(--gds-surface) !important;
+  border-color: var(--gds-line-2) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* Modal labels */
+#tt-modal-overlay label,
+#tt-modal-overlay [style*="color:var(--gw-muted"] {
+  color: var(--gds-muted) !important;
+}
+
+/* Modal heading text (Clock In / Clock Out title) */
+#tt-modal-overlay [style*="color:var(--gw-text"] {
+  color: var(--gds-ink) !important;
+}
+#tt-modal-overlay [style*="color:#E8E4D9"] {
+  color: var(--gds-ink) !important;
+}
+
+/* Cancel button in modals */
+#tt-modal-overlay [style*="background:var(--gw-surface-2,#1a2820)"][style*="color:var(--gw-muted"] {
+  background: var(--gds-surface-2) !important;
+  border-color: var(--gds-line-2) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* Day-selector calendar buttons (non-selected state) */
+#tt-root [style*="background:var(--gw-surface-2,#1a2820)"] {
+  background: var(--gds-surface-2) !important;
+  border-color: var(--gds-line) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* Muted text inside day selector */
+#tt-root [style*="color:var(--gw-muted,#9a9a8a)"] {
+  color: var(--gds-muted) !important;
+}
+
+/* Large number text inside entries/summaries */
+#tt-root [style*="color:var(--gw-text,#E8E4D9)"] {
+  color: var(--gds-ink) !important;
+}
+
+/* Week bar track */
+#tt-week-bar-track {
+  background: var(--gds-surface-3) !important;
+}
+
+/* Small action button style (used in entry rows) */
+#tt-root a[style*="background:var(--gw-surface-2,#1a2820)"],
+#tt-root button[style*="background:var(--gw-surface-2,#1a2820)"] {
+  background: var(--gds-surface-2) !important;
+  border-color: var(--gds-line) !important;
+  color: var(--gds-ink) !important;
+}
+
+/* ─── 73. GLOBAL DARK-FALLBACK INTERCEPT ────────────────────────────────── */
+/* Catch-all: any element rendered by JS that still has the old dark
+   hex fallback as its literal computed color or background will be rescued
+   by these attribute selectors. This is the last-resort safety net. */
+
+/* Off-white-as-text → dark ink */
+[style*="color:#E8E4D9"]   { color: var(--gds-ink)    !important; }
+[style*="color:#EDEAE0"]   { color: var(--gds-ink)    !important; }
+[style*="color:#9a9a8a"]   { color: var(--gds-muted)  !important; }
+[style*="color:#7a9080"]   { color: var(--gds-muted)  !important; }
+
+/* Dark green surfaces → light surface */
+[style*="background:#1a2820"]  { background: var(--gds-surface-2) !important; }
+[style*="background:#141f1a"]  { background: var(--gds-surface)   !important; }
+[style*="background:#0f1a15"]  { background: var(--gds-surface)   !important; }
+[style*="background:#1e2a22"]  { background: var(--gds-surface-2) !important; }
+[style*="background:#0f2419"]  { background: var(--gds-pine)      !important; } /* was intentional dark pill bg */
+[style*="background:#1A3A2A"]  { background: var(--gds-pine)      !important; } /* was intentional dark pill bg */
+
+/* Dark green borders → light border */
+[style*="border:1px solid #2a3a30"] { border-color: var(--gds-line) !important; }
+[style*="border-left:1px solid #2a3a30"] { border-color: var(--gds-line) !important; }
+
 /* ─── END GROUNDWORK DESIGN SYSTEM v1.0 ─────────────────────────────────── */
