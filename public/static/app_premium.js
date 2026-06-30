@@ -409,7 +409,10 @@ function statCards(){
 function buildSuggestedActions(currentRep){
   const suggestions = [];
   const isRep = currentRep && currentRep.role === 'rep';
-  const myOpps = isRep ? state.opportunities.filter(o => o.repId === currentRep.id) : state.opportunities;
+  // Include leads assigned to this rep by a manager (assignedToRepId) as well as created by them
+  const myOpps = isRep
+    ? state.opportunities.filter(o => o.repId === currentRep.id || o.assignedToRepId === currentRep.id)
+    : state.opportunities;
   const _today = todayISO();
   const staleOpps = myOpps.filter(o =>
     !['Sold / Activation','Closed Lost'].includes(o.status) &&
@@ -613,7 +616,11 @@ function pipeline(selectedId){
   const activeCatFilter = window._pipelineCatFilter || 'all';
 
   let opps = state.opportunities;
-  if (activeRepFilter !== 'all') opps = opps.filter(o => o.repId === activeRepFilter);
+  // Show leads where repId matches OR where lead was assigned to this rep by a manager
+  if (activeRepFilter !== 'all') opps = opps.filter(o =>
+    o.repId === activeRepFilter ||
+    (o.assignedToRepId && o.assignedToRepId !== o.repId && o.assignedToRepId === activeRepFilter)
+  );
   if (activeTypeFilter !== 'all') opps = opps.filter(o => o.clientType === activeTypeFilter);
   if (activeCatFilter === 'landscape') opps = opps.filter(o => {
     const cat = (o.projectCategory||'').toLowerCase();

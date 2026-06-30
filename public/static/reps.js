@@ -750,6 +750,7 @@ function renderLoginScreen() {
   const _mapOppFromD1 = function(o) {
     return {
       id: o.id, repId: o.rep_id, companyId: o.company_id,
+      assignedToRepId: o.assigned_to_rep_id || o.rep_id || '',
       client: o.client, phone: o.phone, email: o.email, address: o.address,
       serviceLine: o.service_line, source: o.source,
       status: o.status, jobValue: o.job_value,
@@ -942,18 +943,52 @@ function renderLoginScreen() {
     } catch(_) {}
   }
 
-  // ── Auto-poll: refresh D1 data every 60 seconds while logged in ───────────
-  let _syncPollTimer = null;
-  function _startSyncPoll() {
-    if (_syncPollTimer) clearInterval(_syncPollTimer);
-    _syncPollTimer = setInterval(() => {
-      if (window._d1Ready && window._d1SessionRep) {
-        window._syncFromD1(null, { silent: false });
+  // ── Real-time peer-change detection ──────────────────────────────────────
+  // Every write by any rep in the company stamps {companyId}:last_write in D1.
+  // We poll /api/events/poll every 8 seconds. If the timestamp changed AND the
+  // writing rep is NOT the current user, we trigger an immediate silent sync
+  // so all teammates see new leads/updates within ~8 seconds — no page refresh.
+  let _peerPollTimer  = null;
+  let _lastKnownWrite = null;  // last value we saw from /api/events/poll
+
+  async function _checkForPeerChanges() {
+    if (!window._d1Ready || !window._d1SessionRep) return;
+    try {
+      const res = await fetch('/api/events/poll', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const lw   = data?.data?.lastWrite || null;
+      if (!lw) return;
+      if (_lastKnownWrite === null) { _lastKnownWrite = lw; return; } // first read — calibrate
+      if (lw === _lastKnownWrite) return;  // nothing changed
+      // Something changed — was it someone else?
+      const writingRep = lw.split('|')[1] || '';
+      _lastKnownWrite = lw;
+      if (writingRep !== window._d1SessionRep.id) {
+        // A peer changed data — sync immediately and show subtle toast
+        console.info('[Sync] Peer change detected from', writingRep, '— syncing');
+        await window._syncFromD1(null, { silent: true });
+        // Soft notification — not a blocking popup
+        if (typeof showToast === 'function') {
+          const peerName = (window.REPS || []).find(r => r.id === writingRep)?.name || writingRep;
+          showToast(`↻ ${peerName} updated lead data`, 2500);
+        }
       }
-    }, 60000); // every 60 seconds
+    } catch(_) {}
+  }
+
+  function _startSyncPoll() {
+    // Stop any existing timers
+    if (_peerPollTimer) clearInterval(_peerPollTimer);
+    // Fast peer-change poll: every 8 seconds
+    _peerPollTimer = setInterval(_checkForPeerChanges, 8000);
+    // Warm up immediately
+    setTimeout(_checkForPeerChanges, 2000);
   }
   window._startSyncPoll = _startSyncPoll;
-  window._stopSyncPoll  = function() { if (_syncPollTimer) clearInterval(_syncPollTimer); };
+  window._stopSyncPoll  = function() {
+    if (_peerPollTimer) clearInterval(_peerPollTimer);
+  };
 
   // ── Forgot Password ────────────────────────────────────────────────────────
   window._showForgotPassword = function() {

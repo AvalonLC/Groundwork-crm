@@ -354,6 +354,24 @@ const DB = (() => {
     }
   }
 
+  // ── EVENTS (real-time peer-change detection) ─────────────────────────────────
+  const events = {
+    /**
+     * Poll for latest peer write timestamp.
+     * Returns { lastWrite: "<iso>|<repId>" | null }
+     */
+    poll() {
+      return get('/events/poll');
+    },
+    /**
+     * Ping after a local write so peers know something changed.
+     * Fire-and-forget — ignore errors.
+     */
+    ping() {
+      return post('/events/ping', {}).catch(() => {});
+    }
+  };
+
   // ── PUBLIC API ───────────────────────────────────────────────────────────────
   return {
     auth,
@@ -366,6 +384,7 @@ const DB = (() => {
     settings,
     revenue,
     academy,
+    events,
     sync,
     migrateFromLocalStorage,
     getSession,
