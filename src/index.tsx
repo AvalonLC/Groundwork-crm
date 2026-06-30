@@ -2034,6 +2034,44 @@ app.get('/api/time/weekly-summary', requireAuth, async (c) => {
   return json(c, rows.results)
 })
 
+// GET /api/time/team-summary?from=&to=  — per-rep summary with entries (admin/office_manager)
+app.get('/api/time/team-summary', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  const from = c.req.query('from') || new Date(Date.now() - 7*86400000).toISOString().slice(0,10)
+  const to   = c.req.query('to')   || new Date().toISOString().slice(0,10)
+
+  // Fetch all entries for the period with rep info
+  const entryRows = await c.env.DB.prepare(`
+    SELECT te.*, r.name as rep_name, r.color as rep_color
+    FROM time_entries te
+    LEFT JOIN reps r ON r.id=te.rep_id AND r.company_id=te.company_id
+    WHERE te.company_id=? AND date(te.clock_in)>=? AND date(te.clock_in)<=?
+    ORDER BY te.clock_in DESC
+  `).bind(companyId, from, to).all()
+
+  // Group entries by rep
+  const repMap = new Map<string, { rep_id: string; rep_name: string; rep_color: string; total_min: number; entries: any[] }>()
+  for (const row of (entryRows.results as any[])) {
+    if (!repMap.has(row.rep_id)) {
+      repMap.set(row.rep_id, {
+        rep_id:    row.rep_id,
+        rep_name:  row.rep_name  || row.rep_id,
+        rep_color: row.rep_color || '#4ade80',
+        total_min: 0,
+        entries:   []
+      })
+    }
+    const rep = repMap.get(row.rep_id)!
+    rep.entries.push(row)
+    rep.total_min += (row.duration_min || 0)
+  }
+
+  const data = Array.from(repMap.values()).sort((a, b) => b.total_min - a.total_min)
+  return json(c, data)
+})
+
 // PUT /api/time/entries/:id   — edit notes/jobType (own entry) or approve (admin)
 app.put('/api/time/entries/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
