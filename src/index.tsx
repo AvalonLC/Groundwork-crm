@@ -464,7 +464,7 @@ app.post('/api/roles', requireAuth, async (c) => {
     b.id, companyId, b.label,
     b.color || '#6F7E6A',
     b.description || '',
-    b.permissions ? JSON.stringify(b.permissions) : '{"views":["today","pipeline","settings"],"can_see_all_leads":false,"can_manage_users":false,"can_view_financials":false,"can_edit_roles":false,"can_export":false}',
+    b.permissions ? JSON.stringify(b.permissions) : '{"views":["today","pipeline","settings"],"can_see_all_leads":false,"can_manage_users":false,"can_view_financials":false,"can_edit_roles":false,"can_export":false,"can_delete_leads":false}',
     b.sort_order ?? 99
   ).run()
   return json(c, { id: b.id, company_id: companyId }, 201)
@@ -1119,6 +1119,18 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
 app.delete('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
+  const role      = c.var.role as string
+
+  // Admins always allowed. For other roles, check can_delete_leads permission.
+  if (role !== 'admin') {
+    const roleDef = await c.env.DB.prepare(
+      `SELECT permissions FROM roles WHERE id = ? AND company_id = ? LIMIT 1`
+    ).bind(role, companyId).first<{ permissions: string }>()
+    let perms: any = {}
+    try { perms = JSON.parse(roleDef?.permissions || '{}') } catch(_) {}
+    if (!perms.can_delete_leads) return err(c, 'Permission denied: cannot delete leads', 403)
+  }
+
   await c.env.DB.prepare('DELETE FROM opportunities WHERE id = ? AND company_id = ?').bind(id, companyId).run()
   // Broadcast + activity log (non-blocking)
   c.executionCtx?.waitUntil?.(Promise.all([
@@ -2936,10 +2948,10 @@ function getHtml(): string {
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260630gw12"></script>
+<script src="/static/app_premium.js?v=20260701gw14"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260630gw13"></script>
+<script src="/static/user_management.js?v=20260701gw14"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
 <script>

@@ -979,7 +979,97 @@ function umRenderRoles(container) {
 </div>
 
 <div style="margin-top:12px;font-size:11px;color:#5C6B58">Changes take effect immediately. Settings is always visible for all roles.</div>
+
+<!-- ── Action Permissions ─────────────────────────────────────────────── -->
+<div style="margin-top:28px">
+  <div style="margin-bottom:14px">
+    <h4 style="margin:0 0 3px;font-size:14px;font-weight:800;color:var(--gds-ink,#1F2A2B)">Action Permissions</h4>
+    <p style="margin:0;font-size:12px;color:var(--gw-muted,#5E6E6F)">Control what destructive or elevated actions each role can perform beyond their nav access.</p>
+  </div>
+  <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:12px;overflow:hidden">
+    <!-- Header row -->
+    <div style="display:grid;grid-template-columns:1fr ${nonAdminRoles.map(()=>'80px').join(' ')};gap:0;padding:10px 16px;border-bottom:1px solid var(--gw-line,#E0DDD5);background:var(--gw-surface,#FFFFFF)">
+      <div style="font-size:11px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.06em">Permission</div>
+      ${nonAdminRoles.map(r => `<div style="font-size:11px;font-weight:700;color:${r.color};text-align:center;text-transform:uppercase;letter-spacing:.05em">${r.label.split(' ')[0]}</div>`).join('')}
+    </div>
+    <!-- can_delete_leads row -->
+    <div style="display:grid;grid-template-columns:1fr ${nonAdminRoles.map(()=>'80px').join(' ')};gap:0;padding:12px 16px;align-items:center">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--gds-ink,#1F2A2B);margin-bottom:2px">Delete Leads</div>
+        <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Allow this role to permanently delete any lead from the pipeline</div>
+      </div>
+      ${nonAdminRoles.map(r => {
+        // Read current value from D1-sourced role defs
+        const roleD1 = window._gwRoles ? window._gwRoles.find(d => d.id === r.id) : null;
+        const isOn = !!(roleD1 && roleD1.permissions && roleD1.permissions.can_delete_leads);
+        return `<div style="text-align:center">
+          <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer" title="${r.label}">
+            <input type="checkbox" ${isOn ? 'checked' : ''} id="acp-del-${r.id}"
+              onchange="window._umToggleActionPerm('${r.id}','can_delete_leads',this.checked)"
+              style="position:absolute;opacity:0;width:0;height:0">
+            <span style="
+              display:inline-block;width:36px;height:20px;border-radius:10px;
+              background:${isOn ? r.color : '#CBD0C8'};
+              transition:background .2s;position:relative;flex-shrink:0"
+              id="acp-del-track-${r.id}">
+              <span style="
+                position:absolute;top:2px;left:${isOn ? '18px' : '2px'};
+                width:16px;height:16px;border-radius:50%;background:#fff;
+                box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s"
+                id="acp-del-thumb-${r.id}"></span>
+            </span>
+          </label>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:var(--gw-muted,#5E6E6F)">
+    <strong>Owner / Admin</strong> can always delete leads regardless of this setting.
+  </div>
+</div>
 `;
+
+  window._umToggleActionPerm = async function(roleId, permKey, enabled) {
+    // Update in-memory _gwRoles immediately for instant UI feedback
+    if (window._gwRoles) {
+      const rd = window._gwRoles.find(r => r.id === roleId);
+      if (rd) {
+        if (!rd.permissions || typeof rd.permissions !== 'object') rd.permissions = {};
+        rd.permissions[permKey] = enabled;
+      }
+    }
+    // Animate toggle
+    const track = document.getElementById(`acp-del-track-${roleId}`);
+    const thumb = document.getElementById(`acp-del-thumb-${roleId}`);
+    const roleDef = (window._gwRoles || []).find(r => r.id === roleId);
+    if (track) track.style.background = enabled ? (roleDef?.color || '#4D8A86') : '#CBD0C8';
+    if (thumb) thumb.style.left = enabled ? '18px' : '2px';
+
+    // Persist to D1 via PUT /api/roles/:id
+    try {
+      const rd = window._gwRoles ? window._gwRoles.find(r => r.id === roleId) : null;
+      const currentPerms = (rd && rd.permissions) ? { ...rd.permissions } : {};
+      currentPerms[permKey] = enabled;
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ permissions: currentPerms })
+      });
+      const j = await res.json();
+      if (j.ok === false) throw new Error(j.error || 'Save failed');
+      umToast(`${permKey === 'can_delete_leads' ? 'Delete Leads' : permKey} ${enabled ? 'enabled' : 'disabled'} for ${roleDef?.label || roleId}`);
+    } catch(e) {
+      umToast('Failed to save: ' + e.message, 'error');
+      // Revert in-memory on failure
+      if (window._gwRoles) {
+        const rd = window._gwRoles.find(r => r.id === roleId);
+        if (rd && rd.permissions) rd.permissions[permKey] = !enabled;
+      }
+      if (track) track.style.background = !enabled ? (roleDef?.color || '#4D8A86') : '#CBD0C8';
+      if (thumb) thumb.style.left = !enabled ? '18px' : '2px';
+    }
+  };
 
   window._umTogglePerm = function(roleId, viewKey, enabled) {
     const perms = loadNavPerms();

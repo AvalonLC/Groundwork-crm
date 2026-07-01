@@ -2148,6 +2148,12 @@ function opportunityDetail(id){
   const _cr          = window.getCurrentRep ? window.getCurrentRep() : null;
   const _isAdm       = _cr && _cr.role === 'admin';
   const _isOM        = _cr && _cr.role === 'office_manager';
+  // can_delete_leads: admin always yes; other roles check D1 permissions flag
+  const _canDelLead  = _isAdm || (function(){
+    if (!_cr || !window._gwRoles) return false;
+    const rd = window._gwRoles.find(r => r.id === _cr.role);
+    return !!(rd && rd.permissions && rd.permissions.can_delete_leads);
+  })();
   const _commsCnt    = (state.communications||[]).filter(c=>c.oppId===o.id).length;
   const _filesCnt    = (state.communications||[]).filter(c=>c.oppId===o.id&&c.files&&c.files.length).reduce((a,c)=>a+c.files.length,0);
   const _notesCnt    = (o.notes||[]).length;
@@ -2213,7 +2219,7 @@ function opportunityDetail(id){
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
           Mark Sold
         </button>` : _isSold ? `<span class="ld-sold-badge">✓ Sold</span>` : ''}
-        ${_isAdm||_isOM ? `<div class="ld-overflow-wrap">
+        ${_isAdm||_isOM||_canDelLead ? `<div class="ld-overflow-wrap">
           <button class="ld-overflow-btn" onclick="toggleLeadOverflow(this)" title="More actions">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
           </button>
@@ -2222,7 +2228,7 @@ function opportunityDetail(id){
               <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M2 10V2h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Duplicate
             </button>
-            ${_isAdm ? `<button class="danger" onclick="deleteOpportunity('${o.id}')">
+            ${_canDelLead ? `<button class="danger" onclick="deleteOpportunity('${o.id}')">
               <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2h4v2M11 4l-.75 8H3.75L3 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Delete Lead
             </button>` : ''}
@@ -2265,7 +2271,7 @@ function opportunityDetail(id){
         <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".9"/></svg>
         Mark Sold
       </button>` : _isSold ? `<span class="ld-sold-badge-large">✓ Sold</span>` : ''}
-      ${_isAdm||_isOM ? `<div class="ld-overflow-wrap ld-overflow-hero">
+      ${_isAdm||_isOM||_canDelLead ? `<div class="ld-overflow-wrap ld-overflow-hero">
         <button class="ld-btn-secondary" onclick="toggleLeadOverflow(this)">More</button>
         <div class="ld-overflow-menu" style="display:none">
           <button onclick="duplicateOpportunity('${o.id}');toggleLeadOverflow()">
@@ -2276,7 +2282,7 @@ function opportunityDetail(id){
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             Manage Integrations
           </button>
-          ${_isAdm ? `<button class="danger" onclick="if(confirm('Delete this lead? This cannot be undone.')) deleteOpportunity('${o.id}')">
+          ${_canDelLead ? `<button class="danger" onclick="if(confirm('Delete this lead? This cannot be undone.')) deleteOpportunity('${o.id}')">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2h4v2M11 4l-.75 8H3.75L3 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             Delete Lead
           </button>` : ''}
