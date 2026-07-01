@@ -2404,15 +2404,19 @@ function opportunityDetail(id){
         </div>
         <div class="ld-card ld-qual-notes-card">
           ${[
-            {field:'prompt',       label:'What prompted the inquiry?',             icon:'M7 1l.9 2.6H11L8.5 5.2l.9 2.7L7 6.5l-2.4 1.4.9-2.7L3 3.6h3.1z'},
-            {field:'desiredOutcome',label:'Desired outcome / what good looks like', icon:'M2 11l3.5-3.5 2.5 2.5L12 4'},
-            {field:'fitConcerns',  label:'Fit concerns / risk flags',               icon:'M7 2v5M7 9.5v.5'}
+            {field:'prompt',          label:'What prompted the inquiry?',                                                    icon:'M7 1l.9 2.6H11L8.5 5.2l.9 2.7L7 6.5l-2.4 1.4.9-2.7L3 3.6h3.1z'},
+            {field:'desiredOutcome',  label:'Desired outcome / what good looks like',                                        icon:'M2 11l3.5-3.5 2.5 2.5L12 4'},
+            {field:'painPoints',      label:'Pain Point(s) — what problem are they really trying to solve?',                 icon:'M7 2v4M7 8v.5M4 12l3-10 3 10H4z'},
+            {field:'decisionDrivers', label:'Decision drivers — what do they need from us to say yes?',                     icon:'M2 7h10M8 4l4 3-4 3'},
+            {field:'fitConcerns',     label:'Fit concerns / risk flags',                                                     icon:'M7 2v5M7 9.5v.5'}
           ].map(({field,label,icon})=>{
             const val = escapeHtml(o[field]||'');
             const placeholder = {
-              prompt:'e.g. Referred by a neighbour, saw an ad, urgent project deadline…',
-              desiredOutcome:'e.g. Full kitchen renovation complete before the holidays, budget under $30k…',
-              fitConcerns:'e.g. Budget may be tight, decision-maker not confirmed, competing quotes…'
+              prompt:          'e.g. Referred by a neighbour, saw an ad, urgent project deadline…',
+              desiredOutcome:  'e.g. Full backyard transformation before summer, budget under $25k…',
+              painPoints:      'e.g. Current lawn is embarrassing, HOA notices, drainage flooding the basement…',
+              decisionDrivers: 'e.g. Needs 3 quotes before deciding, spouse must approve, timeline is the biggest factor…',
+              fitConcerns:     'e.g. Budget may be tight, decision-maker not confirmed, competing quotes…'
             }[field];
             return `<div class="ld-qual-field" id="qf-${field}-${o.id}">
               <div class="ld-qual-view" id="qfview-${field}-${o.id}">
@@ -2454,25 +2458,29 @@ function opportunityDetail(id){
           Quick Actions
         </div>
         <div class="ld-qa-grid">
-          <button class="ld-qa-btn" id="qa_homeworks_${o.id}" onclick="qaAction('homeworks','${o.id}',this)">
+          <button type="button" class="ld-qa-btn" id="qa_homeworks_${o.id}" onclick="qaAction('homeworks','${o.id}',this)">
             <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M7 1L1 5v8h4V9h4v4h4V5L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
             <div><div class="ld-qa-title">Push to Homeworks</div><div class="ld-qa-sub">Sync to CRM</div></div>
           </button>
-          <button class="ld-qa-btn" id="qa_calendar_${o.id}" onclick="qaAction('calendar','${o.id}',this)">
+          <button type="button" class="ld-qa-btn" id="qa_calendar_${o.id}" onclick="qaAction('calendar','${o.id}',this)">
             <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             <div><div class="ld-qa-title">Schedule Event</div><div class="ld-qa-sub">Google Calendar</div></div>
           </button>
-          <button class="ld-qa-btn" id="qa_gmail_${o.id}" onclick="qaAction('gmail','${o.id}',this)">
+          <button type="button" class="ld-qa-btn" id="qa_gmail_${o.id}" onclick="qaAction('gmail','${o.id}',this)">
             <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             <div><div class="ld-qa-title">Compose Email</div><div class="ld-qa-sub">Gmail draft</div></div>
           </button>
-          <button class="ld-qa-btn" onclick="window._leadTab='comms';show('pipeline','${o.id}')">
+          <button type="button" class="ld-qa-btn" onclick="window._leadTab='comms';show('pipeline','${o.id}')">
             <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M7 1a5.5 5.5 0 110 11 5.5 5.5 0 010-11z" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             <div><div class="ld-qa-title">Log Call</div><div class="ld-qa-sub">Record outcome</div></div>
           </button>
-          <button class="ld-qa-btn" onclick="window._leadTab='notes';show('pipeline','${o.id}')">
+          <button type="button" class="ld-qa-btn" onclick="window._leadTab='notes';show('pipeline','${o.id}')">
             <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             <div><div class="ld-qa-title">Add Note</div><div class="ld-qa-sub">Save observation</div></div>
+          </button>
+          <button type="button" class="ld-qa-btn" onclick="openCallCompanion('${o.id}')">
+            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="#4ade80" stroke="none"/></svg>
+            <div><div class="ld-qa-title">Call Companion</div><div class="ld-qa-sub">Live stage guide</div></div>
           </button>
         </div>
 
@@ -2581,7 +2589,48 @@ function opportunityDetail(id){
         <div class="ld-rail-follow-date ${_isOvd?'overdue':''}">${prettyDate(o.nextFollowUp)}</div>
         ${_isOvd ? `<div class="ld-rail-overdue-badge">${gwIcon('warning',16)} Overdue</div>` : ''}
         <input type="date" id="railFollowEdit" value="${escapeHtml(o.nextFollowUp||'')}" style="width:100%;margin-top:10px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px">
-        <button class="ld-rail-btn" onclick="setOppField('${o.id}','nextFollowUp',document.getElementById('railFollowEdit').value);showToast('Follow-up updated')">Update</button>
+
+        <!-- What type of follow-up -->
+        <div style="margin-top:10px">
+          <label style="font-size:10px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Type of Follow-Up</label>
+          <select id="railFollowType" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;background:var(--gw-surface-2,#FAFAF8);color:var(--gw-ink,#1F2A2B)">
+            <option value="" ${!o.followUpType?'selected':''}>— Select type —</option>
+            <option value="call" ${o.followUpType==='call'?'selected':''}>📞 Phone call</option>
+            <option value="site_walk" ${o.followUpType==='site_walk'?'selected':''}>🏡 Site walk / visit</option>
+            <option value="proposal" ${o.followUpType==='proposal'?'selected':''}>📄 Deliver / review proposal</option>
+            <option value="email" ${o.followUpType==='email'?'selected':''}>✉️ Email follow-up</option>
+            <option value="sms" ${o.followUpType==='sms'?'selected':''}>💬 Text message</option>
+            <option value="decision" ${o.followUpType==='decision'?'selected':''}>✅ Decision / close meeting</option>
+            <option value="check_in" ${o.followUpType==='check_in'?'selected':''}>🔁 General check-in</option>
+            <option value="other" ${o.followUpType==='other'?'selected':''}>Other</option>
+          </select>
+        </div>
+
+        <!-- What to cover / intention -->
+        <div style="margin-top:10px">
+          <label style="font-size:10px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">What I'm Following Up On</label>
+          <textarea id="railFollowIntent" rows="3" placeholder="e.g. Checking on proposal decision, address the budget objection, confirm site walk time…" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;resize:vertical;background:var(--gw-surface-2,#FAFAF8);color:var(--gw-ink,#1F2A2B);box-sizing:border-box">${escapeHtml(o.followUpIntent||'')}</textarea>
+        </div>
+
+        <button type="button" class="ld-rail-btn" style="margin-top:10px" onclick="(function(){
+          const date   = document.getElementById('railFollowEdit').value;
+          const type   = document.getElementById('railFollowType').value;
+          const intent = document.getElementById('railFollowIntent').value;
+          const opp = (window.state&&window.state.opportunities||[]).find(x=>x.id==='${o.id}');
+          if(!opp) return;
+          if(date)   { opp.nextFollowUp = date; }
+          if(type   !== undefined) opp.followUpType   = type;
+          if(intent !== undefined) opp.followUpIntent = intent;
+          opp.updatedAt = new Date().toISOString();
+          window.saveState && window.saveState();
+          window._d1SaveOpp && window._d1SaveOpp(opp);
+          // In-place date display update
+          const dateStr = window.prettyDate ? window.prettyDate(date) : date;
+          const isOvd   = date && date < window.todayISO();
+          const railDate = document.querySelector('.ld-rail-follow-date');
+          if(railDate){ railDate.textContent = dateStr; railDate.classList.toggle('overdue', isOvd); }
+          window.showToast && window.showToast('Follow-up saved');
+        })()">Save Follow-Up</button>
       </div>
 
       <!-- Last contact card -->
@@ -2638,6 +2687,9 @@ function opportunityDetail(id){
 
   </div><!-- /ld-body -->
   `;
+
+  // Wire checklist checkboxes + progress bars immediately after render
+  wireChecks();
 
   // Wire up Communications compose after render
   if(_activeTab==='comms') wireCommsCompose(o.id, o);
@@ -3176,7 +3228,33 @@ function setOppField(id,field,value){
   // Write-through to D1
   _d1SaveOpp(o);
   showToast('Updated');
-  show('pipeline', id);
+  // ── In-place rail / chip update instead of full re-render ──────────────
+  // Re-rendering the whole lead view resets unsaved form fields.
+  // Instead, update just the visible follow-up display elements.
+  if (field === 'nextFollowUp') {
+    const dateStr = prettyDate(value);
+    const isOvd   = value && value < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
+    // Rail display date
+    const railDate = document.querySelector('.ld-rail-follow-date');
+    if (railDate) { railDate.textContent = dateStr; railDate.classList.toggle('overdue', isOvd); }
+    // Stat chip in sticky header / hero
+    document.querySelectorAll('.ld-stat-val').forEach(el => {
+      // The follow-up chip is the one next to the calendar icon — check parent
+      const chip = el.closest('.ld-stat-chip');
+      if (chip && chip.querySelector('rect[x="2"][y="2.5"]')) el.textContent = dateStr;
+    });
+    // Overdue badge in rail
+    const ovdBadge = document.querySelector('.ld-rail-overdue-badge');
+    if (isOvd && !ovdBadge) {
+      const railCard = document.querySelector('.ld-rail-card--alert, .ld-rail-card');
+      if (railCard) { const b=document.createElement('div'); b.className='ld-rail-overdue-badge'; b.innerHTML=gwIcon('warning',16)+' Overdue'; railCard.insertBefore(b, railCard.querySelector('input')); }
+    } else if (!isOvd && ovdBadge) { ovdBadge.remove(); }
+    return;
+  }
+  // For non-follow-up fields that are safe to update in-place, just save. 
+  // For fields that affect the header/chips (stage, repId etc) do a targeted re-render.
+  const headerFields = ['status','repId','commissionApproved','collected'];
+  if (headerFields.includes(field)) { show('pipeline', id); }
 }
 function duplicateOpportunity(id){
   const o = state.opportunities.find(x=>x.id===id);
@@ -9335,3 +9413,386 @@ window.superAdmin = superAdmin;
     }
   }
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CALL COMPANION  — floating overlay while on a call
+//  Opens a non-blocking, draggable side panel with:
+//    • Stage guide questions & checklist for the lead's current stage
+//    • All 6 process steps quick-reference
+//    • Live transcript recorder with AI-assisted next-steps summary
+// ══════════════════════════════════════════════════════════════════════════════
+window.openCallCompanion = function(oppId) {
+  const o = (window.state && window.state.opportunities || []).find(x => x.id === oppId);
+  if (!o) return;
+
+  // Remove any existing companion
+  document.getElementById('gw-call-companion')?.remove();
+
+  const stageNum     = Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
+  const stagesData   = (window.AVALON_DATA && window.AVALON_DATA.stages) || [];
+  const stageData    = stagesData.find(s => s.id === stageNum) || stagesData[0] || {};
+  const checklists   = (window.AVALON_DATA && window.AVALON_DATA.checklists) || [];
+  const stageCl      = checklists.find(c => c.stage === stageNum);
+  const sp           = (window.AVALON_DATA && window.AVALON_DATA.salesProcess) || {};
+  const steps        = sp.steps || [];
+  const stepColors   = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#4D8A86'];
+
+  // ── Build questions HTML
+  const qHtml = (stageData.questions || []).length
+    ? stageData.questions.map(q => `<div class="gw-cc-q">💬 ${escapeHtml(q)}</div>`).join('')
+    : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
+
+  // ── Build checklist HTML (inline, no wireChecks needed — handled below)
+  const clPrefix = `cc-cl-${stageNum}-${oppId}`;
+  const clHtml = stageCl
+    ? `<div style="margin-top:10px">
+        <div class="gw-cc-section-label">${escapeHtml(stageCl.title)}</div>
+        ${stageCl.items.map((item, i) => {
+          const key = `${clPrefix}-${i}`;
+          const checked = localStorage.getItem(key) === '1';
+          return `<label class="gw-cc-check-row${checked?' gw-cc-check-done':''}">
+            <input type="checkbox" data-key="${key}" ${checked?'checked':''} onchange="(function(el){
+              const k=el.dataset.key; localStorage.setItem(k,el.checked?'1':'0');
+              el.closest('label').classList.toggle('gw-cc-check-done',el.checked);
+            })(this)">
+            <span>${escapeHtml(item)}</span>
+          </label>`;
+        }).join('')}
+       </div>`
+    : '<div class="gw-cc-empty">No checklist for this stage.</div>';
+
+  // ── Red flags
+  const rfHtml = (stageData.redFlags || []).length
+    ? `<div style="margin-top:12px"><div class="gw-cc-section-label" style="color:#C97B6A">🚩 Red Flags to Watch</div>
+        ${stageData.redFlags.map(f => `<div class="gw-cc-rf">⚠️ ${escapeHtml(f)}</div>`).join('')}</div>`
+    : '';
+
+  // ── Steps tab
+  const stepsHtml = steps.map((s, i) => `
+    <div class="gw-cc-step" style="border-left:3px solid ${stepColors[i]||'#4D8A86'}">
+      <div style="font-size:10px;font-weight:800;color:${stepColors[i]||'#4D8A86'};text-transform:uppercase;letter-spacing:.05em">Step ${s.num}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--gds-ink,#1F2A2B);margin:2px 0">${escapeHtml(s.title)}</div>
+      <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">${escapeHtml(s.tagline||'')}</div>
+      ${(s.cbrQuestions||[]).slice(0,3).map(q=>`<div class="gw-cc-q" style="margin-top:4px;font-size:11px">💬 ${escapeHtml(q)}</div>`).join('')}
+    </div>`).join('');
+
+  const panel = document.createElement('div');
+  panel.id = 'gw-call-companion';
+  panel.innerHTML = `
+    <div id="gw-cc-drag-handle" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:linear-gradient(135deg,#0f2d1f,#1a3a2a);border-radius:14px 14px 0 0;cursor:grab;user-select:none">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:gw-cc-pulse 1.5s infinite"></div>
+        <span style="font-size:12px;font-weight:800;color:#fff;letter-spacing:.02em">Call Companion</span>
+        <span style="font-size:10px;color:#4ade8090;font-weight:600">${escapeHtml(o.client||'Lead')}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button type="button" onclick="document.getElementById('gw-call-companion').style.display='none'" title="Minimise"
+          style="background:#ffffff18;border:none;color:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center">—</button>
+        <button type="button" onclick="document.getElementById('gw-call-companion').remove()" title="Close"
+          style="background:#f8717130;border:none;color:#f87171;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div style="display:flex;border-bottom:1px solid #E0DDD5;background:#fff">
+      ${['stage','steps','transcript'].map((t,i)=>`
+        <button type="button" id="gw-cc-tab-${t}" onclick="gwCCTab('${t}')"
+          style="flex:1;padding:9px 4px;font-size:11px;font-weight:700;border:none;cursor:pointer;border-bottom:2px solid ${i===0?'#2D7A55':'transparent'};color:${i===0?'#2D7A55':'#5E6E6F'};background:transparent;transition:all .15s">
+          ${t==='stage'?'🎯 Stage Guide':t==='steps'?'📋 All Steps':'🎙️ Transcript'}
+        </button>`).join('')}
+    </div>
+
+    <!-- Tab: Stage Guide -->
+    <div id="gw-cc-panel-stage" style="padding:12px;overflow-y:auto;max-height:380px">
+      <div style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Stage ${stageNum}: ${escapeHtml(stageData.title||o.status)}</div>
+      <div style="font-size:11px;color:#5E6E6F;margin-bottom:10px;line-height:1.5">${escapeHtml(stageData.purpose||'')}</div>
+      <div class="gw-cc-section-label">Discovery Questions</div>
+      ${qHtml}
+      ${rfHtml}
+      <div style="margin-top:14px"><div class="gw-cc-section-label">Stage Checklist</div>${clHtml}</div>
+    </div>
+
+    <!-- Tab: All Steps -->
+    <div id="gw-cc-panel-steps" style="display:none;padding:12px;overflow-y:auto;max-height:380px">
+      ${stepsHtml || '<div class="gw-cc-empty">No process steps found.</div>'}
+    </div>
+
+    <!-- Tab: Transcript -->
+    <div id="gw-cc-panel-transcript" style="display:none;padding:12px;overflow-y:auto;max-height:380px">
+      <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button type="button" id="gw-cc-rec-btn" onclick="gwCCRecToggle('${oppId}')"
+          style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">
+          <span id="gw-cc-rec-dot" style="width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block"></span>
+          <span id="gw-cc-rec-label">Start Recording</span>
+        </button>
+        <span id="gw-cc-rec-timer" style="font-size:11px;color:#5E6E6F;font-weight:600"></span>
+      </div>
+      <div style="font-size:10px;color:#9CA3A3;margin-bottom:8px">Transcription happens in your browser — nothing is sent externally during recording.</div>
+      <textarea id="gw-cc-transcript-ta" rows="8" placeholder="Transcript will appear here as you speak. You can also type notes manually…"
+        style="width:100%;border:1px solid #E0DDD5;border-radius:9px;padding:9px 11px;font-size:12px;resize:vertical;box-sizing:border-box;color:#1F2A2B;background:#FAFAF8;line-height:1.6"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button type="button" onclick="gwCCSaveTranscript('${oppId}')"
+          style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
+          💾 Save to Call Log
+        </button>
+        <button type="button" onclick="gwCCSummarise('${oppId}')"
+          style="padding:7px 14px;background:#4D8A86;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
+          ✨ AI Next Steps
+        </button>
+        <button type="button" onclick="document.getElementById('gw-cc-transcript-ta').value=''"
+          style="padding:7px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:8px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
+          Clear
+        </button>
+      </div>
+      <div id="gw-cc-summary-out" style="display:none;margin-top:12px;padding:12px;background:#EAF1EE;border:1px solid #2D7A5530;border-radius:10px">
+        <div style="font-size:11px;font-weight:800;color:#1A4740;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">✨ AI Summary &amp; Next Steps</div>
+        <div id="gw-cc-summary-text" style="font-size:12px;color:#1F2A2B;line-height:1.7;white-space:pre-wrap"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button type="button" onclick="gwCCSaveNote('${oppId}')"
+            style="padding:6px 12px;background:#2D7A55;border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
+            Save as Note
+          </button>
+          <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('gw-cc-summary-text').textContent).then(()=>window.showToast('Copied!'))"
+            style="padding:6px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:7px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      #gw-call-companion { position:fixed;bottom:24px;right:24px;width:360px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25),0 4px 16px rgba(0,0,0,.15);z-index:9800;background:#fff;border:1px solid #E0DDD5;font-family:inherit }
+      .gw-cc-section-label { font-size:10px;font-weight:800;color:#5E6E6F;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;display:block }
+      .gw-cc-q { font-size:11.5px;color:#1F2A2B;padding:6px 9px;background:#F5F2EC;border-radius:7px;margin-bottom:5px;line-height:1.5 }
+      .gw-cc-rf { font-size:11.5px;color:#7A2E20;padding:6px 9px;background:#FAE8E430;border-radius:7px;margin-bottom:5px;line-height:1.5 }
+      .gw-cc-empty { font-size:12px;color:#9CA3A3;font-style:italic;padding:8px 0 }
+      .gw-cc-step { padding:10px;background:#FAFAF8;border-radius:8px;margin-bottom:8px }
+      .gw-cc-check-row { display:flex;align-items:flex-start;gap:8px;padding:5px 0;cursor:pointer;font-size:12px;color:#1F2A2B;line-height:1.45 }
+      .gw-cc-check-row input { margin-top:2px;accent-color:#2D7A55;flex-shrink:0 }
+      .gw-cc-check-done { opacity:.55;text-decoration:line-through }
+      @keyframes gw-cc-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    </style>`;
+
+  document.body.appendChild(panel);
+
+  // Make draggable
+  (function(){
+    const handle = document.getElementById('gw-cc-drag-handle');
+    let dragging = false, startX, startY, origRight, origBottom;
+    handle.addEventListener('mousedown', e => {
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      const rect = panel.getBoundingClientRect();
+      origRight  = window.innerWidth  - rect.right;
+      origBottom = window.innerHeight - rect.bottom;
+      handle.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      panel.style.right  = Math.max(0, origRight  - dx) + 'px';
+      panel.style.bottom = Math.max(0, origBottom - dy) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; handle.style.cursor = 'grab'; });
+  })();
+
+  // Tab switching
+  window.gwCCTab = function(tab) {
+    ['stage','steps','transcript'].forEach(t => {
+      const p = document.getElementById('gw-cc-panel-'+t);
+      const b = document.getElementById('gw-cc-tab-'+t);
+      if (p) p.style.display = t === tab ? 'block' : 'none';
+      if (b) {
+        b.style.borderBottomColor = t === tab ? '#2D7A55' : 'transparent';
+        b.style.color             = t === tab ? '#2D7A55' : '#5E6E6F';
+      }
+    });
+  };
+
+  // Transcript recorder (Web Speech API)
+  let _ccRecognition = null, _ccRecording = false, _ccTimerInterval = null, _ccSeconds = 0;
+
+  window.gwCCRecToggle = function(oid) {
+    const btn   = document.getElementById('gw-cc-rec-btn');
+    const dot   = document.getElementById('gw-cc-rec-dot');
+    const label = document.getElementById('gw-cc-rec-label');
+    const timer = document.getElementById('gw-cc-rec-timer');
+    const ta    = document.getElementById('gw-cc-transcript-ta');
+    if (!ta) return;
+
+    if (!_ccRecording) {
+      // Start
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        window.showToast && window.showToast('Speech recognition not supported in this browser — try Chrome');
+        return;
+      }
+      _ccRecognition = new SpeechRec();
+      _ccRecognition.continuous     = true;
+      _ccRecognition.interimResults = true;
+      _ccRecognition.lang           = 'en-US';
+
+      let _interim = '';
+      _ccRecognition.onresult = (e) => {
+        let interim = '', final = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
+          else interim += e.results[i][0].transcript;
+        }
+        if (final) {
+          ta.value += final;
+          _interim = '';
+        } else {
+          _interim = interim;
+        }
+      };
+      _ccRecognition.onerror = (e) => {
+        if (e.error !== 'no-speech') window.showToast && window.showToast('Mic error: ' + e.error);
+      };
+      _ccRecognition.onend = () => {
+        if (_ccRecording) _ccRecognition.start(); // auto-restart on silence
+      };
+      _ccRecognition.start();
+      _ccRecording = true;
+      _ccSeconds = 0;
+      _ccTimerInterval = setInterval(() => {
+        _ccSeconds++;
+        const m = Math.floor(_ccSeconds/60), s = _ccSeconds%60;
+        if (timer) timer.textContent = `${m}:${s<10?'0'+s:s}`;
+      }, 1000);
+      if (btn)   btn.style.background = '#C97B6A';
+      if (dot)   { dot.style.background = '#f87171'; }
+      if (label) label.textContent = 'Stop Recording';
+      window.showToast && window.showToast('🎙️ Recording started');
+
+    } else {
+      // Stop
+      _ccRecording = false;
+      if (_ccRecognition) { try { _ccRecognition.stop(); } catch(e){} _ccRecognition = null; }
+      clearInterval(_ccTimerInterval);
+      if (btn)   btn.style.background = '#2D7A55';
+      if (dot)   dot.style.background = '#4ade80';
+      if (label) label.textContent = 'Start Recording';
+      window.showToast && window.showToast('Recording stopped');
+    }
+  };
+
+  // Save transcript as a communication log entry
+  window.gwCCSaveTranscript = function(oid) {
+    const ta = document.getElementById('gw-cc-transcript-ta');
+    if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Nothing to save yet'); return; }
+    const transcript = ta.value.trim();
+    const ts         = new Date().toISOString();
+    const rep        = window.getCurrentRep ? window.getCurrentRep() : null;
+    const entry = {
+      id:        'comm_' + Date.now(),
+      oppId:     oid,
+      type:      'call',
+      direction: 'in',
+      ts,
+      body:      '[TRANSCRIPT]\n' + transcript,
+      sentBy:    rep ? rep.name : 'Unknown',
+      files:     []
+    };
+    if (!window.state.communications) window.state.communications = [];
+    window.state.communications.unshift(entry);
+    window.saveState && window.saveState();
+    // D1 write-through
+    fetch('/api/opportunities/' + oid + '/comms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ type:'call', direction:'in', body: entry.body, ts })
+    }).catch(() => {});
+    window.showToast && window.showToast('✅ Transcript saved to call log');
+  };
+
+  // AI next-steps summary from transcript using AI Sales Assistant
+  window.gwCCSummarise = function(oid) {
+    const ta  = document.getElementById('gw-cc-transcript-ta');
+    const out = document.getElementById('gw-cc-summary-out');
+    const txt = document.getElementById('gw-cc-summary-text');
+    if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Add a transcript first'); return; }
+    if (!out || !txt) return;
+
+    const opp = (window.state && window.state.opportunities || []).find(x => x.id === oid);
+    const transcript = ta.value.trim();
+
+    out.style.display = 'block';
+    txt.textContent = 'Analysing transcript…';
+
+    // Use the OpenAI integration if available, otherwise build a structured local summary
+    const prompt = `You are a sales call analyst for a premium landscaping company. Analyse this call transcript and provide:
+1. SUMMARY (2-3 sentences of what was discussed)
+2. KEY PAIN POINTS (bullet list)
+3. DECISION DRIVERS (what they need to move forward)
+4. NEXT STEPS (clear action items with suggested timing)
+5. EMAIL SUBJECT LINE (ready to use for follow-up email)
+
+Client: ${opp ? (opp.client||'Unknown') : 'Unknown'}
+Project: ${opp ? (opp.project||opp.status||'') : ''}
+Stage: ${opp ? (opp.status||'') : ''}
+
+TRANSCRIPT:
+${transcript.slice(0, 3000)}`;
+
+    // Try to call the AI endpoint
+    fetch('/api/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], model: 'gpt-4o-mini' })
+    })
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok && j.data) {
+        txt.textContent = j.data;
+      } else {
+        // Graceful offline fallback — structured local parse
+        txt.textContent = gwCCLocalSummary(transcript, opp);
+      }
+    })
+    .catch(() => {
+      txt.textContent = gwCCLocalSummary(transcript, opp);
+    });
+  };
+
+  // Save AI summary as a note on the opportunity
+  window.gwCCSaveNote = function(oid) {
+    const txt = document.getElementById('gw-cc-summary-text');
+    if (!txt || !txt.textContent.trim()) return;
+    const noteBody = '📋 Call Summary\n\n' + txt.textContent.trim();
+    const ts       = new Date().toISOString();
+    const note     = { id: 'note_' + Date.now(), oppId: oid, body: noteBody, createdAt: ts };
+    if (!window.state.notes) window.state.notes = [];
+    window.state.notes.unshift(note);
+    const opp = (window.state && window.state.opportunities || []).find(x => x.id === oid);
+    if (opp) opp.updatedAt = ts;
+    window.saveState && window.saveState();
+    fetch('/api/opportunities/' + oid + '/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ body: noteBody })
+    }).catch(() => {});
+    window.showToast && window.showToast('✅ Summary saved as note');
+  };
+};
+
+// Local summary fallback when AI endpoint is unavailable
+function gwCCLocalSummary(transcript, opp) {
+  const sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
+  const summary   = sentences.slice(0, 3).join('. ') + '.';
+  return [
+    '📋 SUMMARY',
+    summary || '(No summary available — add more transcript content)',
+    '',
+    '✅ NEXT STEPS',
+    '• Review transcript and identify action items',
+    '• Send follow-up email within 24 hours',
+    '• Update lead stage and next follow-up date',
+    '',
+    '💡 TIP: Connect the AI Sales Assistant for full AI-powered analysis.',
+  ].join('\n');
+}
