@@ -1999,7 +1999,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   grid-template-columns: 240px 1fr 280px !important;
   grid-template-rows: auto !important;
   gap: 0 !important;
-  align-items: start !important;
+  align-items: stretch !important;
   min-height: 0 !important;
 }
 @media (max-width: 1199px) {
@@ -2020,12 +2020,11 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 /* ── 2. LEFT PANEL ──────────────────────────────────────────────────────── */
 
 .rp-left {
-  position: sticky !important;
-  top: 52px !important;
-  max-height: calc(100vh - 52px) !important;
-  overflow-y: auto !important;
-  scrollbar-width: thin !important;
-  scrollbar-color: var(--gw-border-strong) transparent !important;
+  position: relative !important;
+  top: auto !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+  scrollbar-width: auto !important;
   border-right: 1px solid var(--gw-border) !important;
   background: var(--gw-bg-surface) !important;
   padding: 0 !important;
@@ -2035,7 +2034,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 /* Record identity hero in left panel */
 .rp-left-hero {
-  padding: 24px 18px 18px !important;
+  padding: 18px 16px 14px !important;
   border-bottom: 1px solid var(--gw-border) !important;
   display: flex !important;
   flex-direction: column !important;
@@ -2043,30 +2042,30 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   text-align: center !important;
 }
 .rp-left-avatar {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--gw-pine-800), var(--gw-pine-600));
   color: #fff;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   display: grid;
   place-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   letter-spacing: .02em;
-  box-shadow: 0 2px 12px rgba(30,84,72,.25);
+  box-shadow: 0 2px 10px rgba(30,84,72,.2);
 }
 .rp-left-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   color: var(--gw-text-primary);
   letter-spacing: -.02em;
   line-height: 1.2;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   word-break: break-word;
 }
 .rp-left-sub {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--gw-text-muted);
   line-height: 1.4;
   word-break: break-word;
@@ -2082,7 +2081,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 /* Info sections in left panel */
 .rp-left-section {
-  padding: 14px 18px !important;
+  padding: 12px 16px !important;
   border-bottom: 1px solid var(--gw-border) !important;
 }
 .rp-left-section:last-child { border-bottom: none !important; }
@@ -2103,8 +2102,8 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 .rp-left-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 10px;
+  gap: 1px;
+  margin-bottom: 8px;
 }
 .rp-left-field:last-child { margin-bottom: 0; }
 .rp-left-field-label {
@@ -2115,10 +2114,10 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   text-transform: uppercase;
 }
 .rp-left-field-value {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--gw-text-primary);
-  line-height: 1.4;
+  line-height: 1.35;
   word-break: break-word;
 }
 .rp-left-field-value a {
@@ -2145,7 +2144,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   gap: 2px;
 }
 .rp-micro-stat-val {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 800;
   color: var(--gw-text-primary);
   letter-spacing: -.03em;
@@ -2330,8 +2329,8 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 .rp-qa-bar {
   display: flex !important;
-  gap: 8px !important;
-  padding: 12px 28px !important;
+  gap: 6px !important;
+  padding: 9px 20px !important;
   background: var(--gw-bg-surface) !important;
   border-bottom: 1px solid var(--gw-border) !important;
   overflow-x: auto !important;
@@ -2479,7 +2478,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: 11px 16px;
   border-bottom: 1px solid var(--gw-border);
   background: var(--gw-bg-surface);
 }
@@ -2495,7 +2494,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 }
 .rp-section-card-title svg { color: var(--gw-action); flex-shrink: 0; }
 .rp-section-card-actions { display: flex; align-items: center; gap: 6px; }
-.rp-section-card-body { padding: 18px; }
+.rp-section-card-body { padding: 16px; }
 .rp-section-card-body.no-pad { padding: 0; }
 
 /* Form grid inside section cards */
@@ -2743,12 +2742,10 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 /* ── 6. RIGHT RAIL ────────────────────────────────────────────────────────── */
 
 .rp-rail {
-  position: sticky !important;
-  top: 52px !important;
-  max-height: calc(100vh - 52px) !important;
-  overflow-y: auto !important;
-  scrollbar-width: thin !important;
-  scrollbar-color: var(--gw-border-strong) transparent !important;
+  position: relative !important;
+  top: auto !important;
+  max-height: none !important;
+  overflow-y: visible !important;
   border-left: 1px solid var(--gw-border) !important;
   background: var(--gw-bg-surface) !important;
   display: flex !important;
@@ -2767,8 +2764,8 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 11px 16px;
-  font-size: 10.5px;
+  padding: 9px 14px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -2781,7 +2778,7 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   display: flex;
   gap: 4px;
 }
-.rp-rail-card-body { padding: 14px 16px; }
+.rp-rail-card-body { padding: 12px 14px; }
 .rp-rail-card-body.no-pad { padding: 0; }
 .rp-rail-card--alert {
   background: var(--gw-clay-100, #F9ECE8) !important;
@@ -3154,8 +3151,8 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 @media (max-width: 1100px) { .ld-body { grid-template-columns: 1fr 270px !important; } }
 @media (max-width: 900px)  { .ld-body { grid-template-columns: 1fr !important; } }
 
-.ld-main { min-width: 0; display: flex; flex-direction: column; gap: 0; padding: 24px 28px; }
-.ld-main > * { margin-bottom: 20px; }
+.ld-main { min-width: 0; display: flex; flex-direction: column; gap: 0; padding: 18px 22px; }
+.ld-main > * { margin-bottom: 16px; }
 .ld-main > *:last-child { margin-bottom: 0; }
 
 /* Hero */
@@ -3307,7 +3304,8 @@ h1.ld-name {
 .ld-tab-bar {
   background: var(--gw-bg-surface-2) !important;
   border-bottom: 1px solid var(--gw-border) !important;
-  padding: 0 24px !important;
+  padding: 0 20px !important;
+  margin-bottom: 0 !important;
 }
 .ld-tab { color: var(--gw-text-muted) !important; }
 .ld-tab:hover { color: var(--gw-text-primary) !important; background: var(--gw-bg-subtle) !important; }
@@ -3640,7 +3638,7 @@ h1.ld-name {
 /* Used in both the new rp-* shell and legacy ld-* detail page */
 
 .rp-stage-track-wrap {
-  padding: 14px 28px !important;
+  padding: 10px 20px !important;
   background: var(--gw-bg-surface-2) !important;
   border-bottom: 1px solid var(--gw-border) !important;
   overflow-x: auto !important;
