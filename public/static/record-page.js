@@ -620,13 +620,14 @@
   R.CommTimeline = function(events, cfg) {
     events = (events || []).sort((a,b) => new Date(b.ts) - new Date(a.ts));
     cfg = cfg || {};
-    const typeIcon = t => ({
+    var _commIcons = {
       sms:      '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>',
       email:    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>',
       call:     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2a1 1 0 011-1h2l1 3-1.5 1.5a9 9 0 004 4L11 8l3 1v2a1 1 0 01-1 1C6 12 4 5 3 3.5V2z"/></svg>',
       note:     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v10l-3 3H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h4"/></svg>',
       proposal: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>'
-    }[t] || '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/></svg>';
+    };
+    var typeIcon = function(t) { return _commIcons[t] || '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/></svg>'; };
     const fmtDate = d => {
       if (!d) return '';
       try { return new Date(d).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
