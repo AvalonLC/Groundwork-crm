@@ -1996,15 +1996,15 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 /* 3-column body */
 .rp-body {
   display: grid !important;
-  grid-template-columns: 260px 1fr 300px !important;
+  grid-template-columns: 240px 1fr 280px !important;
   grid-template-rows: auto !important;
   gap: 0 !important;
   align-items: start !important;
   min-height: 0 !important;
 }
-@media (max-width: 1279px) {
+@media (max-width: 1199px) {
   .rp-body {
-    grid-template-columns: 1fr 280px !important;
+    grid-template-columns: 1fr 260px !important;
     grid-template-areas: "center rail" !important;
   }
   .rp-left { display: none !important; }
@@ -3160,20 +3160,21 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 /* Hero */
 .ld-hero {
-  padding: 20px 24px 16px !important;
+  padding: 16px 20px 14px !important;
   background: var(--gw-bg-surface-2) !important;
   border-bottom: 1px solid var(--gw-border) !important;
   display: flex !important;
   align-items: flex-start !important;
   justify-content: space-between !important;
-  gap: 16px !important;
+  gap: 12px !important;
 }
 .ld-hero-left {
   display: flex !important;
-  gap: 14px !important;
+  gap: 12px !important;
   align-items: flex-start !important;
-  flex: 1 !important;
+  flex: 1 1 0 !important;
   min-width: 0 !important;
+  overflow: hidden !important;
 }
 .ld-hero-info {
   flex: 1 !important;
@@ -3181,37 +3182,39 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 }
 .ld-hero-actions {
   display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
+  align-items: flex-start !important;
+  gap: 6px !important;
   flex-shrink: 0 !important;
-  flex-wrap: wrap !important;
-  padding-top: 2px !important;
+  flex-wrap: nowrap !important;
+  padding-top: 0 !important;
 }
 .ld-hero-avatar {
-  width: 44px !important;
-  height: 44px !important;
-  min-width: 44px !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
   border-radius: 50% !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 15px !important;
+  font-size: 14px !important;
   font-weight: 700 !important;
   letter-spacing: .02em !important;
   background: linear-gradient(135deg, var(--gw-pine-800), var(--gw-pine-600)) !important;
   color: #fff !important;
+  flex-shrink: 0 !important;
 }
 /* Override global h1 collision from premium.css */
 .ld-hero .ld-name,
 h1.ld-name {
-  font-size: clamp(17px, 2.2vw, 24px) !important;
+  font-size: clamp(16px, 2vw, 22px) !important;
   letter-spacing: -.02em !important;
-  line-height: 1.2 !important;
-  margin: 0 0 4px !important;
+  line-height: 1.25 !important;
+  margin: 0 0 3px !important;
   font-weight: 800 !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  word-break: break-word !important;
   max-width: 100% !important;
 }
 .ld-name { color: var(--gw-text-primary) !important; }
@@ -3232,11 +3235,12 @@ h1.ld-name {
 .ld-subtitle {
   color: var(--gw-text-muted) !important;
   font-size: 12px !important;
-  margin: 0 !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  max-width: 100% !important;
+  margin: 0 0 2px !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  line-height: 1.4 !important;
+  word-break: break-word !important;
 }
 .ld-subtitle-sep { color: var(--gw-border-strong) !important; }
 
@@ -3244,16 +3248,17 @@ h1.ld-name {
 .ld-stat-chips {
   display: flex !important;
   flex-wrap: wrap !important;
-  gap: 5px !important;
-  margin-top: 8px !important;
+  gap: 4px !important;
+  margin-top: 7px !important;
+  max-width: 100% !important;
 }
 .ld-stat-chip {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  padding: 4px 9px 4px 7px !important;
+  gap: 5px !important;
+  padding: 3px 8px 3px 6px !important;
   border-radius: var(--gw-r-sm, 6px) !important;
-  font-size: 12px !important;
+  font-size: 11.5px !important;
   cursor: default !important;
   white-space: nowrap !important;
   background: var(--gw-bg-surface) !important;
@@ -3276,7 +3281,7 @@ h1.ld-name {
   color: var(--gw-text-subtle) !important;
 }
 .ld-stat-label {
-  font-size: 9px !important;
+  font-size: 8.5px !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: .05em !important;
@@ -3284,9 +3289,9 @@ h1.ld-name {
   line-height: 1 !important;
 }
 .ld-stat-val {
-  font-size: 12px !important;
+  font-size: 11.5px !important;
   font-weight: 700 !important;
-  line-height: 1.2 !important;
+  line-height: 1.15 !important;
   color: var(--gw-text-primary) !important;
 }
 .ld-stat-chip--green .ld-stat-val { color: var(--gw-action) !important; }
@@ -3555,16 +3560,17 @@ h1.ld-name {
 .ld-btn-secondary {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  padding: 7px 14px !important;
+  gap: 5px !important;
+  padding: 6px 12px !important;
   border-radius: var(--gw-r-md, 8px) !important;
-  font-size: 13px !important;
+  font-size: 12.5px !important;
   font-weight: 600 !important;
   border: 1px solid transparent !important;
   cursor: pointer !important;
   white-space: nowrap !important;
   transition: background .12s, border-color .12s !important;
   line-height: 1 !important;
+  flex-shrink: 0 !important;
 }
 .ld-btn-primary {
   background: var(--gw-action) !important;
@@ -3647,6 +3653,46 @@ h1.ld-name {
   align-items: center;
   gap: 0;
   min-width: max-content;
+}
+
+/* ── 9b. HERO RESPONSIVE ADJUSTMENTS ─────────────────────────────────────── */
+/* When the rp-center column is narrow (hide left → center gets full - rail) */
+/* or when the hero has limited horizontal room, stack actions below info */
+@media (max-width: 900px) {
+  .ld-hero {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .ld-hero-actions {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+  }
+}
+
+/* When viewport is between 1000–1279px:
+   rp-left is hidden, center gets ~(viewport - nav - rail) space
+   hero still needs to show buttons inline, but smaller */
+@media (min-width: 901px) and (max-width: 1279px) {
+  .ld-hero {
+    padding: 14px 16px 12px !important;
+    gap: 10px !important;
+  }
+  .ld-btn-primary,
+  .ld-btn-sold {
+    padding: 5px 10px !important;
+    font-size: 12px !important;
+  }
+  .ld-hero-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    font-size: 13px !important;
+  }
+  .ld-hero .ld-name,
+  h1.ld-name {
+    font-size: 15px !important;
+  }
 }
 
 /* ── 10. PRINT OVERRIDES ─────────────────────────────────────────────────── */
