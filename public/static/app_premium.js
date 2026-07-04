@@ -110,7 +110,7 @@ async function _d1FlushQueue() {
       } else {
         console.error(`[D1 ✗✗] ${item.op} ${item.entityId} DROPPED after 3 attempts — ${e.message}`);
         // Show subtle persistent toast so user knows to re-save
-        showToast(`${gwIcon('warning',16)} Cloud sync failed for ${item.entityId} — check connection`, 6000);
+        showToast(`Cloud sync failed for ${item.entityId} — check connection`, 'warning');
       }
     }
   }
@@ -244,17 +244,55 @@ function estCommission(opp){
   const rates = { landscape:.06, maintenance_onetime:.04, maintenance_recurring:.20, hardscape:.06, drainage:.06, design_build:.06 };
   return val * (rates[opp?.workType] || .06);
 }
-function showToast(message, duration){
+// Toast type icons (inline SVG, 16×16, stroke-based)
+const _toastIcons = {
+  success: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 4.5"/></svg>',
+  error:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  warning: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3L1.5 13.5h13L8 3z"/><line x1="8" y1="7" x2="8" y2="10"/><circle cx="8" cy="12.5" r=".5" fill="currentColor" stroke="none"/></svg>',
+  info:    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7.5" x2="8" y2="11.5"/><circle cx="8" cy="5" r=".5" fill="currentColor" stroke="none"/></svg>'
+};
+const _toastVariants = ['toast-success','toast-error','toast-warning','toast-info'];
+
+function showToast(message, typeOrDuration){
   if (!toastEl) return;
-  toastEl.textContent = message;
+
+  // Resolve arguments: showToast(msg) | showToast(msg, 4000) | showToast(msg, 'success')
+  let type = null, duration = null;
+  if (typeof typeOrDuration === 'string' && _toastVariants.includes('toast-' + typeOrDuration)) {
+    type = typeOrDuration;
+  } else if (typeof typeOrDuration === 'number') {
+    duration = typeOrDuration;
+  }
+
+  // Clear variant classes from previous toast
+  _toastVariants.forEach(cls => toastEl.classList.remove(cls));
+
+  // Apply variant class and icon
+  if (type) {
+    toastEl.classList.add('toast-' + type);
+    toastEl.innerHTML = '<span class="toast-icon">' + _toastIcons[type] + '</span><span>' + message + '</span>';
+  } else {
+    toastEl.textContent = message;
+  }
+
   toastEl.hidden = false;
+
   // Clear any previous timer
   if (toastEl._hideTimer) clearTimeout(toastEl._hideTimer);
+
   // Auto-hide: longer messages get more time, min 2.5s max 6s
   const ms = duration || Math.min(6000, Math.max(2500, message.length * 50));
-  toastEl._hideTimer = setTimeout(() => { toastEl.hidden = true; }, ms);
+  toastEl._hideTimer = setTimeout(() => {
+    toastEl.hidden = true;
+    _toastVariants.forEach(cls => toastEl.classList.remove(cls));
+  }, ms);
+
   // Click anywhere on toast to dismiss immediately
-  toastEl.onclick = () => { toastEl.hidden = true; clearTimeout(toastEl._hideTimer); };
+  toastEl.onclick = () => {
+    toastEl.hidden = true;
+    clearTimeout(toastEl._hideTimer);
+    _toastVariants.forEach(cls => toastEl.classList.remove(cls));
+  };
   toastEl.style.cursor = 'pointer';
 }
 function copyText(text, btnEl){
@@ -346,7 +384,7 @@ window._recoverLocalLeads = async function() {
   const btn    = document.getElementById('gw-recover-btn');
   const status = document.getElementById('gw-recover-status');
   if (!window._d1Ready || !window.DB) {
-    if (status) { status.textContent = '⚠ Not logged in — please sign in first'; status.style.color = '#C97B6A'; status.style.display = 'block'; }
+    if (status) { status.textContent = 'Not logged in — please sign in first'; status.style.color = '#C97B6A'; status.style.display = 'block'; }
     return;
   }
   if (btn) { btn.textContent = 'Recovering…'; btn.disabled = true; btn.style.opacity = '.6'; }
@@ -356,18 +394,18 @@ window._recoverLocalLeads = async function() {
     const allLocalOpps = (localState.opportunities || []);
     // Push ALL local opps — server will skip ones already in D1
     if (allLocalOpps.length === 0) {
-      if (status) { status.textContent = '✓ No local leads to recover — you\'re all synced up!'; status.style.color = '#2D7A55'; }
+      if (status) { status.textContent = 'No local leads to recover — you\'re all synced up!'; status.style.color = '#2D7A55'; }
     } else {
       const result = await window.DB.opportunities.bulkUpsert(allLocalOpps);
-      const msg = `✓ Done! ${result.inserted} lead${result.inserted !== 1 ? 's' : ''} pushed to cloud (${result.skipped} already synced).`;
+      const msg = `Done! ${result.inserted} lead${result.inserted !== 1 ? 's' : ''} pushed to cloud (${result.skipped} already synced).`;
       if (status) { status.textContent = msg; status.style.color = '#2D7A55'; }
       // Now pull from D1 to refresh local state
       if (window._syncFromD1) await window._syncFromD1(null, { silent: false });
-      if (window.showToast) window.showToast(`Cloud sync complete: ${result.inserted} lead${result.inserted !== 1 ? 's' : ''} recovered`);
+      if (window.showToast) window.showToast(`Cloud sync complete: ${result.inserted} lead${result.inserted !== 1 ? 's' : ''} recovered`, 'success');
     }
   } catch(e) {
-    if (status) { status.textContent = `⚠ Error: ${e.message}`; status.style.color = '#C97B6A'; }
-    if (window.showToast) window.showToast('Recovery failed — check your connection');
+    if (status) { status.textContent = `Error: ${e.message}`; status.style.color = '#C97B6A'; }
+    if (window.showToast) window.showToast('Recovery failed — check your connection', 'error');
   } finally {
     if (btn) { btn.textContent = '↑ Recover My Leads to Cloud'; btn.disabled = false; btn.style.opacity = '1'; }
   }
@@ -376,15 +414,15 @@ window._recoverLocalLeads = async function() {
 // Manual sync — triggered by the ⟳ button in sidebar footer or sync status pill
 window._manualSync = async function() {
   if (!window._d1Ready || !window._syncFromD1) {
-    if (window.showToast) window.showToast('Not logged in — please sign in first');
+    if (window.showToast) window.showToast('Not logged in — please sign in first', 'warning');
     return;
   }
   const btn = document.getElementById('gw-sync-btn');
-  if (btn) { btn.textContent = '⟳'; btn.style.opacity = '.5'; btn.disabled = true; }
+  if (btn) { btn.textContent = 'Sync'; btn.style.opacity = '.5'; btn.disabled = true; }
   try {
     await window._syncFromD1(null, { silent: false });
   } finally {
-    if (btn) { btn.textContent = '⟳'; btn.style.opacity = '1'; btn.disabled = false; }
+    if (btn) { btn.textContent = 'Sync'; btn.style.opacity = '1'; btn.disabled = false; }
   }
 };
 
@@ -428,7 +466,7 @@ window._updateSidebarRep = function updateSidebarRep() {
             <span style="font-size:11px;color:rgba(255,255,255,.50)">${displayRole}</span>
           </div>
           <button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server"
-            style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">⟳</button>`;
+            style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">Sync</button>`;
       }
       // Nav items: always fully visible — access controlled by Permission Matrix in Settings
     }
@@ -1148,7 +1186,7 @@ function clients(selectedId) {
   const activeFilterBar = hasFilter ? `
     <div class="pl-active-filter-bar">
       <span>Showing ${filtered.length} of ${list.length}</span>
-      <button class="pl-clear-filter" onclick="window._clientSearch='';window._clientTypeFilter='all';window._clientStatusFilter='all';show('clients')">✕ Clear filters</button>
+      <button class="pl-clear-filter" onclick="window._clientSearch='';window._clientTypeFilter='all';window._clientStatusFilter='all';show('clients')">Clear filters</button>
     </div>` : '';
 
   // ── Client rows ───────────────────────────────────────────────────────────
@@ -1297,7 +1335,7 @@ window.showClientForm = function(clientIdToEdit) {
     <div class="cl-modal">
       <div class="cl-modal-header">
         <h3>${isEdit ? 'Edit Client' : 'Add Client'}</h3>
-        <button class="cl-modal-close" onclick="document.getElementById('clientFormModal').remove()">✕</button>
+        <button class="cl-modal-close" onclick="document.getElementById('clientFormModal').remove()">&times;</button>
       </div>
       <div class="cl-modal-body">
         <div class="cl-form-grid">
@@ -1511,7 +1549,7 @@ window.showAddProperty = function(clientId) {
     <div class="cl-modal" style="max-width:480px">
       <div class="cl-modal-header">
         <h3>Add Service Property</h3>
-        <button class="cl-modal-close" onclick="document.getElementById('addPropertyModal').remove()">✕</button>
+        <button class="cl-modal-close" onclick="document.getElementById('addPropertyModal').remove()">&times;</button>
       </div>
       <div class="cl-modal-body">
         <div class="cl-form-grid">
@@ -1980,7 +2018,7 @@ function lead(){
         + clientTypeBadge(c.type)
         + ' <strong>' + escapeHtml(c.name) + '</strong>'
         + (addr ? ' · ' + escapeHtml(addr) : '')
-        + ' <button type="button" class="lf-client-chip-clear" title="Clear selection" onclick="window._lfClearClient()">✕</button>'
+        + ' <button type="button" class="lf-client-chip-clear" title="Clear selection" onclick="window._lfClearClient()">&times;</button>'
         + '</span>';
     }
 
@@ -2218,7 +2256,7 @@ function opportunityDetail(id){
         ${!_isSold && !_isClosed ? `<button class="ld-action-sold" onclick="openMarkSoldModal('${o.id}')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
           Mark Sold
-        </button>` : _isSold ? `<span class="ld-sold-badge">✓ Sold</span>` : ''}
+        </button>` : _isSold ? `<span class="ld-sold-badge">Sold</span>` : ''}
         ${_isAdm||_isOM||_canDelLead ? `<div class="ld-overflow-wrap">
           <button class="ld-overflow-btn" onclick="toggleLeadOverflow(this)" title="More actions">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
@@ -2270,7 +2308,7 @@ function opportunityDetail(id){
       ${!_isSold && !_isClosed ? `<button class="ld-btn-sold" onclick="openMarkSoldModal('${o.id}')">
         <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".9"/></svg>
         Mark Sold
-      </button>` : _isSold ? `<span class="ld-sold-badge-large">✓ Sold</span>` : ''}
+      </button>` : _isSold ? `<span class="ld-sold-badge-large">Sold</span>` : ''}
       ${_isAdm||_isOM||_canDelLead ? `<div class="ld-overflow-wrap ld-overflow-hero">
         <button class="ld-btn-secondary" onclick="toggleLeadOverflow(this)">More</button>
         <div class="ld-overflow-menu" style="display:none">
@@ -2595,13 +2633,13 @@ function opportunityDetail(id){
           <label style="font-size:10px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Type of Follow-Up</label>
           <select id="railFollowType" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;background:var(--gw-surface-2,#FAFAF8);color:var(--gw-ink,#1F2A2B)">
             <option value="" ${!o.followUpType?'selected':''}>— Select type —</option>
-            <option value="call" ${o.followUpType==='call'?'selected':''}>📞 Phone call</option>
-            <option value="site_walk" ${o.followUpType==='site_walk'?'selected':''}>🏡 Site walk / visit</option>
-            <option value="proposal" ${o.followUpType==='proposal'?'selected':''}>📄 Deliver / review proposal</option>
-            <option value="email" ${o.followUpType==='email'?'selected':''}>✉️ Email follow-up</option>
-            <option value="sms" ${o.followUpType==='sms'?'selected':''}>💬 Text message</option>
-            <option value="decision" ${o.followUpType==='decision'?'selected':''}>✅ Decision / close meeting</option>
-            <option value="check_in" ${o.followUpType==='check_in'?'selected':''}>🔁 General check-in</option>
+            <option value="call" ${o.followUpType==='call'?'selected':''}>Phone call</option>
+            <option value="site_walk" ${o.followUpType==='site_walk'?'selected':''}>Site walk / visit</option>
+            <option value="proposal" ${o.followUpType==='proposal'?'selected':''}>Deliver / review proposal</option>
+            <option value="email" ${o.followUpType==='email'?'selected':''}>Email follow-up</option>
+            <option value="sms" ${o.followUpType==='sms'?'selected':''}>Text message</option>
+            <option value="decision" ${o.followUpType==='decision'?'selected':''}>Decision / close meeting</option>
+            <option value="check_in" ${o.followUpType==='check_in'?'selected':''}>General check-in</option>
             <option value="other" ${o.followUpType==='other'?'selected':''}>Other</option>
           </select>
         </div>
@@ -3664,7 +3702,7 @@ ${data.stages.map(s=>{
             <h2 style="margin:4px 0 2px;color:var(--ink)">${escapeHtml(s.title)}</h2>
             <p style="font-size:.84rem;color:var(--muted);margin:0">${escapeHtml(s.tagline)}</p>
           </div>
-          <button onclick="document.getElementById('stepDetailPanel').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.2rem;padding:4px 8px" title="Close">✕</button>
+          <button onclick="document.getElementById('stepDetailPanel').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.2rem;padding:4px 8px" title="Close">&times;</button>
         </div>
         <p style="font-size:.9rem;color:var(--ink);line-height:1.6">${escapeHtml(s.description||'')}</p>
         ${tappoHtml}${nlpHtml}${qHtml}
@@ -6645,7 +6683,7 @@ ${phaseRows}
         return `<div style="margin-bottom:12px;padding:10px;border-radius:8px;background:${f.correct?'rgba(16,185,129,.06)':'rgba(239,68,68,.06)'};border:1px solid ${f.correct?'rgba(16,185,129,.2)':'rgba(239,68,68,.2)'}">
           <div style="font-size:.83rem;font-weight:600;color:var(--ink);margin-bottom:6px">${escapeHtml(q.prompt||f.questionId)}</div>
           <div style="font-size:.78rem;color:${f.correct?'#2D7A55':'#8B3A2A'};margin-bottom:4px">
-            ${f.correct ? SVG_CHECK+' Correct' : '✗ Incorrect'}
+            ${f.correct ? SVG_CHECK+' Correct' : 'Incorrect'}
             &nbsp;·&nbsp; Rep answered: <em>${escapeHtml(repAnswerText)}</em>
             ${!f.correct ? `&nbsp;·&nbsp; Correct: <em>${escapeHtml(correctText)}</em>` : ''}
           </div>
@@ -6660,7 +6698,7 @@ ${phaseRows}
             <span style="font-size:.78rem;color:var(--muted)">Attempt ${idx+1} of ${attempts.length} · ${fmtDate(att.submitted_at)} · Score: <strong style="color:${att.passed?'#2D7A55':'#8B3A2A'}">${att.percent_score}%</strong> ${att.passed?'PASSED':'FAILED'}</span>
             ${idx > 0 ? `<button class="admin-action-btn" onclick="academyAdminShowAttempt('${repId}','${moduleId}',${idx-1})">← Older</button>` : ''}
             ${idx < attempts.length-1 ? `<button class="admin-action-btn" onclick="academyAdminShowAttempt('${repId}','${moduleId}',${idx+1})">Newer →</button>` : ''}
-            <button class="admin-action-btn" onclick="document.getElementById('quiz-drill-${repId}').style.display='none'">Close ✕</button>
+            <button class="admin-action-btn" onclick="document.getElementById('quiz-drill-${repId}').style.display='none'">Close</button>
           </div>
         </div>
         ${questionsHtml || '<p style="color:var(--muted);font-size:.83rem">No question detail available.</p>'}
@@ -7212,7 +7250,7 @@ function settings(){
             ↑ Recover My Leads to Cloud
           </button>
           <button class="secondary-btn" onclick="window._manualSync && window._manualSync()">
-            ⟳ Sync from Cloud Now
+            Sync from Cloud Now
           </button>
         </div>
         <div id="gw-recover-status" style="margin-top:10px;font-size:13px;display:none"></div>
@@ -7282,7 +7320,7 @@ function renderCommissionRulesPanel() {
 
   const updatedInfo = override
     ? `<span style="color:#8B6914;font-size:12px"> ${gwIcon('settings',16)} Custom rules active — last edited ${new Date(override.updatedAt||'').toLocaleDateString()} by ${override.updatedBy||'admin'}</span>`
-    : `<span style="color:#2D7A55;font-size:12px"> ✓ Using default Avalon commission structure</span>`;
+    : `<span style="color:#2D7A55;font-size:12px">Using default Avalon commission structure</span>`;
 
   const lTiers = active.landscape.tiers;
   const ot = active.maintenance.oneTime;
@@ -7435,7 +7473,7 @@ window._saveCommRules = function() {
     const rules = { version: 1, plans: { ryan: plan } };
     if (typeof window.saveCommissionRules === 'function') window.saveCommissionRules(rules);
     else localStorage.setItem('avalonCommissionRulesV1', JSON.stringify({ ...rules, updatedAt: new Date().toISOString() }));
-    if (window.showToast) window.showToast('Commission rules saved ✓');
+    if (window.showToast) window.showToast('Commission rules saved');
     settings(); // re-render to show "Custom rules active" label
   } catch(e) { if (window.showToast) window.showToast('Error saving rules: ' + e.message, 'error'); }
 };
@@ -7443,7 +7481,7 @@ window._saveCommRules = function() {
 window._resetCommRules = function() {
   if (!confirm('Reset commission rules to Avalon defaults? This removes any custom rates Tyler set.')) return;
   localStorage.removeItem('avalonCommissionRulesV1');
-  if (window.showToast) window.showToast('Rules reset to defaults ✓');
+  if (window.showToast) window.showToast('Rules reset to defaults');
   settings();
 };
 
@@ -7452,8 +7490,8 @@ window._runMigrationFromUI = function() {
   const result = window._migrateCommissionLifecycle ? window._migrateCommissionLifecycle() : null;
   const el = document.getElementById('comm-tool-result');
   if (!result) { if (el) el.textContent = 'Migration function not loaded — refresh and try again.'; return; }
-  if (el) el.innerHTML = `<span style="color:#2D7A55">✓ Migration complete: ${result.migrated} opps updated, ${result.skipped} already migrated.</span>`;
-  if (window.showToast) window.showToast(`Migration: ${result.migrated} updated, ${result.skipped} skipped ✓`);
+  if (el) el.innerHTML = `<span style="color:#2D7A55">Migration complete: ${result.migrated} opps updated, ${result.skipped} already migrated.</span>`;
+  if (window.showToast) window.showToast(`Migration: ${result.migrated} updated, ${result.skipped} skipped`);
 };
 
 window._runQAFromUI = function() {
@@ -9439,7 +9477,7 @@ window.openCallCompanion = function(oppId) {
 
   // ── Build questions HTML
   const qHtml = (stageData.questions || []).length
-    ? stageData.questions.map(q => `<div class="gw-cc-q">💬 ${escapeHtml(q)}</div>`).join('')
+    ? stageData.questions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
     : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
 
   // ── Build checklist HTML (inline, no wireChecks needed — handled below)
@@ -9463,8 +9501,8 @@ window.openCallCompanion = function(oppId) {
 
   // ── Red flags
   const rfHtml = (stageData.redFlags || []).length
-    ? `<div style="margin-top:12px"><div class="gw-cc-section-label" style="color:#C97B6A">🚩 Red Flags to Watch</div>
-        ${stageData.redFlags.map(f => `<div class="gw-cc-rf">⚠️ ${escapeHtml(f)}</div>`).join('')}</div>`
+    ? `<div style="margin-top:12px"><div class="gw-cc-section-label" style="color:#C97B6A">Red Flags to Watch</div>
+        ${stageData.redFlags.map(f => `<div class="gw-cc-rf">${escapeHtml(f)}</div>`).join('')}</div>`
     : '';
 
   // ── Steps tab
@@ -9473,7 +9511,7 @@ window.openCallCompanion = function(oppId) {
       <div style="font-size:10px;font-weight:800;color:${stepColors[i]||'#4D8A86'};text-transform:uppercase;letter-spacing:.05em">Step ${s.num}</div>
       <div style="font-size:12px;font-weight:700;color:var(--gds-ink,#1F2A2B);margin:2px 0">${escapeHtml(s.title)}</div>
       <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">${escapeHtml(s.tagline||'')}</div>
-      ${(s.cbrQuestions||[]).slice(0,3).map(q=>`<div class="gw-cc-q" style="margin-top:4px;font-size:11px">💬 ${escapeHtml(q)}</div>`).join('')}
+      ${(s.cbrQuestions||[]).slice(0,3).map(q=>`<div class="gw-cc-q" style="margin-top:4px;font-size:11px">${escapeHtml(q)}</div>`).join('')}
     </div>`).join('');
 
   const panel = document.createElement('div');
@@ -9489,7 +9527,7 @@ window.openCallCompanion = function(oppId) {
         <button type="button" onclick="document.getElementById('gw-call-companion').style.display='none'" title="Minimise"
           style="background:#ffffff18;border:none;color:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center">—</button>
         <button type="button" onclick="document.getElementById('gw-call-companion').remove()" title="Close"
-          style="background:#f8717130;border:none;color:#f87171;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center">✕</button>
+          style="background:#f8717130;border:none;color:#f87171;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center">&times;</button>
       </div>
     </div>
 
@@ -9498,7 +9536,7 @@ window.openCallCompanion = function(oppId) {
       ${['stage','steps','transcript'].map((t,i)=>`
         <button type="button" id="gw-cc-tab-${t}" onclick="gwCCTab('${t}')"
           style="flex:1;padding:9px 4px;font-size:11px;font-weight:700;border:none;cursor:pointer;border-bottom:2px solid ${i===0?'#2D7A55':'transparent'};color:${i===0?'#2D7A55':'#5E6E6F'};background:transparent;transition:all .15s">
-          ${t==='stage'?'🎯 Stage Guide':t==='steps'?'📋 All Steps':'🎙️ Transcript'}
+          ${t==='stage'?'Stage Guide':t==='steps'?'All Steps':'Transcript'}
         </button>`).join('')}
     </div>
 
@@ -9533,11 +9571,11 @@ window.openCallCompanion = function(oppId) {
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button type="button" onclick="gwCCSaveTranscript('${oppId}')"
           style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
-          💾 Save to Call Log
+          Save to Call Log
         </button>
         <button type="button" onclick="gwCCSummarise('${oppId}')"
           style="padding:7px 14px;background:#4D8A86;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
-          ✨ AI Next Steps
+          AI Next Steps
         </button>
         <button type="button" onclick="document.getElementById('gw-cc-transcript-ta').value=''"
           style="padding:7px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:8px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
@@ -9545,7 +9583,7 @@ window.openCallCompanion = function(oppId) {
         </button>
       </div>
       <div id="gw-cc-summary-out" style="display:none;margin-top:12px;padding:12px;background:#EAF1EE;border:1px solid #2D7A5530;border-radius:10px">
-        <div style="font-size:11px;font-weight:800;color:#1A4740;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">✨ AI Summary &amp; Next Steps</div>
+        <div style="font-size:11px;font-weight:800;color:#1A4740;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">AI Summary &amp; Next Steps</div>
         <div id="gw-cc-summary-text" style="font-size:12px;color:#1F2A2B;line-height:1.7;white-space:pre-wrap"></div>
         <div style="display:flex;gap:8px;margin-top:10px">
           <button type="button" onclick="gwCCSaveNote('${oppId}')"
@@ -9664,7 +9702,7 @@ window.openCallCompanion = function(oppId) {
       if (btn)   btn.style.background = '#C97B6A';
       if (dot)   { dot.style.background = '#f87171'; }
       if (label) label.textContent = 'Stop Recording';
-      window.showToast && window.showToast('🎙️ Recording started');
+      window.showToast && window.showToast('Recording started');
 
     } else {
       // Stop
@@ -9705,7 +9743,7 @@ window.openCallCompanion = function(oppId) {
       credentials: 'include',
       body: JSON.stringify({ type:'call', direction:'in', body: entry.body, ts })
     }).catch(() => {});
-    window.showToast && window.showToast('✅ Transcript saved to call log');
+    window.showToast && window.showToast('Transcript saved to call log');
   };
 
   // AI next-steps summary from transcript using AI Sales Assistant
@@ -9762,7 +9800,7 @@ ${transcript.slice(0, 3000)}`;
   window.gwCCSaveNote = function(oid) {
     const txt = document.getElementById('gw-cc-summary-text');
     if (!txt || !txt.textContent.trim()) return;
-    const noteBody = '📋 Call Summary\n\n' + txt.textContent.trim();
+    const noteBody = 'Call Summary\n\n' + txt.textContent.trim();
     const ts       = new Date().toISOString();
     const note     = { id: 'note_' + Date.now(), oppId: oid, body: noteBody, createdAt: ts };
     if (!state.notes) state.notes = [];
@@ -9776,7 +9814,7 @@ ${transcript.slice(0, 3000)}`;
       credentials: 'include',
       body: JSON.stringify({ body: noteBody })
     }).catch(() => {});
-    window.showToast && window.showToast('✅ Summary saved as note');
+    window.showToast && window.showToast('Summary saved as note');
   };
 };
 
@@ -9785,14 +9823,14 @@ function gwCCLocalSummary(transcript, opp) {
   const sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
   const summary   = sentences.slice(0, 3).join('. ') + '.';
   return [
-    '📋 SUMMARY',
+    'SUMMARY',
     summary || '(No summary available — add more transcript content)',
     '',
-    '✅ NEXT STEPS',
+    'NEXT STEPS',
     '• Review transcript and identify action items',
     '• Send follow-up email within 24 hours',
     '• Update lead stage and next follow-up date',
     '',
-    '💡 TIP: Connect the AI Sales Assistant for full AI-powered analysis.',
+    'TIP: Connect the AI Sales Assistant for full AI-powered analysis.',
   ].join('\n');
 }

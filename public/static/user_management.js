@@ -439,7 +439,7 @@ function umRenderUsers(container) {
 <div class="gw-modal-card" style="width:min(520px,100%);max-height:90vh;overflow-y:auto">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
     <h2 style="margin:0;font-size:18px">${isEdit ? 'Edit User' : 'Add New User'}</h2>
-    <button onclick="document.getElementById('um-user-modal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">✕</button>
+    <button onclick="document.getElementById('um-user-modal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
   </div>
 
   <div style="display:grid;gap:14px">
@@ -673,7 +673,7 @@ function umRenderUsers(container) {
       <h2 style="margin:0 0 4px;font-size:18px">Invite Team Member</h2>
       <p style="margin:0;font-size:13px;color:#6F7E6A">Send a magic-link invite so they can set their own password.</p>
     </div>
-    <button onclick="document.getElementById('um-invite-modal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">✕</button>
+    <button onclick="document.getElementById('um-invite-modal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
   </div>
 
   <div style="display:grid;gap:14px">
@@ -728,7 +728,7 @@ function umRenderUsers(container) {
     </div>
 
     <div style="background:#4D8A8610;border:1px solid #4D8A8630;border-radius:10px;padding:12px 14px">
-      <div style="font-size:12px;color:#4D8A86;font-weight:600;margin-bottom:4px">📧 How it works</div>
+      <div style="font-size:12px;color:#4D8A86;font-weight:600;margin-bottom:4px">How it works</div>
       <div style="font-size:12px;color:#5C6B58;line-height:1.6">
         We'll send them an email with a secure magic link. When they click it, they'll land on a setup page to confirm their name and create their own password. They'll be active and ready to log in immediately.
       </div>
@@ -857,7 +857,7 @@ function umUserRow(u, gc) {
       ${isPendingInvite
         ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">Not Active</span>`
         : umStatusPill(u.status)}
-      ${u.mustResetPin && !isPendingInvite ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">⚠ Pw Reset</span>` : ''}
+      ${u.mustResetPin && !isPendingInvite ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">Pw Reset</span>` : ''}
     </div>
     <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
       ${isPendingInvite
@@ -1315,7 +1315,7 @@ function umRenderMyGoogleConnection(container) {
     : `<p style="color:#6F7E6A;font-size:13px;margin:0 0 14px">Connect your personal Google account to use Gmail, Calendar, and Drive directly from the Sales Hub.</p>
        ${!clientId
          ? `<div style="font-size:13px;color:#8B6914;background:rgba(139,105,20,.09);border:1px solid rgba(139,105,20,.25);border-radius:8px;padding:12px">
-              ⚠ Google Client ID not configured. Ask your Admin to set it up in <strong>Integrations</strong>.
+              Google Client ID not configured. Ask your Admin to set it up in <strong>Integrations</strong>.
             </div>`
          : `<button class="primary-btn" onclick="window._umMyConnect()">Connect My Google Account</button>`
        }`
@@ -1355,7 +1355,7 @@ function umRenderSignatureEditor(container) {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
       Email Signature
     </h3>
-    <div id="um-sig-saved-badge" style="display:none;font-size:10px;font-weight:700;color:#2D7A55;background:#2D7A5515;border:1px solid #2D7A5540;border-radius:20px;padding:2px 9px">✓ Saved</div>
+    <div id="um-sig-saved-badge" style="display:none;font-size:10px;font-weight:700;color:#2D7A55;background:#2D7A5515;border:1px solid #2D7A5540;border-radius:20px;padding:2px 9px">Saved</div>
   </div>
   <p style="font-size:12px;color:#6F7E6A;margin:0 0 14px">
     This signature is automatically appended to every email you send from Groundwork.
@@ -1370,7 +1370,7 @@ function umRenderSignatureEditor(container) {
       style="padding:6px 14px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;
       background:${connected && (cachedGmailSig || cachedGmailSig==='') ? 'var(--gw-surface)' : 'transparent'};
       color:${connected ? 'var(--gw-ink,#1F2A2B)' : '#6F7E6A'}">
-      ${connected ? '✓ ' : ''}Gmail Sync
+      ${connected ? 'Connected: ' : ''}Gmail Sync
     </button>
     <button id="um-sig-tab-manual" onclick="umSigSwitchTab('manual')"
       style="padding:6px 14px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;
@@ -1391,7 +1391,7 @@ function umRenderSignatureEditor(container) {
       <span id="um-sig-fetch-status" style="font-size:11px;color:#6F7E6A"></span>
     </div>
     ${cachedGmailSig
-      ? `<div style="font-size:11px;color:#2D7A55;margin-bottom:8px">✓ Gmail signature fetched${cachedGmailSig ? '' : ' (empty — no signature set in Gmail)'}</div>`
+      ? `<div style="font-size:11px;color:#2D7A55;margin-bottom:8px">Gmail signature fetched${cachedGmailSig ? '' : ' (empty — no signature set in Gmail)'}</div>`
       : cachedGmailSig === ''
       ? `<div style="font-size:11px;color:#8B6914;margin-bottom:8px">ⓘ No signature found in Gmail — use Manual Editor below or set one in Gmail settings.</div>`
       : `<div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Click "Fetch from Gmail" to pull your current Gmail signature.</div>`
@@ -1489,13 +1489,13 @@ async function umFetchGmailSig() {
       umSaveUserGoogle(map);
     }
 
-    if (status) status.textContent = sig ? '✓ Fetched!' : 'No signature found in Gmail.';
+    if (status) status.textContent = sig ? 'Fetched!' : 'No signature found in Gmail.';
 
     // Re-render to show the preview
     const container = document.getElementById('um-sig-fetch-btn')?.closest('section')?.parentElement;
     if (container) umRenderSignatureEditor(container);
 
-    if (sig) umToast('Gmail signature fetched ✓', 'ok');
+    if (sig) umToast('Gmail signature fetched', 'ok');
     else umToast('No signature found in Gmail — use Manual Editor', 'warn');
   } catch(e) {
     if (status) status.textContent = 'Error: ' + e.message;
@@ -1535,7 +1535,7 @@ async function _umSaveSigToD1(rep, sig) {
         const cr = window.getCurrentRep();
         if (cr) cr.email_signature = sig;
       }
-      umToast('Signature saved ✓', 'ok');
+      umToast('Signature saved', 'ok');
       const badge = document.getElementById('um-sig-saved-badge');
       if (badge) { badge.style.display = 'inline-flex'; setTimeout(() => { badge.style.display = 'none'; }, 3000); }
       // Re-render to show active signature
@@ -1663,7 +1663,7 @@ async function umMyConnect() {
       };
       umSaveUserGoogle(map);
       umAddAuditEntry({ type: 'google_connected', userId: rep.id, userName: rep.name, by: rep.name });
-      const sigMsg = gmailSig ? ' (signature synced ✓)' : '';
+      const sigMsg = gmailSig ? ' (signature synced)' : '';
       umToast(`Google connected as ${googleEmail}${sigMsg}`);
 
       // Refresh whatever view is currently visible

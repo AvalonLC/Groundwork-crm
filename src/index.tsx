@@ -2785,9 +2785,13 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260628gw6">
-  <link rel="stylesheet" href="/static/styles.css?v=20260628gw6">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260628gw7">
+  <link rel="stylesheet" href="/static/premium.css?v=20260704gw8">
+  <link rel="stylesheet" href="/static/styles.css?v=20260704gw8">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw8">
+  <style>
+    /* Nav item SVG icon alignment */
+    .nav-item svg { vertical-align: middle; flex-shrink: 0; }
+  </style>
 </head>
 <body>
 <div id="sidebarScrim" class="sidebar-scrim"></div>
@@ -2808,10 +2812,16 @@ function getHtml(): string {
       <details class="nav-group tenant-nav" open>
         <summary class="nav-summary">Home</summary>
         <div class="nav-items">
-          <button class="nav-item active" data-view="today" onclick="show('today')">Today</button>
-          <button class="nav-item" data-view="myDashboard" onclick="show('myDashboard')">My Dashboard</button>
+          <button class="nav-item active" data-view="today" onclick="show('today')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+            Today
+          </button>
+          <button class="nav-item" data-view="myDashboard" onclick="show('myDashboard')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+            My Dashboard
+          </button>
           <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
             Time Tracker
           </button>
         </div>
@@ -2820,40 +2830,88 @@ function getHtml(): string {
       <details class="nav-group tenant-nav" open>
         <summary class="nav-summary">Pipeline</summary>
         <div class="nav-items">
-          <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">Pipeline</button>
-          <button class="nav-item" data-view="lead" onclick="show('lead')">Add Lead</button>
-          <button class="nav-item" data-view="clients" onclick="show('clients')">Clients &amp; Properties</button>
+          <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
+            Pipeline
+          </button>
+          <button class="nav-item" data-view="lead" onclick="show('lead')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/><path d="M11 1v4M13 3H9"/></svg>
+            Add Lead
+          </button>
+          <button class="nav-item" data-view="clients" onclick="show('clients')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4"/><circle cx="8" cy="5" r="3"/></svg>
+            Clients &amp; Properties
+          </button>
         </div>
       </details>
 
       <details class="nav-group tenant-nav">
         <summary class="nav-summary">Sales Toolkit</summary>
         <div class="nav-items">
-          <button class="nav-item" data-view="process" onclick="show('process')">Sales Process</button>
-          <button class="nav-item" data-view="forms" onclick="show('forms')">Forms &amp; Checklists</button>
-          <button class="nav-item" data-view="scripts" onclick="show('scripts')">Scripts</button>
-          <button class="nav-item" data-view="templates" onclick="show('templates')">Email Templates</button>
-          <button class="nav-item" data-view="objections" onclick="show('objections')">Objection Handling</button>
-          <button class="nav-item" data-view="calculator" onclick="show('calculator')">Pricing Tools</button>
-          <button class="nav-item" data-view="ai" onclick="show('ai')">AI Sales Assistant</button>
+          <button class="nav-item" data-view="process" onclick="show('process')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/></svg>
+            Sales Process
+          </button>
+          <button class="nav-item" data-view="forms" onclick="show('forms')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
+            Forms &amp; Checklists
+          </button>
+          <button class="nav-item" data-view="scripts" onclick="show('scripts')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v9a1 1 0 01-1 1H5l-3 2V3a1 1 0 011-1z"/></svg>
+            Scripts
+          </button>
+          <button class="nav-item" data-view="templates" onclick="show('templates')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
+            Email Templates
+          </button>
+          <button class="nav-item" data-view="objections" onclick="show('objections')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor"/></svg>
+            Objection Handling
+          </button>
+          <button class="nav-item" data-view="calculator" onclick="show('calculator')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1.5"/><path d="M5 4h6M5 7.5h2M9 7.5h2M5 10.5h2M9 10.5h2M5 13h2M9 13h2"/></svg>
+            Pricing Tools
+          </button>
+          <button class="nav-item" data-view="ai" onclick="show('ai')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
+            AI Sales Assistant
+          </button>
         </div>
       </details>
 
       <details class="nav-group tenant-nav">
         <summary class="nav-summary">Learning</summary>
         <div class="nav-items">
-          <button class="nav-item" data-view="academy" onclick="show('academy')">Sales Academy</button>
+          <button class="nav-item" data-view="academy" onclick="show('academy')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 6l7 4 7-4-7-4z"/><path d="M1 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>
+            Sales Academy
+          </button>
         </div>
       </details>
 
       <details class="nav-group tenant-nav">
         <summary class="nav-summary">Admin</summary>
         <div class="nav-items">
-          <button class="nav-item" data-view="manager" onclick="show('manager')">Manager Tools</button>
-          <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">Financial Data Hub</button>
-          <button class="nav-item" data-view="integrations" onclick="show('integrations')">Integrations</button>
-          <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">User Management</button>
-          <button class="nav-item" data-view="settings" onclick="show('settings')">Settings</button>
+          <button class="nav-item" data-view="manager" onclick="show('manager')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 12a6 6 0 00-12 0"/><circle cx="8" cy="6" r="3"/><path d="M3 9l-2 3M13 9l2 3"/></svg>
+            Manager Tools
+          </button>
+          <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
+            Financial Hub
+          </button>
+          <button class="nav-item" data-view="integrations" onclick="show('integrations')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="8" r="2.5"/><circle cx="12" cy="4" r="2.5"/><circle cx="12" cy="12" r="2.5"/><path d="M6.4 7.2l3.2-2.4M6.4 8.8l3.2 2.4"/></svg>
+            Integrations
+          </button>
+          <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.5 2.2-4 5-4s5 1.5 5 4"/><path d="M11 3c1.4.4 2.5 1.7 2.5 3s-1.1 2.6-2.5 3M12.5 12c1.3.3 2.5 1.1 2.5 2.5"/></svg>
+            User Management
+          </button>
+          <button class="nav-item" data-view="settings" onclick="show('settings')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
+            Settings
+          </button>
         </div>
       </details>
 
@@ -2948,7 +3006,7 @@ function getHtml(): string {
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260701gw16"></script>
+<script src="/static/app_premium.js?v=20260704gw17"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260701gw14"></script>

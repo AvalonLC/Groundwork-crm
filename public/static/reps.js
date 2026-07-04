@@ -983,15 +983,15 @@ function renderLoginScreen() {
     const el = document.getElementById('gw-sync-status');
     if (!el) return;
     if (state === 'syncing') {
-      el.innerHTML = `<span style="color:#6F7E6A;font-size:11px">⟳ Syncing…</span>`;
+      el.innerHTML = `<span style="color:#6F7E6A;font-size:11px">Syncing…</span>`;
       el.style.display = 'flex';
     } else if (state === 'ok') {
-      const msg = newCount > 0 ? `✓ ${newCount} new` : '✓ Up to date';
+      const msg = newCount > 0 ? `${newCount} new` : 'Up to date';
       el.innerHTML = `<span style="color:#2D7A55;font-size:11px">${msg}</span>`;
       el.style.display = 'flex';
       setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
     } else if (state === 'error') {
-      el.innerHTML = `<span style="color:#C97B6A;font-size:11px">⚠ Sync failed</span>`;
+      el.innerHTML = `<span style="color:#C97B6A;font-size:11px">Sync failed</span>`;
       el.style.display = 'flex';
       setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
     } else {
@@ -1133,7 +1133,7 @@ function renderLoginScreen() {
       if (loginEmailEl) loginEmailEl.value = email;
       const errLogin = document.getElementById('loginError');
       if (errLogin) {
-        errLogin.textContent = '✓ Password updated — sign in with your new password';
+        errLogin.textContent = 'Password updated — sign in with your new password';
         errLogin.style.color = '#7FC5BB';
         errLogin.style.display = 'block';
       }
@@ -1337,7 +1337,7 @@ function renderRepDashboard(viewEl, rep) {
     ${items.map(({ opp, result, lcStatus: s }) => {
       const capBadge = result.capApplied ? `<span style="font-size:9px;background:#C97B6A;color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px">CAPPED</span>` : '';
       const bonusEl = result.retentionBonus > 0
-        ? `<div style="font-size:10px;color:#2D7A55;margin-top:2px">${s === 'paid' ? '✓' : ''} ${fmtCurrency(result.retentionBonus)} retention bonus ${s === 'paid' ? 'earned' : 'after 90-day active'}</div>` : '';
+        ? `<div style="font-size:10px;color:#2D7A55;margin-top:2px">${s === 'paid' ? '' : ''} ${fmtCurrency(result.retentionBonus)} retention bonus ${s === 'paid' ? 'earned' : 'after 90-day active'}</div>` : '';
       // COMM-15: collection gate badge on payout cards
       const gateInfo = window.getCollectionGateInfo ? window.getCollectionGateInfo(opp, result) : null;
       const gateEl   = gateInfo && gateInfo.held
@@ -2098,7 +2098,7 @@ ${(()=>{
             <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
               ${!isApproved ? `
               <button onclick="event.stopPropagation();window._adminApproveComm('${o.id}')"
-                style="background:#2D7A55;border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">✓ Approve</button>
+                style="background:#2D7A55;border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Approve</button>
               <button onclick="event.stopPropagation();window._adminHoldComm('${o.id}')"
                 style="background:#7A5C10;border:none;color:#8B6914;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer">Hold</button>
               <button onclick="event.stopPropagation();window._adminRejectComm('${o.id}')"
@@ -2115,7 +2115,7 @@ ${(()=>{
       }
 
       let html = commQueue.length === 0
-        ? '<p style="color:#2D7A55;font-size:13px">No commissions pending approval. ✓</p>'
+        ? '<p style="color:#2D7A55;font-size:13px">No commissions pending approval.</p>'
         : commQueue.map(o => queueCard(o, false)).join('');
       if (commQueue.length > 0) html += `<p style="font-size:11px;color:#6F7E6A;margin-top:4px">Approve → Approved. Mark Paid → closes lifecycle. Hold/Reject for review.</p>`;
       if (commApproved.length > 0) html += `
@@ -2362,7 +2362,7 @@ window._adminApproveComm = function(oppId) {
     const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
     const updated = touchCommissionLifecycle(oppId, { newStatus: 'approved', actor, note: 'Approved via commission queue' });
     if (updated) {
-      if (window.showToast) window.showToast('Commission approved ✓');
+      if (window.showToast) window.showToast('Commission approved');
       repDashboard();
     }
   } catch(e) { if (window.showToast) window.showToast('Error approving commission', 'error'); }
@@ -2373,7 +2373,7 @@ window._adminMarkCommPaid = function(oppId) {
     const actor = window.getCurrentRep ? (window.getCurrentRep()?.id || 'admin') : 'admin';
     const updated = touchCommissionLifecycle(oppId, { newStatus: 'paid', actor, note: 'Marked paid by admin' });
     if (updated) {
-      if (window.showToast) window.showToast('Commission marked as paid ✓');
+      if (window.showToast) window.showToast('Commission marked as paid');
       repDashboard();
     }
   } catch(e) { if (window.showToast) window.showToast('Error updating commission', 'error'); }
@@ -2578,7 +2578,7 @@ window._setCommFlag = function(flagName, value) {
 // Reset all flags to defaults
 window._resetCommFlags = function() {
   localStorage.removeItem('avalonCommissionFeatureFlagsV1');
-  if (window.showToast) window.showToast('Commission feature flags reset to defaults ✓');
+  if (window.showToast) window.showToast('Commission feature flags reset to defaults');
 };
 
 // ── COMM-18: QA Validation ────────────────────────────────────────────────────

@@ -1,111 +1,261 @@
-/* ═══════════════════════════════════════════════════════════════════════════════
-   GROUNDWORK — Premium SaaS Design System v1.0
-   2026-06-28 · Product-wide visual redesign
+/* ═══════════════════════════════════════════════════════════════════════════
+   GROUNDWORK — Unified Design System v2.0
+   2026-07-04 · Phase 1b: Full token rewrite + component elevation
    
    Load order: LAST — this file wins all specificity battles intentionally.
-   Approach: Override with precision. Preserve function, elevate form.
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   Strategy: Single --gw-* namespace. Primitive scale → semantic tokens.
+             --gds-* aliases keep legacy code working without modification.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ─── 1. DESIGN TOKENS ────────────────────────────────────────────────────── */
+/* ─── 1. PRIMITIVE PALETTE ───────────────────────────────────────────────── */
 :root {
-  /* Primary palette */
-  --gds-pine:        #204A43;   /* primary green — sidebar, CTAs              */
-  --gds-pine-deep:   #183B35;   /* pine pressed/hover depth                   */
-  --gds-pine-mid:    #2C5F57;   /* pine mid — active states, accents          */
-  --gds-pine-light:  #366158;   /* pine hover on dark bg                      */
-  --gds-teal:        #4D8A86;   /* interactive accent — links, focus, tags    */
-  --gds-teal-soft:   #EAF3F2;   /* teal tint surface                          */
-  --gds-clay:        #B8744F;   /* warm accent — sparingly, CTAs alt          */
-  --gds-emerald:     #2D7A55;   /* success, positive, connected               */
 
-  /* Neutrals */
-  --gds-ink:         #1F2A2B;   /* primary text                               */
-  --gds-ink-2:       #2D3E3F;   /* secondary text                             */
-  --gds-muted:       #5E6E6F;   /* tertiary text / metadata                   */
-  --gds-subtle:      #8C9E9E;   /* placeholder / disabled text                */
-  --gds-amber:       #7A5C10;   /* warning / caution                          */
-  --gds-rose:        #7A2E20;   /* danger / destructive                       */
+  /* Pine — primary brand green */
+  --gw-pine-900: #0D2B22;
+  --gw-pine-800: #1A4740;
+  --gw-pine-700: #1E5448;
+  --gw-pine-600: #2D7A55;
+  --gw-pine-500: #3D9B6E;
+  --gw-pine-400: #5BB585;
+  --gw-pine-300: #8FD1AE;
+  --gw-pine-200: #C4E8D6;
+  --gw-pine-100: #EAF4EE;
+  --gw-pine-50:  #F3FAF6;
 
-  /* Surfaces */
-  --gds-bg:          #F4F1EC;   /* warm off-white page background             */
-  --gds-bg-2:        #EDE9E2;   /* slightly deeper warm bg for contrast areas */
-  --gds-surface:     #FFFFFF;   /* card / panel — clean white                 */
-  --gds-surface-2:   #FAFAF8;   /* alt row / secondary surface                */
-  --gds-surface-3:   #F2EFE9;   /* hover surface / tertiary                  */
+  /* Bark — warm neutral scale */
+  --gw-bark-900: #1C1712;
+  --gw-bark-800: #2E2620;
+  --gw-bark-700: #4A3F38;
+  --gw-bark-600: #5E5249;
+  --gw-bark-500: #6E6059;
+  --gw-bark-400: #8C7F78;
+  --gw-bark-300: #B5ABA4;
+  --gw-bark-200: #D8D2CC;
+  --gw-bark-100: #EDEAE6;
+  --gw-bark-50:  #F7F5F2;
+  --gw-bark-25:  #FAFAF8;
+
+  /* Sand — warm mid-tone accents */
+  --gw-sand-700: #7A5C10;
+  --gw-sand-600: #8B6914;
+  --gw-sand-400: #C49A40;
+  --gw-sand-200: #E8D49C;
+  --gw-sand-100: #FAF3DC;
+  --gw-sand-50:  #FDFAEF;
+
+  /* Clay — warm accent */
+  --gw-clay-700: #7A2E20;
+  --gw-clay-600: #8B3826;
+  --gw-clay-400: #C4614A;
+  --gw-clay-200: #EDCCC5;
+  --gw-clay-100: #FAE8E4;
+  --gw-clay-50:  #FDF4F2;
+
+  /* Teal — interactive accent */
+  --gw-teal-700: #215E5A;
+  --gw-teal-600: #2D7874;
+  --gw-teal-500: #4D8A86;
+  --gw-teal-200: #B4D4D2;
+  --gw-teal-100: #EAF3F2;
+  --gw-teal-50:  #F2FAF9;
+
+  /* ─── SEMANTIC TOKENS ─────────────────────────────────────────────────── */
+
+  /* Page & surface backgrounds */
+  --gw-bg-page:        var(--gw-bark-50);      /* #F7F5F2 warm off-white page  */
+  --gw-bg-surface:     var(--gw-bark-25);      /* #FAFAF8 card / panel         */
+  --gw-bg-surface-2:   #FFFFFF;                /* clean white                  */
+  --gw-bg-subtle:      var(--gw-pine-100);     /* #EAF4EE tint surface         */
+  --gw-bg-raised:      var(--gw-bark-100);     /* #EDEAE6 slightly raised      */
 
   /* Borders */
-  --gds-line:        #E0DDD5;   /* default border                             */
-  --gds-line-2:      #CCC9C0;   /* stronger divider                           */
-  --gds-line-3:      #D4D0C7;   /* medium divider                             */
+  --gw-border:         var(--gw-bark-100);     /* #EDEAE6 default border       */
+  --gw-border-strong:  var(--gw-bark-200);     /* #D8D2CC stronger divider     */
+  --gw-border-subtle:  var(--gw-bark-50);      /* very subtle                  */
+  --gw-border-focus:   var(--gw-pine-600);     /* #2D7A55 focus ring           */
+  --gw-border-active:  var(--gw-teal-500);     /* interactive active border    */
 
-  /* Shadows */
-  --gds-shadow-xs:   0 1px 3px rgba(31,42,43,.05);
-  --gds-shadow-sm:   0 3px 10px rgba(31,42,43,.07);
-  --gds-shadow-md:   0 8px 24px rgba(31,42,43,.09);
-  --gds-shadow-lg:   0 20px 52px rgba(31,42,43,.12);
-  --gds-shadow-card: 0 1px 3px rgba(31,42,43,.06), 0 4px 12px rgba(31,42,43,.05);
+  /* Text */
+  --gw-text-primary:   var(--gw-bark-900);     /* #1C1712 body text            */
+  --gw-text-secondary: var(--gw-bark-700);     /* #4A3F38 secondary text       */
+  --gw-text-muted:     var(--gw-bark-500);     /* #6E6059 metadata             */
+  --gw-text-subtle:    var(--gw-bark-400);     /* #8C7F78 placeholder          */
+  --gw-text-disabled:  var(--gw-bark-300);     /* #B5ABA4 disabled             */
+  --gw-text-inverse:   #FFFFFF;
 
-  /* Radius */
-  --gds-r-xs: 5px;
-  --gds-r-sm: 8px;
-  --gds-r-md: 12px;
-  --gds-r-lg: 16px;
-  --gds-r-xl: 22px;
+  /* Action / brand */
+  --gw-action:         var(--gw-pine-600);     /* #2D7A55 primary CTA          */
+  --gw-action-hover:   var(--gw-pine-700);     /* #1E5448 CTA hover            */
+  --gw-action-deep:    var(--gw-pine-800);     /* #1A4740 CTA pressed          */
+  --gw-action-light:   var(--gw-pine-100);     /* tint surface for CTAs        */
+  --gw-action-tint:    var(--gw-pine-50);      /* very light tint              */
+
+  /* Semantic status */
+  --gw-success:        var(--gw-pine-600);     /* #2D7A55                      */
+  --gw-success-bg:     var(--gw-pine-100);
+  --gw-success-border: var(--gw-pine-200);
+  --gw-warning:        var(--gw-sand-700);     /* #7A5C10                      */
+  --gw-warning-bg:     var(--gw-sand-100);
+  --gw-warning-border: var(--gw-sand-200);
+  --gw-danger:         var(--gw-clay-700);     /* #7A2E20                      */
+  --gw-danger-bg:      var(--gw-clay-100);
+  --gw-danger-border:  var(--gw-clay-200);
+  --gw-info:           var(--gw-teal-500);     /* #4D8A86                      */
+  --gw-info-bg:        var(--gw-teal-100);
+  --gw-info-border:    var(--gw-teal-200);
+
+  /* Shadows — 5-level elevation */
+  --gw-shadow-xs:   0 1px 2px rgba(28,23,18,.04), 0 1px 4px rgba(28,23,18,.04);
+  --gw-shadow-sm:   0 1px 4px rgba(28,23,18,.05), 0 4px 12px rgba(28,23,18,.06);
+  --gw-shadow-md:   0 4px 16px rgba(28,23,18,.08), 0 8px 28px rgba(28,23,18,.06);
+  --gw-shadow-lg:   0 12px 40px rgba(28,23,18,.12), 0 24px 64px rgba(28,23,18,.08);
+  --gw-shadow-xl:   0 24px 72px rgba(28,23,18,.16);
+  --gw-shadow-card: 0 1px 3px rgba(28,23,18,.05), 0 4px 12px rgba(28,23,18,.05);
+
+  /* Radius — consistent 8px grid */
+  --gw-r-xs: 4px;
+  --gw-r-sm: 8px;
+  --gw-r-md: 12px;
+  --gw-r-lg: 16px;
+  --gw-r-xl: 20px;
+  --gw-r-2xl: 28px;
+
+  /* Spacing grid (8px base) */
+  --gw-sp-1: 4px;
+  --gw-sp-2: 8px;
+  --gw-sp-3: 12px;
+  --gw-sp-4: 16px;
+  --gw-sp-5: 20px;
+  --gw-sp-6: 24px;
+  --gw-sp-8: 32px;
 
   /* Typography */
-  --gds-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --gw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  /* Sidebar */
-  --gds-sidebar-w:   264px;
-  --gds-sidebar-bg:  #204A43;
-  --gds-topbar-h:    56px;
+  /* Layout */
+  --gw-sidebar-w:   264px;
+  --gw-topbar-h:    56px;
+  --gw-sidebar-bg:  var(--gw-pine-800);        /* #1A4740 rich deep green      */
+
+  /* ─── LEGACY ALIASES — keep all --gds-* references working ──────────── */
+  /* Primary palette */
+  --gds-pine:        var(--gw-pine-800);
+  --gds-pine-deep:   var(--gw-pine-900);
+  --gds-pine-mid:    var(--gw-pine-700);
+  --gds-pine-light:  var(--gw-pine-600);
+  --gds-teal:        var(--gw-teal-500);
+  --gds-teal-soft:   var(--gw-teal-100);
+  --gds-clay:        var(--gw-clay-400);
+  --gds-emerald:     var(--gw-pine-600);
+
+  /* Neutrals */
+  --gds-ink:         var(--gw-text-primary);
+  --gds-ink-2:       var(--gw-text-secondary);
+  --gds-muted:       var(--gw-text-muted);
+  --gds-subtle:      var(--gw-text-subtle);
+  --gds-amber:       var(--gw-warning);
+  --gds-rose:        var(--gw-danger);
+
+  /* Surfaces */
+  --gds-bg:          var(--gw-bg-page);
+  --gds-bg-2:        var(--gw-bark-100);
+  --gds-surface:     var(--gw-bg-surface-2);
+  --gds-surface-2:   var(--gw-bg-surface);
+  --gds-surface-3:   var(--gw-bark-50);
+
+  /* Borders */
+  --gds-line:        var(--gw-border);
+  --gds-line-2:      var(--gw-border-strong);
+  --gds-line-3:      var(--gw-bark-200);
+
+  /* Shadows */
+  --gds-shadow-xs:   var(--gw-shadow-xs);
+  --gds-shadow-sm:   var(--gw-shadow-sm);
+  --gds-shadow-md:   var(--gw-shadow-md);
+  --gds-shadow-lg:   var(--gw-shadow-lg);
+  --gds-shadow-card: var(--gw-shadow-card);
+
+  /* Radius */
+  --gds-r-xs: var(--gw-r-xs);
+  --gds-r-sm: var(--gw-r-sm);
+  --gds-r-md: var(--gw-r-md);
+  --gds-r-lg: var(--gw-r-lg);
+  --gds-r-xl: var(--gw-r-xl);
+
+  /* Typography / Layout */
+  --gds-font:       var(--gw-font);
+  --gds-sidebar-w:  var(--gw-sidebar-w);
+  --gds-sidebar-bg: var(--gw-sidebar-bg);
+  --gds-topbar-h:   var(--gw-topbar-h);
+
+  /* premium.css --gw-* bridge aliases (old pine/ink/muted tokens) */
+  --gw-pine:       var(--gw-pine-800);
+  --gw-pine-deep:  var(--gw-pine-900);
+  --gw-pine-light: var(--gw-pine-600);
+  --gw-pine-muted: var(--gw-pine-600);
+  --gw-emerald:    var(--gw-pine-600);
+  --gw-sky:        var(--gw-teal-500);
+  --gw-ink:        var(--gw-text-primary);
+  --gw-muted:      var(--gw-text-muted);
+  --gw-subtle:     var(--gw-text-subtle);
+  --gw-line:       var(--gw-border);
+  --gw-bg:         var(--gw-bg-page);
+  --gw-surface:    var(--gw-bg-surface-2);
+  --gw-surface-2:  var(--gw-bg-surface);
+  --gw-surface-3:  var(--gw-bark-50);
+
+  /* time_tracker.js used --gw-text — define it */
+  --gw-text: var(--gw-text-primary);
 }
 
-/* ─── 2. GLOBAL RESET UPGRADES ──────────────────────────────────────────── */
+/* ─── 2. GLOBAL RESET ────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
 body {
-  font-family: var(--gds-font) !important;
-  background: var(--gds-bg) !important;
-  color: var(--gds-ink) !important;
+  font-family: var(--gw-font) !important;
+  background: var(--gw-bg-page) !important;
+  color: var(--gw-text-primary) !important;
   margin: 0;
   line-height: 1.5;
   font-size: 14px;
 }
 
-/* Remove all emoji-font fallbacks from heading/body text */
+/* Remove emoji-font fallbacks */
 h1, h2, h3, h4, h5, h6, p, span, div, button, label {
-  font-family: var(--gds-font);
+  font-family: var(--gw-font);
 }
 
 /* Typography scale */
-h1 { font-size: clamp(22px, 3vw, 32px); font-weight: 800; letter-spacing: -.03em; line-height: 1.15; margin: 0 0 8px; color: var(--gds-ink); }
-h2 { font-size: 20px; font-weight: 750; letter-spacing: -.025em; line-height: 1.25; margin: 0 0 10px; color: var(--gds-ink); }
-h3 { font-size: 16px; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; margin: 0 0 8px; color: var(--gds-ink); }
-h4 { font-size: 14px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 6px; color: var(--gds-ink); }
+h1 { font-size: clamp(22px, 3vw, 32px); font-weight: 800; letter-spacing: -.03em; line-height: 1.15; margin: 0 0 8px; color: var(--gw-text-primary); }
+h2 { font-size: 20px; font-weight: 750; letter-spacing: -.025em; line-height: 1.25; margin: 0 0 10px; color: var(--gw-text-primary); }
+h3 { font-size: 16px; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; margin: 0 0 8px; color: var(--gw-text-primary); }
+h4 { font-size: 14px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 6px; color: var(--gw-text-primary); }
 p  { line-height: 1.6; margin: 0 0 10px; }
 
-/* ─── 3. APP SHELL ──────────────────────────────────────────────────────── */
+/* ─── 3. APP SHELL ───────────────────────────────────────────────────────── */
 .app-shell {
   display: grid !important;
-  grid-template-columns: var(--gds-sidebar-w) 1fr !important;
+  grid-template-columns: var(--gw-sidebar-w) 1fr !important;
   min-height: 100vh;
 }
 
 .main {
-  background: var(--gds-bg) !important;
+  background: var(--gw-bg-page) !important;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   min-width: 0;
 }
 
-/* ─── 4. SIDEBAR ────────────────────────────────────────────────────────── */
+/* ─── 4. SIDEBAR ─────────────────────────────────────────────────────────── */
 .sidebar {
-  background: var(--gds-sidebar-bg) !important;
-  width: var(--gds-sidebar-w) !important;
+  background: var(--gw-sidebar-bg) !important;
+  width: var(--gw-sidebar-w) !important;
   padding: 0 !important;
   display: flex !important;
   flex-direction: column !important;
@@ -149,7 +299,6 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   object-fit: cover;
   border-radius: 8px;
   display: block;
-  /* Remove any brightness filter that makes logo invisible */
   filter: none !important;
 }
 
@@ -167,9 +316,7 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   margin-top: 1px !important;
   letter-spacing: .01em !important;
 }
-.brand-kicker {
-  display: none !important; /* remove decorative kicker text */
-}
+.brand-kicker { display: none !important; }
 
 /* Nav container */
 .nav {
@@ -186,12 +333,12 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   letter-spacing: .1em !important;
   text-transform: uppercase !important;
   color: rgba(255,255,255,.3) !important;
-  border-radius: 4px !important;
+  border-radius: var(--gw-r-xs) !important;
   user-select: none;
   cursor: default !important;
 }
 .nav-summary::-webkit-details-marker { display: none; }
-.nav-summary::after { display: none !important; } /* remove chevron */
+.nav-summary::after { display: none !important; }
 .nav-summary:hover { color: rgba(255,255,255,.42) !important; background: transparent !important; }
 .nav-group[open] > .nav-summary { color: rgba(255,255,255,.3) !important; }
 
@@ -217,31 +364,34 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   letter-spacing: -.01em;
   position: relative !important;
 }
+.nav-item svg {
+  flex-shrink: 0;
+  opacity: .6;
+  transition: opacity .14s;
+}
 .nav-item:hover {
-  color: rgba(255,255,255,.85) !important;
+  color: rgba(255,255,255,.88) !important;
   background: rgba(255,255,255,.07) !important;
   border-left-color: rgba(255,255,255,.15) !important;
 }
+.nav-item:hover svg { opacity: .85; }
 .nav-item.active {
   color: #FFFFFF !important;
   background: rgba(255,255,255,.12) !important;
-  border-left: 2px solid #7EC8A4 !important;
+  border-left: 2px solid var(--gw-pine-300) !important;
   font-weight: 650 !important;
 }
-.nav-item.active::before { display: none !important; } /* remove old pseudo bar */
+.nav-item.active svg { opacity: 1; }
+.nav-item.active::before { display: none !important; }
 
-/* AI Assistant — subtle purple tint */
-.nav-item[data-view="ai"] {
-  color: rgba(147, 131, 220, .75) !important;
-}
-.nav-item[data-view="ai"]:hover {
-  color: rgba(167, 151, 240, .95) !important;
-}
+/* AI Assistant tint */
+.nav-item[data-view="ai"] { color: rgba(147,131,220,.75) !important; }
+.nav-item[data-view="ai"]:hover { color: rgba(167,151,240,.95) !important; }
 
 /* Nav group spacing */
 .nav-group { margin-bottom: 4px !important; }
 
-/* ─── 5. SIDEBAR FOOTER / USER CARD ─────────────────────────────────────── */
+/* ─── 5. SIDEBAR FOOTER / USER CARD ──────────────────────────────────────── */
 .sidebar-footer {
   margin-top: auto !important;
   padding: 12px 12px !important;
@@ -259,7 +409,7 @@ p  { line-height: 1.6; margin: 0 0 10px; }
 #sidebarAvatarInitials {
   width: 32px !important;
   height: 32px !important;
-  border-radius: 8px !important;
+  border-radius: var(--gw-r-sm) !important;
   background: rgba(255,255,255,.14) !important;
   color: rgba(255,255,255,.88) !important;
   font-size: 12px !important;
@@ -286,9 +436,9 @@ p  { line-height: 1.6; margin: 0 0 10px; }
 
 /* ─── 6. TOPBAR ──────────────────────────────────────────────────────────── */
 .topbar {
-  height: var(--gds-topbar-h) !important;
-  background: var(--gds-surface) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
+  height: var(--gw-topbar-h) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
   padding: 0 24px !important;
   display: flex !important;
   align-items: center !important;
@@ -296,25 +446,26 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   position: sticky !important;
   top: 0 !important;
   z-index: 15 !important;
-  box-shadow: 0 1px 0 rgba(31,42,43,.06) !important;
+  box-shadow: 0 1px 0 rgba(28,23,18,.05) !important;
 }
 
-/* Search bar — constrained, refined */
+/* Search bar */
 .search-wrap {
   flex: 0 1 380px !important;
   max-width: 380px !important;
   min-width: 180px !important;
   position: relative !important;
+  margin-right: auto;
 }
 .search-wrap input,
 #searchInput {
   width: 100% !important;
-  background: var(--gds-surface-2) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-sm) !important;
+  background: var(--gw-bg-surface) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-sm) !important;
   padding: 7px 12px 7px 34px !important;
   font-size: 13px !important;
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
   transition: border-color .15s, box-shadow .15s !important;
   outline: none !important;
   height: 34px !important;
@@ -322,57 +473,49 @@ p  { line-height: 1.6; margin: 0 0 10px; }
 }
 .search-wrap input:focus,
 #searchInput:focus {
-  background: var(--gds-surface) !important;
-  border-color: var(--gds-teal) !important;
-  box-shadow: 0 0 0 3px rgba(77,138,134,.14) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border-color: var(--gw-border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(45,122,85,.12) !important;
 }
-.search-wrap input::placeholder { color: var(--gds-subtle) !important; }
+.search-wrap input::placeholder { color: var(--gw-text-subtle) !important; }
 .search-wrap::before {
   left: 11px !important;
   width: 13px !important;
   height: 13px !important;
 }
-
-/* Topbar spacer */
-.topbar .search-wrap + * { margin-left: auto; }
-/* Override any flex:1 on search that made it expand to full width */
 .topbar > .search-wrap { flex: 0 1 380px !important; }
-/* Push right-side controls to far right */
-.topbar > *:not(.menu-btn):not(.search-wrap):first-of-type { margin-left: auto; }
-/* Actually: use a spacer approach */
-.search-wrap { margin-right: auto; }
 
 /* New button */
 .topbar-new-btn {
-  background: var(--gds-pine) !important;
+  background: var(--gw-action) !important;
   color: #fff !important;
   border: none !important;
-  border-radius: var(--gds-r-sm) !important;
+  border-radius: var(--gw-r-sm) !important;
   padding: 7px 13px !important;
   font-size: 12.5px !important;
   font-weight: 650 !important;
   display: flex !important;
   align-items: center !important;
   gap: 5px !important;
-  transition: background .14s !important;
-  box-shadow: 0 1px 4px rgba(32,74,67,.2) !important;
+  transition: background .14s, box-shadow .14s !important;
+  box-shadow: 0 1px 4px rgba(45,122,85,.22) !important;
   white-space: nowrap;
   height: 32px;
 }
 .topbar-new-btn:hover {
-  background: var(--gds-pine-deep) !important;
-  box-shadow: 0 3px 10px rgba(32,74,67,.28) !important;
+  background: var(--gw-action-hover) !important;
+  box-shadow: 0 3px 10px rgba(45,122,85,.3) !important;
 }
 
 /* Settings button */
 .topbar-settings {
   background: transparent !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-sm) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-sm) !important;
   padding: 6px 12px !important;
   font-size: 12.5px !important;
   font-weight: 600 !important;
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
   display: flex !important;
   align-items: center !important;
   gap: 5px !important;
@@ -381,36 +524,36 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   transition: background .12s, color .12s !important;
 }
 .topbar-settings:hover {
-  background: var(--gds-surface-2) !important;
-  color: var(--gds-ink) !important;
-  border-color: var(--gds-line-2) !important;
+  background: var(--gw-bg-surface) !important;
+  color: var(--gw-text-primary) !important;
+  border-color: var(--gw-border-strong) !important;
 }
 
 /* Dropdown */
 .topbar-new-dropdown {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
-  box-shadow: var(--gds-shadow-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
+  box-shadow: var(--gw-shadow-md) !important;
   padding: 6px !important;
 }
 .tnd-item {
   font-size: 13px !important;
   font-weight: 500 !important;
-  color: var(--gds-ink) !important;
-  border-radius: var(--gds-r-xs) !important;
+  color: var(--gw-text-primary) !important;
+  border-radius: var(--gw-r-xs) !important;
   padding: 8px 10px !important;
   gap: 8px !important;
 }
 .tnd-item:hover {
-  background: var(--gds-surface-3) !important;
-  color: var(--gds-pine) !important;
+  background: var(--gw-bg-raised) !important;
+  color: var(--gw-action) !important;
 }
 .tnd-section-label {
   font-size: 9.5px !important;
   font-weight: 700 !important;
   letter-spacing: .09em !important;
-  color: var(--gds-subtle) !important;
+  color: var(--gw-text-subtle) !important;
   padding: 4px 10px 6px !important;
 }
 
@@ -423,8 +566,6 @@ p  { line-height: 1.6; margin: 0 0 10px; }
 }
 
 /* ─── 8. PAGE HEADER PATTERN ─────────────────────────────────────────────── */
-/* Constrain h1 inside the main view — the monolithic CSS has 58px max which
-   makes page titles overflow the top edge at wide viewports */
 .view h1 {
   font-size: clamp(22px, 2.8vw, 32px) !important;
   line-height: 1.15 !important;
@@ -441,12 +582,12 @@ h1.pl-title,
   font-size: 22px !important;
   font-weight: 800 !important;
   letter-spacing: -.03em !important;
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
   line-height: 1.2 !important;
 }
 .pl-subtitle {
   font-size: 13px !important;
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
   font-weight: 400 !important;
   margin-top: 2px !important;
   letter-spacing: 0 !important;
@@ -456,53 +597,53 @@ h1.pl-title,
   font-weight: 700 !important;
   letter-spacing: .1em !important;
   text-transform: uppercase !important;
-  color: var(--gds-teal) !important;
+  color: var(--gw-teal-500) !important;
   margin-bottom: 6px !important;
 }
 
 /* ─── 9. CARD SYSTEM ─────────────────────────────────────────────────────── */
 .card {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-card) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-card) !important;
   padding: 20px !important;
   overflow: hidden;
 }
 .card.clickable:hover {
-  box-shadow: var(--gds-shadow-md) !important;
-  border-color: var(--gds-line-2) !important;
+  box-shadow: var(--gw-shadow-md) !important;
+  border-color: var(--gw-border-strong) !important;
   transform: translateY(-1px) !important;
 }
 .app-card {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-card) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-card) !important;
   overflow: hidden;
 }
 .app-card::before {
   content: '' !important;
   display: block !important;
   height: 3px !important;
-  background: linear-gradient(90deg, var(--gds-pine), var(--gds-teal)) !important;
-  opacity: .7 !important;
+  background: linear-gradient(90deg, var(--gw-pine-800), var(--gw-teal-500)) !important;
+  opacity: .65 !important;
 }
 .app-card h2, .card h2.today-h2 {
   font-size: 14px !important;
   font-weight: 700 !important;
   letter-spacing: -.015em !important;
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
   margin: 0 0 14px !important;
 }
 
 /* ─── 10. BUTTONS ────────────────────────────────────────────────────────── */
 /* Primary */
 .primary-btn, .gw-btn-primary {
-  background: var(--gds-pine) !important;
+  background: var(--gw-action) !important;
   color: #ffffff !important;
   border: none !important;
-  border-radius: var(--gds-r-sm) !important;
+  border-radius: var(--gw-r-sm) !important;
   padding: 8px 16px !important;
   font-size: 13px !important;
   font-weight: 650 !important;
@@ -512,23 +653,25 @@ h1.pl-title,
   cursor: pointer !important;
   white-space: nowrap;
   transition: background .14s, box-shadow .14s, transform .1s !important;
-  box-shadow: 0 1px 4px rgba(32,74,67,.2) !important;
+  box-shadow: 0 1px 4px rgba(45,122,85,.22) !important;
   line-height: 1 !important;
   letter-spacing: -.01em !important;
   min-height: 34px !important;
+  background-image: none !important;
 }
 .primary-btn:hover, .gw-btn-primary:hover {
-  background: var(--gds-pine-deep) !important;
-  box-shadow: 0 4px 14px rgba(32,74,67,.28) !important;
+  background: var(--gw-action-hover) !important;
+  box-shadow: 0 4px 14px rgba(45,122,85,.3) !important;
   transform: translateY(-1px) !important;
   filter: none !important;
 }
 .primary-btn:active, .gw-btn-primary:active {
   transform: translateY(0) !important;
   box-shadow: none !important;
+  background: var(--gw-action-deep) !important;
 }
 .primary-btn:focus-visible, .gw-btn-primary:focus-visible {
-  outline: 3px solid rgba(32,74,67,.4) !important;
+  outline: 3px solid rgba(45,122,85,.4) !important;
   outline-offset: 2px !important;
 }
 .primary-btn:disabled, .primary-btn[disabled],
@@ -540,10 +683,10 @@ h1.pl-title,
 
 /* Secondary */
 .secondary-btn, .gw-btn-secondary {
-  background: var(--gds-surface) !important;
-  color: var(--gds-ink) !important;
-  border: 1px solid var(--gds-line-2) !important;
-  border-radius: var(--gds-r-sm) !important;
+  background: var(--gw-bg-surface-2) !important;
+  color: var(--gw-text-primary) !important;
+  border: 1px solid var(--gw-border-strong) !important;
+  border-radius: var(--gw-r-sm) !important;
   padding: 8px 15px !important;
   font-size: 13px !important;
   font-weight: 600 !important;
@@ -555,11 +698,11 @@ h1.pl-title,
   transition: background .12s, border-color .12s, transform .1s !important;
   min-height: 34px !important;
   letter-spacing: -.01em !important;
-  box-shadow: var(--gds-shadow-xs) !important;
+  box-shadow: var(--gw-shadow-xs) !important;
 }
 .secondary-btn:hover, .gw-btn-secondary:hover {
-  background: var(--gds-surface-3) !important;
-  border-color: var(--gds-line-3) !important;
+  background: var(--gw-bg-raised) !important;
+  border-color: var(--gw-bark-300) !important;
 }
 .secondary-btn:active { transform: translateY(0) !important; }
 .secondary-btn:disabled, .secondary-btn[disabled] {
@@ -571,9 +714,9 @@ h1.pl-title,
 /* Danger */
 .danger-btn, .gw-btn-danger, .gw-btn-danger-ghost {
   background: transparent !important;
-  color: #7A2E20 !important;
+  color: var(--gw-danger) !important;
   border: 1px solid rgba(122,46,32,.25) !important;
-  border-radius: var(--gds-r-sm) !important;
+  border-radius: var(--gw-r-sm) !important;
   padding: 8px 15px !important;
   font-size: 13px !important;
   font-weight: 600 !important;
@@ -585,12 +728,33 @@ h1.pl-title,
   min-height: 34px !important;
 }
 .danger-btn:hover, .gw-btn-danger:hover, .gw-btn-danger-ghost:hover {
-  background: rgba(122,46,32,.06) !important;
+  background: var(--gw-danger-bg) !important;
   border-color: rgba(122,46,32,.4) !important;
 }
 .danger-btn:focus-visible {
   outline: 3px solid rgba(122,46,32,.3) !important;
   outline-offset: 2px !important;
+}
+
+/* Ghost (no border) */
+.gw-btn-ghost {
+  background: transparent !important;
+  color: var(--gw-text-muted) !important;
+  border: none !important;
+  border-radius: var(--gw-r-sm) !important;
+  padding: 7px 10px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  transition: background .12s, color .12s !important;
+  min-height: 32px !important;
+}
+.gw-btn-ghost:hover {
+  background: var(--gw-bg-raised) !important;
+  color: var(--gw-text-primary) !important;
 }
 
 /* Small modifier */
@@ -599,6 +763,13 @@ h1.pl-title,
   padding: 6px 12px !important;
   font-size: 12px !important;
   min-height: 30px !important;
+}
+
+/* Kill gradient buttons from legacy system */
+.primary-btn,
+.tab.active,
+.lead-tab-active {
+  background-image: none !important;
 }
 
 /* ─── 11. FORM CONTROLS ──────────────────────────────────────────────────── */
@@ -612,12 +783,12 @@ input[type=url],
 input[type=password],
 select,
 textarea {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line-2) !important;
-  border-radius: var(--gds-r-sm) !important;
-  color: var(--gds-ink) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border-strong) !important;
+  border-radius: var(--gw-r-sm) !important;
+  color: var(--gw-text-primary) !important;
   font-size: 13px !important;
-  font-family: var(--gds-font) !important;
+  font-family: var(--gw-font) !important;
   padding: 8px 12px !important;
   outline: none !important;
   transition: border-color .15s, box-shadow .15s !important;
@@ -625,23 +796,23 @@ textarea {
   box-sizing: border-box;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--gds-teal) !important;
-  box-shadow: 0 0 0 3px rgba(77,138,134,.14) !important;
+  border-color: var(--gw-border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(45,122,85,.12) !important;
 }
 input::placeholder, textarea::placeholder {
-  color: var(--gds-subtle) !important;
+  color: var(--gw-text-subtle) !important;
 }
 label {
   font-size: 12px !important;
   font-weight: 600 !important;
-  color: var(--gds-ink-2) !important;
+  color: var(--gw-text-secondary) !important;
   display: block;
   margin-bottom: 5px;
 }
 .form label span {
   font-size: 12px !important;
   font-weight: 600 !important;
-  color: var(--gds-ink-2) !important;
+  color: var(--gw-text-secondary) !important;
 }
 
 /* ─── 12. STATUS CHIPS / BADGES ─────────────────────────────────────────── */
@@ -658,14 +829,14 @@ label {
   white-space: nowrap;
   letter-spacing: -.005em !important;
 }
-.status-chip.sold    { background: #EAF1EE !important; color: #1A4740 !important; border-color: #C0DCCB !important; }
-.status-chip.active  { background: #EAF3F2 !important; color: #215E5A !important; border-color: #B4D4D2 !important; }
-.status-chip.overdue { background: #FAE8E4 !important; color: #7A2E20 !important; border-color: #EEC3B9 !important; }
-.status-chip.pending { background: #FAF6E8 !important; color: #7A5C10 !important; border-color: #EAD99C !important; }
-.status-chip.lost    { background: var(--gds-surface-3) !important; color: var(--gds-muted) !important; border-color: var(--gds-line-2) !important; }
+.status-chip.sold    { background: var(--gw-pine-100)  !important; color: var(--gw-pine-800)  !important; border-color: var(--gw-pine-200)  !important; }
+.status-chip.active  { background: var(--gw-teal-100)  !important; color: var(--gw-teal-700)  !important; border-color: var(--gw-teal-200)  !important; }
+.status-chip.overdue { background: var(--gw-clay-100)  !important; color: var(--gw-clay-700)  !important; border-color: var(--gw-clay-200)  !important; }
+.status-chip.pending { background: var(--gw-sand-100)  !important; color: var(--gw-sand-700)  !important; border-color: var(--gw-sand-200)  !important; }
+.status-chip.lost    { background: var(--gw-bark-50)   !important; color: var(--gw-text-muted) !important; border-color: var(--gw-border-strong) !important; }
 .badge {
-  background: var(--gds-teal-soft) !important;
-  color: var(--gds-pine) !important;
+  background: var(--gw-teal-100) !important;
+  color: var(--gw-pine-800) !important;
   border-color: rgba(77,138,134,.2) !important;
   border-radius: 5px !important;
 }
@@ -675,11 +846,11 @@ label {
   position: fixed !important;
   right: 20px !important;
   bottom: 20px !important;
-  background: var(--gds-ink) !important;
-  color: #F4F1EC !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bark-900) !important;
+  color: var(--gw-bark-50) !important;
+  border-radius: var(--gw-r-md) !important;
   padding: 11px 18px !important;
-  box-shadow: var(--gds-shadow-lg) !important;
+  box-shadow: var(--gw-shadow-lg) !important;
   font-size: 13px !important;
   font-weight: 550 !important;
   z-index: 9999 !important;
@@ -687,51 +858,78 @@ label {
   letter-spacing: -.01em !important;
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(255,255,255,.06) !important;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,.07) !important;
   transition: opacity .2s, transform .2s;
 }
-/* hidden attribute must win over display:flex */
-.toast[hidden] {
-  display: none !important;
+/* Success variant */
+.toast.toast-success {
+  background: var(--gw-pine-900) !important;
+  border-left: 3px solid var(--gw-pine-400) !important;
 }
+/* Error variant */
+.toast.toast-error {
+  background: var(--gw-clay-700) !important;
+  border-left: 3px solid var(--gw-clay-400) !important;
+}
+/* Warning variant */
+.toast.toast-warning {
+  background: var(--gw-sand-700) !important;
+  border-left: 3px solid var(--gw-sand-400) !important;
+}
+/* Info variant */
+.toast.toast-info {
+  background: var(--gw-teal-700, #1A5C6A) !important;
+  border-left: 3px solid var(--gw-teal-400, #4DB8C8) !important;
+}
+/* Toast icon container */
+.toast-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* hidden attribute wins over display:flex */
+.toast[hidden] { display: none !important; }
 
 /* ─── 14. STAT TILES ─────────────────────────────────────────────────────── */
 .stat, .kpi-card, .gw-kpi-card, .dash-tile {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
   padding: 18px 20px !important;
-  box-shadow: var(--gds-shadow-card) !important;
+  box-shadow: var(--gw-shadow-card) !important;
   position: relative !important;
   overflow: hidden;
 }
 .stat::before, .stat::after { display: none !important; }
-.stat span { font-size: 11px !important; font-weight: 700 !important; color: var(--gds-muted) !important; text-transform: uppercase !important; letter-spacing: .08em !important; display: block !important; margin-bottom: 6px !important; }
-.stat strong { font-size: 28px !important; font-weight: 900 !important; letter-spacing: -.04em !important; color: var(--gds-ink) !important; line-height: 1 !important; display: block !important; }
-.stat.bad strong { color: #7A2E20 !important; }
-.dash-tile strong { font-size: 24px !important; font-weight: 800 !important; color: var(--gds-ink) !important; }
-.dash-tile span { font-size: 11px !important; color: var(--gds-muted) !important; text-transform: uppercase !important; letter-spacing: .07em !important; }
+.stat span { font-size: 11px !important; font-weight: 700 !important; color: var(--gw-text-muted) !important; text-transform: uppercase !important; letter-spacing: .08em !important; display: block !important; margin-bottom: 6px !important; }
+.stat strong { font-size: 28px !important; font-weight: 900 !important; letter-spacing: -.04em !important; color: var(--gw-text-primary) !important; line-height: 1 !important; display: block !important; }
+.stat.bad strong { color: var(--gw-danger) !important; }
+.dash-tile strong { font-size: 24px !important; font-weight: 800 !important; color: var(--gw-text-primary) !important; }
+.dash-tile span { font-size: 11px !important; color: var(--gw-text-muted) !important; text-transform: uppercase !important; letter-spacing: .07em !important; }
 
-/* Dashboard KPI cards — light theme (override dark) */
+/* Dashboard KPI cards */
 .kpi-card, .gw-kpi-card {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
 }
-.kpi-card .kpi-label { color: var(--gds-muted) !important; }
-.kpi-card .kpi-value { color: var(--gds-ink) !important; font-size: 26px !important; }
-.kpi-card .kpi-value.green  { color: var(--gds-emerald) !important; }
-.kpi-card .kpi-value.red    { color: #7A2E20 !important; }
-.kpi-card .kpi-value.cyan   { color: var(--gds-teal) !important; }
-.kpi-card .kpi-value.amber  { color: var(--gds-amber) !important; }
-.kpi-card .kpi-sub { color: var(--gds-muted) !important; }
-.kpi-card:hover { border-color: var(--gds-line-2) !important; box-shadow: var(--gds-shadow-sm) !important; }
+.kpi-card .kpi-label { color: var(--gw-text-muted) !important; }
+.kpi-card .kpi-value { color: var(--gw-text-primary) !important; font-size: 26px !important; }
+.kpi-card .kpi-value.green  { color: var(--gw-success) !important; }
+.kpi-card .kpi-value.red    { color: var(--gw-danger) !important; }
+.kpi-card .kpi-value.cyan   { color: var(--gw-info) !important; }
+.kpi-card .kpi-value.amber  { color: var(--gw-warning) !important; }
+.kpi-card .kpi-sub { color: var(--gw-text-muted) !important; }
+.kpi-card:hover { border-color: var(--gw-border-strong) !important; box-shadow: var(--gw-shadow-sm) !important; }
 
 /* ─── 15. EMPTY STATE COMPONENTS ─────────────────────────────────────────── */
 .empty-state {
-  background: var(--gds-surface) !important;
-  border: 1.5px dashed var(--gds-line-2) !important;
-  border-radius: var(--gds-r-xl) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1.5px dashed var(--gw-border-strong) !important;
+  border-radius: var(--gw-r-xl) !important;
   padding: 48px 28px !important;
   text-align: center !important;
   display: flex !important;
@@ -741,27 +939,27 @@ label {
   box-shadow: none !important;
 }
 .empty-state .empty-icon {
-  font-size: 0 !important; /* hide emoji icons */
+  font-size: 0 !important;
   width: 48px !important;
   height: 48px !important;
-  background: var(--gds-surface-3) !important;
-  border-radius: 12px !important;
+  background: var(--gw-bg-raised) !important;
+  border-radius: var(--gw-r-md) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   margin: 0 auto 16px !important;
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
 }
 .empty-state .empty-icon svg { width: 22px !important; height: 22px !important; }
 .empty-state .empty-title {
   font-size: 16px !important;
   font-weight: 700 !important;
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
   margin-bottom: 6px !important;
   letter-spacing: -.02em !important;
 }
 .empty-state .empty-body {
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
   font-size: 13.5px !important;
   max-width: 300px !important;
   line-height: 1.6 !important;
@@ -769,31 +967,31 @@ label {
 }
 .empty-state .empty-cta { margin-top: 20px !important; }
 
-/* ─── 16. TABLES ──────────────────────────────────────────────────────────── */
+/* ─── 16. TABLES ─────────────────────────────────────────────────────────── */
 .gw-data-table, table {
   border-collapse: collapse !important;
   width: 100% !important;
   font-size: 13px !important;
 }
 .gw-data-table th, table th {
-  background: var(--gds-surface-2) !important;
-  color: var(--gds-muted) !important;
+  background: var(--gw-bg-surface) !important;
+  color: var(--gw-text-muted) !important;
   font-size: 10.5px !important;
   font-weight: 700 !important;
   letter-spacing: .07em !important;
   text-transform: uppercase !important;
   padding: 10px 14px !important;
-  border-bottom: 1px solid var(--gds-line) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
   white-space: nowrap;
 }
 .gw-data-table td, table td {
   padding: 11px 14px !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-  color: var(--gds-ink) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+  color: var(--gw-text-primary) !important;
   vertical-align: middle !important;
 }
 .gw-table-row:hover td, .gw-data-table tr:hover td, table tbody tr:hover td {
-  background: var(--gds-surface-2) !important;
+  background: var(--gw-bg-surface) !important;
 }
 
 /* ─── 17. SECTION HEADS ──────────────────────────────────────────────────── */
@@ -804,18 +1002,17 @@ label {
   gap: 12px !important;
   margin-bottom: 16px !important;
   padding-bottom: 12px !important;
-  border-bottom: 1px solid var(--gds-line) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
 }
 .section-head h2 {
   font-size: 14px !important;
   font-weight: 700 !important;
   letter-spacing: -.015em !important;
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
   margin: 0 !important;
 }
 
 /* ─── 18. PIPELINE / KANBAN ──────────────────────────────────────────────── */
-/* Kanban view — preserve the flex layout from Section 37 */
 .kanban {
   display: flex !important;
   flex-direction: row !important;
@@ -827,11 +1024,11 @@ label {
 .kanban-col {
   flex: 0 0 300px !important;
   min-width: 0;
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
   padding: 14px !important;
-  box-shadow: var(--gds-shadow-xs) !important;
+  box-shadow: var(--gw-shadow-xs) !important;
 }
 .kanban-col h3 {
   display: flex !important;
@@ -841,7 +1038,7 @@ label {
   font-weight: 700 !important;
   letter-spacing: .07em !important;
   text-transform: uppercase !important;
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
   margin: 0 0 12px !important;
   white-space: nowrap !important;
   overflow: hidden !important;
@@ -851,11 +1048,11 @@ label {
 
 /* Opp cards inside kanban */
 .opp-card {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
   padding: 12px 14px 12px 15px !important;
-  box-shadow: var(--gds-shadow-xs) !important;
+  box-shadow: var(--gw-shadow-xs) !important;
   margin-bottom: 8px !important;
   cursor: pointer;
   transition: box-shadow .14s, border-color .14s, transform .12s !important;
@@ -863,14 +1060,14 @@ label {
   overflow: hidden !important;
 }
 .opp-card:hover {
-  box-shadow: var(--gds-shadow-md) !important;
-  border-color: var(--gds-line-2) !important;
+  box-shadow: var(--gw-shadow-md) !important;
+  border-color: var(--gw-border-strong) !important;
   transform: translateY(-1px) !important;
 }
 .opp-card h3 {
   font-size: 13px !important;
   font-weight: 650 !important;
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
   margin: 0 0 4px !important;
   letter-spacing: -.01em !important;
   display: -webkit-box !important;
@@ -879,7 +1076,7 @@ label {
   overflow: hidden !important;
 }
 .opp-card p, .opp-card .muted {
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
   font-size: 12px !important;
 }
 
@@ -892,68 +1089,66 @@ label {
   gap: 12px;
   margin-bottom: 20px;
 }
-/* Pipeline toolbar refinement */
 .pl-toolbar {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-xs) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-xs) !important;
   padding: 8px 12px !important;
   gap: 8px !important;
 }
 
 /* ─── 20. MINI ROWS (Today page) ─────────────────────────────────────────── */
 .mini-row {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
   margin-bottom: 6px !important;
   padding: 11px 14px !important;
 }
 .mini-row:hover {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line-2) !important;
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border-strong) !important;
 }
-.mini-row strong { color: var(--gds-ink) !important; font-size: 13px !important; font-weight: 650 !important; }
-.mini-row em     { color: var(--gds-muted) !important; font-size: 12px !important; }
+.mini-row strong { color: var(--gw-text-primary) !important; font-size: 13px !important; font-weight: 650 !important; }
+.mini-row em     { color: var(--gw-text-muted) !important; font-size: 12px !important; }
 
 /* ─── 21. CHECK ITEMS ────────────────────────────────────────────────────── */
 .check-item {
-  border-bottom: 1px solid var(--gds-line) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
   padding: 10px 4px !important;
   transition: background .1s !important;
 }
-.check-item:hover { background: var(--gds-surface-2) !important; }
-.check-item input { accent-color: var(--gds-pine) !important; }
+.check-item:hover { background: var(--gw-bg-surface) !important; }
+.check-item input { accent-color: var(--gw-action) !important; }
 
 /* ─── 22. MODALS ─────────────────────────────────────────────────────────── */
 .sold-modal, .gw-modal-card {
-  background: var(--gds-surface) !important;
-  border-radius: var(--gds-r-xl) !important;
-  box-shadow: var(--gds-shadow-lg) !important;
-  border: 1px solid var(--gds-line) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border-radius: var(--gw-r-xl) !important;
+  box-shadow: var(--gw-shadow-lg) !important;
+  border: 1px solid var(--gw-border) !important;
 }
-.sold-modal h2 { color: var(--gds-ink) !important; font-weight: 800 !important; letter-spacing: -.03em !important; }
+.sold-modal h2 { color: var(--gw-text-primary) !important; font-weight: 800 !important; letter-spacing: -.03em !important; }
 .sold-modal-backdrop {
-  background: rgba(31,42,43,.55) !important;
+  background: rgba(28,23,18,.55) !important;
   backdrop-filter: blur(2px) !important;
 }
 
 /* ─── 23. HERO SECTION ───────────────────────────────────────────────────── */
 .hero {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-xl) !important;
-  box-shadow: var(--gds-shadow-sm) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-xl) !important;
+  box-shadow: var(--gw-shadow-sm) !important;
   overflow: hidden;
 }
 .hero::before, .hero::after { display: none !important; }
 
-/* Hero panel (dark card inside hero) */
 .hero-panel {
-  background: var(--gds-pine) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-md) !important;
+  background: var(--gw-pine-800) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-md) !important;
 }
 .hero-panel::after { opacity: .1 !important; }
 .hero-panel h3 { color: #fff !important; }
@@ -961,9 +1156,9 @@ label {
 
 /* ─── 24. SCRIPT BOX ─────────────────────────────────────────────────────── */
 .script-box {
-  background: var(--gds-surface-2) !important;
-  border-left: 4px solid var(--gds-teal) !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bg-surface) !important;
+  border-left: 4px solid var(--gw-teal-500) !important;
+  border-radius: var(--gw-r-md) !important;
   padding: 16px 18px !important;
   font-size: 14px !important;
   line-height: 1.65 !important;
@@ -973,7 +1168,7 @@ label {
 .tabs {
   display: flex !important;
   gap: 4px !important;
-  border-bottom: 2px solid var(--gds-line) !important;
+  border-bottom: 2px solid var(--gw-border) !important;
   margin: 0 0 20px !important;
   padding: 0 !important;
   flex-wrap: wrap !important;
@@ -981,7 +1176,7 @@ label {
 .tab {
   border: none !important;
   background: transparent !important;
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
   border-radius: 0 !important;
   padding: 9px 14px !important;
   font-weight: 600 !important;
@@ -991,241 +1186,234 @@ label {
   border-bottom: 2px solid transparent !important;
   margin-bottom: -2px !important;
 }
-.tab:hover { color: var(--gds-ink) !important; }
+.tab:hover { color: var(--gw-text-primary) !important; }
 .tab.active {
   background: transparent !important;
-  color: var(--gds-pine) !important;
-  border-bottom-color: var(--gds-pine) !important;
+  color: var(--gw-action) !important;
+  border-bottom-color: var(--gw-action) !important;
   font-weight: 700 !important;
+  background-image: none !important;
 }
 
 /* Lead tab bar */
 .lead-tab-bar {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
   padding: 4px !important;
 }
 .lead-tab {
-  color: var(--gds-muted) !important;
-  border-radius: var(--gds-r-sm) !important;
+  color: var(--gw-text-muted) !important;
+  border-radius: var(--gw-r-sm) !important;
   font-size: 12.5px !important;
   font-weight: 550 !important;
   padding: 7px 14px !important;
   gap: 6px !important;
 }
-.lead-tab:hover { color: var(--gds-ink) !important; background: var(--gds-surface-2) !important; }
+.lead-tab:hover { color: var(--gw-text-primary) !important; background: var(--gw-bg-surface) !important; }
 .lead-tab-active {
-  background: var(--gds-pine) !important;
+  background: var(--gw-action) !important;
   color: #fff !important;
-  box-shadow: 0 2px 8px rgba(32,74,67,.25) !important;
+  box-shadow: 0 2px 8px rgba(45,122,85,.25) !important;
+  background-image: none !important;
 }
-.lead-tab-active:hover { color: #fff !important; background: var(--gds-pine) !important; }
+.lead-tab-active:hover { color: #fff !important; background: var(--gw-action) !important; }
 
 /* ─── 26. INTEGRATIONS PANELS ────────────────────────────────────────────── */
 .gw-int-panel {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-card) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-card) !important;
 }
 .gw-info-strip {
-  background: var(--gds-surface-2) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bg-surface) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
 }
 .int-list-row {
-  background: var(--gds-surface-2) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-sm) !important;
+  background: var(--gw-bg-surface) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-sm) !important;
 }
-.int-list-row:hover { background: var(--gds-surface-3) !important; }
-.int-list-row-title { color: var(--gds-ink) !important; }
-.int-list-row-meta  { color: var(--gds-muted) !important; }
-.int-list-row-link  { color: var(--gds-teal) !important; border-color: var(--gds-line) !important; }
-.int-list-row-link:hover { background: var(--gds-teal-soft) !important; }
+.int-list-row:hover { background: var(--gw-bg-raised) !important; }
+.int-list-row-title { color: var(--gw-text-primary) !important; }
+.int-list-row-meta  { color: var(--gw-text-muted) !important; }
+.int-list-row-link  { color: var(--gw-teal-500) !important; border-color: var(--gw-border) !important; }
+.int-list-row-link:hover { background: var(--gw-teal-100) !important; }
 
 /* ─── 27. REVENUE / FINANCIAL PANELS ─────────────────────────────────────── */
-/* Override dark-only surfaces for financial hub */
 .rev-editor-table, .div-entry-table {
   font-size: 13px !important;
 }
 .rev-editor-table thead tr,
 .div-entry-table th {
-  background: var(--gds-surface-2) !important;
-  color: var(--gds-muted) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
+  background: var(--gw-bg-surface) !important;
+  color: var(--gw-text-muted) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
 }
 .rev-editor-table tbody tr:hover,
 .div-entry-table tbody tr:hover {
-  background: var(--gds-surface-2) !important;
+  background: var(--gw-bg-surface) !important;
 }
 .rev-editor-table td,
 .div-entry-table td {
-  color: var(--gds-ink) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
+  color: var(--gw-text-primary) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
 }
 .rev-editor-input {
-  background: var(--gds-surface-2) !important;
-  border: 1px solid var(--gds-line-2) !important;
-  color: var(--gds-ink) !important;
+  background: var(--gw-bg-surface) !important;
+  border: 1px solid var(--gw-border-strong) !important;
+  color: var(--gw-text-primary) !important;
 }
-.rev-editor-input:focus { border-color: var(--gds-teal) !important; }
-.rev-variance-pos { color: var(--gds-emerald) !important; }
-.rev-variance-neg { color: #7A2E20 !important; }
-.fin-tab-btn { border-radius: var(--gds-r-sm) !important; }
+.rev-editor-input:focus { border-color: var(--gw-border-focus) !important; }
+.rev-variance-pos { color: var(--gw-success) !important; }
+.rev-variance-neg { color: var(--gw-danger) !important; }
+.fin-tab-btn { border-radius: var(--gw-r-sm) !important; }
 .fin-tab-btn.active {
-  background: var(--gds-pine) !important;
-  border-color: var(--gds-pine) !important;
+  background: var(--gw-action) !important;
+  border-color: var(--gw-action) !important;
   color: #fff !important;
 }
 .fin-tab-btn:not(.active) {
-  background: var(--gds-surface-2) !important;
-  border: 1px solid var(--gds-line) !important;
-  color: var(--gds-muted) !important;
+  background: var(--gw-bg-surface) !important;
+  border: 1px solid var(--gw-border) !important;
+  color: var(--gw-text-muted) !important;
 }
 .fin-tab-btn:hover:not(.active) {
-  background: var(--gds-surface-3) !important;
-  color: var(--gds-ink) !important;
-  border-color: var(--gds-line-2) !important;
+  background: var(--gw-bg-raised) !important;
+  color: var(--gw-text-primary) !important;
+  border-color: var(--gw-border-strong) !important;
 }
-
-/* P&L drop zone */
 .pnl-drop-zone {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line-2) !important;
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border-strong) !important;
 }
-.pnl-drop-zone:hover { border-color: var(--gds-teal) !important; }
+.pnl-drop-zone:hover { border-color: var(--gw-teal-500) !important; }
 
 /* ─── 28. COMMISSION PANELS ──────────────────────────────────────────────── */
 .gw-comm-panel, .gw-sim-panel {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-card) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-card) !important;
 }
 .gw-sim-header {
-  border-bottom: 1px solid var(--gds-line) !important;
-  background: var(--gds-surface-2) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+  background: var(--gw-bg-surface) !important;
   padding: 14px 18px !important;
 }
-
-/* Commission tables on white background — fix dark-themed text */
 .gw-comm-panel [style*="color:#E8E4D9"],
 .gw-comm-panel [style*="color: #E8E4D9"],
 .gw-sim-panel  [style*="color:#E8E4D9"],
 .gw-sim-panel  [style*="color: #E8E4D9"] {
-  color: var(--gds-ink) !important;
+  color: var(--gw-text-primary) !important;
 }
 .gw-comm-panel [style*="color:#6F7E6A"],
 .gw-sim-panel  [style*="color:#6F7E6A"] {
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
 }
 .gw-comm-panel [style*="color:#5C6B58"],
 .gw-sim-panel  [style*="color:#5C6B58"] {
-  color: var(--gds-muted) !important;
+  color: var(--gw-text-muted) !important;
 }
-/* Commission panel background overrides — was dark surface */
 .gw-comm-panel [style*="background:#113931"],
 .gw-sim-panel  [style*="background:#113931"] {
-  background: var(--gds-surface-2) !important;
+  background: var(--gw-bg-surface) !important;
 }
 .gw-comm-panel [style*="background:var(--gw-surface-3)"],
 .gw-sim-panel  [style*="background:var(--gw-surface-3)"] {
-  background: var(--gds-surface-3) !important;
+  background: var(--gw-bark-50) !important;
 }
 
 /* ─── 29. USER MANAGEMENT ────────────────────────────────────────────────── */
 .gw-um-user-row {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
   margin-bottom: 8px !important;
   overflow: hidden !important;
 }
 .gw-um-role-card {
-  background: var(--gds-surface) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-xs) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-xs) !important;
 }
 .gw-um-tab-nav {
-  background: var(--gds-surface-2) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
+  background: var(--gw-bg-surface) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
 }
 .gw-um-form-card {
-  background: var(--gds-surface) !important;
-  border-radius: var(--gds-r-xl) !important;
-  border: 1px solid var(--gds-line) !important;
-  box-shadow: var(--gds-shadow-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border-radius: var(--gw-r-xl) !important;
+  border: 1px solid var(--gw-border) !important;
+  box-shadow: var(--gw-shadow-md) !important;
 }
 
 /* ─── 30. PILL / TAG PATTERNS ────────────────────────────────────────────── */
 .pill {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line-2) !important;
-  border-radius: var(--gds-r-sm) !important;
-  color: var(--gds-ink-2) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border-strong) !important;
+  border-radius: var(--gw-r-sm) !important;
+  color: var(--gw-text-secondary) !important;
   font-weight: 600 !important;
   padding: 5px 10px !important;
   font-size: 12px !important;
 }
 
-/* ─── 31. TIMELINE (lead detail) ─────────────────────────────────────────── */
-.timeline::before { background: var(--gds-line-2) !important; }
+/* ─── 31. TIMELINE ───────────────────────────────────────────────────────── */
+.timeline::before { background: var(--gw-border-strong) !important; }
 
 /* ─── 32. SPINNER ────────────────────────────────────────────────────────── */
 .spinner {
-  border-color: var(--gds-line-2) !important;
-  border-top-color: var(--gds-teal) !important;
+  border-color: var(--gw-border-strong) !important;
+  border-top-color: var(--gw-teal-500) !important;
 }
 
 /* ─── 33. TOOL LIST ──────────────────────────────────────────────────────── */
 .tool-list button {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
-  color: var(--gds-pine) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
+  color: var(--gw-action) !important;
   font-weight: 600 !important;
-  box-shadow: var(--gds-shadow-xs) !important;
+  box-shadow: var(--gw-shadow-xs) !important;
 }
 .tool-list button:hover {
-  background: var(--gds-surface-3) !important;
-  border-color: var(--gds-line-2) !important;
+  background: var(--gw-bg-raised) !important;
+  border-color: var(--gw-border-strong) !important;
 }
 
-/* ─── 34. COMMS BOARD (dark surface — intentional exception) ─────────────── */
-/* Comms board stays dark — it's intentionally immersive */
+/* ─── 34. COMMS BOARD (intentional dark surface) ─────────────────────────── */
 .comms-board { /* keep dark */ }
 
 /* ─── 35. SEARCH RESULTS ─────────────────────────────────────────────────── */
 .search-results {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-md) !important;
 }
 .result {
-  border-radius: var(--gds-r-sm) !important;
+  border-radius: var(--gw-r-sm) !important;
   background: transparent !important;
 }
-.result:hover { background: var(--gds-surface-3) !important; }
-.result-type { color: var(--gds-teal) !important; }
-.result-title { color: var(--gds-ink) !important; font-weight: 700 !important; }
-.result-text  { color: var(--gds-muted) !important; }
+.result:hover { background: var(--gw-bg-raised) !important; }
+.result-type  { color: var(--gw-teal-500) !important; }
+.result-title { color: var(--gw-text-primary) !important; font-weight: 700 !important; }
+.result-text  { color: var(--gw-text-muted) !important; }
 
 /* ─── 36. PAGE PADDING CONSISTENCY ──────────────────────────────────────── */
-/* Ensure content is always wrapped with consistent space */
 .view > * + * { margin-top: 20px; }
 
 /* ─── 37. RESTRICTED / ACCESS STATES ────────────────────────────────────── */
-/* These states should feel like premium cards, not floating text */
 .access-restricted-state,
 [class*="restricted"] > div:first-child,
 .rep-locked-view {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-xl) !important;
-  box-shadow: var(--gds-shadow-sm) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-xl) !important;
+  box-shadow: var(--gw-shadow-sm) !important;
   padding: 48px 36px !important;
   text-align: center !important;
   max-width: 520px !important;
@@ -1233,16 +1421,15 @@ label {
 }
 
 /* ─── 38. ACADEMY / TRAINING ─────────────────────────────────────────────── */
-/* Keep academy cards clean and structured */
 .academy-card, [class*="academy"] .card {
-  background: var(--gds-surface) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-card) !important;
-  border: 1px solid var(--gds-line) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-card) !important;
+  border: 1px solid var(--gw-border) !important;
 }
 
-/* ─── 39. MUTED / META TEXT HELPERS ──────────────────────────────────────── */
-.muted, .meta, .small-text, .lede { color: var(--gds-muted) !important; }
+/* ─── 39. TEXT HELPERS ───────────────────────────────────────────────────── */
+.muted, .meta, .small-text, .lede { color: var(--gw-text-muted) !important; }
 .lede { font-size: 15px !important; line-height: 1.65 !important; max-width: 620px !important; }
 .meta { font-size: 12px !important; }
 
@@ -1257,40 +1444,39 @@ label {
 
 /* ─── 42. RESULT BOX ─────────────────────────────────────────────────────── */
 .result-box {
-  background: var(--gds-teal-soft) !important;
+  background: var(--gw-teal-100) !important;
   border: 1px solid rgba(77,138,134,.2) !important;
-  border-radius: var(--gds-r-md) !important;
+  border-radius: var(--gw-r-md) !important;
 }
 
-/* ─── 43. GW-FLAG PANEL / DARK CARD OVERRIDES ───────────────────────────── */
-/* On light theme, dark surfaces should become light panels */
+/* ─── 43. GW-FLAG PANEL ──────────────────────────────────────────────────── */
 .gw-flag-panel {
-  background: var(--gds-surface-2) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
+  background: var(--gw-bg-surface) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
 }
-.gw-flag-panel [style*="color:#E8E4D9"] { color: var(--gds-ink) !important; }
-.gw-flag-panel [style*="color:#6F7E6A"] { color: var(--gds-muted) !important; }
+.gw-flag-panel [style*="color:#E8E4D9"] { color: var(--gw-text-primary) !important; }
+.gw-flag-panel [style*="color:#6F7E6A"] { color: var(--gw-text-muted) !important; }
 
-/* ─── 44. INPUT FOCUS RING CONSISTENCY ───────────────────────────────────── */
+/* ─── 44. FOCUS RINGS ────────────────────────────────────────────────────── */
 button:focus-visible {
-  outline: 2px solid rgba(32,74,67,.45) !important;
+  outline: 2px solid rgba(45,122,85,.45) !important;
   outline-offset: 2px !important;
 }
 a:focus-visible {
-  outline: 2px solid rgba(32,74,67,.4) !important;
+  outline: 2px solid rgba(45,122,85,.4) !important;
   outline-offset: 2px !important;
 }
 
-/* ─── 45. SCROLLBAR REFINEMENT (global) ─────────────────────────────────── */
+/* ─── 45. SCROLLBAR ──────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--gds-line-2); border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: var(--gds-line-3); }
+::-webkit-scrollbar-thumb { background: var(--gw-border-strong); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gw-bark-300); }
 
-/* ─── 46. LINK STYLING ───────────────────────────────────────────────────── */
-a { color: var(--gds-teal); text-decoration: none; }
-a:hover { color: var(--gds-pine); text-decoration: underline; }
+/* ─── 46. LINKS ──────────────────────────────────────────────────────────── */
+a { color: var(--gw-teal-500); text-decoration: none; }
+a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 /* ─── 47. LOADING STATES ─────────────────────────────────────────────────── */
 .btn-loading {
@@ -1309,9 +1495,9 @@ a:hover { color: var(--gds-pine); text-decoration: underline; }
   border: 2px solid rgba(255,255,255,.3) !important;
   border-top-color: #fff !important;
   border-radius: 50% !important;
-  animation: gds-spin .7s linear infinite !important;
+  animation: gw-spin .7s linear infinite !important;
 }
-@keyframes gds-spin { to { transform: translateY(-50%) rotate(360deg); } }
+@keyframes gw-spin { to { transform: translateY(-50%) rotate(360deg); } }
 
 /* ─── 48. FORM GRID ──────────────────────────────────────────────────────── */
 .form-grid {
@@ -1322,89 +1508,318 @@ a:hover { color: var(--gds-pine); text-decoration: underline; }
 
 /* ─── 49. STAGE NUMBER BADGE ─────────────────────────────────────────────── */
 .stage-number {
-  background: var(--gds-pine) !important;
-  border-radius: var(--gds-r-sm) !important;
-  box-shadow: 0 2px 8px rgba(32,74,67,.2) !important;
+  background: var(--gw-action) !important;
+  border-radius: var(--gw-r-sm) !important;
+  box-shadow: 0 2px 8px rgba(45,122,85,.2) !important;
 }
 
 /* ─── 50. CATEGORY TILE (Add Lead) ───────────────────────────────────────── */
 .cat-tile {
-  background: var(--gds-surface) !important;
-  border: 1.5px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-md) !important;
+  background: var(--gw-bg-surface-2) !important;
+  border: 1.5px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-md) !important;
   transition: border-color .14s, background .14s !important;
 }
 .cat-tile:hover {
-  border-color: var(--gds-line-2) !important;
-  background: var(--gds-surface-2) !important;
+  border-color: var(--gw-border-strong) !important;
+  background: var(--gw-bg-surface) !important;
 }
 .cat-tile.active,
 .cat-tile[style*="background:#204A43"],
 .cat-tile[style*="border-color:#204A43"] {
-  background: var(--gds-pine) !important;
-  border-color: var(--gds-pine) !important;
+  background: var(--gw-action) !important;
+  border-color: var(--gw-action) !important;
   color: #fff !important;
 }
 
-/* ─── 51. GW-BTN-PRIMARY (Settings pages) ───────────────────────────────── */
-.gw-btn-primary {
-  background: var(--gds-pine) !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: var(--gds-r-sm) !important;
-}
-.gw-btn-primary:hover {
-  background: var(--gds-pine-deep) !important;
-}
-
-/* ─── 52. SUPER ADMIN BUTTON (in sidebar) ────────────────────────────────── */
+/* ─── 51. SUPER ADMIN BUTTON ─────────────────────────────────────────────── */
 #superAdminNavBtn {
-  color: #7EC8A4 !important;
+  color: var(--gw-pine-300) !important;
   font-weight: 650 !important;
   border-top: 1px solid rgba(255,255,255,.08) !important;
   margin-top: 6px !important;
   padding-top: 10px !important;
 }
 #superAdminNavBtn:hover {
-  background: rgba(126,200,164,.08) !important;
-  color: #A0D8BC !important;
+  background: rgba(143,209,174,.08) !important;
+  color: var(--gw-pine-200) !important;
 }
 
-/* ─── 53. NOTE CARDS ─────────────────────────────────────────────────────── */
+/* ─── 52. NOTE CARDS ─────────────────────────────────────────────────────── */
 .note {
-  border-bottom: 1px solid var(--gds-line) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
   padding: 12px 0 !important;
 }
-.note time { color: var(--gds-muted) !important; font-size: 11px !important; font-weight: 600 !important; }
-.note p { color: var(--gds-ink) !important; }
+.note time { color: var(--gw-text-muted) !important; font-size: 11px !important; font-weight: 600 !important; }
+.note p { color: var(--gw-text-primary) !important; }
 
-/* ─── 54. DYNAMIC TAG / LOCKED BADGE ────────────────────────────────────── */
+/* ─── 53. DYNAMIC TAG / LOCKED BADGE ────────────────────────────────────── */
 .dynamic-tag {
-  background: var(--gds-teal-soft) !important;
-  color: var(--gds-teal) !important;
+  background: var(--gw-teal-100) !important;
+  color: var(--gw-teal-500) !important;
   border-radius: 4px !important;
 }
 .rev-locked-badge {
-  background: var(--gds-surface-3) !important;
-  color: var(--gds-muted) !important;
+  background: var(--gw-bark-50) !important;
+  color: var(--gw-text-muted) !important;
 }
 
-/* ─── 55. MOBILE RESPONSIVE ──────────────────────────────────────────────── */
+/* ─── 54. GW-SELECT ──────────────────────────────────────────────────────── */
+.gw-select {
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border-strong) !important;
+  border-radius: var(--gw-r-sm) !important;
+  color: var(--gw-text-primary) !important;
+  font-size: 13px !important;
+  padding: 7px 10px !important;
+}
+.gw-select:focus { border-color: var(--gw-border-focus) !important; box-shadow: 0 0 0 3px rgba(45,122,85,.12) !important; }
+
+/* ─── 55. PERM TABLE ─────────────────────────────────────────────────────── */
+.perm-table thead th { background: var(--gw-bg-surface) !important; color: var(--gw-text-muted) !important; }
+.perm-table .perm-group-row td { background: var(--gw-bg-surface) !important; color: var(--gw-text-muted) !important; }
+.perm-table tbody tr.perm-row:nth-child(even) { background: var(--gw-bg-surface) !important; }
+.perm-table tbody tr.perm-row:hover { background: var(--gw-teal-100) !important; }
+.perm-check input[type=checkbox] { accent-color: var(--gw-action) !important; }
+
+/* ─── 56. SPECIFIC PANELS ────────────────────────────────────────────────── */
+.gw-sky-card {
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-lg) !important;
+  box-shadow: var(--gw-shadow-card) !important;
+}
+.gw-sky-card-header {
+  background: var(--gw-bg-surface) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+  padding: 12px 16px !important;
+}
+.gw-admin-panel {
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-xl) !important;
+  box-shadow: var(--gw-shadow-card) !important;
+}
+.gw-admin-panel-header {
+  background: var(--gw-bg-surface) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+}
+.gw-div-section {
+  background: var(--gw-bg-surface-2) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-radius: var(--gw-r-xl) !important;
+  box-shadow: var(--gw-shadow-card) !important;
+  margin-bottom: 20px !important;
+}
+.gw-div-section-header {
+  background: var(--gw-bg-surface) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+  padding: 14px 18px !important;
+}
+
+/* ─── 57. TABLE HEADERS (payout / data) ──────────────────────────────────── */
+.gw-payout-card thead tr,
+.gw-data-table thead tr {
+  background: var(--gw-bg-surface) !important;
+}
+.gw-payout-card th,
+.gw-data-table th {
+  color: var(--gw-text-muted) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+}
+.gw-payout-card td,
+.gw-data-table td {
+  color: var(--gw-text-primary) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+}
+.gw-admin-panel table thead tr { background: var(--gw-bg-surface) !important; }
+.gw-admin-panel table th {
+  color: var(--gw-text-muted) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: .05em !important;
+}
+.gw-admin-panel table td {
+  color: var(--gw-text-primary) !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+}
+.gw-admin-panel table tr:hover { background: var(--gw-bg-surface) !important; }
+
+/* ─── 58. MODAL DARK TEXT RESCUES ────────────────────────────────────────── */
+.modal-box h2[style*="color:#E8E4D9"],
+.modal-box h3[style*="color:#E8E4D9"],
+.modal-box h2[style*="color:#EDEAE0"],
+.modal-box h3[style*="color:#EDEAE0"] {
+  color: var(--gw-text-primary) !important;
+}
+.gw-settings-panel [style*="color:#E8E4D9"],
+.gw-settings-panel [style*="color:#EDEAE0"] {
+  color: var(--gw-text-primary) !important;
+}
+.gw-audit-trail [style*="color:#E8E4D9"],
+.gw-audit-trail [style*="color:#4A5947"] {
+  color: var(--gw-text-primary) !important;
+}
+.gw-cal-row [style*="color:#E8E4D9"] { color: var(--gw-text-primary) !important; }
+
+/* ─── 59. EMOJI SUPPRESSION ───────────────────────────────────────────────── */
+.empty-state .empty-icon:not(:has(svg)) {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ─── 60. PIPELINE VIEW WRAPPER ──────────────────────────────────────────── */
+.kanban-view-outer { overflow-x: auto !important; }
+
+/* ─── 61. GLOBAL DARK-TEXT RESCUES ──────────────────────────────────────── */
+/* Off-white text → ink */
+[style*="color:#E8E4D9"]   { color: var(--gw-text-primary) !important; }
+[style*="color: #E8E4D9"]  { color: var(--gw-text-primary) !important; }
+[style*="color:#EDEAE0"]   { color: var(--gw-text-primary) !important; }
+[style*="color: #EDEAE0"]  { color: var(--gw-text-primary) !important; }
+[style*="color:#D6D1C4"]   { color: var(--gw-text-primary) !important; }
+[style*="color: #D6D1C4"]  { color: var(--gw-text-primary) !important; }
+
+/* Dark-muted text → text-muted */
+[style*="color:#6F7E6A"]   { color: var(--gw-text-muted) !important; }
+[style*="color: #6F7E6A"]  { color: var(--gw-text-muted) !important; }
+[style*="color:#5C6B58"]   { color: var(--gw-text-muted) !important; }
+[style*="color: #5C6B58"]  { color: var(--gw-text-muted) !important; }
+[style*="color:#4A5947"]   { color: var(--gw-text-muted) !important; }
+[style*="color: #4A5947"]  { color: var(--gw-text-muted) !important; }
+
+/* Forest-green text → action */
+[style*="color:#113931"]   { color: var(--gw-action) !important; }
+[style*="color: #113931"]  { color: var(--gw-action) !important; }
+[style*="color:#1A4740"]   { color: var(--gw-action) !important; }
+[style*="color: #1A4740"]  { color: var(--gw-action) !important; }
+
+/* Dark panel backgrounds → light surface */
+[style*="background:#113931"]  { background: var(--gw-bg-surface) !important; }
+[style*="background: #113931"] { background: var(--gw-bg-surface) !important; }
+[style*="background:#1A4740"]  { background: var(--gw-bg-surface) !important; }
+[style*="background: #1A4740"] { background: var(--gw-bg-surface) !important; }
+
+/* ── Exceptions: keep intentional dark surfaces ─────────────────────────── */
+.comms-board [style*="background:#113931"] { background: #113931 !important; }
+.comms-board [style*="color:#E8E4D9"]      { color: #E8E4D9 !important; }
+.sidebar [style*="background:#113931"]     { background: unset !important; }
+/* White text on colored backgrounds — keep legible */
+[style*="background:#2D7A55"] [style*="color:#fff"],
+[style*="background:#2C5F57"] [style*="color:#fff"],
+[style*="background:#8B6914"] [style*="color:#fff"],
+[style*="background:#7A2E20"] [style*="color:#fff"] {
+  color: #fff !important;
+}
+
+/* ─── 62. GLOBAL DARK-FALLBACK INTERCEPT ────────────────────────────────── */
+[style*="color:#E8E4D9"]   { color: var(--gw-text-primary) !important; }
+[style*="color:#EDEAE0"]   { color: var(--gw-text-primary) !important; }
+[style*="color:#9a9a8a"]   { color: var(--gw-text-muted)  !important; }
+[style*="color:#7a9080"]   { color: var(--gw-text-muted)  !important; }
+
+[style*="background:#1a2820"]  { background: var(--gw-bg-surface) !important; }
+[style*="background:#141f1a"]  { background: var(--gw-bg-surface-2) !important; }
+[style*="background:#0f1a15"]  { background: var(--gw-bg-surface-2) !important; }
+[style*="background:#1e2a22"]  { background: var(--gw-bg-surface) !important; }
+[style*="background:#0f2419"]  { background: var(--gw-action) !important; }
+[style*="background:#1A3A2A"]  { background: var(--gw-action) !important; }
+
+[style*="border:1px solid #2a3a30"]      { border-color: var(--gw-border) !important; }
+[style*="border-left:1px solid #2a3a30"] { border-color: var(--gw-border) !important; }
+
+/* ─── 63. TIME TRACKER LIGHT-THEME RESCUE ───────────────────────────────── */
+#tt-root {
+  background: var(--gw-bg-page) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-main {
+  background: transparent !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-ring-panel {
+  background: var(--gw-bg-surface-2) !important;
+  border-left: 1px solid var(--gw-border) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-ring-panel [style*="color:var(--gw-muted"] { color: var(--gw-text-muted) !important; }
+#tt-main h1[style*="color:var(--gw-text"]      { color: var(--gw-text-primary) !important; }
+#tt-main [style*="color:var(--gw-muted"]       { color: var(--gw-text-muted) !important; }
+#tt-root [style*="background:var(--gw-surface-2"] {
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border) !important;
+}
+#tt-root [style*="background:var(--gw-surface,#141f1a)"] {
+  background: var(--gw-bg-surface-2) !important;
+  color: var(--gw-text-primary) !important;
+  box-shadow: 0 1px 4px rgba(28,23,18,.1) !important;
+}
+#tt-modal-overlay [style*="background:var(--gw-surface,"] {
+  background: var(--gw-bg-surface-2) !important;
+  border-color: var(--gw-border) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-modal-overlay [style*="background:var(--gw-surface-2,"] {
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-modal-overlay input,
+#tt-modal-overlay select,
+#tt-modal-overlay textarea {
+  background: var(--gw-bg-surface-2) !important;
+  border-color: var(--gw-border-strong) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-modal-overlay label,
+#tt-modal-overlay [style*="color:var(--gw-muted"] {
+  color: var(--gw-text-muted) !important;
+}
+#tt-modal-overlay [style*="color:var(--gw-text"]   { color: var(--gw-text-primary) !important; }
+#tt-modal-overlay [style*="color:#E8E4D9"]          { color: var(--gw-text-primary) !important; }
+#tt-modal-overlay [style*="background:var(--gw-surface-2,#1a2820)"][style*="color:var(--gw-muted"] {
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border-strong) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-root [style*="background:var(--gw-surface-2,#1a2820)"] {
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border) !important;
+  color: var(--gw-text-primary) !important;
+}
+#tt-root [style*="color:var(--gw-muted,#9a9a8a)"]  { color: var(--gw-text-muted) !important; }
+#tt-root [style*="color:var(--gw-text,#E8E4D9)"]   { color: var(--gw-text-primary) !important; }
+#tt-week-bar-track { background: var(--gw-bark-50) !important; }
+#tt-root a[style*="background:var(--gw-surface-2,#1a2820)"],
+#tt-root button[style*="background:var(--gw-surface-2,#1a2820)"] {
+  background: var(--gw-bg-surface) !important;
+  border-color: var(--gw-border) !important;
+  color: var(--gw-text-primary) !important;
+}
+
+/* ─── 64. TOKEN BRIDGE — --gw-text alias ────────────────────────────────── */
+/* Already defined in :root above; duplicated here as documentation anchor */
+
+/* ─── 65. MOBILE RESPONSIVE ──────────────────────────────────────────────── */
 @media (max-width: 1100px) {
-  .kanban { /* already flex */ }
   .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .dashboard-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 
 @media (max-width: 920px) {
-  :root { --gds-sidebar-w: 264px; }
+  :root { --gw-sidebar-w: 264px; }
   .app-shell { grid-template-columns: 1fr !important; }
   .sidebar {
     position: fixed !important;
     transform: translateX(-100%) !important;
     transition: transform .22s ease !important;
     z-index: 20 !important;
-    box-shadow: var(--gds-shadow-lg) !important;
+    box-shadow: var(--gw-shadow-lg) !important;
   }
   .sidebar.open { transform: translateX(0) !important; }
   .menu-btn { display: inline-flex !important; align-items: center !important; justify-content: center !important; }
@@ -1424,422 +1839,38 @@ a:hover { color: var(--gds-pine); text-decoration: underline; }
   .card { box-shadow: none !important; break-inside: avoid !important; }
 }
 
-/* ─── 56. EMOJI SUPPRESSION ──────────────────────────────────────────────── */
-/* Hide emoji-only content that's purely decorative */
-.empty-state .empty-icon:not(:has(svg)) {
-  font-size: 0 !important;
-  line-height: 0 !important;
-  opacity: 0 !important;
-  height: 0 !important;
-  margin: 0 !important;
-  overflow: hidden !important;
-}
-
-/* ─── 57. PIPELINE VIEW WRAPPER ───────────────────────────────────────────── */
-/* The pipeline view can expand past max-width because it needs horizontal scroll */
-.kanban-view-outer { overflow-x: auto !important; }
-
-/* ─── 58. GW-SELECT ──────────────────────────────────────────────────────── */
-.gw-select {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line-2) !important;
-  border-radius: var(--gds-r-sm) !important;
-  color: var(--gds-ink) !important;
-  font-size: 13px !important;
-  padding: 7px 10px !important;
-}
-.gw-select:focus { border-color: var(--gds-teal) !important; box-shadow: 0 0 0 3px rgba(77,138,134,.14) !important; }
-
-/* ─── 59. PERM TABLE ─────────────────────────────────────────────────────── */
-.perm-table thead th { background: var(--gds-surface-2) !important; color: var(--gds-muted) !important; }
-.perm-table .perm-group-row td { background: var(--gds-surface-2) !important; color: var(--gds-muted) !important; }
-.perm-table tbody tr.perm-row:nth-child(even) { background: var(--gds-surface-2) !important; }
-.perm-table tbody tr.perm-row:hover { background: var(--gds-teal-soft) !important; }
-.perm-check input[type=checkbox] { accent-color: var(--gds-pine) !important; }
-
-/* ─── 60. OVERRIDE: No more blue gradient buttons ─────────────────────────── */
-/* Kill all gradient buttons from old system */
-.primary-btn,
-.tab.active,
-.lead-tab-active {
-  background-image: none !important;
-}
-
-/* ─── 61. GLOBAL DARK-TEXT RESCUES ─────────────────────────────────────── */
-/* These selectors catch all inline color:#E8E4D9, #EDEAE0, #D6D1C4 (off-white
-   text) that was designed for a dark-surface UI and now sits on white cards.
-   Attribute selectors have higher specificity than class+element so they win
-   over premium.css without needing !important everywhere. */
-
-/* — off-white text → ink — */
-[style*="color:#E8E4D9"]   { color: var(--gds-ink)   !important; }
-[style*="color: #E8E4D9"]  { color: var(--gds-ink)   !important; }
-[style*="color:#EDEAE0"]   { color: var(--gds-ink)   !important; }
-[style*="color: #EDEAE0"]  { color: var(--gds-ink)   !important; }
-[style*="color:#D6D1C4"]   { color: var(--gds-ink)   !important; }
-[style*="color: #D6D1C4"]  { color: var(--gds-ink)   !important; }
-
-/* — dark-muted text → gds-muted — */
-[style*="color:#6F7E6A"]   { color: var(--gds-muted) !important; }
-[style*="color: #6F7E6A"]  { color: var(--gds-muted) !important; }
-[style*="color:#5C6B58"]   { color: var(--gds-muted) !important; }
-[style*="color: #5C6B58"]  { color: var(--gds-muted) !important; }
-[style*="color:#4A5947"]   { color: var(--gds-muted) !important; }
-[style*="color: #4A5947"]  { color: var(--gds-muted) !important; }
-
-/* — forest-green text (#113931, #1A4740) → pine — */
-[style*="color:#113931"]   { color: var(--gds-pine)  !important; }
-[style*="color: #113931"]  { color: var(--gds-pine)  !important; }
-[style*="color:#1A4740"]   { color: var(--gds-pine)  !important; }
-[style*="color: #1A4740"]  { color: var(--gds-pine)  !important; }
-
-/* — dark panel backgrounds → light surface — */
-[style*="background:#113931"] { background: var(--gds-surface-2) !important; }
-[style*="background: #113931"] { background: var(--gds-surface-2) !important; }
-[style*="background:#1A4740"]  { background: var(--gds-surface-2) !important; }
-[style*="background: #1A4740"] { background: var(--gds-surface-2) !important; }
-
-/* ── EXCEPTIONS: keep intentional dark surfaces ────────────────────────── */
-/* Comms board stays dark */
-.comms-board [style*="background:#113931"] { background: #113931 !important; }
-.comms-board [style*="color:#E8E4D9"]      { color: #E8E4D9 !important; }
-/* Sidebar stays dark */
-.sidebar [style*="background:#113931"] { background: unset !important; }
-/* Dark tooltip/badge text that sits ON a dark background tile — keep white */
-[style*="background:#2D7A55"] [style*="color:#fff"],
-[style*="background:#2C5F57"] [style*="color:#fff"],
-[style*="background:#8B6914"] [style*="color:#fff"],
-[style*="background:#7A2E20"] [style*="color:#fff"] {
-  color: #fff !important; /* keep white-on-color badges legible */
-}
-
-/* ─── 62. SKY-CARD LIGHT THEME ──────────────────────────────────────────── */
-/* gw-sky-card was a dark card; on light theme it becomes a white card */
-.gw-sky-card {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-lg) !important;
-  box-shadow: var(--gds-shadow-card) !important;
-}
-.gw-sky-card-header {
-  background: var(--gds-surface-2) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-  padding: 12px 16px !important;
-}
-
-/* ─── 63. ADMIN PANEL LIGHT THEME ───────────────────────────────────────── */
-.gw-admin-panel {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-xl) !important;
-  box-shadow: var(--gds-shadow-card) !important;
-}
-.gw-admin-panel-header {
-  background: var(--gds-surface-2) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-}
-
-/* ─── 64. DIVISION SECTION LIGHT THEME ──────────────────────────────────── */
-.gw-div-section {
-  background: var(--gds-surface) !important;
-  border: 1px solid var(--gds-line) !important;
-  border-radius: var(--gds-r-xl) !important;
-  box-shadow: var(--gds-shadow-card) !important;
-  margin-bottom: 20px !important;
-}
-.gw-div-section-header {
-  background: var(--gds-surface-2) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-  padding: 14px 18px !important;
-}
-
-/* ─── 65. REP COMMISSION TABLE HEADER ───────────────────────────────────── */
-/* The gw-payout-card and gw-data-table dark th rows */
-.gw-payout-card thead tr,
-.gw-data-table thead tr {
-  background: var(--gds-surface-2) !important;
-}
-.gw-payout-card th,
-.gw-data-table th {
-  color: var(--gds-muted) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-}
-.gw-payout-card td,
-.gw-data-table td {
-  color: var(--gds-ink) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-}
-
-/* ─── 66. MODAL TITLE DARK TEXT RESCUE ──────────────────────────────────── */
-/* Some modals render h2/h3 with hardcoded dark heading colours */
-.modal-box h2[style*="color:#E8E4D9"],
-.modal-box h3[style*="color:#E8E4D9"],
-.modal-box h2[style*="color:#EDEAE0"],
-.modal-box h3[style*="color:#EDEAE0"] {
-  color: var(--gds-ink) !important;
-}
-
-/* ─── 67. SETTINGS / FEATURE FLAG DARK LABELS ───────────────────────────── */
-/* Feature Flags label and any settings panel dark-text labels */
-.gw-settings-panel [style*="color:#E8E4D9"],
-.gw-settings-panel [style*="color:#EDEAE0"] {
-  color: var(--gds-ink) !important;
-}
-
-/* ─── 68. AUDIT TRAIL DARK ENTRIES ─────────────────────────────────────── */
-/* Commission rule audit trail entries */
-.gw-audit-trail [style*="color:#E8E4D9"],
-.gw-audit-trail [style*="color:#4A5947"] {
-  color: var(--gds-ink) !important;
-}
-
-/* ─── 69. CALENDAR / MEETING ROWS ────────────────────────────────────────── */
-/* Calendar meeting name text */
-.gw-cal-row [style*="color:#E8E4D9"] { color: var(--gds-ink) !important; }
-
-/* ─── 70. ADMIN-PANEL TABLE ROWS ─────────────────────────────────────────── */
-.gw-admin-panel table thead tr { background: var(--gds-surface-2) !important; }
-.gw-admin-panel table th {
-  color: var(--gds-muted) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-  font-size: 11px !important;
-  text-transform: uppercase !important;
-  letter-spacing: .05em !important;
-}
-.gw-admin-panel table td {
-  color: var(--gds-ink) !important;
-  border-bottom: 1px solid var(--gds-line) !important;
-}
-.gw-admin-panel table tr:hover { background: var(--gds-surface-2) !important; }
-
-
 /* ═══════════════════════════════════════════════════════════════════════════
-   GROUNDWORK COLOR CONTRAST RULESET
-   Updated: 2026-06-30
-   
-   ── PROBLEM ROOT CAUSE ─────────────────────────────────────────────────
-   Groundwork has TWO CSS variable systems. Any inline style that references
-   a --gw- variable with a DARK fallback will be invisible on the light page.
+   GROUNDWORK COLOR CONTRAST RULESET — v2.0
+   Updated: 2026-07-04
 
-   System 1  →  --gds-*   (groundwork-design.css, THIS file)   LIGHT THEME ✅
-   System 2  →  --gw-*    (premium.css, older layer)           LIGHT THEME ✅
-   
-   ⚠️  time_tracker.js uses --gw-text (DOES NOT EXIST IN EITHER SYSTEM)
-       and uses dark hex fallbacks (#1a2820, #E8E4D9, #9a9a8a, #0f1a15)
-       left over from an earlier dark-mode prototype. The --gw- variables
-       resolve at runtime (light values from premium.css), but the FALLBACK
-       values are dark — meaning ANY missing/misspelled variable shows
-       dark-on-dark or invisible-on-light.
+   Single token namespace: --gw-*
+   All --gds-* aliases resolve to --gw-* tokens above.
 
-   ── CONTRAST RULES — THE LAW ───────────────────────────────────────────
-   RULE 1  Never use a hardcoded hex fallback of #1a2820, #141f1a, #0f1a15,
-           #0f2419, #1A3A2A, #1e2a22 or any dark green/grey hex in an
-           inline style. These are dark-mode surface colors.
+   RULE 1  Never hardcode dark-mode surface hex as fallback:
+           #1a2820 #141f1a #0f1a15 #0f2419 #1A3A2A
 
-   RULE 2  Never use --gw-text. It does not exist. Use:
-             • Primary text   → var(--gds-ink)      or  var(--gw-ink)
-             • Muted text     → var(--gds-muted)    or  var(--gw-muted)
-             • Subtle/hint    → var(--gds-subtle)   or  var(--gw-subtle)
+   RULE 2  Never use --gw-text directly in new code. Prefer:
+           Primary text   → var(--gw-text-primary)
+           Muted text     → var(--gw-text-muted)
+           Subtle text    → var(--gw-text-subtle)
 
-   RULE 3  Never use a hardcoded hex fallback of #E8E4D9 for text color.
-           That is an off-white — invisible on white/cream backgrounds.
-           Use var(--gds-ink, #1F2A2B) for text instead.
+   RULE 3  Never use #E8E4D9 as text color — it is off-white, invisible on
+           light backgrounds. Use var(--gw-text-primary) instead.
 
-   RULE 4  Never use a hardcoded hex fallback of #9a9a8a for muted text.
-           Use var(--gds-muted, #5E6E6F) instead.
+   RULE 4  Status chips MUST use .status-chip.sold / .active / .overdue /
+           .pending / .lost — never hardcode status colors.
 
-   RULE 5  For inline styles in JS-rendered HTML, ALWAYS use light fallbacks:
-             background  → var(--gds-surface, #FFFFFF)
-             alt surface → var(--gds-surface-2, #FAFAF8)
-             border      → var(--gds-line, #E0DDD5)
-             body text   → var(--gds-ink, #1F2A2B)
-             muted text  → var(--gds-muted, #5E6E6F)
-             subtle text → var(--gds-subtle, #8C9E9E)
+   RULE 5  Dark-background text (sidebar, CTAs, dark modals):
+           Primary → #FFFFFF
+           Muted   → rgba(255,255,255,.65)
+           Subtle  → rgba(255,255,255,.38)
 
-   RULE 6  The right-column ring panel (#tt-ring-panel) is the ONLY area
-           intentionally using a dark bg (#0f1a15 fallback). It is overridden
-           below to use the light surface. If a dark panel is ever desired,
-           it MUST use var(--gds-pine) or var(--gds-ink) as the bg, and
-           MUST pair it with color:#FFFFFF or rgba(255,255,255,.85) for text.
-
-   RULE 7  Semantic color usage (never mix these up):
-             Success/positive  → var(--gds-emerald, #2D7A55)
-             Warning/caution   → var(--gds-amber,   #7A5C10)
-             Error/danger      → var(--gds-rose,    #7A2E20)
-             Interactive/links → var(--gds-teal,    #4D8A86)
-             Brand/primary     → var(--gds-pine,    #204A43)
-
-   RULE 8  Status chips MUST use the semantic chip classes from Section 12:
-           .status-chip.sold / .active / .overdue / .pending / .lost
-           Never hardcode status colors in JS.
-
-   RULE 9  Dark-background text (sidebar, pine CTAs, dark modals) MUST use:
-             Primary text → #FFFFFF
-             Muted text   → rgba(255,255,255,.65)
-             Subtle text  → rgba(255,255,255,.38)
-           Never use a warm cream (#E8E4D9, #EDEAE0) on white/cream bg.
-
-   RULE 10 Before adding any new section/view, run this mental checklist:
-           ☐ Did I use --gds-* or --gw-* variables (no raw hex for color)?
-           ☐ If raw hex is unavoidable, is it dark-on-light or light-on-dark?
-           ☐ Does every var() have a LIGHT-THEME fallback value?
-           ☐ Did I test the background/text pair at the element level?
+   RULE 6  Semantic palette:
+           Success   → var(--gw-success)   #2D7A55
+           Warning   → var(--gw-warning)   #7A5C10
+           Danger    → var(--gw-danger)    #7A2E20
+           Info/link → var(--gw-info)      #4D8A86
+           Brand CTA → var(--gw-action)    #2D7A55
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ─── 71. TOKEN BRIDGE — --gw-text alias ────────────────────────────────── */
-/* --gw-text was never defined in either token system.
-   This bridge defines it so any JS using var(--gw-text,...) resolves cleanly. */
-:root {
-  --gw-text: var(--gds-ink);  /* #1F2A2B in light theme */
-}
-
-/* ─── 72. TIME TRACKER LIGHT-THEME RESCUE ───────────────────────────────── */
-/* time_tracker.js was prototyped with dark fallbacks. The --gw- vars resolve
-   at runtime to light values (from premium.css), but any new element added
-   by copy-paste might bring dark fallbacks back. These rules win via
-   specificity on the structural containers. */
-
-/* Outer root — no dark background */
-#tt-root {
-  background: var(--gds-bg) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* Main scrollable area */
-#tt-main {
-  background: transparent !important;
-  color: var(--gds-ink) !important;
-}
-
-/* Right ring panel — light surface, not dark */
-#tt-ring-panel {
-  background: var(--gds-surface) !important;
-  border-left: 1px solid var(--gds-line) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* "READY" label and ring panel section labels */
-#tt-ring-panel [style*="color:var(--gw-muted"] {
-  color: var(--gds-muted) !important;
-}
-
-/* Page title "Time Tracker" — rescue from off-white fallback */
-#tt-main h1[style*="color:var(--gw-text"] {
-  color: var(--gds-ink) !important;
-}
-
-/* Date subtitle */
-#tt-main [style*="color:var(--gw-muted"] {
-  color: var(--gds-muted) !important;
-}
-
-/* Tab switcher pill container */
-#tt-root [style*="background:var(--gw-surface-2"] {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line) !important;
-}
-
-/* Tab switcher active button */
-#tt-root [style*="background:var(--gw-surface,#141f1a)"] {
-  background: var(--gds-surface) !important;
-  color: var(--gds-ink) !important;
-  box-shadow: 0 1px 4px rgba(31,42,43,.1) !important;
-}
-
-/* Clock In / Clock Out modal overlays — dark overlay is intentional,
-   but inner modal content should use light surface */
-#tt-modal-overlay [style*="background:var(--gw-surface,"] {
-  background: var(--gds-surface) !important;
-  border-color: var(--gds-line) !important;
-  color: var(--gds-ink) !important;
-}
-#tt-modal-overlay [style*="background:var(--gw-surface-2,"] {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* Modal form inputs */
-#tt-modal-overlay input,
-#tt-modal-overlay select,
-#tt-modal-overlay textarea {
-  background: var(--gds-surface) !important;
-  border-color: var(--gds-line-2) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* Modal labels */
-#tt-modal-overlay label,
-#tt-modal-overlay [style*="color:var(--gw-muted"] {
-  color: var(--gds-muted) !important;
-}
-
-/* Modal heading text (Clock In / Clock Out title) */
-#tt-modal-overlay [style*="color:var(--gw-text"] {
-  color: var(--gds-ink) !important;
-}
-#tt-modal-overlay [style*="color:#E8E4D9"] {
-  color: var(--gds-ink) !important;
-}
-
-/* Cancel button in modals */
-#tt-modal-overlay [style*="background:var(--gw-surface-2,#1a2820)"][style*="color:var(--gw-muted"] {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line-2) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* Day-selector calendar buttons (non-selected state) */
-#tt-root [style*="background:var(--gw-surface-2,#1a2820)"] {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* Muted text inside day selector */
-#tt-root [style*="color:var(--gw-muted,#9a9a8a)"] {
-  color: var(--gds-muted) !important;
-}
-
-/* Large number text inside entries/summaries */
-#tt-root [style*="color:var(--gw-text,#E8E4D9)"] {
-  color: var(--gds-ink) !important;
-}
-
-/* Week bar track */
-#tt-week-bar-track {
-  background: var(--gds-surface-3) !important;
-}
-
-/* Small action button style (used in entry rows) */
-#tt-root a[style*="background:var(--gw-surface-2,#1a2820)"],
-#tt-root button[style*="background:var(--gw-surface-2,#1a2820)"] {
-  background: var(--gds-surface-2) !important;
-  border-color: var(--gds-line) !important;
-  color: var(--gds-ink) !important;
-}
-
-/* ─── 73. GLOBAL DARK-FALLBACK INTERCEPT ────────────────────────────────── */
-/* Catch-all: any element rendered by JS that still has the old dark
-   hex fallback as its literal computed color or background will be rescued
-   by these attribute selectors. This is the last-resort safety net. */
-
-/* Off-white-as-text → dark ink */
-[style*="color:#E8E4D9"]   { color: var(--gds-ink)    !important; }
-[style*="color:#EDEAE0"]   { color: var(--gds-ink)    !important; }
-[style*="color:#9a9a8a"]   { color: var(--gds-muted)  !important; }
-[style*="color:#7a9080"]   { color: var(--gds-muted)  !important; }
-
-/* Dark green surfaces → light surface */
-[style*="background:#1a2820"]  { background: var(--gds-surface-2) !important; }
-[style*="background:#141f1a"]  { background: var(--gds-surface)   !important; }
-[style*="background:#0f1a15"]  { background: var(--gds-surface)   !important; }
-[style*="background:#1e2a22"]  { background: var(--gds-surface-2) !important; }
-[style*="background:#0f2419"]  { background: var(--gds-pine)      !important; } /* was intentional dark pill bg */
-[style*="background:#1A3A2A"]  { background: var(--gds-pine)      !important; } /* was intentional dark pill bg */
-
-/* Dark green borders → light border */
-[style*="border:1px solid #2a3a30"] { border-color: var(--gds-line) !important; }
-[style*="border-left:1px solid #2a3a30"] { border-color: var(--gds-line) !important; }
-
-/* ─── END GROUNDWORK DESIGN SYSTEM v1.0 ─────────────────────────────────── */
+/* ─── END GROUNDWORK DESIGN SYSTEM v2.0 ─────────────────────────────────── */

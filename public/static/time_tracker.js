@@ -235,7 +235,7 @@ async function ttQuickClockIn() {
       window._ttState.activeEntry = { id: j.data.id, clock_in: j.data.clock_in, job_type: 'General Work' };
       ttRenderSidebarWidget();
       ttStartRing();
-      ttToast('Clocked in ✓');
+      ttToast('Clocked in');
       ttRefreshCurrent();
     } else { ttToast(j.error || 'Could not clock in'); }
   } catch { ttToast('Network error'); }
@@ -256,7 +256,7 @@ async function ttQuickClockOut() {
       ttRenderSidebarWidget();
       ttStopRing();
       ttResetRingDisplay();
-      ttToast('Clocked out ✓');
+      ttToast('Clocked out');
       ttRefreshCurrent();
     } else { ttToast(j.error || 'Could not clock out'); }
   } catch { ttToast('Network error'); }
@@ -370,7 +370,7 @@ async function ttDoClockIn() {
       ttRenderSidebarWidget();
       ttStartRing();
       ttCloseModal();
-      ttToast('Clocked in ✓');
+      ttToast('Clocked in');
       ttRefreshCurrent();
     } else { ttToast(j.error || 'Could not clock in'); }
   } catch { ttToast('Network error'); }
@@ -442,7 +442,7 @@ async function ttDoClockOut() {
       ttStopRing();
       ttResetRingDisplay();
       ttCloseModal();
-      ttToast('Clocked out ✓');
+      ttToast('Clocked out');
       ttRefreshCurrent();
     } else { ttToast(j.error || 'Could not clock out'); }
   } catch { ttToast('Network error'); }
@@ -929,9 +929,9 @@ function ttBuildEntryCard(e) {
   const col = ttColorForJob(e.job_type);
   const isOpen = !e.clock_out;
   const approvalBadge = e.approved === 1
-    ? `<span style="font-size:9px;font-weight:700;color:#4ade80;background:#4ade8015;border:1px solid #4ade8030;border-radius:20px;padding:2px 7px">✓ Approved</span>`
+    ? `<span style="font-size:9px;font-weight:700;color:#4ade80;background:#4ade8015;border:1px solid #4ade8030;border-radius:20px;padding:2px 7px">Approved</span>`
     : e.approved === 2
-    ? `<span style="font-size:9px;font-weight:700;color:#f87171;background:#f8717115;border:1px solid #f8717130;border-radius:20px;padding:2px 7px">✗ Rejected</span>`
+    ? `<span style="font-size:9px;font-weight:700;color:#f87171;background:#f8717115;border:1px solid #f8717130;border-radius:20px;padding:2px 7px">Rejected</span>`
     : `<span style="font-size:9px;font-weight:700;color:#fbbf24;background:#fbbf2415;border:1px solid #fbbf2430;border-radius:20px;padding:2px 7px">⏳ Pending</span>`;
 
   return `
@@ -949,7 +949,7 @@ function ttBuildEntryCard(e) {
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0">
             <button onclick="ttEditEntry('${ttE(e.id)}')" style="padding:4px 8px;background:transparent;border:1px solid var(--gw-line,#E0DDD5);border-radius:6px;color:var(--gw-muted,#5E6E6F);font-size:10px;font-weight:600;cursor:pointer">Edit</button>
-            <button onclick="ttDeleteEntry('${ttE(e.id)}')" style="padding:4px 8px;background:transparent;border:1px solid #f8717130;border-radius:6px;color:#f87171;font-size:10px;font-weight:600;cursor:pointer">✕</button>
+            <button onclick="ttDeleteEntry('${ttE(e.id)}')" style="padding:4px 8px;background:transparent;border:1px solid #f8717130;border-radius:6px;color:#f87171;font-size:10px;font-weight:600;cursor:pointer">&times;</button>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
@@ -1070,7 +1070,7 @@ async function ttDoManualEntry() {
     const j2 = await r2.json();
     if (j2.ok) {
       ttCloseModal();
-      ttToast('Entry saved ✓');
+      ttToast('Entry saved');
       ttLoadTimesheet();
     } else { ttToast(j2.error || 'Failed to save'); }
   } catch { ttToast('Network error'); }
@@ -1153,7 +1153,7 @@ async function ttDoEditEntry(id) {
     const j = await res.json();
     if (j.ok) {
       ttCloseModal();
-      ttToast('Entry updated ✓');
+      ttToast('Entry updated');
       ttRefreshCurrent();
     } else { ttToast(j.error || 'Could not update'); }
   } catch { ttToast('Network error'); }
@@ -1377,8 +1377,8 @@ function ttBuildPayrollHTML(users) {
       <div style="padding:14px 16px;border-bottom:1px solid var(--gw-line,#E0DDD5);display:flex;align-items:center;justify-content:space-between">
         <div style="font-size:13px;font-weight:800;color:var(--gw-ink,#1F2A2B)">Team Leaderboard</div>
         <div style="display:flex;gap:6px" id="tt-payroll-batch-btns" style="display:none">
-          <button onclick="ttBatchApprove()" style="padding:6px 12px;background:#4ade8020;border:1px solid #4ade8050;border-radius:7px;color:#4ade80;font-size:11px;font-weight:700;cursor:pointer">✓ Approve Selected</button>
-          <button onclick="ttBatchReject()" style="padding:6px 12px;background:#f8717120;border:1px solid #f8717150;border-radius:7px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer">✗ Reject Selected</button>
+          <button onclick="ttBatchApprove()" style="padding:6px 12px;background:#4ade8020;border:1px solid #4ade8050;border-radius:7px;color:#4ade80;font-size:11px;font-weight:700;cursor:pointer">Approve Selected</button>
+          <button onclick="ttBatchReject()" style="padding:6px 12px;background:#f8717120;border:1px solid #f8717150;border-radius:7px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer">Reject Selected</button>
         </div>
       </div>
 
@@ -1423,7 +1423,7 @@ function ttBuildPayrollHTML(users) {
               <div style="font-size:9px;color:var(--gw-muted,#5E6E6F)">${ttFmtDecimal(u.total_min||0)} hrs</div>
               ${pendCount > 0 ? `
                 <div style="display:flex;gap:4px;justify-content:flex-end;margin-top:6px">
-                  <button onclick="ttApproveUser('${ttE(u.rep_id)}')" style="padding:4px 8px;background:#4ade8015;border:1px solid #4ade8040;border-radius:6px;color:#4ade80;font-size:9px;font-weight:700;cursor:pointer">✓ All</button>
+                  <button onclick="ttApproveUser('${ttE(u.rep_id)}')" style="padding:4px 8px;background:#4ade8015;border:1px solid #4ade8040;border-radius:6px;color:#4ade80;font-size:9px;font-weight:700;cursor:pointer">Approve All</button>
                 </div>` : ''}
             </div>
           </div>
@@ -1442,9 +1442,9 @@ function ttBuildPayrollHTML(users) {
                   </div>
                   <div style="font-size:11px;font-weight:700;color:var(--gw-ink,#1F2A2B);white-space:nowrap">${ttFmt(e.duration_min)}</div>
                   ${e.approved === 0 ? `
-                    <button onclick="ttApproveEntry('${ttE(e.id)}')" style="padding:3px 7px;background:#4ade8015;border:1px solid #4ade8040;border-radius:5px;color:#4ade80;font-size:9px;font-weight:700;cursor:pointer">✓</button>
-                    <button onclick="ttRejectEntry('${ttE(e.id)}')" style="padding:3px 7px;background:#f8717115;border:1px solid #f8717140;border-radius:5px;color:#f87171;font-size:9px;font-weight:700;cursor:pointer">✗</button>
-                  ` : `<span style="font-size:9px;font-weight:700;color:${e.approved===1?'#4ade80':'#f87171'}">${e.approved===1?'✓ OK':'✗ Rej'}</span>`}
+                    <button onclick="ttApproveEntry('${ttE(e.id)}')" style="padding:3px 7px;background:#4ade8015;border:1px solid #4ade8040;border-radius:5px;color:#4ade80;font-size:9px;font-weight:700;cursor:pointer">Approved</button>
+                    <button onclick="ttRejectEntry('${ttE(e.id)}')" style="padding:3px 7px;background:#f8717115;border:1px solid #f8717140;border-radius:5px;color:#f87171;font-size:9px;font-weight:700;cursor:pointer">Rejected</button>
+                  ` : `<span style="font-size:9px;font-weight:700;color:${e.approved===1?'#4ade80':'#f87171'}">${e.approved===1?'OK':'Rej'}</span>`}
                 </div>`).join('')}
               ${(u.entries||[]).length > 5 ? `<div style="font-size:10px;color:var(--gw-muted,#5E6E6F);text-align:center;padding-top:4px">+${(u.entries||[]).length-5} more entries</div>` : ''}
             </div>` : ''}`;
@@ -1455,8 +1455,8 @@ function ttBuildPayrollHTML(users) {
     <div id="tt-float-bar" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100;background:var(--gw-surface,#FFFFFF);border:1px solid var(--gw-line,#E0DDD5);border-radius:30px;padding:10px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;align-items:center;gap:12px">
       <span id="tt-float-count" style="font-size:12px;font-weight:700;color:#fff">0 selected</span>
       <div style="width:1px;height:20px;background:var(--gw-line,#E0DDD5)"></div>
-      <button onclick="ttBatchApprove()" style="padding:7px 16px;background:#4ade8020;border:1px solid #4ade8050;border-radius:20px;color:#4ade80;font-size:11px;font-weight:700;cursor:pointer">✓ Approve</button>
-      <button onclick="ttBatchReject()" style="padding:7px 16px;background:#f8717120;border:1px solid #f8717150;border-radius:20px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer">✗ Reject</button>
+      <button onclick="ttBatchApprove()" style="padding:7px 16px;background:#4ade8020;border:1px solid #4ade8050;border-radius:20px;color:#4ade80;font-size:11px;font-weight:700;cursor:pointer">Approve</button>
+      <button onclick="ttBatchReject()" style="padding:7px 16px;background:#f8717120;border:1px solid #f8717150;border-radius:20px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer">Reject</button>
       <button onclick="ttExportCSVSelected()" style="padding:7px 16px;background:#60a5fa20;border:1px solid #60a5fa50;border-radius:20px;color:#60a5fa;font-size:11px;font-weight:700;cursor:pointer">↓ Export</button>
       <button onclick="ttClearSelection()" style="padding:4px 8px;background:transparent;border:none;color:var(--gw-muted,#5E6E6F);font-size:16px;cursor:pointer;line-height:1">×</button>
     </div>`;
@@ -1494,7 +1494,7 @@ function ttClearSelection() {
 async function ttApproveEntry(id) {
   try {
     await fetch(`/api/time/approve/${id}`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ approved:1 }) });
-    ttToast('Approved ✓');
+    ttToast('Approved');
     ttLoadPayroll();
   } catch { ttToast('Network error'); }
 }
@@ -1517,7 +1517,7 @@ async function ttApproveUser(repId) {
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ ids, approved:1 })
     });
-    ttToast(`${ids.length} entries approved ✓`);
+    ttToast(`${ids.length} entries approved`);
     ttLoadPayroll();
   } catch { ttToast('Network error'); }
 }
@@ -1531,7 +1531,7 @@ async function ttBatchApprove() {
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ ids, approved:1 })
     });
-    ttToast(`${ids.length} entries approved ✓`);
+    ttToast(`${ids.length} entries approved`);
     ttClearSelection();
     ttLoadPayroll();
   } catch { ttToast('Network error'); }
@@ -1959,7 +1959,7 @@ function ttDownloadCSV(entries, filename) {
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
-  ttToast('CSV downloaded ✓');
+  ttToast('CSV downloaded');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
