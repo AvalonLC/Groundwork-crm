@@ -44,7 +44,17 @@ const toastEl = document.getElementById('toast');
 let deferredPrompt;
 
 const STORAGE_KEY = 'avalonSalesHubStateV3';
-const DEFAULT_STATE = { opportunities: [], tasks: [], notes: [], communications: [], settings: { repName: '', email: '' } };
+const DEFAULT_STATE = {
+  opportunities: [], tasks: [], notes: [], communications: [],
+  settings: { repName: '', email: '' },
+  // ── Phase 6: Operations Hub ───────────────────────────────────────────────
+  workOrders:     [],  // {id,oppId,status,crew,date,materials,assets,notes,checklist}
+  assets:         [],  // {id,name,category,status,assignedTo,nextMaint,make,model}
+  inventory:      [],  // {id,name,category,onHand,reserved,reorderAt,vendor,unit}
+  allocations:    [],  // {id,woId,itemId,qty,status}
+  maintenance:    [],  // {id,assetId,type,dueDate,completedDate,notes,performedBy}
+  recurringPlans: [],  // {id,clientId,oppId,freq,nextVisit,crew,status,visitHistory}
+};
 let state = loadState();
 
 function loadState(){
@@ -369,7 +379,21 @@ function show(viewName='today', param){
     communications: ()   => communicationsBoard(),
     automations:    ()   => automationManager()
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ai};
+  // Phase 6 routes — Operations Hub
+  const p6Route = {
+    opsHub:              ()   => opsHub(),
+    scheduleBoard:       ()   => scheduleBoard(),
+    dispatchBoard:       ()   => dispatchBoard(),
+    recurringServices:   ()   => recurringServices(),
+    workOrderList:       ()   => workOrderList(),
+    workOrderDetail:     (id) => workOrderDetail(id),
+    assetList:           ()   => assetList(),
+    assetDetail:         (id) => assetDetail(id),
+    maintenanceQueue:    ()   => maintenanceQueue(),
+    inventoryList:       ()   => inventoryList(),
+    materialAllocation:  (id) => materialAllocation(id),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -10796,6 +10820,1135 @@ function financialHub(){
   </div>`;
 }
 window.financialHub = financialHub;
+
+// ─── PHASE 6: OPERATIONS HUB SCREENS ────────────────────────────────────────
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+function _p6WOStatusClass(s) {
+  return { scheduled:'wo-status--scheduled', 'in-progress':'wo-status--inprogress',
+    completed:'wo-status--completed', cancelled:'wo-status--cancelled',
+    'on-hold':'wo-status--onhold' }[s] || 'wo-status--scheduled';
+}
+function _p6WOStatusLabel(s) {
+  return { scheduled:'Scheduled','in-progress':'In Progress',completed:'Completed',
+    cancelled:'Cancelled','on-hold':'On Hold' }[s] || s || 'Scheduled';
+}
+function _p6AssetLabel(s) {
+  return { active:'Active', idle:'Idle', maintenance:'In Maintenance',
+    retired:'Retired', rented:'Rented Out', pending:'Pending',
+    'out-of-service':'Out of Service' }[s] || s || 'Active';
+}
+function _p6InvtLabel(s) {
+  return { ok:'In Stock','low-stock':'Low Stock','out-of-stock':'Out of Stock',
+    reorder:'Reorder Now', discontinued:'Discontinued',
+    'on-order':'On Order', reserved:'Reserved' }[s] || s || 'In Stock';
+}
+function _p6ReadinessLabel(s) {
+  return { ready:'Ready','not-ready':'Not Ready','partial':'Partial Ready',
+    loading:'Loading','en-route':'En Route','on-site':'On Site',
+    'wrapping-up':'Wrapping Up',completed:'Completed',
+    cancelled:'Cancelled',delayed:'Delayed' }[s] || s || 'Ready';
+}
+function _p6FreqLabel(f) {
+  return { weekly:'Weekly', biweekly:'Bi-Weekly', monthly:'Monthly',
+    bimonthly:'Bi-Monthly', quarterly:'Quarterly',
+    semiannual:'Semi-Annual', annual:'Annual' }[f] || f || '—';
+}
+function _p6WONum(wo) {
+  return wo.woNumber || ('WO-' + String(wo.id || '').slice(-5).padStart(5,'0'));
+}
+function _p6AssetCat(c) {
+  return { vehicle:'Vehicle', trailer:'Trailer', equipment:'Equipment',
+    tool:'Tool', tech:'Technology', other:'Other' }[c] || c || '—';
+}
+
+// ── 1. Operations Hub landing ─────────────────────────────────────────────────
+function opsHub() {
+  const R = window.GW && window.GW.record;
+  const wos    = state.workOrders     || [];
+  const assets = state.assets         || [];
+  const inv    = state.inventory      || [];
+  const plans  = state.recurringPlans || [];
+  const maint  = state.maintenance    || [];
+
+  const openWOs      = wos.filter(w => w.status === 'scheduled' || w.status === 'in-progress').length;
+  const inProgressWO = wos.filter(w => w.status === 'in-progress').length;
+  const dueToday     = wos.filter(w => w.date && w.date.slice(0,10) === new Date().toISOString().slice(0,10)).length;
+  const lowInv       = inv.filter(i => Number(i.onHand||0) <= Number(i.reorderAt||0)).length;
+  const overdueMaint = maint.filter(m => !m.completedDate && m.dueDate && m.dueDate < new Date().toISOString().slice(0,10)).length;
+  const activePlans  = plans.filter(p => p.status === 'active').length;
+  const idleAssets   = assets.filter(a => a.status === 'idle').length;
+
+  const statsHtml = R ? R.OpsStatusBar([
+    { val: openWOs,      label: 'Open WOs',        accent: 'action',   filter: 'workOrderList' },
+    { val: inProgressWO, label: 'In Progress',      accent: 'accent3',  filter: 'dispatchBoard' },
+    { val: dueToday,     label: 'Due Today',        accent: 'accent2',  filter: 'scheduleBoard' },
+    { val: activePlans,  label: 'Active Plans',     accent: 'emerald',  filter: 'recurringServices' },
+    { val: lowInv,       label: 'Low Inventory',    accent: 'amber',    filter: 'inventoryList', delta: lowInv > 0 ? '⚠' : '' },
+    { val: overdueMaint, label: 'Overdue Maint.',   accent: 'red',      filter: 'maintenanceQueue', delta: overdueMaint > 0 ? '!' : '' },
+    { val: idleAssets,   label: 'Idle Assets',      accent: 'text-muted', filter: 'assetList' },
+  ]) : '';
+
+  const recentWOs = wos.slice(-5).reverse().map(wo => `
+    <div class="wo-row" onclick="show('workOrderDetail','${wo.id}')" style="cursor:pointer">
+      <span class="wo-number">${_p6WONum(wo)}</span>
+      <span class="wo-client">${escapeHtml(wo.clientName||wo.oppId||'—')}</span>
+      <span class="wo-type">${escapeHtml(wo.type||'Service')}</span>
+      <span><span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></span>
+      <span class="wo-date">${wo.date ? _p5FmtDate(wo.date) : '—'}</span>
+    </div>`).join('') || '<p style="padding:16px;color:var(--gw-text-muted);font-style:italic">No work orders yet. <button class="rp-btn-sm" onclick="show(\'workOrderList\')">Create First WO</button></p>';
+
+  const duePlans = plans.filter(p => p.status === 'active').slice(0,5).map(p => `
+    <div class="recur-row" onclick="show('recurringServices')" style="cursor:pointer">
+      <span class="recur-client">${escapeHtml(p.clientName||p.clientId||'—')}</span>
+      <span class="recur-freq">${_p6FreqLabel(p.freq)}</span>
+      <span class="recur-next">${p.nextVisit ? _p5FmtDate(p.nextVisit) : '—'}</span>
+      <span class="recur-crew">${escapeHtml(p.crew||'Unassigned')}</span>
+    </div>`).join('') || '<p style="padding:12px 0;color:var(--gw-text-muted);font-style:italic">No active recurring plans.</p>';
+
+  document.getElementById('app').innerHTML = `
+  <div class="ops-hub-wrap">
+    <header class="rp-header" style="max-width:1200px;margin:0 auto 0;padding:20px 24px 0">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Operations Hub</h1>
+        <p class="rp-subtitle">Scheduling · Dispatch · Work Orders · Assets · Inventory</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('scheduleBoard')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+          Schedule
+        </button>
+        <button class="rp-btn" onclick="show('dispatchBoard')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/></svg>
+          Dispatch
+        </button>
+        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>
+          + Work Order
+        </button>
+      </div>
+    </header>
+
+    <div style="max-width:1200px;margin:0 auto;padding:16px 24px 0">${statsHtml}</div>
+
+    <div class="ops-hub-grid" style="max-width:1200px;margin:0 auto;padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+      <!-- Work Orders panel -->
+      <div class="rp-card" style="grid-column:1/-1">
+        <div class="rp-card-head">
+          <span class="rp-card-title">Recent Work Orders</span>
+          <button class="rp-btn-sm" onclick="show('workOrderList')">View All</button>
+        </div>
+        <div class="wo-list-shell" style="padding:0">
+          ${recentWOs}
+        </div>
+      </div>
+
+      <!-- Recurring plans panel -->
+      <div class="rp-card">
+        <div class="rp-card-head">
+          <span class="rp-card-title">Active Recurring Plans</span>
+          <button class="rp-btn-sm" onclick="show('recurringServices')">View All</button>
+        </div>
+        <div style="padding:4px 0">
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;padding:4px 0 8px;border-bottom:1px solid var(--gw-border)">
+            <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Client</span>
+            <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Freq</span>
+            <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Next Visit</span>
+            <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Crew</span>
+          </div>
+          ${duePlans}
+        </div>
+      </div>
+
+      <!-- Quick links panel -->
+      <div class="rp-card">
+        <div class="rp-card-head">
+          <span class="rp-card-title">Operations Quick Links</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:8px 0">
+          ${[
+            ['scheduleBoard',     'Schedule Board',    'M2 4h12v2H2zM2 8h12v2H2zM2 12h8v2H2z'],
+            ['dispatchBoard',     'Dispatch Board',    'M8 2a6 6 0 100 12A6 6 0 008 2zM8 6v4l2.5 1.5'],
+            ['recurringServices', 'Recurring Services','M3 8a5 5 0 0110 0M8 5v3l2 1'],
+            ['workOrderList',     'Work Orders',       'M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1zM5 5h6M5 8h6M5 11h3'],
+            ['assetList',         'Assets',            'M2 12V6l6-4 6 4v6l-6 4-6-4z'],
+            ['maintenanceQueue',  'Maintenance',       'M8 2a6 6 0 100 12M8 5v3l2 1.5'],
+            ['inventoryList',     'Inventory',         'M2 4h12v10H2zM5 4V2h6v2M6 8h4M6 11h2'],
+            ['timeTracker',       'Time Tracker',      'M8 4v4l2.5 1.5M8 1a7 7 0 100 14A7 7 0 008 1z'],
+          ].map(([view, label, path]) => `
+            <button class="rp-btn" style="justify-content:flex-start;gap:8px" onclick="show('${view}')">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="${path}"/></svg>
+              <span style="font-size:12px">${label}</span>
+            </button>`).join('')}
+        </div>
+      </div>
+
+    </div>
+  </div>`;
+}
+window.opsHub = opsHub;
+
+// ── 2. Schedule Board ─────────────────────────────────────────────────────────
+function scheduleBoard() {
+  const wos   = state.workOrders || [];
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay()+6)%7));
+
+  const days = Array.from({length:5}, (_,i) => {
+    const d = new Date(monday); d.setDate(monday.getDate()+i);
+    return d;
+  });
+
+  const dayNames = ['Mon','Tue','Wed','Thu','Fri'];
+
+  function jobsForDay(d) {
+    const iso = d.toISOString().slice(0,10);
+    return wos.filter(w => w.date && w.date.slice(0,10) === iso);
+  }
+
+  const weekCols = days.map((d, i) => {
+    const isToday = d.toISOString().slice(0,10) === today.toISOString().slice(0,10);
+    const jobs = jobsForDay(d);
+    const jobCards = jobs.map(wo => `
+      <div class="sched-job-card ${_p6WOStatusClass(wo.status)}" onclick="show('workOrderDetail','${wo.id}')" style="cursor:pointer">
+        <div class="sched-job-head">
+          <span class="sched-job-num">${_p6WONum(wo)}</span>
+          <span class="sched-job-time">${wo.time || '—'}</span>
+        </div>
+        <div class="sched-job-client">${escapeHtml(wo.clientName||wo.oppId||'Job')}</div>
+        <div class="sched-job-crew">${escapeHtml(wo.crew||'Unassigned')}</div>
+        <div class="sched-job-type">${escapeHtml(wo.type||'Service')}</div>
+      </div>`).join('') || `<div class="sched-empty">No jobs</div>`;
+
+    return `
+      <div class="sched-day-col${isToday?' sched-day-col--today':''}">
+        <div class="sched-day-head">
+          <span class="sched-day-name">${dayNames[i]}</span>
+          <span class="sched-day-date">${d.getMonth()+1}/${d.getDate()}</span>
+          <span class="sched-day-count">${jobs.length}</span>
+        </div>
+        <div class="sched-day-body">
+          ${jobCards}
+          <button class="sched-add-btn" onclick="show('workOrderList')" title="Add WO for this day">+</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  const weekLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[4].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="sched-shell">
+    <header class="rp-header" style="max-width:1200px;margin:0 auto;padding:20px 24px 16px">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Schedule Board</h1>
+        <p class="rp-subtitle">${weekLabel}</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch View</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+      </div>
+    </header>
+    <div style="max-width:1200px;margin:0 auto;padding:0 24px 32px">
+      <div class="sched-week-grid">
+        ${weekCols}
+      </div>
+    </div>
+  </div>`;
+}
+window.scheduleBoard = scheduleBoard;
+
+// ── 3. Dispatch Board ─────────────────────────────────────────────────────────
+function dispatchBoard() {
+  const R   = window.GW && window.GW.record;
+  const wos = state.workOrders || [];
+
+  // Group by crew
+  const crews = {};
+  wos.filter(w => w.status === 'scheduled' || w.status === 'in-progress').forEach(w => {
+    const c = w.crew || 'Unassigned';
+    if (!crews[c]) crews[c] = [];
+    crews[c].push(w);
+  });
+  const crewNames = Object.keys(crews).sort();
+
+  const crewPanels = crewNames.map(crew => {
+    const jobs = crews[crew];
+    const jobRows = jobs.map(wo => `
+      <div class="disp-job-row" onclick="show('workOrderDetail','${wo.id}')" style="cursor:pointer">
+        <span class="disp-job-num">${_p6WONum(wo)}</span>
+        <span class="disp-job-client">${escapeHtml(wo.clientName||wo.oppId||'—')}</span>
+        <span>${R ? R.ReadinessBadge(wo.readiness||'ready') : ''}</span>
+        <span class="disp-job-time">${wo.time||'—'}</span>
+      </div>`).join('') || '<p class="disp-empty">No jobs dispatched</p>';
+
+    return `
+      <div class="disp-crew-card">
+        <div class="disp-crew-head">
+          <span class="disp-crew-name">${escapeHtml(crew)}</span>
+          <span class="disp-crew-count">${jobs.length} job${jobs.length!==1?'s':''}</span>
+        </div>
+        <div class="disp-crew-jobs">${jobRows}</div>
+      </div>`;
+  }).join('') || `
+    <div class="rp-empty-state">
+      <p>No active dispatches today.</p>
+      <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Schedule Work Order</button>
+    </div>`;
+
+  // Activity feed
+  const feedEvents = wos.slice(-8).reverse().map(wo => ({
+    title: _p6WONum(wo) + ' — ' + (wo.clientName||wo.oppId||'Job'),
+    desc:  _p6WOStatusLabel(wo.status) + (wo.crew ? ' · ' + wo.crew : ''),
+    time:  wo.updatedAt ? _p5FmtDate(wo.updatedAt) : (wo.date ? _p5FmtDate(wo.date) : '—'),
+    variant: wo.status === 'completed' ? 'positive' : wo.status === 'in-progress' ? 'info' : 'neutral'
+  }));
+  const feedHtml = R ? R.OpsTL(feedEvents) : feedEvents.map(e => `<div style="padding:8px 0;border-bottom:1px solid var(--gw-border)"><strong>${escapeHtml(e.title)}</strong><br><small>${escapeHtml(e.desc)}</small></div>`).join('');
+
+  document.getElementById('app').innerHTML = `
+  <div class="disp-shell">
+    <header class="rp-header" style="max-width:1200px;margin:0 auto;padding:20px 24px 16px">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Dispatch Board</h1>
+        <p class="rp-subtitle">${crewNames.length} crew${crewNames.length!==1?'s':''} · ${wos.filter(w=>w.status==='in-progress').length} in progress</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule View</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+      </div>
+    </header>
+    <div style="max-width:1200px;margin:0 auto;padding:0 24px 32px">
+      <div class="disp-layout">
+        <div class="disp-crew-panel">
+          <div class="disp-panel-head">Crews</div>
+          ${crewPanels}
+        </div>
+        <div class="disp-feed-panel">
+          <div class="disp-panel-head">Activity Feed</div>
+          ${feedHtml || '<p style="color:var(--gw-text-muted);font-style:italic;padding:16px 0">No recent activity.</p>'}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+window.dispatchBoard = dispatchBoard;
+
+// ── 4. Recurring Services ─────────────────────────────────────────────────────
+function recurringServices() {
+  const plans = state.recurringPlans || [];
+  const today = new Date().toISOString().slice(0,10);
+
+  const dueSoon = plans.filter(p => p.status==='active' && p.nextVisit && p.nextVisit <= new Date(Date.now()+7*864e5).toISOString().slice(0,10));
+  const active  = plans.filter(p => p.status==='active');
+  const paused  = plans.filter(p => p.status==='paused');
+
+  function planRow(p) {
+    const overdue = p.nextVisit && p.nextVisit < today;
+    return `
+    <div class="recur-row" onclick="show('workOrderList')" style="cursor:pointer">
+      <span class="recur-client">${escapeHtml(p.clientName||p.clientId||'—')}</span>
+      <span class="recur-freq">${_p6FreqLabel(p.freq)}</span>
+      <span class="recur-next${overdue?' recur-next--overdue':''}">${p.nextVisit ? _p5FmtDate(p.nextVisit) : '—'}</span>
+      <span class="recur-crew">${escapeHtml(p.crew||'Unassigned')}</span>
+      <span><span class="ops-ready-badge ${p.status==='active'?'wo-status--completed':p.status==='paused'?'wo-status--onhold':'wo-status--cancelled'}">${p.status||'active'}</span></span>
+      <span class="recur-actions">
+        <button class="rp-btn-sm" onclick="event.stopPropagation();show('workOrderList')">Create WO</button>
+      </span>
+    </div>`;
+  }
+
+  const dueShelf = dueSoon.length ? `
+    <div class="recur-due-shelf">
+      <div class="recur-shelf-head">Due Within 7 Days (${dueSoon.length})</div>
+      ${dueSoon.map(planRow).join('')}
+    </div>` : '';
+
+  const allRows = plans.length
+    ? plans.map(planRow).join('')
+    : `<div class="rp-empty-state"><p>No recurring service plans yet.</p><button class="rp-btn rp-btn--primary" onclick="show('clients')">Link Client Plan</button></div>`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="recur-shell">
+    <header class="rp-header" style="max-width:1100px;margin:0 auto;padding:20px 24px 16px">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Recurring Services</h1>
+        <p class="rp-subtitle">${active.length} active · ${paused.length} paused · ${dueSoon.length} due soon</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('opsHub')">← Ops Hub</button>
+      </div>
+    </header>
+    <div style="max-width:1100px;margin:0 auto;padding:0 24px 32px">
+      ${dueShelf}
+      <div class="recur-list">
+        <div class="recur-list-head" style="display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:10px;padding:6px 12px;border-bottom:2px solid var(--gw-border)">
+          <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Client</span>
+          <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Frequency</span>
+          <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Next Visit</span>
+          <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Crew</span>
+          <span style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">Status</span>
+          <span></span>
+        </div>
+        ${allRows}
+      </div>
+    </div>
+  </div>`;
+}
+window.recurringServices = recurringServices;
+
+// ── 5. Work Order List ────────────────────────────────────────────────────────
+function workOrderList() {
+  const wos = state.workOrders || [];
+
+  // Summary bar
+  const counts = { scheduled:0, 'in-progress':0, completed:0, cancelled:0, 'on-hold':0 };
+  wos.forEach(w => { if (counts[w.status]!==undefined) counts[w.status]++; });
+
+  function newWO() {
+    const id = 'wo-' + Date.now();
+    const woNum = 'WO-' + String(wos.length+1).padStart(5,'0');
+    const wo = { id, woNumber: woNum, status:'scheduled', crew:'', date:'', type:'Service',
+      clientName:'', notes:'', checklist:[], materials:[], assets:[], readiness:'ready',
+      createdAt: new Date().toISOString() };
+    state.workOrders = [...wos, wo];
+    saveState();
+    show('workOrderDetail', id);
+  }
+
+  const rows = wos.length ? [...wos].reverse().map(wo => `
+    <div class="wo-row" onclick="show('workOrderDetail','${wo.id}')" style="cursor:pointer">
+      <span class="wo-number">${_p6WONum(wo)}</span>
+      <span class="wo-client">${escapeHtml(wo.clientName||wo.oppId||'—')}</span>
+      <span class="wo-type">${escapeHtml(wo.type||'Service')}</span>
+      <span class="wo-date">${wo.date ? _p5FmtDate(wo.date) : '—'}</span>
+      <span class="wo-date">${escapeHtml(wo.crew||'Unassigned')}</span>
+      <span><span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></span>
+      <span class="wo-actions">
+        <button class="rp-btn-sm" onclick="event.stopPropagation();show('workOrderDetail','${wo.id}')">Open</button>
+        <button class="rp-btn-sm rp-btn-sm--danger" onclick="event.stopPropagation();_p6DeleteWO('${wo.id}')">✕</button>
+      </span>
+    </div>`) .join('')
+    : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No work orders yet.</p></div>`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="wo-list-shell">
+    <header class="rp-header" style="padding:20px 0 0">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Work Orders</h1>
+        <p class="rp-subtitle">${wos.length} total · ${counts['in-progress']} in progress · ${counts.scheduled} scheduled</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule Board</button>
+        <button class="rp-btn rp-btn--primary" onclick="_p6NewWO()">+ New Work Order</button>
+      </div>
+    </header>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding-top:4px">
+      ${Object.entries(counts).map(([s,n]) => `
+        <span class="ops-ready-badge ${_p6WOStatusClass(s)}" style="cursor:default">${_p6WOStatusLabel(s)}: ${n}</span>`).join('')}
+    </div>
+
+    <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);overflow:hidden;background:var(--gw-bg-surface-2)">
+      <div class="wo-row" style="background:var(--gw-bg-surface-3);cursor:default;font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">
+        <span>WO #</span><span>Client</span><span>Type</span><span>Date</span><span>Crew</span><span>Status</span><span></span>
+      </div>
+      ${rows}
+    </div>
+  </div>`;
+
+  window._p6NewWO = newWO;
+}
+window.workOrderList = workOrderList;
+
+window._p6DeleteWO = function(id) {
+  if (!confirm('Delete this work order?')) return;
+  state.workOrders = (state.workOrders||[]).filter(w => w.id !== id);
+  saveState();
+  workOrderList();
+};
+
+// ── 6. Work Order Detail ──────────────────────────────────────────────────────
+function workOrderDetail(id) {
+  const R   = window.GW && window.GW.record;
+  const wos = state.workOrders || [];
+  let wo    = wos.find(w => w.id === id);
+  if (!wo) {
+    // Create stub if not found
+    wo = { id: id||('wo-'+Date.now()), woNumber:'WO-NEW', status:'scheduled', crew:'', date:'', type:'Service',
+      clientName:'', notes:'', checklist:[], materials:[], assets:[], readiness:'ready',
+      createdAt: new Date().toISOString() };
+    state.workOrders = [...(state.workOrders||[]), wo];
+    saveState();
+  }
+
+  function save() {
+    wo.clientName = document.getElementById('wo-client-name')?.value || wo.clientName;
+    wo.type       = document.getElementById('wo-type')?.value       || wo.type;
+    wo.date       = document.getElementById('wo-date')?.value       || wo.date;
+    wo.time       = document.getElementById('wo-time')?.value       || wo.time;
+    wo.crew       = document.getElementById('wo-crew')?.value       || wo.crew;
+    wo.status     = document.getElementById('wo-status')?.value     || wo.status;
+    wo.readiness  = document.getElementById('wo-readiness')?.value  || wo.readiness;
+    wo.notes      = document.getElementById('wo-notes')?.value      || wo.notes;
+    wo.updatedAt  = new Date().toISOString();
+    state.workOrders = (state.workOrders||[]).map(w => w.id===id ? wo : w);
+    saveState();
+    workOrderDetail(id);
+  }
+
+  // Checklist
+  const checklist = wo.checklist||[];
+  const checklistHtml = checklist.map((item,i) => `
+    <div class="wo-checklist-item">
+      <button class="wo-check-box${item.done?' checked':''}" onclick="_p6ToggleCheck('${id}',${i})">
+        ${item.done?'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-5"/></svg>':''}
+      </button>
+      <span class="wo-check-label${item.done?' checked':''}">${escapeHtml(item.text||'')}</span>
+      <button class="rp-btn-sm rp-btn-sm--danger" style="margin-left:auto" onclick="_p6RemoveCheck('${id}',${i})">✕</button>
+    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No checklist items.</p>';
+
+  // Materials
+  const mats = wo.materials||[];
+  const matsHtml = mats.map((m,i) => `
+    <div class="wo-material-item">
+      <span class="wo-mat-name">${escapeHtml(m.name||'Item')}</span>
+      <span class="wo-mat-qty">${m.qty||1} ${escapeHtml(m.unit||'ea')}</span>
+      <button class="rp-btn-sm rp-btn-sm--danger" onclick="_p6RemoveMat('${id}',${i})">✕</button>
+    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No materials allocated.</p>';
+
+  // TL events
+  const tlEvents = (wo.timeline||[]).map(e => ({
+    title: e.action, desc: e.note||'', time: e.at ? _p5FmtDate(e.at) : '—', variant: 'neutral'
+  }));
+  if (!tlEvents.length) tlEvents.push({ title: 'Work Order Created', desc: 'Initial creation', time: wo.createdAt ? _p5FmtDate(wo.createdAt) : '—', variant: 'positive' });
+  const tlHtml = R ? R.OpsTL(tlEvents) : '';
+
+  // Left rail
+  const leftRail = `
+    <section class="rp-section">
+      <div class="wo-scope-block">
+        <div class="wo-scope-label">Work Order #</div>
+        <div class="wo-scope-text" style="font-size:18px;font-weight:800;letter-spacing:.02em">${_p6WONum(wo)}</div>
+      </div>
+    </section>
+    <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Details</span></div>
+      <div class="rp-field-grid">
+        <label class="rp-field">
+          <span class="rp-field-label">Client / Job Name</span>
+          <input class="rp-input" id="wo-client-name" value="${escapeHtml(wo.clientName||'')}" placeholder="Client or job name">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Type</span>
+          <input class="rp-input" id="wo-type" value="${escapeHtml(wo.type||'Service')}" placeholder="e.g. Lawn Care, Install">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Scheduled Date</span>
+          <input class="rp-input" id="wo-date" type="date" value="${wo.date||''}">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Time</span>
+          <input class="rp-input" id="wo-time" type="time" value="${wo.time||''}">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Crew / Assignee</span>
+          <input class="rp-input" id="wo-crew" value="${escapeHtml(wo.crew||'')}" placeholder="Crew name or lead">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Status</span>
+          <select class="rp-input" id="wo-status">
+            ${['scheduled','in-progress','completed','on-hold','cancelled'].map(s=>`<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Readiness</span>
+          <select class="rp-input" id="wo-readiness">
+            ${['ready','not-ready','partial','loading','en-route','on-site','wrapping-up','completed','cancelled','delayed'].map(s=>`<option value="${s}"${wo.readiness===s?' selected':''}>${_p6ReadinessLabel(s)}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <label class="rp-field" style="margin-top:8px">
+        <span class="rp-field-label">Notes / Scope</span>
+        <textarea class="rp-input" id="wo-notes" rows="4" placeholder="Job scope, special instructions…">${escapeHtml(wo.notes||'')}</textarea>
+      </label>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="rp-btn rp-btn--primary" onclick="_p6WOSave()">Save Changes</button>
+        <button class="rp-btn" onclick="show('workOrderList')">← Back to WOs</button>
+      </div>
+    </section>
+
+    <section class="rp-section">
+      <div class="rp-section-head">
+        <span class="rp-section-title">Checklist</span>
+        <button class="rp-btn-sm" onclick="_p6AddCheck('${id}')">+ Item</button>
+      </div>
+      ${checklistHtml}
+    </section>
+
+    <section class="rp-section">
+      <div class="rp-section-head">
+        <span class="rp-section-title">Materials</span>
+        <button class="rp-btn-sm" onclick="show('materialAllocation','${id}')">Allocate</button>
+      </div>
+      ${matsHtml}
+    </section>`;
+
+  // Right rail
+  const rightRail = `
+    <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Status</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Readiness</span><br>
+          ${R ? R.ReadinessBadge(wo.readiness||'ready') : `<strong>${_p6ReadinessLabel(wo.readiness||'ready')}</strong>`}</div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Work Order Status</span><br>
+          <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Crew</span><br>
+          <strong style="font-size:13px">${escapeHtml(wo.crew||'Unassigned')}</strong></div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Scheduled</span><br>
+          <strong style="font-size:13px">${wo.date ? _p5FmtDate(wo.date) : '—'}${wo.time?' at '+wo.time:''}</strong></div>
+      </div>
+    </section>
+    <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Timeline</span></div>
+      ${tlHtml || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No activity yet.</p>'}
+    </section>`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="rp-shell">
+    <div class="rp-breadcrumb">
+      <button class="rp-crumb" onclick="show('workOrderList')">Work Orders</button>
+      <span class="rp-crumb-sep">›</span>
+      <span class="rp-crumb-current">${_p6WONum(wo)}</span>
+    </div>
+    <div class="rp-columns">
+      <div class="rp-col-main">${leftRail}</div>
+      <div class="rp-col-side">${rightRail}</div>
+    </div>
+  </div>`;
+
+  window._p6WOSave = save;
+}
+window.workOrderDetail = workOrderDetail;
+
+window._p6ToggleCheck = function(woId, idx) {
+  const wo = (state.workOrders||[]).find(w => w.id===woId);
+  if (!wo) return;
+  if (!wo.checklist) wo.checklist = [];
+  if (wo.checklist[idx]) wo.checklist[idx].done = !wo.checklist[idx].done;
+  state.workOrders = (state.workOrders||[]).map(w => w.id===woId ? wo : w);
+  saveState();
+  workOrderDetail(woId);
+};
+window._p6RemoveCheck = function(woId, idx) {
+  const wo = (state.workOrders||[]).find(w => w.id===woId);
+  if (!wo || !wo.checklist) return;
+  wo.checklist.splice(idx, 1);
+  state.workOrders = (state.workOrders||[]).map(w => w.id===woId ? wo : w);
+  saveState();
+  workOrderDetail(woId);
+};
+window._p6AddCheck = function(woId) {
+  const text = prompt('Checklist item:');
+  if (!text) return;
+  const wo = (state.workOrders||[]).find(w => w.id===woId);
+  if (!wo) return;
+  if (!wo.checklist) wo.checklist = [];
+  wo.checklist.push({ text, done:false });
+  state.workOrders = (state.workOrders||[]).map(w => w.id===woId ? wo : w);
+  saveState();
+  workOrderDetail(woId);
+};
+window._p6RemoveMat = function(woId, idx) {
+  const wo = (state.workOrders||[]).find(w => w.id===woId);
+  if (!wo || !wo.materials) return;
+  wo.materials.splice(idx, 1);
+  state.workOrders = (state.workOrders||[]).map(w => w.id===woId ? wo : w);
+  saveState();
+  workOrderDetail(woId);
+};
+
+// ── 7. Asset List ─────────────────────────────────────────────────────────────
+function assetList() {
+  const R      = window.GW && window.GW.record;
+  const assets = state.assets || [];
+
+  const counts = { active:0, idle:0, maintenance:0, retired:0, rented:0 };
+  assets.forEach(a => { if (counts[a.status]!==undefined) counts[a.status]++; });
+
+  const statsHtml = R ? R.OpsStatusBar([
+    { val: counts.active,      label: 'Active',          accent: 'emerald' },
+    { val: counts.idle,        label: 'Idle',            accent: 'text-muted' },
+    { val: counts.maintenance, label: 'In Maintenance',  accent: 'amber' },
+    { val: counts.retired,     label: 'Retired',         accent: 'red' },
+    { val: counts.rented,      label: 'Rented Out',      accent: 'action' },
+  ]) : '';
+
+  function newAsset() {
+    const id = 'ast-' + Date.now();
+    const asset = { id, name:'New Asset', category:'equipment', status:'active',
+      assignedTo:'', make:'', model:'', serial:'', nextMaint:'', notes:'',
+      createdAt: new Date().toISOString() };
+    state.assets = [...(state.assets||[]), asset];
+    saveState();
+    show('assetDetail', id);
+  }
+
+  const rows = assets.length ? [...assets].reverse().map(a => `
+    <div class="wo-row" onclick="show('assetDetail','${a.id}')" style="cursor:pointer">
+      <span class="wo-client">${escapeHtml(a.name||'—')}</span>
+      <span class="wo-type">${_p6AssetCat(a.category)}</span>
+      <span class="wo-type">${escapeHtml(a.make||'')} ${escapeHtml(a.model||'')}</span>
+      <span class="wo-date">${escapeHtml(a.assignedTo||'—')}</span>
+      <span class="wo-date">${a.nextMaint ? _p5FmtDate(a.nextMaint) : '—'}</span>
+      <span>${R ? R.AssetStatusBadge(a.status) : `<span class="ops-asset-badge">${_p6AssetLabel(a.status)}</span>`}</span>
+      <span class="wo-actions">
+        <button class="rp-btn-sm" onclick="event.stopPropagation();show('assetDetail','${a.id}')">Open</button>
+        <button class="rp-btn-sm rp-btn-sm--danger" onclick="event.stopPropagation();_p6DeleteAsset('${a.id}')">✕</button>
+      </span>
+    </div>`) .join('')
+    : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No assets tracked yet.</p></div>`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="wo-list-shell">
+    <header class="rp-header" style="padding:20px 0 16px">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Assets</h1>
+        <p class="rp-subtitle">${assets.length} tracked · ${counts.active} active · ${counts.maintenance} in maintenance</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('maintenanceQueue')">Maintenance Queue</button>
+        <button class="rp-btn rp-btn--primary" onclick="_p6NewAsset()">+ Add Asset</button>
+      </div>
+    </header>
+    ${statsHtml}
+    <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);overflow:hidden;background:var(--gw-bg-surface-2);margin-top:16px">
+      <div class="wo-row" style="background:var(--gw-bg-surface-3);cursor:default;font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">
+        <span>Name</span><span>Category</span><span>Make/Model</span><span>Assigned To</span><span>Next Maint.</span><span>Status</span><span></span>
+      </div>
+      ${rows}
+    </div>
+  </div>`;
+  window._p6NewAsset = newAsset;
+}
+window.assetList = assetList;
+
+window._p6DeleteAsset = function(id) {
+  if (!confirm('Remove this asset?')) return;
+  state.assets = (state.assets||[]).filter(a => a.id !== id);
+  saveState();
+  assetList();
+};
+
+// ── 8. Asset Detail ───────────────────────────────────────────────────────────
+function assetDetail(id) {
+  const R = window.GW && window.GW.record;
+  const assets = state.assets || [];
+  let asset = assets.find(a => a.id === id);
+  if (!asset) {
+    asset = { id: id||('ast-'+Date.now()), name:'New Asset', category:'equipment',
+      status:'active', assignedTo:'', make:'', model:'', serial:'',
+      nextMaint:'', notes:'', createdAt: new Date().toISOString() };
+    state.assets = [...(state.assets||[]), asset];
+    saveState();
+  }
+
+  function save() {
+    asset.name       = document.getElementById('ast-name')?.value       || asset.name;
+    asset.category   = document.getElementById('ast-category')?.value   || asset.category;
+    asset.status     = document.getElementById('ast-status')?.value     || asset.status;
+    asset.assignedTo = document.getElementById('ast-assigned')?.value   || asset.assignedTo;
+    asset.make       = document.getElementById('ast-make')?.value       || asset.make;
+    asset.model      = document.getElementById('ast-model')?.value      || asset.model;
+    asset.serial     = document.getElementById('ast-serial')?.value     || asset.serial;
+    asset.nextMaint  = document.getElementById('ast-nextmaint')?.value  || asset.nextMaint;
+    asset.notes      = document.getElementById('ast-notes')?.value      || asset.notes;
+    asset.updatedAt  = new Date().toISOString();
+    state.assets = (state.assets||[]).map(a => a.id===id ? asset : a);
+    saveState();
+    assetDetail(id);
+  }
+
+  const maintHistory = (state.maintenance||[]).filter(m => m.assetId === id);
+  const maintRows = maintHistory.map(m => `
+    <div class="maint-row">
+      <span class="maint-type">${escapeHtml(m.type||'Service')}</span>
+      <span class="maint-due">${m.dueDate ? _p5FmtDate(m.dueDate) : '—'}</span>
+      <span class="maint-done">${m.completedDate ? _p5FmtDate(m.completedDate) : '<em style="color:var(--gw-text-muted)">Pending</em>'}</span>
+      <span class="maint-by">${escapeHtml(m.performedBy||'—')}</span>
+    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No maintenance records.</p>';
+
+  const leftRail = `
+    <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Asset Details</span></div>
+      <div class="rp-field-grid">
+        <label class="rp-field">
+          <span class="rp-field-label">Asset Name</span>
+          <input class="rp-input" id="ast-name" value="${escapeHtml(asset.name||'')}" placeholder="e.g. Mower #1">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Category</span>
+          <select class="rp-input" id="ast-category">
+            ${['vehicle','trailer','equipment','tool','tech','other'].map(c=>`<option value="${c}"${asset.category===c?' selected':''}>${_p6AssetCat(c)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Status</span>
+          <select class="rp-input" id="ast-status">
+            ${['active','idle','maintenance','retired','rented','pending','out-of-service'].map(s=>`<option value="${s}"${asset.status===s?' selected':''}>${_p6AssetLabel(s)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Assigned To</span>
+          <input class="rp-input" id="ast-assigned" value="${escapeHtml(asset.assignedTo||'')}" placeholder="Crew or employee">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Make</span>
+          <input class="rp-input" id="ast-make" value="${escapeHtml(asset.make||'')}" placeholder="e.g. John Deere">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Model</span>
+          <input class="rp-input" id="ast-model" value="${escapeHtml(asset.model||'')}" placeholder="e.g. Z930M">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Serial Number</span>
+          <input class="rp-input" id="ast-serial" value="${escapeHtml(asset.serial||'')}" placeholder="Serial / VIN">
+        </label>
+        <label class="rp-field">
+          <span class="rp-field-label">Next Maintenance</span>
+          <input class="rp-input" id="ast-nextmaint" type="date" value="${asset.nextMaint||''}">
+        </label>
+      </div>
+      <label class="rp-field" style="margin-top:8px">
+        <span class="rp-field-label">Notes</span>
+        <textarea class="rp-input" id="ast-notes" rows="3" placeholder="Condition notes, purchase info…">${escapeHtml(asset.notes||'')}</textarea>
+      </label>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="rp-btn rp-btn--primary" onclick="_p6AssetSave()">Save Changes</button>
+        <button class="rp-btn" onclick="show('assetList')">← Back to Assets</button>
+      </div>
+    </section>
+    <section class="rp-section">
+      <div class="rp-section-head">
+        <span class="rp-section-title">Maintenance History</span>
+        <button class="rp-btn-sm" onclick="show('maintenanceQueue')">View Queue</button>
+      </div>
+      ${maintRows}
+    </section>`;
+
+  const rightRail = `
+    <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Status</span></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div>${R ? R.AssetStatusBadge(asset.status) : `<span>${_p6AssetLabel(asset.status)}</span>`}</div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Category</span><br><strong>${_p6AssetCat(asset.category)}</strong></div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Assigned To</span><br><strong>${escapeHtml(asset.assignedTo||'Unassigned')}</strong></div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Next Maintenance</span><br><strong>${asset.nextMaint ? _p5FmtDate(asset.nextMaint) : '—'}</strong></div>
+        <div><span style="font-size:11px;color:var(--gw-text-muted)">Make / Model</span><br><strong>${escapeHtml(asset.make||'—')} ${escapeHtml(asset.model||'')}</strong></div>
+      </div>
+    </section>`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="rp-shell">
+    <div class="rp-breadcrumb">
+      <button class="rp-crumb" onclick="show('assetList')">Assets</button>
+      <span class="rp-crumb-sep">›</span>
+      <span class="rp-crumb-current">${escapeHtml(asset.name||'Asset')}</span>
+    </div>
+    <div class="rp-columns">
+      <div class="rp-col-main">${leftRail}</div>
+      <div class="rp-col-side">${rightRail}</div>
+    </div>
+  </div>`;
+
+  window._p6AssetSave = save;
+}
+window.assetDetail = assetDetail;
+
+// ── 9. Maintenance Queue ──────────────────────────────────────────────────────
+function maintenanceQueue() {
+  const maint  = state.maintenance || [];
+  const assets = state.assets || [];
+  const today  = new Date().toISOString().slice(0,10);
+
+  const overdue  = maint.filter(m => !m.completedDate && m.dueDate && m.dueDate < today);
+  const dueSoon  = maint.filter(m => !m.completedDate && m.dueDate && m.dueDate >= today && m.dueDate <= new Date(Date.now()+14*864e5).toISOString().slice(0,10));
+  const upcoming = maint.filter(m => !m.completedDate && m.dueDate && m.dueDate > new Date(Date.now()+14*864e5).toISOString().slice(0,10));
+  const done     = maint.filter(m => m.completedDate);
+
+  function assetName(id) {
+    const a = assets.find(a => a.id===id);
+    return a ? a.name : id||'—';
+  }
+
+  function maintRow(m) {
+    const isOverdue = !m.completedDate && m.dueDate && m.dueDate < today;
+    return `
+    <div class="maint-row${isOverdue?' maint-row--overdue':''}" onclick="show('assetDetail','${m.assetId}')" style="cursor:pointer">
+      <span class="maint-asset">${escapeHtml(assetName(m.assetId))}</span>
+      <span class="maint-type">${escapeHtml(m.type||'Service')}</span>
+      <span class="maint-due${isOverdue?' maint-overdue-text':''}">${m.dueDate ? _p5FmtDate(m.dueDate) : '—'}</span>
+      <span class="maint-done">${m.completedDate ? _p5FmtDate(m.completedDate) : '<em style="color:var(--gw-text-muted)">Pending</em>'}</span>
+      <span class="maint-by">${escapeHtml(m.performedBy||'—')}</span>
+      <span class="wo-actions">
+        ${!m.completedDate ? `<button class="rp-btn-sm" onclick="event.stopPropagation();_p6CompleteMaint('${m.id}')">Mark Done</button>` : ''}
+      </span>
+    </div>`;
+  }
+
+  function section(title, items, accent) {
+    if (!items.length) return '';
+    return `
+      <div style="margin-bottom:24px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gw-${accent});margin-bottom:8px">${title} (${items.length})</div>
+        <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);overflow:hidden;background:var(--gw-bg-surface-2)">
+          ${items.map(maintRow).join('')}
+        </div>
+      </div>`;
+  }
+
+  function newMaintRecord() {
+    if (!assets.length) { alert('Add an asset first.'); return; }
+    const assetId = prompt('Asset ID or name:');
+    if (!assetId) return;
+    const type    = prompt('Maintenance type (e.g. Oil Change, Blade Sharpen):','Service');
+    if (!type) return;
+    const dueDate = prompt('Due date (YYYY-MM-DD):', new Date().toISOString().slice(0,10));
+    const id = 'maint-' + Date.now();
+    state.maintenance = [...(state.maintenance||[]), { id, assetId, type, dueDate, performedBy:'', completedDate:null, notes:'' }];
+    saveState();
+    maintenanceQueue();
+  }
+
+  const emptyState = !maint.length ? `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No maintenance records. Add assets and schedule their maintenance.</p></div>` : '';
+
+  document.getElementById('app').innerHTML = `
+  <div class="wo-list-shell">
+    <header class="rp-header" style="padding:20px 0 16px">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Maintenance Queue</h1>
+        <p class="rp-subtitle">${overdue.length} overdue · ${dueSoon.length} due soon · ${done.length} completed</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('assetList')">Assets</button>
+        <button class="rp-btn rp-btn--primary" onclick="_p6NewMaint()">+ Schedule Maintenance</button>
+      </div>
+    </header>
+    ${emptyState}
+    ${section('Overdue', overdue, 'red')}
+    ${section('Due Within 14 Days', dueSoon, 'amber')}
+    ${section('Upcoming', upcoming, 'text-secondary')}
+    ${section('Completed', done.slice(-10).reverse(), 'emerald')}
+  </div>`;
+  window._p6NewMaint = newMaintRecord;
+}
+window.maintenanceQueue = maintenanceQueue;
+
+window._p6CompleteMaint = function(id) {
+  const date = prompt('Completion date:', new Date().toISOString().slice(0,10));
+  if (!date) return;
+  const by = prompt('Performed by:','');
+  state.maintenance = (state.maintenance||[]).map(m => m.id===id ? {...m, completedDate:date, performedBy:by||m.performedBy} : m);
+  saveState();
+  maintenanceQueue();
+};
+
+// ── 10. Inventory List ────────────────────────────────────────────────────────
+function inventoryList() {
+  const R   = window.GW && window.GW.record;
+  const inv = state.inventory || [];
+  const today = new Date().toISOString().slice(0,10);
+
+  const needReorder = inv.filter(i => Number(i.onHand||0) <= Number(i.reorderAt||0));
+  const outOfStock  = inv.filter(i => Number(i.onHand||0) === 0);
+  const ok          = inv.filter(i => Number(i.onHand||0) > Number(i.reorderAt||0));
+
+  const statsHtml = R ? R.OpsStatusBar([
+    { val: inv.length,           label: 'Total Items',   accent: 'action' },
+    { val: ok.length,            label: 'In Stock',      accent: 'emerald' },
+    { val: needReorder.length,   label: 'Low / Reorder', accent: 'amber', delta: needReorder.length>0?'⚠':'' },
+    { val: outOfStock.length,    label: 'Out of Stock',  accent: 'red',   delta: outOfStock.length>0?'!':'' },
+  ]) : '';
+
+  function newItem() {
+    const id   = 'inv-' + Date.now();
+    const item = { id, name:'New Item', category:'supply', onHand:0, reserved:0,
+      reorderAt:5, vendor:'', unit:'ea', notes:'',
+      createdAt: new Date().toISOString() };
+    state.inventory = [...(state.inventory||[]), item];
+    saveState();
+    inventoryList();
+  }
+
+  function statusFor(item) {
+    if (Number(item.onHand||0) === 0) return 'out-of-stock';
+    if (Number(item.onHand||0) <= Number(item.reorderAt||0)) return 'low-stock';
+    return 'ok';
+  }
+
+  const rows = inv.length ? [...inv].map(item => {
+    const s = statusFor(item);
+    const badge = R ? R.InvtStatusBadge(s) : `<span class="ops-inv-badge">${_p6InvtLabel(s)}</span>`;
+    const pct = item.reorderAt > 0 ? Math.min(100, Math.round(Number(item.onHand||0)/Number(item.reorderAt||1)*100)) : 100;
+    return `
+    <div class="invt-row" style="cursor:default">
+      <span class="invt-name">${escapeHtml(item.name||'—')}</span>
+      <span class="invt-cat">${escapeHtml(item.category||'—')}</span>
+      <span class="invt-qty">
+        <span style="font-weight:700;font-size:13px">${item.onHand||0}</span>
+        <span style="font-size:10px;color:var(--gw-text-muted)">${escapeHtml(item.unit||'ea')}</span>
+      </span>
+      <span class="invt-bar-wrap">
+        <div class="invt-bar"><div class="invt-bar-fill invt-bar-fill--${s}" style="width:${pct}%"></div></div>
+        <span class="invt-reorder-label">reorder @ ${item.reorderAt||0}</span>
+      </span>
+      <span>${badge}</span>
+      <span class="invt-vendor">${escapeHtml(item.vendor||'—')}</span>
+      <span class="wo-actions">
+        <button class="rp-btn-sm" onclick="_p6EditInvt('${item.id}')">Edit</button>
+        <button class="rp-btn-sm rp-btn-sm--danger" onclick="_p6DeleteInvt('${item.id}')">✕</button>
+      </span>
+    </div>`;
+  }).join('')
+  : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No inventory items yet.</p></div>`;
+
+  document.getElementById('app').innerHTML = `
+  <div class="wo-list-shell">
+    <header class="rp-header" style="padding:20px 0 16px">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Inventory</h1>
+        <p class="rp-subtitle">${inv.length} items · ${needReorder.length} need reorder</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('opsHub')">← Ops Hub</button>
+        <button class="rp-btn rp-btn--primary" onclick="_p6NewInvt()">+ Add Item</button>
+      </div>
+    </header>
+    ${statsHtml}
+    <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);overflow:hidden;background:var(--gw-bg-surface-2);margin-top:16px">
+      <div class="invt-row" style="background:var(--gw-bg-surface-3);cursor:default;font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">
+        <span>Item Name</span><span>Category</span><span>On Hand</span><span>Stock Level</span><span>Status</span><span>Vendor</span><span></span>
+      </div>
+      ${rows}
+    </div>
+  </div>`;
+  window._p6NewInvt = newItem;
+}
+window.inventoryList = inventoryList;
+
+window._p6EditInvt = function(id) {
+  const item = (state.inventory||[]).find(i => i.id===id);
+  if (!item) return;
+  const name     = prompt('Item name:', item.name) || item.name;
+  const onHand   = prompt('On hand quantity:', item.onHand);
+  const reorderAt= prompt('Reorder at:', item.reorderAt);
+  const vendor   = prompt('Vendor:', item.vendor||'');
+  state.inventory = (state.inventory||[]).map(i => i.id===id ? {...i, name, onHand:Number(onHand)||0, reorderAt:Number(reorderAt)||0, vendor } : i);
+  saveState();
+  inventoryList();
+};
+window._p6DeleteInvt = function(id) {
+  if (!confirm('Remove this inventory item?')) return;
+  state.inventory = (state.inventory||[]).filter(i => i.id!==id);
+  saveState();
+  inventoryList();
+};
+
+// ── 11. Material Allocation ───────────────────────────────────────────────────
+function materialAllocation(woId) {
+  const wos = state.workOrders || [];
+  const inv  = state.inventory  || [];
+  const wo   = wos.find(w => w.id === woId);
+  if (!wo) { show('workOrderList'); return; }
+
+  const allocs = (state.allocations||[]).filter(a => a.woId === woId);
+
+  function addAlloc() {
+    if (!inv.length) { alert('No inventory items. Add items to inventory first.'); return; }
+    const names = inv.map((i,n) => `${n+1}. ${i.name} (${i.onHand} ${i.unit||'ea'})`).join('\n');
+    const idx   = parseInt(prompt('Select item number:\n'+names)) - 1;
+    if (isNaN(idx) || idx<0 || idx>=inv.length) return;
+    const item  = inv[idx];
+    const qty   = parseFloat(prompt(`Quantity for "${item.name}":`, '1'));
+    if (!qty || isNaN(qty)) return;
+    const id = 'alloc-' + Date.now();
+    state.allocations = [...(state.allocations||[]), { id, woId, itemId:item.id, itemName:item.name, qty, unit:item.unit||'ea', status:'allocated' }];
+    // Add to WO materials for display
+    if (!wo.materials) wo.materials = [];
+    wo.materials.push({ name:item.name, qty, unit:item.unit||'ea', itemId:item.id });
+    state.workOrders = (state.workOrders||[]).map(w => w.id===woId ? wo : w);
+    saveState();
+    materialAllocation(woId);
+  }
+
+  const allocRows = allocs.map(a => {
+    const item = inv.find(i => i.id===a.itemId);
+    return `
+    <div class="alloc-item">
+      <div class="alloc-item-head">
+        <span class="alloc-item-name">${escapeHtml(a.itemName||a.itemId||'—')}</span>
+        <span class="alloc-item-qty">${a.qty} ${escapeHtml(a.unit||'ea')}</span>
+        <button class="rp-btn-sm rp-btn-sm--danger" onclick="_p6RemoveAlloc('${a.id}','${woId}')">Remove</button>
+      </div>
+      <div class="alloc-item-detail">
+        ${item ? `On Hand: ${item.onHand} · Reserved: ${item.reserved||0}` : 'Item not found in inventory'}
+      </div>
+    </div>`;
+  }).join('') || '<p style="color:var(--gw-text-muted);font-style:italic">No materials allocated yet.</p>';
+
+  const totalCost = allocs.reduce((sum,a) => {
+    const item = inv.find(i => i.id===a.itemId);
+    return sum + (a.qty * (item?.unitCost||0));
+  }, 0);
+
+  document.getElementById('app').innerHTML = `
+  <div class="rp-shell">
+    <div class="rp-breadcrumb">
+      <button class="rp-crumb" onclick="show('workOrderList')">Work Orders</button>
+      <span class="rp-crumb-sep">›</span>
+      <button class="rp-crumb" onclick="show('workOrderDetail','${woId}')">${_p6WONum(wo)}</button>
+      <span class="rp-crumb-sep">›</span>
+      <span class="rp-crumb-current">Material Allocation</span>
+    </div>
+    <div style="max-width:700px;margin:0 auto;padding:20px 24px">
+      <div class="rp-card">
+        <div class="rp-card-head">
+          <span class="rp-card-title">Materials for ${_p6WONum(wo)}</span>
+          <button class="rp-btn rp-btn--primary" onclick="_p6AddAlloc()">+ Allocate Item</button>
+        </div>
+        <div class="alloc-summary" style="margin-bottom:12px">
+          <span class="alloc-summary-text">${allocs.length} items allocated${totalCost>0?' · Est. Cost: '+_p5Money(totalCost):''}</span>
+        </div>
+        ${allocRows}
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="rp-btn" onclick="show('workOrderDetail','${woId}')">← Back to Work Order</button>
+        <button class="rp-btn" onclick="show('inventoryList')">View Inventory</button>
+      </div>
+    </div>
+  </div>`;
+
+  window._p6AddAlloc = addAlloc;
+}
+window.materialAllocation = materialAllocation;
+
+window._p6RemoveAlloc = function(allocId, woId) {
+  if (!confirm('Remove this material allocation?')) return;
+  const alloc = (state.allocations||[]).find(a => a.id===allocId);
+  state.allocations = (state.allocations||[]).filter(a => a.id!==allocId);
+  // Also remove from WO materials
+  if (alloc) {
+    const wo = (state.workOrders||[]).find(w => w.id===woId);
+    if (wo && wo.materials) {
+      wo.materials = wo.materials.filter(m => !(m.itemId===alloc.itemId && m.qty===alloc.qty));
+      state.workOrders = (state.workOrders||[]).map(w => w.id===woId ? wo : w);
+    }
+  }
+  saveState();
+  materialAllocation(woId);
+};
+
+// ─── END PHASE 6 SCREENS ─────────────────────────────────────────────────────
 
 // Local summary fallback when AI endpoint is unavailable
 function gwCCLocalSummary(transcript, opp) {

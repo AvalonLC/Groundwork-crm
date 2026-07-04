@@ -278,9 +278,9 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker'],
-    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker'],
-    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker'],
+    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
+    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
+    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail'],
     estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
     view_only: ['today','pipeline','settings']
   }
@@ -632,9 +632,9 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker'],
-    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker'],
-    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker'],
+    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
+    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
+    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail'],
     estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
     view_only: ['today','pipeline','settings']
   }
@@ -2820,10 +2820,6 @@ function getHtml(): string {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
             My Dashboard
           </button>
-          <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
-            Time Tracker
-          </button>
         </div>
       </details>
 
@@ -2912,6 +2908,49 @@ function getHtml(): string {
           <button class="nav-item" data-view="automations" onclick="show('automations')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/><path d="M3 3l10 10" opacity=".3"/></svg>
             Automations
+          </button>
+        </div>
+      </details>
+
+      <!-- ── Operations Hub ── -->
+      <details class="nav-group tenant-nav" open>
+        <summary class="nav-summary">Operations</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="opsHub" onclick="show('opsHub')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/></svg>
+            Ops Hub
+          </button>
+          <button class="nav-item" data-view="scheduleBoard" onclick="show('scheduleBoard')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
+            Schedule Board
+          </button>
+          <button class="nav-item" data-view="dispatchBoard" onclick="show('dispatchBoard')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2.5 1.5"/></svg>
+            Dispatch Board
+          </button>
+          <button class="nav-item" data-view="recurringServices" onclick="show('recurringServices')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 009.9-1M13 8a5 5 0 01-9.9 1"/><path d="M3 5l.1 3h3M13 11l-.1-3h-3"/></svg>
+            Recurring Services
+          </button>
+          <button class="nav-item" data-view="workOrderList" onclick="show('workOrderList')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
+            Work Orders
+          </button>
+          <button class="nav-item" data-view="assetList" onclick="show('assetList')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/><path d="M8 2v14M2 6l6 4 6-4"/></svg>
+            Assets
+          </button>
+          <button class="nav-item" data-view="maintenanceQueue" onclick="show('maintenanceQueue')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M5.5 1.5l1 2M10.5 1.5l-1 2"/></svg>
+            Maintenance
+          </button>
+          <button class="nav-item" data-view="inventoryList" onclick="show('inventoryList')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v10H2z"/><path d="M5 4V2h6v2"/><path d="M6 8h4M6 11h2"/></svg>
+            Inventory
+          </button>
+          <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
+            Time Tracker
           </button>
         </div>
       </details>

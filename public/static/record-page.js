@@ -654,6 +654,129 @@
     return `<div class="comm-tl-wrap">${items}</div>`;
   };
 
+  // ══ PHASE 6 PRIMITIVES ═══════════════════════════════════════════════════
+
+  // ── R.OpsStatusBar(stats) ─────────────────────────────────────────────────
+  // stats: [{ val, label, accent, filter }]
+  // accent: 'warning' | 'danger' | 'positive' | 'info' | '' (neutral)
+  R.OpsStatusBar = function(stats) {
+    if (!stats || !stats.length) return '';
+    const cells = stats.map((s, i) => {
+      const valClass = s.accent ? ` ops-sum-val--${s.accent}` : '';
+      return `<div class="ops-sum-stat" data-filter="${s.filter||''}"
+                   onclick="window._opsFilterActive='${s.filter||''}';
+                            document.querySelectorAll('.ops-sum-stat').forEach(el=>el.classList.remove('is-active'));
+                            this.classList.add('is-active');
+                            window._opsRenderFilter&&window._opsRenderFilter('${s.filter||''}')">
+        <div class="ops-sum-val${valClass}">${s.val}</div>
+        <div class="ops-sum-label">${s.label}</div>
+        ${s.delta ? `<div class="ops-sum-delta">${s.delta}</div>` : ''}
+      </div>`;
+    });
+    return `<div class="ops-sum-bar">${cells.join('')}</div>`;
+  };
+
+  // ── R.AssignBlock(cfg) ────────────────────────────────────────────────────
+  // cfg: { crew: [{initials, name}], window: string, area: string, unassigned: bool }
+  R.AssignBlock = function(cfg) {
+    cfg = cfg || {};
+    if (cfg.unassigned) {
+      return `<div class="ops-assign-row">
+        <span class="ops-assign-empty" onclick="${cfg.onAssign||''}">
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 1v12M1 7h12"/></svg>
+          Assign Crew
+        </span>
+        ${cfg.window ? `<span class="ops-assign-window">${cfg.window}</span>` : '<span class="ops-assign-window" style="color:var(--gw-text-subtle)">No date set</span>'}
+      </div>`;
+    }
+    const crew = cfg.crew || [];
+    const visible = crew.slice(0, 3);
+    const overflow = crew.length > 3 ? crew.length - 3 : 0;
+    const avatars = visible.map(c =>
+      `<div class="ops-assign-avatar" title="${c.name||''}">${c.initials||'?'}</div>`
+    ).join('') + (overflow ? `<div class="ops-assign-overflow">+${overflow}</div>` : '');
+    return `<div class="ops-assign-row">
+      <div class="ops-assign-avatars">${avatars}</div>
+      ${cfg.window ? `<span class="ops-assign-window">${cfg.window}</span>` : ''}
+      ${cfg.area   ? `<span class="ops-assign-area">${cfg.area}</span>` : ''}
+    </div>`;
+  };
+
+  // ── R.ReadinessBadge(state, reason) ──────────────────────────────────────
+  // state: one of the ops-ready-- classes (without prefix)
+  R.ReadinessBadge = function(state, reason) {
+    const labels = {
+      'unscheduled':       'Ready to Schedule',
+      'scheduled':         'Scheduled',
+      'crew-ready':        'Crew Ready',
+      'pending-approval':  'Pending Approval',
+      'waiting-materials': 'Waiting on Materials',
+      'waiting-deposit':   'Waiting on Deposit',
+      'blocked':           'Blocked',
+      'in-progress':       'In Progress',
+      'complete':          'Complete',
+      'cancelled':         'Cancelled'
+    };
+    const label = labels[state] || state;
+    const badge = `<span class="ops-ready-badge ops-ready--${state}">
+      <span class="ops-ready-dot"></span>${label}
+    </span>`;
+    return reason
+      ? `<div>${badge}<div class="ops-ready-reason">${reason}</div></div>`
+      : badge;
+  };
+
+  // ── R.AssetStatusBadge(state) ─────────────────────────────────────────────
+  R.AssetStatusBadge = function(state) {
+    const labels = {
+      'available':      'Available',
+      'assigned':       'Assigned',
+      'in-maintenance': 'In Maintenance',
+      'out-of-service': 'Out of Service',
+      'inspection-due': 'Inspection Due',
+      'overdue-maint':  'Maintenance Overdue',
+      'retired':        'Retired'
+    };
+    return `<span class="ops-asset-badge ops-asset--${state}">${labels[state]||state}</span>`;
+  };
+
+  // ── R.InvtStatusBadge(state) ─────────────────────────────────────────────
+  R.InvtStatusBadge = function(state) {
+    const labels = {
+      'in-stock':    'In Stock',
+      'low-stock':   'Low Stock',
+      'reserved':    'Reserved',
+      'on-order':    'On Order',
+      'delivered':   'Delivered',
+      'consumed':    'Consumed',
+      'unavailable': 'Unavailable'
+    };
+    return `<span class="ops-inv-badge ops-inv--${state}">${labels[state]||state}</span>`;
+  };
+
+  // ── R.OpsTL(events) ───────────────────────────────────────────────────────
+  // events: [{ title, desc, time, variant }]  variant: 'muted'|'warn'|'danger'|''
+  R.OpsTL = function(events) {
+    events = events || [];
+    if (!events.length) return `<div style="font-size:12px;color:var(--gw-text-subtle);font-style:italic;padding:8px 0">No activity yet</div>`;
+    const rows = events.map((e, i) => {
+      const isLast = i === events.length - 1;
+      const dotCls = e.variant ? ` ops-tl-dot--${e.variant}` : '';
+      return `<div class="ops-tl-entry">
+        <div class="ops-tl-spine">
+          <div class="ops-tl-dot${dotCls}"></div>
+          ${!isLast ? '<div class="ops-tl-line"></div>' : ''}
+        </div>
+        <div class="ops-tl-body">
+          <div class="ops-tl-title">${e.title}</div>
+          ${e.desc ? `<div class="ops-tl-desc">${e.desc}</div>` : ''}
+        </div>
+        <div class="ops-tl-time">${e.time||''}</div>
+      </div>`;
+    });
+    return `<div class="ops-tl-wrap">${rows.join('')}</div>`;
+  };
+
   window.toggleRecordOverflow = function (btn) {
     const menu = btn ? btn.nextElementSibling : null;
     if (!menu) return;
