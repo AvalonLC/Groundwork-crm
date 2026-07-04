@@ -2787,7 +2787,7 @@ function getHtml(): string {
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/premium.css?v=20260704gw8">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw8">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw8">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw9">
   <style>
     /* Nav item SVG icon alignment */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -2823,7 +2823,7 @@ function getHtml(): string {
         </div>
       </details>
 
-      <details class="nav-group tenant-nav" open>
+      <details class="nav-group tenant-nav">
         <summary class="nav-summary">Pipeline</summary>
         <div class="nav-items">
           <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">
@@ -2886,7 +2886,7 @@ function getHtml(): string {
       </details>
 
       <!-- ── Money Loop ── -->
-      <details class="nav-group tenant-nav" open>
+      <details class="nav-group tenant-nav">
         <summary class="nav-summary">Money Loop</summary>
         <div class="nav-items">
           <button class="nav-item" data-view="financialHub" onclick="show('financialHub')">
@@ -2913,7 +2913,7 @@ function getHtml(): string {
       </details>
 
       <!-- ── Operations Hub ── -->
-      <details class="nav-group tenant-nav" open>
+      <details class="nav-group tenant-nav">
         <summary class="nav-summary">Operations</summary>
         <div class="nav-items">
           <button class="nav-item" data-view="opsHub" onclick="show('opsHub')">
@@ -3071,9 +3071,9 @@ function getHtml(): string {
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260630gw12"></script>
-<script src="/static/record-page.js?v=20260704rp1"></script>
+<script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260704gw18"></script>
+<script src="/static/app_premium.js?v=20260704gw19"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260701gw14"></script>
