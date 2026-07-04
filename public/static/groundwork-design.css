@@ -2237,30 +2237,36 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 .rp-stage-node {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0;
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  /* last node gets no flex growth since it has no connector */
+}
+.rp-stage-node:last-child {
+  flex: 0 0 auto;
 }
 .rp-stage-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   background: none;
   border: none;
   cursor: pointer;
   font-family: inherit;
-  padding: 4px 6px;
+  padding: 3px 4px;
   border-radius: var(--gw-r-sm);
   transition: background .12s;
   position: relative;
-  min-width: 72px;
-  max-width: 96px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 .rp-stage-btn:hover { background: var(--gw-bg-subtle); }
 .rp-stage-dot {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: 2px solid var(--gw-border-strong);
   background: var(--gw-bg-surface-2);
@@ -2269,28 +2275,29 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   transition: all .18s;
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
 }
 .rp-stage-dot svg { color: var(--gw-text-subtle); }
 .rp-stage-label {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 700;
   color: var(--gw-text-subtle);
   text-align: center;
   letter-spacing: .01em;
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 84px;
+  white-space: normal;
+  word-break: break-word;
+  overflow: visible;
+  max-width: 100%;
+  width: 100%;
 }
 .rp-stage-connector {
-  width: 32px;
+  flex: 1 1 0;
+  min-width: 6px;
   height: 2px;
   background: var(--gw-border-strong);
-  flex-shrink: 0;
-  margin: 0 -2px;
-  position: relative;
-  top: -8px; /* align with dots */
+  margin-top: 12px; /* align to dot center (24px dot / 2 = 12px) */
+  align-self: flex-start;
 }
 
 /* State variants */
@@ -2329,25 +2336,24 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 
 .rp-qa-bar {
   display: flex !important;
-  gap: 6px !important;
-  padding: 9px 20px !important;
+  flex-wrap: wrap !important;
+  gap: 5px !important;
+  padding: 8px 16px !important;
   background: var(--gw-bg-surface) !important;
   border-bottom: 1px solid var(--gw-border) !important;
-  overflow-x: auto !important;
-  scrollbar-width: none !important;
+  overflow-x: hidden !important;
   flex-shrink: 0 !important;
 }
-.rp-qa-bar::-webkit-scrollbar { display: none; }
 
 .rp-qa-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 13px;
+  gap: 5px;
+  padding: 6px 11px;
   background: var(--gw-bg-surface-2);
   border: 1px solid var(--gw-border);
   border-radius: var(--gw-r-sm);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--gw-text-secondary);
   cursor: pointer;
@@ -3638,19 +3644,17 @@ h1.ld-name {
 /* Used in both the new rp-* shell and legacy ld-* detail page */
 
 .rp-stage-track-wrap {
-  padding: 10px 20px !important;
+  padding: 10px 16px !important;
   background: var(--gw-bg-surface-2) !important;
   border-bottom: 1px solid var(--gw-border) !important;
-  overflow-x: auto !important;
-  scrollbar-width: none !important;
+  overflow-x: hidden !important;
 }
-.rp-stage-track-wrap::-webkit-scrollbar { display: none; }
 
 .rp-stage-track {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 0;
-  min-width: max-content;
 }
 
 /* ── 9b. HERO RESPONSIVE ADJUSTMENTS ─────────────────────────────────────── */
