@@ -10906,7 +10906,7 @@ function opsHub() {
       <span class="recur-crew">${escapeHtml(p.crew||'Unassigned')}</span>
     </div>`).join('') || '<p style="padding:12px 0;color:var(--gw-text-muted);font-style:italic">No active recurring plans.</p>';
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="ops-hub-wrap">
     <header class="rp-header" style="max-width:1200px;margin:0 auto 0;padding:20px 24px 0">
       <div class="rp-header-left">
@@ -11038,7 +11038,7 @@ function scheduleBoard() {
 
   const weekLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[4].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="sched-shell">
     <header class="rp-header" style="max-width:1200px;margin:0 auto;padding:20px 24px 16px">
       <div class="rp-header-left">
@@ -11106,7 +11106,7 @@ function dispatchBoard() {
   }));
   const feedHtml = R ? R.OpsTL(feedEvents) : feedEvents.map(e => `<div style="padding:8px 0;border-bottom:1px solid var(--gw-border)"><strong>${escapeHtml(e.title)}</strong><br><small>${escapeHtml(e.desc)}</small></div>`).join('');
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="disp-shell">
     <header class="rp-header" style="max-width:1200px;margin:0 auto;padding:20px 24px 16px">
       <div class="rp-header-left">
@@ -11168,7 +11168,7 @@ function recurringServices() {
     ? plans.map(planRow).join('')
     : `<div class="rp-empty-state"><p>No recurring service plans yet.</p><button class="rp-btn rp-btn--primary" onclick="show('clients')">Link Client Plan</button></div>`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="recur-shell">
     <header class="rp-header" style="max-width:1100px;margin:0 auto;padding:20px 24px 16px">
       <div class="rp-header-left">
@@ -11231,7 +11231,7 @@ function workOrderList() {
     </div>`) .join('')
     : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No work orders yet.</p></div>`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="wo-list-shell">
     <header class="rp-header" style="padding:20px 0 0">
       <div class="rp-header-left">
@@ -11414,7 +11414,7 @@ function workOrderDetail(id) {
       ${tlHtml || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No activity yet.</p>'}
     </section>`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="rp-shell">
     <div class="rp-breadcrumb">
       <button class="rp-crumb" onclick="show('workOrderList')">Work Orders</button>
@@ -11509,7 +11509,7 @@ function assetList() {
     </div>`) .join('')
     : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No assets tracked yet.</p></div>`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="wo-list-shell">
     <header class="rp-header" style="padding:20px 0 16px">
       <div class="rp-header-left">
@@ -11648,7 +11648,7 @@ function assetDetail(id) {
       </div>
     </section>`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="rp-shell">
     <div class="rp-breadcrumb">
       <button class="rp-crumb" onclick="show('assetList')">Assets</button>
@@ -11722,7 +11722,7 @@ function maintenanceQueue() {
 
   const emptyState = !maint.length ? `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No maintenance records. Add assets and schedule their maintenance.</p></div>` : '';
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="wo-list-shell">
     <header class="rp-header" style="padding:20px 0 16px">
       <div class="rp-header-left">
@@ -11812,7 +11812,7 @@ function inventoryList() {
   }).join('')
   : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No inventory items yet.</p></div>`;
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="wo-list-shell">
     <header class="rp-header" style="padding:20px 0 16px">
       <div class="rp-header-left">
@@ -11901,7 +11901,7 @@ function materialAllocation(woId) {
     return sum + (a.qty * (item?.unitCost||0));
   }, 0);
 
-  document.getElementById('app').innerHTML = `
+  view.innerHTML = `
   <div class="rp-shell">
     <div class="rp-breadcrumb">
       <button class="rp-crumb" onclick="show('workOrderList')">Work Orders</button>
