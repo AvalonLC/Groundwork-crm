@@ -327,7 +327,7 @@ function show(viewName='today', param){
     _d1.company_id === 'groundwork_platform';
   if (!_isPlatformSA && viewName !== 'settings' && !canViewTab(viewName)) {
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
-    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',revenueAdmin:'Financial Data Hub',integrations:'Integrations',userManagement:'User Management',settings:'Settings',ai:'AI Sales Assistant',timeTracker:'Time Tracker'};
+    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',revenueAdmin:'Financial Data Hub',integrations:'Integrations',userManagement:'User Management',settings:'Settings',ai:'AI Sales Assistant',timeTracker:'Time Tracker',financialHub:'Financial Hub',estimates:'Estimate',invoices:'Invoice',statement:'Account Statement',communications:'Communications',automations:'Automations'};
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px;max-width:520px;margin-left:auto;margin-right:auto">
       <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
       <h2 style="color:#1F2A2B;margin-bottom:10px;font-size:20px">${_viewLabels[viewName] || viewName}</h2>
@@ -360,7 +360,16 @@ function show(viewName='today', param){
         gwPlatformSettings: () => window.gwPlatformAdmin.platformSettings() }
     : {};
   const ttRoute = (typeof window.timeTracker === 'function') ? {timeTracker: window.timeTracker} : {};
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ai};
+  // Phase 5 routes
+  const p5Route = {
+    financialHub,
+    estimates:      (id) => estimateDetail(id),
+    invoices:       (id) => invoiceDetail(id),
+    statement:      (id) => accountStatement(id),
+    communications: ()   => communicationsBoard(),
+    automations:    ()   => automationManager()
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -2893,6 +2902,41 @@ function opportunityDetail(id){
             ${_viewAllBtn}
           </div>
         </div>
+
+        <!-- Phase 5: Financial Summary -->
+        ${R && o.jobValue ? `<div class="ld-rail-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Financials
+          </div>
+          <div style="padding:12px 12px 4px">
+            ${R.FinancialSummary({
+              contractValue: o.jobValue,
+              estimateStatus: o.status==='Sold / Activation'?'paid':(o.status==='Closed Lost'?'declined':(o.jobValue?'sent':'draft')),
+              depositPaid: o.status==='Sold / Activation' ? Math.round(Number(o.jobValue)*0.30) : 0,
+              totalBilled: o.status==='Sold / Activation' ? o.jobValue : (o.jobValue ? Math.round(Number(o.jobValue)*0.30) : 0),
+              totalPaid:   o.status==='Sold / Activation' ? o.jobValue : 0,
+              balanceDue:  o.status==='Sold / Activation' ? 0 : o.jobValue,
+              estimateId: o.id,
+              invoiceId:  o.status==='Sold / Activation' ? o.id : null
+            })}
+          </div>
+        </div>` : ''}
+
+        <!-- Phase 5: Payment Timeline -->
+        ${R && o.jobValue ? `<div class="ld-rail-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2.5 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Payment Schedule
+          </div>
+          <div style="padding:12px 12px 4px">
+            ${R.PaymentTimeline([
+              { name:'Deposit (30%)', amount: Math.round(Number(o.jobValue)*0.30), dueDate: o.createdAt, status: o.status==='Sold / Activation'?'paid':'pending', paidDate: o.closedDate||null },
+              { name:'Progress (50%)', amount: Math.round(Number(o.jobValue)*0.50), dueDate: o.nextFollowUp||null, status: 'pending' },
+              { name:'Final (20%)', amount: Math.round(Number(o.jobValue)*0.20), dueDate: null, status: 'pending' }
+            ], { invoiceId: o.status==='Sold / Activation'?o.id:null })}
+          </div>
+        </div>` : ''}
 
       </aside><!-- /rp-rail -->
 
@@ -9987,6 +10031,771 @@ ${transcript.slice(0, 3000)}`;
     window.showToast && window.showToast('Summary saved as note');
   };
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE 5 — CUSTOMER + MONEY LOOP
+// Estimate Detail · Invoice Detail · Account Statement ·
+// Communications Board · Automation Manager · Financial Hub
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Helpers shared across Phase 5 views ──────────────────────────────────
+function _p5Money(v){
+  const n=Number(v||0);
+  return isNaN(n)?'—':'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function _p5FmtDate(d){
+  if(!d) return '—';
+  try{ return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+  catch(e){ return d; }
+}
+function _p5Initials(name){
+  return (name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+}
+
+// ── ESTIMATE DETAIL ───────────────────────────────────────────────────────
+function estimateDetail(id){
+  // Pull from state or create demo
+  const opp = id ? state.opportunities.find(o=>o.id===id) : null;
+  const estNum = 'EST-' + String(opp ? opp.id : '0001').slice(-4).toUpperCase();
+  const clientName = opp ? (opp.client||'Client') : 'Sample Client';
+  const jobVal     = opp ? Number(opp.jobValue||0) : 5400;
+  const deposit    = Math.round(jobVal * 0.30);
+  const remaining  = jobVal - deposit;
+  const status     = opp ? (opp.status==='Sold / Activation'?'approved':(opp.estimateStatus||'draft')) : 'draft';
+  const badgeClass = {draft:'est-badge--draft',sent:'est-badge--sent',approved:'est-badge--approved',declined:'est-badge--declined',expired:'est-badge--expired'}[status]||'est-badge--draft';
+  const badgeLabel = status.charAt(0).toUpperCase()+status.slice(1);
+  const backTo     = opp ? `show('pipeline','${opp.id}')` : "show('financialHub')";
+  const backLabel  = opp ? 'Lead' : 'Financial Hub';
+
+  const lineItems = opp ? [
+    { name: opp.serviceLine||opp.project||'Service', qty:1, unit: jobVal - deposit, desc: opp.project||'' },
+    { name: 'Deposit (30%)', qty:1, unit: deposit, desc: 'Required at contract signing' }
+  ] : [
+    { name: 'Installation — Full System', qty:1, unit:3800, desc:'Labor and materials included' },
+    { name: 'Premium Control Panel Upgrade', qty:1, unit:1200, desc:'Smart home integration' },
+    { name: 'Annual Monitoring Plan', qty:1, unit:400, desc:'24/7 professional monitoring' }
+  ];
+
+  const lineRows = lineItems.map(l=>`
+    <tr>
+      <td><div style="font-weight:600">${escapeHtml(l.name)}</div><div class="est-line-desc">${escapeHtml(l.desc||'')}</div></td>
+      <td style="text-align:center">${l.qty}</td>
+      <td>${_p5Money(l.unit)}</td>
+      <td>${_p5Money(l.qty*l.unit)}</td>
+    </tr>`).join('');
+
+  const subtotal = lineItems.reduce((a,l)=>a+l.qty*l.unit,0);
+  const tax      = 0;
+  const total    = subtotal + tax;
+
+  view.innerHTML = `
+  <div class="rp-shell">
+    <div class="rp-command" id="rpCommandBar">
+      <button class="rp-command-back" onclick="${backTo}">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9 11L4 7l5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        ${backLabel}
+      </button>
+      <div class="rp-command-identity">
+        <div class="rp-command-avatar">${_p5Initials(clientName)}</div>
+        <span class="rp-command-name">${escapeHtml(clientName)}</span>
+        <div class="rp-command-meta">
+          <span class="est-badge ${badgeClass}" style="font-size:10px;padding:2px 8px">${badgeLabel}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--gw-action)">${_p5Money(total)}</span>
+        </div>
+      </div>
+      <div class="rp-command-actions">
+        ${status==='draft'?`<button class="rp-btn rp-btn--primary" style="padding:6px 13px;font-size:12.5px" onclick="showToast('Estimate sent to client','success')">Send to Client</button>`:''}
+        ${status==='sent'?`<button class="rp-btn rp-btn--primary" style="padding:6px 13px;font-size:12.5px;background:var(--gw-pine-500)" onclick="showToast('Estimate approved','success')">Mark Approved</button>`:''}
+      </div>
+    </div>
+
+    <div style="background:var(--gw-surface);border-bottom:1px solid var(--gw-border);padding:0 24px">
+      <div class="est-header-band" style="border-bottom:none;padding-left:0;padding-right:0">
+        <div class="est-number">${estNum}</div>
+        <div class="est-title">Estimate for ${escapeHtml(clientName)}</div>
+        <div class="est-meta-row">
+          <span class="est-badge ${badgeClass}">${badgeLabel}</span>
+          <span>Created ${_p5FmtDate(opp?opp.createdAt:new Date().toISOString())}</span>
+          ${opp&&opp.nextFollowUp?`<span>Valid until ${_p5FmtDate(opp.nextFollowUp)}</span>`:''}
+          ${opp?`<span>Rep: ${(window.REPS||[]).find(r=>r.id===opp.repId)?.name||'Unassigned'}</span>`:''}
+        </div>
+      </div>
+    </div>
+
+    <div class="est-body">
+      <div class="est-section-head">Scope of Work</div>
+      <table class="est-line-table">
+        <thead><tr><th>Item / Description</th><th style="text-align:center;width:60px">Qty</th><th style="width:120px">Unit Price</th><th style="width:120px">Total</th></tr></thead>
+        <tbody>${lineRows}</tbody>
+      </table>
+      <div class="est-totals-col">
+        <div class="est-total-row"><span>Subtotal</span><span>${_p5Money(subtotal)}</span></div>
+        <div class="est-total-row"><span>Tax (0%)</span><span>${_p5Money(tax)}</span></div>
+        <div class="est-total-row"><strong>Total</strong><strong>${_p5Money(total)}</strong></div>
+      </div>
+
+      <div class="est-section-head" style="margin-top:28px">Payment Terms</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">
+        <div style="background:var(--gw-bark-25);border:1px solid var(--gw-border);border-radius:8px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-text-muted);font-weight:700;margin-bottom:4px">Deposit (30%)</div>
+          <div style="font-size:16px;font-weight:800;color:var(--gw-action)">${_p5Money(deposit)}</div>
+          <div style="font-size:11px;color:var(--gw-text-muted)">Due at signing</div>
+        </div>
+        <div style="background:var(--gw-bark-25);border:1px solid var(--gw-border);border-radius:8px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-text-muted);font-weight:700;margin-bottom:4px">Progress</div>
+          <div style="font-size:16px;font-weight:800;color:var(--gw-action)">50%</div>
+          <div style="font-size:11px;color:var(--gw-text-muted)">Mid-project</div>
+        </div>
+        <div style="background:var(--gw-bark-25);border:1px solid var(--gw-border);border-radius:8px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-text-muted);font-weight:700;margin-bottom:4px">Final</div>
+          <div style="font-size:16px;font-weight:800;color:var(--gw-action)">20%</div>
+          <div style="font-size:11px;color:var(--gw-text-muted)">On completion</div>
+        </div>
+      </div>
+
+      ${opp&&opp.notes&&opp.notes.length?`
+      <div class="est-section-head">Notes</div>
+      <div class="est-notes-area">${escapeHtml((opp.notes||[]).slice(-1)[0]?.body||'No notes')}</div>`:''}
+
+      <div class="est-action-bar">
+        <button class="est-btn est-btn--send" onclick="showToast('Estimate sent via email','success')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>
+          Send to Client
+        </button>
+        ${status==='sent'?`<button class="est-btn est-btn--approve" onclick="showToast('Marked approved — ready to invoice','success')">✓ Mark Approved</button>`:''}
+        ${status==='sent'?`<button class="est-btn est-btn--decline" onclick="showToast('Estimate marked declined','error')">✗ Mark Declined</button>`:''}
+        <button class="est-btn est-btn--secondary" onclick="showToast('PDF download coming soon','info')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
+          Download PDF
+        </button>
+        ${opp?`<button class="est-btn est-btn--secondary" onclick="show('pipeline','${opp.id}')">View Lead →</button>`:''}
+      </div>
+    </div>
+  </div>`;
+
+  // Attach command-bar scroll behavior
+  setTimeout(()=>{
+    const bar = document.getElementById('rpCommandBar');
+    if(!bar) return;
+    window.addEventListener('scroll',()=>{ bar.classList.toggle('is-pinned',window.scrollY>60); },{passive:true});
+  },100);
+}
+window.estimateDetail = estimateDetail;
+
+// ── INVOICE DETAIL ────────────────────────────────────────────────────────
+function invoiceDetail(id){
+  const opp        = id ? state.opportunities.find(o=>o.id===id) : null;
+  const invNum     = 'INV-' + String(opp ? opp.id : '0001').slice(-4).toUpperCase();
+  const clientName = opp ? (opp.client||'Client') : 'Sample Client';
+  const jobVal     = opp ? Number(opp.jobValue||0) : 5400;
+  const deposit    = Math.round(jobVal * 0.30);
+  const totalDue   = jobVal;
+  const isPaid     = opp ? opp.status==='Sold / Activation' : false;
+  const paidAmt    = isPaid ? totalDue : deposit;
+  const balance    = totalDue - paidAmt;
+  const status     = isPaid ? 'paid' : (balance > 0 ? 'partial' : 'sent');
+  const badgeClass = {draft:'inv-badge--draft',sent:'inv-badge--sent',partial:'inv-badge--partial',paid:'inv-badge--paid',overdue:'inv-badge--overdue'}[status]||'inv-badge--draft';
+  const badgeLabel = {draft:'Draft',sent:'Sent',partial:'Partial',paid:'Paid',overdue:'Overdue'}[status]||status;
+  const backTo     = opp ? `show('pipeline','${opp.id}')` : "show('financialHub')";
+  const backLabel  = opp ? 'Lead' : 'Financial Hub';
+  const repName    = opp ? ((window.REPS||[]).find(r=>r.id===opp.repId)?.name||'Unassigned') : 'Rep';
+
+  const payments = isPaid
+    ? [{ date: opp?.closedDate||new Date().toISOString(), method:'Check', amount:totalDue, note:'Payment in full' }]
+    : [{ date: new Date(Date.now()-7*86400000).toISOString(), method:'Credit Card', amount:deposit, note:'Deposit' }];
+
+  view.innerHTML = `
+  <div class="rp-shell">
+    <div class="rp-command" id="rpCommandBar">
+      <button class="rp-command-back" onclick="${backTo}">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9 11L4 7l5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        ${backLabel}
+      </button>
+      <div class="rp-command-identity">
+        <div class="rp-command-avatar">${_p5Initials(clientName)}</div>
+        <span class="rp-command-name">${escapeHtml(clientName)}</span>
+        <div class="rp-command-meta">
+          <span class="inv-badge ${badgeClass}" style="font-size:10px;padding:2px 8px">${badgeLabel}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--gw-action)">${_p5Money(totalDue)}</span>
+        </div>
+      </div>
+      <div class="rp-command-actions">
+        ${status!=='paid'?`<button class="rp-btn rp-btn--primary" style="padding:6px 13px;font-size:12.5px;background:var(--gw-pine-500)" onclick="showToast('Payment recorded','success')">Record Payment</button>`:''}
+      </div>
+    </div>
+
+    <div style="background:var(--gw-surface);border-bottom:1px solid var(--gw-border);padding:0 24px">
+      <div class="inv-header-band" style="border-bottom:none;padding-left:0;padding-right:0">
+        <div class="inv-number">${invNum}</div>
+        <div class="inv-title">Invoice — ${escapeHtml(clientName)}</div>
+        <div class="inv-meta-row">
+          <span class="inv-badge ${badgeClass}">${badgeLabel}</span>
+          <span>Issued ${_p5FmtDate(opp?opp.createdAt:new Date().toISOString())}</span>
+          <span>Due ${_p5FmtDate(opp?opp.nextFollowUp:new Date(Date.now()+30*86400000).toISOString())}</span>
+          <span>Rep: ${escapeHtml(repName)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="inv-body">
+      <div class="inv-parties-grid">
+        <div class="inv-party-block">
+          <div class="inv-party-label">Bill To</div>
+          <div class="inv-party-name">${escapeHtml(clientName)}</div>
+          ${opp&&opp.address?`<div class="inv-party-detail">${escapeHtml(opp.address)}</div>`:''}
+          ${opp&&opp.email?`<div class="inv-party-detail">${escapeHtml(opp.email)}</div>`:''}
+          ${opp&&opp.phone?`<div class="inv-party-detail">${escapeHtml(opp.phone)}</div>`:''}
+        </div>
+        <div class="inv-party-block">
+          <div class="inv-party-label">From</div>
+          <div class="inv-party-name">Groundwork</div>
+          <div class="inv-party-detail">${escapeHtml(repName)}</div>
+          <div class="inv-party-detail">Invoice #${invNum}</div>
+        </div>
+      </div>
+
+      <div class="inv-section-head">Line Items</div>
+      <table class="inv-line-table">
+        <thead><tr><th>Description</th><th style="text-align:center;width:60px">Qty</th><th style="width:130px">Unit Price</th><th style="width:130px">Total</th></tr></thead>
+        <tbody>
+          <tr><td><div style="font-weight:600">${escapeHtml(opp?.serviceLine||opp?.project||'Professional Services')}</div></td><td style="text-align:center">1</td><td>${_p5Money(jobVal)}</td><td>${_p5Money(jobVal)}</td></tr>
+        </tbody>
+      </table>
+      <div class="inv-totals-col">
+        <div class="inv-total-row"><span>Subtotal</span><span>${_p5Money(jobVal)}</span></div>
+        <div class="inv-total-row"><span>Tax (0%)</span><span>$0.00</span></div>
+        <div class="inv-total-row inv-total-row--grand"><strong>Total Due</strong><strong>${_p5Money(totalDue)}</strong></div>
+        <div class="inv-total-row"><span>Amount Paid</span><span style="color:var(--gw-pine-600)">${_p5Money(paidAmt)}</span></div>
+        <div class="inv-total-row inv-total-row--balance ${balance<=0?'is-paid':'is-due'}">
+          <strong>Balance ${balance<=0?'(Paid)':'Due'}</strong>
+          <strong>${_p5Money(Math.abs(balance))}</strong>
+        </div>
+      </div>
+
+      ${payments.length?`
+      <div class="inv-section-head" style="margin-top:28px">Payment History</div>
+      <div class="inv-payment-history">
+        ${payments.map(p=>`
+        <div class="inv-payment-row">
+          <div class="inv-payment-row-left">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--gw-pine-600)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l6 6 6-6" transform="rotate(180 8 8)"/><rect x="1" y="4" width="14" height="9" rx="1.5"/></svg>
+            ${_p5FmtDate(p.date)} · ${escapeHtml(p.method)}
+            ${p.note?`<span style="font-size:11px;color:var(--gw-text-muted)">— ${escapeHtml(p.note)}</span>`:''}
+          </div>
+          <div class="inv-payment-row-amount">${_p5Money(p.amount)}</div>
+        </div>`).join('')}
+      </div>`:''}
+
+      <div class="inv-action-bar">
+        ${status!=='paid'?`<button class="inv-btn inv-btn--record" onclick="showToast('Record payment modal coming soon','info')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l6 6 6-6" transform="rotate(180 8 8)"/><rect x="1" y="4" width="14" height="9" rx="1.5"/></svg>
+          Record Payment
+        </button>`:''}
+        <button class="inv-btn inv-btn--send" onclick="showToast('Invoice sent via email','success')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>
+          Send Invoice
+        </button>
+        <button class="inv-btn inv-btn--secondary" onclick="showToast('PDF download coming soon','info')">
+          Download PDF
+        </button>
+        ${opp?`<button class="inv-btn inv-btn--secondary" onclick="show('pipeline','${opp.id}')">View Lead →</button>`:''}
+      </div>
+    </div>
+  </div>`;
+
+  setTimeout(()=>{
+    const bar = document.getElementById('rpCommandBar');
+    if(!bar) return;
+    window.addEventListener('scroll',()=>{ bar.classList.toggle('is-pinned',window.scrollY>60); },{passive:true});
+  },100);
+}
+window.invoiceDetail = invoiceDetail;
+
+// ── ACCOUNT STATEMENT ─────────────────────────────────────────────────────
+function accountStatement(clientId){
+  // Find client opportunities
+  const clientOpps = (state.opportunities||[]).filter(o=>{
+    if(clientId) return o.id===clientId || (o.clientId&&o.clientId===clientId);
+    return true;
+  }).slice(0,20);
+
+  const totalContract = clientOpps.reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalPaid     = clientOpps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalDue      = totalContract - totalPaid;
+  const clientName    = clientId ? (clientOpps[0]?.client||'Client') : 'All Clients';
+
+  // Build table rows from opps
+  const rows = clientOpps.length ? clientOpps.map(o=>{
+    const st = o.status==='Sold / Activation' ? 'paid' :
+               (o.status==='Closed Lost' ? 'declined' :
+               (o.jobValue&&Number(o.jobValue)>0 ? 'invoiced' : 'draft'));
+    const bdgClass = {paid:'stmt-badge--paid',draft:'stmt-badge--draft',invoiced:'stmt-badge--sent',declined:'stmt-badge--overdue',approved:'stmt-badge--approved'}[st]||'stmt-badge--draft';
+    const bdgLabel = {paid:'Paid',draft:'Draft',invoiced:'Invoiced',declined:'Declined',approved:'Approved'}[st]||'Draft';
+    return `<tr>
+      <td><span class="stmt-doc-link" onclick="show('estimates','${o.id}')">${escapeHtml(o.serviceLine||o.project||'Opportunity')}</span></td>
+      <td>${escapeHtml(o.client||'—')}</td>
+      <td>${_p5FmtDate(o.createdAt)}</td>
+      <td>${_p5Money(o.jobValue)}</td>
+      <td>${o.status==='Sold / Activation'?_p5Money(o.jobValue):'$0.00'}</td>
+      <td>${o.status!=='Sold / Activation'&&o.jobValue?_p5Money(o.jobValue):'$0.00'}</td>
+      <td><span class="stmt-badge ${bdgClass}">${bdgLabel}</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--gw-text-subtle);font-style:italic">No documents found</td></tr>`;
+
+  view.innerHTML = `
+  <div class="stmt-shell">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <button class="rp-command-back" onclick="show('financialHub')" style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;background:var(--gw-surface);border:1px solid var(--gw-border);font-size:12px;font-weight:600;cursor:pointer;color:var(--gw-text-muted)">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M9 11L4 7l5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Financial Hub
+      </button>
+    </div>
+    <div class="stmt-header">
+      <div class="stmt-client-info">
+        <div class="stmt-client-name">${escapeHtml(clientName)}</div>
+        <div class="stmt-client-meta">Account Statement · as of ${_p5FmtDate(new Date().toISOString())}</div>
+      </div>
+      <div class="stmt-summary-cards">
+        <div class="stmt-sum-card">
+          <div class="stmt-sum-card-val">${_p5Money(totalContract)}</div>
+          <div class="stmt-sum-card-label">Total Contracted</div>
+        </div>
+        <div class="stmt-sum-card">
+          <div class="stmt-sum-card-val stmt-sum-card-val--paid">${_p5Money(totalPaid)}</div>
+          <div class="stmt-sum-card-label">Total Paid</div>
+        </div>
+        <div class="stmt-sum-card">
+          <div class="stmt-sum-card-val ${totalDue>0?'stmt-sum-card-val--due':''}">${_p5Money(totalDue)}</div>
+          <div class="stmt-sum-card-label">Outstanding</div>
+        </div>
+        <div class="stmt-sum-card">
+          <div class="stmt-sum-card-val">${clientOpps.length}</div>
+          <div class="stmt-sum-card-label">Jobs</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stmt-filter-bar">
+      <button class="stmt-filter-btn active" onclick="window._stmtFilter='all';document.querySelectorAll('.stmt-filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">All</button>
+      <button class="stmt-filter-btn" onclick="window._stmtFilter='open';document.querySelectorAll('.stmt-filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Open</button>
+      <button class="stmt-filter-btn" onclick="window._stmtFilter='paid';document.querySelectorAll('.stmt-filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Paid</button>
+      <button class="stmt-filter-btn" onclick="window._stmtFilter='overdue';document.querySelectorAll('.stmt-filter-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Overdue</button>
+    </div>
+
+    <div class="stmt-table-wrap">
+      <table class="stmt-table">
+        <thead><tr>
+          <th>Job / Document</th><th>Client</th><th>Date</th>
+          <th>Contract</th><th>Paid</th><th>Balance</th><th>Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="stmt-tfoot-row">
+          <td colspan="3"><strong>Totals</strong></td>
+          <td><strong>${_p5Money(totalContract)}</strong></td>
+          <td><strong style="color:var(--gw-pine-600)">${_p5Money(totalPaid)}</strong></td>
+          <td><strong style="color:${totalDue>0?'var(--gw-clay-600)':'var(--gw-pine-600)'}">${_p5Money(totalDue)}</strong></td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div>
+  </div>`;
+}
+window.accountStatement = accountStatement;
+
+// ── COMMUNICATIONS BOARD ──────────────────────────────────────────────────
+function communicationsBoard(){
+  const allComms = (state.communications||[]).sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+  const TYPE_ICON = {
+    sms:      `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>`,
+    email:    `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>`,
+    call:     `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2a1 1 0 011-1h2l1 3-1.5 1.5a9 9 0 004 4L11 8l3 1v2a1 1 0 01-1 1C6 12 4 5 3 3.5V2z"/></svg>`,
+    note:     `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v10l-3 3H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h4"/></svg>`,
+    proposal: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>`
+  };
+  const fmtDate = d=>{ try{ return new Date(d).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+
+  const cards = allComms.length ? allComms.map(m=>{
+    const opp = state.opportunities.find(o=>o.id===m.oppId);
+    const clientName = opp ? (opp.client||'Unknown') : 'Unknown Client';
+    const preview = (m.subject||m.body||'(no content)').slice(0,120);
+    const iconCls = `comms-card-icon comms-card-icon--${m.type||'note'}`;
+    return `
+    <div class="comms-card" onclick="window._leadTab='comms';show('pipeline','${m.oppId}')">
+      <div class="comms-card-head">
+        <div class="${iconCls}">${TYPE_ICON[m.type]||TYPE_ICON.note}</div>
+        <div class="comms-card-meta">
+          <div class="comms-card-client">${escapeHtml(clientName)}</div>
+          <div class="comms-card-sub">${opp?escapeHtml(opp.status||''):'Opportunity not found'}</div>
+        </div>
+        <div class="comms-card-time">${fmtDate(m.ts)}</div>
+      </div>
+      <div class="comms-card-preview">${escapeHtml(preview)}</div>
+      <div class="comms-card-footer">
+        <span class="comms-card-type-badge">${(m.type||'note').toUpperCase()}</span>
+        <span class="comms-card-dir">${m.direction==='out'?'↑ Sent':'↓ Received'}</span>
+      </div>
+    </div>`;
+  }).join('') : `
+    <div class="comms-empty">
+      <div class="comms-empty-icon">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--gw-text-muted)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
+      </div>
+      <div style="font-weight:700;font-size:14px;color:var(--gw-text);margin-bottom:6px">No communications yet</div>
+      <div>Communications will appear here as you log calls, SMS, and emails from lead records.</div>
+    </div>`;
+
+  // Type filter counts
+  const counts = ['all','sms','email','call','note','proposal'].reduce((a,t)=>({...a,[t]:t==='all'?allComms.length:allComms.filter(m=>m.type===t).length}),{});
+
+  view.innerHTML = `
+  <div class="comms-shell">
+    <div class="comms-header">
+      <div>
+        <div class="comms-title">Communications</div>
+        <div style="font-size:13px;color:var(--gw-text-muted);margin-top:2px">${allComms.length} total message${allComms.length!==1?'s':''}</div>
+      </div>
+      <div class="comms-actions">
+        <button class="comms-btn comms-btn--secondary" onclick="show('pipeline')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
+          Pipeline
+        </button>
+      </div>
+    </div>
+
+    <div class="comms-filter-bar">
+      <input class="comms-search" type="text" placeholder="Search communications…" oninput="window._commsSearch=this.value.toLowerCase();window._commsRender&&window._commsRender()">
+      ${['all','sms','email','call','note','proposal'].map(t=>`
+        <button class="comms-type-tab${t==='all'?' active':''}" data-type="${t}"
+          onclick="document.querySelectorAll('.comms-type-tab').forEach(b=>b.classList.remove('active'));this.classList.add('active');window._commsType='${t}';window._commsRender&&window._commsRender()">
+          ${t.charAt(0).toUpperCase()+t.slice(1)}${counts[t]>0?` <span style="opacity:.7">(${counts[t]})</span>`:''}
+        </button>`).join('')}
+    </div>
+
+    <div class="comms-grid" id="commsGrid">
+      ${cards}
+    </div>
+  </div>`;
+
+  // Live filter
+  window._commsType   = 'all';
+  window._commsSearch = '';
+  window._commsRender = function(){
+    const filtered = allComms.filter(m=>{
+      const typeOk = window._commsType==='all' || m.type===window._commsType;
+      const srch   = window._commsSearch;
+      if(!srch) return typeOk;
+      const opp    = state.opportunities.find(o=>o.id===m.oppId);
+      const hay    = ((opp?.client||'')+(m.subject||'')+(m.body||'')).toLowerCase();
+      return typeOk && hay.includes(srch);
+    });
+    const grid = document.getElementById('commsGrid');
+    if(!grid) return;
+    if(!filtered.length){
+      grid.innerHTML = `<div class="comms-empty"><div>No results match your filters</div></div>`;
+      return;
+    }
+    grid.innerHTML = filtered.map(m=>{
+      const opp = state.opportunities.find(o=>o.id===m.oppId);
+      const clientName = opp ? (opp.client||'Unknown') : 'Unknown Client';
+      const preview = (m.subject||m.body||'(no content)').slice(0,120);
+      const iconCls = `comms-card-icon comms-card-icon--${m.type||'note'}`;
+      const fmtD = d=>{ try{ return new Date(d).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+      return `
+      <div class="comms-card" onclick="window._leadTab='comms';show('pipeline','${m.oppId}')">
+        <div class="comms-card-head">
+          <div class="${iconCls}">${TYPE_ICON[m.type]||TYPE_ICON.note}</div>
+          <div class="comms-card-meta">
+            <div class="comms-card-client">${escapeHtml(clientName)}</div>
+            <div class="comms-card-sub">${opp?escapeHtml(opp.status||''):''}</div>
+          </div>
+          <div class="comms-card-time">${fmtD(m.ts)}</div>
+        </div>
+        <div class="comms-card-preview">${escapeHtml(preview)}</div>
+        <div class="comms-card-footer">
+          <span class="comms-card-type-badge">${(m.type||'note').toUpperCase()}</span>
+          <span class="comms-card-dir">${m.direction==='out'?'↑ Sent':'↓ Received'}</span>
+        </div>
+      </div>`;
+    }).join('');
+  };
+}
+window.communicationsBoard = communicationsBoard;
+
+// ── AUTOMATION MANAGER ────────────────────────────────────────────────────
+function automationManager(){
+  const defaultRules = [
+    {
+      id:'auto-1', active:true,
+      name:'New Lead Welcome SMS',
+      desc:'Sends a welcome SMS to the client within 5 minutes of a new lead being created.',
+      trigger:'New Lead Created', action:'Send SMS', delay:'5 min',
+      runCount:47, lastRun: new Date(Date.now()-3600000).toISOString()
+    },
+    {
+      id:'auto-2', active:true,
+      name:'Follow-Up Reminder',
+      desc:'Notifies the assigned rep when a follow-up date passes without contact logged.',
+      trigger:'Follow-up Overdue', action:'Notify Rep', delay:'1 day',
+      runCount:23, lastRun: new Date(Date.now()-86400000).toISOString()
+    },
+    {
+      id:'auto-3', active:false,
+      name:'Estimate Approval Email',
+      desc:'Sends a thank-you email when an estimate is marked Approved.',
+      trigger:'Estimate Approved', action:'Send Email', delay:'Immediate',
+      runCount:12, lastRun: new Date(Date.now()-5*86400000).toISOString()
+    },
+    {
+      id:'auto-4', active:false,
+      name:'Deposit Received Confirmation',
+      desc:'Sends a receipt confirmation when a deposit payment is recorded.',
+      trigger:'Payment Recorded (Deposit)', action:'Send Email + SMS', delay:'Immediate',
+      runCount:8, lastRun: new Date(Date.now()-10*86400000).toISOString()
+    },
+    {
+      id:'auto-5', active:true,
+      name:'Job Completion Survey',
+      desc:'Sends a satisfaction survey 24 hours after a job is marked Sold / Activation.',
+      trigger:'Status → Sold/Activation', action:'Send Survey Email', delay:'24 hrs',
+      runCount:31, lastRun: new Date(Date.now()-2*86400000).toISOString()
+    },
+    {
+      id:'auto-6', active:false,
+      name:'Invoice Overdue Alert',
+      desc:'Sends a payment reminder when an invoice is 7 days past due.',
+      trigger:'Invoice Overdue (7 days)', action:'Send Email', delay:'7 days',
+      runCount:5, lastRun: new Date(Date.now()-15*86400000).toISOString()
+    }
+  ];
+
+  const fmtDate = d=>{ try{ return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return ''; } };
+  const activeRules = defaultRules.filter(r=>r.active);
+
+  const ruleCards = defaultRules.map(r=>`
+    <div class="auto-rule-card auto-rule-card--${r.active?'active':'inactive'}" id="auto-card-${r.id}">
+      <div class="auto-rule-toggle">
+        <div class="auto-toggle-wrap" onclick="window._autoToggle('${r.id}',this)">
+          <div class="auto-toggle-track${r.active?' on':''}">
+            <div class="auto-toggle-knob"></div>
+          </div>
+        </div>
+      </div>
+      <div class="auto-rule-body">
+        <div class="auto-rule-name">${escapeHtml(r.name)}</div>
+        <div class="auto-rule-desc">${escapeHtml(r.desc)}</div>
+        <div class="auto-rule-chips">
+          <span class="auto-rule-chip auto-rule-chip--trigger">⚡ ${escapeHtml(r.trigger)}</span>
+          <span class="auto-rule-chip auto-rule-chip--action">→ ${escapeHtml(r.action)}</span>
+          <span class="auto-rule-chip auto-rule-chip--delay">⏱ ${escapeHtml(r.delay)}</span>
+          <span class="auto-rule-chip">${r.runCount} runs · last ${fmtDate(r.lastRun)}</span>
+        </div>
+      </div>
+      <div class="auto-rule-actions">
+        <button class="auto-rule-btn" onclick="showToast('Edit automation coming soon','info')">Edit</button>
+        <button class="auto-rule-btn" onclick="showToast('Automation history coming soon','info')">History</button>
+      </div>
+    </div>`).join('');
+
+  view.innerHTML = `
+  <div class="auto-shell">
+    <div class="auto-header">
+      <div>
+        <div class="auto-title">Automation Manager</div>
+        <div class="auto-title-sub">${activeRules.length} of ${defaultRules.length} automations active</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="auto-btn auto-btn--secondary" onclick="showToast('Automation templates coming soon','info')">Browse Templates</button>
+        <button class="auto-btn auto-btn--primary" onclick="showToast('New automation builder coming soon','info')">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v12M1 7h12"/></svg>
+          New Automation
+        </button>
+      </div>
+    </div>
+
+    <div class="auto-tab-bar">
+      <button class="auto-tab active" onclick="document.querySelectorAll('.auto-tab').forEach(b=>b.classList.remove('active'));this.classList.add('active')">All Rules</button>
+      <button class="auto-tab" onclick="document.querySelectorAll('.auto-tab').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Active (${activeRules.length})</button>
+      <button class="auto-tab" onclick="document.querySelectorAll('.auto-tab').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Inactive (${defaultRules.length-activeRules.length})</button>
+      <button class="auto-tab" onclick="document.querySelectorAll('.auto-tab').forEach(b=>b.classList.remove('active'));this.classList.add('active')">Run History</button>
+    </div>
+
+    <div id="autoRulesContainer">
+      ${ruleCards}
+    </div>
+  </div>`;
+
+  // Toggle handler
+  window._autoToggle = function(ruleId, wrap){
+    const track = wrap.querySelector('.auto-toggle-track');
+    const card  = document.getElementById('auto-card-'+ruleId);
+    if(!track||!card) return;
+    const wasOn = track.classList.contains('on');
+    track.classList.toggle('on', !wasOn);
+    card.className = `auto-rule-card auto-rule-card--${!wasOn?'active':'inactive'}`;
+    showToast(`Automation ${!wasOn?'enabled':'disabled'}`, !wasOn?'success':'info');
+  };
+}
+window.automationManager = automationManager;
+
+// ── FINANCIAL HUB ─────────────────────────────────────────────────────────
+function financialHub(){
+  const opps = state.opportunities || [];
+
+  // KPIs
+  const totalPipeline  = opps.reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalSold      = opps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalOpen      = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const estimatesOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)&&Number(o.jobValue||0)>0).length;
+
+  // Recent deals (last 5 sold)
+  const recentSold = opps.filter(o=>o.status==='Sold / Activation')
+    .sort((a,b)=>new Date(b.closedDate||b.createdAt)-new Date(a.closedDate||a.createdAt))
+    .slice(0,5);
+
+  // Open estimates (top 5 by value)
+  const openEstimates = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)&&Number(o.jobValue||0)>0)
+    .sort((a,b)=>Number(b.jobValue)-Number(a.jobValue))
+    .slice(0,5);
+
+  // Outstanding (any open opp with a value)
+  const outstanding = opps.filter(o=>o.status!=='Sold / Activation'&&o.status!=='Closed Lost'&&Number(o.jobValue||0)>0)
+    .sort((a,b)=>Number(b.jobValue)-Number(a.jobValue)).slice(0,5);
+
+  const soldRows = recentSold.length
+    ? recentSold.map(o=>`<tr>
+        <td><span class="fhub-link" onclick="show('pipeline','${o.id}')">${escapeHtml(o.client||'—')}</span></td>
+        <td>${escapeHtml(o.serviceLine||o.project||'—')}</td>
+        <td style="text-align:right;font-weight:700;color:var(--gw-pine-600)">${_p5Money(o.jobValue)}</td>
+        <td>${_p5FmtDate(o.closedDate||o.createdAt)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gw-text-subtle);font-style:italic">No closed deals yet</td></tr>`;
+
+  const estRows = openEstimates.length
+    ? openEstimates.map(o=>`<tr>
+        <td><span class="fhub-link" onclick="show('estimates','${o.id}')">${escapeHtml(o.client||'—')}</span></td>
+        <td>${escapeHtml(o.status||'—')}</td>
+        <td style="text-align:right;font-weight:700;color:var(--gw-action)">${_p5Money(o.jobValue)}</td>
+        <td><button class="fhub-link" onclick="show('estimates','${o.id}')" style="background:none;border:none;font-size:inherit;font-weight:700;color:var(--gw-action);cursor:pointer">View →</button></td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gw-text-subtle);font-style:italic">No open estimates</td></tr>`;
+
+  view.innerHTML = `
+  <div class="fhub-shell">
+    <div class="fhub-header">
+      <div class="fhub-title">Financial Hub</div>
+      <div class="fhub-subtitle">Overview of pipeline value, estimates, invoices, and payments</div>
+    </div>
+
+    <!-- Quick Navigation Cards -->
+    <div class="fhub-quick-nav">
+      <div class="fhub-nav-card" onclick="accountStatement()">
+        <div class="fhub-nav-card-icon">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--gw-pine-600)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
+        </div>
+        <div class="fhub-nav-card-label">Account Statements</div>
+        <div class="fhub-nav-card-sub">View all client docs</div>
+      </div>
+      <div class="fhub-nav-card" onclick="show('communications')">
+        <div class="fhub-nav-card-icon" style="background:var(--gw-teal-100)">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--gw-teal-600)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
+        </div>
+        <div class="fhub-nav-card-label">Communications</div>
+        <div class="fhub-nav-card-sub">All client messages</div>
+      </div>
+      <div class="fhub-nav-card" onclick="show('automations')">
+        <div class="fhub-nav-card-icon" style="background:var(--gw-sand-100)">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--gw-sand-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/></svg>
+        </div>
+        <div class="fhub-nav-card-label">Automations</div>
+        <div class="fhub-nav-card-sub">Manage triggers</div>
+      </div>
+      <div class="fhub-nav-card" onclick="show('revenueAdmin')">
+        <div class="fhub-nav-card-icon" style="background:var(--gw-clay-100)">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--gw-clay-700)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
+        </div>
+        <div class="fhub-nav-card-label">Revenue Analytics</div>
+        <div class="fhub-nav-card-sub">Full financial data</div>
+      </div>
+    </div>
+
+    <!-- KPI Row -->
+    <div class="fhub-kpi-row">
+      <div class="fhub-kpi-card">
+        <div class="fhub-kpi-label">Total Pipeline</div>
+        <div class="fhub-kpi-val">${_p5Money(totalPipeline)}</div>
+        <div class="fhub-kpi-delta">${opps.length} opportunities</div>
+      </div>
+      <div class="fhub-kpi-card">
+        <div class="fhub-kpi-label">Closed / Collected</div>
+        <div class="fhub-kpi-val fhub-kpi-val--positive">${_p5Money(totalSold)}</div>
+        <div class="fhub-kpi-delta fhub-kpi-delta--up">${opps.filter(o=>o.status==='Sold / Activation').length} sold</div>
+      </div>
+      <div class="fhub-kpi-card">
+        <div class="fhub-kpi-label">Open Value</div>
+        <div class="fhub-kpi-val fhub-kpi-val--warning">${_p5Money(totalOpen)}</div>
+        <div class="fhub-kpi-delta">${estimatesOpen} open jobs</div>
+      </div>
+      <div class="fhub-kpi-card">
+        <div class="fhub-kpi-label">Conversion Rate</div>
+        <div class="fhub-kpi-val">${opps.length>0?Math.round((opps.filter(o=>o.status==='Sold / Activation').length/opps.length)*100):0}%</div>
+        <div class="fhub-kpi-delta">Close rate</div>
+      </div>
+    </div>
+
+    <!-- Panels -->
+    <div class="fhub-section-grid">
+      <div class="fhub-panel">
+        <div class="fhub-panel-head">
+          <div class="fhub-panel-title">Recent Closed Deals</div>
+          <span class="fhub-panel-link" onclick="show('pipeline')">All Pipeline →</span>
+        </div>
+        <div class="fhub-panel-body">
+          <table class="fhub-table">
+            <thead><tr><th>Client</th><th>Job</th><th style="text-align:right">Value</th><th>Closed</th></tr></thead>
+            <tbody>${soldRows}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="fhub-panel">
+        <div class="fhub-panel-head">
+          <div class="fhub-panel-title">Open Estimates</div>
+          <span class="fhub-panel-link" onclick="show('pipeline')">All Estimates →</span>
+        </div>
+        <div class="fhub-panel-body">
+          <table class="fhub-table">
+            <thead><tr><th>Client</th><th>Stage</th><th style="text-align:right">Value</th><th></th></tr></thead>
+            <tbody>${estRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Outstanding Balances -->
+    <div class="fhub-panel" style="margin-bottom:24px">
+      <div class="fhub-panel-head">
+        <div class="fhub-panel-title">Outstanding — Needs Attention</div>
+        <span class="fhub-panel-link" onclick="accountStatement()">Full Statement →</span>
+      </div>
+      <div class="fhub-panel-body">
+        <table class="fhub-table">
+          <thead><tr><th>Client</th><th>Job Type</th><th>Stage</th><th style="text-align:right">Value</th><th>Follow-Up</th></tr></thead>
+          <tbody>
+            ${outstanding.length ? outstanding.map(o=>`<tr>
+              <td><span class="fhub-link" onclick="show('pipeline','${o.id}')">${escapeHtml(o.client||'—')}</span></td>
+              <td>${escapeHtml(o.serviceLine||o.project||'—')}</td>
+              <td>${escapeHtml(o.status||'—')}</td>
+              <td style="text-align:right;font-weight:700;color:var(--gw-action)">${_p5Money(o.jobValue)}</td>
+              <td style="color:${o.nextFollowUp&&o.nextFollowUp<window.todayISO()?'var(--gw-clay-600)':'var(--gw-text-muted)'}">${_p5FmtDate(o.nextFollowUp)}</td>
+            </tr>`).join('')
+            : `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--gw-text-subtle);font-style:italic">No outstanding items</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+window.financialHub = financialHub;
 
 // Local summary fallback when AI endpoint is unavailable
 function gwCCLocalSummary(transcript, opp) {

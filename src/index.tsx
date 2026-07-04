@@ -2889,6 +2889,33 @@ function getHtml(): string {
         </div>
       </details>
 
+      <!-- ── Money Loop ── -->
+      <details class="nav-group tenant-nav" open>
+        <summary class="nav-summary">Money Loop</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="financialHub" onclick="show('financialHub')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
+            Financial Hub
+          </button>
+          <button class="nav-item" data-view="estimates" onclick="show('estimates')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
+            Estimates
+          </button>
+          <button class="nav-item" data-view="invoices" onclick="show('invoices')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
+            Invoices
+          </button>
+          <button class="nav-item" data-view="communications" onclick="show('communications')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
+            Communications
+          </button>
+          <button class="nav-item" data-view="automations" onclick="show('automations')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/><path d="M3 3l10 10" opacity=".3"/></svg>
+            Automations
+          </button>
+        </div>
+      </details>
+
       <details class="nav-group tenant-nav">
         <summary class="nav-summary">Admin</summary>
         <div class="nav-items">
@@ -2898,7 +2925,7 @@ function getHtml(): string {
           </button>
           <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
-            Financial Hub
+            Revenue Analytics
           </button>
           <button class="nav-item" data-view="integrations" onclick="show('integrations')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="8" r="2.5"/><circle cx="12" cy="4" r="2.5"/><circle cx="12" cy="12" r="2.5"/><path d="M6.4 7.2l3.2-2.4M6.4 8.8l3.2 2.4"/></svg>

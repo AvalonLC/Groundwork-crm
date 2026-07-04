@@ -477,6 +477,183 @@
   // ══════════════════════════════════════════════════════════════════════════
   // OVERFLOW MENU TOGGLE — shared by all record pages
   // ══════════════════════════════════════════════════════════════════════════
+  // ── Phase 5: Financial Summary Widget ────────────────────────────────────
+  // cfg: { contractValue, estimateStatus, depositPaid, depositPct,
+  //        totalBilled, totalPaid, balanceDue, estimateId, invoiceId }
+  R.FinancialSummary = function(cfg) {
+    cfg = cfg || {};
+    const fmt = v => {
+      if (v == null || v === '') return '—';
+      const n = Number(v);
+      if (isNaN(n)) return '—';
+      return '$' + n.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+    };
+    const pct = cfg.contractValue > 0 && cfg.totalPaid > 0
+      ? Math.min(100, Math.round((cfg.totalPaid / cfg.contractValue) * 100))
+      : 0;
+    const estBadgeClass = {
+      draft: 'fin-sum-badge--draft',
+      sent: 'fin-sum-badge--pending',
+      approved: 'fin-sum-badge--approved',
+      declined: 'fin-sum-badge--overdue',
+      invoiced: 'fin-sum-badge--invoiced',
+      paid: 'fin-sum-badge--paid'
+    }[cfg.estimateStatus] || 'fin-sum-badge--draft';
+    const estLabel = cfg.estimateStatus
+      ? cfg.estimateStatus.charAt(0).toUpperCase() + cfg.estimateStatus.slice(1)
+      : 'No Estimate';
+    const fillClass = pct >= 100 ? '' : (pct >= 50 ? '' : (cfg.balanceDue > 0 ? 'fin-sum-progress-fill--warn' : ''));
+    const linkEst = cfg.estimateId
+      ? `<span class="fin-sum-title-link" onclick="show('estimates','${cfg.estimateId}')">View Estimate →</span>`
+      : '';
+    const linkInv = cfg.invoiceId
+      ? `<span class="fin-sum-title-link" onclick="show('invoices','${cfg.invoiceId}')">View Invoice →</span>`
+      : '';
+    return `
+    <div class="fin-sum-card">
+      <div class="fin-sum-title">
+        <span>Financial Summary</span>
+        ${linkEst || linkInv}
+      </div>
+      <div class="fin-sum-grid">
+        <div class="fin-sum-stat">
+          <div class="fin-sum-stat-val">${fmt(cfg.contractValue)}</div>
+          <div class="fin-sum-stat-label">Contract Value</div>
+        </div>
+        <div class="fin-sum-stat">
+          <div class="fin-sum-stat-val">${fmt(cfg.depositPaid)}</div>
+          <div class="fin-sum-stat-label">Deposit Paid</div>
+        </div>
+        <div class="fin-sum-stat">
+          <div class="fin-sum-stat-val">${fmt(cfg.totalBilled)}</div>
+          <div class="fin-sum-stat-label">Total Invoiced</div>
+        </div>
+        <div class="fin-sum-stat">
+          <div class="fin-sum-stat-val${cfg.balanceDue > 0 ? ' fin-sum-stat-val--danger' : ' fin-sum-stat-val--positive'}">${fmt(cfg.balanceDue)}</div>
+          <div class="fin-sum-stat-label">Balance Due</div>
+        </div>
+      </div>
+      <div class="fin-sum-progress-wrap">
+        <div class="fin-sum-progress-label">
+          <span>Collected</span><span>${pct}%</span>
+        </div>
+        <div class="fin-sum-progress-track">
+          <div class="fin-sum-progress-fill ${fillClass}" style="width:${pct}%"></div>
+        </div>
+      </div>
+      <hr class="fin-sum-divider">
+      <div class="fin-sum-status-row">
+        <span style="font-size:11px;color:var(--gw-text-muted)">Estimate Status</span>
+        <span class="fin-sum-badge ${estBadgeClass}">${estLabel}</span>
+      </div>
+    </div>`;
+  };
+
+  // ── Phase 5: Payment Timeline ─────────────────────────────────────────────
+  // milestones: [{ name, amount, dueDate, paidDate, status }]
+  // status: 'paid' | 'pending' | 'overdue' | 'draft'
+  R.PaymentTimeline = function(milestones, cfg) {
+    milestones = milestones || [];
+    cfg = cfg || {};
+    const fmt = v => {
+      const n = Number(v);
+      if (!v || isNaN(n)) return '—';
+      return '$' + n.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+    };
+    const fmtDate = d => {
+      if (!d) return '';
+      try { return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+      catch(e) { return d; }
+    };
+    if (!milestones.length) {
+      return `<div class="fin-sum-card">
+        <div class="fin-sum-title">Payment Schedule</div>
+        <div style="font-size:12px;color:var(--gw-text-subtle);font-style:italic;padding:6px 0">No payment milestones set</div>
+      </div>`;
+    }
+    const dotClass = s => ({
+      paid: 'pay-tl-dot--done',
+      pending: 'pay-tl-dot--pending',
+      overdue: 'pay-tl-dot--overdue',
+      active: 'pay-tl-dot--active'
+    }[s] || 'pay-tl-dot--pending');
+    const badgeClass = s => ({
+      paid: 'pay-tl-badge--paid',
+      pending: 'pay-tl-badge--pending',
+      overdue: 'pay-tl-badge--overdue',
+      draft: 'pay-tl-badge--draft'
+    }[s] || 'pay-tl-badge--pending');
+    const rows = milestones.map((m, i) => {
+      const isLast = i === milestones.length - 1;
+      const statusLabel = m.status ? m.status.charAt(0).toUpperCase() + m.status.slice(1) : 'Pending';
+      const dateLabel = m.status === 'paid' && m.paidDate
+        ? `Paid ${fmtDate(m.paidDate)}`
+        : (m.dueDate ? `Due ${fmtDate(m.dueDate)}` : '');
+      return `
+      <div class="pay-tl-row">
+        <div class="pay-tl-spine">
+          <div class="pay-tl-dot ${dotClass(m.status)}"></div>
+          ${!isLast ? '<div class="pay-tl-line"></div>' : ''}
+        </div>
+        <div class="pay-tl-content">
+          <div class="pay-tl-head">
+            <div class="pay-tl-name">${m.name || 'Payment ' + (i+1)}</div>
+            <div class="pay-tl-amount">${fmt(m.amount)}</div>
+          </div>
+          <div class="pay-tl-meta">${dateLabel}</div>
+          <span class="pay-tl-badge ${badgeClass(m.status)}">${statusLabel}</span>
+        </div>
+      </div>`;
+    }).join('');
+    return `
+    <div class="fin-sum-card">
+      <div class="fin-sum-title">
+        <span>Payment Schedule</span>
+        ${cfg.invoiceId ? `<span class="fin-sum-title-link" onclick="show('invoices','${cfg.invoiceId}')">Full Invoice →</span>` : ''}
+      </div>
+      <div class="pay-tl-wrap">${rows}</div>
+    </div>`;
+  };
+
+  // ── Phase 5: Communications Timeline ─────────────────────────────────────
+  // events: [{ type, direction, subject, body, ts, files }]
+  R.CommTimeline = function(events, cfg) {
+    events = (events || []).sort((a,b) => new Date(b.ts) - new Date(a.ts));
+    cfg = cfg || {};
+    const typeIcon = t => ({
+      sms:      '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>',
+      email:    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>',
+      call:     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2a1 1 0 011-1h2l1 3-1.5 1.5a9 9 0 004 4L11 8l3 1v2a1 1 0 01-1 1C6 12 4 5 3 3.5V2z"/></svg>',
+      note:     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v10l-3 3H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h4"/></svg>',
+      proposal: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>'
+    }[t] || '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="6"/></svg>';
+    const fmtDate = d => {
+      if (!d) return '';
+      try { return new Date(d).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+      catch(e) { return d; }
+    };
+    if (!events.length) {
+      return `<div style="padding:16px;font-size:12px;color:var(--gw-text-subtle);font-style:italic">No communications logged yet</div>`;
+    }
+    const items = events.map(m => {
+      const preview = (m.subject || m.body || '').slice(0, 100);
+      const iconClass = `comm-tl-icon comm-tl-icon--${m.type || 'note'}`;
+      return `
+      <div class="comm-tl-item">
+        <div class="${iconClass}">${typeIcon(m.type)}</div>
+        <div class="comm-tl-body">
+          <div class="comm-tl-meta">
+            <span class="comm-tl-type">${(m.type||'note').toUpperCase()}</span>
+            <span class="comm-tl-dir">${m.direction==='out'?'↑ Sent':'↓ Received'}</span>
+          </div>
+          <div class="comm-tl-preview">${preview}${(m.subject||m.body||'').length>100?'…':''}</div>
+        </div>
+        <div class="comm-tl-time">${fmtDate(m.ts)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="comm-tl-wrap">${items}</div>`;
+  };
+
   window.toggleRecordOverflow = function (btn) {
     const menu = btn ? btn.nextElementSibling : null;
     if (!menu) return;
