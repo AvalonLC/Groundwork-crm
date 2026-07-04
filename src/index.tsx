@@ -3005,8 +3005,9 @@ function getHtml(): string {
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260630gw12"></script>
+<script src="/static/record-page.js?v=20260704rp1"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260704gw17"></script>
+<script src="/static/app_premium.js?v=20260704gw18"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260701gw14"></script>

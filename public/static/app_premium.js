@@ -2177,7 +2177,8 @@ function textarea(name,label,value=''){ return `<label class="full"><span>${labe
 function opportunityDetail(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o){ return pipeline(); }
-  const stageGuess   = Math.max(1, getPipelineStages().indexOf(o.status)+1);
+  const _stages      = getPipelineStages();
+  const stageGuess   = Math.max(1, _stages.indexOf(o.status)+1);
   const _activeTab   = window._leadTab || 'overview';
   const _repObj      = (window.REPS||[]).find(r=>r.id===o.repId);
   const _repName     = _repObj ? _repObj.name : 'Unassigned';
@@ -2229,148 +2230,117 @@ function opportunityDetail(id){
   // ── Stage checklist for right rail ───────────────────────────────────────
   const stageChecklist = (window.AVALON_DATA.checklists||[]).find(c=>c.stage===stageGuess);
 
-  view.innerHTML = `
-  <!-- ══ STICKY LEAD HEADER ══════════════════════════════════════════════ -->
-  <div class="ld-sticky-header" id="ldStickyHeader">
-    <div class="ld-sticky-inner">
-      <button class="ld-back-btn" onclick="show('pipeline')">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L4 7l5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Pipeline
+  // ── Helper: build activity timeline items for Activity tab ────────────────
+  const _allComms = (state.communications||[]).filter(c=>c.oppId===o.id)
+    .sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+
+  // ── Build page using record page primitives ────────────────────────────────
+  const R = window.GW && window.GW.record;
+
+  // ── COMMAND BAR ────────────────────────────────────────────────────────────
+  const _cmdBarHtml = `
+    <button class="rp-command-back" onclick="show('pipeline')">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9 11L4 7l5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Pipeline
+    </button>
+    <div class="rp-command-identity">
+      <div class="rp-command-avatar">${(o.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+      <span class="rp-command-name">${escapeHtml(o.client||'Unnamed Lead')}</span>
+      <div class="rp-command-meta">
+        <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px;padding:2px 8px">${escapeHtml(o.status||'New Lead')}</span>
+        ${o.jobValue ? `<span style="font-size:12px;font-weight:700;color:var(--gw-action)">${money(Number(o.jobValue))}</span>` : ''}
+      </div>
+    </div>
+    <div class="rp-command-actions">
+      <button class="rp-btn rp-btn--primary" style="padding:6px 13px;font-size:12.5px" onclick="saveOpportunity('${o.id}')">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Save
       </button>
-      <div class="ld-sticky-identity">
-        <div class="ld-sticky-avatar">${(o.client||'?')[0].toUpperCase()}</div>
-        <div>
-          <div class="ld-sticky-name">${escapeHtml(o.client||'Unnamed Lead')}</div>
-          <div class="ld-sticky-sub">
-            <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px;padding:2px 8px">${escapeHtml(o.status||'New Lead')}</span>
-            <span style="color:#6F7E6A;font-size:12px">${escapeHtml(_repName)}</span>
-            ${o.jobValue ? `<span style="color:#2D7A55;font-size:12px;font-weight:700">${money(Number(o.jobValue))}</span>` : ''}
+      ${!_isSold && !_isClosed ? `<button class="rp-btn rp-btn--sold" style="padding:6px 13px;font-size:12.5px" onclick="openMarkSoldModal('${o.id}')">Mark Sold</button>` : _isSold ? `<span class="rp-sold-badge" style="font-size:11px;padding:4px 10px">Sold</span>` : ''}
+    </div>`;
+
+  // ── HERO ───────────────────────────────────────────────────────────────────
+  const _heroHtml = `
+    <div class="ld-hero">
+      <div class="ld-hero-left">
+        <div class="ld-hero-avatar">${(o.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div class="ld-hero-info">
+          <div class="ld-eyebrow">
+            <span>OPPORTUNITY</span>
+            ${o.source ? `<span class="ld-source-pill">${escapeHtml(o.source)}</span>` : ''}
+          </div>
+          <h1 class="ld-name">${escapeHtml(o.client||'Unnamed Lead')}</h1>
+          <p class="ld-subtitle">
+            ${escapeHtml(o.project||o.serviceLine||'Opportunity')}
+            ${o.address ? `<span class="ld-subtitle-sep">·</span>${escapeHtml(o.address)}` : ''}
+          </p>
+          <div class="ld-stat-chips">
+            ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 11V5l5-3 5 3v6H9V8H5v3H2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>','Stage',escapeHtml(o.status||'New Lead'))}
+            ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Rep',escapeHtml(_repName))}
+            ${o.jobValue ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Value',money(Number(o.jobValue)),'green') : ''}
+            ${_estComm > 0 ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12L7 2l5 10M4.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>','Commission',money(_estComm),'blue') : ''}
+            ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'')}
+            ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2l5.5 10H1.5L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v3M7 10.5h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Comm.',o.commissionApproved?'Approved':'Pending',o.commissionApproved?'green':'amber')}
           </div>
         </div>
       </div>
-      <div class="ld-sticky-actions">
-        <button class="ld-action-save" onclick="saveOpportunity('${o.id}')">
+      <div class="ld-hero-actions">
+        <button class="ld-btn-primary" onclick="saveOpportunity('${o.id}')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Save
+          Save Changes
         </button>
-        ${!_isSold && !_isClosed ? `<button class="ld-action-sold" onclick="openMarkSoldModal('${o.id}')">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        ${!_isSold && !_isClosed ? `<button class="ld-btn-sold" onclick="openMarkSoldModal('${o.id}')">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".9"/></svg>
           Mark Sold
-        </button>` : _isSold ? `<span class="ld-sold-badge">Sold</span>` : ''}
-        ${_isAdm||_isOM||_canDelLead ? `<div class="ld-overflow-wrap">
-          <button class="ld-overflow-btn" onclick="toggleLeadOverflow(this)" title="More actions">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
+        </button>` : _isSold ? `<span class="rp-sold-badge">Sold</span>` : ''}
+        ${_isAdm||_isOM||_canDelLead ? `<div class="rp-overflow-wrap">
+          <button class="ld-btn-secondary" onclick="toggleRecordOverflow(this)">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
+            More
           </button>
-          <div class="ld-overflow-menu" style="display:none">
-            <button onclick="duplicateOpportunity('${o.id}');toggleLeadOverflow()">
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M2 10V2h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Duplicate
+          <div class="rp-overflow-menu" style="display:none">
+            <button onclick="duplicateOpportunity('${o.id}');toggleRecordOverflow()">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M2 10V2h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              Duplicate Lead
             </button>
-            ${_canDelLead ? `<button class="danger" onclick="deleteOpportunity('${o.id}')">
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2h4v2M11 4l-.75 8H3.75L3 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <button onclick="show('integrations')">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              Integrations
+            </button>
+            ${_canDelLead ? `<button class="danger" onclick="if(confirm('Delete this lead?')) deleteOpportunity('${o.id}')">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2h4v2M11 4l-.75 8H3.75L3 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
               Delete Lead
             </button>` : ''}
           </div>
         </div>` : ''}
       </div>
-    </div>
-  </div>
+    </div>`;
 
-  <!-- ══ HERO IDENTITY BLOCK ════════════════════════════════════════════ -->
-  <div class="ld-hero">
-    <div class="ld-hero-left">
-      <div class="ld-hero-avatar">${(o.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
-      <div class="ld-hero-info">
-        <div class="ld-eyebrow">
-          <span>OPPORTUNITY</span>
-          ${o.source ? `<span class="ld-source-pill">${escapeHtml(o.source)}</span>` : ''}
-        </div>
-        <h1 class="ld-name">${escapeHtml(o.client||'Unnamed Lead')}</h1>
-        <p class="ld-subtitle">
-          ${escapeHtml(o.project||o.serviceLine||'Opportunity')}
-          ${o.address ? `<span class="ld-subtitle-sep">·</span> ${escapeHtml(o.address)}` : ''}
-        </p>
-        <div class="ld-stat-chips">
-          ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 11V5l5-3 5 3v6H9V8H5v3H2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', 'Stage', escapeHtml(o.status||'New Lead'))}
-          ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', 'Rep', escapeHtml(_repName))}
-          ${o.jobValue ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', 'Est. Value', money(Number(o.jobValue)), 'green') : ''}
-          ${_estComm > 0 ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12L7 2l5 10M4.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>', 'Commission', money(_estComm), 'blue') : ''}
-          ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', 'Follow-Up', prettyDate(o.nextFollowUp), _isOvd?'red':'')}
-          ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2l5.5 10H1.5L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v3M7 10.5h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', 'Commission', o.commissionApproved?'Approved':'Pending', o.commissionApproved?'green':'amber')}
-        </div>
-      </div>
-    </div>
-    <div class="ld-hero-actions">
-      <button class="ld-btn-primary" onclick="saveOpportunity('${o.id}')">
-        <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Save Changes
-      </button>
-      ${!_isSold && !_isClosed ? `<button class="ld-btn-sold" onclick="openMarkSoldModal('${o.id}')">
-        <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".9"/></svg>
-        Mark Sold
-      </button>` : _isSold ? `<span class="ld-sold-badge-large">Sold</span>` : ''}
-      ${_isAdm||_isOM||_canDelLead ? `<div class="ld-overflow-wrap ld-overflow-hero">
-        <button class="ld-btn-secondary" onclick="toggleLeadOverflow(this)">More</button>
-        <div class="ld-overflow-menu" style="display:none">
-          <button onclick="duplicateOpportunity('${o.id}');toggleLeadOverflow()">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M2 10V2h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Duplicate Lead
-          </button>
-          <button onclick="show('integrations')">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Manage Integrations
-          </button>
-          ${_canDelLead ? `<button class="danger" onclick="if(confirm('Delete this lead? This cannot be undone.')) deleteOpportunity('${o.id}')">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2h4v2M11 4l-.75 8H3.75L3 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Delete Lead
-          </button>` : ''}
-        </div>
-      </div>` : ''}
-    </div>
-  </div>
+  // ── STAGE TRACKER ──────────────────────────────────────────────────────────
+  const _stageTrackerHtml = R ? R.StageTracker(_stages, o.status) : '';
 
-  <!-- ══ PRIMARY TABS ════════════════════════════════════════════════════ -->
-  <div class="ld-tab-bar">
-    <button class="ld-tab ${_activeTab==='overview'?'ld-tab-active':''}" onclick="window._leadTab='overview';show('pipeline','${o.id}')">
-      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M4 5h6M4 7.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Overview
-    </button>
-    <button class="ld-tab ${_activeTab==='comms'?'ld-tab-active':''}" onclick="window._leadTab='comms';show('pipeline','${o.id}')">
-      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-      Communications
-      ${_commsCnt ? `<span class="ld-tab-count">${_commsCnt}</span>` : ''}
-    </button>
-    <button class="ld-tab ${_activeTab==='files'?'ld-tab-active':''}" onclick="window._leadTab='files';show('pipeline','${o.id}')">
-      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".5"/></svg>
-      Files
-      ${_filesCnt ? `<span class="ld-tab-count">${_filesCnt}</span>` : ''}
-    </button>
-    <button class="ld-tab ${_activeTab==='notes'?'ld-tab-active':''}" onclick="window._leadTab='notes';show('pipeline','${o.id}')">
-      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Notes
-      ${_notesCnt ? `<span class="ld-tab-count">${_notesCnt}</span>` : ''}
-    </button>
-    <button class="ld-tab ${_activeTab==='activity'?'ld-tab-active':''}" onclick="window._leadTab='activity';show('pipeline','${o.id}')">
-      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-      Activity
-    </button>
-  </div>
+  // ── QUICK ACTION BAR ───────────────────────────────────────────────────────
+  const _qaBarHtml = R ? R.QuickActionBar([
+    { id:`qa_homeworks_${o.id}`, icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1L1 5v8h4V9h4v4h4V5L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', label:'Push to Homeworks', onclick:`qaAction('homeworks','${o.id}',this)` },
+    { id:`qa_calendar_${o.id}`,  icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Schedule', onclick:`qaAction('calendar','${o.id}',this)` },
+    { id:`qa_gmail_${o.id}`,     icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Email', onclick:`qaAction('gmail','${o.id}',this)` },
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', label:'Log Call', onclick:`window._leadTab='comms';show('pipeline','${o.id}')` },
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Add Note', onclick:`window._leadTab='notes';show('pipeline','${o.id}')` },
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="var(--gw-success)" stroke="none"/></svg>', label:'Call Companion', onclick:`openCallCompanion('${o.id}')` },
+    ...(!_isSold && !_isClosed ? [{icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".8"/></svg>', label:'Mark Sold', variant:'primary', onclick:`openMarkSoldModal('${o.id}')`}] : [])
+  ]) : '';
 
-  <!-- ══ TWO-COLUMN BODY ═════════════════════════════════════════════════ -->
-  <div class="ld-body">
-
-    <!-- Main working column -->
-    <div class="ld-main">
-
-      <!-- TAB: Overview -->
-      <div id="ldTabOverview" style="display:${_activeTab==='overview'?'block':'none'}">
-
-        <!-- Contact & Opportunity Info -->
-        <div class="ld-section-head">
-          <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+  // ── OVERVIEW TAB: Contact & Opportunity form ────────────────────────────────
+  const _overviewContactHtml = `
+    <div class="rp-section-card">
+      <div class="rp-section-card-head">
+        <div class="rp-section-card-title">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           Contact &amp; Opportunity
         </div>
-        <form class="ld-card ld-form" id="oppForm">
+      </div>
+      <div class="rp-section-card-body">
+        <form class="ld-form" id="oppForm" style="padding:0">
           <div class="ld-form-grid">
             ${inputEdit('client','Client Name',o.client)}
             ${inputEdit('phone','Phone',o.phone)}
@@ -2384,37 +2354,57 @@ function opportunityDetail(id){
             ${inputEdit('budget','Budget Range',o.budget)}
           </div>
         </form>
+      </div>
+    </div>`;
 
-        <!-- Stage & Scheduling -->
-        <div class="ld-section-head" style="margin-top:20px">
-          <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+  // ── OVERVIEW TAB: Stage & Scheduling ──────────────────────────────────────
+  const _overviewStageHtml = `
+    <div class="rp-section-card">
+      <div class="rp-section-card-head">
+        <div class="rp-section-card-title">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           Stage &amp; Scheduling
         </div>
-        <div class="ld-card-row">
-          <div class="ld-card ld-card-sm">
-            <div class="ld-card-label">Pipeline Stage</div>
-            ${selectWithId('statusEdit',getPipelineStages(),o.status)}
-            <button class="ld-inline-btn" onclick="setOppField('${o.id}','status',document.getElementById('statusEdit').value)">Update Stage</button>
+      </div>
+      <div class="rp-section-card-body">
+        <div class="rp-card-row">
+          <div class="rp-section-card">
+            <div class="rp-section-card-body">
+              <div class="ld-card-label">Pipeline Stage</div>
+              ${selectWithId('statusEdit',getPipelineStages(),o.status)}
+              <button class="rp-inline-btn" style="margin-top:10px" onclick="setOppField('${o.id}','status',document.getElementById('statusEdit').value)">Update Stage</button>
+            </div>
           </div>
-          <div class="ld-card ld-card-sm">
-            <div class="ld-card-label">Next Follow-Up</div>
-            <input id="followEdit" type="date" value="${escapeHtml(o.nextFollowUp||'')}">
-            <button class="ld-inline-btn" onclick="setOppField('${o.id}','nextFollowUp',document.getElementById('followEdit').value)">Set Date</button>
+          <div class="rp-section-card">
+            <div class="rp-section-card-body">
+              <div class="ld-card-label">Next Follow-Up</div>
+              <input id="followEdit" type="date" value="${escapeHtml(o.nextFollowUp||'')}" style="border:1px solid var(--gw-border);border-radius:var(--gw-r-xs);padding:7px 10px;font-size:13px;width:100%;background:var(--gw-bg-surface);color:var(--gw-text-primary);margin-top:8px">
+              <button class="rp-inline-btn" style="margin-top:10px" onclick="setOppField('${o.id}','nextFollowUp',document.getElementById('followEdit').value)">Set Date</button>
+            </div>
           </div>
-          <div class="ld-card ld-card-sm">
-            <div class="ld-card-label">Stage Guide</div>
-            <p style="font-size:12px;color:#6F7E6A;margin:6px 0 10px;line-height:1.5">See what this stage requires before moving forward.</p>
-            <button class="ld-inline-btn" onclick="show('process',${Math.min(stageGuess,12)})">Open Stage ${stageGuess} Guide</button>
+          <div class="rp-section-card">
+            <div class="rp-section-card-body">
+              <div class="ld-card-label">Stage Guide</div>
+              <p style="font-size:12px;color:var(--gw-text-muted);margin:8px 0 10px;line-height:1.5">See what Stage ${stageGuess} requires before moving forward.</p>
+              <button class="rp-inline-btn" onclick="show('process',${Math.min(stageGuess,12)})">Open Stage ${stageGuess} Guide</button>
+            </div>
           </div>
         </div>
+      </div>
+    </div>`;
 
-        <!-- Estimate Tracking -->
-        <div class="ld-section-head" style="margin-top:20px">
-          <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 7l1.5 1.5L9.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  // ── OVERVIEW TAB: Estimate Tracking ───────────────────────────────────────
+  const _overviewEstimateHtml = `
+    <div class="rp-section-card">
+      <div class="rp-section-card-head">
+        <div class="rp-section-card-title">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 7l1.5 1.5L9.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Estimate Tracking
-          <span class="ld-section-sub">Paper on the street</span>
         </div>
-        <div class="ld-card ld-form">
+        <span style="font-size:10.5px;color:var(--gw-text-subtle);font-weight:600">Paper on the street</span>
+      </div>
+      <div class="rp-section-card-body">
+        <div class="ld-form" style="padding:0">
           <div class="ld-form-grid">
             <label><span>Estimate Status</span>
               <select id="estimateStatusEdit" name="estimateStatus">
@@ -2434,297 +2424,483 @@ function opportunityDetail(id){
             ${inputEdit('estimateCount','# Estimates Issued',o.estimateCount,'number')}
           </div>
         </div>
+      </div>
+    </div>`;
 
-        <!-- Qualification Notes -->
-        <div class="ld-section-head" style="margin-top:20px">
-          <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v9a.5.5 0 01-.5.5h-9A.5.5 0 012 11.5v-9z" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h5M4.5 10h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+  // ── OVERVIEW TAB: Qualification Notes ─────────────────────────────────────
+  const _qualFields = [
+    {field:'prompt',          label:'What prompted the inquiry?',                                icon:'M7 1l.9 2.6H11L8.5 5.2l.9 2.7L7 6.5l-2.4 1.4.9-2.7L3 3.6h3.1z'},
+    {field:'desiredOutcome',  label:'Desired outcome / what good looks like',                   icon:'M2 11l3.5-3.5 2.5 2.5L12 4'},
+    {field:'painPoints',      label:'Pain points — what problem are they really solving?',      icon:'M7 2v4M7 8v.5M4 12l3-10 3 10H4z'},
+    {field:'decisionDrivers', label:'Decision drivers — what do they need to say yes?',         icon:'M2 7h10M8 4l4 3-4 3'},
+    {field:'fitConcerns',     label:'Fit concerns / risk flags',                                icon:'M7 2v5M7 9.5v.5'}
+  ];
+  const _qualPlaceholders = {
+    prompt:          'e.g. Referred by a neighbour, saw an ad, urgent deadline…',
+    desiredOutcome:  'e.g. Full backyard transformation before summer, under $25k…',
+    painPoints:      'e.g. Current lawn embarrassing, HOA notices, drainage flooding…',
+    decisionDrivers: 'e.g. Needs 3 quotes, spouse must approve, timeline is the key…',
+    fitConcerns:     'e.g. Budget may be tight, decision-maker unconfirmed…'
+  };
+  const _qualHtml = `
+    <div class="rp-section-card">
+      <div class="rp-section-card-head">
+        <div class="rp-section-card-title">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v9a.5.5 0 01-.5.5h-9A.5.5 0 012 11.5v-9z" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h5M4.5 10h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           Qualification Notes
         </div>
-        <div class="ld-card ld-qual-notes-card">
-          ${[
-            {field:'prompt',          label:'What prompted the inquiry?',                                                    icon:'M7 1l.9 2.6H11L8.5 5.2l.9 2.7L7 6.5l-2.4 1.4.9-2.7L3 3.6h3.1z'},
-            {field:'desiredOutcome',  label:'Desired outcome / what good looks like',                                        icon:'M2 11l3.5-3.5 2.5 2.5L12 4'},
-            {field:'painPoints',      label:'Pain Point(s) — what problem are they really trying to solve?',                 icon:'M7 2v4M7 8v.5M4 12l3-10 3 10H4z'},
-            {field:'decisionDrivers', label:'Decision drivers — what do they need from us to say yes?',                     icon:'M2 7h10M8 4l4 3-4 3'},
-            {field:'fitConcerns',     label:'Fit concerns / risk flags',                                                     icon:'M7 2v5M7 9.5v.5'}
-          ].map(({field,label,icon})=>{
-            const val = escapeHtml(o[field]||'');
-            const placeholder = {
-              prompt:          'e.g. Referred by a neighbour, saw an ad, urgent project deadline…',
-              desiredOutcome:  'e.g. Full backyard transformation before summer, budget under $25k…',
-              painPoints:      'e.g. Current lawn is embarrassing, HOA notices, drainage flooding the basement…',
-              decisionDrivers: 'e.g. Needs 3 quotes before deciding, spouse must approve, timeline is the biggest factor…',
-              fitConcerns:     'e.g. Budget may be tight, decision-maker not confirmed, competing quotes…'
-            }[field];
-            return `<div class="ld-qual-field" id="qf-${field}-${o.id}">
-              <div class="ld-qual-view" id="qfview-${field}-${o.id}">
-                <div class="ld-qual-header">
-                  <span class="ld-qual-label">
-                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="${icon}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    ${label}
-                  </span>
-                  <button class="ld-qual-edit-btn" onclick="ldQualEdit('${field}','${o.id}')" title="Edit">
-                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-                    Edit
-                  </button>
-                </div>
-                <div class="ld-qual-content" id="qfcontent-${field}-${o.id}">${val || `<span class="ld-qual-empty">${placeholder}</span>`}</div>
+      </div>
+      <div class="rp-section-card-body no-pad">
+        ${_qualFields.map(({field,label,icon},i) => {
+          const val = escapeHtml(o[field]||'');
+          const ph  = _qualPlaceholders[field];
+          return `${i>0?'<div class="ld-qual-divider"></div>':''}
+          <div class="ld-qual-field" id="qf-${field}-${o.id}">
+            <div class="ld-qual-view" id="qfview-${field}-${o.id}">
+              <div class="ld-qual-header">
+                <span class="ld-qual-label">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="${icon}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  ${label}
+                </span>
+                <button class="ld-qual-edit-btn" onclick="ldQualEdit('${field}','${o.id}')" title="Edit">
+                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+                  Edit
+                </button>
               </div>
-              <div class="ld-qual-edit" id="qfedit-${field}-${o.id}" style="display:none">
-                <div class="ld-qual-header">
-                  <span class="ld-qual-label">
-                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="${icon}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    ${label}
-                  </span>
-                  <div style="display:flex;gap:6px">
-                    <button class="ld-qual-save-btn" onclick="ldQualSave('${field}','${o.id}')">
-                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      Save
-                    </button>
-                    <button class="ld-qual-cancel-btn" onclick="ldQualCancel('${field}','${o.id}')">Cancel</button>
-                  </div>
-                </div>
-                <textarea id="qfta-${field}-${o.id}" rows="4" placeholder="${placeholder}" class="ld-qual-textarea">${o[field]||''}</textarea>
-              </div>
-            </div>`;
-          }).join('<div class="ld-qual-divider"></div>')}
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="ld-section-head" style="margin-top:20px">
-          <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-          Quick Actions
-        </div>
-        <div class="ld-qa-grid">
-          <button type="button" class="ld-qa-btn" id="qa_homeworks_${o.id}" onclick="qaAction('homeworks','${o.id}',this)">
-            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M7 1L1 5v8h4V9h4v4h4V5L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-            <div><div class="ld-qa-title">Push to Homeworks</div><div class="ld-qa-sub">Sync to CRM</div></div>
-          </button>
-          <button type="button" class="ld-qa-btn" id="qa_calendar_${o.id}" onclick="qaAction('calendar','${o.id}',this)">
-            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            <div><div class="ld-qa-title">Schedule Event</div><div class="ld-qa-sub">Google Calendar</div></div>
-          </button>
-          <button type="button" class="ld-qa-btn" id="qa_gmail_${o.id}" onclick="qaAction('gmail','${o.id}',this)">
-            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            <div><div class="ld-qa-title">Compose Email</div><div class="ld-qa-sub">Gmail draft</div></div>
-          </button>
-          <button type="button" class="ld-qa-btn" onclick="window._leadTab='comms';show('pipeline','${o.id}')">
-            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M7 1a5.5 5.5 0 110 11 5.5 5.5 0 010-11z" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            <div><div class="ld-qa-title">Log Call</div><div class="ld-qa-sub">Record outcome</div></div>
-          </button>
-          <button type="button" class="ld-qa-btn" onclick="window._leadTab='notes';show('pipeline','${o.id}')">
-            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            <div><div class="ld-qa-title">Add Note</div><div class="ld-qa-sub">Save observation</div></div>
-          </button>
-          <button type="button" class="ld-qa-btn" onclick="openCallCompanion('${o.id}')">
-            <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="#4ade80" stroke="none"/></svg>
-            <div><div class="ld-qa-title">Call Companion</div><div class="ld-qa-sub">Live stage guide</div></div>
-          </button>
-        </div>
-
-        <!-- Admin / Office Controls (role-gated) -->
-        ${(()=>{
-          if (!_isAdm && !_isOM) return '';
-          const _ca = o;
-          const _commApprovedHtml = _isAdm
-            ? `<label class="ld-toggle-row"><input type="checkbox" id="commApproved" ${_ca.commissionApproved?'checked':''} onchange="setOppField('${o.id}','commissionApproved',this.checked);showToast('Commission approval updated')"><span>Commission Approved</span></label>`
-            : `<div class="ld-locked-field">Commission Approved — Tyler (Owner) only</div>`;
-          const _borderColor = _isAdm ? '#4D8A86' : '#8B6914';
-          const _panelTitle  = _isAdm ? 'Admin Controls' : 'Office Controls';
-          return `<div class="ld-section-head" style="margin-top:20px;border-color:${_borderColor}40">
-            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l5.5 3v4c0 2.8-2 5-5.5 6C2 14 0 11.8 0 9V4L7 1z" stroke="${_borderColor}" stroke-width="1.3" stroke-linejoin="round"/></svg>
-            <span style="color:${_borderColor}">${_panelTitle}</span>
-          </div>
-          <div class="ld-card" style="border-color:${_borderColor}40">
-            <div class="ld-form-grid ld-form-grid-3">
-              <div>${_commApprovedHtml}</div>
-              <div><label class="ld-toggle-row"><input type="checkbox" id="payCollected" ${_ca.collected?'checked':''} onchange="setOppField('${o.id}','collected',this.checked);showToast('Collection status updated')"><span>Payment Collected</span></label></div>
-              <div>
-                <div class="ld-card-label">Reassign Rep</div>
-                <select onchange="setOppField('${o.id}','repId',this.value)" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-size:13px">
-                  <option value="">— Assign —</option>
-                  ${(window.REPS||[]).map(r=>`<option value="${r.id}" ${o.repId===r.id?'selected':''}>${r.name}</option>`).join('')}
-                </select>
-              </div>
+              <div class="ld-qual-content" id="qfcontent-${field}-${o.id}">${val || `<span class="ld-qual-empty">${ph}</span>`}</div>
             </div>
-            <p style="font-size:11.5px;color:#6F7E6A;margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line)">Commission paid only when both Approved + Collected are checked. Approval is Tyler's decision.</p>
+            <div class="ld-qual-edit" id="qfedit-${field}-${o.id}" style="display:none">
+              <div class="ld-qual-header">
+                <span class="ld-qual-label">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="${icon}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  ${label}
+                </span>
+                <div style="display:flex;gap:6px">
+                  <button class="ld-qual-save-btn" onclick="ldQualSave('${field}','${o.id}')">
+                    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Save
+                  </button>
+                  <button class="ld-qual-cancel-btn" onclick="ldQualCancel('${field}','${o.id}')">Cancel</button>
+                </div>
+              </div>
+              <textarea id="qfta-${field}-${o.id}" rows="4" placeholder="${ph}" class="ld-qual-textarea">${o[field]||''}</textarea>
+            </div>
           </div>`;
-        })()}
-
-      </div><!-- /ldTabOverview -->
-
-      <!-- TAB: Communications -->
-      <div id="ldTabComms" style="display:${_activeTab==='comms'?'block':'none'}">
-        ${commsBoardHtml(o.id, o)}
+        }).join('')}
       </div>
+    </div>`;
 
-      <!-- TAB: Files -->
-      <div id="ldTabFiles" style="display:${_activeTab==='files'?'block':'none'}">
-        ${filesTabHtml(o.id, o)}
-      </div>
-
-      <!-- TAB: Notes -->
-      <div id="ldTabNotes" style="display:${_activeTab==='notes'?'block':'none'}">
-        <div class="ld-card" style="margin-top:16px">
-          <div class="ld-section-head" style="border:none;margin:0 0 12px;padding:0">
-            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Activity &amp; Notes
+  // ── OVERVIEW TAB: Admin / Office Controls ─────────────────────────────────
+  const _adminHtml = (()=>{
+    if (!_isAdm && !_isOM) return '';
+    const _commApprovedHtml = _isAdm
+      ? `<label class="rp-toggle-row"><input type="checkbox" id="commApproved" ${o.commissionApproved?'checked':''} onchange="setOppField('${o.id}','commissionApproved',this.checked);showToast('Commission approval updated','success')"><span>Commission Approved</span></label>`
+      : `<div style="font-size:12px;color:var(--gw-text-subtle);font-style:italic;padding:8px 0">Commission Approved — Owner only</div>`;
+    const _accentColor = _isAdm ? 'var(--gw-info)' : 'var(--gw-warning)';
+    const _panelTitle  = _isAdm ? 'Admin Controls' : 'Office Controls';
+    return `
+      <div class="rp-section-card" style="border-color:${_accentColor}40">
+        <div class="rp-section-card-head" style="border-color:${_accentColor}30">
+          <div class="rp-section-card-title" style="color:${_accentColor}">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l5.5 3v4c0 2.8-2 5-5.5 6C2 14 0 11.8 0 9V4L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            ${_panelTitle}
           </div>
-          <div id="noteList" style="margin-bottom:16px">${renderNotes(o.id)}</div>
-          <textarea id="newNote" rows="4" placeholder="Add call note, site observation, objection, or next step…" style="width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:13px;resize:vertical"></textarea>
-          <button class="ld-btn-primary" style="margin-top:10px" onclick="addNote('${o.id}')">Add Note</button>
+        </div>
+        <div class="rp-section-card-body">
+          <div class="ld-form-grid ld-form-grid-3">
+            <div>${_commApprovedHtml}</div>
+            <div><label class="rp-toggle-row"><input type="checkbox" id="payCollected" ${o.collected?'checked':''} onchange="setOppField('${o.id}','collected',this.checked);showToast('Collection status updated','success')"><span>Payment Collected</span></label></div>
+            <div>
+              <div class="ld-card-label" style="margin-bottom:6px">Reassign Rep</div>
+              <select onchange="setOppField('${o.id}','repId',this.value)" style="width:100%;padding:7px 10px;border:1px solid var(--gw-border);border-radius:var(--gw-r-xs);font-size:13px;background:var(--gw-bg-surface);color:var(--gw-text-primary)">
+                <option value="">— Assign —</option>
+                ${(window.REPS||[]).map(r=>`<option value="${r.id}" ${o.repId===r.id?'selected':''}>${r.name}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--gw-text-muted);margin:12px 0 0;padding-top:10px;border-top:1px solid var(--gw-border)">Commission paid only when both Approved + Collected are checked.</p>
+        </div>
+      </div>`;
+  })();
+
+  // ── NOTES TAB ─────────────────────────────────────────────────────────────
+  const _notesTabHtml = `
+    <div class="rp-section-card">
+      <div class="rp-section-card-head">
+        <div class="rp-section-card-title">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Activity &amp; Notes
         </div>
       </div>
+      <div class="rp-section-card-body">
+        <div id="noteList" style="margin-bottom:16px">${renderNotes(o.id)}</div>
+        <textarea id="newNote" rows="4" placeholder="Add call note, site observation, objection, or next step…" style="width:100%;resize:vertical;box-sizing:border-box"></textarea>
+        <button class="rp-btn rp-btn--primary" style="margin-top:10px" onclick="addNote('${o.id}')">Add Note</button>
+      </div>
+    </div>`;
 
-      <!-- TAB: Activity -->
-      <div id="ldTabActivity" style="display:${_activeTab==='activity'?'block':'none'}">
-        <div class="ld-card" style="margin-top:16px">
-          <div class="ld-section-head" style="border:none;margin:0 0 16px;padding:0">
-            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+  // ── ACTIVITY TAB ──────────────────────────────────────────────────────────
+  const _activityTabHtml = R
+    ? `<div class="rp-section-card">
+        <div class="rp-section-card-head">
+          <div class="rp-section-card-title">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             Full Activity Log
           </div>
-          ${(state.communications||[]).filter(c=>c.oppId===o.id).length === 0 ?
-            `<div style="text-align:center;padding:40px;color:#6F7E6A">
-              <div style="font-size:28px;margin-bottom:12px">${gwIcon('checklist',16)}</div>
-              <p style="font-weight:600;margin:0 0 6px">No activity yet</p>
-              <p style="font-size:12.5px;color:#5C6B58;margin:0">Activity will appear here as you log calls, emails, and notes.</p>
-            </div>` :
-            (state.communications||[]).filter(c=>c.oppId===o.id)
-              .sort((a,b)=>new Date(b.ts)-new Date(a.ts))
-              .map(m => {
-                const fmt = dt => { try{ return new Date(dt).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} };
-                const typeColors = {sms:'#2D7A55',email:'#1A4740',call:'#8B6914',note:'#6F7E6A',proposal:'#B8744F'};
-                const tc = typeColors[m.type]||'#6F7E6A';
-                return `<div class="ld-activity-item">
-                  <div class="ld-act-dot" style="background:${tc}22;border-color:${tc}44;color:${tc}">${TYPE_ICON[m.type]||gwIcon('checklist',14,'#6F7E6A')}</div>
-                  <div class="ld-act-content">
-                    <div class="ld-act-header">
-                      <span class="ld-act-type" style="color:${tc}">${m.type.toUpperCase()}</span>
-                      <span class="ld-act-dir">${m.direction==='out'?'↑ Outbound':'↓ Inbound'}</span>
-                      <span class="ld-act-time">${fmt(m.ts)}</span>
-                    </div>
-                    ${m.subject ? `<div class="ld-act-subject">${escapeHtml(m.subject)}</div>` : ''}
-                    <div class="ld-act-body">${escapeHtml((m.body||'').slice(0,160))}${(m.body||'').length>160?'…':''}</div>
-                    ${m.sentBy ? `<div class="ld-act-actor">by ${escapeHtml(m.sentBy)}</div>` : ''}
-                  </div>
-                </div>`;
-              }).join('')
-          }
+          <span style="font-size:11px;color:var(--gw-text-subtle)">${_allComms.length} entries</span>
         </div>
+        <div class="rp-section-card-body no-pad">
+          ${R.ActivityTimeline(_allComms)}
+        </div>
+      </div>`
+    : '';
+
+  // ── RIGHT RAIL: Follow-up card ─────────────────────────────────────────────
+  const _railFollowHtml = `
+    <div class="rp-rail-date${_isOvd?' is-overdue':''}">${prettyDate(o.nextFollowUp)}</div>
+    ${_isOvd ? `<div class="rp-rail-overdue-badge">
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M7 2l5.5 10H1.5L7 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 6.5v3M7 10.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      Overdue
+    </div>` : ''}
+    <div class="rp-rail-field">
+      <label>Date</label>
+      <input type="date" id="railFollowEdit" value="${escapeHtml(o.nextFollowUp||'')}">
+    </div>
+    <div class="rp-rail-field">
+      <label>Type of Follow-Up</label>
+      <select id="railFollowType">
+        <option value="" ${!o.followUpType?'selected':''}>— Select type —</option>
+        <option value="call" ${o.followUpType==='call'?'selected':''}>Phone call</option>
+        <option value="site_walk" ${o.followUpType==='site_walk'?'selected':''}>Site walk / visit</option>
+        <option value="proposal" ${o.followUpType==='proposal'?'selected':''}>Deliver / review proposal</option>
+        <option value="email" ${o.followUpType==='email'?'selected':''}>Email follow-up</option>
+        <option value="sms" ${o.followUpType==='sms'?'selected':''}>Text message</option>
+        <option value="decision" ${o.followUpType==='decision'?'selected':''}>Decision / close meeting</option>
+        <option value="check_in" ${o.followUpType==='check_in'?'selected':''}>General check-in</option>
+        <option value="other" ${o.followUpType==='other'?'selected':''}>Other</option>
+      </select>
+    </div>
+    <div class="rp-rail-field">
+      <label>What I'm Following Up On</label>
+      <textarea id="railFollowIntent" rows="3" placeholder="e.g. Address the budget objection, confirm site walk time…">${escapeHtml(o.followUpIntent||'')}</textarea>
+    </div>
+    <button type="button" class="rp-rail-btn rp-rail-btn--primary" onclick="(function(){
+      const date   = document.getElementById('railFollowEdit').value;
+      const type   = document.getElementById('railFollowType').value;
+      const intent = document.getElementById('railFollowIntent').value;
+      const opp = (state&&state.opportunities||[]).find(x=>x.id==='${o.id}');
+      if(!opp) return;
+      if(date) opp.nextFollowUp = date;
+      if(type   !== undefined) opp.followUpType   = type;
+      if(intent !== undefined) opp.followUpIntent = intent;
+      opp.updatedAt = new Date().toISOString();
+      saveState();
+      window._d1SaveOpp && window._d1SaveOpp(opp);
+      const dateStr = window.prettyDate ? window.prettyDate(date) : date;
+      const isOvd   = date && date < window.todayISO();
+      const railDate = document.querySelector('.rp-rail-date');
+      if(railDate){ railDate.textContent = dateStr; railDate.classList.toggle('is-overdue', isOvd); }
+      window.showToast && window.showToast('Follow-up saved', 'success');
+    })()">Save Follow-Up</button>`;
+
+  // ── RIGHT RAIL: Last contact card ─────────────────────────────────────────
+  const _railLastContactHtml = _lastComm ? `
+    <div class="rp-rail-last-type">
+      ${TYPE_ICON[_lastComm.type]||gwIcon('checklist',13,'var(--gw-text-muted)')}
+      ${_lastComm.type.toUpperCase()}
+    </div>
+    <div class="rp-rail-last-time">${(()=>{ try{ return new Date(_lastComm.ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){return '—';} })()}</div>
+    <div class="rp-rail-last-preview">${escapeHtml((_lastComm.subject||_lastComm.body||'').slice(0,80))}${(_lastComm.subject||_lastComm.body||'').length>80?'…':''}</div>
+    <button class="rp-rail-btn" style="margin-top:10px" onclick="window._leadTab='comms';show('pipeline','${o.id}')">View Communications →</button>
+  ` : `<div class="rp-rail-empty">No contact logged yet</div>
+    <button class="rp-rail-btn" onclick="window._leadTab='comms';show('pipeline','${o.id}')">Log First Contact →</button>`;
+
+  // ── RIGHT RAIL: Snapshot stats ────────────────────────────────────────────
+  const _railSnapshotHtml = `
+    <div class="rp-rail-stats">
+      <div class="rp-rail-stat">
+        <div class="rp-rail-stat-val">${_commsCnt}</div>
+        <div class="rp-rail-stat-label">Messages</div>
       </div>
-
-    </div><!-- /ld-main -->
-
-    <!-- ── RIGHT CONTEXT RAIL ──────────────────────────────────────── -->
-    <aside class="ld-rail">
-
-      <!-- Follow-up card -->
-      <div class="ld-rail-card ${_isOvd?'ld-rail-card--alert':''}">
-        <div class="ld-rail-card-head">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          Next Follow-Up
-        </div>
-        <div class="ld-rail-follow-date ${_isOvd?'overdue':''}">${prettyDate(o.nextFollowUp)}</div>
-        ${_isOvd ? `<div class="ld-rail-overdue-badge">${gwIcon('warning',16)} Overdue</div>` : ''}
-        <input type="date" id="railFollowEdit" value="${escapeHtml(o.nextFollowUp||'')}" style="width:100%;margin-top:10px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px">
-
-        <!-- What type of follow-up -->
-        <div style="margin-top:10px">
-          <label style="font-size:10px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Type of Follow-Up</label>
-          <select id="railFollowType" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;background:var(--gw-surface-2,#FAFAF8);color:var(--gw-ink,#1F2A2B)">
-            <option value="" ${!o.followUpType?'selected':''}>— Select type —</option>
-            <option value="call" ${o.followUpType==='call'?'selected':''}>Phone call</option>
-            <option value="site_walk" ${o.followUpType==='site_walk'?'selected':''}>Site walk / visit</option>
-            <option value="proposal" ${o.followUpType==='proposal'?'selected':''}>Deliver / review proposal</option>
-            <option value="email" ${o.followUpType==='email'?'selected':''}>Email follow-up</option>
-            <option value="sms" ${o.followUpType==='sms'?'selected':''}>Text message</option>
-            <option value="decision" ${o.followUpType==='decision'?'selected':''}>Decision / close meeting</option>
-            <option value="check_in" ${o.followUpType==='check_in'?'selected':''}>General check-in</option>
-            <option value="other" ${o.followUpType==='other'?'selected':''}>Other</option>
-          </select>
-        </div>
-
-        <!-- What to cover / intention -->
-        <div style="margin-top:10px">
-          <label style="font-size:10px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">What I'm Following Up On</label>
-          <textarea id="railFollowIntent" rows="3" placeholder="e.g. Checking on proposal decision, address the budget objection, confirm site walk time…" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;resize:vertical;background:var(--gw-surface-2,#FAFAF8);color:var(--gw-ink,#1F2A2B);box-sizing:border-box">${escapeHtml(o.followUpIntent||'')}</textarea>
-        </div>
-
-        <button type="button" class="ld-rail-btn" style="margin-top:10px" onclick="(function(){
-          const date   = document.getElementById('railFollowEdit').value;
-          const type   = document.getElementById('railFollowType').value;
-          const intent = document.getElementById('railFollowIntent').value;
-          const opp = (state&&state.opportunities||[]).find(x=>x.id==='${o.id}');
-          if(!opp) return;
-          if(date)   { opp.nextFollowUp = date; }
-          if(type   !== undefined) opp.followUpType   = type;
-          if(intent !== undefined) opp.followUpIntent = intent;
-          opp.updatedAt = new Date().toISOString();
-          saveState();
-          window._d1SaveOpp && window._d1SaveOpp(opp);
-          // In-place date display update
-          const dateStr = window.prettyDate ? window.prettyDate(date) : date;
-          const isOvd   = date && date < window.todayISO();
-          const railDate = document.querySelector('.ld-rail-follow-date');
-          if(railDate){ railDate.textContent = dateStr; railDate.classList.toggle('overdue', isOvd); }
-          window.showToast && window.showToast('Follow-up saved');
-        })()">Save Follow-Up</button>
+      <div class="rp-rail-stat">
+        <div class="rp-rail-stat-val">${_filesCnt}</div>
+        <div class="rp-rail-stat-label">Files</div>
       </div>
-
-      <!-- Last contact card -->
-      <div class="ld-rail-card">
-        <div class="ld-rail-card-head">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-          Last Contact
+      <div class="rp-rail-stat">
+        <div class="rp-rail-stat-val">${_notesCnt}</div>
+        <div class="rp-rail-stat-label">Notes</div>
+      </div>
+      <div class="rp-rail-stat">
+        <div class="rp-rail-stat-val" style="${o.jobValue?'color:var(--gw-action)':''}">
+          ${o.jobValue ? money(Number(o.jobValue)) : '—'}
         </div>
-        ${_lastComm ? `
-          <div class="ld-rail-last-type">${TYPE_ICON[_lastComm.type]||gwIcon('checklist',14,'#6F7E6A')} ${_lastComm.type.toUpperCase()}</div>
-          <div class="ld-rail-last-time">${(()=>{ try{ return new Date(_lastComm.ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){return '—';} })()}</div>
-          <div class="ld-rail-last-preview">${escapeHtml((_lastComm.subject||_lastComm.body||'').slice(0,80))}${(_lastComm.subject||_lastComm.body||'').length>80?'…':''}</div>
-        ` : '<div class="ld-rail-empty">No contact logged yet</div>'}
-        <button class="ld-rail-btn" onclick="window._leadTab='comms';show('pipeline','${o.id}')">
-          Go to Communications →
+        <div class="rp-rail-stat-label">Value</div>
+      </div>
+    </div>`;
+
+  // ── RIGHT RAIL: Recent activity mini-feed ─────────────────────────────────
+  const _recentComms = (state.communications||[]).filter(c=>c.oppId===o.id)
+    .sort((a,b)=>new Date(b.ts)-new Date(a.ts)).slice(0,5);
+  const _railFeedHtml = R ? R.RailMiniFeed(_recentComms) : railActivityHtml;
+  const _viewAllBtn = _commsCnt > 5
+    ? `<div style="padding:10px 16px;border-top:1px solid var(--gw-border)">
+        <button class="rp-rail-btn rp-rail-btn--link" onclick="window._leadTab='activity';show('pipeline','${o.id}')">
+          View all ${_commsCnt} entries →
         </button>
-      </div>
+       </div>`
+    : '';
 
-      <!-- Stage checklist preview -->
-      ${stageChecklist ? `<div class="ld-rail-card">
-        <div class="ld-rail-card-head">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Stage ${stageGuess} Checklist
+  // ── ASSEMBLE: full page HTML ───────────────────────────────────────────────
+  view.innerHTML = `
+  <!-- ══ RECORD PAGE SHELL ════════════════════════════════════════════════ -->
+  <div class="rp-shell">
+
+    <!-- Command bar (appears on scroll) -->
+    <div class="rp-command" id="rpCommandBar">
+      ${_cmdBarHtml}
+    </div>
+
+    <!-- 2-column body (left panel hidden at <1280px) -->
+    <div class="rp-body">
+
+      <!-- LEFT PANEL -->
+      <aside class="rp-left" aria-label="Lead overview">
+        <div class="rp-left-hero">
+          <div class="rp-left-avatar">${(o.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+          <div class="rp-left-name">${escapeHtml(o.client||'Unnamed Lead')}</div>
+          <div class="rp-left-sub">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</div>
+          <div class="rp-left-status">
+            <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px;padding:2px 9px">${escapeHtml(o.status||'New Lead')}</span>
+          </div>
         </div>
-        <div style="font-size:12px;color:#6F7E6A;margin-bottom:8px">${escapeHtml(stageChecklist.title)}</div>
-        ${renderChecklist(stageChecklist, true, o.id)}
-      </div>` : ''}
 
-      <!-- Pipeline stats card -->
-      <div class="ld-rail-card">
-        <div class="ld-rail-card-head">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 12V8M5.5 12V5M9 12V7M12.5 12V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Lead Snapshot
+        <!-- Contact info -->
+        <div class="rp-left-section">
+          <div class="rp-left-section-head">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Contact
+          </div>
+          ${o.phone ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Phone</div>
+            <div class="rp-left-field-value"><a href="tel:${escapeHtml(o.phone)}">${escapeHtml(o.phone)}</a></div>
+          </div>` : ''}
+          ${o.email ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Email</div>
+            <div class="rp-left-field-value"><a href="mailto:${escapeHtml(o.email)}">${escapeHtml(o.email)}</a></div>
+          </div>` : ''}
+          ${o.address ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Address</div>
+            <div class="rp-left-field-value">${escapeHtml(o.address)}</div>
+          </div>` : ''}
+          ${!o.phone && !o.email && !o.address ? `<div class="rp-left-field-empty" style="font-size:12px;color:var(--gw-text-subtle);font-style:italic">No contact info yet</div>` : ''}
         </div>
-        <div class="ld-rail-stats">
-          <div class="ld-rail-stat"><span>${_commsCnt}</span><label>Messages</label></div>
-          <div class="ld-rail-stat"><span>${_filesCnt}</span><label>Files</label></div>
-          <div class="ld-rail-stat"><span>${_notesCnt}</span><label>Notes</label></div>
-          <div class="ld-rail-stat"><span>${o.jobValue ? money(Number(o.jobValue)) : '—'}</span><label>Value</label></div>
+
+        <!-- Opportunity details -->
+        <div class="rp-left-section">
+          <div class="rp-left-section-head">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M4 6h6M4 8.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Opportunity
+          </div>
+          <div class="rp-left-field">
+            <div class="rp-left-field-label">Rep</div>
+            <div class="rp-left-field-value">${escapeHtml(_repName)}</div>
+          </div>
+          ${o.source ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Source</div>
+            <div class="rp-left-field-value">${escapeHtml(o.source)}</div>
+          </div>` : ''}
+          ${o.urgency ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Urgency</div>
+            <div class="rp-left-field-value">${escapeHtml(o.urgency)}</div>
+          </div>` : ''}
+          ${o.decisionMaker ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Decision-Maker</div>
+            <div class="rp-left-field-value">${escapeHtml(o.decisionMaker)}</div>
+          </div>` : ''}
+          ${o.budget ? `<div class="rp-left-field">
+            <div class="rp-left-field-label">Budget</div>
+            <div class="rp-left-field-value">${escapeHtml(o.budget)}</div>
+          </div>` : ''}
         </div>
-      </div>
 
-      <!-- Recent activity mini-feed -->
-      <div class="ld-rail-card">
-        <div class="ld-rail-card-head">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          Recent Activity
+        <!-- Key figures -->
+        <div class="rp-left-section">
+          <div class="rp-left-section-head">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Figures
+          </div>
+          <div class="rp-micro-grid">
+            <div class="rp-micro-stat">
+              <div class="rp-micro-stat-val${o.jobValue?' accent-green':''}">${o.jobValue ? money(Number(o.jobValue)) : '—'}</div>
+              <div class="rp-micro-stat-label">Est. Value</div>
+            </div>
+            <div class="rp-micro-stat">
+              <div class="rp-micro-stat-val${_estComm>0?' accent-green':''}">${_estComm > 0 ? money(_estComm) : '—'}</div>
+              <div class="rp-micro-stat-label">Commission</div>
+            </div>
+            <div class="rp-micro-stat">
+              <div class="rp-micro-stat-val">${_commsCnt}</div>
+              <div class="rp-micro-stat-label">Comms</div>
+            </div>
+            <div class="rp-micro-stat">
+              <div class="rp-micro-stat-val">${_notesCnt}</div>
+              <div class="rp-micro-stat-label">Notes</div>
+            </div>
+          </div>
         </div>
-        ${railActivityHtml}
-        ${_commsCnt > 5 ? `<button class="ld-rail-btn" onclick="window._leadTab='activity';show('pipeline','${o.id}')">View all ${_commsCnt} →</button>` : ''}
-      </div>
 
-    </aside>
+        <!-- Created / updated dates -->
+        <div class="rp-left-section">
+          <div class="rp-left-section-head">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Dates
+          </div>
+          <div class="rp-left-field">
+            <div class="rp-left-field-label">Created</div>
+            <div class="rp-left-field-value">${o.createdAt ? prettyDate(o.createdAt.slice(0,10)) : '—'}</div>
+          </div>
+          <div class="rp-left-field">
+            <div class="rp-left-field-label">Last Updated</div>
+            <div class="rp-left-field-value">${o.updatedAt ? prettyDate(o.updatedAt.slice(0,10)) : '—'}</div>
+          </div>
+          <div class="rp-left-field">
+            <div class="rp-left-field-label">Next Follow-Up</div>
+            <div class="rp-left-field-value${_isOvd?' accent-red':''}" style="${_isOvd?'color:var(--gw-danger)':''}">${prettyDate(o.nextFollowUp)}</div>
+          </div>
+        </div>
+      </aside>
 
-  </div><!-- /ld-body -->
+      <!-- CENTER WORKSPACE -->
+      <div class="rp-center">
+
+        <!-- Hero -->
+        ${_heroHtml}
+
+        <!-- Stage tracker -->
+        ${_stageTrackerHtml}
+
+        <!-- Quick action bar -->
+        ${_qaBarHtml}
+
+        <!-- Tab bar -->
+        <div class="ld-tab-bar">
+          <button class="ld-tab ${_activeTab==='overview'?'ld-tab-active':''}" onclick="window._leadTab='overview';show('pipeline','${o.id}')">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M4 5h6M4 7.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Overview
+          </button>
+          <button class="ld-tab ${_activeTab==='comms'?'ld-tab-active':''}" onclick="window._leadTab='comms';show('pipeline','${o.id}')">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            Communications
+            ${_commsCnt ? `<span class="ld-tab-count">${_commsCnt}</span>` : ''}
+          </button>
+          <button class="ld-tab ${_activeTab==='files'?'ld-tab-active':''}" onclick="window._leadTab='files';show('pipeline','${o.id}')">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".5"/></svg>
+            Files
+            ${_filesCnt ? `<span class="ld-tab-count">${_filesCnt}</span>` : ''}
+          </button>
+          <button class="ld-tab ${_activeTab==='notes'?'ld-tab-active':''}" data-tab="notes" onclick="window._leadTab='notes';show('pipeline','${o.id}')">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Notes
+            ${_notesCnt ? `<span class="ld-tab-count">${_notesCnt}</span>` : ''}
+          </button>
+          <button class="ld-tab ${_activeTab==='activity'?'ld-tab-active':''}" onclick="window._leadTab='activity';show('pipeline','${o.id}')">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Activity
+          </button>
+        </div>
+
+        <!-- Tab content -->
+        <div class="ld-main">
+          <div id="ldTabOverview" style="display:${_activeTab==='overview'?'flex':'none'};flex-direction:column;gap:20px">
+            ${_overviewContactHtml}
+            ${_overviewStageHtml}
+            ${_overviewEstimateHtml}
+            ${_qualHtml}
+            ${_adminHtml}
+          </div>
+
+          <div id="ldTabComms" style="display:${_activeTab==='comms'?'block':'none'}">
+            ${commsBoardHtml(o.id, o)}
+          </div>
+
+          <div id="ldTabFiles" style="display:${_activeTab==='files'?'block':'none'}">
+            ${filesTabHtml(o.id, o)}
+          </div>
+
+          <div id="ldTabNotes" style="display:${_activeTab==='notes'?'flex':'none'};flex-direction:column;gap:20px">
+            ${_notesTabHtml}
+          </div>
+
+          <div id="ldTabActivity" style="display:${_activeTab==='activity'?'flex':'none'};flex-direction:column;gap:20px">
+            ${_activityTabHtml}
+          </div>
+        </div>
+
+      </div><!-- /rp-center -->
+
+      <!-- RIGHT RAIL -->
+      <aside class="ld-rail rp-rail" aria-label="Lead context">
+
+        <!-- Follow-Up -->
+        <div class="ld-rail-card${_isOvd?' ld-rail-card--alert':''}">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Next Follow-Up
+          </div>
+          <div style="padding:14px 16px">
+            ${_railFollowHtml}
+          </div>
+        </div>
+
+        <!-- Last Contact -->
+        <div class="ld-rail-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            Last Contact
+          </div>
+          <div style="padding:14px 16px">
+            ${_railLastContactHtml}
+          </div>
+        </div>
+
+        <!-- Stage Checklist -->
+        ${stageChecklist ? `<div class="ld-rail-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Stage ${stageGuess} Checklist
+          </div>
+          <div style="padding:12px 16px;font-size:11.5px;color:var(--gw-text-muted);border-bottom:1px solid var(--gw-border)">${escapeHtml(stageChecklist.title)}</div>
+          <div style="padding:0 8px 8px">${renderChecklist(stageChecklist, true, o.id)}</div>
+        </div>` : ''}
+
+        <!-- Snapshot Stats -->
+        <div class="ld-rail-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 12V8M5.5 12V5M9 12V7M12.5 12V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            Lead Snapshot
+          </div>
+          ${_railSnapshotHtml}
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="ld-rail-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5V7l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Recent Activity
+          </div>
+          <div class="rp-rail-card-body no-pad">
+            ${_railFeedHtml}
+            ${_viewAllBtn}
+          </div>
+        </div>
+
+      </aside><!-- /rp-rail -->
+
+    </div><!-- /rp-body -->
+  </div><!-- /rp-shell -->
   `;
+
+  // ── POST-RENDER WIRING ────────────────────────────────────────────────────
 
   // Wire checklist checkboxes + progress bars immediately after render
   wireChecks();
@@ -2732,10 +2908,9 @@ function opportunityDetail(id){
   // Wire up Communications compose after render
   if(_activeTab==='comms') wireCommsCompose(o.id, o);
 
-  // ── Lazy-load D1 notes when Notes tab is active or becomes active ──────────
-  // Fire immediately if notes tab is visible; otherwise wire the tab button click
+  // Lazy-load D1 notes when Notes tab is active or becomes active
   if (_activeTab === 'notes' && window._d1Ready) {
-    _d1LoadNotes(o.id); // async, refreshes #noteList when done
+    _d1LoadNotes(o.id);
   }
   const _notesTabBtn = document.querySelector('[data-tab="notes"]');
   if (_notesTabBtn && window._d1Ready) {
@@ -2744,14 +2919,9 @@ function opportunityDetail(id){
     }, { once: true });
   }
 
-  // Sticky header scroll behavior
-  const stickyEl = document.getElementById('ldStickyHeader');
-  const heroEl   = view.querySelector('.ld-hero');
-  if(stickyEl && heroEl){
-    const obs = new IntersectionObserver(([e])=>{
-      stickyEl.classList.toggle('ld-sticky-visible', !e.isIntersecting);
-    }, { threshold:0, rootMargin:'-60px 0px 0px 0px' });
-    obs.observe(heroEl);
+  // Command bar scroll observer
+  if (window.GW && window.GW.record) {
+    window.GW.record.wireCommandBar('.ld-hero');
   }
 }
 
