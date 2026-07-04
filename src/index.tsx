@@ -278,10 +278,10 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
-    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
-    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail'],
-    estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    rep: ['today','myDashboard','pipeline','lead','clients','estimates','communications','templates','process','forms','scripts','objections','calculator','ai','academy','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail','timeTracker','settings'],
+    estimator: ['today','pipeline','clients','properties','estimates','process','forms','calculator','settings'],
     view_only: ['today','pipeline','settings']
   }
 
@@ -632,10 +632,10 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
-    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker','opsHub','scheduleBoard','dispatchBoard','recurringServices','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation'],
-    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail'],
-    estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    rep: ['today','myDashboard','pipeline','lead','clients','estimates','communications','templates','process','forms','scripts','objections','calculator','ai','academy','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail','timeTracker','settings'],
+    estimator: ['today','pipeline','clients','properties','estimates','process','forms','calculator','settings'],
     view_only: ['today','pipeline','settings']
   }
   let perms = defaultPerms
@@ -2785,12 +2785,28 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260704gw8">
-  <link rel="stylesheet" href="/static/styles.css?v=20260704gw8">
+  <link rel="stylesheet" href="/static/premium.css?v=20260704gw9">
+  <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw9">
   <style>
     /* Nav item SVG icon alignment */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
+    /* Phase 7: sub-group labels and indented items */
+    .nav-subgroup { margin-top: 4px; }
+    .nav-subgroup-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: rgba(255,255,255,.28);
+      padding: 8px 16px 3px 18px;
+      pointer-events: none;
+      user-select: none;
+    }
+    .nav-item--sub {
+      padding-left: 26px !important;
+      font-size: 12.5px !important;
+    }
   </style>
 </head>
 <body>
@@ -2809,8 +2825,10 @@ function getHtml(): string {
     <nav class="nav" id="mainNav" role="navigation">
 
       <!-- ── Tenant nav groups (hidden when platform admin session active) ── -->
+
+      <!-- ── Dashboard ── -->
       <details class="nav-group tenant-nav" open>
-        <summary class="nav-summary">Home</summary>
+        <summary class="nav-summary">Dashboard</summary>
         <div class="nav-items">
           <button class="nav-item active" data-view="today" onclick="show('today')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
@@ -2820,11 +2838,16 @@ function getHtml(): string {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
             My Dashboard
           </button>
+          <button class="nav-item" data-view="teamView" onclick="show('teamView')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
+            Team View
+          </button>
         </div>
       </details>
 
+      <!-- ── Sales ── -->
       <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Pipeline</summary>
+        <summary class="nav-summary">Sales</summary>
         <div class="nav-items">
           <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
@@ -2832,122 +2855,158 @@ function getHtml(): string {
           </button>
           <button class="nav-item" data-view="lead" onclick="show('lead')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/><path d="M11 1v4M13 3H9"/></svg>
-            Add Lead
+            Leads
           </button>
           <button class="nav-item" data-view="clients" onclick="show('clients')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4"/><circle cx="8" cy="5" r="3"/></svg>
-            Clients &amp; Properties
+            Clients
           </button>
-        </div>
-      </details>
-
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Sales Toolkit</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="process" onclick="show('process')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/></svg>
-            Sales Process
-          </button>
-          <button class="nav-item" data-view="forms" onclick="show('forms')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
-            Forms &amp; Checklists
-          </button>
-          <button class="nav-item" data-view="scripts" onclick="show('scripts')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v9a1 1 0 01-1 1H5l-3 2V3a1 1 0 011-1z"/></svg>
-            Scripts
-          </button>
-          <button class="nav-item" data-view="templates" onclick="show('templates')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
-            Email Templates
-          </button>
-          <button class="nav-item" data-view="objections" onclick="show('objections')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor"/></svg>
-            Objection Handling
-          </button>
-          <button class="nav-item" data-view="calculator" onclick="show('calculator')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1.5"/><path d="M5 4h6M5 7.5h2M9 7.5h2M5 10.5h2M9 10.5h2M5 13h2M9 13h2"/></svg>
-            Pricing Tools
-          </button>
-          <button class="nav-item" data-view="ai" onclick="show('ai')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
-            AI Sales Assistant
-          </button>
-        </div>
-      </details>
-
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Learning</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="academy" onclick="show('academy')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 6l7 4 7-4-7-4z"/><path d="M1 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>
-            Sales Academy
-          </button>
-        </div>
-      </details>
-
-      <!-- ── Money Loop ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Money Loop</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="financialHub" onclick="show('financialHub')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
-            Financial Hub
+          <button class="nav-item" data-view="properties" onclick="show('properties')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 14V7l7-5 7 5v7"/><path d="M6 14V9h4v5"/></svg>
+            Properties
           </button>
           <button class="nav-item" data-view="estimates" onclick="show('estimates')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
             Estimates
           </button>
+          <!-- Engagement sub-group -->
+          <div class="nav-subgroup">
+            <div class="nav-subgroup-label">Engagement</div>
+            <button class="nav-item nav-item--sub" data-view="communications" onclick="show('communications')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
+              Communications
+            </button>
+            <button class="nav-item nav-item--sub" data-view="automations" onclick="show('automations')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/><path d="M3 3l10 10" opacity=".3"/></svg>
+              Automations
+            </button>
+            <button class="nav-item nav-item--sub" data-view="templates" onclick="show('templates')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
+              Templates
+            </button>
+            <button class="nav-item nav-item--sub" data-view="campaigns" onclick="show('campaigns')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/><path d="M13 7v2"/></svg>
+              Campaigns / Drips
+            </button>
+          </div>
+          <!-- Sales Resources sub-group -->
+          <div class="nav-subgroup">
+            <div class="nav-subgroup-label">Sales Resources</div>
+            <button class="nav-item nav-item--sub" data-view="process" onclick="show('process')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/></svg>
+              Sales Process
+            </button>
+            <button class="nav-item nav-item--sub" data-view="forms" onclick="show('forms')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
+              Forms &amp; Checklists
+            </button>
+            <button class="nav-item nav-item--sub" data-view="scripts" onclick="show('scripts')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v9a1 1 0 01-1 1H5l-3 2V3a1 1 0 011-1z"/></svg>
+              Scripts
+            </button>
+            <button class="nav-item nav-item--sub" data-view="emailTemplates" onclick="show('emailTemplates')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
+              Email Templates
+            </button>
+            <button class="nav-item nav-item--sub" data-view="objections" onclick="show('objections')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor"/></svg>
+              Objection Handling
+            </button>
+            <button class="nav-item nav-item--sub" data-view="calculator" onclick="show('calculator')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1.5"/><path d="M5 4h6M5 7.5h2M9 7.5h2M5 10.5h2M9 10.5h2M5 13h2M9 13h2"/></svg>
+              Pricing Tools
+            </button>
+            <button class="nav-item nav-item--sub" data-view="ai" onclick="show('ai')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
+              AI Sales Assistant
+            </button>
+            <button class="nav-item nav-item--sub" data-view="academy" onclick="show('academy')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 6l7 4 7-4-7-4z"/><path d="M1 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>
+              Sales Academy
+            </button>
+          </div>
+        </div>
+      </details>
+
+      <!-- ── Financial ── -->
+      <details class="nav-group tenant-nav">
+        <summary class="nav-summary">Financial</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="financialHub" onclick="show('financialHub')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
+            Overview
+          </button>
           <button class="nav-item" data-view="invoices" onclick="show('invoices')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
             Invoices
           </button>
-          <button class="nav-item" data-view="communications" onclick="show('communications')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
-            Communications
+          <button class="nav-item" data-view="payments" onclick="show('payments')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/><circle cx="5" cy="10" r="1" fill="currentColor" stroke="none"/></svg>
+            Payments
           </button>
-          <button class="nav-item" data-view="automations" onclick="show('automations')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/><path d="M3 3l10 10" opacity=".3"/></svg>
-            Automations
+          <button class="nav-item" data-view="deposits" onclick="show('deposits')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
+            Deposits
+          </button>
+          <button class="nav-item" data-view="statements" onclick="show('statements')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>
+            Statements
+          </button>
+          <button class="nav-item" data-view="financialActivity" onclick="show('financialActivity')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l3-4 3 2 3-5 3 3"/></svg>
+            Financial Activity
           </button>
         </div>
       </details>
 
-      <!-- ── Operations Hub ── -->
+      <!-- ── Operations ── -->
       <details class="nav-group tenant-nav">
         <summary class="nav-summary">Operations</summary>
         <div class="nav-items">
-          <button class="nav-item" data-view="opsHub" onclick="show('opsHub')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/></svg>
-            Ops Hub
-          </button>
-          <button class="nav-item" data-view="scheduleBoard" onclick="show('scheduleBoard')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
-            Schedule Board
-          </button>
-          <button class="nav-item" data-view="dispatchBoard" onclick="show('dispatchBoard')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2.5 1.5"/></svg>
-            Dispatch Board
-          </button>
-          <button class="nav-item" data-view="recurringServices" onclick="show('recurringServices')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 009.9-1M13 8a5 5 0 01-9.9 1"/><path d="M3 5l.1 3h3M13 11l-.1-3h-3"/></svg>
-            Recurring Services
-          </button>
+          <!-- Scheduling sub-group -->
+          <div class="nav-subgroup">
+            <div class="nav-subgroup-label">Scheduling</div>
+            <button class="nav-item nav-item--sub" data-view="scheduleBoard" onclick="show('scheduleBoard')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
+              Calendar
+            </button>
+            <button class="nav-item nav-item--sub" data-view="dispatchBoard" onclick="show('dispatchBoard')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2.5 1.5"/></svg>
+              Dispatch
+            </button>
+            <button class="nav-item nav-item--sub" data-view="recurringServices" onclick="show('recurringServices')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 009.9-1M13 8a5 5 0 01-9.9 1"/><path d="M3 5l.1 3h3M13 11l-.1-3h-3"/></svg>
+              Recurring
+            </button>
+            <button class="nav-item nav-item--sub" data-view="crewView" onclick="show('crewView')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
+              Crew View
+            </button>
+          </div>
           <button class="nav-item" data-view="workOrderList" onclick="show('workOrderList')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
             Work Orders
           </button>
-          <button class="nav-item" data-view="assetList" onclick="show('assetList')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/><path d="M8 2v14M2 6l6 4 6-4"/></svg>
-            Assets
-          </button>
-          <button class="nav-item" data-view="maintenanceQueue" onclick="show('maintenanceQueue')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M5.5 1.5l1 2M10.5 1.5l-1 2"/></svg>
-            Maintenance
-          </button>
-          <button class="nav-item" data-view="inventoryList" onclick="show('inventoryList')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v10H2z"/><path d="M5 4V2h6v2"/><path d="M6 8h4M6 11h2"/></svg>
-            Inventory
-          </button>
+          <!-- Assets & Inventory sub-group -->
+          <div class="nav-subgroup">
+            <div class="nav-subgroup-label">Assets &amp; Inventory</div>
+            <button class="nav-item nav-item--sub" data-view="assetList" onclick="show('assetList')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/><path d="M8 2v14M2 6l6 4 6-4"/></svg>
+              Assets
+            </button>
+            <button class="nav-item nav-item--sub" data-view="maintenanceQueue" onclick="show('maintenanceQueue')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M5.5 1.5l1 2M10.5 1.5l-1 2"/></svg>
+              Maintenance
+            </button>
+            <button class="nav-item nav-item--sub" data-view="inventoryList" onclick="show('inventoryList')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v10H2z"/><path d="M5 4V2h6v2"/><path d="M6 8h4M6 11h2"/></svg>
+              Inventory
+            </button>
+            <button class="nav-item nav-item--sub" data-view="toolsConsumables" onclick="show('toolsConsumables')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l4 4-7 7-4-4 7-7z"/><path d="M2 14l2-2"/></svg>
+              Tools / Consumables
+            </button>
+          </div>
           <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
             Time Tracker
@@ -2955,28 +3014,60 @@ function getHtml(): string {
         </div>
       </details>
 
+      <!-- ── Reports ── -->
       <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Admin</summary>
+        <summary class="nav-summary">Reports</summary>
         <div class="nav-items">
-          <button class="nav-item" data-view="manager" onclick="show('manager')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 12a6 6 0 00-12 0"/><circle cx="8" cy="6" r="3"/><path d="M3 9l-2 3M13 9l2 3"/></svg>
-            Manager Tools
-          </button>
           <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
             Revenue Analytics
+          </button>
+          <button class="nav-item" data-view="salesReports" onclick="show('salesReports')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
+            Sales Reports
+          </button>
+          <button class="nav-item" data-view="financialReports" onclick="show('financialReports')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
+            Financial Reports
+          </button>
+          <button class="nav-item" data-view="opsReports" onclick="show('opsReports')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/></svg>
+            Operations Reports
+          </button>
+          <button class="nav-item" data-view="teamReports" onclick="show('teamReports')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
+            Team / Productivity
+          </button>
+        </div>
+      </details>
+
+      <!-- ── Settings ── -->
+      <details class="nav-group tenant-nav">
+        <summary class="nav-summary">Settings</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="settings" onclick="show('settings')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
+            General
+          </button>
+          <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.5 2.2-4 5-4s5 1.5 5 4"/><path d="M11 3c1.4.4 2.5 1.7 2.5 3s-1.1 2.6-2.5 3M12.5 12c1.3.3 2.5 1.1 2.5 2.5"/></svg>
+            Users &amp; Roles
           </button>
           <button class="nav-item" data-view="integrations" onclick="show('integrations')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="8" r="2.5"/><circle cx="12" cy="4" r="2.5"/><circle cx="12" cy="12" r="2.5"/><path d="M6.4 7.2l3.2-2.4M6.4 8.8l3.2 2.4"/></svg>
             Integrations
           </button>
-          <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.5 2.2-4 5-4s5 1.5 5 4"/><path d="M11 3c1.4.4 2.5 1.7 2.5 3s-1.1 2.6-2.5 3M12.5 12c1.3.3 2.5 1.1 2.5 2.5"/></svg>
-            User Management
+          <button class="nav-item" data-view="manager" onclick="show('manager')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 12a6 6 0 00-12 0"/><circle cx="8" cy="6" r="3"/><path d="M3 9l-2 3M13 9l2 3"/></svg>
+            Manager Tools
           </button>
-          <button class="nav-item" data-view="settings" onclick="show('settings')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
-            Settings
+          <button class="nav-item" data-view="systemConfig" onclick="show('systemConfig')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+            System Config
+          </button>
+          <button class="nav-item" data-view="systemTemplates" onclick="show('systemTemplates')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
+            Templates &amp; Automations
           </button>
         </div>
       </details>
@@ -3073,7 +3164,7 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260704gw19"></script>
+<script src="/static/app_premium.js?v=20260704gw20"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260701gw14"></script>

@@ -161,9 +161,11 @@ const NAV_PERMS_KEY = 'avalonNavPermissions';
 
 // Default permissions by role. Tyler can override from Settings.
 const DEFAULT_NAV_PERMS = {
-  admin: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','userManagement','settings','ai','timeTracker'],
-  office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker'],
-  rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','integrations','settings','ai','timeTracker']
+  admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+  office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+  rep: ['today','myDashboard','pipeline','lead','clients','estimates','communications','templates','process','forms','scripts','objections','calculator','ai','academy','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail','timeTracker','settings'],
+  estimator: ['today','pipeline','clients','properties','estimates','process','forms','calculator','settings'],
+  view_only: ['today','pipeline','settings']
 };
 
 function loadNavPerms() {
@@ -393,7 +395,32 @@ function show(viewName='today', param){
     inventoryList:       ()   => inventoryList(),
     materialAllocation:  (id) => materialAllocation(id),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ai};
+  // Phase 7 routes — Full IA Restructure
+  const p7Route = {
+    // Dashboard
+    teamView:           ()   => teamView(),
+    // Sales
+    properties:         ()   => properties(),
+    campaigns:          ()   => campaigns(),
+    emailTemplates:     ()   => emailTemplates(),
+    // Financial
+    payments:           ()   => payments(),
+    deposits:           ()   => deposits(),
+    statements:         ()   => statements(),
+    financialActivity:  ()   => financialActivity(),
+    // Operations
+    crewView:           ()   => crewView(),
+    toolsConsumables:   ()   => toolsConsumables(),
+    // Reports
+    salesReports:       ()   => salesReports(),
+    financialReports:   ()   => financialReports(),
+    opsReports:         ()   => opsReports(),
+    teamReports:        ()   => teamReports(),
+    // Settings
+    systemConfig:       ()   => systemConfig(),
+    systemTemplates:    ()   => systemTemplates(),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -11949,6 +11976,115 @@ window._p6RemoveAlloc = function(allocId, woId) {
 };
 
 // ─── END PHASE 6 SCREENS ─────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 7 — Full IA Restructure  (placeholder screens)
+// New views wired in p7Route inside show(). Each renders a consistent
+// "coming soon" shell that matches the design system.
+// ══════════════════════════════════════════════════════════════════════════════
+function _p7Placeholder(title, icon, description, group) {
+  activateNav(window._currentView || '');
+  view.innerHTML = `
+    <div class="rp-shell" style="max-width:700px;margin:0 auto;padding:40px 24px">
+      <div class="rp-crumb" style="margin-bottom:20px">
+        <span style="color:var(--gw-muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">${escapeHtml(group)}</span>
+        <span style="color:var(--gw-muted);margin:0 6px">›</span>
+        <span style="color:var(--gw-text);font-size:12px;font-weight:600">${escapeHtml(title)}</span>
+      </div>
+      <div style="text-align:center;padding:60px 24px;background:var(--gw-card);border:1px solid var(--gw-line);border-radius:12px">
+        <div style="font-size:40px;margin-bottom:16px">${icon}</div>
+        <h2 style="margin:0 0 10px;color:var(--gw-text);font-size:1.4rem">${escapeHtml(title)}</h2>
+        <p style="margin:0 0 24px;color:var(--gw-muted);font-size:14px;line-height:1.6;max-width:420px;margin-left:auto;margin-right:auto">${escapeHtml(description)}</p>
+        <span style="display:inline-block;padding:4px 14px;background:var(--gw-line);border-radius:20px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.08em">Coming in a future phase</span>
+      </div>
+    </div>`;
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function teamView() {
+  window._currentView = 'teamView';
+  _p7Placeholder('Team View', '👥', 'See all team members\' activity, open tasks, pipeline positions, and daily performance at a glance.', 'Dashboard');
+}
+
+// ── Sales ─────────────────────────────────────────────────────────────────────
+function properties() {
+  window._currentView = 'properties';
+  _p7Placeholder('Properties', '🏠', 'Browse and manage all service properties linked to clients — address history, service records, and site notes.', 'Sales');
+}
+function campaigns() {
+  window._currentView = 'campaigns';
+  _p7Placeholder('Campaigns / Drips', '📣', 'Create multi-step drip sequences, schedule follow-up campaigns, and track engagement across your contact list.', 'Sales · Engagement');
+}
+function emailTemplates() {
+  window._currentView = 'emailTemplates';
+  // Route to existing templates view — emailTemplates is an alias for templates
+  templates();
+  window._currentView = 'emailTemplates';
+}
+
+// ── Financial ─────────────────────────────────────────────────────────────────
+function payments() {
+  window._currentView = 'payments';
+  _p7Placeholder('Payments', '💳', 'Track all incoming payments across invoices, view payment history per client, and reconcile open balances.', 'Financial');
+}
+function deposits() {
+  window._currentView = 'deposits';
+  _p7Placeholder('Deposits', '🏦', 'Log and track customer deposits and retainers collected before work begins. Link deposits to jobs and invoices.', 'Financial');
+}
+function statements() {
+  window._currentView = 'statements';
+  // Route to existing accountStatement list view
+  if (typeof accountStatement === 'function') {
+    accountStatement(null);
+    window._currentView = 'statements';
+  } else {
+    _p7Placeholder('Statements', '📋', 'Generate and send account statements showing outstanding balances, payment history, and transaction summaries.', 'Financial');
+  }
+}
+function financialActivity() {
+  window._currentView = 'financialActivity';
+  _p7Placeholder('Financial Activity', '📈', 'A chronological ledger of all financial events — invoices created, payments received, deposits applied, and credits issued.', 'Financial');
+}
+
+// ── Operations ────────────────────────────────────────────────────────────────
+function crewView() {
+  window._currentView = 'crewView';
+  _p7Placeholder('Crew View', '🦺', 'A per-crew schedule board showing today\'s jobs, crew availability, and route assignments at a glance.', 'Operations · Scheduling');
+}
+function toolsConsumables() {
+  window._currentView = 'toolsConsumables';
+  _p7Placeholder('Tools / Consumables', '🔧', 'Track small tools, consumables, and expendables that don\'t require full asset-level maintenance records.', 'Operations · Assets & Inventory');
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+function salesReports() {
+  window._currentView = 'salesReports';
+  _p7Placeholder('Sales Reports', '📊', 'Detailed breakdowns of pipeline conversion, close rates by rep, lead source performance, and deal velocity.', 'Reports');
+}
+function financialReports() {
+  window._currentView = 'financialReports';
+  _p7Placeholder('Financial Reports', '💰', 'P&L summaries, revenue by service type, accounts receivable aging, and cash flow reports for any date range.', 'Reports');
+}
+function opsReports() {
+  window._currentView = 'opsReports';
+  _p7Placeholder('Operations Reports', '⚙️', 'Job completion rates, scheduling efficiency, asset utilization, crew productivity, and recurring service compliance.', 'Reports');
+}
+function teamReports() {
+  window._currentView = 'teamReports';
+  _p7Placeholder('Team / Productivity', '🏆', 'Per-rep and per-crew activity metrics — calls made, jobs completed, hours logged, and goal attainment.', 'Reports');
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function systemConfig() {
+  window._currentView = 'systemConfig';
+  _p7Placeholder('System Configuration', '⚙️', 'Configure company-wide system defaults: timezone, business hours, service area, notification preferences, and data retention.', 'Settings');
+}
+function systemTemplates() {
+  window._currentView = 'systemTemplates';
+  _p7Placeholder('Templates & System Automations', '🤖', 'Manage system-level document templates, automated workflows triggered by status changes, and scheduled recurring tasks.', 'Settings');
+}
+
+// ─── END PHASE 7 SCREENS ─────────────────────────────────────────────────────
 
 // Local summary fallback when AI endpoint is unavailable
 function gwCCLocalSummary(transcript, opp) {
