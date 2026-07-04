@@ -2616,13 +2616,13 @@ function opportunityDetail(id){
           const date   = document.getElementById('railFollowEdit').value;
           const type   = document.getElementById('railFollowType').value;
           const intent = document.getElementById('railFollowIntent').value;
-          const opp = (window.state&&window.state.opportunities||[]).find(x=>x.id==='${o.id}');
+          const opp = (state&&state.opportunities||[]).find(x=>x.id==='${o.id}');
           if(!opp) return;
           if(date)   { opp.nextFollowUp = date; }
           if(type   !== undefined) opp.followUpType   = type;
           if(intent !== undefined) opp.followUpIntent = intent;
           opp.updatedAt = new Date().toISOString();
-          window.saveState && window.saveState();
+          saveState();
           window._d1SaveOpp && window._d1SaveOpp(opp);
           // In-place date display update
           const dateStr = window.prettyDate ? window.prettyDate(date) : date;
@@ -3124,7 +3124,7 @@ window.deleteComm = function(commId, oppId){
 
 // ── T6: Quick Action button orchestrator — loading + success states ──────────
 window.qaAction = function(type, oppId, btn) {
-  const o = (window.state && window.state.opportunities || []).find(x => x.id === oppId);
+  const o = (state && state.opportunities || []).find(x => x.id === oppId);
   if (!btn || !o) return;
 
   // Set loading state
@@ -9422,8 +9422,8 @@ window.superAdmin = superAdmin;
 //    • Live transcript recorder with AI-assisted next-steps summary
 // ══════════════════════════════════════════════════════════════════════════════
 window.openCallCompanion = function(oppId) {
-  const o = (window.state && window.state.opportunities || []).find(x => x.id === oppId);
-  if (!o) return;
+  const o = (state && state.opportunities || []).find(x => x.id === oppId);
+  if (!o) { console.warn('[CallCompanion] Opportunity not found:', oppId); return; }
 
   // Remove any existing companion
   document.getElementById('gw-call-companion')?.remove();
@@ -9695,9 +9695,9 @@ window.openCallCompanion = function(oppId) {
       sentBy:    rep ? rep.name : 'Unknown',
       files:     []
     };
-    if (!window.state.communications) window.state.communications = [];
-    window.state.communications.unshift(entry);
-    window.saveState && window.saveState();
+    if (!state.communications) state.communications = [];
+    state.communications.unshift(entry);
+    saveState();
     // D1 write-through
     fetch('/api/opportunities/' + oid + '/comms', {
       method: 'POST',
@@ -9716,7 +9716,7 @@ window.openCallCompanion = function(oppId) {
     if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Add a transcript first'); return; }
     if (!out || !txt) return;
 
-    const opp = (window.state && window.state.opportunities || []).find(x => x.id === oid);
+    const opp = (state && state.opportunities || []).find(x => x.id === oid);
     const transcript = ta.value.trim();
 
     out.style.display = 'block';
@@ -9765,11 +9765,11 @@ ${transcript.slice(0, 3000)}`;
     const noteBody = '📋 Call Summary\n\n' + txt.textContent.trim();
     const ts       = new Date().toISOString();
     const note     = { id: 'note_' + Date.now(), oppId: oid, body: noteBody, createdAt: ts };
-    if (!window.state.notes) window.state.notes = [];
-    window.state.notes.unshift(note);
-    const opp = (window.state && window.state.opportunities || []).find(x => x.id === oid);
+    if (!state.notes) state.notes = [];
+    state.notes.unshift(note);
+    const opp = (state && state.opportunities || []).find(x => x.id === oid);
     if (opp) opp.updatedAt = ts;
-    window.saveState && window.saveState();
+    saveState();
     fetch('/api/opportunities/' + oid + '/notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
