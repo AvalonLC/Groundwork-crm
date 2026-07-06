@@ -279,10 +279,12 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
   ]
   const defaultNavPerms = {
     admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    rep: ['today','myDashboard','pipeline','lead','clients','estimates','communications','templates','process','forms','scripts','objections','calculator','ai','academy','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail','timeTracker','settings'],
-    estimator: ['today','pipeline','clients','properties','estimates','process','forms','calculator','settings'],
-    view_only: ['today','pipeline','settings']
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports'],
+    laborer: ['scheduleBoard','workOrderList','timeTracker'],
+    view_only: ['today','pipeline']
   }
 
   let stages = defaultStages
@@ -633,10 +635,12 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
     admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    rep: ['today','myDashboard','pipeline','lead','clients','estimates','communications','templates','process','forms','scripts','objections','calculator','ai','academy','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail','timeTracker','settings'],
-    estimator: ['today','pipeline','clients','properties','estimates','process','forms','calculator','settings'],
-    view_only: ['today','pipeline','settings']
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports'],
+    laborer: ['scheduleBoard','workOrderList','timeTracker'],
+    view_only: ['today','pipeline']
   }
   let perms = defaultPerms
   if (row?.value) {
@@ -3366,7 +3370,7 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260704gw21"></script>
+<script src="/static/app_premium.js?v=20260706gw22"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260701gw14"></script>

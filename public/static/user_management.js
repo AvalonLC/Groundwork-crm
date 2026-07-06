@@ -30,41 +30,197 @@ const UM_GOOGLE_KEY  = 'avalonUserGoogleV1';
 //   2. D1 bootstrap failed (network error)
 // At login, window._gwRoles is populated from D1 with this company's roles.
 // getRoleDefs() always returns the most current source.
+// ── GROUNDWORK ROLE MODEL ─────────────────────────────────────────────────────
+// Single source of truth for role definitions, default view access, capability
+// flags, and data-scope metadata. Derived by all permission UI and canViewTab().
+//
+// VIEW KEYS map directly to show() route keys used throughout app_premium.js.
+// CAPABILITIES are named action/permission flags for future enforcement.
+// SCOPE controls data visibility (self / team / all) per domain.
+// ─────────────────────────────────────────────────────────────────────────────
+
 const _UM_ROLE_DEFS_DEFAULT = [
+  // ── 1. ADMIN ──────────────────────────────────────────────────────────────
   {
     id: 'admin',
     label: 'Owner / Admin',
     color: '#4D8A86',
-    description: 'Full access to all sections including financial data, user management, and settings.',
-    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','revenueAdmin','integrations','settings','userManagement']
+    description: 'Full access to everything. Bypasses all permission gates.',
+    defaultViews: ['today','myDashboard','teamView',
+      'pipeline','lead','clients','properties','estimates',
+      'communications','automations','templates','campaigns',
+      'process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+      'financialHub','invoices','payments','deposits','statements','financialActivity',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'settings','userManagement','integrations','manager','systemConfig','systemTemplates',
+      'opsHub'],
+    capabilities: {
+      // Sales / Financial
+      can_create_lead: true, can_edit_lead: true,
+      can_create_estimate: true, can_edit_estimate: true, can_send_estimate: true,
+      can_create_invoice: true, can_send_invoice: true, can_record_payment: true,
+      // Operations
+      can_assign_schedule: true, can_dispatch_crews: true,
+      can_edit_work_order: true, can_mark_work_order_complete: true,
+      can_edit_time: true, can_approve_time: true,
+      can_manage_assets: true, can_manage_inventory: true,
+      // Admin
+      can_manage_users: true, can_manage_roles: true,
+      can_manage_integrations: true, can_edit_system_settings: true,
+      can_delete_leads: true,
+    },
+    scope: { sales: 'all', ops: 'all', financial: 'all', people: 'all' }
   },
+
+  // ── 2. OFFICE MANAGER ─────────────────────────────────────────────────────
   {
     id: 'office_manager',
     label: 'Office Manager',
     color: '#8B6914',
-    description: 'Operations and admin access. Sees ALL leads across all reps. Can manage most settings.',
-    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings','ai','timeTracker']
+    description: 'Broad business access across Sales, Financial, Ops, and Reports. Limited settings — not equivalent to Admin.',
+    defaultViews: ['today','myDashboard','teamView',
+      'pipeline','lead','clients','properties','estimates',
+      'communications','automations','templates','campaigns',
+      'process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+      'financialHub','invoices','payments','deposits','statements','financialActivity',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'settings','integrations','manager'],
+    capabilities: {
+      can_create_lead: true, can_edit_lead: true,
+      can_create_estimate: true, can_edit_estimate: true, can_send_estimate: true,
+      can_create_invoice: true, can_send_invoice: true, can_record_payment: true,
+      can_assign_schedule: true, can_dispatch_crews: true,
+      can_edit_work_order: true, can_mark_work_order_complete: true,
+      can_edit_time: true, can_approve_time: true,
+      can_manage_assets: true, can_manage_inventory: true,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: true, can_edit_system_settings: false,
+      can_delete_leads: false,
+    },
+    scope: { sales: 'all', ops: 'all', financial: 'all', people: 'all' }
   },
+
+  // ── 3. REP (full field-sales default) ─────────────────────────────────────
   {
     id: 'rep',
     label: 'Sales Rep',
     color: '#2D7A55',
-    description: 'Standard rep access. Today, pipeline (own leads), clients, and full sales toolkit.',
-    defaultViews: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings','ai','timeTracker']
+    description: 'Full sales workflow — pipeline, estimates, comms, pricing, and all sales enablement. Assign this role if someone both quotes and manages the relationship.',
+    defaultViews: ['today','myDashboard',
+      'pipeline','lead','clients','properties','estimates',
+      'communications','automations','templates','campaigns',
+      'process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    capabilities: {
+      can_create_lead: true, can_edit_lead: true,
+      can_create_estimate: true, can_edit_estimate: true, can_send_estimate: true,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: false, can_dispatch_crews: false,
+      can_edit_work_order: false, can_mark_work_order_complete: false,
+      can_edit_time: true, can_approve_time: false,
+      can_manage_assets: false, can_manage_inventory: false,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+    },
+    scope: { sales: 'self', ops: 'self', financial: 'none', people: 'self' }
   },
+
+  // ── 4. ESTIMATOR (quote-only specialist) ──────────────────────────────────
   {
     id: 'estimator',
     label: 'Estimator',
-    color: '#4D8A86',
-    description: 'Access to pipeline, pricing tools, forms, and process docs.',
-    defaultViews: ['today','pipeline','clients','process','forms','calculator','settings']
+    color: '#5B7FA6',
+    description: 'Narrow quote/pricing specialist. Pipeline, estimates, properties, and pricing tools only. Does NOT manage the client relationship — use Rep for that.',
+    defaultViews: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    capabilities: {
+      can_create_lead: false, can_edit_lead: false,
+      can_create_estimate: true, can_edit_estimate: true, can_send_estimate: true,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: false, can_dispatch_crews: false,
+      can_edit_work_order: false, can_mark_work_order_complete: false,
+      can_edit_time: false, can_approve_time: false,
+      can_manage_assets: false, can_manage_inventory: false,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+    },
+    scope: { sales: 'assigned', ops: 'none', financial: 'none', people: 'none' }
   },
+
+  // ── 5. FIELD SUPERVISOR (foreman) ─────────────────────────────────────────
+  {
+    id: 'field_supervisor',
+    label: 'Field Supervisor',
+    color: '#6B5EA8',
+    description: 'Operations lead / foreman. Full Operations hub access, crew and schedule oversight, limited ops reports. No Sales or Financial.',
+    defaultViews: ['today','myDashboard',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail',
+      'assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
+      'timeTracker','opsReports','teamReports'],
+    capabilities: {
+      can_create_lead: false, can_edit_lead: false,
+      can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: true, can_dispatch_crews: true,
+      can_edit_work_order: true, can_mark_work_order_complete: true,
+      can_edit_time: true, can_approve_time: true,
+      can_manage_assets: true, can_manage_inventory: true,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+    },
+    scope: { sales: 'none', ops: 'team', financial: 'none', people: 'team' }
+  },
+
+  // ── 6. LABORER (field crew member) ────────────────────────────────────────
+  {
+    id: 'laborer',
+    label: 'Laborer',
+    color: '#7A7A6E',
+    description: 'Self-service field access only. Assigned work orders, schedule, and time tracking. Nothing else.',
+    defaultViews: ['scheduleBoard','workOrderList','timeTracker'],
+    capabilities: {
+      can_create_lead: false, can_edit_lead: false,
+      can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: false, can_dispatch_crews: false,
+      can_edit_work_order: false, can_mark_work_order_complete: true,
+      can_edit_time: true, can_approve_time: false,
+      can_manage_assets: false, can_manage_inventory: false,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+    },
+    scope: { sales: 'none', ops: 'self', financial: 'none', people: 'self' }
+  },
+
+  // ── 7. VIEW ONLY ──────────────────────────────────────────────────────────
   {
     id: 'view_only',
     label: 'View Only',
     color: '#6F7E6A',
-    description: 'Read-only access to Today and Pipeline.',
-    defaultViews: ['today','pipeline','settings']
+    description: 'Read-only stakeholder access. Today and Pipeline visibility only.',
+    defaultViews: ['today','pipeline'],
+    capabilities: {
+      can_create_lead: false, can_edit_lead: false,
+      can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: false, can_dispatch_crews: false,
+      can_edit_work_order: false, can_mark_work_order_complete: false,
+      can_edit_time: false, can_approve_time: false,
+      can_manage_assets: false, can_manage_inventory: false,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+    },
+    scope: { sales: 'none', ops: 'none', financial: 'none', people: 'none' }
   }
 ];
 
@@ -75,21 +231,21 @@ const _UM_ROLE_DEFS_DEFAULT = [
  */
 function getRoleDefs() {
   if (window._gwRoles && window._gwRoles.length > 0) {
-    // Map D1 role format to UM format (add defaultViews from permissions.views)
-    return window._gwRoles.map(r => ({
-      id:           r.id,
-      label:        r.label,
-      color:        r.color || '#6F7E6A',
-      description:  r.description || '',
-      defaultViews: (r.permissions && Array.isArray(r.permissions.views))
-                      ? r.permissions.views
-                      : (_UM_ROLE_DEFS_DEFAULT.find(d => d.id === r.id)?.defaultViews || []),
-      // Pass through D1-specific permission flags
-      can_see_all_leads:   r.permissions?.can_see_all_leads || false,
-      can_manage_users:    r.permissions?.can_manage_users  || false,
-      can_view_financials: r.permissions?.can_view_financials || false,
-      is_system:           r.is_system || false
-    }));
+    return window._gwRoles.map(r => {
+      const fallback = _UM_ROLE_DEFS_DEFAULT.find(d => d.id === r.id) || {};
+      return {
+        id:           r.id,
+        label:        r.label,
+        color:        r.color || fallback.color || '#6F7E6A',
+        description:  r.description || fallback.description || '',
+        defaultViews: (r.permissions && Array.isArray(r.permissions.views))
+                        ? r.permissions.views
+                        : (fallback.defaultViews || []),
+        capabilities: Object.assign({}, fallback.capabilities || {}, r.permissions?.capabilities || {}),
+        scope:        Object.assign({}, fallback.scope || {}, r.permissions?.scope || {}),
+        is_system:    r.is_system || false
+      };
+    });
   }
   return _UM_ROLE_DEFS_DEFAULT;
 }
@@ -120,7 +276,11 @@ const UM_POSITIONS = [
   'Office Manager',
   'Estimator',
   'Admin Support',
-  'Field Supervisor',
+  'Field Supervisor / Foreman',
+  'Crew Lead',
+  'Laborer',
+  'Technician',
+  'Driver',
   'Other'
 ];
 
@@ -146,10 +306,12 @@ function umBootstrapUsersFromReps() {
   // reflects the current D1 team list — including newly invited reps.
   const reps = window.REPS || [];
   const positionForRole = r =>
-    r.role === 'admin' ? 'Owner' :
-    r.role === 'office_manager' ? 'Office Manager' :
-    r.role === 'estimator' ? 'Estimator' :
-    r.role === 'view_only' ? 'View Only' : 'Sales Rep';
+    r.role === 'admin'            ? 'Owner' :
+    r.role === 'office_manager'   ? 'Office Manager' :
+    r.role === 'estimator'        ? 'Estimator' :
+    r.role === 'field_supervisor' ? 'Field Supervisor / Foreman' :
+    r.role === 'laborer'          ? 'Laborer' :
+    r.role === 'view_only'        ? 'View Only' : 'Sales Rep';
 
   const users = reps.map(r => ({
     id: r.id,
@@ -279,25 +441,70 @@ function umToast(msg, type = 'ok') {
   alert(msg);
 }
 
-// ── All-views list (for permission matrix) ────────────────────────────────────
+// ── All-views list — single source of truth for the permission matrix ─────────
+// Each entry: { key, label, hub, kind }
+//   key  = show() route key used in app_premium.js
+//   hub  = one of the 6 nav hubs (matches nav structure)
+//   kind = 'page' | 'report' | 'admin'
 const UM_ALL_VIEWS = [
-  { key:'today',         label:'Today',              group:'Home' },
-  { key:'myDashboard',   label:'My Dashboard',        group:'Home' },
-  { key:'pipeline',      label:'Pipeline',            group:'Pipeline' },
-  { key:'lead',          label:'Add Lead',            group:'Pipeline' },
-  { key:'clients',       label:'Clients & Properties',group:'Pipeline' },
-  { key:'process',       label:'Sales Process',       group:'Sales Toolkit' },
-  { key:'forms',         label:'Forms & Checklists',  group:'Sales Toolkit' },
-  { key:'scripts',       label:'Scripts',             group:'Sales Toolkit' },
-  { key:'templates',     label:'Email Templates',     group:'Sales Toolkit' },
-  { key:'objections',    label:'Objection Handling',  group:'Sales Toolkit' },
-  { key:'calculator',    label:'Pricing Tools',       group:'Sales Toolkit' },
-  { key:'academy',       label:'Sales Academy',       group:'Learning' },
-  { key:'manager',       label:'Manager Tools',       group:'Admin' },
-  { key:'revenueAdmin',  label:'Financial Data Hub',  group:'Admin' },
-  { key:'integrations',  label:'Integrations',        group:'Admin' },
-  { key:'settings',      label:'Settings',            group:'Admin' },
-  { key:'userManagement',label:'User Management',     group:'Admin' }
+  // ── DASHBOARD ──────────────────────────────────────────────────────────────
+  { key:'today',              label:'Today',                   hub:'Dashboard',   kind:'page'   },
+  { key:'myDashboard',        label:'My Dashboard',            hub:'Dashboard',   kind:'page'   },
+  { key:'teamView',           label:'Team View',               hub:'Dashboard',   kind:'page'   },
+
+  // ── SALES ──────────────────────────────────────────────────────────────────
+  { key:'pipeline',           label:'Pipeline',                hub:'Sales',       kind:'page'   },
+  { key:'lead',               label:'Leads',                   hub:'Sales',       kind:'page'   },
+  { key:'clients',            label:'Clients',                 hub:'Sales',       kind:'page'   },
+  { key:'properties',         label:'Properties',              hub:'Sales',       kind:'page'   },
+  { key:'estimates',          label:'Estimates',               hub:'Sales',       kind:'page'   },
+  { key:'communications',     label:'Communications',          hub:'Sales',       kind:'page'   },
+  { key:'automations',        label:'Automations',             hub:'Sales',       kind:'page'   },
+  { key:'templates',          label:'Templates',               hub:'Sales',       kind:'page'   },
+  { key:'campaigns',          label:'Campaigns / Drips',       hub:'Sales',       kind:'page'   },
+  { key:'process',            label:'Sales Process',           hub:'Sales',       kind:'page'   },
+  { key:'forms',              label:'Forms & Checklists',      hub:'Sales',       kind:'page'   },
+  { key:'scripts',            label:'Scripts',                 hub:'Sales',       kind:'page'   },
+  { key:'emailTemplates',     label:'Email Templates',         hub:'Sales',       kind:'page'   },
+  { key:'objections',         label:'Objection Handling',      hub:'Sales',       kind:'page'   },
+  { key:'calculator',         label:'Pricing Tools',           hub:'Sales',       kind:'page'   },
+  { key:'ai',                 label:'AI Assistant',            hub:'Sales',       kind:'page'   },
+  { key:'academy',            label:'Academy',                 hub:'Sales',       kind:'page'   },
+
+  // ── FINANCIAL ──────────────────────────────────────────────────────────────
+  { key:'financialHub',       label:'Financial Overview',      hub:'Financial',   kind:'page'   },
+  { key:'invoices',           label:'Invoices',                hub:'Financial',   kind:'page'   },
+  { key:'payments',           label:'Payments',                hub:'Financial',   kind:'page'   },
+  { key:'deposits',           label:'Deposits',                hub:'Financial',   kind:'page'   },
+  { key:'statements',         label:'Statements',              hub:'Financial',   kind:'page'   },
+  { key:'financialActivity',  label:'Activity',                hub:'Financial',   kind:'page'   },
+
+  // ── OPERATIONS ─────────────────────────────────────────────────────────────
+  { key:'scheduleBoard',      label:'Calendar',                hub:'Operations',  kind:'page'   },
+  { key:'dispatchBoard',      label:'Dispatch',                hub:'Operations',  kind:'page'   },
+  { key:'recurringServices',  label:'Recurring Services',      hub:'Operations',  kind:'page'   },
+  { key:'crewView',           label:'Crew View',               hub:'Operations',  kind:'page'   },
+  { key:'workOrderList',      label:'Work Orders',             hub:'Operations',  kind:'page'   },
+  { key:'assetList',          label:'Assets',                  hub:'Operations',  kind:'page'   },
+  { key:'maintenanceQueue',   label:'Maintenance',             hub:'Operations',  kind:'page'   },
+  { key:'inventoryList',      label:'Inventory',               hub:'Operations',  kind:'page'   },
+  { key:'toolsConsumables',   label:'Tools & Consumables',     hub:'Operations',  kind:'page'   },
+  { key:'timeTracker',        label:'Time Tracker',            hub:'Operations',  kind:'page'   },
+
+  // ── REPORTS ────────────────────────────────────────────────────────────────
+  { key:'revenueAdmin',       label:'Revenue',                 hub:'Reports',     kind:'report' },
+  { key:'salesReports',       label:'Sales',                   hub:'Reports',     kind:'report' },
+  { key:'financialReports',   label:'Financial',               hub:'Reports',     kind:'report' },
+  { key:'opsReports',         label:'Operations',              hub:'Reports',     kind:'report' },
+  { key:'teamReports',        label:'Team',                    hub:'Reports',     kind:'report' },
+
+  // ── SETTINGS ───────────────────────────────────────────────────────────────
+  { key:'settings',           label:'General Settings',        hub:'Settings',    kind:'admin'  },
+  { key:'userManagement',     label:'Users & Roles',           hub:'Settings',    kind:'admin'  },
+  { key:'integrations',       label:'Integrations',            hub:'Settings',    kind:'admin'  },
+  { key:'manager',            label:'Manager Tools',           hub:'Settings',    kind:'admin'  },
+  { key:'systemConfig',       label:'System Config',           hub:'Settings',    kind:'admin'  },
+  { key:'systemTemplates',    label:'Templates & Automations', hub:'Settings',    kind:'admin'  },
 ];
 
 // ── Main entry point ───────────────────────────────────────────────────────────
@@ -902,83 +1109,117 @@ function umRenderRoles(container) {
     localStorage.setItem('avalonNavPermissions', JSON.stringify(p));
   });
 
+  // ── Hub hub-color map ──────────────────────────────────────────────────────
+  const HUB_META = {
+    Dashboard:   { color: '#3A7CA5', bg: '#EAF3FA' },
+    Sales:       { color: '#2D7A55', bg: '#EAF4EE' },
+    Financial:   { color: '#8B6914', bg: '#F8F3E6' },
+    Operations:  { color: '#6B5EA8', bg: '#F0EDF8' },
+    Reports:     { color: '#5B7FA6', bg: '#EDF1F7' },
+    Settings:    { color: '#6F7E6A', bg: '#F2F3EF' }
+  };
+
+  // ── KIND badge labels ──────────────────────────────────────────────────────
+  const KIND_LABEL = { page: '', report: 'Report', admin: 'Admin' };
+
+  // ── Canonical DEFAULT_NAV_PERMS (7 roles) ─────────────────────────────────
   const DEFAULT_NAV_PERMS = window.DEFAULT_NAV_PERMS || {
-    admin: UM_ALL_VIEWS.map(v=>v.key),
-    office_manager: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','manager','integrations','settings'],
-    rep: ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings'],
-    estimator: ['today','pipeline','clients','process','forms','calculator','settings'],
-    view_only: ['today','pipeline','settings']
+    admin: UM_ALL_VIEWS.map(v => v.key),
+    office_manager: ['today','myDashboard','teamView',
+      'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+      'financialHub','invoices','payments','deposits','statements','financialActivity',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'settings','userManagement','integrations','manager'],
+    rep: ['today','myDashboard',
+      'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    field_supervisor: ['today','myDashboard',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+      'opsReports','teamReports'],
+    laborer: ['scheduleBoard','workOrderList','timeTracker'],
+    view_only: ['today','pipeline']
   };
 
   const perms = loadNavPerms();
-  const groups = [...new Set(UM_ALL_VIEWS.map(v => v.group))];
+  // Use .hub field — group by hub in defined order
+  const HUB_ORDER = ['Dashboard','Sales','Financial','Operations','Reports','Settings'];
+  const hubs = HUB_ORDER.filter(h => UM_ALL_VIEWS.some(v => v.hub === h));
 
   const nonAdminRoles = UM_ROLE_DEFS.filter(r => r.id !== 'admin');
 
   container.innerHTML = `
 <div style="margin-bottom:20px">
   <h3 style="margin:0 0 4px;font-size:16px">Role Permission Matrix</h3>
-  <p style="color:#6F7E6A;font-size:13px;margin:0">Control which sections each role can access. Tyler (Owner/Admin) always has full access.</p>
+  <p style="color:#6F7E6A;font-size:13px;margin:0">Control which views each role can access. Admin always has full access and bypasses all gates.</p>
 </div>
 
 <!-- Role Cards -->
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:28px">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:28px">
   ${UM_ROLE_DEFS.map(r => `
   <div class="gw-um-role-card" style="border:1px solid ${r.color}40">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <span style="width:10px;height:10px;border-radius:50%;background:${r.color};flex-shrink:0"></span>
-      <div style="font-weight:700;font-size:14px;color:${r.color}">${r.label}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="width:9px;height:9px;border-radius:50%;background:${r.color};flex-shrink:0"></span>
+      <div style="font-weight:700;font-size:13px;color:${r.color}">${r.label}</div>
     </div>
-    <div style="font-size:12px;color:#6F7E6A;line-height:1.5;margin-bottom:12px">${r.description}</div>
+    <div style="font-size:11px;color:#6F7E6A;line-height:1.4;margin-bottom:10px">${r.description || ''}</div>
     ${r.id !== 'admin' ? `
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button class="secondary-btn" style="font-size:11px;padding:4px 9px" onclick="window._umPreset('${r.id}','full')">Full</button>
-      <button class="secondary-btn" style="font-size:11px;padding:4px 9px" onclick="window._umPreset('${r.id}','standard')">Standard</button>
-      <button class="secondary-btn" style="font-size:11px;padding:4px 9px" onclick="window._umPreset('${r.id}','view')">View Only</button>
-      <button class="secondary-btn" style="font-size:11px;padding:4px 9px" onclick="window._umPreset('${r.id}','default')">↺ Reset</button>
-    </div>` : `<div style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Always Full Access</div>`}
+    <div style="display:flex;gap:5px;flex-wrap:wrap">
+      <button class="secondary-btn" style="font-size:10px;padding:3px 8px" onclick="window._umPreset('${r.id}','full')">Full</button>
+      <button class="secondary-btn" style="font-size:10px;padding:3px 8px" onclick="window._umPreset('${r.id}','default')">Default</button>
+      <button class="secondary-btn" style="font-size:10px;padding:3px 8px" onclick="window._umPreset('${r.id}','none')">None</button>
+    </div>` : `<div style="font-size:10px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Always Full Access</div>`}
   </div>`).join('')}
 </div>
 
 <!-- Permission Matrix Table -->
-<div class="gw-um-perm-table">
-  <table style="width:100%;border-collapse:collapse;min-width:600px">
+<div class="gw-um-perm-table" style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;min-width:700px">
     <thead>
       <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-        <th style="text-align:left;padding:12px 16px;font-size:12px;color:#6F7E6A;font-weight:600;width:180px">Section</th>
+        <th style="text-align:left;padding:10px 14px;font-size:11px;color:#6F7E6A;font-weight:600;width:190px;position:sticky;left:0;background:var(--gw-surface)">View</th>
         ${nonAdminRoles.map(r => `
-        <th style="text-align:center;padding:12px 10px;font-size:12px;font-weight:700;color:${r.color}">
+        <th style="text-align:center;padding:10px 6px;font-size:11px;font-weight:700;color:${r.color};min-width:70px">
           ${r.label}
         </th>`).join('')}
       </tr>
     </thead>
     <tbody>
-      ${groups.map(group => {
-        const gViews = UM_ALL_VIEWS.filter(v => v.group === group);
+      ${hubs.map(hub => {
+        const hMeta = HUB_META[hub] || { color: '#6F7E6A', bg: '#F5F5F0' };
+        const hViews = UM_ALL_VIEWS.filter(v => v.hub === hub);
         return `
-        <tr style="background:var(--gw-surface)">
-          <td colspan="${nonAdminRoles.length+1}" style="padding:8px 16px;font-size:10px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em">${group}</td>
+        <tr>
+          <td colspan="${nonAdminRoles.length + 1}" style="padding:7px 14px;background:${hMeta.bg};border-top:2px solid ${hMeta.color}30;border-bottom:1px solid ${hMeta.color}30">
+            <span style="font-size:10px;font-weight:800;color:${hMeta.color};text-transform:uppercase;letter-spacing:.1em">${hub}</span>
+          </td>
         </tr>
-        ${gViews.map(v => `
+        ${hViews.map(v => {
+          const kindBadge = v.kind && v.kind !== 'page'
+            ? `<span style="margin-left:5px;font-size:9px;padding:1px 5px;border-radius:3px;background:${hMeta.bg};color:${hMeta.color};border:1px solid ${hMeta.color}40;font-weight:600;text-transform:uppercase;letter-spacing:.04em">${KIND_LABEL[v.kind]||v.kind}</span>`
+            : '';
+          return `
         <tr style="border-bottom:1px solid var(--gw-line)">
-          <td style="padding:10px 16px;font-size:13px;color:#D6D1C4">${v.label}</td>
+          <td style="padding:9px 14px;font-size:12px;color:#D6D1C4;position:sticky;left:0;background:var(--gw-bg,#1A2020)">${v.label}${kindBadge}</td>
           ${nonAdminRoles.map(r => {
             const rolePerms = perms[r.id] || DEFAULT_NAV_PERMS[r.id] || [];
             const checked = rolePerms.includes(v.key);
-            const isLocked = v.key === 'settings'; // settings always visible
-            return `<td style="text-align:center;padding:8px">
-              <input type="checkbox" ${checked?'checked':''} ${isLocked?'disabled title="Always visible"':''}
+            return `<td style="text-align:center;padding:7px">
+              <input type="checkbox" ${checked ? 'checked' : ''}
                 onchange="window._umTogglePerm('${r.id}','${v.key}',this.checked)"
-                style="width:16px;height:16px;accent-color:${r.color};cursor:${isLocked?'not-allowed':'pointer'}">
+                style="width:15px;height:15px;accent-color:${r.color};cursor:pointer">
             </td>`;
           }).join('')}
-        </tr>`).join('')}`;
+        </tr>`;
+        }).join('')}`;
       }).join('')}
     </tbody>
   </table>
 </div>
 
-<div style="margin-top:12px;font-size:11px;color:#5C6B58">Changes take effect immediately. Settings is always visible for all roles.</div>
+<div style="margin-top:12px;font-size:11px;color:#5C6B58">Changes take effect immediately. Admin always bypasses all checks regardless of matrix state.</div>
 
 <!-- ── Action Permissions ─────────────────────────────────────────────── -->
 <div style="margin-top:28px">
@@ -999,24 +1240,16 @@ function umRenderRoles(container) {
         <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Allow this role to permanently delete any lead from the pipeline</div>
       </div>
       ${nonAdminRoles.map(r => {
-        // Read current value from D1-sourced role defs
         const roleD1 = window._gwRoles ? window._gwRoles.find(d => d.id === r.id) : null;
-        const isOn = !!(roleD1 && roleD1.permissions && roleD1.permissions.can_delete_leads);
+        const caps = (roleD1 && roleD1.permissions && roleD1.permissions.capabilities) || (roleD1 && roleD1.permissions) || {};
+        const isOn = !!(caps.can_delete_leads);
         return `<div style="text-align:center">
           <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer" title="${r.label}">
             <input type="checkbox" ${isOn ? 'checked' : ''} id="acp-del-${r.id}"
               onchange="window._umToggleActionPerm('${r.id}','can_delete_leads',this.checked)"
               style="position:absolute;opacity:0;width:0;height:0">
-            <span style="
-              display:inline-block;width:36px;height:20px;border-radius:10px;
-              background:${isOn ? r.color : '#CBD0C8'};
-              transition:background .2s;position:relative;flex-shrink:0"
-              id="acp-del-track-${r.id}">
-              <span style="
-                position:absolute;top:2px;left:${isOn ? '18px' : '2px'};
-                width:16px;height:16px;border-radius:50%;background:#fff;
-                box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s"
-                id="acp-del-thumb-${r.id}"></span>
+            <span style="display:inline-block;width:36px;height:20px;border-radius:10px;background:${isOn ? r.color : '#CBD0C8'};transition:background .2s;position:relative;flex-shrink:0" id="acp-del-track-${r.id}">
+              <span style="position:absolute;top:2px;left:${isOn ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s" id="acp-del-thumb-${r.id}"></span>
             </span>
           </label>
         </div>`;
@@ -1084,16 +1317,14 @@ function umRenderRoles(container) {
   };
 
   window._umPreset = function(roleId, preset) {
-    const ALL  = UM_ALL_VIEWS.map(v=>v.key);
-    const STANDARD = ['today','myDashboard','pipeline','lead','clients','process','forms','scripts','templates','objections','calculator','academy','settings'];
-    const VIEW = ['today','pipeline','settings'];
-    const DEFAULT = DEFAULT_NAV_PERMS[roleId] || STANDARD;
-    const views = preset==='full' ? ALL : preset==='standard' ? STANDARD : preset==='view' ? VIEW : DEFAULT;
+    const ALL  = UM_ALL_VIEWS.map(v => v.key);
+    const DEFAULT = (window.DEFAULT_NAV_PERMS || {})[roleId] || [];
+    const views = preset === 'full' ? ALL : preset === 'none' ? [] : DEFAULT;
     const perms = loadNavPerms();
     perms[roleId] = [...views];
     saveNavPerms(perms);
     const role = umRoleDef(roleId);
-    umToast(`${role.label} → ${preset==='full'?'Full Access':preset==='standard'?'Standard':preset==='view'?'View Only':'Defaults'}`);
+    umToast(`${role.label} → ${preset === 'full' ? 'Full Access' : preset === 'none' ? 'No Access' : 'Defaults'}`);
     umRenderRoles(container);
   };
 }

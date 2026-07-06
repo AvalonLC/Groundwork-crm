@@ -159,13 +159,37 @@ window._d1DeleteClient= _d1DeleteClient;
 // All views always visible in sidebar. Tyler controls access per role here.
 const NAV_PERMS_KEY = 'avalonNavPermissions';
 
-// Default permissions by role. Tyler can override from Settings.
+// Default permissions by role. 7-role model — source of truth for fallback before D1 loads.
 const DEFAULT_NAV_PERMS = {
-  admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-  office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-  rep: ['today','myDashboard','pipeline','lead','clients','estimates','communications','templates','process','forms','scripts','objections','calculator','ai','academy','scheduleBoard','dispatchBoard','workOrderList','workOrderDetail','timeTracker','settings'],
-  estimator: ['today','pipeline','clients','properties','estimates','process','forms','calculator','settings'],
-  view_only: ['today','pipeline','settings']
+  // Admin: all views — bypasses gate anyway but listed for completeness
+  admin: ['today','myDashboard','teamView',
+    'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+    'financialHub','invoices','payments','deposits','statements','financialActivity',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+    'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+    'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+  // Office Manager: everything except system-level admin settings
+  office_manager: ['today','myDashboard','teamView',
+    'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+    'financialHub','invoices','payments','deposits','statements','financialActivity',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+    'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+    'settings','userManagement','integrations','manager'],
+  // Sales Rep: full sales workflow — pipeline through academy, no ops/financial/settings
+  rep: ['today','myDashboard',
+    'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+  // Estimator: narrow quote/pricing specialist only
+  estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+  // Field Supervisor: full operations hub + ops/team reports, no sales/financial/settings
+  field_supervisor: ['today','myDashboard',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView',
+    'workOrderList','workOrderDetail','assetList','assetDetail',
+    'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+    'opsReports','teamReports'],
+  // Laborer: self-service field only — assigned schedule, work orders, time
+  laborer: ['scheduleBoard','workOrderList','timeTracker'],
+  // View Only: conservative read-only dashboard + pipeline
+  view_only: ['today','pipeline']
 };
 
 function loadNavPerms() {
