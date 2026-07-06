@@ -12066,17 +12066,330 @@ function _p7Placeholder(title, icon, description, group) {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function teamView() {
   window._currentView = 'teamView';
-  _p7Placeholder('Team View', '👥', 'See all team members\' activity, open tasks, pipeline positions, and daily performance at a glance.', 'Dashboard');
+  activateNav('teamView');
+  const reps   = window.REPS || [];
+  const opps   = state.opportunities || [];
+  const comms  = state.communications || [];
+  const today  = todayISO();
+
+  const repRows = reps.map(r => {
+    const myOpps    = opps.filter(o => o.repId === r.id || o.assignedToRepId === r.id);
+    const openOpps  = myOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+    const soldOpps  = myOpps.filter(o => o.status === 'Sold / Activation');
+    const overdue   = openOpps.filter(o => o.nextFollowUp && o.nextFollowUp < today);
+    const myComms   = comms.filter(c => c.repId === r.id);
+    const lastComm  = myComms.sort((a,b)=>new Date(b.ts)-new Date(a.ts))[0];
+    const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
+    const roleDef   = (window._gwRoles||[]).find(d=>d.id===r.role) || {};
+    const roleColor = roleDef.color || '#6F7E6A';
+    const roleLabel = roleDef.label || r.role || 'Rep';
+    const initials  = (r.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const activityDot = lastComm && new Date(lastComm.ts) > new Date(Date.now()-86400000*2)
+      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2D7A55;margin-left:6px" title="Active in last 48h"></span>`
+      : '';
+    return `
+    <tr style="border-bottom:1px solid var(--gw-line);cursor:pointer" onclick="show('pipeline')">
+      <td style="padding:12px 14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:34px;height:34px;border-radius:50%;background:${roleColor}22;border:1.5px solid ${roleColor}55;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:${roleColor};flex-shrink:0">${initials}</div>
+          <div>
+            <div style="font-weight:700;font-size:13px;color:var(--gds-ink)">${escapeHtml(r.name)}${activityDot}</div>
+            <div style="font-size:11px;color:${roleColor}">${escapeHtml(roleLabel)}</div>
+          </div>
+        </div>
+      </td>
+      <td style="padding:12px 10px;text-align:center"><span style="font-weight:700;font-size:14px">${openOpps.length}</span></td>
+      <td style="padding:12px 10px;text-align:center;color:#C97B6A;font-weight:${overdue.length?'700':'400'}">${overdue.length||'—'}</td>
+      <td style="padding:12px 10px;text-align:right;font-weight:700;color:var(--gw-pine-600)">${_p5Money(pipeVal)}</td>
+      <td style="padding:12px 10px;text-align:center;color:#2D7A55;font-weight:700">${soldOpps.length}</td>
+      <td style="padding:12px 10px;font-size:11px;color:var(--gw-muted)">${lastComm ? _p5FmtDate(lastComm.ts) : '—'}</td>
+    </tr>`;
+  });
+
+  // Team totals
+  const totalOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length;
+  const totalSold  = opps.filter(o=>o.status==='Sold / Activation').length;
+  const totalVal   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const totalOD    = opps.filter(o=>o.nextFollowUp&&o.nextFollowUp<today&&!['Sold / Activation','Closed Lost'].includes(o.status)).length;
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Dashboard</div>
+        <h1 class="rp-title">Team View</h1>
+        <p class="rp-subtitle">${reps.length} team member${reps.length!==1?'s':''} · live pipeline snapshot</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('lead')">+ New Lead</button>
+      </div>
+    </header>
+
+    <!-- Team KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Open Leads</div>
+        <div style="font-size:28px;font-weight:800;color:var(--gds-ink)">${totalOpen}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Value</div>
+        <div style="font-size:28px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(totalVal)}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Overdue Follow-Ups</div>
+        <div style="font-size:28px;font-weight:800;color:${totalOD?'#C97B6A':'var(--gds-ink)'}">${totalOD}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Closed / Won</div>
+        <div style="font-size:28px;font-weight:800;color:#2D7A55">${totalSold}</div>
+      </div>
+    </div>
+
+    <!-- Team Table -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Team Member</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#C97B6A;text-transform:uppercase;letter-spacing:.06em">Overdue</th>
+            <th style="text-align:right;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-pine-600);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Sold</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Last Activity</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${repRows.length ? repRows.join('') : `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No team members found — add reps in Team Members.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--gw-muted)">Click any row to open the pipeline filtered to that rep.</div>
+  </div>`;
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
 function properties() {
   window._currentView = 'properties';
-  _p7Placeholder('Properties', '🏠', 'Browse and manage all service properties linked to clients — address history, service records, and site notes.', 'Sales');
+  activateNav('properties');
+  const clients = state.clients || [];
+
+  // Build a flat list of all properties across all clients
+  const allProps = [];
+  clients.forEach(c => {
+    (c.properties || []).forEach(p => {
+      allProps.push({ ...p, clientName: c.name, clientId: c.id });
+    });
+  });
+
+  const search = (window._propSearch || '').toLowerCase();
+  const filtered = allProps.filter(p =>
+    !search ||
+    (p.label||'').toLowerCase().includes(search) ||
+    (p.street||'').toLowerCase().includes(search) ||
+    (p.city||'').toLowerCase().includes(search) ||
+    (p.clientName||'').toLowerCase().includes(search)
+  );
+
+  const rows = filtered.map(p => {
+    const woCount = (state.workOrders||[]).filter(w=>w.propertyId===p.id||w.clientId===p.clientId).length;
+    const oppCount= (state.opportunities||[]).filter(o=>o.clientId===p.clientId).length;
+    return `
+    <tr style="border-bottom:1px solid var(--gw-line);cursor:pointer" onclick="show('clients','${p.clientId}')">
+      <td style="padding:11px 14px">
+        <div style="font-weight:600;font-size:13px;color:var(--gds-ink)">${escapeHtml(p.label||'Property')}</div>
+        <div style="font-size:11px;color:var(--gw-muted)">${escapeHtml([p.street,p.city,p.state].filter(Boolean).join(', '))}</div>
+      </td>
+      <td style="padding:11px 10px">
+        <button style="background:none;border:none;padding:0;color:#4D8A86;font-weight:600;font-size:13px;cursor:pointer" onclick="event.stopPropagation();show('clients','${p.clientId}')">${escapeHtml(p.clientName)}</button>
+      </td>
+      <td style="padding:11px 10px;text-align:center;font-size:13px">${woCount||'—'}</td>
+      <td style="padding:11px 10px;text-align:center;font-size:13px">${oppCount||'—'}</td>
+      <td style="padding:11px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(p.notes||'—')}</td>
+    </tr>`;
+  });
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Sales</div>
+        <h1 class="rp-title">Properties</h1>
+        <p class="rp-subtitle">${allProps.length} service propert${allProps.length!==1?'ies':'y'} across ${clients.length} client${clients.length!==1?'s':''}</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn rp-btn--primary" onclick="show('clients')">Manage in Clients →</button>
+      </div>
+    </header>
+
+    <div style="margin-bottom:16px">
+      <input type="search" placeholder="Search properties, addresses, clients…" value="${escapeHtml(window._propSearch||'')}"
+        oninput="window._propSearch=this.value;properties()"
+        style="width:100%;max-width:360px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink)">
+    </div>
+
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Property</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Client</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Work Orders</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Opportunities</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.join('') : `<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${search ? 'No properties match your search.' : 'No properties yet — add properties from a client record.'}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--gw-muted)">Properties are managed inside each client record. Click any row to open the client.</div>
+  </div>`;
 }
+
 function campaigns() {
   window._currentView = 'campaigns';
-  _p7Placeholder('Campaigns / Drips', '📣', 'Create multi-step drip sequences, schedule follow-up campaigns, and track engagement across your contact list.', 'Sales · Engagement');
+  activateNav('campaigns');
+
+  const LS_KEY = 'avalonCampaigns';
+  let campaigns_data = [];
+  try { campaigns_data = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(_) {}
+
+  const opps   = state.opportunities || [];
+  const clients = state.clients || [];
+  const allContacts = [
+    ...clients.map(c=>({id:'c:'+c.id, name:c.name, email:c.email||'', type:'Client'})),
+    ...opps.filter(o=>o.email).map(o=>({id:'o:'+o.id, name:o.client||o.project||'Lead', email:o.email||'', type:'Lead'}))
+  ];
+
+  const statusColor = { active:'#2D7A55', paused:'#8B6914', draft:'#5B7FA6', completed:'#6F7E6A' };
+
+  const campaignCards = campaigns_data.map(cam => `
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px;position:relative">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14px;color:var(--gds-ink);margin-bottom:3px">${escapeHtml(cam.name||'Untitled Campaign')}</div>
+          <div style="font-size:12px;color:var(--gw-muted)">${escapeHtml(cam.description||'')}</div>
+        </div>
+        <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;background:${statusColor[cam.status]||'#6F7E6A'}22;color:${statusColor[cam.status]||'#6F7E6A'};border:1px solid ${statusColor[cam.status]||'#6F7E6A'}44">${cam.status||'draft'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+        <div style="text-align:center;background:var(--gw-surface);border-radius:7px;padding:8px">
+          <div style="font-size:18px;font-weight:800;color:var(--gds-ink)">${cam.steps?.length||0}</div>
+          <div style="font-size:10px;color:var(--gw-muted);font-weight:600;text-transform:uppercase">Steps</div>
+        </div>
+        <div style="text-align:center;background:var(--gw-surface);border-radius:7px;padding:8px">
+          <div style="font-size:18px;font-weight:800;color:var(--gds-ink)">${cam.contacts?.length||0}</div>
+          <div style="font-size:10px;color:var(--gw-muted);font-weight:600;text-transform:uppercase">Contacts</div>
+        </div>
+        <div style="text-align:center;background:var(--gw-surface);border-radius:7px;padding:8px">
+          <div style="font-size:18px;font-weight:800;color:#2D7A55">${cam.sent||0}</div>
+          <div style="font-size:10px;color:var(--gw-muted);font-weight:600;text-transform:uppercase">Sent</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="secondary-btn" style="font-size:12px;padding:5px 12px" onclick="window._camEdit('${cam.id}')">Edit</button>
+        <button class="secondary-btn" style="font-size:12px;padding:5px 12px;color:${cam.status==='active'?'#8B6914':'#2D7A55'}" onclick="window._camToggle('${cam.id}')">${cam.status==='active'?'Pause':'Activate'}</button>
+        <button class="secondary-btn" style="font-size:12px;padding:5px 12px;color:#A05050;margin-left:auto" onclick="window._camDelete('${cam.id}')">Delete</button>
+      </div>
+    </div>`).join('');
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Sales · Engagement</div>
+        <h1 class="rp-title">Campaigns & Drips</h1>
+        <p class="rp-subtitle">Multi-step follow-up sequences for leads and clients</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn rp-btn--primary" onclick="window._camNew()">+ New Campaign</button>
+      </div>
+    </header>
+
+    ${campaigns_data.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">${campaignCards}</div>`
+      : `<div style="text-align:center;padding:60px 24px;background:var(--gw-card);border:1px solid var(--gw-line);border-radius:12px">
+           <div style="font-size:36px;margin-bottom:12px">📣</div>
+           <h3 style="margin:0 0 8px;color:var(--gds-ink)">No campaigns yet</h3>
+           <p style="color:var(--gw-muted);font-size:14px;max-width:360px;margin:0 auto 20px">Create a multi-step follow-up sequence to automatically nurture leads or re-engage past clients.</p>
+           <button class="primary-btn" onclick="window._camNew()">Create First Campaign</button>
+         </div>`}
+
+    <!-- Campaign Editor Modal -->
+    <div id="cam-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--gw-card);border-radius:14px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;padding:24px">
+        <h3 style="margin:0 0 16px;font-size:16px" id="cam-modal-title">New Campaign</h3>
+        <div style="display:grid;gap:12px;margin-bottom:16px">
+          <div>
+            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:4px;font-weight:600">Campaign Name</label>
+            <input id="cam-f-name" type="text" placeholder="e.g. 30-Day Estimate Follow-Up"
+              style="width:100%;padding:8px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:4px;font-weight:600">Description</label>
+            <textarea id="cam-f-desc" rows="2" placeholder="What is this campaign for?"
+              style="width:100%;padding:8px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);resize:vertical;box-sizing:border-box"></textarea>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:4px;font-weight:600">Steps (one per line: Day X — Action)</label>
+            <textarea id="cam-f-steps" rows="5" placeholder="Day 1 — Send thank-you email&#10;Day 3 — Follow-up call&#10;Day 7 — Send pricing reminder&#10;Day 14 — Final check-in"
+              style="width:100%;padding:8px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:12px;font-family:monospace;background:var(--gw-surface-2);color:var(--gds-ink);resize:vertical;box-sizing:border-box"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="secondary-btn" onclick="document.getElementById('cam-modal').style.display='none'">Cancel</button>
+          <button class="primary-btn" onclick="window._camSave()">Save Campaign</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  let _editingCamId = null;
+
+  window._camNew = function() {
+    _editingCamId = null;
+    document.getElementById('cam-modal-title').textContent = 'New Campaign';
+    document.getElementById('cam-f-name').value = '';
+    document.getElementById('cam-f-desc').value = '';
+    document.getElementById('cam-f-steps').value = '';
+    document.getElementById('cam-modal').style.display = 'flex';
+  };
+  window._camEdit = function(id) {
+    const cam = campaigns_data.find(c=>c.id===id); if (!cam) return;
+    _editingCamId = id;
+    document.getElementById('cam-modal-title').textContent = 'Edit Campaign';
+    document.getElementById('cam-f-name').value  = cam.name || '';
+    document.getElementById('cam-f-desc').value  = cam.description || '';
+    document.getElementById('cam-f-steps').value = (cam.steps||[]).join('\n');
+    document.getElementById('cam-modal').style.display = 'flex';
+  };
+  window._camSave = function() {
+    const name  = document.getElementById('cam-f-name').value.trim();
+    const desc  = document.getElementById('cam-f-desc').value.trim();
+    const steps = document.getElementById('cam-f-steps').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if (!name) { showToast('Campaign name is required'); return; }
+    if (_editingCamId) {
+      campaigns_data = campaigns_data.map(c => c.id===_editingCamId ? {...c,name,description:desc,steps} : c);
+    } else {
+      campaigns_data.push({ id:'cam_'+Date.now(), name, description:desc, steps, status:'draft', contacts:[], sent:0, createdAt:new Date().toISOString() });
+    }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(campaigns_data)); } catch(_) {}
+    document.getElementById('cam-modal').style.display = 'none';
+    campaigns();
+  };
+  window._camToggle = function(id) {
+    campaigns_data = campaigns_data.map(c => c.id===id ? {...c, status: c.status==='active'?'paused':'active'} : c);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(campaigns_data)); } catch(_) {}
+    campaigns();
+  };
+  window._camDelete = function(id) {
+    if (!confirm('Delete this campaign? This cannot be undone.')) return;
+    campaigns_data = campaigns_data.filter(c=>c.id!==id);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(campaigns_data)); } catch(_) {}
+    campaigns();
+  };
 }
 function emailTemplates() {
   window._currentView = 'emailTemplates';
@@ -12088,11 +12401,286 @@ function emailTemplates() {
 // ── Financial ─────────────────────────────────────────────────────────────────
 function payments() {
   window._currentView = 'payments';
-  _p7Placeholder('Payments', '💳', 'Track all incoming payments across invoices, view payment history per client, and reconcile open balances.', 'Financial');
+  activateNav('payments');
+  const LS_KEY = 'avalonPayments';
+  let payments_data = [];
+  try { payments_data = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(_) {}
+
+  const opps    = state.opportunities || [];
+  const clients = state.clients || [];
+  const search  = (window._paySearch||'').toLowerCase();
+
+  const filtered = payments_data.filter(p =>
+    !search ||
+    (p.clientName||'').toLowerCase().includes(search) ||
+    (p.method||'').toLowerCase().includes(search) ||
+    (p.note||'').toLowerCase().includes(search)
+  );
+  const totalReceived = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
+
+  const methodColor = { cash:'#2D7A55', check:'#5B7FA6', card:'#6B5EA8', ach:'#8B6914', other:'#6F7E6A' };
+  const rows = filtered.map(p => `
+    <tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:10px 14px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(p.date)}</td>
+      <td style="padding:10px 10px;font-weight:600;font-size:13px;color:var(--gds-ink)">${escapeHtml(p.clientName||'—')}</td>
+      <td style="padding:10px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.invoiceRef||'—')}</td>
+      <td style="padding:10px 10px;text-align:right;font-weight:700;font-size:14px;color:#2D7A55">${_p5Money(p.amount)}</td>
+      <td style="padding:10px 10px;text-align:center">
+        <span style="padding:2px 9px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;background:${methodColor[p.method]||'#6F7E6A'}22;color:${methodColor[p.method]||'#6F7E6A'};border:1px solid ${methodColor[p.method]||'#6F7E6A'}44">${escapeHtml(p.method||'other')}</span>
+      </td>
+      <td style="padding:10px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(p.note||'')}</td>
+      <td style="padding:10px 10px;text-align:center">
+        <button onclick="window._payDelete('${p.id}')" style="background:none;border:none;color:#A05050;cursor:pointer;font-size:14px" title="Delete">×</button>
+      </td>
+    </tr>`).join('');
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Financial</div>
+        <h1 class="rp-title">Payments</h1>
+        <p class="rp-subtitle">${payments_data.length} payment${payments_data.length!==1?'s':''} · ${_p5Money(totalReceived)} total received</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn rp-btn--primary" onclick="window._payNew()">+ Record Payment</button>
+      </div>
+    </header>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Received</div>
+        <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalReceived)}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${_p5Money(payments_data.filter(p=>p.date&&p.date.slice(0,7)===todayISO().slice(0,7)).reduce((s,p)=>s+Number(p.amount||0),0))}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Transactions</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${payments_data.length}</div>
+      </div>
+    </div>
+
+    <input type="search" placeholder="Search payments…" value="${escapeHtml(window._paySearch||'')}"
+      oninput="window._paySearch=this.value;payments()"
+      style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
+
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Date</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Client</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Invoice Ref</th>
+            <th style="text-align:right;padding:10px 10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Amount</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Method</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Note</th>
+            <th style="width:36px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${search?'No matching payments.':'No payments recorded yet.'}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Record Payment Modal -->
+    <div id="pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--gw-card);border-radius:14px;width:100%;max-width:420px;padding:24px">
+        <h3 style="margin:0 0 16px;font-size:16px">Record Payment</h3>
+        <div style="display:grid;gap:10px;margin-bottom:16px">
+          <div>
+            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Client Name</label>
+            <input id="pay-f-client" list="pay-clients-list" type="text" placeholder="Client name"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            <datalist id="pay-clients-list">
+              ${(state.clients||[]).map(c=>`<option value="${escapeHtml(c.name)}">`).join('')}
+            </datalist>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Amount ($)</label>
+              <input id="pay-f-amount" type="number" min="0" step="0.01" placeholder="0.00"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Date</label>
+              <input id="pay-f-date" type="date" value="${todayISO()}"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Method</label>
+              <select id="pay-f-method" style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+                <option value="check">Check</option><option value="cash">Cash</option>
+                <option value="card">Card</option><option value="ach">ACH</option><option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Invoice Ref</label>
+              <input id="pay-f-inv" type="text" placeholder="INV-001"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Note (optional)</label>
+            <input id="pay-f-note" type="text" placeholder="e.g. Final payment for job #234"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="secondary-btn" onclick="document.getElementById('pay-modal').style.display='none'">Cancel</button>
+          <button class="primary-btn" onclick="window._paySave()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  window._payNew  = ()=>{ document.getElementById('pay-modal').style.display='flex'; };
+  window._paySave = ()=>{
+    const amount = parseFloat(document.getElementById('pay-f-amount').value);
+    const client = document.getElementById('pay-f-client').value.trim();
+    if (!client||!amount) { showToast('Client and amount required'); return; }
+    payments_data.push({ id:'pay_'+Date.now(), clientName:client, amount, date:document.getElementById('pay-f-date').value, method:document.getElementById('pay-f-method').value, invoiceRef:document.getElementById('pay-f-inv').value.trim(), note:document.getElementById('pay-f-note').value.trim() });
+    try { localStorage.setItem(LS_KEY, JSON.stringify(payments_data)); } catch(_) {}
+    document.getElementById('pay-modal').style.display='none';
+    showToast(`Payment of ${_p5Money(amount)} recorded`);
+    payments();
+  };
+  window._payDelete = (id)=>{
+    payments_data = payments_data.filter(p=>p.id!==id);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(payments_data)); } catch(_) {}
+    payments();
+  };
 }
+
 function deposits() {
   window._currentView = 'deposits';
-  _p7Placeholder('Deposits', '🏦', 'Log and track customer deposits and retainers collected before work begins. Link deposits to jobs and invoices.', 'Financial');
+  activateNav('deposits');
+  const LS_KEY = 'avalonDeposits';
+  let deps = [];
+  try { deps = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(_) {}
+
+  const totalDeposited = deps.reduce((s,d)=>s+Number(d.amount||0),0);
+  const totalApplied   = deps.filter(d=>d.applied).reduce((s,d)=>s+Number(d.amount||0),0);
+  const totalHeld      = totalDeposited - totalApplied;
+
+  const statusStyle = applied => applied
+    ? 'background:#2D7A5522;color:#2D7A55;border:1px solid #2D7A5544'
+    : 'background:#8B691422;color:#8B6914;border:1px solid #8B691444';
+
+  const rows = deps.map(d => `
+    <tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:10px 14px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(d.date)}</td>
+      <td style="padding:10px 10px;font-weight:600;font-size:13px">${escapeHtml(d.clientName||'—')}</td>
+      <td style="padding:10px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(d.jobRef||'—')}</td>
+      <td style="padding:10px 10px;text-align:right;font-weight:700;color:#5B7FA6">${_p5Money(d.amount)}</td>
+      <td style="padding:10px 10px;text-align:center">
+        <span style="padding:2px 9px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;${statusStyle(d.applied)}">${d.applied?'Applied':'Held'}</span>
+      </td>
+      <td style="padding:10px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(d.note||'')}</td>
+      <td style="padding:10px 10px;text-align:center">
+        ${!d.applied?`<button onclick="window._depApply('${d.id}')" style="font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid #2D7A55;background:none;color:#2D7A55;cursor:pointer">Apply</button>`:''}
+        <button onclick="window._depDelete('${d.id}')" style="background:none;border:none;color:#A05050;cursor:pointer;font-size:14px;margin-left:4px" title="Delete">×</button>
+      </td>
+    </tr>`).join('');
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Financial</div>
+        <h1 class="rp-title">Deposits</h1>
+        <p class="rp-subtitle">Retainers and pre-job deposits collected from clients</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn rp-btn--primary" onclick="window._depNew()">+ Record Deposit</button>
+      </div>
+    </header>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Collected</div>
+        <div style="font-size:26px;font-weight:800;color:#5B7FA6">${_p5Money(totalDeposited)}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Applied to Jobs</div>
+        <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalApplied)}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Currently Held</div>
+        <div style="font-size:26px;font-weight:800;color:#8B6914">${_p5Money(totalHeld)}</div>
+      </div>
+    </div>
+
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Date</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Client</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Job Ref</th>
+            <th style="text-align:right;padding:10px 10px;font-size:11px;font-weight:700;color:#5B7FA6;text-transform:uppercase;letter-spacing:.06em">Amount</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Status</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Note</th>
+            <th style="width:90px"></th>
+          </tr>
+        </thead>
+        <tbody>${rows||`<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No deposits recorded yet.</td></tr>`}</tbody>
+      </table>
+    </div>
+
+    <div id="dep-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--gw-card);border-radius:14px;width:100%;max-width:400px;padding:24px">
+        <h3 style="margin:0 0 16px;font-size:16px">Record Deposit</h3>
+        <div style="display:grid;gap:10px;margin-bottom:16px">
+          <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Client</label>
+            <input id="dep-f-client" list="dep-clients-list" type="text" placeholder="Client name"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            <datalist id="dep-clients-list">${(state.clients||[]).map(c=>`<option value="${escapeHtml(c.name)}">`).join('')}</datalist>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Amount ($)</label>
+              <input id="dep-f-amount" type="number" min="0" step="0.01" placeholder="0.00"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+            <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Date</label>
+              <input id="dep-f-date" type="date" value="${todayISO()}"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+          </div>
+          <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Job Reference</label>
+            <input id="dep-f-job" type="text" placeholder="e.g. Fall Cleanup #223"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+          </div>
+          <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Note</label>
+            <input id="dep-f-note" type="text" placeholder="Optional note"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="secondary-btn" onclick="document.getElementById('dep-modal').style.display='none'">Cancel</button>
+          <button class="primary-btn" onclick="window._depSave()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  window._depNew    = ()=>{ document.getElementById('dep-modal').style.display='flex'; };
+  window._depSave   = ()=>{
+    const amount=parseFloat(document.getElementById('dep-f-amount').value);
+    const client=document.getElementById('dep-f-client').value.trim();
+    if(!client||!amount){ showToast('Client and amount required'); return; }
+    deps.push({id:'dep_'+Date.now(),clientName:client,amount,date:document.getElementById('dep-f-date').value,jobRef:document.getElementById('dep-f-job').value.trim(),note:document.getElementById('dep-f-note').value.trim(),applied:false});
+    try{localStorage.setItem(LS_KEY,JSON.stringify(deps));}catch(_){}
+    document.getElementById('dep-modal').style.display='none';
+    showToast(`Deposit of ${_p5Money(amount)} recorded`);
+    deposits();
+  };
+  window._depApply  = (id)=>{ deps=deps.map(d=>d.id===id?{...d,applied:true}:d); try{localStorage.setItem(LS_KEY,JSON.stringify(deps));}catch(_){} deposits(); };
+  window._depDelete = (id)=>{ deps=deps.filter(d=>d.id!==id); try{localStorage.setItem(LS_KEY,JSON.stringify(deps));}catch(_){} deposits(); };
 }
 function statements() {
   window._currentView = 'statements';
@@ -12106,45 +12694,1497 @@ function statements() {
 }
 function financialActivity() {
   window._currentView = 'financialActivity';
-  _p7Placeholder('Financial Activity', '📈', 'A chronological ledger of all financial events — invoices created, payments received, deposits applied, and credits issued.', 'Financial');
+  activateNav('financialActivity');
+
+  // Pull from all financial data sources
+  let payments_data=[], deps=[], invList=[];
+  try { payments_data=JSON.parse(localStorage.getItem('avalonPayments')||'[]'); } catch(_){}
+  try { deps=JSON.parse(localStorage.getItem('avalonDeposits')||'[]'); } catch(_){}
+  try { invList=JSON.parse(localStorage.getItem('avalonInvoices')||'[]'); } catch(_){}
+
+  // Build unified activity ledger
+  const events = [
+    ...payments_data.map(p=>({ ts:p.date+'T12:00:00', type:'payment',  label:`Payment — ${p.clientName}`, amount:+p.amount, color:'#2D7A55', icon:'💳', note:p.note||'' })),
+    ...deps.map(d=>({ ts:d.date+'T10:00:00', type:'deposit',  label:`Deposit — ${d.clientName}`, amount:+d.amount, color:'#5B7FA6', icon:'🏦', note:d.jobRef||'' })),
+    ...deps.filter(d=>d.applied).map(d=>({ ts:d.date+'T14:00:00', type:'applied',  label:`Deposit Applied — ${d.clientName}`, amount:-d.amount, color:'#8B6914', icon:'✓', note:'' })),
+    ...invList.map(i=>({ ts:i.date+'T09:00:00', type:'invoice', label:`Invoice ${i.number||''} — ${i.clientName}`, amount:+i.amount, color:'#6B5EA8', icon:'📄', note:i.status||'' })),
+    // Also pull sold opps as "job won" events
+    ...(state.opportunities||[]).filter(o=>o.status==='Sold / Activation'&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'🏆', note:o.project||'' }))
+  ].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+
+  const totalIn  = events.filter(e=>e.amount>0&&['payment','deposit','won'].includes(e.type)).reduce((s,e)=>s+e.amount,0);
+  const thisMonth= events.filter(e=>e.ts&&e.ts.slice(0,7)===todayISO().slice(0,7)&&e.amount>0).reduce((s,e)=>s+e.amount,0);
+
+  const rows = events.slice(0,100).map(e=>`
+    <tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:9px 14px;font-size:12px;color:var(--gw-muted);white-space:nowrap">${_p5FmtDate(e.ts)}</td>
+      <td style="padding:9px 10px;text-align:center;font-size:16px">${e.icon}</td>
+      <td style="padding:9px 10px;font-size:13px;font-weight:600;color:var(--gds-ink)">${escapeHtml(e.label)}</td>
+      <td style="padding:9px 10px;text-align:right;font-weight:700;font-size:14px;color:${e.amount>=0?e.color:'#A05050'}">${e.amount>=0?'+':''}${_p5Money(Math.abs(e.amount))}</td>
+      <td style="padding:9px 10px">
+        <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;background:${e.color}22;color:${e.color};border:1px solid ${e.color}44">${e.type}</span>
+      </td>
+      <td style="padding:9px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(e.note)}</td>
+    </tr>`).join('');
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Financial</div>
+        <h1 class="rp-title">Financial Activity</h1>
+        <p class="rp-subtitle">Chronological ledger of all financial events</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('payments')">Record Payment</button>
+        <button class="rp-btn" onclick="show('deposits')">Record Deposit</button>
+      </div>
+    </header>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Activity</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${events.length}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total In</div>
+        <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalIn)}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
+        <div style="font-size:26px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(thisMonth)}</div>
+      </div>
+    </div>
+
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Date</th>
+            <th style="width:36px"></th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Description</th>
+            <th style="text-align:right;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Amount</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Type</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Reference</th>
+          </tr>
+        </thead>
+        <tbody>${rows||`<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No financial activity yet. Record payments or deposits to see the ledger.</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 // ── Operations ────────────────────────────────────────────────────────────────
 function crewView() {
   window._currentView = 'crewView';
-  _p7Placeholder('Crew View', '🦺', 'A per-crew schedule board showing today\'s jobs, crew availability, and route assignments at a glance.', 'Operations · Scheduling');
+  activateNav('crewView');
+  const wos  = state.workOrders || [];
+  const today = todayISO();
+
+  // Build crew → jobs map for today
+  const crewMap = {};
+  wos.filter(w => w.date && w.date.slice(0,10) === today).forEach(w => {
+    const crew = w.crew || 'Unassigned';
+    if (!crewMap[crew]) crewMap[crew] = [];
+    crewMap[crew].push(w);
+  });
+
+  const statusColor = { scheduled:'#5B7FA6', 'in-progress':'#8B6914', completed:'#2D7A55', cancelled:'#A05050' };
+  const statusLabel = { scheduled:'Scheduled', 'in-progress':'In Progress', completed:'Done', cancelled:'Cancelled' };
+
+  const crewCols = Object.entries(crewMap).map(([crew, jobs]) => {
+    const done = jobs.filter(j=>j.status==='completed').length;
+    const inProg = jobs.filter(j=>j.status==='in-progress').length;
+    const jobCards = jobs.map(j=>`
+      <div style="background:var(--gw-surface-2);border:1px solid var(--gw-line);border-left:3px solid ${statusColor[j.status]||'#6F7E6A'};border-radius:7px;padding:10px 12px;cursor:pointer;margin-bottom:8px" onclick="show('workOrderDetail','${j.id}')">
+        <div style="font-weight:700;font-size:12px;color:var(--gds-ink);margin-bottom:3px">${escapeHtml(j.clientName||j.oppId||'Job')}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-bottom:5px">${escapeHtml(j.type||'Service')} · ${j.time||'TBD'}</div>
+        <span style="padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:${statusColor[j.status]||'#6F7E6A'}22;color:${statusColor[j.status]||'#6F7E6A'}">${statusLabel[j.status]||j.status}</span>
+      </div>`).join('');
+    return `
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;min-width:200px">
+      <div style="background:var(--gw-surface);padding:12px 14px;border-bottom:1px solid var(--gw-line)">
+        <div style="font-weight:800;font-size:14px;color:var(--gds-ink)">${escapeHtml(crew)}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">${jobs.length} job${jobs.length!==1?'s':''} · ${done} done${inProg?` · ${inProg} in progress`:''}</div>
+      </div>
+      <div style="padding:12px">${jobCards||`<div style="text-align:center;padding:20px;font-size:12px;color:var(--gw-muted);font-style:italic">No jobs today</div>`}</div>
+    </div>`;
+  }).join('');
+
+  // Also gather all unique crews from all WOs (for roster)
+  const allCrews = [...new Set(wos.map(w=>w.crew||'Unassigned'))].filter(Boolean).sort();
+  const todayWOs = wos.filter(w=>w.date&&w.date.slice(0,10)===today);
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Operations</div>
+        <h1 class="rp-title">Crew View</h1>
+        <p class="rp-subtitle">Today's job assignments by crew · ${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('scheduleBoard')">Week Schedule</button>
+        <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch Board</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+      </div>
+    </header>
+
+    ${todayWOs.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">${crewCols}</div>`
+      : `<div style="text-align:center;padding:60px 24px;background:var(--gw-card);border:1px solid var(--gw-line);border-radius:12px">
+           <div style="font-size:36px;margin-bottom:12px">🦺</div>
+           <h3 style="margin:0 0 8px;color:var(--gds-ink)">No jobs scheduled for today</h3>
+           <p style="color:var(--gw-muted);font-size:14px;max-width:360px;margin:0 auto 20px">Add work orders and assign them to crews to see the crew view populate.</p>
+           <button class="primary-btn" onclick="show('workOrderList')">+ Create Work Order</button>
+         </div>`}
+
+    ${allCrews.length ? `
+    <div style="margin-top:28px">
+      <h3 style="font-size:14px;font-weight:800;color:var(--gds-ink);margin:0 0 12px">All Crews (${allCrews.length})</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${allCrews.map(c=>{
+          const total=wos.filter(w=>w.crew===c).length;
+          return `<span style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;background:var(--gw-surface);border:1px solid var(--gw-line);color:var(--gds-ink)">${escapeHtml(c)} <span style="color:var(--gw-muted)">(${total} WOs)</span></span>`;
+        }).join('')}
+      </div>
+    </div>` : ''}
+  </div>`;
 }
+
 function toolsConsumables() {
   window._currentView = 'toolsConsumables';
-  _p7Placeholder('Tools / Consumables', '🔧', 'Track small tools, consumables, and expendables that don\'t require full asset-level maintenance records.', 'Operations · Assets & Inventory');
+  activateNav('toolsConsumables');
+  const LS_KEY = 'avalonTools';
+  let tools = [];
+  try { tools = JSON.parse(localStorage.getItem(LS_KEY)||'[]'); } catch(_) {}
+
+  const search = (window._toolSearch||'').toLowerCase();
+  const filtered = tools.filter(t => !search || (t.name||'').toLowerCase().includes(search) || (t.category||'').toLowerCase().includes(search));
+
+  const categoryColor = { tool:'#5B7FA6', consumable:'#8B6914', safety:'#2D7A55', chemical:'#6B5EA8', other:'#6F7E6A' };
+  const rows = filtered.map(t => {
+    const lowStock = t.category==='consumable' && t.onHand<=t.reorderAt;
+    return `
+    <tr style="border-bottom:1px solid var(--gw-line)${lowStock?';background:#8B691408':''}">
+      <td style="padding:10px 14px">
+        <div style="font-weight:600;font-size:13px;color:var(--gds-ink)">${escapeHtml(t.name)}${lowStock?`<span style="margin-left:7px;font-size:10px;font-weight:800;color:#8B6914;background:#8B691420;border:1px solid #8B691440;border-radius:10px;padding:1px 6px">LOW STOCK</span>`:''}</div>
+        ${t.location?`<div style="font-size:11px;color:var(--gw-muted)">${escapeHtml(t.location)}</div>`:''}
+      </td>
+      <td style="padding:10px 10px;text-align:center">
+        <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;background:${categoryColor[t.category]||'#6F7E6A'}22;color:${categoryColor[t.category]||'#6F7E6A'}">${t.category||'other'}</span>
+      </td>
+      <td style="padding:10px 10px;text-align:center;font-weight:700">${t.onHand!=null?t.onHand:'—'}</td>
+      <td style="padding:10px 10px;text-align:center;color:var(--gw-muted);font-size:12px">${t.reorderAt!=null?t.reorderAt:'—'}</td>
+      <td style="padding:10px 10px;font-size:11px;color:var(--gw-muted)">${escapeHtml(t.vendor||'')}</td>
+      <td style="padding:10px 10px">
+        <button onclick="window._toolEdit('${t.id}')" style="background:none;border:none;color:#4D8A86;cursor:pointer;font-size:12px;font-weight:600;padding:0 4px">Edit</button>
+        <button onclick="window._toolDelete('${t.id}')" style="background:none;border:none;color:#A05050;cursor:pointer;font-size:14px;padding:0 4px" title="Delete">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const lowCount = tools.filter(t=>t.category==='consumable'&&t.onHand<=t.reorderAt&&t.reorderAt!=null).length;
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:900px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Operations · Assets & Inventory</div>
+        <h1 class="rp-title">Tools & Consumables</h1>
+        <p class="rp-subtitle">${tools.length} item${tools.length!==1?'s':''}${lowCount?` · <span style="color:#8B6914;font-weight:700">${lowCount} low stock</span>`:''}</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('inventoryList')">Full Inventory</button>
+        <button class="rp-btn rp-btn--primary" onclick="window._toolNew()">+ Add Item</button>
+      </div>
+    </header>
+
+    <input type="search" placeholder="Search tools and consumables…" value="${escapeHtml(window._toolSearch||'')}"
+      oninput="window._toolSearch=this.value;toolsConsumables()"
+      style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
+
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Item</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Type</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">On Hand</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Reorder At</th>
+            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Vendor</th>
+            <th style="width:80px"></th>
+          </tr>
+        </thead>
+        <tbody>${rows||`<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${search?'No matching items.':'No tools or consumables tracked yet.'}</td></tr>`}</tbody>
+      </table>
+    </div>
+
+    <div id="tool-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+      <div style="background:var(--gw-card);border-radius:14px;width:100%;max-width:400px;padding:24px">
+        <h3 id="tool-modal-title" style="margin:0 0 16px;font-size:16px">Add Item</h3>
+        <div style="display:grid;gap:10px;margin-bottom:16px">
+          <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Name</label>
+            <input id="tool-f-name" type="text" placeholder="e.g. Roundup Concentrate, Safety Glasses"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Category</label>
+              <select id="tool-f-cat" style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+                <option value="tool">Tool</option><option value="consumable">Consumable</option>
+                <option value="safety">Safety</option><option value="chemical">Chemical</option><option value="other">Other</option>
+              </select>
+            </div>
+            <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">On Hand (qty)</label>
+              <input id="tool-f-qty" type="number" min="0" placeholder="0"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Reorder At</label>
+              <input id="tool-f-reorder" type="number" min="0" placeholder="0"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+            <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Location / Truck</label>
+              <input id="tool-f-loc" type="text" placeholder="e.g. Truck 1, Shop"
+                style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+            </div>
+          </div>
+          <div><label style="font-size:11px;color:var(--gw-muted);display:block;margin-bottom:3px;font-weight:600">Vendor</label>
+            <input id="tool-f-vendor" type="text" placeholder="e.g. Home Depot, SiteOne"
+              style="width:100%;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="secondary-btn" onclick="document.getElementById('tool-modal').style.display='none'">Cancel</button>
+          <button class="primary-btn" onclick="window._toolSave()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  let _editToolId = null;
+  window._toolNew  = ()=>{ _editToolId=null; document.getElementById('tool-modal-title').textContent='Add Item'; ['name','qty','reorder','loc','vendor'].forEach(f=>document.getElementById('tool-f-'+f).value=''); document.getElementById('tool-modal').style.display='flex'; };
+  window._toolEdit = (id)=>{
+    const t=tools.find(x=>x.id===id); if(!t) return; _editToolId=id;
+    document.getElementById('tool-modal-title').textContent='Edit Item';
+    document.getElementById('tool-f-name').value=t.name||'';
+    document.getElementById('tool-f-cat').value=t.category||'tool';
+    document.getElementById('tool-f-qty').value=t.onHand!=null?t.onHand:'';
+    document.getElementById('tool-f-reorder').value=t.reorderAt!=null?t.reorderAt:'';
+    document.getElementById('tool-f-loc').value=t.location||'';
+    document.getElementById('tool-f-vendor').value=t.vendor||'';
+    document.getElementById('tool-modal').style.display='flex';
+  };
+  window._toolSave = ()=>{
+    const name=document.getElementById('tool-f-name').value.trim();
+    if(!name){showToast('Name required');return;}
+    const item={id:_editToolId||'tool_'+Date.now(),name,category:document.getElementById('tool-f-cat').value,onHand:Number(document.getElementById('tool-f-qty').value)||0,reorderAt:Number(document.getElementById('tool-f-reorder').value)||0,location:document.getElementById('tool-f-loc').value.trim(),vendor:document.getElementById('tool-f-vendor').value.trim()};
+    tools=_editToolId?tools.map(t=>t.id===_editToolId?item:t):[...tools,item];
+    try{localStorage.setItem(LS_KEY,JSON.stringify(tools));}catch(_){}
+    document.getElementById('tool-modal').style.display='none';
+    toolsConsumables();
+  };
+  window._toolDelete = (id)=>{ tools=tools.filter(t=>t.id!==id); try{localStorage.setItem(LS_KEY,JSON.stringify(tools));}catch(_){} toolsConsumables(); };
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 function salesReports() {
   window._currentView = 'salesReports';
-  _p7Placeholder('Sales Reports', '📊', 'Detailed breakdowns of pipeline conversion, close rates by rep, lead source performance, and deal velocity.', 'Reports');
+  activateNav('salesReports');
+  const opps   = state.opportunities || [];
+  const comms  = state.communications || [];
+  const reps   = window.REPS || [];
+
+  // Stage conversion funnel
+  const stages = ['Initial Inquiry','Discovery / Consultation','Site Walk / Assessment','Proposal / Estimate Sent','Follow-Up','Presentation & SOW Pitch','Deal Closed / Won','On Hold','Closed Lost'];
+  const stageCounts = stages.map(s=>({ stage:s, count:opps.filter(o=>o.status===s).length }));
+
+  // Close rate
+  const closed = opps.filter(o=>['Sold / Activation','Closed Lost'].includes(o.status)).length;
+  const won    = opps.filter(o=>o.status==='Sold / Activation').length;
+  const closeRate = closed ? Math.round((won/closed)*100) : 0;
+  const totalPipeVal = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const avgDeal = won ? opps.filter(o=>o.status==='Sold / Activation').reduce((s,o)=>s+Number(o.jobValue||0),0)/won : 0;
+
+  // Rep breakdown
+  const repRows = reps.map(r=>{
+    const mine  = opps.filter(o=>o.repId===r.id);
+    const mWon  = mine.filter(o=>o.status==='Sold / Activation');
+    const mOpen = mine.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
+    const mVal  = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
+    const mClosed = mine.filter(o=>['Sold / Activation','Closed Lost'].includes(o.status)).length;
+    const mRate = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
+    return `<tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:10px 14px;font-weight:600">${escapeHtml(r.name)}</td>
+      <td style="padding:10px 10px;text-align:center">${mine.length}</td>
+      <td style="padding:10px 10px;text-align:center">${mOpen.length}</td>
+      <td style="padding:10px 10px;text-align:center;color:#2D7A55;font-weight:700">${mWon.length}</td>
+      <td style="padding:10px 10px;text-align:right;color:var(--gw-pine-600);font-weight:700">${_p5Money(mVal)}</td>
+      <td style="padding:10px 10px;text-align:center">${mRate}%</td>
+    </tr>`;
+  }).join('');
+
+  // Lead source breakdown (from opportunities)
+  const sourceCounts = {};
+  opps.forEach(o=>{const s=o.leadSource||o.prompt||'Unknown';sourceCounts[s]=(sourceCounts[s]||0)+1;});
+  const sources = Object.entries(sourceCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Reports</div>
+        <h1 class="rp-title">Sales Reports</h1>
+        <p class="rp-subtitle">Pipeline conversion, close rates, rep performance</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
+        <button class="rp-btn" onclick="show('teamReports')">Team Report →</button>
+      </div>
+    </header>
+
+    <!-- KPI Row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      ${[
+        {label:'Total Leads',val:opps.length,color:'var(--gds-ink)'},
+        {label:'Pipeline Value',val:_p5Money(totalPipeVal),color:'var(--gw-pine-600)'},
+        {label:'Close Rate',val:closeRate+'%',color:closeRate>=50?'#2D7A55':'#8B6914'},
+        {label:'Avg Deal Size',val:_p5Money(avgDeal),color:'#5B7FA6'}
+      ].map(k=>`
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${k.label}</div>
+        <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
+      </div>`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
+      <!-- Pipeline Funnel -->
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
+        <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
+        ${stageCounts.filter(s=>s.count>0).map(s=>{
+          const pct = opps.length ? Math.round((s.count/opps.length)*100) : 0;
+          const isWon=s.stage.includes('Won')||s.stage.includes('Sold');
+          const isLost=s.stage.includes('Lost');
+          const barColor=isWon?'#2D7A55':isLost?'#A05050':'#4D8A86';
+          return `<div style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+              <span style="color:var(--gds-ink);font-weight:600">${escapeHtml(s.stage)}</span>
+              <span style="color:var(--gw-muted)">${s.count}</span>
+            </div>
+            <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <!-- Lead Sources -->
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
+        <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Lead Sources</h3>
+        ${sources.length
+          ? sources.map(([src,cnt])=>{
+              const pct=opps.length?Math.round((cnt/opps.length)*100):0;
+              return `<div style="margin-bottom:8px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                  <span style="color:var(--gds-ink);font-weight:600">${escapeHtml(src.slice(0,40))}</span>
+                  <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
+                </div>
+                <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
+                </div>
+              </div>`;
+            }).join('')
+          : `<p style="color:var(--gw-muted);font-size:13px">Add lead source data when creating leads to see breakdown here.</p>`}
+      </div>
+    </div>
+
+    <!-- Rep Breakdown Table -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line)">
+        <h3 style="margin:0;font-size:14px;font-weight:800">Rep Performance</h3>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+          <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Rep</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Total</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Open</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase">Won</th>
+          <th style="text-align:right;padding:10px;font-size:11px;font-weight:700;color:var(--gw-pine-600);text-transform:uppercase">Pipeline $</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Close %</th>
+        </tr></thead>
+        <tbody>${repRows||`<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No reps found.</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
+
 function financialReports() {
   window._currentView = 'financialReports';
-  _p7Placeholder('Financial Reports', '💰', 'P&L summaries, revenue by service type, accounts receivable aging, and cash flow reports for any date range.', 'Reports');
+  activateNav('financialReports');
+  const opps = state.opportunities || [];
+  let payments_data=[], deps=[];
+  try { payments_data=JSON.parse(localStorage.getItem('avalonPayments')||'[]'); } catch(_){}
+  try { deps=JSON.parse(localStorage.getItem('avalonDeposits')||'[]'); } catch(_){}
+
+  const soldOpps = opps.filter(o=>o.status==='Sold / Activation');
+  const totalContracted = soldOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const totalPipeline   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const totalPaid       = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
+  const totalDeposits   = deps.reduce((s,d)=>s+Number(d.amount||0),0);
+
+  // Monthly revenue from sold opps (by closedDate or createdAt)
+  const monthlyMap = {};
+  soldOpps.forEach(o=>{
+    const m=(o.closedDate||o.createdAt||'').slice(0,7);
+    if(m) monthlyMap[m]=(monthlyMap[m]||0)+Number(o.jobValue||0);
+  });
+  const months = Object.entries(monthlyMap).sort((a,b)=>a[0].localeCompare(b[0])).slice(-12);
+  const maxVal = months.length ? Math.max(...months.map(([,v])=>v)) : 1;
+
+  // Service line breakdown
+  const svcMap = {};
+  soldOpps.forEach(o=>{ const s=o.serviceLine||o.project||'Other'; svcMap[s]=(svcMap[s]||0)+Number(o.jobValue||0); });
+  const svcRows = Object.entries(svcMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Reports</div>
+        <h1 class="rp-title">Financial Reports</h1>
+        <p class="rp-subtitle">Revenue summaries, service line breakdown, cash received</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('financialHub')">Financial Hub</button>
+        <button class="rp-btn" onclick="show('revenueAdmin')">Revenue Admin →</button>
+      </div>
+    </header>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      ${[
+        {label:'Contracted (Won)',val:_p5Money(totalContracted),color:'#2D7A55'},
+        {label:'Pipeline (Open)',val:_p5Money(totalPipeline),color:'var(--gw-pine-600)'},
+        {label:'Cash Received',val:_p5Money(totalPaid),color:'#5B7FA6'},
+        {label:'Deposits Held',val:_p5Money(deps.filter(d=>!d.applied).reduce((s,d)=>s+Number(d.amount||0),0)),color:'#8B6914'}
+      ].map(k=>`
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${k.label}</div>
+        <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Monthly Revenue Chart -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;margin-bottom:20px">
+      <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Monthly Contracted Revenue (Last 12 Months)</h3>
+      ${months.length
+        ? `<div style="display:flex;align-items:flex-end;gap:8px;height:120px;overflow-x:auto">
+            ${months.map(([m,v])=>{
+              const pct=Math.max(8,Math.round((v/maxVal)*100));
+              return `<div style="flex:1;min-width:40px;display:flex;flex-direction:column;align-items:center;gap:4px">
+                <div style="font-size:10px;font-weight:700;color:#2D7A55">${_p5Money(v).replace('$','')}</div>
+                <div style="width:100%;height:${pct}px;background:#2D7A55;border-radius:4px 4px 0 0;min-height:8px"></div>
+                <div style="font-size:10px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
+              </div>`;
+            }).join('')}
+           </div>`
+        : `<p style="color:var(--gw-muted);font-size:13px;text-align:center;padding:30px">No closed deals yet to chart.</p>`}
+    </div>
+
+    <!-- Service Line Breakdown -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
+      <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Revenue by Service Line</h3>
+      ${svcRows.length
+        ? svcRows.map(([svc,val])=>{
+            const pct=totalContracted?Math.round((val/totalContracted)*100):0;
+            return `<div style="margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+                <span style="font-weight:600">${escapeHtml(svc.slice(0,50))}</span>
+                <span style="color:var(--gw-pine-600);font-weight:700">${_p5Money(val)} <span style="color:var(--gw-muted);font-weight:400">(${pct}%)</span></span>
+              </div>
+              <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden">
+                <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#4D8A86,#2D7A55);border-radius:4px"></div>
+              </div>
+            </div>`;
+          }).join('')
+        : `<p style="color:var(--gw-muted);font-size:13px">No closed deals yet. Close deals and add service lines to see breakdown.</p>`}
+    </div>
+  </div>`;
 }
+
 function opsReports() {
   window._currentView = 'opsReports';
-  _p7Placeholder('Operations Reports', '⚙️', 'Job completion rates, scheduling efficiency, asset utilization, crew productivity, and recurring service compliance.', 'Reports');
+  activateNav('opsReports');
+  const wos    = state.workOrders || [];
+  const assets = state.assets || [];
+  const inv    = state.inventory || [];
+
+  const totalWOs     = wos.length;
+  const completedWOs = wos.filter(w=>w.status==='completed').length;
+  const inProgWOs    = wos.filter(w=>w.status==='in-progress').length;
+  const completionRate = totalWOs ? Math.round((completedWOs/totalWOs)*100) : 0;
+
+  // Crew productivity
+  const crewMap = {};
+  wos.forEach(w=>{ const c=w.crew||'Unassigned'; if(!crewMap[c]) crewMap[c]={total:0,done:0}; crewMap[c].total++; if(w.status==='completed')crewMap[c].done++; });
+  const crewRows = Object.entries(crewMap).sort((a,b)=>b[1].total-a[1].total).map(([crew,d])=>`
+    <tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:10px 14px;font-weight:600">${escapeHtml(crew)}</td>
+      <td style="padding:10px;text-align:center">${d.total}</td>
+      <td style="padding:10px;text-align:center;color:#2D7A55;font-weight:700">${d.done}</td>
+      <td style="padding:10px;text-align:center">${d.total?Math.round((d.done/d.total)*100):0}%</td>
+    </tr>`).join('');
+
+  // WO type breakdown
+  const typeMap = {};
+  wos.forEach(w=>{ const t=w.type||'Other'; typeMap[t]=(typeMap[t]||0)+1; });
+  const typeRows = Object.entries(typeMap).sort((a,b)=>b[1]-a[1]).map(([type,cnt])=>{
+    const pct=totalWOs?Math.round((cnt/totalWOs)*100):0;
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span style="font-weight:600">${escapeHtml(type)}</span><span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
+      </div>
+      <div style="height:6px;background:var(--gw-line);border-radius:3px">
+        <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Asset health
+  const assetsNeedMaint = assets.filter(a=>a.status==='needs-service'||a.status==='down').length;
+  const lowInv = inv.filter(i=>i.onHand<=i.reorderAt).length;
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Reports</div>
+        <h1 class="rp-title">Operations Reports</h1>
+        <p class="rp-subtitle">Work order completion, crew productivity, asset & inventory health</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('workOrderList')">Work Orders</button>
+        <button class="rp-btn" onclick="show('crewView')">Crew View</button>
+      </div>
+    </header>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      ${[
+        {label:'Total Work Orders',val:totalWOs,color:'var(--gds-ink)'},
+        {label:'Completed',val:completedWOs,color:'#2D7A55'},
+        {label:'Completion Rate',val:completionRate+'%',color:completionRate>=70?'#2D7A55':'#8B6914'},
+        {label:'Assets Needing Service',val:assetsNeedMaint,color:assetsNeedMaint?'#C97B6A':'var(--gds-ink)'}
+      ].map(k=>`
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${k.label}</div>
+        <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
+      </div>`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
+        <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Work Orders by Type</h3>
+        ${typeRows||`<p style="color:var(--gw-muted);font-size:13px">No work orders yet.</p>`}
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
+        <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Inventory Health</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div style="background:var(--gw-surface);border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:22px;font-weight:800;color:var(--gds-ink)">${inv.length}</div>
+            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Total Items</div>
+          </div>
+          <div style="background:var(--gw-surface);border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:22px;font-weight:800;color:${lowInv?'#8B6914':'#2D7A55'}">${lowInv}</div>
+            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Low Stock</div>
+          </div>
+        </div>
+        ${lowInv ? `<button class="secondary-btn" style="font-size:12px;width:100%" onclick="show('inventoryList')">View Low Stock Items →</button>` : `<p style="color:#2D7A55;font-size:12px;font-weight:600;text-align:center">✓ All inventory levels OK</p>`}
+      </div>
+    </div>
+
+    <!-- Crew Productivity -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line)">
+        <h3 style="margin:0;font-size:14px;font-weight:800">Crew Productivity</h3>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+          <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Assigned</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase">Completed</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Rate</th>
+        </tr></thead>
+        <tbody>${crewRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No work orders with crew assignments yet.</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
+
 function teamReports() {
   window._currentView = 'teamReports';
-  _p7Placeholder('Team / Productivity', '🏆', 'Per-rep and per-crew activity metrics — calls made, jobs completed, hours logged, and goal attainment.', 'Reports');
+  activateNav('teamReports');
+  const reps   = window.REPS || [];
+  const opps   = state.opportunities || [];
+  const comms  = state.communications || [];
+  const wos    = state.workOrders || [];
+
+  const now    = Date.now();
+  const day7   = new Date(now - 7*86400000).toISOString();
+  const day30  = new Date(now - 30*86400000).toISOString();
+
+  const repData = reps.map(r => {
+    const myOpps  = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
+    const myComms = comms.filter(c=>c.repId===r.id);
+    const myWOs   = wos.filter(w=>w.assignedTo===r.id||w.crew===r.name);
+    const won30   = myOpps.filter(o=>o.status==='Sold / Activation'&&(o.closedDate||'')>=day30).length;
+    const comms7  = myComms.filter(c=>c.ts>=day7).length;
+    const woDone  = myWOs.filter(w=>w.status==='completed').length;
+    const openPipe= myOpps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+    return { r, myOpps:myOpps.length, won30, comms7, woDone, openPipe };
+  });
+
+  const rows = repData.map(({r,myOpps,won30,comms7,woDone,openPipe})=>`
+    <tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:11px 14px">
+        <div style="font-weight:700;font-size:13px">${escapeHtml(r.name)}</div>
+        <div style="font-size:11px;color:var(--gw-muted)">${escapeHtml(r.role||'')}</div>
+      </td>
+      <td style="padding:11px 10px;text-align:center">${myOpps}</td>
+      <td style="padding:11px 10px;text-align:center;color:#2D7A55;font-weight:700">${won30}</td>
+      <td style="padding:11px 10px;text-align:center">${comms7}</td>
+      <td style="padding:11px 10px;text-align:center">${woDone}</td>
+      <td style="padding:11px 10px;text-align:right;color:var(--gw-pine-600);font-weight:700">${_p5Money(openPipe)}</td>
+    </tr>`).join('');
+
+  // Top performer
+  const top = repData.sort((a,b)=>(b.won30+b.comms7*0.1)-(a.won30+a.comms7*0.1))[0];
+
+  view.innerHTML = `
+  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Reports</div>
+        <h1 class="rp-title">Team & Productivity</h1>
+        <p class="rp-subtitle">Activity, wins, comms, and pipeline per team member</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('teamView')">Team View</button>
+        <button class="rp-btn" onclick="show('salesReports')">Sales Reports</button>
+      </div>
+    </header>
+
+    ${top ? `
+    <div style="background:linear-gradient(135deg,#2D7A5514,#4D8A8614);border:1px solid #4D8A8640;border-radius:10px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px">
+      <div style="font-size:28px">🏆</div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em">Top Performer · Last 30 Days</div>
+        <div style="font-size:18px;font-weight:800;color:var(--gds-ink);margin-top:2px">${escapeHtml(top.r.name)}</div>
+        <div style="font-size:12px;color:var(--gw-muted);margin-top:2px">${top.won30} deal${top.won30!==1?'s':''} won · ${top.comms7} comms this week · ${_p5Money(top.openPipe)} open pipeline</div>
+      </div>
+    </div>` : ''}
+
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+          <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Team Member</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Leads</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase">Won (30d)</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Comms (7d)</th>
+          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">WOs Done</th>
+          <th style="text-align:right;padding:10px;font-size:11px;font-weight:700;color:var(--gw-pine-600);text-transform:uppercase">Pipeline $</th>
+        </tr></thead>
+        <tbody>${rows||`<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No team members yet.</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--gw-muted)">Comms = logged communications in the last 7 days. Won = deals closed in last 30 days.</div>
+  </div>`;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
+const LS_SYS_CONFIG_KEY = 'avalonSystemConfig';
+function _scLoad() {
+  try { return JSON.parse(localStorage.getItem(LS_SYS_CONFIG_KEY) || 'null'); } catch(_){ return null; }
+}
+function _scSave(cfg) {
+  localStorage.setItem(LS_SYS_CONFIG_KEY, JSON.stringify(cfg));
+}
+function _scDefault() {
+  return {
+    company: { name:'Avalon Exterior Solutions', phone:'(804) 555-0100', email:'info@avalonexterior.com',
+                address:'123 Main St', city:'Richmond', state:'VA', zip:'23219', website:'', logo:'' },
+    hours: {
+      mon:{ open:true, start:'08:00', end:'17:00' }, tue:{ open:true, start:'08:00', end:'17:00' },
+      wed:{ open:true, start:'08:00', end:'17:00' }, thu:{ open:true, start:'08:00', end:'17:00' },
+      fri:{ open:true, start:'08:00', end:'17:00' }, sat:{ open:false, start:'09:00', end:'13:00' },
+      sun:{ open:false, start:'', end:'' }
+    },
+    timezone: 'America/New_York',
+    serviceArea: { type:'zip', zips:'23219,23220,23221,23222,23223,23224,23225,23226', radiusMi:'30', centerZip:'23219' },
+    notifications: { newLead:true, woAssigned:true, woComplete:true, paymentReceived:true, lowInventory:true, dailyDigest:false },
+    retention: { opps:365, comms:180, completedWOs:730 },
+    brand: { primaryColor:'#0ea5e9', accentColor:'#f59e0b', darkMode:false }
+  };
+}
+
 function systemConfig() {
   window._currentView = 'systemConfig';
-  _p7Placeholder('System Configuration', '⚙️', 'Configure company-wide system defaults: timezone, business hours, service area, notification preferences, and data retention.', 'Settings');
+  activateNav('systemConfig');
+  const el = document.getElementById('main-content');
+  if (!el) return;
+
+  let cfg = _scLoad() || _scDefault();
+  const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+  const DAY_LABELS = { mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday', sun:'Sunday' };
+  const TIMEZONES = [
+    'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
+    'America/Anchorage','America/Honolulu','America/Phoenix','Pacific/Honolulu'
+  ];
+
+  el.innerHTML = `
+  <div class="p-6 max-w-5xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">⚙️ System Configuration</h1>
+        <p class="text-sm text-gray-500 mt-1">Company-wide settings, hours, service area, notifications, and preferences.</p>
+      </div>
+      <button onclick="_scSaveAll()" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">💾 Save All Changes</button>
+    </div>
+
+    <!-- Company Info -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+        <span class="text-lg">🏢</span><h2 class="font-semibold text-gray-800">Company Information</h2>
+      </div>
+      <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Company Name</label>
+          <input id="sc-co-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.name)}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Phone</label>
+          <input id="sc-co-phone" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.phone)}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Email</label>
+          <input id="sc-co-email" type="email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.email)}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Website</label>
+          <input id="sc-co-website" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.website)}">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Street Address</label>
+          <input id="sc-co-address" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.address)}">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">City</label>
+          <input id="sc-co-city" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.city)}">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">State</label>
+            <input id="sc-co-state" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.state)}" maxlength="2">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">ZIP</label>
+            <input id="sc-co-zip" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.zip)}">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Business Hours -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+        <span class="text-lg">🕐</span><h2 class="font-semibold text-gray-800">Business Hours</h2>
+        <span class="ml-auto text-xs text-gray-400">Toggle days on/off, set open/close times</span>
+      </div>
+      <div class="p-6 space-y-2">
+        ${DAYS.map(d => {
+          const h = cfg.hours[d];
+          return `<div class="flex items-center gap-4 py-2 border-b border-gray-100 last:border-0">
+            <label class="flex items-center gap-2 w-32 cursor-pointer">
+              <input type="checkbox" id="sc-h-${d}" ${h.open?'checked':''} class="w-4 h-4 accent-sky-500" onchange="_scToggleDay('${d}')">
+              <span class="text-sm font-medium ${h.open?'text-gray-800':'text-gray-400'}" id="sc-hl-${d}">${DAY_LABELS[d]}</span>
+            </label>
+            <div id="sc-ht-${d}" class="${h.open?'':'opacity-30 pointer-events-none'} flex items-center gap-2">
+              <input type="time" id="sc-hs-${d}" value="${h.start}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              <span class="text-gray-400 text-sm">to</span>
+              <input type="time" id="sc-he-${d}" value="${h.end}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </section>
+
+    <!-- Timezone & Service Area -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+          <span class="text-lg">🌐</span><h2 class="font-semibold text-gray-800">Timezone</h2>
+        </div>
+        <div class="p-6">
+          <label class="block text-xs font-medium text-gray-500 mb-2">Company Timezone</label>
+          <select id="sc-tz" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            ${TIMEZONES.map(tz => `<option value="${tz}" ${cfg.timezone===tz?'selected':''}>${tz.replace('America/','').replace('_',' ')}</option>`).join('')}
+          </select>
+          <p class="text-xs text-gray-400 mt-2">Used for scheduling, reports, and notifications.</p>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+          <span class="text-lg">📍</span><h2 class="font-semibold text-gray-800">Service Area</h2>
+        </div>
+        <div class="p-6 space-y-3">
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="sc-sa-type" value="zip" ${cfg.serviceArea.type==='zip'?'checked':''} onchange="_scSAType('zip')" class="accent-sky-500">
+              <span class="text-sm">ZIP Codes</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="sc-sa-type" value="radius" ${cfg.serviceArea.type==='radius'?'checked':''} onchange="_scSAType('radius')" class="accent-sky-500">
+              <span class="text-sm">Radius</span>
+            </label>
+          </div>
+          <div id="sc-sa-zip" class="${cfg.serviceArea.type==='zip'?'':'hidden'}">
+            <label class="block text-xs font-medium text-gray-500 mb-1">ZIP Codes (comma-separated)</label>
+            <textarea id="sc-sa-zips" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none">${escapeHtml(cfg.serviceArea.zips)}</textarea>
+          </div>
+          <div id="sc-sa-rad" class="${cfg.serviceArea.type==='radius'?'':'hidden'} space-y-2">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Center ZIP</label>
+              <input id="sc-sa-center" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.serviceArea.centerZip)}">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Radius (miles)</label>
+              <input id="sc-sa-radius" type="number" min="1" max="200" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${cfg.serviceArea.radiusMi}">
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Notification Preferences -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+        <span class="text-lg">🔔</span><h2 class="font-semibold text-gray-800">Notification Preferences</h2>
+        <span class="ml-auto text-xs text-gray-400">Email alerts sent to company address</span>
+      </div>
+      <div class="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        ${[
+          ['newLead','New Lead Assigned','Notify when a new lead is created or assigned'],
+          ['woAssigned','Work Order Assigned','Notify when a WO is assigned to a crew member'],
+          ['woComplete','Work Order Completed','Notify when a work order is marked complete'],
+          ['paymentReceived','Payment Received','Notify when a payment is recorded'],
+          ['lowInventory','Low Inventory Alert','Notify when an item hits its reorder threshold'],
+          ['dailyDigest','Daily Digest Email','Send a morning summary of open items']
+        ].map(([key,label,desc]) => `
+          <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
+            <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key]?'checked':''} class="mt-0.5 w-4 h-4 accent-sky-500">
+            <div>
+              <div class="text-sm font-medium text-gray-800">${label}</div>
+              <div class="text-xs text-gray-400">${desc}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+    </section>
+
+    <!-- Data Retention -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+        <span class="text-lg">🗄️</span><h2 class="font-semibold text-gray-800">Data Retention</h2>
+        <span class="ml-auto text-xs text-gray-400">Days to keep historical records</span>
+      </div>
+      <div class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        ${[
+          ['opps','Opportunities / Leads','Days to retain closed/lost opportunity records'],
+          ['comms','Communications','Days to retain call logs and message history'],
+          ['completedWOs','Completed Work Orders','Days to retain completed work order records']
+        ].map(([key,label,desc]) => `
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">${label}</label>
+            <div class="flex items-center gap-2">
+              <input id="sc-r-${key}" type="number" min="30" max="3650" step="30"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${cfg.retention[key]}">
+              <span class="text-xs text-gray-400 whitespace-nowrap">days</span>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">${desc}</p>
+          </div>`).join('')}
+      </div>
+    </section>
+
+    <!-- Brand Colors -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+        <span class="text-lg">🎨</span><h2 class="font-semibold text-gray-800">Brand & Display</h2>
+      </div>
+      <div class="p-6 flex flex-wrap items-center gap-6">
+        <div class="flex items-center gap-3">
+          <label class="text-sm font-medium text-gray-700">Primary Color</label>
+          <input id="sc-b-primary" type="color" value="${cfg.brand.primaryColor}" class="w-10 h-10 rounded cursor-pointer border border-gray-300">
+          <span class="text-sm text-gray-500">(Buttons, links, highlights)</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="text-sm font-medium text-gray-700">Accent Color</label>
+          <input id="sc-b-accent" type="color" value="${cfg.brand.accentColor}" class="w-10 h-10 rounded cursor-pointer border border-gray-300">
+          <span class="text-sm text-gray-500">(Badges, KPI cards)</span>
+        </div>
+        <div class="ml-auto">
+          <button onclick="_scResetDefaults()" class="text-sm text-gray-400 hover:text-red-500 transition">↺ Reset to defaults</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Save footer -->
+    <div class="flex justify-end pb-4">
+      <button onclick="_scSaveAll()" class="px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">💾 Save All Changes</button>
+    </div>
+  </div>`;
+
+  // Wire up helpers
+  window._scToggleDay = function(d) {
+    const cb = document.getElementById(`sc-h-${d}`);
+    const lbl = document.getElementById(`sc-hl-${d}`);
+    const ht  = document.getElementById(`sc-ht-${d}`);
+    if (!cb) return;
+    lbl.className = cb.checked ? 'text-sm font-medium text-gray-800' : 'text-sm font-medium text-gray-400';
+    ht.className  = cb.checked ? 'flex items-center gap-2' : 'opacity-30 pointer-events-none flex items-center gap-2';
+  };
+  window._scSAType = function(t) {
+    document.getElementById('sc-sa-zip').className = t==='zip' ? '' : 'hidden';
+    document.getElementById('sc-sa-rad').className = t==='radius' ? 'space-y-2' : 'hidden';
+  };
+  window._scResetDefaults = function() {
+    if (!confirm('Reset all system config to defaults?')) return;
+    localStorage.removeItem(LS_SYS_CONFIG_KEY);
+    systemConfig();
+    showToast('Settings reset to defaults');
+  };
+  window._scSaveAll = function() {
+    const cur = _scLoad() || _scDefault();
+    // Company
+    cur.company.name    = (document.getElementById('sc-co-name')||{}).value || cur.company.name;
+    cur.company.phone   = (document.getElementById('sc-co-phone')||{}).value || cur.company.phone;
+    cur.company.email   = (document.getElementById('sc-co-email')||{}).value || cur.company.email;
+    cur.company.website = (document.getElementById('sc-co-website')||{}).value || '';
+    cur.company.address = (document.getElementById('sc-co-address')||{}).value || cur.company.address;
+    cur.company.city    = (document.getElementById('sc-co-city')||{}).value || cur.company.city;
+    cur.company.state   = (document.getElementById('sc-co-state')||{}).value || cur.company.state;
+    cur.company.zip     = (document.getElementById('sc-co-zip')||{}).value || cur.company.zip;
+    // Hours
+    const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+    DAYS.forEach(d => {
+      cur.hours[d].open  = !!(document.getElementById(`sc-h-${d}`)||{}).checked;
+      cur.hours[d].start = (document.getElementById(`sc-hs-${d}`)||{}).value || cur.hours[d].start;
+      cur.hours[d].end   = (document.getElementById(`sc-he-${d}`)||{}).value || cur.hours[d].end;
+    });
+    // Timezone
+    cur.timezone = (document.getElementById('sc-tz')||{}).value || cur.timezone;
+    // Service area
+    const saType = (document.querySelector('input[name="sc-sa-type"]:checked')||{}).value || cur.serviceArea.type;
+    cur.serviceArea.type = saType;
+    if (saType === 'zip') cur.serviceArea.zips = (document.getElementById('sc-sa-zips')||{}).value || '';
+    else {
+      cur.serviceArea.centerZip = (document.getElementById('sc-sa-center')||{}).value || '';
+      cur.serviceArea.radiusMi  = (document.getElementById('sc-sa-radius')||{}).value || '';
+    }
+    // Notifications
+    ['newLead','woAssigned','woComplete','paymentReceived','lowInventory','dailyDigest'].forEach(k => {
+      cur.notifications[k] = !!(document.getElementById(`sc-n-${k}`)||{}).checked;
+    });
+    // Retention
+    ['opps','comms','completedWOs'].forEach(k => {
+      const v = parseInt((document.getElementById(`sc-r-${k}`)||{}).value);
+      if (!isNaN(v) && v >= 30) cur.retention[k] = v;
+    });
+    // Brand
+    cur.brand.primaryColor = (document.getElementById('sc-b-primary')||{}).value || cur.brand.primaryColor;
+    cur.brand.accentColor  = (document.getElementById('sc-b-accent')||{}).value || cur.brand.accentColor;
+    _scSave(cur);
+    showToast('✅ System configuration saved');
+  };
 }
+
+// ── System Templates & Automations ────────────────────────────────────────────
+const LS_SYS_AUTO_KEY  = 'avalonSystemAutomations';
+const LS_SYS_TMPL_KEY  = 'avalonDocTemplates';
+
+function _stLoadAuto()  { try { return JSON.parse(localStorage.getItem(LS_SYS_AUTO_KEY)||'null'); } catch(_){ return null; } }
+function _stSaveAuto(d) { localStorage.setItem(LS_SYS_AUTO_KEY, JSON.stringify(d)); }
+function _stLoadTmpl()  { try { return JSON.parse(localStorage.getItem(LS_SYS_TMPL_KEY)||'null'); } catch(_){ return null; } }
+function _stSaveTmpl(d) { localStorage.setItem(LS_SYS_TMPL_KEY, JSON.stringify(d)); }
+
+function _stDefaultAutos() {
+  return [
+    { id:'auto1', name:'New Lead Welcome Email', enabled:true,
+      trigger:'lead_created', triggerLabel:'Lead Created',
+      action:'send_email', actionLabel:'Send Email',
+      params:{ templateName:'Welcome Email', delayMinutes:0, assignTo:'rep' },
+      created: todayISO() },
+    { id:'auto2', name:'Estimate Follow-up (3 days)', enabled:true,
+      trigger:'estimate_sent', triggerLabel:'Estimate Sent',
+      action:'send_email', actionLabel:'Send Email',
+      params:{ templateName:'Estimate Follow-up', delayMinutes:4320, assignTo:'' },
+      created: todayISO() },
+    { id:'auto3', name:'Work Order Assigned — Crew SMS', enabled:false,
+      trigger:'wo_assigned', triggerLabel:'WO Assigned',
+      action:'send_sms', actionLabel:'Send SMS',
+      params:{ templateName:'WO Assigned SMS', delayMinutes:0, assignTo:'crew' },
+      created: todayISO() },
+    { id:'auto4', name:'WO Complete — Request Review', enabled:true,
+      trigger:'wo_completed', triggerLabel:'WO Completed',
+      action:'send_email', actionLabel:'Send Email',
+      params:{ templateName:'Review Request', delayMinutes:1440, assignTo:'client' },
+      created: todayISO() },
+    { id:'auto5', name:'Overdue Invoice Reminder', enabled:true,
+      trigger:'invoice_overdue', triggerLabel:'Invoice Overdue',
+      action:'send_email', actionLabel:'Send Email',
+      params:{ templateName:'Overdue Invoice', delayMinutes:0, assignTo:'client' },
+      created: todayISO() }
+  ];
+}
+function _stDefaultTemplates() {
+  return [
+    { id:'tmpl1', name:'Welcome Email', category:'email', subject:'Welcome to Avalon Exterior Solutions!',
+      body:'Hi {{client_name}},\n\nThank you for reaching out to Avalon Exterior Solutions. We are excited to work with you!\n\nYour rep {{rep_name}} will be in touch shortly to schedule a free estimate.\n\nBest,\nThe Avalon Team',
+      variables:['client_name','rep_name'], created: todayISO() },
+    { id:'tmpl2', name:'Estimate Follow-up', category:'email', subject:'Following up on your estimate — {{company_name}}',
+      body:'Hi {{client_name}},\n\nWe wanted to follow up on the estimate we sent a few days ago for {{service_type}} at {{property_address}}.\n\nPlease feel free to reply with any questions or let us know when you\'d like to schedule.\n\n{{rep_name}} | {{company_phone}}',
+      variables:['client_name','service_type','property_address','rep_name','company_phone'], created: todayISO() },
+    { id:'tmpl3', name:'Review Request', category:'email', subject:'How did we do? Share your experience!',
+      body:'Hi {{client_name}},\n\nThank you for choosing Avalon Exterior Solutions! We hope you love your new {{service_type}}.\n\nWould you mind leaving us a quick review? It helps us grow and serve more homeowners like you.\n\n⭐ Leave a review: {{review_link}}\n\nThank you!\n{{company_name}}',
+      variables:['client_name','service_type','review_link','company_name'], created: todayISO() },
+    { id:'tmpl4', name:'WO Assigned SMS', category:'sms', subject:'',
+      body:'Hi {{crew_name}}, you have a new job assigned for {{scheduled_date}} at {{property_address}}. Check your schedule in Groundwork.',
+      variables:['crew_name','scheduled_date','property_address'], created: todayISO() },
+    { id:'tmpl5', name:'Overdue Invoice', category:'email', subject:'Invoice #{{invoice_number}} — Payment Overdue',
+      body:'Hi {{client_name}},\n\nThis is a reminder that Invoice #{{invoice_number}} for {{invoice_amount}} is now {{days_overdue}} days overdue.\n\nPlease contact us at your earliest convenience to arrange payment.\n\n{{company_name}}\n{{company_phone}} | {{company_email}}',
+      variables:['client_name','invoice_number','invoice_amount','days_overdue','company_name','company_phone','company_email'], created: todayISO() }
+  ];
+}
+
 function systemTemplates() {
   window._currentView = 'systemTemplates';
-  _p7Placeholder('Templates & System Automations', '🤖', 'Manage system-level document templates, automated workflows triggered by status changes, and scheduled recurring tasks.', 'Settings');
+  activateNav('systemTemplates');
+  const el = document.getElementById('main-content');
+  if (!el) return;
+
+  let autos = _stLoadAuto() || _stDefaultAutos();
+  let tmpls = _stLoadTmpl() || _stDefaultTemplates();
+  window._stAutos = autos;
+  window._stTmpls = tmpls;
+
+  const TRIGGER_OPTS = [
+    ['lead_created','Lead Created'], ['estimate_sent','Estimate Sent'], ['estimate_accepted','Estimate Accepted'],
+    ['wo_assigned','WO Assigned'], ['wo_completed','WO Completed'], ['invoice_sent','Invoice Sent'],
+    ['invoice_overdue','Invoice Overdue'], ['payment_received','Payment Received'], ['recurring_due','Recurring Service Due']
+  ];
+  const ACTION_OPTS = [
+    ['send_email','Send Email'], ['send_sms','Send SMS'], ['create_task','Create Task'],
+    ['update_status','Update Status'], ['notify_rep','Notify Rep'], ['notify_admin','Notify Admin']
+  ];
+  const TMPL_CATS = ['email','sms','pdf','contract'];
+
+  function renderAutoRow(a) {
+    const trigBg = { lead_created:'bg-sky-100 text-sky-700', estimate_sent:'bg-violet-100 text-violet-700',
+      estimate_accepted:'bg-emerald-100 text-emerald-700', wo_assigned:'bg-amber-100 text-amber-700',
+      wo_completed:'bg-green-100 text-green-700', invoice_sent:'bg-blue-100 text-blue-700',
+      invoice_overdue:'bg-red-100 text-red-700', payment_received:'bg-teal-100 text-teal-700',
+      recurring_due:'bg-orange-100 text-orange-700' };
+    const actIco = { send_email:'✉', send_sms:'💬', create_task:'✅', update_status:'🔄', notify_rep:'👤', notify_admin:'🔔' };
+    return `<tr class="border-b border-gray-100 hover:bg-gray-50 transition" id="str-${a.id}">
+      <td class="px-4 py-3">
+        <div class="font-medium text-sm text-gray-800">${escapeHtml(a.name)}</div>
+        ${a.params.delayMinutes ? `<div class="text-xs text-gray-400">Delay: ${a.params.delayMinutes >= 1440 ? (a.params.delayMinutes/1440).toFixed(0)+'d' : (a.params.delayMinutes/60).toFixed(0)+'h'} after trigger</div>` : ''}
+      </td>
+      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${trigBg[a.trigger]||'bg-gray-100 text-gray-600'}">${a.triggerLabel}</span></td>
+      <td class="px-4 py-3 text-sm text-gray-600">${actIco[a.action]||'⚡'} ${a.actionLabel}</td>
+      <td class="px-4 py-3 text-xs text-gray-400">${a.params.templateName||'—'}</td>
+      <td class="px-4 py-3">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" ${a.enabled?'checked':''} class="sr-only peer" onchange="_stToggleAuto('${a.id}',this.checked)">
+          <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+        </label>
+      </td>
+      <td class="px-4 py-3 text-right">
+        <button onclick="_stEditAuto('${a.id}')" class="text-xs text-sky-600 hover:text-sky-800 mr-2">Edit</button>
+        <button onclick="_stDeleteAuto('${a.id}')" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+      </td>
+    </tr>`;
+  }
+
+  function renderTmplCard(t) {
+    const catCol = { email:'bg-sky-100 text-sky-700', sms:'bg-green-100 text-green-700', pdf:'bg-amber-100 text-amber-700', contract:'bg-violet-100 text-violet-700' };
+    const varList = (t.variables||[]).map(v=>`<span class="inline-block bg-gray-100 text-gray-500 text-xs rounded px-1.5 py-0.5 mr-1 mb-1">{{${v}}}</span>`).join('');
+    return `<div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition" id="stc-${t.id}">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">${t.category==='email'?'✉':t.category==='sms'?'💬':t.category==='pdf'?'📄':'📝'}</span>
+          <div>
+            <div class="font-semibold text-gray-800 text-sm">${escapeHtml(t.name)}</div>
+            <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${catCol[t.category]||'bg-gray-100 text-gray-600'}">${t.category.toUpperCase()}</span>
+          </div>
+        </div>
+        <div class="flex gap-1">
+          <button onclick="_stEditTmpl('${t.id}')" class="text-xs text-sky-600 hover:text-sky-800 px-2 py-1 rounded border border-sky-200 hover:border-sky-400 transition">Edit</button>
+          <button onclick="_stDeleteTmpl('${t.id}')" class="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded border border-red-100 hover:border-red-300 transition">✕</button>
+        </div>
+      </div>
+      ${t.subject ? `<div class="text-xs text-gray-500 mb-2 truncate"><strong>Subject:</strong> ${escapeHtml(t.subject)}</div>` : ''}
+      <div class="text-xs text-gray-600 bg-gray-50 rounded p-2 mb-2 line-clamp-2 leading-relaxed">${escapeHtml(t.body).replace(/\n/g,'<br>').substring(0,160)}${t.body.length>160?'…':''}</div>
+      ${varList ? `<div class="mt-1">${varList}</div>` : ''}
+    </div>`;
+  }
+
+  el.innerHTML = `
+  <div class="p-6 max-w-6xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">🤖 Templates &amp; System Automations</h1>
+        <p class="text-sm text-gray-500 mt-1">Manage automated workflows triggered by status changes, and document/message templates.</p>
+      </div>
+    </div>
+
+    <!-- Sub-tabs -->
+    <div class="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+      <button id="st-tab-auto" onclick="_stShowTab('auto')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition">⚡ Automations (${autos.length})</button>
+      <button id="st-tab-tmpl" onclick="_stShowTab('tmpl')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition">📄 Templates (${tmpls.length})</button>
+    </div>
+
+    <!-- Automations Panel -->
+    <div id="st-panel-auto">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">⚡</span>
+            <h2 class="font-semibold text-gray-800">Automation Rules</h2>
+            <span class="ml-2 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">${autos.filter(a=>a.enabled).length} active</span>
+          </div>
+          <button onclick="_stNewAuto()" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition">+ New Rule</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead><tr class="text-xs text-gray-400 uppercase border-b border-gray-100">
+              <th class="px-4 py-3 text-left">Rule Name</th>
+              <th class="px-4 py-3 text-left">Trigger</th>
+              <th class="px-4 py-3 text-left">Action</th>
+              <th class="px-4 py-3 text-left">Template</th>
+              <th class="px-4 py-3 text-left">Enabled</th>
+              <th class="px-4 py-3 text-right"></th>
+            </tr></thead>
+            <tbody id="st-auto-tbody">${autos.map(renderAutoRow).join('')}</tbody>
+          </table>
+          ${autos.length===0?'<div class="p-8 text-center text-gray-400 text-sm">No automation rules yet. Click "+ New Rule" to get started.</div>':''}
+        </div>
+      </div>
+
+      <!-- How automations work info box -->
+      <div class="mt-4 bg-sky-50 border border-sky-200 rounded-xl p-4 flex gap-3">
+        <span class="text-xl">ℹ️</span>
+        <div class="text-sm text-sky-800">
+          <strong>How automations work:</strong> When a trigger event occurs in Groundwork CRM, the matching enabled rules fire in order. Email/SMS actions use the linked template with variable substitution. Rules fire in real-time (0 min delay) or after a configured delay.
+        </div>
+      </div>
+    </div>
+
+    <!-- Templates Panel (hidden by default) -->
+    <div id="st-panel-tmpl" class="hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="font-semibold text-gray-800">Document &amp; Message Templates</h2>
+          <div class="flex gap-1">
+            ${TMPL_CATS.map(c=>`<button onclick="_stFilterTmpl('${c}')" id="stf-${c}" class="px-2.5 py-1 rounded-full text-xs border border-gray-200 hover:border-sky-400 hover:text-sky-700 transition">${c.toUpperCase()}</button>`).join('')}
+            <button onclick="_stFilterTmpl('')" id="stf-all" class="px-2.5 py-1 rounded-full text-xs border border-sky-400 text-sky-700 bg-sky-50 font-medium">ALL</button>
+          </div>
+        </div>
+        <button onclick="_stNewTmpl()" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition">+ New Template</button>
+      </div>
+      <div id="st-tmpl-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ${tmpls.map(renderTmplCard).join('')}
+      </div>
+      ${tmpls.length===0?'<div class="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400 text-sm">No templates yet. Click "+ New Template" to create one.</div>':''}
+    </div>
+  </div>
+
+  <!-- Automation Modal -->
+  <div id="st-auto-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 id="st-auto-modal-title" class="font-semibold text-gray-800">New Automation Rule</h3>
+        <button onclick="_stCloseModals()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Rule Name</label>
+          <input id="st-a-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" placeholder="e.g. New Lead Welcome Email">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Trigger Event</label>
+            <select id="st-a-trigger" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              ${TRIGGER_OPTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Action</label>
+            <select id="st-a-action" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              ${ACTION_OPTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Template Name (optional)</label>
+          <input id="st-a-tmplname" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" list="st-tmpl-list" placeholder="Select or type template name">
+          <datalist id="st-tmpl-list">${(window._stTmpls||[]).map(t=>`<option value="${escapeHtml(t.name)}">`).join('')}</datalist>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Delay After Trigger</label>
+          <div class="flex gap-2 items-center">
+            <input id="st-a-delay" type="number" min="0" value="0" class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <select id="st-a-delayunit" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              <option value="min">minutes</option>
+              <option value="hr">hours</option>
+              <option value="day">days</option>
+            </select>
+          </div>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input id="st-a-enabled" type="checkbox" checked class="w-4 h-4 accent-sky-500">
+          <span class="text-sm text-gray-700">Enable rule immediately</span>
+        </label>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 flex gap-2 justify-end">
+        <button onclick="_stCloseModals()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+        <button onclick="_stSaveAutoModal()" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-semibold transition">Save Rule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Template Modal -->
+  <div id="st-tmpl-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+        <h3 id="st-tmpl-modal-title" class="font-semibold text-gray-800">New Template</h3>
+        <button onclick="_stCloseModals()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div class="p-6 space-y-4 overflow-y-auto">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Template Name</label>
+            <input id="st-t-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" placeholder="e.g. Welcome Email">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Category</label>
+            <select id="st-t-cat" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              ${TMPL_CATS.map(c=>`<option value="${c}">${c.toUpperCase()}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div id="st-t-subject-wrap">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Subject Line <span class="text-gray-400">(email only)</span></label>
+          <input id="st-t-subject" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" placeholder="e.g. Welcome to {{company_name}}!">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Body</label>
+          <textarea id="st-t-body" rows="8" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none font-mono" placeholder="Use {{variable_name}} for dynamic content. e.g. Hi {{client_name}}, ..."></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Variables (auto-detected from body)</label>
+          <div id="st-t-vars-preview" class="min-h-[28px] flex flex-wrap gap-1"></div>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+          <strong>Available variables:</strong> {{client_name}}, {{rep_name}}, {{company_name}}, {{company_phone}}, {{company_email}}, {{property_address}}, {{service_type}}, {{scheduled_date}}, {{invoice_number}}, {{invoice_amount}}, {{crew_name}}, {{review_link}}
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 flex gap-2 justify-end flex-shrink-0">
+        <button onclick="_stCloseModals()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+        <button onclick="_stSaveTmplModal()" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-semibold transition">Save Template</button>
+      </div>
+    </div>
+  </div>`;
+
+  // Wire up all helpers
+  window._stEditId = null;
+  window._stTmplEditId = null;
+
+  window._stShowTab = function(tab) {
+    document.getElementById('st-panel-auto').classList.toggle('hidden', tab!=='auto');
+    document.getElementById('st-panel-tmpl').classList.toggle('hidden', tab!=='tmpl');
+    document.getElementById('st-tab-auto').className = tab==='auto'
+      ? 'px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition'
+      : 'px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition';
+    document.getElementById('st-tab-tmpl').className = tab==='tmpl'
+      ? 'px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition'
+      : 'px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition';
+  };
+
+  window._stToggleAuto = function(id, val) {
+    const autos = _stLoadAuto() || _stDefaultAutos();
+    const a = autos.find(x=>x.id===id);
+    if (a) { a.enabled = val; _stSaveAuto(autos); showToast(val ? '✅ Rule enabled' : 'Rule disabled'); }
+  };
+
+  window._stDeleteAuto = function(id) {
+    if (!confirm('Delete this automation rule?')) return;
+    let autos = _stLoadAuto() || _stDefaultAutos();
+    autos = autos.filter(x=>x.id!==id);
+    _stSaveAuto(autos);
+    const row = document.getElementById(`str-${id}`);
+    if (row) row.remove();
+    showToast('Automation rule deleted');
+  };
+
+  window._stCloseModals = function() {
+    document.getElementById('st-auto-modal').classList.add('hidden');
+    document.getElementById('st-tmpl-modal').classList.add('hidden');
+    window._stEditId = null;
+    window._stTmplEditId = null;
+  };
+
+  window._stNewAuto = function() {
+    window._stEditId = null;
+    document.getElementById('st-auto-modal-title').textContent = 'New Automation Rule';
+    document.getElementById('st-a-name').value = '';
+    document.getElementById('st-a-trigger').value = 'lead_created';
+    document.getElementById('st-a-action').value = 'send_email';
+    document.getElementById('st-a-tmplname').value = '';
+    document.getElementById('st-a-delay').value = '0';
+    document.getElementById('st-a-delayunit').value = 'min';
+    document.getElementById('st-a-enabled').checked = true;
+    document.getElementById('st-auto-modal').classList.remove('hidden');
+  };
+
+  window._stEditAuto = function(id) {
+    const autos = _stLoadAuto() || _stDefaultAutos();
+    const a = autos.find(x=>x.id===id);
+    if (!a) return;
+    window._stEditId = id;
+    document.getElementById('st-auto-modal-title').textContent = 'Edit Automation Rule';
+    document.getElementById('st-a-name').value = a.name;
+    document.getElementById('st-a-trigger').value = a.trigger;
+    document.getElementById('st-a-action').value = a.action;
+    document.getElementById('st-a-tmplname').value = a.params.templateName||'';
+    let delay = a.params.delayMinutes||0;
+    let unit = 'min';
+    if (delay >= 1440 && delay % 1440 === 0) { delay = delay/1440; unit = 'day'; }
+    else if (delay >= 60 && delay % 60 === 0) { delay = delay/60; unit = 'hr'; }
+    document.getElementById('st-a-delay').value = delay;
+    document.getElementById('st-a-delayunit').value = unit;
+    document.getElementById('st-a-enabled').checked = a.enabled;
+    document.getElementById('st-auto-modal').classList.remove('hidden');
+  };
+
+  window._stSaveAutoModal = function() {
+    const name = (document.getElementById('st-a-name').value||'').trim();
+    if (!name) { showToast('⚠ Rule name required'); return; }
+    const triggerVal = document.getElementById('st-a-trigger').value;
+    const triggerLabel = TRIGGER_OPTS.find(([v])=>v===triggerVal)?.[1]||triggerVal;
+    const actionVal = document.getElementById('st-a-action').value;
+    const actionLabel = ACTION_OPTS.find(([v])=>v===actionVal)?.[1]||actionVal;
+    const tmplName = document.getElementById('st-a-tmplname').value||'';
+    const delayRaw = parseInt(document.getElementById('st-a-delay').value)||0;
+    const unit = document.getElementById('st-a-delayunit').value;
+    const delayMins = unit==='day' ? delayRaw*1440 : unit==='hr' ? delayRaw*60 : delayRaw;
+    const enabled = document.getElementById('st-a-enabled').checked;
+    let autos = _stLoadAuto() || _stDefaultAutos();
+    if (window._stEditId) {
+      const idx = autos.findIndex(x=>x.id===window._stEditId);
+      if (idx>=0) autos[idx] = { ...autos[idx], name, trigger:triggerVal, triggerLabel, action:actionVal, actionLabel, enabled, params:{ templateName:tmplName, delayMinutes:delayMins } };
+    } else {
+      autos.push({ id:'auto'+Date.now(), name, trigger:triggerVal, triggerLabel, action:actionVal, actionLabel, enabled, params:{ templateName:tmplName, delayMinutes:delayMins }, created:todayISO() });
+    }
+    _stSaveAuto(autos);
+    window._stAutos = autos;
+    _stCloseModals();
+    systemTemplates();
+    showToast('✅ Automation rule saved');
+  };
+
+  window._stFilterTmpl = function(cat) {
+    const tmpls = _stLoadTmpl() || _stDefaultTemplates();
+    const filtered = cat ? tmpls.filter(t=>t.category===cat) : tmpls;
+    document.getElementById('st-tmpl-grid').innerHTML = filtered.map(renderTmplCard).join('') ||
+      '<div class="col-span-3 text-center text-gray-400 text-sm py-8">No templates in this category.</div>';
+    ['email','sms','pdf','contract','all'].forEach(c => {
+      const btn = document.getElementById(c==='all'?'stf-all':`stf-${c}`);
+      if (!btn) return;
+      btn.className = (c===cat || (c==='all'&&!cat))
+        ? 'px-2.5 py-1 rounded-full text-xs border border-sky-400 text-sky-700 bg-sky-50 font-medium'
+        : 'px-2.5 py-1 rounded-full text-xs border border-gray-200 hover:border-sky-400 hover:text-sky-700 transition';
+    });
+  };
+
+  window._stNewTmpl = function() {
+    window._stTmplEditId = null;
+    document.getElementById('st-tmpl-modal-title').textContent = 'New Template';
+    document.getElementById('st-t-name').value = '';
+    document.getElementById('st-t-cat').value = 'email';
+    document.getElementById('st-t-subject').value = '';
+    document.getElementById('st-t-body').value = '';
+    document.getElementById('st-t-vars-preview').innerHTML = '';
+    document.getElementById('st-tmpl-modal').classList.remove('hidden');
+  };
+
+  window._stEditTmpl = function(id) {
+    const tmpls = _stLoadTmpl() || _stDefaultTemplates();
+    const t = tmpls.find(x=>x.id===id);
+    if (!t) return;
+    window._stTmplEditId = id;
+    document.getElementById('st-tmpl-modal-title').textContent = 'Edit Template';
+    document.getElementById('st-t-name').value = t.name;
+    document.getElementById('st-t-cat').value = t.category;
+    document.getElementById('st-t-subject').value = t.subject||'';
+    document.getElementById('st-t-body').value = t.body||'';
+    _stDetectVars();
+    document.getElementById('st-tmpl-modal').classList.remove('hidden');
+  };
+
+  window._stDetectVars = function() {
+    const body = document.getElementById('st-t-body').value||'';
+    const subj = document.getElementById('st-t-subject').value||'';
+    const matches = [...new Set([...(body+subj).matchAll(/\{\{([^}]+)\}\}/g)].map(m=>m[1]))];
+    const preview = document.getElementById('st-t-vars-preview');
+    if (preview) preview.innerHTML = matches.map(v=>`<span class="inline-block bg-gray-100 text-gray-600 text-xs rounded px-1.5 py-0.5">{{${escapeHtml(v)}}}</span>`).join('') || '<span class="text-gray-400 text-xs">No variables detected yet.</span>';
+  };
+  const bodyInput = document.getElementById('st-t-body');
+  const subjInput = document.getElementById('st-t-subject');
+  if (bodyInput) bodyInput.addEventListener('input', window._stDetectVars);
+  if (subjInput) subjInput.addEventListener('input', window._stDetectVars);
+
+  window._stDeleteTmpl = function(id) {
+    if (!confirm('Delete this template?')) return;
+    let tmpls = _stLoadTmpl() || _stDefaultTemplates();
+    tmpls = tmpls.filter(x=>x.id!==id);
+    _stSaveTmpl(tmpls);
+    const card = document.getElementById(`stc-${id}`);
+    if (card) card.remove();
+    showToast('Template deleted');
+  };
+
+  window._stSaveTmplModal = function() {
+    const name = (document.getElementById('st-t-name').value||'').trim();
+    if (!name) { showToast('⚠ Template name required'); return; }
+    const cat = document.getElementById('st-t-cat').value||'email';
+    const subj = document.getElementById('st-t-subject').value||'';
+    const body = document.getElementById('st-t-body').value||'';
+    const vars = [...new Set([...(body+subj).matchAll(/\{\{([^}]+)\}\}/g)].map(m=>m[1]))];
+    let tmpls = _stLoadTmpl() || _stDefaultTemplates();
+    if (window._stTmplEditId) {
+      const idx = tmpls.findIndex(x=>x.id===window._stTmplEditId);
+      if (idx>=0) tmpls[idx] = { ...tmpls[idx], name, category:cat, subject:subj, body, variables:vars };
+    } else {
+      tmpls.push({ id:'tmpl'+Date.now(), name, category:cat, subject:subj, body, variables:vars, created:todayISO() });
+    }
+    _stSaveTmpl(tmpls);
+    window._stTmpls = tmpls;
+    _stCloseModals();
+    systemTemplates();
+    showToast('✅ Template saved');
+  };
 }
 
 // ─── END PHASE 7 SCREENS ─────────────────────────────────────────────────────
