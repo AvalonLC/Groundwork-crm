@@ -8236,6 +8236,14 @@ if (sidebarScrim) sidebarScrim.addEventListener('click', closeSidebar);
 document.addEventListener('click', e => {
   if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) closeSidebar();
 });
+// ── Mobile: close sidebar when a nav-item is tapped ──────────────────────────
+sidebar.addEventListener('click', e => {
+  const item = e.target.closest('.nav-item');
+  if (item && window.innerWidth <= 768) closeSidebar();
+});
+// ── Mobile: close button in sidebar ──────────────────────────────────────────
+const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
+if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', closeSidebar);
 
 // ── + New dropdown ──────────────────────────────────────────────────────────
 const _newBtn  = document.getElementById('topbarNewBtn');

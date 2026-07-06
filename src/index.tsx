@@ -2789,23 +2789,222 @@ function getHtml(): string {
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw9">
   <style>
-    /* Nav item SVG icon alignment */
+    /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
-    /* Phase 7: sub-group labels and indented items */
-    .nav-subgroup { margin-top: 4px; }
+
+    /* ── Section divider labels inside a group ──────────────────────────────── */
+    .nav-subgroup { margin-top: 2px; }
     .nav-subgroup-label {
-      font-size: 9.5px;
+      font-size: 9px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .1em;
-      color: rgba(255,255,255,.28);
-      padding: 8px 16px 3px 18px;
+      letter-spacing: .11em;
+      color: rgba(255,255,255,.22);
+      padding: 10px 16px 2px 16px;
       pointer-events: none;
       user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+
+    /* ── Sub-items (indented under a section label) ─────────────────────────── */
     .nav-item--sub {
-      padding-left: 26px !important;
+      padding-left: 24px !important;
       font-size: 12.5px !important;
+    }
+
+    /* ── Sidebar close button (mobile only, injected by JS) ─────────────────── */
+    .sidebar-close-btn {
+      display: none;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       MOBILE OVERRIDES  @media (max-width: 768px)
+       All mobile sidebar and layout adjustments are here, not in premium.css.
+    ══════════════════════════════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+
+      /* ── Sidebar: overlay panel, full-height, slide in from left ─────────── */
+      .sidebar {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        height: 100dvh !important;
+        width: 280px !important;
+        max-width: 85vw !important;
+        transform: translateX(-100%) !important;
+        transition: transform 0.22s ease !important;
+        z-index: 200 !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+      }
+      .sidebar.open {
+        transform: translateX(0) !important;
+        box-shadow: 4px 0 32px rgba(0,0,0,.45) !important;
+      }
+
+      /* Scrim covers content when sidebar open */
+      .sidebar-scrim {
+        display: block !important;
+      }
+
+      /* ── Main area: full width on mobile ─────────────────────────────────── */
+      .main {
+        margin-left: 0 !important;
+        width: 100% !important;
+      }
+
+      /* ── Topbar adjustments ───────────────────────────────────────────────── */
+      .topbar {
+        padding: 0 12px !important;
+        gap: 8px !important;
+      }
+      .search-wrap {
+        min-width: 0 !important;
+        flex: 1 !important;
+      }
+      .search-wrap input {
+        font-size: 13px !important;
+        padding: 6px 10px !important;
+      }
+      /* Hide install button on mobile — low-priority action */
+      .install-btn { display: none !important; }
+
+      /* ── Brand header in sidebar ─────────────────────────────────────────── */
+      .brand {
+        padding: 14px 14px 10px !important;
+      }
+      .brand-name  { font-size: 15px !important; }
+      .brand-subtitle { font-size: 10px !important; }
+
+      /* ── Nav group summaries (top-level section headers) ─────────────────── */
+      .nav-summary {
+        font-size: 10px !important;
+        padding: 9px 14px !important;
+        letter-spacing: .07em !important;
+      }
+
+      /* ── Nav items: tighter rows ─────────────────────────────────────────── */
+      .nav-item {
+        font-size: 13px !important;
+        padding: 7px 14px !important;
+        gap: 8px !important;
+      }
+      .nav-item svg {
+        width: 13px !important;
+        height: 13px !important;
+      }
+
+      /* ── Sub-items: slightly more indented, same reduced size ────────────── */
+      .nav-item--sub {
+        padding-left: 22px !important;
+        font-size: 12px !important;
+      }
+
+      /* ── Section divider labels ──────────────────────────────────────────── */
+      .nav-subgroup-label {
+        font-size: 8.5px !important;
+        padding: 8px 14px 2px 14px !important;
+      }
+
+      /* ── Collapse secondary groups by default on mobile ─────────────────── */
+      /* Sales Resources and Engagement are depth-2 — hide until parent opens */
+      details.nav-group.nav-group--secondary {
+        /* marker class added in HTML below for resource-heavy groups */
+      }
+
+      /* ── Sidebar footer ──────────────────────────────────────────────────── */
+      .sidebar-footer {
+        padding: 10px 14px !important;
+        gap: 8px !important;
+      }
+      #sidebarUserName { font-size: 12px !important; }
+      #sidebarUserRole { font-size: 10px !important; }
+
+      /* ── Close button visible on mobile ─────────────────────────────────── */
+      .sidebar-close-btn {
+        display: flex !important;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 10px 14px 0;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: rgba(255,255,255,.5);
+        font-size: 20px;
+        line-height: 1;
+        width: 100%;
+      }
+      .sidebar-close-btn:hover { color: #fff; }
+
+      /* ── Content area: tighter padding on mobile ─────────────────────────── */
+      .view-wrap,
+      #view > .rp-shell,
+      #view > div {
+        padding: 14px 12px !important;
+      }
+
+      /* ── Card grids: single column ───────────────────────────────────────── */
+      .stat-grid,
+      .ops-stat-grid,
+      .gw-grid-3,
+      .gw-grid-2 {
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+      }
+
+      /* ── Record page shell: remove side margins ──────────────────────────── */
+      .rp-shell {
+        padding: 14px 12px !important;
+      }
+      .rp-cols {
+        flex-direction: column !important;
+        gap: 12px !important;
+      }
+
+      /* ── Tables: allow horizontal scroll rather than overflow ────────────── */
+      .gw-table-wrap {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+      }
+      .gw-table {
+        min-width: 520px !important;
+      }
+
+      /* ── Toolbars: wrap on small screens ─────────────────────────────────── */
+      .gw-toolbar,
+      .filter-row,
+      .rp-actions {
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+      }
+      .gw-toolbar button,
+      .filter-row button {
+        font-size: 12px !important;
+        padding: 5px 10px !important;
+      }
+
+      /* ── Modals: full-width on mobile ────────────────────────────────────── */
+      .gw-modal-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        border-radius: 12px 12px 0 0 !important;
+      }
+      /* bottom-sheet feel for overlays */
+      #exportModalOverlay,
+      .modal-overlay {
+        align-items: flex-end !important;
+        padding: 0 !important;
+      }
+
+      /* ── Topbar new-dropdown: full width ────────────────────────────────── */
+      .topbar-new-dropdown {
+        right: 0 !important;
+        left: auto !important;
+        min-width: 200px !important;
+      }
     }
   </style>
 </head>
@@ -2813,6 +3012,7 @@ function getHtml(): string {
 <div id="sidebarScrim" class="sidebar-scrim"></div>
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
+    <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">&#x2715;</button>
     <div class="brand">
       <div class="brand-mark" onclick="show('today')" style="cursor:pointer;" title="Go to Today">
         <img src="/static/avalon-logo.png" alt="Groundwork" />
@@ -2854,7 +3054,7 @@ function getHtml(): string {
             Pipeline
           </button>
           <button class="nav-item" data-view="lead" onclick="show('lead')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/><path d="M11 1v4M13 3H9"/></svg>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
             Leads
           </button>
           <button class="nav-item" data-view="clients" onclick="show('clients')">
@@ -2869,7 +3069,7 @@ function getHtml(): string {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
             Estimates
           </button>
-          <!-- Engagement sub-group -->
+          <!-- Engagement -->
           <div class="nav-subgroup">
             <div class="nav-subgroup-label">Engagement</div>
             <button class="nav-item nav-item--sub" data-view="communications" onclick="show('communications')">
@@ -2877,7 +3077,7 @@ function getHtml(): string {
               Communications
             </button>
             <button class="nav-item nav-item--sub" data-view="automations" onclick="show('automations')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/><path d="M3 3l10 10" opacity=".3"/></svg>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/></svg>
               Automations
             </button>
             <button class="nav-item nav-item--sub" data-view="templates" onclick="show('templates')">
@@ -2885,11 +3085,11 @@ function getHtml(): string {
               Templates
             </button>
             <button class="nav-item nav-item--sub" data-view="campaigns" onclick="show('campaigns')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/><path d="M13 7v2"/></svg>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/></svg>
               Campaigns / Drips
             </button>
           </div>
-          <!-- Sales Resources sub-group -->
+          <!-- Sales Resources -->
           <div class="nav-subgroup">
             <div class="nav-subgroup-label">Sales Resources</div>
             <button class="nav-item nav-item--sub" data-view="process" onclick="show('process')">
@@ -2918,11 +3118,11 @@ function getHtml(): string {
             </button>
             <button class="nav-item nav-item--sub" data-view="ai" onclick="show('ai')">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
-              AI Sales Assistant
+              AI Assistant
             </button>
             <button class="nav-item nav-item--sub" data-view="academy" onclick="show('academy')">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 6l7 4 7-4-7-4z"/><path d="M1 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>
-              Sales Academy
+              Academy
             </button>
           </div>
         </div>
@@ -2954,7 +3154,7 @@ function getHtml(): string {
           </button>
           <button class="nav-item" data-view="financialActivity" onclick="show('financialActivity')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l3-4 3 2 3-5 3 3"/></svg>
-            Financial Activity
+            Activity
           </button>
         </div>
       </details>
@@ -2963,7 +3163,7 @@ function getHtml(): string {
       <details class="nav-group tenant-nav">
         <summary class="nav-summary">Operations</summary>
         <div class="nav-items">
-          <!-- Scheduling sub-group -->
+          <!-- Scheduling -->
           <div class="nav-subgroup">
             <div class="nav-subgroup-label">Scheduling</div>
             <button class="nav-item nav-item--sub" data-view="scheduleBoard" onclick="show('scheduleBoard')">
@@ -2987,7 +3187,7 @@ function getHtml(): string {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
             Work Orders
           </button>
-          <!-- Assets & Inventory sub-group -->
+          <!-- Assets & Inventory -->
           <div class="nav-subgroup">
             <div class="nav-subgroup-label">Assets &amp; Inventory</div>
             <button class="nav-item nav-item--sub" data-view="assetList" onclick="show('assetList')">
@@ -3004,7 +3204,7 @@ function getHtml(): string {
             </button>
             <button class="nav-item nav-item--sub" data-view="toolsConsumables" onclick="show('toolsConsumables')">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l4 4-7 7-4-4 7-7z"/><path d="M2 14l2-2"/></svg>
-              Tools / Consumables
+              Tools
             </button>
           </div>
           <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
@@ -3020,23 +3220,23 @@ function getHtml(): string {
         <div class="nav-items">
           <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
-            Revenue Analytics
+            Revenue
           </button>
           <button class="nav-item" data-view="salesReports" onclick="show('salesReports')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
-            Sales Reports
+            Sales
           </button>
           <button class="nav-item" data-view="financialReports" onclick="show('financialReports')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
-            Financial Reports
+            Financial
           </button>
           <button class="nav-item" data-view="opsReports" onclick="show('opsReports')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/></svg>
-            Operations Reports
+            Operations
           </button>
           <button class="nav-item" data-view="teamReports" onclick="show('teamReports')">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
-            Team / Productivity
+            Team
           </button>
         </div>
       </details>
@@ -3164,7 +3364,7 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260704gw20"></script>
+<script src="/static/app_premium.js?v=20260704gw21"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260701gw14"></script>
