@@ -564,7 +564,7 @@ window._updateSidebarRep = function updateSidebarRep() {
       if (footer) {
         const displayName = isPlatformAdmin ? 'Tyler Grigg' : (rep?.name || 'User');
         const displayRole = isPlatformAdmin ? 'Platform Owner' :
-                            isAdmin ? 'Owner / Admin' : isOM ? 'Office Manager' :
+                            isAdmin ? 'Owner' : isOM ? 'Office Manager' :
                             (rep?.title || 'Sales Rep');
         // Platform admin gets a distinct teal avatar; tenant reps get white
         const avatarBg = isPlatformAdmin
@@ -7526,7 +7526,7 @@ function settings(){
     </section>` : _iom ? `
     <section class="card" style="border:1px solid rgba(139,105,20,.19);opacity:.75">
       <h2>Import / Reset</h2>
-      <p class="muted">Import and data reset are restricted to Tyler (Owner / Admin). Contact Tyler if a data restore is needed.</p>
+      <p class="muted">Import and data reset are restricted to the Owner. Contact your Owner if a data restore is needed.</p>
     </section>` : `
     <section class="card" style="opacity:.6">
       <h2>Import / Reset</h2>
@@ -7534,7 +7534,7 @@ function settings(){
     </section>`;
 
   const _viewLabel = _ia
-    ? '<span style="font-size:13px;color:#4D8A86;font-weight:400;margin-left:8px">· Owner / Admin View</span>'
+    ? '<span style="font-size:13px;color:#4D8A86;font-weight:400;margin-left:8px">· Owner View</span>'
     : _iom
     ? '<span style="font-size:13px;color:#8B6914;font-weight:400;margin-left:8px">· Office Manager View</span>'
     : '<span style="font-size:13px;color:#6F7E6A;font-weight:400;margin-left:8px">· Rep View</span>';

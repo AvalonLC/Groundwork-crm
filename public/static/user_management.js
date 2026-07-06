@@ -43,7 +43,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
   // ── 1. ADMIN ──────────────────────────────────────────────────────────────
   {
     id: 'admin',
-    label: 'Owner / Admin',
+    label: 'Owner',
     color: '#4D8A86',
     description: 'Full access to everything. Bypasses all permission gates.',
     defaultViews: ['today','myDashboard','teamView',
@@ -519,7 +519,7 @@ function userManagement(tab) {
       <div style="text-align:center;padding:64px 24px;margin-top:40px">
         <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
         <h2 style="color:#C97B6A;margin-bottom:10px">Access Restricted</h2>
-        <p style="color:#6F7E6A;max-width:420px;margin:0 auto 24px">User Management is restricted to Tyler (Owner / Admin). Ask Tyler if you need access changes.</p>
+        <p style="color:#6F7E6A;max-width:420px;margin:0 auto 24px">User Management is restricted to the Owner. Ask your Owner if you need access changes.</p>
         <button class="secondary-btn" onclick="show('today')">← Back to Today</button>
       </div>`;
     return;
@@ -1257,7 +1257,7 @@ function umRenderRoles(container) {
     </div>
   </div>
   <div style="margin-top:8px;font-size:11px;color:var(--gw-muted,#5E6E6F)">
-    <strong>Owner / Admin</strong> can always delete leads regardless of this setting.
+    <strong>Owner</strong> can always delete leads regardless of this setting.
   </div>
 </div>
 `;
