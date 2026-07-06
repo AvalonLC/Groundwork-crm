@@ -3373,7 +3373,7 @@ function getHtml(): string {
 <script src="/static/app_premium.js?v=20260706gw22"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260701gw14"></script>
+<script src="/static/user_management.js?v=20260706gw23"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
 <script>

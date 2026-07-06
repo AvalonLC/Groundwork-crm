@@ -527,9 +527,10 @@ function userManagement(tab) {
 
   const activeTab = tab || 'users';
   const tabs = [
-    { id:'users',  label:'Team Members' },
-    { id:'roles',  label:'Roles & Permissions' },
-    { id:'audit',  label:'Login Audit' }
+    { id:'users',      label:'Team Members' },
+    { id:'onboarding', label:'Onboarding' },
+    { id:'roles',      label:'Roles & Permissions' },
+    { id:'audit',      label:'Login Audit' }
   ];
 
   viewEl.innerHTML = `
@@ -559,9 +560,10 @@ function userManagement(tab) {
   const tc = document.getElementById('um-tab-content');
   if (!tc) return;
 
-  if (activeTab === 'users')  umRenderUsers(tc);
-  else if (activeTab === 'roles') umRenderRoles(tc);
-  else if (activeTab === 'audit') umRenderAudit(tc);
+  if (activeTab === 'users')           umRenderUsers(tc);
+  else if (activeTab === 'onboarding') umRenderOnboarding(tc);
+  else if (activeTab === 'roles')      umRenderRoles(tc);
+  else if (activeTab === 'audit')      umRenderAudit(tc);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1028,6 +1030,27 @@ function umRenderUsers(container) {
       }
     } catch(e) { umToast('Network error'); }
   };
+
+  // Send onboarding packet shortcut — switches to onboarding tab with email pre-filled
+  window._umSendOnboardingTo = function(email, name) {
+    userManagement('onboarding');
+    // After re-render, inject the email
+    setTimeout(() => {
+      const emailEl = document.getElementById('ob-send-email');
+      const selEl   = document.getElementById('ob-send-select');
+      if (emailEl) emailEl.value = email;
+      if (selEl) {
+        // Try to match a select option
+        for (let i = 0; i < selEl.options.length; i++) {
+          if (selEl.options[i].value === email) { selEl.value = email; break; }
+        }
+      }
+      // Scroll to send section
+      const statusEl = document.getElementById('ob-send-status');
+      if (statusEl) statusEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      umToast(`Onboarding tab open — ready to send to ${name}`);
+    }, 120);
+  };
 }
 
 function umUserRow(u, gc) {
@@ -1070,6 +1093,7 @@ function umUserRow(u, gc) {
       ${isPendingInvite
         ? `<button class="secondary-btn" style="font-size:12px;padding:6px 12px;color:#8B6914;border-color:#8B691440" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
         : `<button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umResetPin('${u.id}')">Reset Password</button>`}
+      <button class="secondary-btn" style="font-size:12px;padding:6px 12px;color:#4D8A86;border-color:#4D8A8640" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">✉ Onboarding</button>
       <button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
     </div>
   </div>
@@ -1098,7 +1122,311 @@ function umUserRow(u, gc) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TAB 2 — ROLES & PERMISSIONS
+// TAB 2 — ONBOARDING PACKET BUILDER
+// ═══════════════════════════════════════════════════════════════════════════════
+const LS_ONBOARD_KEY = 'avalonOnboardingPacket';
+
+function umLoadOnboardPacket() {
+  try {
+    const raw = localStorage.getItem(LS_ONBOARD_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(_) {}
+  // Default packet — mirrors Avalon's existing Google Drawing
+  return {
+    companyName: 'Avalon Landscape Construction',
+    contactEmail: 'Admin@avalon-lc.com',
+    websiteUrl: 'https://avalon-lc.com',
+    logoUrl: '',
+    welcomeMsg: 'Welcome to the team! Please complete the following steps to get started.',
+    steps: [
+      { label: 'Complete legal forms', links: [
+          { text: 'W-4 Form',       url: '' },
+          { text: 'Payroll Form',   url: '' },
+          { text: 'I-9 Form',       url: '' },
+          { text: 'VA-4 Form',      url: '' }
+        ]
+      },
+      { label: 'Review and sign the employee agreement', links: [
+          { text: 'Employee Agreement Form', url: '' }
+        ]
+      },
+      { label: 'Fill out the uniform / swag form to receive your company gear', links: [
+          { text: 'Swag & Uniform Form', url: '' }
+        ]
+      },
+      { label: 'Print and turn in all forms — or email completed forms to begin employment', links: [] }
+    ]
+  };
+}
+
+function umSaveOnboardPacket(packet) {
+  try { localStorage.setItem(LS_ONBOARD_KEY, JSON.stringify(packet)); } catch(_) {}
+}
+
+function umRenderOnboarding(container) {
+  const packet = umLoadOnboardPacket();
+  const users  = umLoadUsers().filter(u => u.status === 'active');
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function stepRowHtml(step, si) {
+    const linkInputs = step.links.map((lk, li) => `
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+        <input type="text" placeholder="Link label" value="${esc(lk.text)}"
+          oninput="window._obUpdateLink(${si},${li},'text',this.value)"
+          style="flex:0 0 140px;font-size:12px;padding:5px 8px;border:1px solid var(--gw-line);border-radius:6px;background:var(--gw-surface-2);color:var(--gds-ink)">
+        <input type="url" placeholder="https://..." value="${esc(lk.url)}"
+          oninput="window._obUpdateLink(${si},${li},'url',this.value)"
+          style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--gw-line);border-radius:6px;background:var(--gw-surface-2);color:var(--gds-ink)">
+        <button onclick="window._obRemoveLink(${si},${li})"
+          style="background:none;border:none;cursor:pointer;color:#A05050;font-size:16px;padding:0 4px;line-height:1" title="Remove link">×</button>
+      </div>`).join('');
+    return `
+    <div id="ob-step-${si}" style="background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+        <span style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:#4D8A86;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px">${si+1}</span>
+        <div style="flex:1">
+          <input type="text" value="${esc(step.label)}"
+            oninput="window._obUpdateStep(${si},'label',this.value)"
+            style="width:100%;font-size:13px;font-weight:600;padding:6px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink)">
+        </div>
+        <button onclick="window._obRemoveStep(${si})"
+          style="background:none;border:none;cursor:pointer;color:#A05050;font-size:18px;padding:0 4px;line-height:1;flex-shrink:0" title="Remove step">×</button>
+      </div>
+      <div id="ob-links-${si}" style="padding-left:34px">
+        ${linkInputs}
+        <button onclick="window._obAddLink(${si})"
+          style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px dashed #4D8A86;background:none;color:#4D8A86;cursor:pointer;margin-top:2px">
+          + Add Link
+        </button>
+      </div>
+    </div>`;
+  }
+
+  function previewHtml(p) {
+    const stepBlocks = p.steps.map((s,i) => {
+      const linkLine = s.links.filter(l=>l.text||l.url).map(l =>
+        l.url ? `<a href="${esc(l.url)}" style="color:#4D8A86;font-weight:600;text-decoration:none">${esc(l.text||l.url)}</a>` : `<span style="color:#4D8A86;font-weight:600">${esc(l.text)}</span>`
+      ).join(' <span style="color:#6F7E6A"> / </span> ');
+      return `
+        <div style="padding:14px 0;border-bottom:1px solid #E8E4DC">
+          <div style="font-size:14px;color:#1A2020"><strong>Step ${i+1})</strong> ${esc(s.label)}${linkLine ? ': ' : ''}<br>${linkLine ? `<span style="display:inline-block;margin-top:4px">${linkLine}</span>` : ''}</div>
+        </div>`;
+    }).join('');
+    const bottomBar = p.websiteUrl
+      ? `<div style="background:#3AB8C5;padding:10px 24px;display:flex;align-items:center;justify-content:center;gap:24px;border-radius:0 0 10px 10px">
+           <span style="color:#fff;font-size:13px">📷</span>
+           <a href="${esc(p.websiteUrl)}" style="color:#fff;font-size:13px;font-weight:700;text-decoration:underline">${esc(p.websiteUrl.replace(/^https?:\/\//,''))}</a>
+           <span style="color:#fff;font-size:13px">📘</span>
+         </div>` : '';
+    return `
+      <div style="border-radius:10px;overflow:hidden;border:1px solid #D6D1C4;max-width:520px;margin:0 auto;font-family:sans-serif">
+        <div style="background:#1A2020;padding:20px 24px;display:flex;align-items:center;gap:16px">
+          ${p.logoUrl ? `<img src="${esc(p.logoUrl)}" style="height:44px;border-radius:4px" alt="logo">` : `<div style="width:44px;height:44px;border-radius:8px;background:#3AB8C5;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff">${esc((p.companyName||'A')[0])}</div>`}
+          <div>
+            <div style="color:#fff;font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:.05em">Employee Onboarding</div>
+            <div style="color:#3AB8C5;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${esc(p.companyName)}</div>
+          </div>
+        </div>
+        ${p.welcomeMsg ? `<div style="background:#F5F3EE;padding:12px 24px;font-size:13px;color:#5C6B58;font-style:italic;border-bottom:1px solid #E8E4DC">${esc(p.welcomeMsg)}</div>` : ''}
+        <div style="background:#fff;padding:0 24px">${stepBlocks}</div>
+        ${p.contactEmail ? `<div style="background:#F5F3EE;padding:12px 24px;font-size:12px;color:#5C6B58;border-top:1px solid #E8E4DC">
+          Print and turn in all forms or email completed forms to <strong>${esc(p.contactEmail)}</strong> to begin employment.
+        </div>` : ''}
+        ${bottomBar}
+      </div>`;
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  container.innerHTML = `
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+
+  <!-- LEFT: Packet Builder -->
+  <div>
+    <div style="margin-bottom:18px">
+      <h3 style="margin:0 0 3px;font-size:15px;font-weight:800">Onboarding Packet</h3>
+      <p style="margin:0;font-size:12px;color:#6F7E6A">Build the document you send to every new hire. Changes save automatically.</p>
+    </div>
+
+    <!-- Company Info -->
+    <div style="background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Company Info</div>
+      <div style="display:grid;gap:8px">
+        <div>
+          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Company Name</label>
+          <input type="text" id="ob-company" value="${esc(packet.companyName)}"
+            oninput="window._obField('companyName',this.value)"
+            style="width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Contact / Admin Email</label>
+          <input type="email" id="ob-email" value="${esc(packet.contactEmail)}"
+            oninput="window._obField('contactEmail',this.value)"
+            style="width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Website URL</label>
+          <input type="url" id="ob-website" value="${esc(packet.websiteUrl)}"
+            oninput="window._obField('websiteUrl',this.value)"
+            style="width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Welcome Message (optional)</label>
+          <textarea id="ob-welcome" rows="2" oninput="window._obField('welcomeMsg',this.value)"
+            style="width:100%;font-size:12px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);resize:vertical;box-sizing:border-box">${esc(packet.welcomeMsg)}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Steps -->
+    <div style="background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Onboarding Steps</div>
+      <div id="ob-steps-list">
+        ${packet.steps.map((s,i) => stepRowHtml(s,i)).join('')}
+      </div>
+      <button onclick="window._obAddStep()"
+        style="width:100%;padding:9px;border-radius:8px;border:1.5px dashed #4D8A86;background:none;color:#4D8A86;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px">
+        + Add Step
+      </button>
+    </div>
+
+    <div style="font-size:11px;color:#5C6B58;margin-top:-8px">
+      💾 Changes save to this browser automatically. Use <strong>Send Onboarding</strong> on any Team Member card to email the packet.
+    </div>
+  </div>
+
+  <!-- RIGHT: Preview + Send -->
+  <div>
+    <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h3 style="margin:0 0 2px;font-size:15px;font-weight:800">Live Preview</h3>
+        <p style="margin:0;font-size:12px;color:#6F7E6A">This is what your new hire receives.</p>
+      </div>
+    </div>
+    <div id="ob-preview">${previewHtml(packet)}</div>
+
+    <!-- Send to Team Member -->
+    <div style="margin-top:20px;background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div style="font-size:11px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Send Onboarding Packet</div>
+      <div style="margin-bottom:8px;font-size:12px;color:#6F7E6A">Choose a team member to send the packet to, or enter any email directly.</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="ob-send-select" onchange="document.getElementById('ob-send-email').value=this.value"
+          style="flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink)">
+          <option value="">— Pick team member —</option>
+          ${users.map(u => `<option value="${esc(u.email||'')}">${esc(u.name)} ${u.email?'('+esc(u.email)+')':''}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="email" id="ob-send-email" placeholder="or enter email directly"
+          style="flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink)">
+        <button onclick="window._obSendPacket()"
+          style="padding:7px 18px;border-radius:8px;background:#4D8A86;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
+          Send ✉
+        </button>
+      </div>
+      <div id="ob-send-status" style="margin-top:8px;font-size:12px;color:#4D8A86;min-height:18px"></div>
+    </div>
+  </div>
+
+</div>
+`;
+
+  // ── Helpers — live packet mutation + preview refresh ──────────────────────
+  let _obPacket = JSON.parse(JSON.stringify(packet));
+
+  function _obRefreshPreview() {
+    umSaveOnboardPacket(_obPacket);
+    const prev = document.getElementById('ob-preview');
+    if (prev) prev.innerHTML = previewHtml(_obPacket);
+  }
+  function _obRefreshSteps() {
+    const list = document.getElementById('ob-steps-list');
+    if (list) list.innerHTML = _obPacket.steps.map((s,i) => stepRowHtml(s,i)).join('');
+    _obRefreshPreview();
+  }
+
+  window._obField = function(key, val) {
+    _obPacket[key] = val;
+    _obRefreshPreview();
+  };
+  window._obUpdateStep = function(si, key, val) {
+    _obPacket.steps[si][key] = val;
+    _obRefreshPreview();
+  };
+  window._obAddStep = function() {
+    _obPacket.steps.push({ label: 'New step — describe what to do', links: [] });
+    _obRefreshSteps();
+  };
+  window._obRemoveStep = function(si) {
+    _obPacket.steps.splice(si, 1);
+    _obRefreshSteps();
+  };
+  window._obUpdateLink = function(si, li, key, val) {
+    _obPacket.steps[si].links[li][key] = val;
+    _obRefreshPreview();
+  };
+  window._obAddLink = function(si) {
+    _obPacket.steps[si].links.push({ text: '', url: '' });
+    _obRefreshSteps();
+  };
+  window._obRemoveLink = function(si, li) {
+    _obPacket.steps[si].links.splice(li, 1);
+    _obRefreshSteps();
+  };
+  window._obSendPacket = async function() {
+    const emailEl = document.getElementById('ob-send-email');
+    const statusEl = document.getElementById('ob-send-status');
+    const email = (emailEl?.value || '').trim();
+    if (!email) { if (statusEl) statusEl.textContent = 'Enter an email address first.'; return; }
+    if (statusEl) statusEl.textContent = 'Sending…';
+    // Build plain-text version of the packet for the email body
+    const p = _obPacket;
+    const stepsText = p.steps.map((s,i) => {
+      const linkParts = s.links.filter(l=>l.text||l.url).map(l => l.url ? `${l.text}: ${l.url}` : l.text);
+      return `Step ${i+1}) ${s.label}${linkParts.length ? '\n   ' + linkParts.join('\n   ') : ''}`;
+    }).join('\n\n');
+    const bodyText = [
+      `${p.welcomeMsg || ''}`,
+      `\n${stepsText}`,
+      p.contactEmail ? `\nPrint and return all forms or email to ${p.contactEmail} to begin employment.` : '',
+      p.websiteUrl ? `\n${p.websiteUrl}` : ''
+    ].join('\n').trim();
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: email.split('@')[0],
+          email,
+          role: 'laborer',
+          isOnboarding: true,
+          onboardingSubject: `Welcome to ${p.companyName} — Onboarding Packet`,
+          onboardingBody: bodyText
+        })
+      });
+      const j = await res.json();
+      if (statusEl) {
+        if (j.emailSent || j.ok !== false) {
+          statusEl.style.color = '#2D7A55';
+          statusEl.textContent = `✓ Onboarding packet sent to ${email}`;
+          if (emailEl) emailEl.value = '';
+          const sel = document.getElementById('ob-send-select');
+          if (sel) sel.value = '';
+        } else {
+          statusEl.style.color = '#A05050';
+          statusEl.textContent = j.error || 'Send failed — check email config in Integrations.';
+        }
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.style.color = '#A05050'; statusEl.textContent = 'Network error: ' + e.message; }
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 3 — ROLES & PERMISSIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 function umRenderRoles(container) {
   // We re-use the existing nav permissions system and extend it with userManagement
