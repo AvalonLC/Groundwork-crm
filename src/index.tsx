@@ -2844,9 +2844,11 @@ function getHtml(): string {
         box-shadow: 4px 0 32px rgba(0,0,0,.45) !important;
       }
 
-      /* Scrim covers content when sidebar open */
-      .sidebar-scrim {
-        display: block !important;
+      /* Scrim: keep z-index paired with the sidebar overlay (z-index:200 above).
+         Visibility is still JS-controlled via .visible class — we only bump
+         the stacking context so it sits between main content and the sidebar. */
+      .sidebar-scrim.visible {
+        z-index: 199 !important;
       }
 
       /* ── Main area: full width on mobile ─────────────────────────────────── */

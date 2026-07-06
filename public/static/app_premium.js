@@ -339,7 +339,38 @@ function show(viewName='today', param){
     _d1.company_id === 'groundwork_platform';
   if (!_isPlatformSA && viewName !== 'settings' && !canViewTab(viewName)) {
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
-    const _viewLabels = {today:'Today',myDashboard:'My Dashboard',pipeline:'Pipeline',lead:'Add Lead',clients:'Clients & Properties',process:'Sales Process',forms:'Forms & Checklists',scripts:'Scripts',templates:'Email Templates',objections:'Objection Handling',calculator:'Pricing Tools',academy:'Sales Academy',manager:'Manager Tools',revenueAdmin:'Financial Data Hub',integrations:'Integrations',userManagement:'User Management',settings:'Settings',ai:'AI Sales Assistant',timeTracker:'Time Tracker',financialHub:'Financial Hub',estimates:'Estimate',invoices:'Invoice',statement:'Account Statement',communications:'Communications',automations:'Automations'};
+    const _viewLabels = {
+      // Dashboard
+      today:'Today', myDashboard:'My Dashboard', teamView:'Team View',
+      // Sales
+      pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
+      estimates:'Estimates', communications:'Communications', automations:'Automations',
+      templates:'Templates', campaigns:'Campaigns / Drips',
+      process:'Sales Process', forms:'Forms & Checklists', scripts:'Scripts',
+      emailTemplates:'Email Templates', objections:'Objection Handling',
+      calculator:'Pricing Tools', ai:'AI Assistant', academy:'Academy',
+      // Financial
+      financialHub:'Financial Overview', invoices:'Invoices', payments:'Payments',
+      deposits:'Deposits', statements:'Statements', financialActivity:'Financial Activity',
+      // Operations
+      scheduleBoard:'Calendar', dispatchBoard:'Dispatch', recurringServices:'Recurring Services',
+      crewView:'Crew View', workOrderList:'Work Orders', workOrderDetail:'Work Order',
+      assetList:'Assets', assetDetail:'Asset', maintenanceQueue:'Maintenance',
+      inventoryList:'Inventory', materialAllocation:'Material Allocation',
+      toolsConsumables:'Tools & Consumables', timeTracker:'Time Tracker',
+      // Reports
+      revenueAdmin:'Revenue', salesReports:'Sales Reports', financialReports:'Financial Reports',
+      opsReports:'Operations Reports', teamReports:'Team Reports',
+      // Settings
+      settings:'Settings', userManagement:'Users & Roles', integrations:'Integrations',
+      manager:'Manager Tools', systemConfig:'System Config', systemTemplates:'Templates & Automations',
+      // Platform Admin
+      gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support & Tickets',
+      gwAnnounce:'Announcements', gwBilling:'Billing & Plans',
+      gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
+      // Legacy / misc
+      statement:'Account Statement', opsHub:'Operations Hub',
+    };
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px;max-width:520px;margin-left:auto;margin-right:auto">
       <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
       <h2 style="color:#1F2A2B;margin-bottom:10px;font-size:20px">${_viewLabels[viewName] || viewName}</h2>
