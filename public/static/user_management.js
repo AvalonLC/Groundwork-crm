@@ -1170,34 +1170,48 @@ function umRenderOnboarding(container) {
   // ── Helpers ──────────────────────────────────────────────────────────────
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+  // Step icons by index
+  const STEP_ICONS = ['📋','✍️','👕','📬','📎','📁','🔑','📞'];
+
   function stepRowHtml(step, si) {
+    const icon = STEP_ICONS[si] || '📌';
     const linkInputs = step.links.map((lk, li) => `
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;background:#F8F9FB;border:1px solid #E5E9F0;border-radius:8px;padding:8px 10px">
+        <span style="font-size:14px;flex-shrink:0;opacity:.5">🔗</span>
         <input type="text" placeholder="Link label" value="${esc(lk.text)}"
           oninput="window._obUpdateLink(${si},${li},'text',this.value)"
-          style="flex:0 0 140px;font-size:12px;padding:5px 8px;border:1px solid var(--gw-line);border-radius:6px;background:var(--gw-surface-2);color:var(--gds-ink)">
+          style="flex:0 0 130px;font-size:12px;padding:5px 9px;border:1px solid #D8DEE8;border-radius:6px;background:#fff;color:var(--gds-ink);outline:none;transition:border .15s"
+          onfocus="this.style.borderColor='#4D8A86'" onblur="this.style.borderColor='#D8DEE8'">
         <input type="url" placeholder="https://..." value="${esc(lk.url)}"
           oninput="window._obUpdateLink(${si},${li},'url',this.value)"
-          style="flex:1;font-size:12px;padding:5px 8px;border:1px solid var(--gw-line);border-radius:6px;background:var(--gw-surface-2);color:var(--gds-ink)">
+          style="flex:1;font-size:12px;padding:5px 9px;border:1px solid #D8DEE8;border-radius:6px;background:#fff;color:var(--gds-ink);outline:none;transition:border .15s"
+          onfocus="this.style.borderColor='#4D8A86'" onblur="this.style.borderColor='#D8DEE8'">
         <button onclick="window._obRemoveLink(${si},${li})"
-          style="background:none;border:none;cursor:pointer;color:#A05050;font-size:16px;padding:0 4px;line-height:1" title="Remove link">×</button>
+          style="background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;cursor:pointer;color:#DC2626;font-size:13px;padding:3px 8px;line-height:1;transition:all .15s"
+          onmouseover="this.style.background='#FEE2E2'" onmouseout="this.style.background='#FEF2F2'" title="Remove">×</button>
       </div>`).join('');
     return `
-    <div id="ob-step-${si}" style="background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:14px 16px;margin-bottom:10px">
-      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
-        <span style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:#4D8A86;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px">${si+1}</span>
-        <div style="flex:1">
-          <input type="text" value="${esc(step.label)}"
-            oninput="window._obUpdateStep(${si},'label',this.value)"
-            style="width:100%;font-size:13px;font-weight:600;padding:6px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink)">
-        </div>
+    <div id="ob-step-${si}" style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:12px;padding:0;margin-bottom:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+      <!-- Step header bar -->
+      <div style="background:linear-gradient(135deg,#F0F7F6 0%,#EAF4F3 100%);border-bottom:1px solid #DCF0EE;padding:12px 14px;display:flex;align-items:center;gap:10px">
+        <span style="flex-shrink:0;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#4D8A86,#3a6e6b);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(77,138,134,.35)">${si+1}</span>
+        <span style="font-size:16px;flex-shrink:0">${icon}</span>
+        <input type="text" value="${esc(step.label)}"
+          oninput="window._obUpdateStep(${si},'label',this.value)"
+          style="flex:1;font-size:13px;font-weight:600;padding:5px 10px;border:1px solid #C8DDD9;border-radius:7px;background:#fff;color:var(--gds-ink);outline:none;transition:border .15s;box-shadow:inset 0 1px 2px rgba(0,0,0,.04)"
+          onfocus="this.style.borderColor='#4D8A86';this.style.boxShadow='0 0 0 3px rgba(77,138,134,.12)'"
+          onblur="this.style.borderColor='#C8DDD9';this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,.04)'">
         <button onclick="window._obRemoveStep(${si})"
-          style="background:none;border:none;cursor:pointer;color:#A05050;font-size:18px;padding:0 4px;line-height:1;flex-shrink:0" title="Remove step">×</button>
+          style="background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:20px;padding:0 4px;line-height:1;flex-shrink:0;transition:color .15s"
+          onmouseover="this.style.color='#DC2626'" onmouseout="this.style.color='#9CA3AF'" title="Remove step">×</button>
       </div>
-      <div id="ob-links-${si}" style="padding-left:34px">
+      <!-- Links area -->
+      <div id="ob-links-${si}" style="padding:12px 14px 10px 14px">
         ${linkInputs}
         <button onclick="window._obAddLink(${si})"
-          style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px dashed #4D8A86;background:none;color:#4D8A86;cursor:pointer;margin-top:2px">
+          style="font-size:11px;padding:5px 12px;border-radius:6px;border:1.5px dashed #A8D0CC;background:none;color:#4D8A86;cursor:pointer;font-weight:600;transition:all .15s;width:100%;text-align:center"
+          onmouseover="this.style.background='#F0FAF8';this.style.borderColor='#4D8A86'"
+          onmouseout="this.style.background='none';this.style.borderColor='#A8D0CC'">
           + Add Link
         </button>
       </div>
@@ -1205,127 +1219,233 @@ function umRenderOnboarding(container) {
   }
 
   function previewHtml(p) {
+    const initial = esc((p.companyName||'A')[0].toUpperCase());
     const stepBlocks = p.steps.map((s,i) => {
-      const linkLine = s.links.filter(l=>l.text||l.url).map(l =>
-        l.url ? `<a href="${esc(l.url)}" style="color:#4D8A86;font-weight:600;text-decoration:none">${esc(l.text||l.url)}</a>` : `<span style="color:#4D8A86;font-weight:600">${esc(l.text)}</span>`
-      ).join(' <span style="color:#6F7E6A"> / </span> ');
+      const icon = STEP_ICONS[i] || '📌';
+      const links = s.links.filter(l=>l.text||l.url);
+      const linkLine = links.map(l =>
+        l.url
+          ? `<a href="${esc(l.url)}" style="display:inline-flex;align-items:center;gap:5px;color:#2D7F7B;font-weight:600;text-decoration:none;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:5px;padding:3px 9px;font-size:12px;margin:2px 3px 2px 0">
+               <span style="font-size:11px">🔗</span>${esc(l.text||l.url)}
+             </a>`
+          : `<span style="display:inline-flex;align-items:center;gap:4px;color:#2D7F7B;font-weight:600;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:5px;padding:3px 9px;font-size:12px;margin:2px 3px 2px 0">${esc(l.text)}</span>`
+      ).join('');
       return `
-        <div style="padding:14px 0;border-bottom:1px solid #E8E4DC">
-          <div style="font-size:14px;color:#1A2020"><strong>Step ${i+1})</strong> ${esc(s.label)}${linkLine ? ': ' : ''}<br>${linkLine ? `<span style="display:inline-block;margin-top:4px">${linkLine}</span>` : ''}</div>
+        <div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #F0F4F8;align-items:flex-start">
+          <div style="flex-shrink:0;margin-top:1px">
+            <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#4D8A86,#3a6e6b);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(77,138,134,.3)">${i+1}</div>
+          </div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:${links.length?'6':'0'}px">
+              <span style="font-size:15px">${icon}</span>
+              <span style="font-size:13px;font-weight:600;color:#1A2020">${esc(s.label)}</span>
+            </div>
+            ${links.length ? `<div style="margin-left:2px">${linkLine}</div>` : ''}
+          </div>
         </div>`;
     }).join('');
-    const bottomBar = p.websiteUrl
-      ? `<div style="background:#3AB8C5;padding:10px 24px;display:flex;align-items:center;justify-content:center;gap:24px;border-radius:0 0 10px 10px">
-           <span style="color:#fff;font-size:13px">📷</span>
-           <a href="${esc(p.websiteUrl)}" style="color:#fff;font-size:13px;font-weight:700;text-decoration:underline">${esc(p.websiteUrl.replace(/^https?:\/\//,''))}</a>
-           <span style="color:#fff;font-size:13px">📘</span>
-         </div>` : '';
+
+    const footerDomain = p.websiteUrl ? p.websiteUrl.replace(/^https?:\/\//,'') : '';
+
     return `
-      <div style="border-radius:10px;overflow:hidden;border:1px solid #D6D1C4;max-width:520px;margin:0 auto;font-family:sans-serif">
-        <div style="background:#1A2020;padding:20px 24px;display:flex;align-items:center;gap:16px">
-          ${p.logoUrl ? `<img src="${esc(p.logoUrl)}" style="height:44px;border-radius:4px" alt="logo">` : `<div style="width:44px;height:44px;border-radius:8px;background:#3AB8C5;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff">${esc((p.companyName||'A')[0])}</div>`}
-          <div>
-            <div style="color:#fff;font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:.05em">Employee Onboarding</div>
-            <div style="color:#3AB8C5;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${esc(p.companyName)}</div>
+      <div style="border-radius:14px;overflow:hidden;border:1px solid #D4DAE5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+        <!-- Header with gradient -->
+        <div style="background:linear-gradient(135deg,#0F1F1E 0%,#1A3332 50%,#1C3D3A 100%);padding:22px 24px;display:flex;align-items:center;gap:16px;position:relative;overflow:hidden">
+          <div style="position:absolute;top:-20px;right:-20px;width:100px;height:100px;border-radius:50%;background:rgba(58,184,197,.12)"></div>
+          <div style="position:absolute;bottom:-30px;right:60px;width:70px;height:70px;border-radius:50%;background:rgba(77,138,134,.15)"></div>
+          ${p.logoUrl
+            ? `<img src="${esc(p.logoUrl)}" style="height:48px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.3)" alt="logo">`
+            : `<div style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#3AB8C5,#2D9AA8);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;box-shadow:0 4px 12px rgba(58,184,197,.4);flex-shrink:0">${initial}</div>`}
+          <div style="z-index:1">
+            <div style="color:rgba(255,255,255,.6);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;margin-bottom:3px">Employee Onboarding</div>
+            <div style="color:#fff;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;line-height:1.1">${esc(p.companyName)}</div>
+          </div>
+          <div style="margin-left:auto;z-index:1">
+            <div style="background:rgba(58,184,197,.2);border:1px solid rgba(58,184,197,.4);border-radius:20px;padding:4px 12px">
+              <span style="color:#3AB8C5;font-size:10px;font-weight:700;letter-spacing:.08em">NEW HIRE</span>
+            </div>
           </div>
         </div>
-        ${p.welcomeMsg ? `<div style="background:#F5F3EE;padding:12px 24px;font-size:13px;color:#5C6B58;font-style:italic;border-bottom:1px solid #E8E4DC">${esc(p.welcomeMsg)}</div>` : ''}
-        <div style="background:#fff;padding:0 24px">${stepBlocks}</div>
-        ${p.contactEmail ? `<div style="background:#F5F3EE;padding:12px 24px;font-size:12px;color:#5C6B58;border-top:1px solid #E8E4DC">
-          Print and turn in all forms or email completed forms to <strong>${esc(p.contactEmail)}</strong> to begin employment.
+        <!-- Welcome message -->
+        ${p.welcomeMsg ? `
+        <div style="background:linear-gradient(135deg,#F7FAF9,#F0F7F6);padding:14px 24px;border-bottom:1px solid #E0ECEB;display:flex;gap:10px;align-items:flex-start">
+          <span style="font-size:16px;flex-shrink:0;margin-top:1px">👋</span>
+          <p style="margin:0;font-size:13px;color:#2D4D4B;line-height:1.55;font-style:italic">${esc(p.welcomeMsg)}</p>
         </div>` : ''}
-        ${bottomBar}
+        <!-- Steps -->
+        <div style="background:#fff;padding:4px 24px 8px">${stepBlocks}</div>
+        <!-- Footer info bar -->
+        ${p.contactEmail ? `
+        <div style="background:#F7FAF9;border-top:1px solid #E0ECEB;padding:12px 24px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:14px">📩</span>
+          <span style="font-size:12px;color:#4A6360">Submit completed forms to <strong style="color:#2D4D4B">${esc(p.contactEmail)}</strong> to begin employment.</span>
+        </div>` : ''}
+        <!-- Bottom brand bar -->
+        ${p.websiteUrl ? `
+        <div style="background:linear-gradient(135deg,#3AB8C5,#2D9AA8);padding:11px 24px;display:flex;align-items:center;justify-content:center;gap:12px">
+          <span style="color:rgba(255,255,255,.7);font-size:12px">🌐</span>
+          <a href="${esc(p.websiteUrl)}" style="color:#fff;font-size:13px;font-weight:700;text-decoration:none;letter-spacing:.02em">${esc(footerDomain)}</a>
+          <span style="color:rgba(255,255,255,.4);font-size:11px">·</span>
+          <span style="color:rgba(255,255,255,.7);font-size:12px">Powered by Groundwork CRM</span>
+        </div>` : ''}
       </div>`;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
   container.innerHTML = `
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+<style>
+  .ob-card { background:#fff;border:1px solid #E5E9F0;border-radius:14px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05) }
+  .ob-card-header { background:linear-gradient(135deg,#F8F9FC 0%,#F2F5FA 100%);border-bottom:1px solid #E5E9F0;padding:13px 18px;display:flex;align-items:center;gap:10px }
+  .ob-card-header-icon { font-size:16px }
+  .ob-card-header-label { font-size:11px;font-weight:800;color:#4A5568;text-transform:uppercase;letter-spacing:.1em }
+  .ob-card-body { padding:16px 18px }
+  .ob-field-label { font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:5px;letter-spacing:.02em }
+  .ob-input { width:100%;font-size:13px;padding:8px 11px;border:1px solid #D1D5DB;border-radius:8px;background:#FAFBFC;color:var(--gds-ink);outline:none;transition:all .15s;box-sizing:border-box }
+  .ob-input:focus { border-color:#4D8A86;box-shadow:0 0 0 3px rgba(77,138,134,.12);background:#fff }
+  .ob-textarea { width:100%;font-size:12.5px;padding:8px 11px;border:1px solid #D1D5DB;border-radius:8px;background:#FAFBFC;color:var(--gds-ink);resize:vertical;outline:none;transition:all .15s;box-sizing:border-box;line-height:1.5 }
+  .ob-textarea:focus { border-color:#4D8A86;box-shadow:0 0 0 3px rgba(77,138,134,.12);background:#fff }
+  .ob-field-row { margin-bottom:12px }
+  .ob-field-row:last-child { margin-bottom:0 }
+  .ob-add-step-btn { width:100%;padding:10px;border-radius:10px;border:2px dashed #B2D4D1;background:linear-gradient(135deg,#F0FAF8,#EAF6F5);color:#4D8A86;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:6px;letter-spacing:.01em }
+  .ob-add-step-btn:hover { border-color:#4D8A86;background:linear-gradient(135deg,#E0F7F4,#D8F4F0);box-shadow:0 2px 8px rgba(77,138,134,.15) }
+  .ob-send-btn { padding:10px 22px;border-radius:9px;background:linear-gradient(135deg,#4D8A86,#3a6e6b);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;letter-spacing:.02em;transition:all .2s;box-shadow:0 2px 8px rgba(77,138,134,.3) }
+  .ob-send-btn:hover { background:linear-gradient(135deg,#3a6e6b,#2d5655);box-shadow:0 4px 14px rgba(77,138,134,.4);transform:translateY(-1px) }
+  .ob-send-btn:active { transform:translateY(0) }
+  .ob-section-badge { display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#4D8A86;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:20px;padding:2px 9px;letter-spacing:.05em }
+  .ob-auto-save-note { font-size:11px;color:#9CA3AF;display:flex;align-items:center;gap:6px;padding:10px 0 0 }
+</style>
 
-  <!-- LEFT: Packet Builder -->
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;align-items:start">
+
+  <!-- ════════════ LEFT: Packet Builder ════════════ -->
   <div>
-    <div style="margin-bottom:18px">
-      <h3 style="margin:0 0 3px;font-size:15px;font-weight:800">Onboarding Packet</h3>
-      <p style="margin:0;font-size:12px;color:#6F7E6A">Build the document you send to every new hire. Changes save automatically.</p>
+    <!-- Page header -->
+    <div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--gds-ink)">Onboarding Packet</h3>
+        <span class="ob-section-badge">✏️ Builder</span>
+      </div>
+      <p style="margin:0;font-size:12px;color:#6B7280;line-height:1.5">Configure the packet sent to every new hire. All changes save to this browser automatically.</p>
     </div>
 
-    <!-- Company Info -->
-    <div style="background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Company Info</div>
-      <div style="display:grid;gap:8px">
-        <div>
-          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Company Name</label>
-          <input type="text" id="ob-company" value="${esc(packet.companyName)}"
-            oninput="window._obField('companyName',this.value)"
-            style="width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+    <!-- Company Info card -->
+    <div class="ob-card">
+      <div class="ob-card-header">
+        <span class="ob-card-header-icon">🏢</span>
+        <span class="ob-card-header-label">Company Info</span>
+      </div>
+      <div class="ob-card-body" style="display:grid;gap:0">
+        <div class="ob-field-row">
+          <label class="ob-field-label">Company Name</label>
+          <input type="text" id="ob-company" value="${esc(packet.companyName)}" class="ob-input"
+            oninput="window._obField('companyName',this.value)" placeholder="Your company name">
         </div>
-        <div>
-          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Contact / Admin Email</label>
-          <input type="email" id="ob-email" value="${esc(packet.contactEmail)}"
-            oninput="window._obField('contactEmail',this.value)"
-            style="width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
+        <div class="ob-field-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label class="ob-field-label">Contact / Admin Email</label>
+            <input type="email" id="ob-email" value="${esc(packet.contactEmail)}" class="ob-input"
+              oninput="window._obField('contactEmail',this.value)" placeholder="admin@company.com">
+          </div>
+          <div>
+            <label class="ob-field-label">Website URL</label>
+            <input type="url" id="ob-website" value="${esc(packet.websiteUrl)}" class="ob-input"
+              oninput="window._obField('websiteUrl',this.value)" placeholder="https://...">
+          </div>
         </div>
-        <div>
-          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Website URL</label>
-          <input type="url" id="ob-website" value="${esc(packet.websiteUrl)}"
-            oninput="window._obField('websiteUrl',this.value)"
-            style="width:100%;font-size:13px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:11px;color:#6F7E6A;display:block;margin-bottom:3px">Welcome Message (optional)</label>
-          <textarea id="ob-welcome" rows="2" oninput="window._obField('welcomeMsg',this.value)"
-            style="width:100%;font-size:12px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink);resize:vertical;box-sizing:border-box">${esc(packet.welcomeMsg)}</textarea>
+        <div class="ob-field-row">
+          <label class="ob-field-label">Welcome Message <span style="font-weight:400;opacity:.7">(optional)</span></label>
+          <textarea id="ob-welcome" rows="2" class="ob-textarea"
+            oninput="window._obField('welcomeMsg',this.value)"
+            placeholder="Welcome to the team! Here's everything you need to get started.">${esc(packet.welcomeMsg)}</textarea>
         </div>
       </div>
     </div>
 
-    <!-- Steps -->
-    <div style="background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Onboarding Steps</div>
-      <div id="ob-steps-list">
-        ${packet.steps.map((s,i) => stepRowHtml(s,i)).join('')}
+    <!-- Steps card -->
+    <div class="ob-card">
+      <div class="ob-card-header" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="ob-card-header-icon">📋</span>
+          <span class="ob-card-header-label">Onboarding Steps</span>
+        </div>
+        <span style="font-size:11px;color:#9CA3AF;font-weight:500">${packet.steps.length} step${packet.steps.length!==1?'s':''}</span>
       </div>
-      <button onclick="window._obAddStep()"
-        style="width:100%;padding:9px;border-radius:8px;border:1.5px dashed #4D8A86;background:none;color:#4D8A86;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px">
-        + Add Step
-      </button>
+      <div class="ob-card-body">
+        <div id="ob-steps-list">
+          ${packet.steps.map((s,i) => stepRowHtml(s,i)).join('')}
+        </div>
+        <button class="ob-add-step-btn" onclick="window._obAddStep()">＋ Add Step</button>
+      </div>
     </div>
 
-    <div style="font-size:11px;color:#5C6B58;margin-top:-8px">
-      💾 Changes save to this browser automatically. Use <strong>Send Onboarding</strong> on any Team Member card to email the packet.
+    <div class="ob-auto-save-note">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5.5" stroke="#9CA3AF"/><path d="M6 3.5v3l2 1.5" stroke="#9CA3AF" stroke-linecap="round"/></svg>
+      Changes save to this browser automatically · Use <strong style="color:#4D8A86;margin:0 3px">✉ Onboarding</strong> on any team member card to pre-fill the send form
     </div>
   </div>
 
-  <!-- RIGHT: Preview + Send -->
+  <!-- ════════════ RIGHT: Preview + Send ════════════ -->
   <div>
-    <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+    <!-- Preview header -->
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
       <div>
-        <h3 style="margin:0 0 2px;font-size:15px;font-weight:800">Live Preview</h3>
-        <p style="margin:0;font-size:12px;color:#6F7E6A">This is what your new hire receives.</p>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--gds-ink)">Live Preview</h3>
+          <span class="ob-section-badge">👁 Real-time</span>
+        </div>
+        <p style="margin:0;font-size:12px;color:#6B7280">Exactly what your new hire receives.</p>
       </div>
     </div>
-    <div id="ob-preview">${previewHtml(packet)}</div>
 
-    <!-- Send to Team Member -->
-    <div style="margin-top:20px;background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-      <div style="font-size:11px;font-weight:800;color:#5C6B58;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Send Onboarding Packet</div>
-      <div style="margin-bottom:8px;font-size:12px;color:#6F7E6A">Choose a team member to send the packet to, or enter any email directly.</div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <select id="ob-send-select" onchange="document.getElementById('ob-send-email').value=this.value"
-          style="flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink)">
-          <option value="">— Pick team member —</option>
-          ${users.map(u => `<option value="${esc(u.email||'')}">${esc(u.name)} ${u.email?'('+esc(u.email)+')':''}</option>`).join('')}
-        </select>
+    <!-- Preview frame with subtle shadow -->
+    <div style="border-radius:16px;padding:2px;background:linear-gradient(135deg,#E0ECEB,#D8E8F4);box-shadow:0 8px 32px rgba(0,0,0,.1)">
+      <div id="ob-preview" style="border-radius:14px;overflow:hidden">
+        ${previewHtml(packet)}
       </div>
-      <div style="display:flex;gap:8px">
-        <input type="email" id="ob-send-email" placeholder="or enter email directly"
-          style="flex:1;font-size:12px;padding:7px 10px;border:1px solid var(--gw-line);border-radius:7px;background:var(--gw-surface-2);color:var(--gds-ink)">
-        <button onclick="window._obSendPacket()"
-          style="padding:7px 18px;border-radius:8px;background:#4D8A86;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
-          Send ✉
-        </button>
+    </div>
+
+    <!-- Send panel card -->
+    <div class="ob-card" style="margin-top:20px">
+      <div class="ob-card-header">
+        <span class="ob-card-header-icon">✉️</span>
+        <span class="ob-card-header-label">Send Onboarding Packet</span>
       </div>
-      <div id="ob-send-status" style="margin-top:8px;font-size:12px;color:#4D8A86;min-height:18px"></div>
+      <div class="ob-card-body">
+        <p style="margin:0 0 12px;font-size:12.5px;color:#6B7280;line-height:1.5">Choose a team member or enter any email address to send the packet directly.</p>
+
+        <!-- Team member picker -->
+        <div class="ob-field-row">
+          <label class="ob-field-label">Quick-fill from team</label>
+          <div style="position:relative">
+            <select id="ob-send-select" onchange="document.getElementById('ob-send-email').value=this.value"
+              style="width:100%;font-size:12.5px;padding:8px 32px 8px 11px;border:1px solid #D1D5DB;border-radius:8px;background:#FAFBFC;color:var(--gds-ink);outline:none;cursor:pointer;appearance:none;transition:all .15s"
+              onfocus="this.style.borderColor='#4D8A86';this.style.boxShadow='0 0 0 3px rgba(77,138,134,.12)'"
+              onblur="this.style.borderColor='#D1D5DB';this.style.boxShadow='none'">
+              <option value="">— Pick team member —</option>
+              ${users.map(u => `<option value="${esc(u.email||'')}">${esc(u.name)}${u.email?' · '+esc(u.email):''}</option>`).join('')}
+            </select>
+            <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#9CA3AF" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 5.5L7 9l3.5-3.5" stroke="#9CA3AF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+
+        <!-- Email + Send row -->
+        <div class="ob-field-row">
+          <label class="ob-field-label">Or enter email directly</label>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;position:relative">
+              <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%)" width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="8" rx="1.5" stroke="#9CA3AF" stroke-width="1.2"/><path d="M1 4.5l6 4 6-4" stroke="#9CA3AF" stroke-width="1.2"/></svg>
+              <input type="email" id="ob-send-email" placeholder="hire@example.com"
+                style="width:100%;font-size:12.5px;padding:8px 11px 8px 30px;border:1px solid #D1D5DB;border-radius:8px;background:#FAFBFC;color:var(--gds-ink);outline:none;transition:all .15s;box-sizing:border-box"
+                onfocus="this.style.borderColor='#4D8A86';this.style.boxShadow='0 0 0 3px rgba(77,138,134,.12)';this.style.background='#fff'"
+                onblur="this.style.borderColor='#D1D5DB';this.style.boxShadow='none';this.style.background='#FAFBFC'">
+            </div>
+            <button class="ob-send-btn" onclick="window._obSendPacket()">Send ✉</button>
+          </div>
+        </div>
+
+        <!-- Status message -->
+        <div id="ob-send-status" style="min-height:22px;font-size:12px;transition:all .2s"></div>
+      </div>
     </div>
   </div>
 
@@ -1343,6 +1463,9 @@ function umRenderOnboarding(container) {
   function _obRefreshSteps() {
     const list = document.getElementById('ob-steps-list');
     if (list) list.innerHTML = _obPacket.steps.map((s,i) => stepRowHtml(s,i)).join('');
+    // Update step count badge
+    const countBadge = document.querySelector('.ob-card-header [style*="color:#9CA3AF"]');
+    if (countBadge) countBadge.textContent = `${_obPacket.steps.length} step${_obPacket.steps.length!==1?'s':''}`;
     _obRefreshPreview();
   }
 
@@ -1378,8 +1501,11 @@ function umRenderOnboarding(container) {
     const emailEl = document.getElementById('ob-send-email');
     const statusEl = document.getElementById('ob-send-status');
     const email = (emailEl?.value || '').trim();
-    if (!email) { if (statusEl) statusEl.textContent = 'Enter an email address first.'; return; }
-    if (statusEl) statusEl.textContent = 'Sending…';
+    if (!email) {
+      if (statusEl) statusEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:6px;padding:5px 10px;color:#92400E;font-weight:600">⚠️ Enter an email address first.</span>';
+      return;
+    }
+    if (statusEl) statusEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#F0F9FF;border:1px solid #BAE6FD;border-radius:6px;padding:5px 10px;color:#0369A1;font-weight:600"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="animation:spin 1s linear infinite"><circle cx="7" cy="7" r="5" stroke="#0369A1" stroke-width="2" stroke-dasharray="22" stroke-dashoffset="10"/></svg>Sending packet…</span><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
     // Build plain-text version of the packet for the email body
     const p = _obPacket;
     const stepsText = p.steps.map((s,i) => {
@@ -1409,18 +1535,17 @@ function umRenderOnboarding(container) {
       const j = await res.json();
       if (statusEl) {
         if (j.emailSent || j.ok !== false) {
-          statusEl.style.color = '#2D7A55';
-          statusEl.textContent = `✓ Onboarding packet sent to ${email}`;
+          statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:6px;padding:5px 10px;color:#065F46;font-weight:600">✅ Packet sent to ${email}</span>`;
           if (emailEl) emailEl.value = '';
           const sel = document.getElementById('ob-send-select');
           if (sel) sel.value = '';
+          setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 5000);
         } else {
-          statusEl.style.color = '#A05050';
-          statusEl.textContent = j.error || 'Send failed — check email config in Integrations.';
+          statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:5px 10px;color:#991B1B;font-weight:600">❌ ${j.error || 'Send failed — check Integrations.'}</span>`;
         }
       }
     } catch(e) {
-      if (statusEl) { statusEl.style.color = '#A05050'; statusEl.textContent = 'Network error: ' + e.message; }
+      if (statusEl) statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:5px 10px;color:#991B1B;font-weight:600">❌ Network error: ${e.message}</span>`;
     }
   };
 }
