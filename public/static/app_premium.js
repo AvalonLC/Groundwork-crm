@@ -354,6 +354,113 @@ function fallbackCopy(text){
   try { document.execCommand('copy'); } catch(e){}
   document.body.removeChild(ta);
 }
+// ══════════════════════════════════════════════════════════════════════════════
+// NAV HISTORY TRAIL  — breadcrumb strip shown below the topbar
+// Max 8 unique entries; deduplicates adjacent; persists to sessionStorage.
+// ══════════════════════════════════════════════════════════════════════════════
+(function _initGwTrail(){
+  const SS_KEY = 'gwNavHistory';
+  const MAX    = 8;
+
+  // Restore from sessionStorage on page load
+  try {
+    const saved = sessionStorage.getItem(SS_KEY);
+    window._gwNavHistory = saved ? JSON.parse(saved) : [];
+  } catch(e) {
+    window._gwNavHistory = [];
+  }
+
+  window._gwPushTrail = function(viewName){
+    const hist = window._gwNavHistory;
+    // Skip system / modal-style views that shouldn't pollute the trail
+    const skipList = ['today']; // 'today' is home — always accessible, skip trail for it
+    // Deduplicate adjacent: don't push same view twice in a row
+    if (hist.length && hist[hist.length - 1] === viewName) return;
+    // Remove any earlier occurrence of this view (bubble to end)
+    const idx = hist.indexOf(viewName);
+    if (idx !== -1) hist.splice(idx, 1);
+    hist.push(viewName);
+    // Trim to max
+    if (hist.length > MAX) hist.splice(0, hist.length - MAX);
+    window._gwNavHistory = hist;
+    try { sessionStorage.setItem(SS_KEY, JSON.stringify(hist)); } catch(e){}
+    window._gwRenderTrail(viewName);
+  };
+
+  window._gwRenderTrail = function(currentView){
+    const trail = document.getElementById('gw-trail');
+    if (!trail) return;
+    const hist  = window._gwNavHistory || [];
+
+    // Build label map (same as the one inside show())
+    const labels = {
+      today:'Today', myDashboard:'My Dashboard', teamView:'Team View',
+      pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
+      estimates:'Estimates', communications:'Communications', automations:'Automations',
+      templates:'Templates', campaigns:'Campaigns', process:'Sales Process',
+      forms:'Forms', scripts:'Scripts', emailTemplates:'Email Templates',
+      objections:'Objections', calculator:'Pricing Tools', ai:'AI Assistant',
+      academy:'Academy', financialHub:'Financial', invoices:'Invoices',
+      payments:'Payments', deposits:'Deposits', statements:'Statements',
+      financialActivity:'Activity', scheduleBoard:'Calendar',
+      dispatchBoard:'Dispatch', recurringServices:'Recurring', crewView:'Crew View',
+      workOrderList:'Work Orders', workOrderDetail:'Work Order',
+      assetList:'Assets', assetDetail:'Asset', maintenanceQueue:'Maintenance',
+      inventoryList:'Inventory', materialAllocation:'Materials',
+      toolsConsumables:'Tools', timeTracker:'Time Tracker',
+      revenueAdmin:'Revenue', salesReports:'Sales Reports',
+      financialReports:'Financial Reports', opsReports:'Ops Reports',
+      teamReports:'Team Reports', settings:'Settings',
+      userManagement:'Users & Roles', integrations:'Integrations',
+      manager:'Manager', systemConfig:'System Config',
+      systemTemplates:'Templates & Automations',
+      gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support',
+      gwAnnounce:'Announcements', gwBilling:'Billing',
+      gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
+      opsHub:'Operations Hub',
+    };
+
+    // Hide bar if only 1 item (nothing to navigate back to)
+    if (hist.length < 2) {
+      trail.style.display = 'none';
+      return;
+    }
+    trail.style.display = 'flex';
+
+    // Previous view for the ← Back button
+    const prevIdx = hist.length - 2;
+    const prevView = hist[prevIdx];
+    const prevLabel = labels[prevView] || prevView;
+
+    let html = '';
+
+    // ← Back button (jump to previous)
+    html += `<button class="gw-trail-back" onclick="show('${prevView}')" title="Back to ${prevLabel}">` +
+      `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7.5,2 3.5,6 7.5,10"/></svg>` +
+      `${prevLabel}</button>`;
+
+    // Separator
+    html += `<span class="gw-trail-sep"></span>`;
+
+    // History pills (oldest → newest / current)
+    hist.forEach((v, i) => {
+      const lbl  = labels[v] || v;
+      const isActive = (v === currentView);
+      if (i > 0) html += `<span class="gw-trail-chevron">›</span>`;
+      if (isActive) {
+        html += `<span class="gw-trail-pill gw-trail-pill--active" title="${lbl}">${lbl}</span>`;
+      } else {
+        html += `<button class="gw-trail-pill" onclick="show('${v}')" title="${lbl}">${lbl}</button>`;
+      }
+    });
+
+    trail.innerHTML = html;
+
+    // Auto-scroll so current (rightmost) pill is visible
+    requestAnimationFrame(() => { trail.scrollLeft = trail.scrollWidth; });
+  };
+})();
+
 function show(viewName='today', param){
   // ── Permission gate (admin-configurable) ─────────────────
   // Platform super-admin bypasses all tenant permission gates
@@ -482,6 +589,9 @@ function show(viewName='today', param){
 
   // Track current view so background sync can re-render after data arrives
   window._currentView = viewName;
+
+  // ── Nav history trail ─────────────────────────────────────
+  if (typeof window._gwPushTrail === 'function') window._gwPushTrail(viewName);
 
   // On data-heavy views, trigger a background sync so data is always fresh
   // (non-blocking — runs after render, re-renders only if new data arrives)

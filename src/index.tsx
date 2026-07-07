@@ -3359,6 +3359,7 @@ function getHtml(): string {
 
       <button class="topbar-settings" onclick="show('settings')" title="Settings"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg>Settings</button>
     </header>
+    <nav id="gw-trail" class="gw-trail" aria-label="Navigation history" style="display:none"></nav>
     <div class="view" id="view" role="region" aria-live="polite"></div>
   </main>
 </div>
