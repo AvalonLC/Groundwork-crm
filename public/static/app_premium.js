@@ -1540,73 +1540,107 @@ function buildSuggestedActions(currentRep){
   </div>`;
 }
 
-function today(){
+// ── Today refresh hook — called by task engine after complete/archive ──────────
+window._gwTodayRefreshIfActive = function() {
+  if (window._currentView === 'today') {
+    _gwTodayRender();
+  }
+};
+
+// ── Today: render task sections from cache ────────────────────────────────────
+function _gwTodayRenderTaskWorkspace(rep) {
+  if (!window.gwTask || !rep) return '';
+  const today  = todayISO();
+  const repId  = rep.id;
+  const overdue    = window.gwTask.overdueForUser(repId);
+  const dueToday   = window.gwTask.dueTodayForUser(repId);
+  const upcoming   = (window.gwTask.openForUser(repId))
+    .filter(t => t.due_date && t.due_date > today)
+    .sort((a,b) => a.due_date.localeCompare(b.due_date)).slice(0, 10);
+  const noDue      = (window.gwTask.openForUser(repId)).filter(t => !t.due_date);
+  const donesToday = window.gwTask.completedToday(repId);
+
+  const allOpen = [...overdue, ...dueToday, ...upcoming, ...noDue];
+
+  function mkSection(label, tasks, emptyMsg, addlClass) {
+    if (!tasks.length) return `<div class="gw-today-section-empty">${emptyMsg||''}</div>`;
+    return tasks.map(t => window.gwTask.renderRow(t, { showRecord: true, showCompleteBtn: true, showEditBtn: true, showArchiveBtn: false })).join('');
+  }
+
+  const overdueHtml   = overdue.length   ? `<div class="gw-today-group-label gw-today-group-label--overdue">Overdue (${overdue.length})</div>${mkSection('Overdue',overdue)}` : '';
+  const todayHtml     = dueToday.length  ? `<div class="gw-today-group-label gw-today-group-label--today">Due Today (${dueToday.length})</div>${mkSection('Due Today',dueToday)}` : '';
+  const upcomingHtml  = upcoming.length  ? `<div class="gw-today-group-label">Upcoming</div>${mkSection('Upcoming',upcoming)}` : '';
+  const noDueHtml     = noDue.length     ? `<div class="gw-today-group-label">No Date</div>${mkSection('No Date',noDue)}` : '';
+
+  const doneHtml = donesToday.length ? `
+    <details class="gw-task-done-details" style="margin-top:12px">
+      <summary class="gw-task-done-summary">Completed today (${donesToday.length})</summary>
+      ${donesToday.map(t => window.gwTask.renderRow(t, { showRecord: true, showCompleteBtn: false, showEditBtn: false, showArchiveBtn: true })).join('')}
+    </details>` : '';
+
+  const emptyAll = !allOpen.length && !donesToday.length
+    ? `<div class="gw-task-empty" style="padding:24px 0">No tasks scheduled — add one to get started.</div>` : '';
+
+  return `<section class="card app-card" style="grid-column:1/-1">
+    <div class="section-head">
+      <h2>My Tasks</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${overdue.length ? `<span class="badge bad-badge">${overdue.length} overdue</span>` : ''}
+        ${dueToday.length ? `<span class="badge warn-badge">${dueToday.length} due today</span>` : (overdue.length ? '' : `<span class="badge neutral-badge">All clear</span>`)}
+        <button class="secondary-btn small" onclick="window._gwTodayNewTask()">+ Add Task</button>
+      </div>
+    </div>
+    <div class="gw-task-workspace">
+      ${overdueHtml}${todayHtml}${upcomingHtml}${noDueHtml}${emptyAll}${doneHtml}
+    </div>
+  </section>`;
+}
+
+function _gwTodayRender() {
   const _todayRep = window.getCurrentRep ? window.getCurrentRep() : null;
   const _isOM = _todayRep && _todayRep.role === 'office_manager';
-  // Check for unsynced localStorage leads
+  const today = todayISO();
+
+  // Unsynced banner
   const _localOnlyOpps = state.opportunities.filter(o => !o._fromD1);
   const _unsyncedBanner = _localOnlyOpps.length > 0 ? `
     <div style="background:#FFF3CD;border:1px solid #FFD60A;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L1 16h16L9 2z" stroke="#8B6914" stroke-width="1.5" stroke-linejoin="round" fill="#FFF3CD"/><path d="M9 7v4" stroke="#8B6914" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="13.5" r="1" fill="#8B6914"/></svg>
-      <div style="flex:1">
-        <strong style="color:#8B6914">${_localOnlyOpps.length} lead${_localOnlyOpps.length>1?'s are':' is'} only saved locally</strong> — not yet synced to the cloud. Teammates can't see them yet.
-      </div>
-      <button onclick="window._recoverLocalLeads&&window._recoverLocalLeads()" style="background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">↑ Sync Now</button>
+      <div style="flex:1"><strong style="color:#8B6914">${_localOnlyOpps.length} lead${_localOnlyOpps.length>1?'s are':' is'} only saved locally</strong> — not yet synced to the cloud.</div>
+      <button onclick="window._recoverLocalLeads&&window._recoverLocalLeads()" style="background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Sync Now</button>
     </div>` : '';
-  const due = state.opportunities
-    .filter(o=>o.nextFollowUp && o.nextFollowUp <= todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status))
-    .sort((a,b)=>a.nextFollowUp.localeCompare(b.nextFollowUp));
-  const next = state.opportunities
-    .filter(o=>o.nextFollowUp && o.nextFollowUp > todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status))
-    .sort((a,b)=>a.nextFollowUp.localeCompare(b.nextFollowUp)).slice(0,5);
+
+  // Opportunity-derived lists (still used for Coming Up / Recently Updated)
   const recent = [...state.opportunities].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
-  const _heroBlock = _isOM ? `
-    <div class="pl-page-header">
-      <div class="pl-page-title">
-        <h1 class="pl-title">Today</h1>
-        <span class="pl-subtitle">Office operations · ${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
-      </div>
-      <div class="pl-page-actions">
-        <button class="primary-btn small" onclick="show('lead')">+ New Lead</button>
-        <button class="secondary-btn small" onclick="show('pipeline')">Full Pipeline</button>
-        <button class="secondary-btn small" onclick="show('myDashboard')">Ops Dashboard</button>
-      </div>
-    </div>` : `
+
+  // Hero header
+  const _heroBlock = `
     <div class="pl-page-header">
       <div class="pl-page-title">
         <h1 class="pl-title">Today</h1>
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
-        <button class="primary-btn small" onclick="show('lead')">+ New Lead</button>
-        <button class="secondary-btn small" onclick="show('pipeline')">Open Pipeline</button>
-        <button class="secondary-btn small" onclick="show('forms','discovery')">Discovery Planner</button>
-        <button class="secondary-btn small" onclick="show('forms','site-walk')">Site Walk</button>
+        <button class="primary-btn small" onclick="window._gwTodayNewTask()">+ New Task</button>
+        <button class="secondary-btn small" onclick="show('lead')">+ New Lead</button>
+        <button class="secondary-btn small" onclick="show('pipeline')">Pipeline</button>
+        ${_isOM ? `<button class="secondary-btn small" onclick="show('myDashboard')">Ops</button>` : ''}
       </div>
     </div>`;
+
+  // Task workspace (from cache — loaded async below)
+  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep);
+
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}
     ${statCards()}
+    <div class="grid mt" style="grid-template-columns:1fr 1fr;gap:16px">
+      ${_taskWorkspace}
+    </div>
     <div class="grid grid-2 mt">
-      <section class="card app-card">
-        <div class="section-head">
-          <h2>Due Now</h2>
-          ${due.length
-            ? badge(`${due.length} follow-up${due.length===1?'':'s'}`, 'warn-badge')
-            : `<span class="badge neutral-badge">All clear</span>`}
-        </div>
-        ${due.length ? due.map(oppCard).join('') : `<div class="due-now-clear">No follow-ups due today.</div>
-        ${buildSuggestedActions(_todayRep)}`}
-      </section>
       <section class="card app-card">
         <div class="section-head"><h2>Daily Sales Start-Up</h2></div>
         ${renderChecklist(data.checklists.find(c=>c.id==='daily'), true)}
-      </section>
-    </div>
-    <div class="grid grid-2 mt">
-      <section class="card">
-        <div class="section-head"><h2>Coming Up</h2></div>
-        ${next.length ? next.map(oppMini).join('') : empty('No upcoming follow-ups.', '', `<button class="secondary-btn small" onclick="show('pipeline')">View Pipeline</button>`)}
       </section>
       <section class="card">
         <div class="section-head"><h2>Recently Updated</h2></div>
@@ -1616,7 +1650,38 @@ function today(){
     ${renderTodayActivityWidget()}
   `;
   wireChecks();
+
+  // Load tasks from D1 async, then re-render the task workspace in place
+  if (window.gwTask && _todayRep) {
+    window.gwTask.loadToday().then(function() {
+      const ws = document.querySelector('.gw-task-workspace');
+      if (!ws) return; // view changed
+      const newSection = _gwTodayRenderTaskWorkspace(_todayRep);
+      // Replace entire task section
+      const sectionEl = ws.closest('section.app-card');
+      if (sectionEl) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = newSection;
+        sectionEl.replaceWith(tmp.firstElementChild);
+      }
+    }).catch(() => {});
+  }
 }
+
+function today(){
+  _gwTodayRender();
+}
+
+// Handler: add task from Today, unlinked or linked
+window._gwTodayNewTask = function() {
+  if (!window.gwTask) return;
+  const rep = typeof window.getCurrentRep === 'function' ? window.getCurrentRep() : null;
+  window.gwTask.modal({
+    defaults: { assignedUserId: rep?.id || '', dueDate: todayISO() }
+  }, function() {
+    if (window._currentView === 'today') _gwTodayRender();
+  });
+};
 
 function renderTodayActivityWidget(){
   const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
@@ -3773,8 +3838,17 @@ function opportunityDetail(id){
             <div class="rp-left-field-value">${o.updatedAt ? prettyDate(o.updatedAt.slice(0,10)) : '—'}</div>
           </div>
           <div class="rp-left-field">
-            <div class="rp-left-field-label">Next Follow-Up</div>
-            <div class="rp-left-field-value${_isOvd?' accent-red':''}" style="${_isOvd?'color:var(--gw-danger)':''}">${prettyDate(o.nextFollowUp)}</div>
+            <div class="rp-left-field-label">Next Task</div>
+            <div class="rp-left-field-value${_isOvd?' accent-red':''}" style="${_isOvd?'color:var(--gw-danger)':''}">
+              ${(function(){
+                  if (!window.gwTask) return prettyDate(o.nextFollowUp) || '—';
+                  const next = window.gwTask.forRecord('lead',o.id)
+                    .filter(t=>t.status==='open')
+                    .sort((a,b)=>(a.due_date||'9999').localeCompare(b.due_date||'9999'))[0];
+                  if (next) return window.gwTask.prettyDate(next.due_date);
+                  return o.nextFollowUp ? prettyDate(o.nextFollowUp) : '—';
+                })()}
+            </div>
           </div>
         </div>
       </aside>
@@ -3850,14 +3924,14 @@ function opportunityDetail(id){
       <!-- RIGHT RAIL -->
       <aside class="ld-rail rp-rail" aria-label="Lead context">
 
-        <!-- Follow-Up -->
-        <div class="ld-rail-card${_isOvd?' ld-rail-card--alert':''}">
+        <!-- Task Panel (replaces legacy Follow-Up card) -->
+        <div class="ld-rail-card" id="gwTaskRailCard_${o.id}">
           <div class="ld-rail-card-head">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Next Follow-Up
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Tasks
           </div>
-          <div style="padding:14px 16px">
-            ${_railFollowHtml}
+          <div style="padding:0 0 4px">
+            ${window.gwTask ? window.gwTask.renderRecordPanel('lead', o.id, o.client || 'Lead') : `<div style="padding:14px 16px;font-size:12px;color:var(--gw-text-subtle)">Loading tasks…</div>`}
           </div>
         </div>
 
@@ -3948,6 +4022,16 @@ function opportunityDetail(id){
 
   // Wire checklist checkboxes + progress bars immediately after render
   wireChecks();
+
+  // Load tasks for this record from D1, then refresh the rail panel in place
+  if (window.gwTask && window._d1Ready) {
+    window.gwTask.loadForRecord('lead', o.id).then(function() {
+      const railCard = document.getElementById('gwTaskRailCard_' + o.id);
+      if (!railCard) return; // view changed
+      const body = railCard.querySelector('div[style]');
+      if (body) body.innerHTML = window.gwTask.renderRecordPanel('lead', o.id, o.client || 'Lead');
+    }).catch(() => {});
+  }
 
   // Wire up Communications compose after render
   if(_activeTab==='comms') wireCommsCompose(o.id, o);
@@ -13103,11 +13187,15 @@ function teamView() {
   const comms  = state.communications || [];
   const today  = todayISO();
 
-  const repRows = reps.map(r => {
+  // Pipeline-derived stats (immediate, no async)
+  const totalOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length;
+  const totalSold  = opps.filter(o=>o.status==='Sold / Activation').length;
+  const totalVal   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+
+  function _tvRepRow(r, taskSummary) {
     const myOpps    = opps.filter(o => o.repId === r.id || o.assignedToRepId === r.id);
     const openOpps  = myOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
     const soldOpps  = myOpps.filter(o => o.status === 'Sold / Activation');
-    const overdue   = openOpps.filter(o => o.nextFollowUp && o.nextFollowUp < today);
     const myComms   = comms.filter(c => c.repId === r.id);
     const lastComm  = myComms.sort((a,b)=>new Date(b.ts)-new Date(a.ts))[0];
     const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
@@ -13116,10 +13204,20 @@ function teamView() {
     const roleLabel = roleDef.label || r.role || 'Rep';
     const initials  = (r.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     const activityDot = lastComm && new Date(lastComm.ts) > new Date(Date.now()-86400000*2)
-      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2D7A55;margin-left:6px" title="Active in last 48h"></span>`
+      ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2D7A55;margin-left:5px" title="Active in last 48h"></span>`
       : '';
+
+    // Task columns — from server summary if available, else derived from cache
+    const ts = taskSummary ? taskSummary.find(x => x.assigned_user_id === r.id) : null;
+    const tOpen   = ts ? ts.open_count          : (window.gwTask ? window.gwTask.openForUser(r.id).length : '—');
+    const tOvd    = ts ? ts.overdue_count        : (window.gwTask ? window.gwTask.overdueForUser(r.id).length : '—');
+    const tToday  = ts ? ts.due_today_count      : (window.gwTask ? window.gwTask.dueTodayForUser(r.id).length : '—');
+    const tDone   = ts ? ts.completed_today_count: (window.gwTask ? window.gwTask.completedToday(r.id).length : '—');
+
+    const ovdStyle = (Number(tOvd) > 0) ? 'color:#C97B6A;font-weight:700' : 'color:var(--gw-muted)';
+
     return `
-    <tr style="border-bottom:1px solid var(--gw-line);cursor:pointer" onclick="show('pipeline')">
+    <tr style="border-bottom:1px solid var(--gw-line)" data-rep-id="${r.id}">
       <td style="padding:12px 14px">
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:34px;height:34px;border-radius:50%;background:${roleColor}22;border:1.5px solid ${roleColor}55;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:${roleColor};flex-shrink:0">${initials}</div>
@@ -13130,26 +13228,25 @@ function teamView() {
         </div>
       </td>
       <td style="padding:12px 10px;text-align:center"><span style="font-weight:700;font-size:14px">${openOpps.length}</span></td>
-      <td style="padding:12px 10px;text-align:center;color:#C97B6A;font-weight:${overdue.length?'700':'400'}">${overdue.length||'—'}</td>
-      <td style="padding:12px 10px;text-align:right;font-weight:700;color:var(--gw-pine-600)">${_p5Money(pipeVal)}</td>
-      <td style="padding:12px 10px;text-align:center;color:#2D7A55;font-weight:700">${soldOpps.length}</td>
+      <td style="padding:12px 10px;text-align:center;font-weight:700;color:var(--gw-pine-600)">${_p5Money(pipeVal)}</td>
+      <td style="padding:12px 10px;text-align:center">${tOpen}</td>
+      <td style="padding:12px 10px;text-align:center;${ovdStyle}">${tOvd || '—'}</td>
+      <td style="padding:12px 10px;text-align:center;color:${Number(tToday)>0?'#4D8A86':'var(--gw-muted)'}">${tToday || '—'}</td>
+      <td style="padding:12px 10px;text-align:center;color:#2D7A55;font-weight:${Number(tDone)>0?'700':'400'}">${tDone || '—'}</td>
       <td style="padding:12px 10px;font-size:11px;color:var(--gw-muted)">${lastComm ? _p5FmtDate(lastComm.ts) : '—'}</td>
     </tr>`;
-  });
+  }
 
-  // Team totals
-  const totalOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length;
-  const totalSold  = opps.filter(o=>o.status==='Sold / Activation').length;
-  const totalVal   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const totalOD    = opps.filter(o=>o.nextFollowUp&&o.nextFollowUp<today&&!['Sold / Activation','Closed Lost'].includes(o.status)).length;
+  // Initial render with pipeline data only (tasks async below)
+  const repRowsHtml = reps.map(r => _tvRepRow(r, null)).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Dashboard</div>
+        <div class="eyebrow">Manager Cockpit</div>
         <h1 class="rp-title">Team View</h1>
-        <p class="rp-subtitle">${reps.length} team member${reps.length!==1?'s':''} · live pipeline snapshot</p>
+        <p class="rp-subtitle">${reps.length} team member${reps.length!==1?'s':''} · pipeline + task rollup</p>
       </div>
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
@@ -13157,7 +13254,7 @@ function teamView() {
       </div>
     </header>
 
-    <!-- Team KPIs -->
+    <!-- Team KPIs row -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
       <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Open Leads</div>
@@ -13167,36 +13264,89 @@ function teamView() {
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Value</div>
         <div style="font-size:28px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(totalVal)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Overdue Follow-Ups</div>
-        <div style="font-size:28px;font-weight:800;color:${totalOD?'#C97B6A':'var(--gds-ink)'}">${totalOD}</div>
+      <div id="tvTotalOpenTasks" style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Open Tasks</div>
+        <div style="font-size:28px;font-weight:800;color:var(--gds-ink)">…</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Closed / Won</div>
-        <div style="font-size:28px;font-weight:800;color:#2D7A55">${totalSold}</div>
+      <div id="tvTotalOverdueTasks" style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Overdue Tasks</div>
+        <div style="font-size:28px;font-weight:800;color:var(--gds-ink)">…</div>
       </div>
     </div>
 
     <!-- Team Table -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse">
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <table id="tvRepTable" style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
             <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Team Member</th>
-            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
-            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#C97B6A;text-transform:uppercase;letter-spacing:.06em">Overdue</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open Leads</th>
             <th style="text-align:right;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-pine-600);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
-            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Sold</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open Tasks</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#C97B6A;text-transform:uppercase;letter-spacing:.06em">Overdue</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em">Due Today</th>
+            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Done Today</th>
             <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Last Activity</th>
           </tr>
         </thead>
         <tbody>
-          ${repRows.length ? repRows.join('') : `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No team members found — add reps in Team Members.</td></tr>`}
+          ${repRowsHtml || `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No team members found.</td></tr>`}
         </tbody>
       </table>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--gw-muted)">Click any row to open the pipeline filtered to that rep.</div>
+
+    <!-- Stuck / Intervention section — populated async -->
+    <div id="tvInterventionSection"></div>
   </div>`;
+
+  // Load team task summary from D1, then re-render table rows + KPI tiles
+  if (window.gwTask) {
+    window.gwTask.loadTeamSummary().then(function(summary) {
+      if (!summary || !summary.length) return;
+      // Update KPI tiles
+      const totalOpenT = summary.reduce((s,x)=>s+Number(x.open_count||0),0);
+      const totalOvdT  = summary.reduce((s,x)=>s+Number(x.overdue_count||0),0);
+      const kpiOpen = document.getElementById('tvTotalOpenTasks');
+      const kpiOvd  = document.getElementById('tvTotalOverdueTasks');
+      if (kpiOpen) kpiOpen.querySelector('div:last-child').textContent = totalOpenT;
+      if (kpiOvd)  {
+        const el = kpiOvd.querySelector('div:last-child');
+        el.textContent = totalOvdT;
+        if (totalOvdT > 0) el.style.color = '#C97B6A';
+      }
+      // Re-render table with task data
+      const tbody = document.querySelector('#tvRepTable tbody');
+      if (tbody) tbody.innerHTML = reps.map(r => _tvRepRow(r, summary)).join('');
+
+      // Intervention section — reps with overdue tasks
+      const needsAttention = summary.filter(x => Number(x.overdue_count) > 0)
+        .sort((a,b) => Number(b.overdue_count) - Number(a.overdue_count));
+      const sec = document.getElementById('tvInterventionSection');
+      if (sec && needsAttention.length) {
+        sec.innerHTML = `
+          <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+            <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:13px;font-weight:700;color:var(--gds-ink)">Needs Attention</div>
+              <span style="font-size:11px;color:var(--gw-muted)">${needsAttention.length} member${needsAttention.length!==1?'s':''} with overdue tasks</span>
+            </div>
+            ${needsAttention.map(x => {
+              const rep = reps.find(r => r.id === x.assigned_user_id);
+              const roleDef = rep ? ((window._gwRoles||[]).find(d=>d.id===rep.role)||{}) : {};
+              const roleColor = roleDef.color || '#6F7E6A';
+              const initials = (x.assigned_user_label||rep?.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+              return `<div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--gw-line)">
+                <div style="width:30px;height:30px;border-radius:50%;background:${roleColor}22;border:1.5px solid ${roleColor}55;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:${roleColor};flex-shrink:0">${initials}</div>
+                <div style="flex:1">
+                  <div style="font-weight:600;font-size:13px;color:var(--gds-ink)">${escapeHtml(x.assigned_user_label||rep?.name||'Unknown')}</div>
+                  <div style="font-size:11px;color:var(--gw-muted)">${x.open_count} open · ${x.due_today_count} due today</div>
+                </div>
+                <span style="background:#C97B6A18;border:1px solid #C97B6A40;color:#C97B6A;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px">${x.overdue_count} overdue</span>
+              </div>`;
+            }).join('')}
+          </div>`;
+      }
+    }).catch(() => {});
+  }
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────────────

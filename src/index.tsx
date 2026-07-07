@@ -2364,6 +2364,204 @@ app.put('/api/workday-settings', requireAuth, async (c) => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TASKS — Unified Task / To-Do Engine (Phase 10)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/tasks
+// Query params: assignedUserId, recordType, recordId, status, from (due_date >=), to (due_date <=)
+// Scoped to session company. Returns open tasks by default; pass status=all for everything.
+app.get('/api/tasks', requireAuth, async (c) => {
+  const companyId     = c.var.companyId as string
+  const role          = c.var.role as string
+  const repId         = c.var.repId as string
+  const assignedUser  = c.req.query('assignedUserId') || null
+  const recordType    = c.req.query('recordType')     || null
+  const recordId      = c.req.query('recordId')       || null
+  const statusFilter  = c.req.query('status')         || 'open'  // 'open'|'completed'|'archived'|'all'
+  const from          = c.req.query('from')            || null
+  const to            = c.req.query('to')              || null
+
+  // Non-admins can only see tasks assigned to themselves, unless they provide no filter
+  const isManager = role === 'admin' || role === 'office_manager'
+  const effectiveUser = isManager
+    ? (assignedUser || null)
+    : repId  // non-managers always scoped to self
+
+  let q = 'SELECT * FROM tasks WHERE company_id=?'
+  const params: any[] = [companyId]
+
+  if (effectiveUser) { q += ' AND assigned_user_id=?'; params.push(effectiveUser) }
+  if (recordType)    { q += ' AND linked_record_type=?'; params.push(recordType) }
+  if (recordId)      { q += ' AND linked_record_id=?'; params.push(recordId) }
+  if (statusFilter !== 'all') { q += ' AND status=?'; params.push(statusFilter) }
+  if (from)          { q += ' AND (due_date IS NULL OR due_date >= ?)'; params.push(from) }
+  if (to)            { q += ' AND due_date <= ?'; params.push(to) }
+
+  q += ' ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, created_at DESC'
+
+  const rows = await c.env.DB.prepare(q).bind(...params).all()
+  return json(c, rows.results)
+})
+
+// POST /api/tasks  — create a new task
+app.post('/api/tasks', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const b = await c.req.json() as any
+
+  if (!b.title?.trim()) return err(c, 'title required')
+  const id  = 'task_' + uid()
+  const now = new Date().toISOString()
+
+  await c.env.DB.prepare(`
+    INSERT INTO tasks (
+      id, company_id, title, description, task_type,
+      linked_record_type, linked_record_id, linked_record_label,
+      assigned_user_id, assigned_user_label, created_by,
+      due_date, due_time, priority, status,
+      calendar_sync_state, source, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    id, companyId,
+    b.title.trim(),
+    b.description || '',
+    b.taskType || 'follow_up',
+    b.linkedRecordType  || null,
+    b.linkedRecordId    || null,
+    b.linkedRecordLabel || '',
+    b.assignedUserId    || repId,
+    b.assignedUserLabel || '',
+    repId,
+    b.dueDate  || null,
+    b.dueTime  || null,
+    b.priority || 'normal',
+    'open',
+    b.calendarSyncState || 'none',
+    b.source || 'manual',
+    now, now
+  ).run()
+
+  const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id=? LIMIT 1').bind(id).first()
+  return json(c, task, 201)
+})
+
+// PUT /api/tasks/:id  — update task fields
+app.put('/api/tasks/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const role      = c.var.role as string
+  const id        = c.req.param('id')
+  const b = await c.req.json() as any
+
+  const task = await c.env.DB.prepare(
+    'SELECT * FROM tasks WHERE id=? AND company_id=? LIMIT 1'
+  ).bind(id, companyId).first<any>()
+  if (!task) return err(c, 'Task not found', 404)
+
+  // Non-admins can only edit tasks assigned to them or created by them
+  const isManager = role === 'admin' || role === 'office_manager'
+  if (!isManager && task.assigned_user_id !== repId && task.created_by !== repId)
+    return err(c, 'Forbidden', 403)
+
+  const updates: string[] = []
+  const vals: any[] = []
+
+  const fields: Record<string, string> = {
+    title: 'title', description: 'description', taskType: 'task_type',
+    linkedRecordType: 'linked_record_type', linkedRecordId: 'linked_record_id',
+    linkedRecordLabel: 'linked_record_label', assignedUserId: 'assigned_user_id',
+    assignedUserLabel: 'assigned_user_label', dueDate: 'due_date', dueTime: 'due_time',
+    priority: 'priority', calendarSyncState: 'calendar_sync_state',
+    calendarEventId: 'calendar_event_id'
+  }
+  for (const [jsKey, dbCol] of Object.entries(fields)) {
+    if (b[jsKey] !== undefined) { updates.push(`${dbCol}=?`); vals.push(b[jsKey]) }
+  }
+  if (!updates.length) return err(c, 'Nothing to update')
+
+  updates.push("updated_at=datetime('now')")
+  await c.env.DB.prepare(
+    `UPDATE tasks SET ${updates.join(',')} WHERE id=? AND company_id=?`
+  ).bind(...vals, id, companyId).run()
+
+  const updated = await c.env.DB.prepare('SELECT * FROM tasks WHERE id=? LIMIT 1').bind(id).first()
+  return json(c, updated)
+})
+
+// PUT /api/tasks/:id/complete  — mark a task completed
+app.put('/api/tasks/:id/complete', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const role      = c.var.role as string
+  const id        = c.req.param('id')
+
+  const task = await c.env.DB.prepare(
+    'SELECT * FROM tasks WHERE id=? AND company_id=? LIMIT 1'
+  ).bind(id, companyId).first<any>()
+  if (!task) return err(c, 'Task not found', 404)
+  const isManager = role === 'admin' || role === 'office_manager'
+  if (!isManager && task.assigned_user_id !== repId && task.created_by !== repId)
+    return err(c, 'Forbidden', 403)
+
+  const now = new Date().toISOString()
+  await c.env.DB.prepare(`
+    UPDATE tasks SET status='completed', completed_at=?, completed_by=?, updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(now, repId, id, companyId).run()
+
+  return json(c, { id, status: 'completed', completed_at: now })
+})
+
+// PUT /api/tasks/:id/archive  — archive a task (soft-delete)
+app.put('/api/tasks/:id/archive', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const role      = c.var.role as string
+  const id        = c.req.param('id')
+
+  const task = await c.env.DB.prepare(
+    'SELECT * FROM tasks WHERE id=? AND company_id=? LIMIT 1'
+  ).bind(id, companyId).first<any>()
+  if (!task) return err(c, 'Task not found', 404)
+  const isManager = role === 'admin' || role === 'office_manager'
+  if (!isManager && task.assigned_user_id !== repId && task.created_by !== repId)
+    return err(c, 'Forbidden', 403)
+
+  const now = new Date().toISOString()
+  await c.env.DB.prepare(`
+    UPDATE tasks SET status='archived', archived_at=?, archived_by=?, updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(now, repId, id, companyId).run()
+
+  return json(c, { id, status: 'archived', archived_at: now })
+})
+
+// GET /api/tasks/team-summary  — manager cockpit: task counts per user
+// Returns: [ { assigned_user_id, assigned_user_label, open, overdue, due_today, completed_today } ]
+app.get('/api/tasks/team-summary', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const rows = await c.env.DB.prepare(`
+    SELECT
+      t.assigned_user_id,
+      t.assigned_user_label,
+      COUNT(CASE WHEN t.status='open' THEN 1 END)                                          AS open_count,
+      COUNT(CASE WHEN t.status='open' AND t.due_date < ?  THEN 1 END)                      AS overdue_count,
+      COUNT(CASE WHEN t.status='open' AND t.due_date = ?  THEN 1 END)                      AS due_today_count,
+      COUNT(CASE WHEN t.status='completed' AND date(t.completed_at) = ? THEN 1 END)        AS completed_today_count
+    FROM tasks t
+    WHERE t.company_id = ? AND t.status IN ('open','completed')
+    GROUP BY t.assigned_user_id
+    ORDER BY overdue_count DESC, open_count DESC
+  `).bind(today, today, today, companyId).all()
+
+  return json(c, rows.results)
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SUPER-ADMIN API  (is_super_admin = 1 required)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -3546,7 +3744,8 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260707gw27"></script>
+<script src="/static/task_engine.js?v=20260707p10a1"></script>
+<script src="/static/app_premium.js?v=20260707p10a1"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
