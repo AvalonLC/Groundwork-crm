@@ -8462,3 +8462,202 @@ h1.pl-title,
   .gw-task-row-notes { max-width: 180px; }
   .gw-task-row-2 { grid-template-columns: 1fr; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PHASE B — My Day view: pipeline strip, two-column layout, finance snap card
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Pipeline stat strip ──────────────────────────────────────────────────── */
+.gw-today-pipe-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  background: var(--gw-surface, #ffffff);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: var(--gw-r-lg, 12px);
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+}
+.gw-today-pipe-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  gap: 4px;
+  cursor: pointer;
+  transition: background .15s;
+  border-right: 1px solid var(--gw-line, #E2EAE9);
+  text-align: center;
+}
+.gw-today-pipe-cell:last-child { border-right: 0; }
+.gw-today-pipe-cell:hover { background: var(--gw-bg2, #F5F8F7); }
+.gw-today-pipe-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+}
+.gw-today-pipe-val {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gw-ink, #1F2A2B);
+  line-height: 1.15;
+}
+.gw-today-pipe-val--money { font-size: 18px; color: var(--gw-pine, #4D8A86); }
+.gw-today-pipe-val--won   { font-size: 16px; color: #2D7A55; }
+
+@media (max-width: 680px) {
+  .gw-today-pipe-strip { grid-template-columns: repeat(2, 1fr); }
+  .gw-today-pipe-cell:nth-child(2) { border-right: 0; }
+  .gw-today-pipe-cell:nth-child(2n) { border-right: 0; }
+  .gw-today-pipe-cell { border-bottom: 1px solid var(--gw-line, #E2EAE9); }
+  .gw-today-pipe-cell:nth-child(3),
+  .gw-today-pipe-cell:nth-child(4) { border-bottom: 0; }
+}
+
+/* ── Two-column My Day grid ───────────────────────────────────────────────── */
+.gw-today-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+.gw-today-tasks-col { min-width: 0; }
+.gw-today-side-col  { min-width: 0; }
+
+@media (max-width: 900px) {
+  .gw-today-main-grid { grid-template-columns: 1fr; }
+  .gw-today-side-col  { order: -1; } /* show finance snap above tasks on mobile */
+}
+
+/* ── Financial Pulse card ─────────────────────────────────────────────────── */
+.gw-today-fin-card {
+  background: var(--gw-surface, #ffffff);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: var(--gw-r-lg, 12px);
+  padding: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+}
+.gw-today-fin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.gw-today-fin-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--gw-ink, #1F2A2B);
+}
+.gw-today-fin-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gw-pine, #4D8A86);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.gw-today-fin-link:hover { opacity: .75; }
+
+/* KPI grid */
+.gw-today-fin-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.gw-today-fin-kpi {
+  background: var(--gw-bg2, #F5F8F7);
+  border-radius: var(--gw-r-md, 8px);
+  padding: 10px 12px;
+}
+.gw-today-fin-kpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+  margin-bottom: 3px;
+}
+.gw-today-fin-kpi-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gw-ink, #1F2A2B);
+  line-height: 1.2;
+}
+.gw-today-fin-kpi-sub {
+  font-size: 10px;
+  color: var(--gw-muted, #5E6E6F);
+  margin-top: 2px;
+}
+
+/* Annual progress bar */
+.gw-today-fin-progress { margin-bottom: 14px; }
+.gw-today-fin-prog-bar {
+  height: 6px;
+  background: var(--gw-line, #E2EAE9);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.gw-today-fin-prog-bar > div {
+  height: 100%;
+  background: var(--gw-pine, #4D8A86);
+  border-radius: 99px;
+  transition: width .4s ease;
+  min-width: 2px;
+}
+.gw-today-fin-prog-label {
+  font-size: 11px;
+  color: var(--gw-muted, #5E6E6F);
+  text-align: right;
+}
+
+/* Divisional bars */
+.gw-today-fin-divs {
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gw-today-fin-div { display: flex; flex-direction: column; gap: 2px; }
+.gw-today-fin-div-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gw-ink, #1F2A2B);
+}
+.gw-today-fin-div-val {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gw-pine, #4D8A86);
+}
+.gw-today-fin-div-bar {
+  height: 4px;
+  background: var(--gw-line, #E2EAE9);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.gw-today-fin-div-bar > div {
+  height: 100%;
+  background: var(--gw-pine, #4D8A86);
+  border-radius: 99px;
+  transition: width .4s ease;
+  min-width: 2px;
+}
+.gw-today-fin-div-target {
+  font-size: 10px;
+  color: var(--gw-muted, #5E6E6F);
+  text-align: right;
+}

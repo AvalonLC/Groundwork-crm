@@ -26,12 +26,12 @@ window.getPipelineStages = getPipelineStages;
 // Map legacy/alias view names to their parent workspace for nav highlighting
 const _VIEW_WORKSPACE_MAP = {
   // Dashboard workspace
-  today:'gwDashboard', myDashboard:'gwDashboard', teamView:'gwDashboard',
+  today:'gwDashboard', myDashboard:'gwDashboard',
   revenueAdmin:'gwDashboard', salesReports:'gwDashboard',
   financialReports:'gwDashboard', opsReports:'gwDashboard', teamReports:'gwDashboard',
   fieldDashboard:'gwDashboard',
   // Sales workspace
-  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales',
+  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales', teamView:'gwSales',
   estimates:'gwSales', communications:'gwSales', templates:'gwSales',
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
   aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
@@ -572,8 +572,8 @@ const _gwWsNameToId = {
 
 // Which L1 tab "owns" a given L2 view id (so the L1 row stays highlighted too)
 const _gwL2Parent = {
-  // Sales > Records
-  lead: 'gwRecords', clients: 'gwRecords', properties: 'gwRecords',
+  // Sales — lead & clients are top-level; only properties stays under Records if needed
+  properties: 'gwRecords',
   // Operations > Resources
   assetList: 'gwResources', maintenanceQueue: 'gwResources',
   inventoryList: 'gwResources', toolsConsumables: 'gwResources',
@@ -635,7 +635,6 @@ function gwDashboard(tab) {
       ]
     : [
         {id:'today',           label:'My Day'},
-        {id:'teamView',        label:'Team'},
         {id:'salesReports',    label:'Business Pulse'},
         {id:'financialReports',label:'Financial Snapshot'},
         {id:'opsReports',      label:'Operations Snapshot'},
@@ -643,7 +642,6 @@ function gwDashboard(tab) {
   _gwSetHeader('Dashboard', dashTabs, tab);
   if (tab === 'fieldDashboard')  (typeof window.fieldDashboard==='function') ? window.fieldDashboard() : _gwTabStub('Field Dashboard');
   else if (tab === 'today')            today();
-  else if (tab === 'teamView')    (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
   else if (tab === 'salesReports')(typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
   else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
   else if (tab === 'opsReports')  (typeof opsReports==='function') ? opsReports() : _gwTabStub('Operations Snapshot');
@@ -659,11 +657,9 @@ function gwSales(tab) {
   tab = tab || 'pipeline';
   _gwSetHeader('Sales', [
     {id:'pipeline',      label:'Pipeline'},
-    {id:'gwRecords',     label:'Records', children:[
-      {id:'lead',        label:'Leads'},
-      {id:'clients',     label:'Clients'},
-      {id:'properties',  label:'Properties'},
-    ]},
+    {id:'lead',          label:'Leads'},
+    {id:'clients',       label:'Clients'},
+    {id:'teamView',      label:'Team'},
     {id:'estimates',     label:'Estimates'},
     {id:'communications',label:'Communications'},
     {id:'templates',     label:'Templates'},
@@ -673,11 +669,9 @@ function gwSales(tab) {
     {id:'aiAssist',      label:'AI Assist'},
   ], tab);
   if (tab === 'pipeline')            pipeline();
-  else if (tab === 'gwRecords')      gwRecords('lead');
-  // L2 Records children — route directly
   else if (tab === 'lead')           lead();
   else if (tab === 'clients')        clients();
-  else if (tab === 'properties')     (typeof properties==='function') ? properties() : _gwTabStub('Properties');
+  else if (tab === 'teamView')       (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
   else if (tab === 'estimates')      (typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates');
   else if (tab === 'communications') (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
   else if (tab === 'templates')      (typeof templates==='function') ? templates() : _gwTabStub('Templates');
@@ -685,37 +679,18 @@ function gwSales(tab) {
   else if (tab === 'talkTracks')     (typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
   else if (tab === 'playbooks')      (typeof playbooks==='function') ? playbooks() : _gwTabStub('Playbooks');
   else if (tab === 'aiAssist')       (typeof ai==='function') ? ai() : _gwTabStub('AI Assist');
+  // Legacy gwRecords calls — redirect to lead
+  else if (tab === 'gwRecords')      lead();
   else pipeline();
 }
 window.gwSales = gwSales;
 
-// Records sub-workspace (Leads / Clients / Properties)
-// Sidebar tree is rendered via _gwSetHeader with the L2 id as activeTabId,
-// which triggers the children block to expand and highlight the right item.
+// gwRecords — backward-compat shim for deep links; routes to top-level Sales tabs
 function gwRecords(sub) {
   sub = sub || 'lead';
-  window._gwActiveSubTabs = {fn:'gwRecords', sub};
   window._gwPendingSubHeader = null;
-  _gwSetHeader('Sales', [
-    {id:'pipeline',      label:'Pipeline'},
-    {id:'gwRecords',     label:'Records', children:[
-      {id:'lead',        label:'Leads'},
-      {id:'clients',     label:'Clients'},
-      {id:'properties',  label:'Properties'},
-    ]},
-    {id:'estimates',     label:'Estimates'},
-    {id:'communications',label:'Communications'},
-    {id:'templates',     label:'Templates'},
-    {id:'sequences',     label:'Sequences'},
-    {id:'talkTracks',    label:'Talk Tracks'},
-    {id:'playbooks',     label:'Playbooks'},
-    {id:'aiAssist',      label:'AI Assist'},
-  ], sub); // pass L2 id — _gwSetHeader resolves parent via _gwL2Parent
-  activateNav(sub);
-  window._currentView = sub;
-  if (sub === 'lead')            lead();
-  else if (sub === 'clients')    clients();
-  else if (sub === 'properties') (typeof properties==='function') ? properties() : _gwTabStub('Properties');
+  window._gwActiveSubTabs = null;
+  show(sub === 'properties' ? 'properties' : sub === 'clients' ? 'clients' : 'lead');
 }
 window.gwRecords = gwRecords;
 
@@ -920,7 +895,6 @@ window.gwAccessModes = gwAccessModes;
   // Dashboard
   _gwSetHeader('Dashboard', [
     {id:'today',            label:'My Day'},
-    {id:'teamView',         label:'Team'},
     {id:'salesReports',     label:'Business Pulse'},
     {id:'financialReports', label:'Financial Snapshot'},
     {id:'opsReports',       label:'Operations Snapshot'},
@@ -929,11 +903,9 @@ window.gwAccessModes = gwAccessModes;
   // Sales
   _gwSetHeader('Sales', [
     {id:'pipeline',       label:'Pipeline'},
-    {id:'gwRecords',      label:'Records', children:[
-      {id:'lead',         label:'Leads'},
-      {id:'clients',      label:'Clients'},
-      {id:'properties',   label:'Properties'},
-    ]},
+    {id:'lead',           label:'Leads'},
+    {id:'clients',        label:'Clients'},
+    {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
     {id:'templates',      label:'Templates'},
@@ -1134,11 +1106,11 @@ function show(viewName='today', param){
   // For platform admin views and misc views with no workspace, we clear it.
   const _wsHeaderMap = {
     // Dashboard workspace tab aliases
-    today:'Dashboard', myDashboard:'Dashboard', teamView:'Dashboard',
+    today:'Dashboard', myDashboard:'Dashboard',
     revenueAdmin:'Dashboard', salesReports:'Dashboard',
     financialReports:'Dashboard', opsReports:'Dashboard', teamReports:'Dashboard',
     // Sales workspace tab aliases
-    pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales',
+    pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales',
     estimates:'Sales', communications:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
@@ -1163,27 +1135,26 @@ function show(viewName='today', param){
     portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Admin',
   };
   const _wsTabDefs = {
-    Dashboard:  [{id:'today',label:'My Day'},{id:'teamView',label:'Team'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
-    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'gwRecords',label:'Records'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
+    Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
     Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
   };
   const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin'].includes(viewName);
-  const _isSubWsCall = ['gwRecords','gwResources','gwAdminWorkflow','gwAudit','gwAccessModes'].includes(viewName);
+  const _isSubWsCall = ['gwResources','gwAdminWorkflow','gwAudit','gwAccessModes'].includes(viewName); // gwRecords removed — now shims via show()
   const _isDirectWsCall = _isTopWsCall || _isSubWsCall;
   // Sub-workspace direct calls: set parent workspace header so tab bar is visible
   if (_isSubWsCall) {
     const _subWsParent = {
-      gwRecords:'Sales', gwResources:'Operations',
+      gwResources:'Operations',
       gwAdminWorkflow:'Admin', gwAudit:'Admin', gwAccessModes:'Admin',
     };
     const _subWsTabHighlight = {
-      gwRecords:'gwRecords', gwResources:'gwResources',
+      gwResources:'gwResources',
       gwAdminWorkflow:'gwAdminWorkflow', gwAudit:'gwAudit', gwAccessModes:'gwAccessModes',
     };
     const _wsTabDefs2 = {
-      Sales:      [{id:'pipeline',label:'Pipeline'},{id:'gwRecords',label:'Records'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
       Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
       Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
     };
@@ -1195,25 +1166,21 @@ function show(viewName='today', param){
     if (_wsName && _wsTabDefs[_wsName]) {
       // Map aliases: some views (lead, clients, properties) display as Records tab;
       // assetList/maintenanceQueue/inventoryList/toolsConsumables display as Resources tab
-      const _recordViews = ['lead','clients','properties'];
+      const _recordViews = []; // lead/clients now top-level Sales tabs — no sub-header injection
       const _resourceViews = ['assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
       const _workflowViews = ['systemTemplates','approvalQueue','automations','automationCenter','manager'];
       const _accessViews  = ['portalAdmin','fieldMode'];
       // Schedule-family views map to scheduleBoard tab highlight
       const _scheduleViews = ['crewView','recurringServices','dispatchBoard'];
       let _tabHighlight = viewName;
-      if (_recordViews.includes(viewName))        _tabHighlight = 'gwRecords';
-      else if (_resourceViews.includes(viewName)) _tabHighlight = 'gwResources';
+      if (_resourceViews.includes(viewName)) _tabHighlight = 'gwResources';
       else if (_workflowViews.includes(viewName)) _tabHighlight = 'gwAdminWorkflow';
       else if (_accessViews.includes(viewName))   _tabHighlight = 'gwAccessModes';
       else if (viewName === 'auditLog')            _tabHighlight = 'gwAudit';
       else if (viewName === 'crewView')            _tabHighlight = 'scheduleBoard';
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
       // Set up sub-header for sub-tab views so the bar survives legacy innerHTML writes
-      if (_recordViews.includes(viewName)) {
-        const subTabs = [{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'}];
-        _gwSetSubHeader(subTabs, viewName, 'show');
-      } else if (_resourceViews.includes(viewName)) {
+      if (_resourceViews.includes(viewName)) {
         const subTabs = [{id:'assetList',label:'Assets'},{id:'maintenanceQueue',label:'Maintenance'},{id:'inventoryList',label:'Inventory'},{id:'toolsConsumables',label:'Tools'}];
         _gwSetSubHeader(subTabs, viewName, 'show');
       } else if (_workflowViews.includes(viewName) && ['systemTemplates','approvalQueue'].includes(viewName)) {
@@ -1346,7 +1313,7 @@ function show(viewName='today', param){
   };
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
-  const dashAliases = ['myDashboard','teamView','revenueAdmin','salesReports','financialReports','opsReports','teamReports'];
+  const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports','teamReports'];
   const salesAliases = ['lead','clients','properties','estimates','communications','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
     'process','forms','scripts','emailTemplates','objections','calculator','academy'];
@@ -1596,10 +1563,67 @@ function _gwTodayRenderTaskWorkspace(rep) {
   </section>`;
 }
 
+function _gwTodayFinanceSnap() {
+  // Small financial snapshot card — reads from revenueAdmin data (same source as Financial Data Hub)
+  try {
+    const fy = (typeof getResolvedFY === 'function') ? getResolvedFY() : null;
+    if (!fy) return '';
+    const fmt = n => (n == null ? '—' : n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}));
+    const annual = fy.annual || {};
+    const pct = annual.budgetedRevenue > 0 ? Math.min(100, Math.round((annual.actualRevenue / annual.budgetedRevenue) * 100)) : 0;
+    const varColor = (annual.ytdVariance >= 0) ? '#2D7A55' : '#C97B6A';
+    const varSign  = (annual.ytdVariance >= 0) ? '+' : '';
+    const divs = fy.divisions || {};
+    const divKeys = Object.keys(divs).filter(k => divs[k]);
+    const divCells = divKeys.slice(0,3).map(k => {
+      const d = divs[k];
+      const label = k.charAt(0).toUpperCase() + k.slice(1);
+      const dpct = d.target > 0 ? Math.min(100, Math.round((d.actual||0)/d.target*100)) : 0;
+      return `<div class="gw-today-fin-div">
+        <div class="gw-today-fin-div-label">${escapeHtml(label)}</div>
+        <div class="gw-today-fin-div-val">${fmt(d.actual||0)}</div>
+        <div class="gw-today-fin-div-bar"><div style="width:${dpct}%;background:var(--gw-pine,#4D8A86)"></div></div>
+        <div class="gw-today-fin-div-target">of ${fmt(d.target||0)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="gw-today-fin-card">
+      <div class="gw-today-fin-head">
+        <span class="gw-today-fin-title">Financial Pulse</span>
+        <button class="gw-today-fin-link" onclick="show('revenueAdmin')">Full View</button>
+      </div>
+      <div class="gw-today-fin-kpis">
+        <div class="gw-today-fin-kpi">
+          <div class="gw-today-fin-kpi-label">YTD Actual</div>
+          <div class="gw-today-fin-kpi-val" style="color:var(--gw-pine,#4D8A86)">${fmt(annual.actualRevenue)}</div>
+        </div>
+        <div class="gw-today-fin-kpi">
+          <div class="gw-today-fin-kpi-label">Annual Budget</div>
+          <div class="gw-today-fin-kpi-val">${fmt(annual.budgetedRevenue)}</div>
+        </div>
+        <div class="gw-today-fin-kpi">
+          <div class="gw-today-fin-kpi-label">YTD Variance</div>
+          <div class="gw-today-fin-kpi-val" style="color:${varColor}">${varSign}${fmt(annual.ytdVariance)}</div>
+        </div>
+        <div class="gw-today-fin-kpi">
+          <div class="gw-today-fin-kpi-label">Needed / Mo</div>
+          <div class="gw-today-fin-kpi-val" style="color:#8B6914">${fmt(annual.avgNeededPerMonth)}</div>
+          <div class="gw-today-fin-kpi-sub">${annual.monthsLeft||0} mo left</div>
+        </div>
+      </div>
+      <div class="gw-today-fin-progress">
+        <div class="gw-today-fin-prog-bar"><div style="width:${pct}%"></div></div>
+        <div class="gw-today-fin-prog-label">${pct}% of annual target</div>
+      </div>
+      ${divCells ? `<div class="gw-today-fin-divs">${divCells}</div>` : ''}
+    </div>`;
+  } catch(_) { return ''; }
+}
+
 function _gwTodayRender() {
   const _todayRep = window.getCurrentRep ? window.getCurrentRep() : null;
-  const _isOM = _todayRep && _todayRep.role === 'office_manager';
-  const today = todayISO();
+  const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
+  const _isOM     = _todayRep && _todayRep.role === 'office_manager';
+  const _showFin  = _isAdmin || _isOM;
 
   // Unsynced banner
   const _localOnlyOpps = state.opportunities.filter(o => !o._fromD1);
@@ -1610,32 +1634,67 @@ function _gwTodayRender() {
       <button onclick="window._recoverLocalLeads&&window._recoverLocalLeads()" style="background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Sync Now</button>
     </div>` : '';
 
-  // Opportunity-derived lists (still used for Coming Up / Recently Updated)
-  const recent = [...state.opportunities].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
+  // Pipeline quick-stats strip (compact, owner-relevant)
+  const opps = state.opportunities || [];
+  const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
+  const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
+  const _pipeVal = _open.reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const _won     = opps.filter(o=>o.status==='Sold / Activation');
+  const _wonMTD  = _won.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7) === todayISO().slice(0,7));
+  const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
+
+  const _pipeStrip = `
+    <div class="gw-today-pipe-strip">
+      <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Open pipeline">
+        <span class="gw-today-pipe-label">Open Leads</span>
+        <span class="gw-today-pipe-val">${_open.length}</span>
+      </div>
+      <div class="gw-today-pipe-cell" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
+        <span class="gw-today-pipe-label">Proposals Out</span>
+        <span class="gw-today-pipe-val">${_propo.length}</span>
+      </div>
+      <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Pipeline value">
+        <span class="gw-today-pipe-label">Pipeline Value</span>
+        <span class="gw-today-pipe-val gw-today-pipe-val--money">${_fmt(_pipeVal)}</span>
+      </div>
+      <div class="gw-today-pipe-cell" title="Won this month">
+        <span class="gw-today-pipe-label">Won MTD</span>
+        <span class="gw-today-pipe-val gw-today-pipe-val--won">${_wonMTD.length} · ${_fmt(_wonMTDVal)}</span>
+      </div>
+    </div>`;
+
+  // Finance snap (admin/OM only)
+  const _finSnap = _showFin ? _gwTodayFinanceSnap() : '';
+
+  // Task workspace (from cache — loaded async below)
+  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep);
+
+  // Recently Updated leads
+  const recent = [...opps].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
 
   // Hero header
   const _heroBlock = `
     <div class="pl-page-header">
       <div class="pl-page-title">
-        <h1 class="pl-title">Today</h1>
+        <h1 class="pl-title">My Day</h1>
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
         <button class="primary-btn small" onclick="window._gwTodayNewTask()">+ New Task</button>
         <button class="secondary-btn small" onclick="show('lead')">+ New Lead</button>
         <button class="secondary-btn small" onclick="show('pipeline')">Pipeline</button>
-        ${_isOM ? `<button class="secondary-btn small" onclick="show('myDashboard')">Ops</button>` : ''}
       </div>
     </div>`;
 
-  // Task workspace (from cache — loaded async below)
-  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep);
-
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}
-    ${statCards()}
-    <div class="grid mt" style="grid-template-columns:1fr 1fr;gap:16px">
-      ${_taskWorkspace}
+    ${_pipeStrip}
+    <div class="gw-today-main-grid">
+      <div class="gw-today-tasks-col">
+        ${_taskWorkspace}
+      </div>
+      ${_showFin ? `<div class="gw-today-side-col">${_finSnap}</div>` : ''}
     </div>
     <div class="grid grid-2 mt">
       <section class="card app-card">
@@ -1657,7 +1716,6 @@ function _gwTodayRender() {
       const ws = document.querySelector('.gw-task-workspace');
       if (!ws) return; // view changed
       const newSection = _gwTodayRenderTaskWorkspace(_todayRep);
-      // Replace entire task section
       const sectionEl = ws.closest('section.app-card');
       if (sectionEl) {
         const tmp = document.createElement('div');
@@ -14543,102 +14601,176 @@ function salesReports() {
   window._currentView = 'salesReports';
   activateNav('salesReports');
   const opps   = state.opportunities || [];
-  const comms  = state.communications || [];
   const reps   = window.REPS || [];
+  const today  = todayISO();
+  const mtd    = today.slice(0,7); // YYYY-MM
 
-  // Stage conversion funnel
-  const stages = ['Initial Inquiry','Discovery / Consultation','Site Walk / Assessment','Proposal / Estimate Sent','Follow-Up','Presentation & SOW Pitch','Deal Closed / Won','On Hold','Closed Lost'];
-  const stageCounts = stages.map(s=>({ stage:s, count:opps.filter(o=>o.status===s).length }));
+  // Core metrics
+  const WON_STATUSES = ['Sold / Activation','Deal Closed / Won'];
+  const LOST_STATUSES = ['Closed Lost'];
+  const OPEN_STATUSES = s => !WON_STATUSES.includes(s) && !LOST_STATUSES.includes(s);
 
-  // Close rate
-  const closed = opps.filter(o=>['Sold / Activation','Closed Lost'].includes(o.status)).length;
-  const won    = opps.filter(o=>o.status==='Sold / Activation').length;
-  const closeRate = closed ? Math.round((won/closed)*100) : 0;
-  const totalPipeVal = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const avgDeal = won ? opps.filter(o=>o.status==='Sold / Activation').reduce((s,o)=>s+Number(o.jobValue||0),0)/won : 0;
+  const wonOpps   = opps.filter(o => WON_STATUSES.includes(o.status));
+  const openOpps  = opps.filter(o => OPEN_STATUSES(o.status));
+  const proposalOpps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Presentation & SOW Pitch'].includes(o.status));
+  const closedAll = opps.filter(o => WON_STATUSES.includes(o.status) || LOST_STATUSES.includes(o.status));
+  const closeRate = closedAll.length ? Math.round((wonOpps.length/closedAll.length)*100) : 0;
+  const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const wonTotal  = wonOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const avgDeal   = wonOpps.length ? wonTotal/wonOpps.length : 0;
 
-  // Rep breakdown
+  // MTD won
+  const wonMTD    = wonOpps.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd);
+  const wonMTDVal = wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
+
+  // Pipeline funnel stages
+  const FUNNEL = [
+    {label:'Initial Inquiry',        statuses:['Initial Inquiry']},
+    {label:'Discovery / Consult',    statuses:['Discovery / Consultation']},
+    {label:'Site Walk / Assessment', statuses:['Site Walk / Assessment']},
+    {label:'Proposal Sent',          statuses:['Proposal / Estimate Sent','Proposal Sent']},
+    {label:'Follow-Up',              statuses:['Follow-Up']},
+    {label:'SOW Pitch',              statuses:['Presentation & SOW Pitch']},
+    {label:'On Hold',                statuses:['On Hold']},
+    {label:'Won',                    statuses:WON_STATUSES, won:true},
+    {label:'Lost',                   statuses:LOST_STATUSES, lost:true},
+  ];
+  const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(o=>f.statuses.includes(o.status)).length));
+
+  // Lead source breakdown
+  const sourceMap = {};
+  opps.forEach(o=>{ const s=o.leadSource||o.source||'Unknown'; sourceMap[s]=(sourceMap[s]||0)+1; });
+  const sources = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  // Monthly closed trend (last 6 months)
+  const monthMap = {};
+  wonOpps.forEach(o=>{const m=(o.closedDate||o.createdAt||'').slice(0,7);if(m)monthMap[m]=(monthMap[m]||0)+Number(o.jobValue||0);});
+  const months6 = [];
+  for(let i=5;i>=0;i--){const d=new Date();d.setMonth(d.getMonth()-i);months6.push(d.toISOString().slice(0,7));}
+  const maxMonthVal = Math.max(1,...months6.map(m=>monthMap[m]||0));
+
+  // Rep performance table
   const repRows = reps.map(r=>{
-    const mine  = opps.filter(o=>o.repId===r.id);
-    const mWon  = mine.filter(o=>o.status==='Sold / Activation');
-    const mOpen = mine.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-    const mVal  = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
-    const mClosed = mine.filter(o=>['Sold / Activation','Closed Lost'].includes(o.status)).length;
-    const mRate = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
+    const mine    = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
+    const mWon    = mine.filter(o=>WON_STATUSES.includes(o.status));
+    const mOpen   = mine.filter(o=>OPEN_STATUSES(o.status));
+    const mLost   = mine.filter(o=>LOST_STATUSES.includes(o.status));
+    const mPipe   = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
+    const mWonVal = mWon.reduce((s,o)=>s+Number(o.jobValue||0),0);
+    const mClosed = mWon.length + mLost.length;
+    const mRate   = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
+    const mMTD    = mWon.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd).length;
+    const rateColor = mRate >= 50 ? '#2D7A55' : mRate >= 25 ? '#8B6914' : 'var(--gw-muted)';
     return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:10px 14px;font-weight:600">${escapeHtml(r.name)}</td>
-      <td style="padding:10px 10px;text-align:center">${mine.length}</td>
-      <td style="padding:10px 10px;text-align:center">${mOpen.length}</td>
-      <td style="padding:10px 10px;text-align:center;color:#2D7A55;font-weight:700">${mWon.length}</td>
-      <td style="padding:10px 10px;text-align:right;color:var(--gw-pine-600);font-weight:700">${_p5Money(mVal)}</td>
-      <td style="padding:10px 10px;text-align:center">${mRate}%</td>
+      <td style="padding:11px 14px">
+        <span style="font-weight:700;font-size:13px">${escapeHtml(r.name)}</span>
+        <div style="font-size:10px;color:var(--gw-muted);margin-top:1px">${escapeHtml((window._gwRoles||[]).find(d=>d.id===r.role)?.label||r.role||'Rep')}</div>
+      </td>
+      <td style="padding:11px 10px;text-align:center;font-weight:600">${mine.length}</td>
+      <td style="padding:11px 10px;text-align:center">${mOpen.length}</td>
+      <td style="padding:11px 10px;text-align:center;color:var(--gw-pine-600);font-weight:700">${proposalOpps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id).length}</td>
+      <td style="padding:11px 10px;text-align:center;color:#2D7A55;font-weight:700">${mWon.length}</td>
+      <td style="padding:11px 10px;text-align:right;font-weight:700;color:var(--gw-pine-600)">${_p5Money(mWonVal)}</td>
+      <td style="padding:11px 10px;text-align:right;color:var(--gw-muted)">${_p5Money(mPipe)}</td>
+      <td style="padding:11px 10px;text-align:center;color:${rateColor};font-weight:700">${mRate}%</td>
+      <td style="padding:11px 10px;text-align:center;color:#4D8A86;font-weight:${mMTD?'700':'400'}">${mMTD||'—'}</td>
     </tr>`;
   }).join('');
 
-  // Lead source breakdown (from opportunities)
-  const sourceCounts = {};
-  opps.forEach(o=>{const s=o.leadSource||o.prompt||'Unknown';sourceCounts[s]=(sourceCounts[s]||0)+1;});
-  const sources = Object.entries(sourceCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Reports</div>
-        <h1 class="rp-title">Sales Reports</h1>
-        <p class="rp-subtitle">Pipeline conversion, close rates, rep performance</p>
+        <div class="eyebrow">Sales</div>
+        <h1 class="rp-title">Sales Performance</h1>
+        <p class="rp-subtitle">Pipeline · close rates · rep performance · lead sources</p>
       </div>
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
-        <button class="rp-btn" onclick="show('teamReports')">Team Report →</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('lead')">+ New Lead</button>
       </div>
     </header>
 
-    <!-- KPI Row -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+    <!-- KPI Row — 5 cards -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
       ${[
-        {label:'Total Leads',val:opps.length,color:'var(--gds-ink)'},
-        {label:'Pipeline Value',val:_p5Money(totalPipeVal),color:'var(--gw-pine-600)'},
-        {label:'Close Rate',val:closeRate+'%',color:closeRate>=50?'#2D7A55':'#8B6914'},
-        {label:'Avg Deal Size',val:_p5Money(avgDeal),color:'#5B7FA6'}
+        {label:'Total Leads',    val:opps.length,           color:'var(--gw-ink)'},
+        {label:'Open Leads',     val:openOpps.length,       color:'var(--gw-ink)'},
+        {label:'Proposals Out',  val:proposalOpps.length,   color:'var(--gw-pine,#4D8A86)'},
+        {label:'Close Rate',     val:closeRate+'%',         color:closeRate>=50?'#2D7A55':closeRate>=25?'#8B6914':'#C97B6A'},
+        {label:'Avg Deal Size',  val:_p5Money(avgDeal),     color:'#5B7FA6'}
       ].map(k=>`
       <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${k.label}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">${k.label}</div>
         <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
       </div>`).join('')}
+    </div>
+
+    <!-- Secondary row: Pipeline $ + Won total + Won MTD -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Pipeline Value (Open)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--gw-pine,#4D8A86)">${_p5Money(pipeVal)}</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Total Won Revenue</div>
+        <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonTotal)}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonOpps.length} deal${wonOpps.length!==1?'s':''} closed</div>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Won This Month</div>
+        <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonMTDVal)}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonMTD.length} deal${wonMTD.length!==1?'s':''}</div>
+      </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
       <!-- Pipeline Funnel -->
       <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
-        <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
-        ${stageCounts.filter(s=>s.count>0).map(s=>{
-          const pct = opps.length ? Math.round((s.count/opps.length)*100) : 0;
-          const isWon=s.stage.includes('Won')||s.stage.includes('Sold');
-          const isLost=s.stage.includes('Lost');
-          const barColor=isWon?'#2D7A55':isLost?'#A05050':'#4D8A86';
-          return `<div style="margin-bottom:8px">
+        <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
+        ${FUNNEL.map(f=>{
+          const cnt = opps.filter(o=>f.statuses.includes(o.status)).length;
+          if(!cnt) return '';
+          const pct = Math.max(4, Math.round((cnt/funnelMax)*100));
+          const bar = f.won ? 'background:#2D7A55' : f.lost ? 'background:#A05050' : 'background:var(--gw-pine,#4D8A86)';
+          return `<div style="margin-bottom:9px">
             <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-              <span style="color:var(--gds-ink);font-weight:600">${escapeHtml(s.stage)}</span>
-              <span style="color:var(--gw-muted)">${s.count}</span>
+              <span style="font-weight:600;color:var(--gw-ink)">${escapeHtml(f.label)}</span>
+              <span style="color:var(--gw-muted)">${cnt}</span>
             </div>
             <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
-              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
+              <div style="height:100%;width:${pct}%;${bar};border-radius:3px;transition:width .4s"></div>
             </div>
           </div>`;
         }).join('')}
       </div>
 
-      <!-- Lead Sources -->
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
-        <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Lead Sources</h3>
-        ${sources.length
-          ? sources.map(([src,cnt])=>{
-              const pct=opps.length?Math.round((cnt/opps.length)*100):0;
-              return `<div style="margin-bottom:8px">
-                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-                  <span style="color:var(--gds-ink);font-weight:600">${escapeHtml(src.slice(0,40))}</span>
-                  <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
+      <!-- Monthly Won Trend (6 months) + Lead Sources -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;flex:0 0 auto">
+          <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Won Revenue — Last 6 Months</h3>
+          <div style="display:flex;align-items:flex-end;gap:8px;height:80px">
+            ${months6.map(m=>{
+              const v=monthMap[m]||0;
+              const h=Math.max(4,Math.round((v/maxMonthVal)*80));
+              const isNow=m===mtd;
+              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+                <div style="font-size:9px;font-weight:700;color:#2D7A55;white-space:nowrap">${v?_p5Money(v).replace('$','$').replace(/,000$/,'k'):''}</div>
+                <div style="width:100%;height:${h}px;background:${isNow?'#2D7A55':'#4D8A8680'};border-radius:3px 3px 0 0;min-height:4px"></div>
+                <div style="font-size:9px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+        <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;flex:1">
+          <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Lead Sources</h3>
+          ${sources.length
+            ? sources.map(([src,cnt])=>{
+                const pct=opps.length?Math.round((cnt/opps.length)*100):0;
+                return `<div style="margin-bottom:8px">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                    <span style="font-weight:600">${escapeHtml(src.slice(0,36))}</span>
+                    <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
                 </div>
                 <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
                   <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
@@ -14646,226 +14778,376 @@ function salesReports() {
               </div>`;
             }).join('')
           : `<p style="color:var(--gw-muted);font-size:13px">Add lead source data when creating leads to see breakdown here.</p>`}
+        </div>
       </div>
     </div>
 
-    <!-- Rep Breakdown Table -->
+    <!-- Rep Performance Table -->
     <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line)">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
         <h3 style="margin:0;font-size:14px;font-weight:800">Rep Performance</h3>
+        <span style="font-size:11px;color:var(--gw-muted)">${reps.length} member${reps.length!==1?'s':''}</span>
       </div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-          <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Rep</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Total</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Open</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase">Won</th>
-          <th style="text-align:right;padding:10px;font-size:11px;font-weight:700;color:var(--gw-pine-600);text-transform:uppercase">Pipeline $</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Close %</th>
-        </tr></thead>
-        <tbody>${repRows||`<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No reps found.</td></tr>`}</tbody>
-      </table>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:680px">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:10px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Rep</th>
+            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Total</th>
+            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
+            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Proposals</th>
+            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won</th>
+            <th style="text-align:right;padding:10px 8px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won $</th>
+            <th style="text-align:right;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
+            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Close %</th>
+            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em">Won MTD</th>
+          </tr></thead>
+          <tbody>${repRows||`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No team members configured.</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>
   </div>`;
 }
 
 function financialReports() {
+  // Financial Snapshot — estimates, invoices, payments. No leads, no missions.
   window._currentView = 'financialReports';
   activateNav('financialReports');
-  const opps = state.opportunities || [];
-  let payments_data=[], deps=[];
+  const fmt = n => (n==null?'—':Number(n).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}));
+
+  // Pull from localStorage (same stores as Financial workspace)
+  let payments_data=[], deps=[], ests=[], invs=[];
   try { payments_data=JSON.parse(localStorage.getItem('avalonPayments')||'[]'); } catch(_){}
   try { deps=JSON.parse(localStorage.getItem('avalonDeposits')||'[]'); } catch(_){}
+  try { ests=JSON.parse(localStorage.getItem('avalonEstimates')||'[]'); } catch(_){}
+  try { invs=JSON.parse(localStorage.getItem('avalonInvoices')||'[]'); } catch(_){}
 
-  const soldOpps = opps.filter(o=>o.status==='Sold / Activation');
-  const totalContracted = soldOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const totalPipeline   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const totalPaid       = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
-  const totalDeposits   = deps.reduce((s,d)=>s+Number(d.amount||0),0);
+  // Also pull from state if available
+  if (!ests.length && state.estimates) ests = state.estimates;
+  if (!invs.length && state.invoices)  invs = state.invoices;
 
-  // Monthly revenue from sold opps (by closedDate or createdAt)
-  const monthlyMap = {};
-  soldOpps.forEach(o=>{
-    const m=(o.closedDate||o.createdAt||'').slice(0,7);
-    if(m) monthlyMap[m]=(monthlyMap[m]||0)+Number(o.jobValue||0);
-  });
-  const months = Object.entries(monthlyMap).sort((a,b)=>a[0].localeCompare(b[0])).slice(-12);
-  const maxVal = months.length ? Math.max(...months.map(([,v])=>v)) : 1;
+  const today = todayISO();
+  const mtd   = today.slice(0,7);
 
-  // Service line breakdown
-  const svcMap = {};
-  soldOpps.forEach(o=>{ const s=o.serviceLine||o.project||'Other'; svcMap[s]=(svcMap[s]||0)+Number(o.jobValue||0); });
-  const svcRows = Object.entries(svcMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  // Estimates
+  const estOpen     = ests.filter(e=>!['approved','rejected','invoiced'].includes(e.status));
+  const estApproved = ests.filter(e=>e.status==='approved');
+  const estTotal    = ests.reduce((s,e)=>s+Number(e.total||e.amount||0),0);
+  const estOpenVal  = estOpen.reduce((s,e)=>s+Number(e.total||e.amount||0),0);
+
+  // Invoices
+  const invUnpaid   = invs.filter(i=>!['paid','voided'].includes(i.status));
+  const invOverdue  = invUnpaid.filter(i=>i.dueDate && i.dueDate < today);
+  const invPaidMTD  = invs.filter(i=>i.status==='paid' && (i.paidDate||i.updatedAt||'').slice(0,7)===mtd);
+  const invOutstanding = invUnpaid.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
+  const invOverdueVal  = invOverdue.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
+  const invPaidMTDVal  = invPaidMTD.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
+
+  // Payments
+  const totalPaid     = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
+  const paidMTD       = payments_data.filter(p=>(p.date||p.createdAt||'').slice(0,7)===mtd);
+  const paidMTDVal    = paidMTD.reduce((s,p)=>s+Number(p.amount||0),0);
+
+  // Deposits
+  const depHeld       = deps.filter(d=>!d.applied);
+  const depHeldVal    = depHeld.reduce((s,d)=>s+Number(d.amount||0),0);
+
+  // Budget metrics (from revenueAdmin)
+  let fyBlock = '';
+  try {
+    const fy = (typeof getResolvedFY==='function') ? getResolvedFY() : null;
+    if (fy && fy.annual) {
+      const a = fy.annual;
+      const varColor = a.ytdVariance>=0?'#2D7A55':'#C97B6A';
+      const varSign  = a.ytdVariance>=0?'+':'';
+      const pct = a.budgetedRevenue>0?Math.min(100,Math.round(a.actualRevenue/a.budgetedRevenue*100)):0;
+      const divs = fy.divisions||{};
+      const divKeys = Object.keys(divs).filter(k=>divs[k]);
+      const divCells = divKeys.map(k=>{
+        const d=divs[k]; const label=k.charAt(0).toUpperCase()+k.slice(1);
+        const dpct=d.target>0?Math.min(100,Math.round((d.actual||0)/d.target*100)):0;
+        const gm = d.grossMarginPct!=null?Math.round(d.grossMarginPct*100):null;
+        return `<tr style="border-bottom:1px solid var(--gw-line)">
+          <td style="padding:10px 14px;font-weight:600">${escapeHtml(label)}</td>
+          <td style="padding:10px;text-align:right;font-weight:700;color:var(--gw-pine,#4D8A86)">${fmt(d.actual||0)}</td>
+          <td style="padding:10px;text-align:right;color:var(--gw-muted)">${fmt(d.target||0)}</td>
+          <td style="padding:10px;text-align:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="flex:1;height:5px;background:var(--gw-line);border-radius:3px;overflow:hidden"><div style="height:100%;width:${dpct}%;background:var(--gw-pine,#4D8A86);border-radius:3px"></div></div>
+              <span style="font-size:10px;font-weight:700;color:var(--gw-muted);white-space:nowrap">${dpct}%</span>
+            </div>
+          </td>
+          <td style="padding:10px;text-align:center;font-size:11px;font-weight:700;color:${gm!=null&&gm<(d.grossMarginFloor||0)*100?'#C97B6A':'#2D7A55'}">${gm!=null?gm+'%':'—'}</td>
+          <td style="padding:10px;text-align:right;color:${(d.remaining||0)>0?'var(--gw-muted)':'#2D7A55'};font-size:12px">${fmt(Math.max(0,d.remaining||0))}</td>
+        </tr>`;
+      }).join('');
+      fyBlock = `
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <h3 style="margin:0;font-size:14px;font-weight:800">Budget vs Actual — ${fy.budgetVersion||'FY'}</h3>
+          <button class="rp-btn" onclick="show('revenueAdmin')">Manage Budget</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+          ${[
+            {label:'YTD Actual',val:fmt(a.actualRevenue),color:'var(--gw-pine,#4D8A86)'},
+            {label:'Annual Budget',val:fmt(a.budgetedRevenue),color:'var(--gw-ink)'},
+            {label:'YTD Variance',val:varSign+fmt(a.ytdVariance),color:varColor},
+            {label:'Needed / Month',val:fmt(a.avgNeededPerMonth),color:'#8B6914'}
+          ].map(k=>`
+          <div style="background:var(--gw-surface-2);border-radius:8px;padding:12px">
+            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${k.label}</div>
+            <div style="font-size:18px;font-weight:800;color:${k.color}">${k.val}</div>
+          </div>`).join('')}
+        </div>
+        <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:var(--gw-pine,#4D8A86);border-radius:4px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-bottom:16px">${pct}% of annual target · ${a.monthsLeft||0} months remaining</div>
+        ${divCells ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Division</th>
+            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Actual</th>
+            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Target</th>
+            <th style="padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Progress</th>
+            <th style="text-align:center;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">GM %</th>
+            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Remaining</th>
+          </tr></thead>
+          <tbody>${divCells}</tbody>
+        </table>` : ''}
+      </div>`;
+    }
+  } catch(_) {}
+
+  // Recent payment rows
+  const recentPmts = [...payments_data].sort((a,b)=>(b.date||b.createdAt||'').localeCompare(a.date||a.createdAt||'')).slice(0,8);
+  const pmtRows = recentPmts.map(p=>`<tr style="border-bottom:1px solid var(--gw-line)">
+    <td style="padding:9px 14px;font-weight:600">${escapeHtml(p.clientName||p.client||'—')}</td>
+    <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.method||p.type||'—')}</td>
+    <td style="padding:9px 10px;text-align:right;font-weight:700;color:#2D7A55">${fmt(p.amount)}</td>
+    <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(p.date||p.createdAt)}</td>
+  </tr>`).join('');
+
+  // Recent invoice rows
+  const recentInvs = [...invs].sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||'')).slice(0,8);
+  const invRows = recentInvs.map(i=>{
+    const isPaid = i.status==='paid';
+    const isOvd  = !isPaid && i.dueDate && i.dueDate < today;
+    const sColor = isPaid?'#2D7A55':isOvd?'#C97B6A':'var(--gw-muted)';
+    return `<tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:9px 14px;font-weight:600">${escapeHtml(i.clientName||i.client||'—')}</td>
+      <td style="padding:9px 10px;text-align:right;font-weight:700">${fmt(i.total||i.amount)}</td>
+      <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(i.dueDate)}</td>
+      <td style="padding:9px 10px"><span style="font-size:11px;font-weight:700;color:${sColor}">${escapeHtml(i.status||'open')}</span></td>
+    </tr>`;
+  }).join('');
 
   view.innerHTML = `
   <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Reports</div>
-        <h1 class="rp-title">Financial Reports</h1>
-        <p class="rp-subtitle">Revenue summaries, service line breakdown, cash received</p>
+        <div class="eyebrow">Financial</div>
+        <h1 class="rp-title">Financial Snapshot</h1>
+        <p class="rp-subtitle">Estimates · invoices · payments · budget vs actual</p>
       </div>
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('financialHub')">Financial Hub</button>
-        <button class="rp-btn" onclick="show('revenueAdmin')">Revenue Admin →</button>
+        <button class="rp-btn" onclick="show('revenueAdmin')">Budget Admin</button>
       </div>
     </header>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+    <!-- Primary KPIs: invoices + payments -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
       ${[
-        {label:'Contracted (Won)',val:_p5Money(totalContracted),color:'#2D7A55'},
-        {label:'Pipeline (Open)',val:_p5Money(totalPipeline),color:'var(--gw-pine-600)'},
-        {label:'Cash Received',val:_p5Money(totalPaid),color:'#5B7FA6'},
-        {label:'Deposits Held',val:_p5Money(deps.filter(d=>!d.applied).reduce((s,d)=>s+Number(d.amount||0),0)),color:'#8B6914'}
+        {label:'Outstanding Invoices', val:fmt(invOutstanding),   sub:`${invUnpaid.length} unpaid`,       color:'var(--gw-ink)'},
+        {label:'Overdue',              val:fmt(invOverdueVal),    sub:`${invOverdue.length} invoices`,    color:invOverdueVal?'#C97B6A':'var(--gw-muted)'},
+        {label:'Collected MTD',        val:fmt(paidMTDVal),       sub:`${paidMTD.length} payments`,       color:'#2D7A55'},
+        {label:'Total Collected',      val:fmt(totalPaid),        sub:'all time',                          color:'#2D7A55'},
       ].map(k=>`
       <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${k.label}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
         <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
       </div>`).join('')}
     </div>
 
-    <!-- Monthly Revenue Chart -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;margin-bottom:20px">
-      <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Monthly Contracted Revenue (Last 12 Months)</h3>
-      ${months.length
-        ? `<div style="display:flex;align-items:flex-end;gap:8px;height:120px;overflow-x:auto">
-            ${months.map(([m,v])=>{
-              const pct=Math.max(8,Math.round((v/maxVal)*100));
-              return `<div style="flex:1;min-width:40px;display:flex;flex-direction:column;align-items:center;gap:4px">
-                <div style="font-size:10px;font-weight:700;color:#2D7A55">${_p5Money(v).replace('$','')}</div>
-                <div style="width:100%;height:${pct}px;background:#2D7A55;border-radius:4px 4px 0 0;min-height:8px"></div>
-                <div style="font-size:10px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
-              </div>`;
-            }).join('')}
-           </div>`
-        : `<p style="color:var(--gw-muted);font-size:13px;text-align:center;padding:30px">No closed deals yet to chart.</p>`}
+    <!-- Secondary: estimates + deposits -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      ${[
+        {label:'Open Estimates',  val:fmt(estOpenVal),  sub:`${estOpen.length} pending`,     color:'var(--gw-pine,#4D8A86)'},
+        {label:'Approved',        val:fmt(estApproved.reduce((s,e)=>s+Number(e.total||e.amount||0),0)),  sub:`${estApproved.length} estimates`, color:'#2D7A55'},
+        {label:'Est. Total Sent', val:fmt(estTotal),    sub:`${ests.length} total`,           color:'var(--gw-ink)'},
+        {label:'Deposits Held',   val:fmt(depHeldVal),  sub:`${depHeld.length} unapplied`,   color:'#8B6914'},
+      ].map(k=>`
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
+        <div style="font-size:22px;font-weight:800;color:${k.color}">${k.val}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
+      </div>`).join('')}
     </div>
 
-    <!-- Service Line Breakdown -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
-      <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Revenue by Service Line</h3>
-      ${svcRows.length
-        ? svcRows.map(([svc,val])=>{
-            const pct=totalContracted?Math.round((val/totalContracted)*100):0;
-            return `<div style="margin-bottom:10px">
-              <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-                <span style="font-weight:600">${escapeHtml(svc.slice(0,50))}</span>
-                <span style="color:var(--gw-pine-600);font-weight:700">${_p5Money(val)} <span style="color:var(--gw-muted);font-weight:400">(${pct}%)</span></span>
-              </div>
-              <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden">
-                <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#4D8A86,#2D7A55);border-radius:4px"></div>
-              </div>
-            </div>`;
-          }).join('')
-        : `<p style="color:var(--gw-muted);font-size:13px">No closed deals yet. Close deals and add service lines to see breakdown.</p>`}
+    <!-- Budget vs Actual block (from revenueAdmin data) -->
+    ${fyBlock}
+
+    <!-- Invoices + Payments side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+        <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
+          <h3 style="margin:0;font-size:14px;font-weight:800">Recent Invoices</h3>
+          <button class="rp-btn" onclick="show('invoices')" style="font-size:11px;padding:4px 10px">All Invoices</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
+            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Amount</th>
+            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Due</th>
+            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
+          </tr></thead>
+          <tbody>${invRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No invoices yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+        <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
+          <h3 style="margin:0;font-size:14px;font-weight:800">Recent Payments</h3>
+          <button class="rp-btn" onclick="show('payments')" style="font-size:11px;padding:4px 10px">All Payments</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
+            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Method</th>
+            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase">Amount</th>
+            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
+          </tr></thead>
+          <tbody>${pmtRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No payments recorded.</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>
   </div>`;
 }
 
 function opsReports() {
+  // Operations Snapshot — today's jobs, upcoming, weeks booked.
   window._currentView = 'opsReports';
   activateNav('opsReports');
   const wos    = state.workOrders || [];
-  const assets = state.assets || [];
-  const inv    = state.inventory || [];
+  const today  = todayISO();
+  const fmt    = n => Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
 
-  const totalWOs     = wos.length;
-  const completedWOs = wos.filter(w=>w.status==='completed').length;
-  const inProgWOs    = wos.filter(w=>w.status==='in-progress').length;
-  const completionRate = totalWOs ? Math.round((completedWOs/totalWOs)*100) : 0;
+  // Today's jobs
+  const todayWOs     = wos.filter(w => w.scheduledDate === today || w.date === today);
+  const todayDone    = todayWOs.filter(w => w.status === 'completed');
+  const todayPending = todayWOs.filter(w => w.status !== 'completed');
 
-  // Crew productivity
-  const crewMap = {};
-  wos.forEach(w=>{ const c=w.crew||'Unassigned'; if(!crewMap[c]) crewMap[c]={total:0,done:0}; crewMap[c].total++; if(w.status==='completed')crewMap[c].done++; });
-  const crewRows = Object.entries(crewMap).sort((a,b)=>b[1].total-a[1].total).map(([crew,d])=>`
-    <tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:10px 14px;font-weight:600">${escapeHtml(crew)}</td>
-      <td style="padding:10px;text-align:center">${d.total}</td>
-      <td style="padding:10px;text-align:center;color:#2D7A55;font-weight:700">${d.done}</td>
-      <td style="padding:10px;text-align:center">${d.total?Math.round((d.done/d.total)*100):0}%</td>
-    </tr>`).join('');
+  // This week
+  const weekStart = (()=>{ const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); })();
+  const weekEnd   = (()=>{ const d=new Date(); d.setDate(d.getDate()+(6-d.getDay())); return d.toISOString().slice(0,10); })();
+  const thisWeekWOs = wos.filter(w=>{ const dt=w.scheduledDate||w.date||''; return dt>=weekStart&&dt<=weekEnd; });
+  const thisWeekDone = thisWeekWOs.filter(w=>w.status==='completed');
 
-  // WO type breakdown
-  const typeMap = {};
-  wos.forEach(w=>{ const t=w.type||'Other'; typeMap[t]=(typeMap[t]||0)+1; });
-  const typeRows = Object.entries(typeMap).sort((a,b)=>b[1]-a[1]).map(([type,cnt])=>{
-    const pct=totalWOs?Math.round((cnt/totalWOs)*100):0;
-    return `<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-        <span style="font-weight:600">${escapeHtml(type)}</span><span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
-      </div>
-      <div style="height:6px;background:var(--gw-line);border-radius:3px">
-        <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
-      </div>
-    </div>`;
-  }).join('');
+  // Upcoming (next 7 days after today)
+  const next7 = (()=>{ const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
+  const upcomingWOs = wos.filter(w=>{ const dt=w.scheduledDate||w.date||''; return dt>today&&dt<=next7; })
+    .sort((a,b)=>(a.scheduledDate||a.date||'').localeCompare(b.scheduledDate||b.date||''));
 
-  // Asset health
-  const assetsNeedMaint = assets.filter(a=>a.status==='needs-service'||a.status==='down').length;
-  const lowInv = inv.filter(i=>i.onHand<=i.reorderAt).length;
+  // All open work orders (not completed)
+  const openWOs      = wos.filter(w=>w.status!=='completed'&&w.status!=='cancelled');
+  const completedAll = wos.filter(w=>w.status==='completed');
+  const totalVal     = wos.reduce((s,w)=>s+Number(w.jobValue||w.value||0),0);
+
+  // Status breakdown
+  const statusMap = {};
+  wos.forEach(w=>{ const s=w.status||'unknown'; statusMap[s]=(statusMap[s]||0)+1; });
+
+  // WO row helper
+  function woRow(w, showDate) {
+    const isCompleted = w.status==='completed';
+    const isOverdue   = !isCompleted && (w.scheduledDate||w.date||'') < today;
+    const statColor   = isCompleted ? '#2D7A55' : isOverdue ? '#C97B6A' : 'var(--gw-pine,#4D8A86)';
+    const dateStr     = showDate ? _p5FmtDate(w.scheduledDate||w.date) : '';
+    return `<tr style="border-bottom:1px solid var(--gw-line)">
+      <td style="padding:9px 14px">
+        <div style="font-weight:600;font-size:13px">${escapeHtml(w.title||_p6WONum(w)||'Work Order')}</div>
+        <div style="font-size:11px;color:var(--gw-muted)">${escapeHtml(w.client||w.clientName||'')}</div>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(w.crew||w.foreman||'—')}</td>
+      ${showDate?`<td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${dateStr}</td>`:''}
+      <td style="padding:9px 10px"><span style="font-size:11px;font-weight:700;color:${statColor}">${escapeHtml(w.status||'—')}</span></td>
+    </tr>`;
+  }
 
   view.innerHTML = `
   <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Reports</div>
-        <h1 class="rp-title">Operations Reports</h1>
-        <p class="rp-subtitle">Work order completion, crew productivity, asset & inventory health</p>
+        <div class="eyebrow">Operations</div>
+        <h1 class="rp-title">Operations Snapshot</h1>
+        <p class="rp-subtitle">Today's jobs · upcoming · schedule health</p>
       </div>
       <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('workOrderList')">Work Orders</button>
-        <button class="rp-btn" onclick="show('crewView')">Crew View</button>
+        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule Board</button>
+        <button class="rp-btn" onclick="show('workOrderList')">All Work Orders</button>
       </div>
     </header>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
       ${[
-        {label:'Total Work Orders',val:totalWOs,color:'var(--gds-ink)'},
-        {label:'Completed',val:completedWOs,color:'#2D7A55'},
-        {label:'Completion Rate',val:completionRate+'%',color:completionRate>=70?'#2D7A55':'#8B6914'},
-        {label:'Assets Needing Service',val:assetsNeedMaint,color:assetsNeedMaint?'#C97B6A':'var(--gds-ink)'}
+        {label:"Today's Jobs",      val:todayWOs.length,      sub:`${todayDone.length} done · ${todayPending.length} pending`,  color:'var(--gw-ink)'},
+        {label:'This Week',         val:thisWeekWOs.length,   sub:`${thisWeekDone.length} completed`,                           color:'var(--gw-pine,#4D8A86)'},
+        {label:'Open WOs',          val:openWOs.length,       sub:'not yet completed',                                           color:'var(--gw-ink)'},
+        {label:'Upcoming (7 days)', val:upcomingWOs.length,   sub:'scheduled ahead',                                            color:'#8B6914'},
+        {label:'Completed Total',   val:completedAll.length,  sub:'all time',                                                    color:'#2D7A55'},
       ].map(k=>`
       <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${k.label}</div>
-        <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
+        <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
       </div>`).join('')}
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
-        <h3 style="margin:0 0 14px;font-size:14px;font-weight:800">Work Orders by Type</h3>
-        ${typeRows||`<p style="color:var(--gw-muted);font-size:13px">No work orders yet.</p>`}
+    <!-- Today's Work Orders -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
+        <h3 style="margin:0;font-size:14px;font-weight:800">Today's Jobs</h3>
+        <span style="font-size:11px;color:var(--gw-muted)">${today}</span>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
-        <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Inventory Health</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-          <div style="background:var(--gw-surface);border-radius:8px;padding:12px;text-align:center">
-            <div style="font-size:22px;font-weight:800;color:var(--gds-ink)">${inv.length}</div>
-            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Total Items</div>
-          </div>
-          <div style="background:var(--gw-surface);border-radius:8px;padding:12px;text-align:center">
-            <div style="font-size:22px;font-weight:800;color:${lowInv?'#8B6914':'#2D7A55'}">${lowInv}</div>
-            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Low Stock</div>
-          </div>
-        </div>
-        ${lowInv ? `<button class="secondary-btn" style="font-size:12px;width:100%" onclick="show('inventoryList')">View Low Stock Items →</button>` : `<p style="color:#2D7A55;font-size:12px;font-weight:600;text-align:center">✓ All inventory levels OK</p>`}
-      </div>
-    </div>
-
-    <!-- Crew Productivity -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line)">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Crew Productivity</h3>
-      </div>
+      ${todayWOs.length ? `
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-          <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Assigned</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:#2D7A55;text-transform:uppercase">Completed</th>
-          <th style="text-align:center;padding:10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Rate</th>
+          <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
+          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew / Lead</th>
+          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
         </tr></thead>
-        <tbody>${crewRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No work orders with crew assignments yet.</td></tr>`}</tbody>
-      </table>
+        <tbody>${todayWOs.map(w=>woRow(w,false)).join('')}</tbody>
+      </table>` :
+      `<div style="padding:32px;text-align:center;color:var(--gw-muted);font-size:13px">No work orders scheduled for today. <button class="rp-btn" style="margin-left:12px" onclick="show('scheduleBoard')">View Schedule</button></div>`}
+    </div>
+
+    <!-- Upcoming next 7 days -->
+    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+      <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line)">
+        <h3 style="margin:0;font-size:14px;font-weight:800">Upcoming — Next 7 Days</h3>
+      </div>
+      ${upcomingWOs.length ? `
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+          <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
+          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
+          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
+          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
+        </tr></thead>
+        <tbody>${upcomingWOs.map(w=>woRow(w,true)).join('')}</tbody>
+      </table>` :
+      `<div style="padding:28px;text-align:center;color:var(--gw-muted);font-size:13px">No jobs scheduled in the next 7 days.</div>`}
+    </div>
+
+    <!-- Note: Weeks Booked Out calculation -->
+    <div style="background:var(--gw-surface-2,#F8F6F0);border:1px solid var(--gw-line);border-radius:10px;padding:16px 20px;display:flex;align-items:center;gap:14px">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.5"/><path d="M9 5v4l2.5 2.5" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--gw-ink)">Weeks Booked Out — coming soon</div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Once budgeted hours are attached to estimates and work orders, this will show weeks of capacity booked out based on your team's weekly hour budget.</div>
+      </div>
+      <button class="rp-btn" style="margin-left:auto;white-space:nowrap" onclick="show('workOrderList')">View All WOs</button>
     </div>
   </div>`;
 }
