@@ -634,12 +634,12 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
     rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
-    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports'],
-    laborer: ['scheduleBoard','workOrderList','timeTracker'],
+    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
+    laborer: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
     view_only: ['today','pipeline']
   }
   let perms = defaultPerms
@@ -3275,6 +3275,23 @@ function getHtml(): string {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
             Templates &amp; Automations
           </button>
+          <button class="nav-item" data-view="approvalQueue" onclick="show('approvalQueue')" style="position:relative">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 7V4.5L9 1H3a1 1 0 00-1 1v11a1 1 0 001 1h5"/><path d="M9 1v4h4"/><path d="M9 11l2 2 4-4"/></svg>
+            Approval Queue
+            <span class="nav-badge" id="approvalQueueBadge" style="display:none"></span>
+          </button>
+          <button class="nav-item" data-view="auditLog" onclick="show('auditLog')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 10H2M14 6H2M14 2H2M14 14H2"/><circle cx="5" cy="10" r="1.2" fill="currentColor" stroke="none"/></svg>
+            Audit Log
+          </button>
+          <button class="nav-item" data-view="portalAdmin" onclick="show('portalAdmin')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M5 8h6M8 5v6"/></svg>
+            Client Portal
+          </button>
+          <button class="nav-item" data-view="fieldMode" onclick="show('fieldMode')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="1" width="8" height="14" rx="1.5"/><path d="M6 13h4"/><circle cx="8" cy="11" r=".8" fill="currentColor" stroke="none"/></svg>
+            Field Mode
+          </button>
         </div>
       </details>
 
@@ -3374,9 +3391,14 @@ function getHtml(): string {
 <script src="/static/app_premium.js?v=20260706gw22"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260706gw23"></script>
+<script src="/static/user_management.js?v=20260707gw24"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
+<script src="/static/platform_core.js?v=20260707gw8p1"></script>
+<script src="/static/approval_engine.js?v=20260707gw8p1"></script>
+<script src="/static/automation_engine.js?v=20260707gw8p1"></script>
+<script src="/static/client_portal.js?v=20260707gw8p1"></script>
+<script src="/static/field_mode.js?v=20260707gw8p1"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {

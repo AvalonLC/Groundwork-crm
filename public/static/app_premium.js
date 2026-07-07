@@ -167,14 +167,16 @@ const DEFAULT_NAV_PERMS = {
     'financialHub','invoices','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-    'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
+    'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
   // Office Manager: everything except system-level admin settings
   office_manager: ['today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-    'settings','userManagement','integrations','manager'],
+    'settings','userManagement','integrations','manager',
+    'approvalQueue','auditLog','portalAdmin','automationCenter'],
   // Sales Rep: full sales workflow — pipeline through academy, no ops/financial/settings
   rep: ['today','myDashboard',
     'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
@@ -185,9 +187,9 @@ const DEFAULT_NAV_PERMS = {
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-    'opsReports','teamReports'],
+    'opsReports','teamReports','approvalQueue','fieldMode'],
   // Laborer: self-service field only — assigned schedule, work orders, time
-  laborer: ['scheduleBoard','workOrderList','timeTracker'],
+  laborer: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
   view_only: ['today','pipeline']
 };
@@ -418,6 +420,10 @@ function fallbackCopy(text){
       gwAnnounce:'Announcements', gwBilling:'Billing',
       gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
       opsHub:'Operations Hub',
+      // Phase 8
+      approvalQueue:'Approval Queue', auditLog:'Audit Log',
+      portalAdmin:'Client Portal', automationCenter:'Automation Center',
+      fieldMode:'Field Mode',
     };
 
     // Hide bar if only 1 item (nothing to navigate back to)
@@ -501,6 +507,10 @@ function show(viewName='today', param){
       gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
       // Legacy / misc
       statement:'Account Statement', opsHub:'Operations Hub',
+      // Phase 8
+      approvalQueue:'Approval Queue', auditLog:'Audit Log',
+      portalAdmin:'Client Portal', automationCenter:'Automation Center',
+      fieldMode:'Field Mode',
     };
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px;max-width:520px;margin-left:auto;margin-right:auto">
       <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
@@ -582,7 +592,26 @@ function show(viewName='today', param){
     systemConfig:       ()   => systemConfig(),
     systemTemplates:    ()   => systemTemplates(),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ai};
+  // Phase 8 stub for when engine files haven't loaded yet (rare, safe fallback)
+  function _p8Stub(label) {
+    const view = document.getElementById('view');
+    if (view) view.innerHTML = `<div style="padding:48px 24px;text-align:center;max-width:480px;margin:40px auto">
+      <div style="width:44px;height:44px;border-radius:10px;background:#EDF2F0;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      </div>
+      <h2 style="font-size:18px;color:#1F2A2B;margin:0 0 8px">${label}</h2>
+      <p style="font-size:13px;color:#5E6E6F;line-height:1.6;margin:0">Loading platform module. Please refresh the page if this persists.</p>
+    </div>`;
+  }
+  // Phase 8 routes — Platform Maturity
+  const p8Route = {
+    approvalQueue:    () => (typeof window.approvalQueue    === 'function') ? window.approvalQueue()    : _p8Stub('Approval Queue'),
+    auditLog:         () => (typeof window.auditLog         === 'function') ? window.auditLog()         : _p8Stub('Audit Log'),
+    portalAdmin:      () => (typeof window.portalAdmin      === 'function') ? window.portalAdmin()      : _p8Stub('Client Portal'),
+    automationCenter: () => (typeof window.automationCenter === 'function') ? window.automationCenter() : _p8Stub('Automation Center'),
+    fieldMode:        () => (typeof window.fieldMode        === 'function') ? window.fieldMode()        : _p8Stub('Field Mode'),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -9879,9 +9908,14 @@ window.superAdmin = superAdmin;
   } else if (d1Rep) {
     // ── Standard authenticated tenant flow ───────────────────────────────────
     // Bootstrap complete: REPS hydrated, _gwNavPerms set, getCurrentRep() works.
-    // Refresh admin nav visibility then show Today.
+    // Refresh admin nav visibility then show Today (or Field Mode for field roles on mobile).
     if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
-    show('today');
+    // Phase 8: Auto-route field roles to Field Mode on mobile
+    if (typeof window._gwShouldStartFieldMode === 'function' && window._gwShouldStartFieldMode()) {
+      show('fieldMode');
+    } else {
+      show('today');
+    }
   } else {
     // ── No session (unauthenticated) — show login screen ────────────────────
     if (typeof window.renderLoginScreen === 'function') {

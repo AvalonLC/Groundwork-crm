@@ -56,7 +56,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
       'settings','userManagement','integrations','manager','systemConfig','systemTemplates',
-      'opsHub'],
+      'opsHub','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     capabilities: {
       // Sales / Financial
       can_create_lead: true, can_edit_lead: true,
@@ -71,6 +71,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: true, can_manage_roles: true,
       can_manage_integrations: true, can_edit_system_settings: true,
       can_delete_leads: true,
+      // Phase 8 platform capabilities
+      can_approve_requests: true, can_manage_automations: true,
+      can_view_audit_logs: true, can_manage_portal_access: true,
     },
     scope: { sales: 'all', ops: 'all', financial: 'all', people: 'all' }
   },
@@ -90,7 +93,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-      'settings','integrations','manager'],
+      'settings','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
     capabilities: {
       can_create_lead: true, can_edit_lead: true,
       can_create_estimate: true, can_edit_estimate: true, can_send_estimate: true,
@@ -102,6 +105,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: true, can_edit_system_settings: false,
       can_delete_leads: false,
+      // Phase 8 platform capabilities
+      can_approve_requests: true, can_manage_automations: true,
+      can_view_audit_logs: true, can_manage_portal_access: true,
     },
     scope: { sales: 'all', ops: 'all', financial: 'all', people: 'all' }
   },
@@ -127,6 +133,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
+      // Phase 8 platform capabilities
+      can_approve_requests: false, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
     },
     scope: { sales: 'self', ops: 'self', financial: 'none', people: 'self' }
   },
@@ -149,6 +158,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
+      // Phase 8 platform capabilities
+      can_approve_requests: false, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
     },
     scope: { sales: 'assigned', ops: 'none', financial: 'none', people: 'none' }
   },
@@ -163,7 +175,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail',
       'assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
-      'timeTracker','opsReports','teamReports'],
+      'timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
     capabilities: {
       can_create_lead: false, can_edit_lead: false,
       can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
@@ -175,6 +187,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
+      // Phase 8 platform capabilities
+      can_approve_requests: true, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
     },
     scope: { sales: 'none', ops: 'team', financial: 'none', people: 'team' }
   },
@@ -185,7 +200,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
     label: 'Laborer',
     color: '#7A7A6E',
     description: 'Self-service field access only. Assigned work orders, schedule, and time tracking. Nothing else.',
-    defaultViews: ['scheduleBoard','workOrderList','timeTracker'],
+    defaultViews: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
     capabilities: {
       can_create_lead: false, can_edit_lead: false,
       can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
@@ -197,6 +212,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
+      // Phase 8 platform capabilities
+      can_approve_requests: false, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
     },
     scope: { sales: 'none', ops: 'self', financial: 'none', people: 'self' }
   },
@@ -219,6 +237,9 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
+      // Phase 8 platform capabilities
+      can_approve_requests: false, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
     },
     scope: { sales: 'none', ops: 'none', financial: 'none', people: 'none' }
   }
