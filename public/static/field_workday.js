@@ -400,36 +400,29 @@ window.fieldDashboard = function fieldDashboard() {
 
   const isSupervisor = rep.role === 'field_supervisor';
   const todayJobs    = (typeof _getMySchedule === 'function') ? _getMySchedule() : [];
-  const allMyJobs    = (typeof _getMyWorkOrders === 'function') ? _getMyWorkOrders() : [];
   const state        = window._gwPillState || 'not-in';
   const entry        = window._ttState && window._ttState.activeEntry;
-  const allReps      = window.REPS || [];
 
   // ── Crew / foreman context ────────────────────────────────────────────────
+  // WO schema: wo.crew is a plain string (crew name / lead name), not a rep ID.
+  // For laborers: show the crew/foreman string from their first today job.
+  // For supervisors: collect unique crew strings across all today's jobs.
 
-  // Find foreman for laborer (field_supervisor assigned to their crew)
-  let foremanRep = null;
+  // Laborer: foreman = wo.crew string from first job
+  let foremanName = null;
   if (!isSupervisor && todayJobs.length > 0) {
-    const job = todayJobs[0];
-    const foremanId = job.foreman || job.supervisor;
-    if (foremanId) {
-      foremanRep = allReps.find(r => r.id === foremanId) || null;
-    }
+    foremanName = todayJobs[0].crew || null;
   }
 
-  // Find crew for supervisor
-  let crewMembers = [];
-  if (isSupervisor) {
-    // Crew = all laborers whose schedule today overlaps with supervisor's jobs
-    const myJobIds = new Set(todayJobs.map(j => j.id));
-    crewMembers = allReps.filter(r => {
-      if (r.role !== 'laborer') return false;
-      const rState = window._avalonState || {};
-      const wos = rState.workOrders || [];
-      return wos.some(wo =>
-        wo.date === _fwTodayISO() && myJobIds.has(wo.id) &&
-        wo.crew && (Array.isArray(wo.crew) ? wo.crew.includes(r.id) : wo.crew === r.id)
-      );
+  // Supervisor: unique crew member strings across today's jobs
+  let crewNames = [];
+  if (isSupervisor && todayJobs.length > 0) {
+    const seen = new Set();
+    todayJobs.forEach(wo => {
+      if (wo.crew && !seen.has(wo.crew)) {
+        seen.add(wo.crew);
+        crewNames.push(wo.crew);
+      }
     });
   }
 
@@ -548,34 +541,36 @@ window.fieldDashboard = function fieldDashboard() {
   // ── Foreman / Crew section ────────────────────────────────────────────────
 
   let contextHTML = '';
-  if (!isSupervisor && foremanRep) {
-    const initials = (foremanRep.name || 'F').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  if (!isSupervisor && foremanName) {
+    const initials = foremanName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
     contextHTML = `
       <div class="fd-section">
-        <div class="fd-section-hd">Your Foreman Today</div>
+        <div class="fd-section-hd">Your Crew / Foreman Today</div>
         <div class="fd-card">
           <div class="fd-card-row">
-            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4D8A86,#2D7A55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;flex-shrink:0">${initials}</div>
+            <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4D8A86,#2D7A55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;flex-shrink:0">${_fwE(initials)}</div>
             <div style="flex:1;min-width:0">
-              <div class="fd-card-value">${_fwE(foremanRep.name || 'Foreman')}</div>
-              <div class="fd-card-meta">Field Supervisor</div>
+              <div class="fd-card-value">${_fwE(foremanName)}</div>
+              <div class="fd-card-meta">Crew / Foreman</div>
             </div>
           </div>
         </div>
       </div>`;
-  } else if (isSupervisor && crewMembers.length > 0) {
+  } else if (isSupervisor && crewNames.length > 0) {
     contextHTML = `
       <div class="fd-section">
-        <div class="fd-section-hd">Today's Crew (${crewMembers.length})</div>
+        <div class="fd-section-hd">Today's Crew (${crewNames.length})</div>
         <div class="fd-card">
-          ${crewMembers.map(m => {
-            const initials = (m.name || 'M').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+          ${crewNames.map((name, i) => {
+            const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+            const colors = ['#4D8A86','#2D7A55','#8B6914','#4B7BB5','#8B3A2A'];
+            const color  = colors[i % colors.length];
             return `
-              <div class="fd-card-row" style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--gw-line,#F0EDE5)">
-                <div style="width:32px;height:32px;border-radius:50%;background:${m.color||'#4D8A86'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:800;flex-shrink:0">${initials}</div>
+              <div class="fd-card-row" style="${i < crewNames.length - 1 ? 'margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--gw-line,#F0EDE5)' : ''}">
+                <div style="width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:800;flex-shrink:0">${_fwE(initials)}</div>
                 <div style="flex:1;min-width:0">
-                  <div class="fd-card-value" style="font-size:13px">${_fwE(m.name || 'Crew Member')}</div>
-                  <div class="fd-card-meta">${_fwE(m.title || 'Laborer')}</div>
+                  <div class="fd-card-value" style="font-size:13px">${_fwE(name)}</div>
+                  <div class="fd-card-meta">Crew Member</div>
                 </div>
               </div>`;
           }).join('')}
