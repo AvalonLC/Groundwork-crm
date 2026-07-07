@@ -63,6 +63,10 @@ function activateNav(viewName) {
     const isActive = bView === viewName || bView === wsTarget;
     b.classList.toggle('active', isActive);
   });
+  // Highlight the correct sidebar subtab button
+  document.querySelectorAll('.nav-subtab').forEach(b => {
+    b.classList.toggle('nav-subtab--active', b.dataset.tab === viewName);
+  });
 }
 const navItems = [...document.querySelectorAll('.nav-item')];
 const sidebar = document.getElementById('sidebar');
@@ -529,23 +533,33 @@ function fallbackCopy(text){
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── Workspace header helper ───────────────────────────────────────────────────
-// Renders workspace name + tab bar into #gw-ws-header (outside #view) so that
-// legacy functions freely wipe #view without destroying the navigation chrome.
+// Renders workspace tab list into the sidebar subtabs div (#gw-subtabs-<wsId>).
+// wsName is the display label ("Dashboard"); wsId is the data-view key ("gwDashboard").
+const _gwWsNameToId = {
+  Dashboard: 'gwDashboard',
+  Sales: 'gwSales',
+  Financial: 'gwFinancial',
+  Operations: 'gwOperations',
+  Admin: 'gwAdmin',
+};
 function _gwSetHeader(wsName, tabsConfig, activeTabId) {
-  const hdr = document.getElementById('gw-ws-header');
-  if (!hdr) return;
-  let tabs = '<div class="gw-ws-tabs" role="tablist">';
+  const wsId = _gwWsNameToId[wsName] || null;
+  // Clear all sidebar subtab panels first
+  document.querySelectorAll('.nav-subtabs').forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
+  if (!wsId) return;
+  const panel = document.getElementById('gw-subtabs-' + wsId);
+  if (!panel) return;
+  let html = '';
   tabsConfig.forEach(t => {
-    const active = t.id === activeTabId ? ' gw-ws-tab--active' : '';
-    tabs += `<button class="gw-ws-tab${active}" role="tab" aria-selected="${t.id===activeTabId}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+    const active = t.id === activeTabId ? ' nav-subtab--active' : '';
+    html += `<button class="nav-subtab${active}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
   });
-  tabs += '</div>';
-  hdr.innerHTML = `<div class="gw-workspace-header"><span class="gw-workspace-title">${wsName}</span>${tabs}</div>`;
-  hdr.style.display = '';
+  panel.innerHTML = html;
+  panel.style.display = 'flex';
+  panel.style.flexDirection = 'column';
 }
 function _gwClearHeader() {
-  const hdr = document.getElementById('gw-ws-header');
-  if (hdr) { hdr.innerHTML = ''; hdr.style.display = 'none'; }
+  document.querySelectorAll('.nav-subtabs').forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
 }
 
 // ── Dashboard workspace ───────────────────────────────────────────────────────

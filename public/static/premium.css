@@ -7682,8 +7682,17 @@ h1.pl-title,
 
 /* ════════════════════════════════════════════════════════
    GW-WORKSPACE — 5-workspace navigation model
-   Workspace shells, top tab bars, sub-tab bars
+   Sidebar expand/collapse with subtab list per workspace
    ════════════════════════════════════════════════════════ */
+
+/* ── Hide the old top-of-content workspace header bar ── */
+#gw-ws-header { display: none !important; }
+
+/* ── Wrapper group keeps button + subtab list together ── */
+.nav-ws-group {
+  display: flex;
+  flex-direction: column;
+}
 
 /* ── Sidebar workspace nav buttons (flat, no <details>) ── */
 .nav-workspace {
@@ -7691,7 +7700,7 @@ h1.pl-title,
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   font-size: 13px;
   font-weight: 500;
   border-radius: var(--gw-r-xs);
@@ -7727,74 +7736,62 @@ h1.pl-title,
   border-radius: 0 3px 3px 0;
 }
 
-/* ── Workspace container ── */
-.gw-workspace {
-  display: flex;
+/* ── Subtab panel (expands below the active workspace button) ── */
+.nav-subtabs {
+  display: none; /* shown by JS when workspace is active */
   flex-direction: column;
-  min-height: 0;
-}
-.gw-workspace-header {
-  padding: 0 0 0 0;
-  border-bottom: 1px solid var(--gw-line);
-  background: var(--gw-surface);
-  position: sticky;
-  top: 58px; /* below topbar */
-  z-index: 10;
-}
-.gw-workspace-title {
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--gw-muted);
-  margin: 0;
-  padding: 12px 24px 0;
+  padding: 2px 0 6px 0;
+  margin: 0 8px 4px 8px;
+  border-left: 2px solid rgba(255,255,255,.12);
 }
 
-/* ── Workspace primary tab bar ── */
-.gw-ws-tabs {
-  display: flex;
-  align-items: flex-end;
-  gap: 0;
-  padding: 0 24px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.gw-ws-tabs::-webkit-scrollbar { display: none; }
-
-.gw-ws-tab {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 10px 14px 9px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--gw-muted);
+/* ── Individual sidebar subtab button ── */
+.nav-subtab {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 12px 6px 14px;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255,255,255,.5);
   cursor: pointer;
+  border-radius: 0 5px 5px 0;
+  transition: color .12s, background .12s;
   white-space: nowrap;
-  transition: color .12s, border-color .12s;
-  border-radius: 0;
-  margin-bottom: -1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.gw-ws-tab:hover {
-  color: var(--gw-ink);
-  background: none;
+.nav-subtab:hover {
+  color: rgba(255,255,255,.85);
+  background: rgba(255,255,255,.06);
 }
-.gw-ws-tab--active {
-  color: var(--gw-sky);
-  border-bottom-color: var(--gw-sky);
+.nav-subtab--active {
+  color: #FFFFFF;
   font-weight: 600;
+  background: rgba(255,255,255,.10);
+}
+.nav-subtab--active::before {
+  /* subtle left accent on active subtab */
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: -14px;
+  margin-right: 8px;
+  border-left: 2px solid var(--gw-sky);
+  vertical-align: middle;
 }
 
-/* ── Workspace body (content area) ── */
-#gw-workspace-body {
-  flex: 1;
-  min-height: 0;
-}
+/* ── Legacy top-bar tab classes kept for any remaining references ── */
+.gw-workspace-header { display: none; }
+.gw-ws-tabs { display: none; }
+.gw-ws-tab { display: none; }
+.gw-ws-tab--active { display: none; }
 
 /* ── Sub-tab bar (Records, Resources, Workflow, Access Modes) ── */
+/* These still render inside #view as pill tabs */
 .gw-sub-tabs {
   display: flex;
   gap: 4px;
@@ -7803,6 +7800,7 @@ h1.pl-title,
   background: var(--gw-surface);
   overflow-x: auto;
   scrollbar-width: none;
+  margin: -26px -26px 20px; /* bleed to view edges */
 }
 .gw-sub-tabs::-webkit-scrollbar { display: none; }
 
@@ -7832,21 +7830,15 @@ h1.pl-title,
   border-bottom-color: var(--gw-surface);
 }
 
-/* ── Mobile responsive for workspace tabs ── */
+/* ── Mobile ── */
 @media (max-width: 768px) {
-  .gw-workspace-title {
-    padding: 10px 16px 0;
-    font-size: 10px;
-  }
-  .gw-ws-tabs {
-    padding: 0 12px;
-  }
-  .gw-ws-tab {
-    padding: 9px 10px 8px;
-    font-size: 12px;
+  .nav-subtab {
+    font-size: 11px;
+    padding: 5px 10px 5px 12px;
   }
   .gw-sub-tabs {
     padding: 12px 12px 0;
+    margin: -16px -16px 16px;
   }
   .gw-sub-tab {
     padding: 6px 10px;

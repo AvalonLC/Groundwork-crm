@@ -3218,34 +3218,49 @@ function getHtml(): string {
       <!-- ── Tenant nav (hidden when platform admin session active) ── -->
 
       <!-- ── Dashboard ── -->
-      <button class="nav-item nav-workspace tenant-nav active" data-view="gwDashboard" onclick="show('gwDashboard')">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
-        Dashboard
-      </button>
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace active" data-view="gwDashboard" onclick="show('gwDashboard')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+          Dashboard
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwDashboard"></div>
+      </div>
 
       <!-- ── Sales ── -->
-      <button class="nav-item nav-workspace tenant-nav" data-view="gwSales" onclick="show('gwSales')">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
-        Sales
-      </button>
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwSales" onclick="show('gwSales')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
+          Sales
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwSales"></div>
+      </div>
 
       <!-- ── Financial ── -->
-      <button class="nav-item nav-workspace tenant-nav" data-view="gwFinancial" onclick="show('gwFinancial')">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
-        Financial
-      </button>
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwFinancial" onclick="show('gwFinancial')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
+          Financial
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwFinancial"></div>
+      </div>
 
       <!-- ── Operations ── -->
-      <button class="nav-item nav-workspace tenant-nav" data-view="gwOperations" onclick="show('gwOperations')">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
-        Operations
-      </button>
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwOperations" onclick="show('gwOperations')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
+          Operations
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwOperations"></div>
+      </div>
 
       <!-- ── Admin ── -->
-      <button class="nav-item nav-workspace tenant-nav" data-view="gwAdmin" onclick="show('gwAdmin')">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
-        Admin
-      </button>
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwAdmin" onclick="show('gwAdmin')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
+          Admin
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwAdmin"></div>
+      </div>
 
       <!-- ── Platform Admin nav (visible only when company_id=groundwork_platform) ── -->
       <div id="platformAdminNav" style="display:none">
