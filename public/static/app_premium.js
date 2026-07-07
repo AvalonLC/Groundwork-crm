@@ -14094,7 +14094,7 @@ function _scDefault() {
 function systemConfig() {
   window._currentView = 'systemConfig';
   activateNav('systemConfig');
-  const el = document.getElementById('main-content');
+  const el = document.getElementById('view');
   if (!el) return;
 
   let cfg = _scLoad() || _scDefault();
@@ -14434,7 +14434,7 @@ function _stDefaultTemplates() {
 function systemTemplates() {
   window._currentView = 'systemTemplates';
   activateNav('systemTemplates');
-  const el = document.getElementById('main-content');
+  const el = document.getElementById('view');
   if (!el) return;
 
   let autos = _stLoadAuto() || _stDefaultAutos();
