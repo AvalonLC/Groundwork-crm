@@ -634,13 +634,37 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
-    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
-    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
-    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
-    laborer: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
-    view_only: ['today','pipeline']
+    admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+      'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates',
+      'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+      'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+      'financialHub','invoices','payments','deposits','statements','financialActivity',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+      'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
+      'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
+    office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+      'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates',
+      'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+      'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+      'financialHub','invoices','payments','deposits','statements','financialActivity',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+      'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
+    rep: ['gwDashboard','gwSales',
+      'today','myDashboard','pipeline','lead','clients','properties','estimates',
+      'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+      'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['gwDashboard','gwSales','today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
+    field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
+      'today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+      'opsReports','teamReports','approvalQueue','fieldMode'],
+    laborer: ['gwOperations','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+    view_only: ['gwDashboard','today','pipeline']
   }
   let perms = defaultPerms
   if (row?.value) {
@@ -3191,247 +3215,37 @@ function getHtml(): string {
         <div class="brand-subtitle">Sales CRM</div>
       </div>
     </div>
-    <nav class="nav" id="mainNav" role="navigation">
-
-      <!-- ── Tenant nav groups (hidden when platform admin session active) ── -->
+      <!-- ── Tenant nav (hidden when platform admin session active) ── -->
 
       <!-- ── Dashboard ── -->
-      <details class="nav-group tenant-nav" open>
-        <summary class="nav-summary">Dashboard</summary>
-        <div class="nav-items">
-          <button class="nav-item active" data-view="today" onclick="show('today')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
-            Today
-          </button>
-          <button class="nav-item" data-view="myDashboard" onclick="show('myDashboard')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-            My Dashboard
-          </button>
-          <button class="nav-item" data-view="teamView" onclick="show('teamView')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
-            Team View
-          </button>
-        </div>
-      </details>
+      <button class="nav-item nav-workspace tenant-nav active" data-view="gwDashboard" onclick="show('gwDashboard')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+        Dashboard
+      </button>
 
       <!-- ── Sales ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Sales</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="pipeline" onclick="show('pipeline')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
-            Pipeline
-          </button>
-          <button class="nav-item" data-view="lead" onclick="show('lead')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
-            Leads
-          </button>
-          <button class="nav-item" data-view="clients" onclick="show('clients')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4"/><circle cx="8" cy="5" r="3"/></svg>
-            Clients
-          </button>
-          <button class="nav-item" data-view="properties" onclick="show('properties')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 14V7l7-5 7 5v7"/><path d="M6 14V9h4v5"/></svg>
-            Properties
-          </button>
-          <button class="nav-item" data-view="estimates" onclick="show('estimates')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
-            Estimates
-          </button>
-        </div>
-      </details>
-
-      <!-- ── Engagement ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Engagement</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="communications" onclick="show('communications')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
-            Communications
-          </button>
-          <button class="nav-item" data-view="templates" onclick="show('templates')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
-            Templates
-          </button>
-          <button class="nav-item" data-view="sequences" onclick="show('sequences')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/></svg>
-            Sequences
-          </button>
-          <button class="nav-item" data-view="talkTracks" onclick="show('talkTracks')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v9a1 1 0 01-1 1H5l-3 2V3a1 1 0 011-1z"/></svg>
-            Talk Tracks
-          </button>
-          <button class="nav-item" data-view="playbooks" onclick="show('playbooks')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/></svg>
-            Playbooks
-          </button>
-          <button class="nav-item" data-view="aiAssist" onclick="show('aiAssist')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
-            AI Assist
-          </button>
-        </div>
-      </details>
+      <button class="nav-item nav-workspace tenant-nav" data-view="gwSales" onclick="show('gwSales')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
+        Sales
+      </button>
 
       <!-- ── Financial ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Financial</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="financialHub" onclick="show('financialHub')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
-            Overview
-          </button>
-          <button class="nav-item" data-view="invoices" onclick="show('invoices')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
-            Invoices
-          </button>
-          <button class="nav-item" data-view="payments" onclick="show('payments')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/><circle cx="5" cy="10" r="1" fill="currentColor" stroke="none"/></svg>
-            Payments
-          </button>
-          <button class="nav-item" data-view="deposits" onclick="show('deposits')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
-            Deposits
-          </button>
-          <button class="nav-item" data-view="statements" onclick="show('statements')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>
-            Statements
-          </button>
-          <button class="nav-item" data-view="financialActivity" onclick="show('financialActivity')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l3-4 3 2 3-5 3 3"/></svg>
-            Activity
-          </button>
-        </div>
-      </details>
+      <button class="nav-item nav-workspace tenant-nav" data-view="gwFinancial" onclick="show('gwFinancial')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
+        Financial
+      </button>
 
       <!-- ── Operations ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Operations</summary>
-        <div class="nav-items">
-          <!-- Scheduling -->
-          <div class="nav-subgroup">
-            <div class="nav-subgroup-label">Scheduling</div>
-            <button class="nav-item nav-item--sub" data-view="scheduleBoard" onclick="show('scheduleBoard')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
-              Calendar
-            </button>
-            <button class="nav-item nav-item--sub" data-view="dispatchBoard" onclick="show('dispatchBoard')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2.5 1.5"/></svg>
-              Dispatch
-            </button>
-            <button class="nav-item nav-item--sub" data-view="recurringServices" onclick="show('recurringServices')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 009.9-1M13 8a5 5 0 01-9.9 1"/><path d="M3 5l.1 3h3M13 11l-.1-3h-3"/></svg>
-              Recurring
-            </button>
-            <button class="nav-item nav-item--sub" data-view="crewView" onclick="show('crewView')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
-              Crew View
-            </button>
-          </div>
-          <button class="nav-item" data-view="workOrderList" onclick="show('workOrderList')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
-            Work Orders
-          </button>
-          <!-- Assets & Inventory -->
-          <div class="nav-subgroup">
-            <div class="nav-subgroup-label">Assets &amp; Inventory</div>
-            <button class="nav-item nav-item--sub" data-view="assetList" onclick="show('assetList')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/><path d="M8 2v14M2 6l6 4 6-4"/></svg>
-              Assets
-            </button>
-            <button class="nav-item nav-item--sub" data-view="maintenanceQueue" onclick="show('maintenanceQueue')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M5.5 1.5l1 2M10.5 1.5l-1 2"/></svg>
-              Maintenance
-            </button>
-            <button class="nav-item nav-item--sub" data-view="inventoryList" onclick="show('inventoryList')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v10H2z"/><path d="M5 4V2h6v2"/><path d="M6 8h4M6 11h2"/></svg>
-              Inventory
-            </button>
-            <button class="nav-item nav-item--sub" data-view="toolsConsumables" onclick="show('toolsConsumables')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l4 4-7 7-4-4 7-7z"/><path d="M2 14l2-2"/></svg>
-              Tools
-            </button>
-          </div>
-          <button class="nav-item" data-view="timeTracker" onclick="show('timeTracker')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="9" r="5"/><path d="M8 6v3l2 1.5"/><path d="M6 1h4M8 1v3"/></svg>
-            Time Tracker
-          </button>
-        </div>
-      </details>
+      <button class="nav-item nav-workspace tenant-nav" data-view="gwOperations" onclick="show('gwOperations')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
+        Operations
+      </button>
 
-      <!-- ── Reports ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Reports</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="revenueAdmin" onclick="show('revenueAdmin')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11l4-4 3 3 5-6"/><circle cx="8" cy="8" r="7"/></svg>
-            Revenue
-          </button>
-          <button class="nav-item" data-view="salesReports" onclick="show('salesReports')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
-            Sales
-          </button>
-          <button class="nav-item" data-view="financialReports" onclick="show('financialReports')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
-            Financial
-          </button>
-          <button class="nav-item" data-view="opsReports" onclick="show('opsReports')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12V6l6-4 6 4v6l-6 4-6-4z"/></svg>
-            Operations
-          </button>
-          <button class="nav-item" data-view="teamReports" onclick="show('teamReports')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2.5"/><circle cx="11" cy="5" r="2.5"/><path d="M1 14c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5"/><path d="M10 11.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.5 4 3.5"/></svg>
-            Team
-          </button>
-        </div>
-      </details>
-
-      <!-- ── Settings ── -->
-      <details class="nav-group tenant-nav">
-        <summary class="nav-summary">Settings</summary>
-        <div class="nav-items">
-          <button class="nav-item" data-view="settings" onclick="show('settings')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
-            General
-          </button>
-          <button class="nav-item" data-view="userManagement" onclick="show('userManagement')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-2.5 2.2-4 5-4s5 1.5 5 4"/><path d="M11 3c1.4.4 2.5 1.7 2.5 3s-1.1 2.6-2.5 3M12.5 12c1.3.3 2.5 1.1 2.5 2.5"/></svg>
-            Users &amp; Roles
-          </button>
-          <button class="nav-item" data-view="integrations" onclick="show('integrations')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="8" r="2.5"/><circle cx="12" cy="4" r="2.5"/><circle cx="12" cy="12" r="2.5"/><path d="M6.4 7.2l3.2-2.4M6.4 8.8l3.2 2.4"/></svg>
-            Integrations
-          </button>
-          <button class="nav-item" data-view="manager" onclick="show('manager')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 12a6 6 0 00-12 0"/><circle cx="8" cy="6" r="3"/><path d="M3 9l-2 3M13 9l2 3"/></svg>
-            Manager Tools
-          </button>
-          <button class="nav-item" data-view="systemConfig" onclick="show('systemConfig')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-            System Config
-          </button>
-          <button class="nav-item" data-view="systemTemplates" onclick="show('systemTemplates')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
-            Templates &amp; Automations
-          </button>
-          <button class="nav-item" data-view="approvalQueue" onclick="show('approvalQueue')" style="position:relative">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 7V4.5L9 1H3a1 1 0 00-1 1v11a1 1 0 001 1h5"/><path d="M9 1v4h4"/><path d="M9 11l2 2 4-4"/></svg>
-            Approval Queue
-            <span class="nav-badge" id="approvalQueueBadge" style="display:none"></span>
-          </button>
-          <button class="nav-item" data-view="auditLog" onclick="show('auditLog')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 10H2M14 6H2M14 2H2M14 14H2"/><circle cx="5" cy="10" r="1.2" fill="currentColor" stroke="none"/></svg>
-            Audit Log
-          </button>
-          <button class="nav-item" data-view="portalAdmin" onclick="show('portalAdmin')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M5 8h6M8 5v6"/></svg>
-            Client Portal
-          </button>
-          <button class="nav-item" data-view="fieldMode" onclick="show('fieldMode')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="1" width="8" height="14" rx="1.5"/><path d="M6 13h4"/><circle cx="8" cy="11" r=".8" fill="currentColor" stroke="none"/></svg>
-            Field Mode
-          </button>
-        </div>
-      </details>
+      <!-- ── Admin ── -->
+      <button class="nav-item nav-workspace tenant-nav" data-view="gwAdmin" onclick="show('gwAdmin')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
+        Admin
+      </button>
 
       <!-- ── Platform Admin nav (visible only when company_id=groundwork_platform) ── -->
       <div id="platformAdminNav" style="display:none">
@@ -3512,9 +3326,10 @@ function getHtml(): string {
       <!-- Live sync status pill — shown during/after background sync -->
       <div id="gw-sync-status" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--gw-surface-2,rgba(255,255,255,.07));border:1px solid var(--gw-line,rgba(255,255,255,.12));border-radius:20px;font-size:11px;font-weight:600;cursor:pointer" onclick="window._manualSync()" title="Click to sync now"></div>
 
-      <button class="topbar-settings" onclick="show('settings')" title="Settings"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg>Settings</button>
+      <button class="topbar-settings" onclick="show('gwAdmin')" title="Admin"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg>Admin</button>
     </header>
     <nav id="gw-trail" class="gw-trail" aria-label="Navigation history" style="display:none"></nav>
+    <div id="gw-ws-header" style="display:none"></div>
     <div class="view" id="view" role="region" aria-live="polite"></div>
   </main>
 </div>
@@ -3526,7 +3341,7 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260706gw22"></script>
+<script src="/static/app_premium.js?v=20260707gw23"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
@@ -3757,21 +3572,27 @@ function getHtml(): string {
     if (typeof window._d1BootstrapResolve === 'function') window._d1BootstrapResolve({ authed: false });
   })();
 
-  // Show/hide admin-only nav items based on current rep role
+  // Show/hide nav items based on current rep role
+  // With the 5-workspace model, visibility is handled inside gwAdmin workspace tabs;
+  // the sidebar itself only needs to show/hide workspace buttons per role.
   (function applyNavVisibility() {
     function refreshAdminNav() {
       const rep = window.getCurrentRep ? window.getCurrentRep() : null;
       const isAdmin = rep && rep.role === 'admin';
-      const umBtn = document.querySelector('[data-view="userManagement"]');
-      if (umBtn) {
-        umBtn.style.display = isAdmin ? '' : 'none';
+      // Hide Admin workspace button from non-admin roles that lack admin views
+      // (gwAdmin workspace itself handles internal tab visibility)
+      const adminBtn = document.querySelector('[data-view="gwAdmin"]');
+      if (adminBtn) {
+        // Show Admin nav for admin and office_manager roles
+        const canSeeAdmin = !rep || rep.role === 'admin' || rep.role === 'office_manager';
+        (adminBtn as HTMLElement).style.display = canSeeAdmin ? '' : 'none';
       }
       // Super-admin nav: visible only if is_super_admin from D1 session rep
       const d1Rep = window._d1SessionRep;
       const isSuperAdmin = d1Rep && (d1Rep.is_super_admin === 1 || d1Rep.is_super_admin === true);
       const saBtn = document.getElementById('superAdminNavBtn');
       if (saBtn) {
-        saBtn.style.display = isSuperAdmin ? '' : 'none';
+        (saBtn as HTMLElement).style.display = isSuperAdmin ? '' : 'none';
       }
     }
     // Run on load and expose so login/logout can call it

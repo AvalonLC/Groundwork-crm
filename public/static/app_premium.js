@@ -23,15 +23,45 @@ function getPipelineStages() {
 }
 window.getPipelineStages = getPipelineStages;
 // navItems re-queried each call so dynamically added platform nav buttons are included
+// Map legacy/alias view names to their parent workspace for nav highlighting
+const _VIEW_WORKSPACE_MAP = {
+  // Dashboard workspace
+  today:'gwDashboard', myDashboard:'gwDashboard', teamView:'gwDashboard',
+  revenueAdmin:'gwDashboard', salesReports:'gwDashboard',
+  financialReports:'gwDashboard', opsReports:'gwDashboard', teamReports:'gwDashboard',
+  // Sales workspace
+  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales',
+  estimates:'gwSales', communications:'gwSales', templates:'gwSales',
+  sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
+  aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
+  process:'gwSales', forms:'gwSales', scripts:'gwSales', emailTemplates:'gwSales',
+  objections:'gwSales', calculator:'gwSales', academy:'gwSales',
+  // Financial workspace
+  financialHub:'gwFinancial', invoices:'gwFinancial', payments:'gwFinancial',
+  deposits:'gwFinancial', statements:'gwFinancial', financialActivity:'gwFinancial',
+  statement:'gwFinancial',
+  // Operations workspace
+  scheduleBoard:'gwOperations', dispatchBoard:'gwOperations',
+  recurringServices:'gwOperations', crewView:'gwOperations',
+  workOrderList:'gwOperations', workOrderDetail:'gwOperations',
+  assetList:'gwOperations', assetDetail:'gwOperations',
+  maintenanceQueue:'gwOperations', inventoryList:'gwOperations',
+  materialAllocation:'gwOperations', toolsConsumables:'gwOperations',
+  timeTracker:'gwOperations', opsHub:'gwOperations',
+  // Admin workspace
+  settings:'gwAdmin', userManagement:'gwAdmin', integrations:'gwAdmin',
+  manager:'gwAdmin', systemConfig:'gwAdmin', systemTemplates:'gwAdmin',
+  approvalQueue:'gwAdmin', auditLog:'gwAdmin',
+  portalAdmin:'gwAdmin', automationCenter:'gwAdmin', fieldMode:'gwAdmin',
+};
 function activateNav(viewName) {
+  // Resolve workspace button to highlight (handles aliases and direct workspace calls)
+  const wsTarget = _VIEW_WORKSPACE_MAP[viewName] || viewName;
   document.querySelectorAll('.nav-item').forEach(b => {
-    const isActive = b.dataset.view === viewName;
+    const bView = b.dataset.view;
+    // Match exact view OR the workspace this view belongs to
+    const isActive = bView === viewName || bView === wsTarget;
     b.classList.toggle('active', isActive);
-    if (isActive) {
-      // auto-open the parent <details> group if inside one
-      const group = b.closest('details.nav-group');
-      if (group) group.open = true;
-    }
   });
 }
 const navItems = [...document.querySelectorAll('.nav-item')];
@@ -160,44 +190,53 @@ window._d1DeleteClient= _d1DeleteClient;
 const NAV_PERMS_KEY = 'avalonNavPermissions';
 
 // Default permissions by role. 7-role model — source of truth for fallback before D1 loads.
+// Workspace view names (gwDashboard, gwSales, gwFinancial, gwOperations, gwAdmin) gate the
+// top-level sidebar buttons. Legacy view names kept for alias routing and deep-link support.
 const DEFAULT_NAV_PERMS = {
   // Admin: all views — bypasses gate anyway but listed for completeness
-  admin: ['today','myDashboard','teamView',
+  admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
-    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+    'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
   // Office Manager: everything except system-level admin settings
-  office_manager: ['today','myDashboard','teamView',
+  office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
-    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+    'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
     'approvalQueue','auditLog','portalAdmin','automationCenter'],
   // Sales Rep: full sales workflow, no ops/financial/settings
-  rep: ['today','myDashboard',
+  rep: ['gwDashboard','gwSales',
+    'today','myDashboard',
     'pipeline','lead','clients','properties','estimates',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
   // Estimator: narrow quote/pricing specialist only
-  estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
-  // Field Supervisor: full operations hub + ops/team reports, no sales/financial/settings
-  field_supervisor: ['today','myDashboard',
+  estimator: ['gwDashboard','gwSales',
+    'today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
+  // Field Supervisor: full operations hub + ops/team reports, no sales/financial/admin
+  field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
+    'today','myDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
     'opsReports','teamReports','approvalQueue','fieldMode'],
   // Laborer: self-service field only — assigned schedule, work orders, time
-  laborer: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
+  laborer: ['gwOperations','scheduleBoard','workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
-  view_only: ['today','pipeline']
+  view_only: ['gwDashboard','today','pipeline']
 };
 
 function loadNavPerms() {
@@ -402,36 +441,44 @@ function fallbackCopy(text){
 
     // Build label map (same as the one inside show())
     const labels = {
-      today:'Today', myDashboard:'My Dashboard', teamView:'Team View',
+      // Workspace top-level
+      gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
+      gwOperations:'Operations', gwAdmin:'Admin',
+      // Dashboard workspace tabs
+      today:'My Day', myDashboard:'My Day', teamView:'Team',
+      revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
+      financialReports:'Financial Snapshot', opsReports:'Operations Snapshot',
+      teamReports:'Team',
+      // Sales workspace tabs
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
-      estimates:'Estimates', communications:'Communications', automations:'Automations',
-      templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
-      playbooks:'Playbooks', aiAssist:'AI Assist',
-      campaigns:'Campaigns', process:'Sales Process',
-      forms:'Forms', scripts:'Scripts', emailTemplates:'Email Templates',
-      objections:'Objections', calculator:'Pricing Tools', ai:'AI Assistant',
-      academy:'Academy', financialHub:'Financial', invoices:'Invoices',
+      estimates:'Estimates', communications:'Communications',
+      automations:'Sequences', templates:'Templates', sequences:'Sequences',
+      talkTracks:'Talk Tracks', playbooks:'Playbooks', aiAssist:'AI Assist',
+      campaigns:'Sequences', process:'Playbooks',
+      forms:'Playbooks', scripts:'Talk Tracks', emailTemplates:'Templates',
+      objections:'Talk Tracks', calculator:'Pricing Tools', ai:'AI Assist',
+      academy:'Playbooks',
+      // Financial workspace tabs
+      financialHub:'Overview', invoices:'Invoices',
       payments:'Payments', deposits:'Deposits', statements:'Statements',
-      financialActivity:'Activity', scheduleBoard:'Calendar',
-      dispatchBoard:'Dispatch', recurringServices:'Recurring', crewView:'Crew View',
+      financialActivity:'Activity', statement:'Statement',
+      // Operations workspace tabs
+      scheduleBoard:'Schedule', dispatchBoard:'Dispatch',
+      recurringServices:'Recurring Services', crewView:'Crew View',
       workOrderList:'Work Orders', workOrderDetail:'Work Order',
-      assetList:'Assets', assetDetail:'Asset', maintenanceQueue:'Maintenance',
-      inventoryList:'Inventory', materialAllocation:'Materials',
-      toolsConsumables:'Tools', timeTracker:'Time Tracker',
-      revenueAdmin:'Revenue', salesReports:'Sales Reports',
-      financialReports:'Financial Reports', opsReports:'Ops Reports',
-      teamReports:'Team Reports', settings:'Settings',
-      userManagement:'Users & Roles', integrations:'Integrations',
-      manager:'Manager', systemConfig:'System Config',
-      systemTemplates:'Templates & Automations',
+      assetList:'Resources', assetDetail:'Asset', maintenanceQueue:'Resources',
+      inventoryList:'Resources', materialAllocation:'Resources',
+      toolsConsumables:'Resources', timeTracker:'Time', opsHub:'Operations',
+      // Admin workspace tabs
+      settings:'General', userManagement:'Users & Roles', integrations:'Integrations',
+      manager:'Workflow', systemConfig:'System Config',
+      systemTemplates:'Workflow', approvalQueue:'Workflow',
+      auditLog:'Audit', portalAdmin:'Access Modes',
+      automationCenter:'Workflow', fieldMode:'Access Modes',
+      // Platform Admin
       gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support',
       gwAnnounce:'Announcements', gwBilling:'Billing',
       gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
-      opsHub:'Operations Hub',
-      // Phase 8
-      approvalQueue:'Approval Queue', auditLog:'Audit Log',
-      portalAdmin:'Client Portal', automationCenter:'Automation Center',
-      fieldMode:'Field Mode',
     };
 
     // Hide bar if only 1 item (nothing to navigate back to)
@@ -475,6 +522,282 @@ function fallbackCopy(text){
   };
 })();
 
+// ══════════════════════════════════════════════════════════════════════════════
+// WORKSPACE HUB FUNCTIONS — 5-workspace navigation model
+// Each function renders the workspace shell with internal tab subnav.
+// Legacy view names route into these via aliases in show().
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Workspace header helper ───────────────────────────────────────────────────
+// Renders workspace name + tab bar into #gw-ws-header (outside #view) so that
+// legacy functions freely wipe #view without destroying the navigation chrome.
+function _gwSetHeader(wsName, tabsConfig, activeTabId) {
+  const hdr = document.getElementById('gw-ws-header');
+  if (!hdr) return;
+  let tabs = '<div class="gw-ws-tabs" role="tablist">';
+  tabsConfig.forEach(t => {
+    const active = t.id === activeTabId ? ' gw-ws-tab--active' : '';
+    tabs += `<button class="gw-ws-tab${active}" role="tab" aria-selected="${t.id===activeTabId}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+  });
+  tabs += '</div>';
+  hdr.innerHTML = `<div class="gw-workspace-header"><span class="gw-workspace-title">${wsName}</span>${tabs}</div>`;
+  hdr.style.display = '';
+}
+function _gwClearHeader() {
+  const hdr = document.getElementById('gw-ws-header');
+  if (hdr) { hdr.innerHTML = ''; hdr.style.display = 'none'; }
+}
+
+// ── Dashboard workspace ───────────────────────────────────────────────────────
+function gwDashboard(tab) {
+  tab = tab || 'today';
+  _gwSetHeader('Dashboard', [
+    {id:'today',           label:'My Day'},
+    {id:'teamView',        label:'Team'},
+    {id:'salesReports',    label:'Business Pulse'},
+    {id:'financialReports',label:'Financial Snapshot'},
+    {id:'opsReports',      label:'Operations Snapshot'},
+  ], tab);
+  if (tab === 'today')            today();
+  else if (tab === 'teamView')    (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
+  else if (tab === 'salesReports')(typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
+  else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
+  else if (tab === 'opsReports')  (typeof opsReports==='function') ? opsReports() : _gwTabStub('Operations Snapshot');
+  else today();
+}
+window.gwDashboard = gwDashboard;
+
+// ── Sales workspace ───────────────────────────────────────────────────────────
+function gwSales(tab) {
+  tab = tab || 'pipeline';
+  _gwSetHeader('Sales', [
+    {id:'pipeline',      label:'Pipeline'},
+    {id:'gwRecords',     label:'Records'},
+    {id:'estimates',     label:'Estimates'},
+    {id:'communications',label:'Communications'},
+    {id:'templates',     label:'Templates'},
+    {id:'sequences',     label:'Sequences'},
+    {id:'talkTracks',    label:'Talk Tracks'},
+    {id:'playbooks',     label:'Playbooks'},
+    {id:'aiAssist',      label:'AI Assist'},
+  ], tab);
+  if (tab === 'pipeline')       pipeline();
+  else if (tab === 'gwRecords') gwRecords('lead');
+  else if (tab === 'estimates') (typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates');
+  else if (tab === 'communications') (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
+  else if (tab === 'templates') (typeof templates==='function') ? templates() : _gwTabStub('Templates');
+  else if (tab === 'sequences') (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
+  else if (tab === 'talkTracks')(typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
+  else if (tab === 'playbooks') (typeof playbooks==='function') ? playbooks() : _gwTabStub('Playbooks');
+  else if (tab === 'aiAssist')  (typeof ai==='function') ? ai() : _gwTabStub('AI Assist');
+  else pipeline();
+}
+window.gwSales = gwSales;
+
+// Records sub-workspace (Leads / Clients / Properties)
+// Renders sub-tab bar into #view then calls the legacy function (which re-renders #view).
+// Sub-tab bar is re-injected as a sticky header via _gwSetSubHeader.
+function gwRecords(sub) {
+  sub = sub || 'lead';
+  window._gwActiveSubTabs = {fn:'gwRecords', sub};
+  _gwSetSubHeader([
+    {id:'lead',       label:'Leads'},
+    {id:'clients',    label:'Clients'},
+    {id:'properties', label:'Properties'},
+  ], sub, 'gwRecords');
+  window._currentView = sub;
+  if (sub === 'lead')       lead();
+  else if (sub === 'clients')    clients();
+  else if (sub === 'properties') (typeof properties==='function') ? properties() : _gwTabStub('Properties');
+}
+window.gwRecords = gwRecords;
+
+// ── Financial workspace ───────────────────────────────────────────────────────
+function gwFinancial(tab) {
+  tab = tab || 'financialHub';
+  _gwSetHeader('Financial', [
+    {id:'financialHub',      label:'Overview'},
+    {id:'invoices',          label:'Invoices'},
+    {id:'payments',          label:'Payments'},
+    {id:'deposits',          label:'Deposits'},
+    {id:'statements',        label:'Statements'},
+    {id:'financialActivity', label:'Activity'},
+  ], tab);
+  if (tab === 'financialHub')       (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
+  else if (tab === 'invoices')      (typeof invoiceDetail==='function') ? invoiceDetail() : _gwTabStub('Invoices');
+  else if (tab === 'payments')      (typeof payments==='function') ? payments() : _gwTabStub('Payments');
+  else if (tab === 'deposits')      (typeof deposits==='function') ? deposits() : _gwTabStub('Deposits');
+  else if (tab === 'statements')    (typeof statements==='function') ? statements() : _gwTabStub('Statements');
+  else if (tab === 'financialActivity')(typeof financialActivity==='function') ? financialActivity() : _gwTabStub('Activity');
+  else financialHub();
+}
+window.gwFinancial = gwFinancial;
+
+// ── Operations workspace ──────────────────────────────────────────────────────
+function gwOperations(tab) {
+  tab = tab || 'scheduleBoard';
+  _gwSetHeader('Operations', [
+    {id:'scheduleBoard',     label:'Schedule'},
+    {id:'dispatchBoard',     label:'Dispatch'},
+    {id:'workOrderList',     label:'Work Orders'},
+    {id:'recurringServices', label:'Recurring Services'},
+    {id:'gwResources',       label:'Resources'},
+    {id:'timeTracker',       label:'Time'},
+  ], tab);
+  if (tab === 'scheduleBoard')     (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
+  else if (tab === 'dispatchBoard')(typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
+  else if (tab === 'workOrderList')(typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
+  else if (tab === 'recurringServices')(typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
+  else if (tab === 'gwResources')  gwResources('assetList');
+  else if (tab === 'timeTracker')  (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time');
+  else scheduleBoard();
+}
+window.gwOperations = gwOperations;
+
+// Resources sub-workspace (Assets / Maintenance / Inventory / Tools)
+function gwResources(sub) {
+  sub = sub || 'assetList';
+  window._gwActiveSubTabs = {fn:'gwResources', sub};
+  _gwSetSubHeader([
+    {id:'assetList',        label:'Assets'},
+    {id:'maintenanceQueue', label:'Maintenance'},
+    {id:'inventoryList',    label:'Inventory'},
+    {id:'toolsConsumables', label:'Tools'},
+  ], sub, 'gwResources');
+  window._currentView = sub;
+  if (sub === 'assetList')        (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
+  else if (sub === 'maintenanceQueue')(typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
+  else if (sub === 'inventoryList')(typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
+  else if (sub === 'toolsConsumables')(typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
+}
+window.gwResources = gwResources;
+
+// ── Admin workspace ───────────────────────────────────────────────────────────
+function gwAdmin(tab) {
+  tab = tab || 'settings';
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const isAdmin = !rep || rep.role === 'admin';
+  const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
+  const tabs = [
+    {id:'settings',      label:'General'},
+    ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
+    {id:'integrations',  label:'Integrations'},
+    {id:'gwWorkflow',    label:'Workflow'},
+    {id:'gwAudit',       label:'Audit'},
+    {id:'gwAccessModes', label:'Access Modes'},
+    ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
+  ];
+  _gwSetHeader('Admin', tabs, tab);
+  if (tab === 'settings')        (typeof settings==='function') ? settings() : _gwTabStub('General');
+  else if (tab === 'userManagement')(typeof userManagement==='function') ? userManagement() : _gwTabStub('Users & Roles');
+  else if (tab === 'integrations')(typeof integrations==='function') ? integrations() : _gwTabStub('Integrations');
+  else if (tab === 'gwWorkflow') gwWorkflow('systemTemplates');
+  else if (tab === 'gwAudit')    gwAuditTab();
+  else if (tab === 'gwAccessModes') gwAccessModes('portalAdmin');
+  else if (tab === 'systemConfig')(typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
+  else settings();
+}
+window.gwAdmin = gwAdmin;
+
+// Workflow sub-workspace (systemTemplates + approvalQueue)
+function gwWorkflow(sub) {
+  sub = sub || 'systemTemplates';
+  window._gwActiveSubTabs = {fn:'gwWorkflow', sub};
+  _gwSetSubHeader([
+    {id:'systemTemplates', label:'Templates & Automations'},
+    {id:'approvalQueue',   label:'Approval Queue'},
+  ], sub, 'gwWorkflow');
+  window._currentView = sub;
+  if (sub === 'systemTemplates') (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
+  else if (sub === 'approvalQueue') (typeof window.approvalQueue==='function') ? window.approvalQueue() : _gwTabStub('Approval Queue');
+}
+window.gwWorkflow = gwWorkflow;
+
+// Audit tab
+function gwAuditTab() {
+  window._gwActiveSubTabs = null;
+  _gwClearSubHeader();
+  if (typeof window.auditLog === 'function') window.auditLog();
+  else _gwTabStub('Audit Log');
+}
+window.gwAuditTab = gwAuditTab;
+
+// Access Modes sub-workspace (portalAdmin + fieldMode)
+function gwAccessModes(sub) {
+  sub = sub || 'portalAdmin';
+  window._gwActiveSubTabs = {fn:'gwAccessModes', sub};
+  _gwSetSubHeader([
+    {id:'portalAdmin', label:'Client Portal'},
+    {id:'fieldMode',   label:'Field Mode'},
+  ], sub, 'gwAccessModes');
+  window._currentView = sub;
+  if (sub === 'portalAdmin') (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
+  else if (sub === 'fieldMode') (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
+}
+window.gwAccessModes = gwAccessModes;
+
+// ── Sub-tab header helper ─────────────────────────────────────────────────────
+// Injects a sub-tab row into #view BEFORE the legacy function renders its content.
+// Uses a MutationObserver to prepend the sub-tab bar after view.innerHTML is wiped.
+function _gwSetSubHeader(subTabsConfig, activeSub, fnName) {
+  // Build the sub-tab HTML
+  const html = `<div class="gw-sub-tabs" id="gw-sub-header" role="tablist">${
+    subTabsConfig.map(t =>
+      `<button class="gw-sub-tab${t.id===activeSub?' gw-sub-tab--active':''}" role="tab" data-tab="${t.id}" onclick="${fnName}('${t.id}')">${t.label}</button>`
+    ).join('')
+  }</div>`;
+  // Store for re-injection after legacy functions wipe #view
+  window._gwPendingSubHeader = html;
+  // Immediately inject into current #view
+  const el = document.getElementById('view');
+  if (el) el.insertAdjacentHTML('afterbegin', html);
+}
+function _gwClearSubHeader() {
+  window._gwPendingSubHeader = null;
+  const el = document.getElementById('gw-sub-header');
+  if (el) el.remove();
+}
+
+// ── Intercept view.innerHTML writes to re-inject sub-tab bar ─────────────────
+// Legacy functions do `view.innerHTML = ...` which wipes #gw-sub-header.
+// We patch via a wrapper so sub-tabs survive the re-render.
+(function _gwPatchViewInnerHTML() {
+  const realView = document.getElementById('view');
+  if (!realView) return;
+  const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  if (!descriptor) return;
+  const origSet = descriptor.set;
+  Object.defineProperty(realView, 'innerHTML', {
+    get() { return descriptor.get.call(this); },
+    set(val) {
+      origSet.call(this, val);
+      // Re-inject pending sub-tab bar at top of view after any innerHTML write
+      if (window._gwPendingSubHeader && !this.querySelector('#gw-sub-header')) {
+        this.insertAdjacentHTML('afterbegin', window._gwPendingSubHeader);
+      }
+    },
+    configurable: true,
+  });
+})();
+
+function _gwTabStub(label) {
+  const el = document.getElementById('view');
+  if (el) el.innerHTML = _gwTabStubHTML(label);
+}
+function _gwTabStubHTML(label) {
+  return `<div style="padding:48px 24px;text-align:center;max-width:480px;margin:40px auto">
+    <div style="width:44px;height:44px;border-radius:10px;background:#EDF2F0;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    </div>
+    <h2 style="font-size:18px;color:#1F2A2B;margin:0 0 8px">${label}</h2>
+    <p style="font-size:13px;color:#5E6E6F;line-height:1.6;margin:0">Loading module…</p>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// END WORKSPACE HUB FUNCTIONS
+// ══════════════════════════════════════════════════════════════════════════════
+
 function show(viewName='today', param){
   // ── Dismiss any stray full-screen overlays left by previous view ──────────
   // Prevents phantom overlays (e.g. #gw-auto-overlay from automationManager)
@@ -493,41 +816,41 @@ function show(viewName='today', param){
   if (!_isPlatformSA && viewName !== 'settings' && !canViewTab(viewName)) {
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
     const _viewLabels = {
+      // Workspace top-level
+      gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
+      gwOperations:'Operations', gwAdmin:'Admin',
       // Dashboard
-      today:'Today', myDashboard:'My Dashboard', teamView:'Team View',
+      today:'My Day', myDashboard:'My Day', teamView:'Team',
+      revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
+      financialReports:'Financial Snapshot', opsReports:'Operations Snapshot', teamReports:'Team',
       // Sales
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
-      estimates:'Estimates', communications:'Communications', automations:'Automations',
+      estimates:'Estimates', communications:'Communications', automations:'Sequences',
       templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
       playbooks:'Playbooks', aiAssist:'AI Assist',
-      campaigns:'Campaigns / Drips', process:'Sales Process', forms:'Forms & Checklists', scripts:'Scripts',
-      emailTemplates:'Email Templates', objections:'Objection Handling',
-      calculator:'Pricing Tools', ai:'AI Assistant', academy:'Academy',
+      campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
+      emailTemplates:'Templates', objections:'Talk Tracks',
+      calculator:'Pricing Tools', ai:'AI Assist', academy:'Playbooks',
       // Financial
-      financialHub:'Financial Overview', invoices:'Invoices', payments:'Payments',
-      deposits:'Deposits', statements:'Statements', financialActivity:'Financial Activity',
+      financialHub:'Overview', invoices:'Invoices', payments:'Payments',
+      deposits:'Deposits', statements:'Statements', financialActivity:'Activity',
       // Operations
-      scheduleBoard:'Calendar', dispatchBoard:'Dispatch', recurringServices:'Recurring Services',
+      scheduleBoard:'Schedule', dispatchBoard:'Dispatch', recurringServices:'Recurring Services',
       crewView:'Crew View', workOrderList:'Work Orders', workOrderDetail:'Work Order',
-      assetList:'Assets', assetDetail:'Asset', maintenanceQueue:'Maintenance',
-      inventoryList:'Inventory', materialAllocation:'Material Allocation',
-      toolsConsumables:'Tools & Consumables', timeTracker:'Time Tracker',
-      // Reports
-      revenueAdmin:'Revenue', salesReports:'Sales Reports', financialReports:'Financial Reports',
-      opsReports:'Operations Reports', teamReports:'Team Reports',
-      // Settings
-      settings:'Settings', userManagement:'Users & Roles', integrations:'Integrations',
-      manager:'Manager Tools', systemConfig:'System Config', systemTemplates:'Templates & Automations',
+      assetList:'Resources', assetDetail:'Asset', maintenanceQueue:'Resources',
+      inventoryList:'Resources', materialAllocation:'Resources',
+      toolsConsumables:'Resources', timeTracker:'Time',
+      // Admin
+      settings:'General', userManagement:'Users & Roles', integrations:'Integrations',
+      manager:'Workflow', systemConfig:'System Config', systemTemplates:'Workflow',
+      approvalQueue:'Workflow', auditLog:'Audit',
+      portalAdmin:'Access Modes', automationCenter:'Workflow', fieldMode:'Access Modes',
       // Platform Admin
       gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support & Tickets',
       gwAnnounce:'Announcements', gwBilling:'Billing & Plans',
       gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
       // Legacy / misc
-      statement:'Account Statement', opsHub:'Operations Hub',
-      // Phase 8
-      approvalQueue:'Approval Queue', auditLog:'Audit Log',
-      portalAdmin:'Client Portal', automationCenter:'Automation Center',
-      fieldMode:'Field Mode',
+      statement:'Account Statement', opsHub:'Operations',
     };
     view.innerHTML = `<div style="text-align:center;padding:64px 24px;margin-top:40px;max-width:520px;margin-left:auto;margin-right:auto">
       <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
@@ -540,6 +863,76 @@ function show(viewName='today', param){
     sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible');
     window.scrollTo({top:0, behavior:'smooth'});
     return;
+  }
+  // ── Workspace header: sync workspace chrome on each view change ─────────────
+  // For direct workspace calls (gwDashboard, gwSales …) the workspace function
+  // itself sets the header. For alias legacy routes called directly, we set the
+  // appropriate workspace header here so the tab bar is always visible.
+  // For platform admin views and misc views with no workspace, we clear it.
+  const _wsHeaderMap = {
+    // Dashboard workspace tab aliases
+    today:'Dashboard', myDashboard:'Dashboard', teamView:'Dashboard',
+    revenueAdmin:'Dashboard', salesReports:'Dashboard',
+    financialReports:'Dashboard', opsReports:'Dashboard', teamReports:'Dashboard',
+    // Sales workspace tab aliases
+    pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales',
+    estimates:'Sales', communications:'Sales', templates:'Sales',
+    sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
+    automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
+    scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
+    calculator:'Sales', ai:'Sales', academy:'Sales',
+    // Financial workspace tab aliases
+    financialHub:'Financial', invoices:'Financial', payments:'Financial',
+    deposits:'Financial', statements:'Financial', financialActivity:'Financial',
+    statement:'Financial',
+    // Operations workspace tab aliases
+    scheduleBoard:'Operations', dispatchBoard:'Operations',
+    recurringServices:'Operations', crewView:'Operations',
+    workOrderList:'Operations', workOrderDetail:'Operations',
+    assetList:'Operations', assetDetail:'Operations',
+    maintenanceQueue:'Operations', inventoryList:'Operations',
+    materialAllocation:'Operations', toolsConsumables:'Operations',
+    timeTracker:'Operations', opsHub:'Operations',
+    // Admin workspace tab aliases
+    settings:'Admin', userManagement:'Admin', integrations:'Admin',
+    manager:'Admin', systemConfig:'Admin', systemTemplates:'Admin',
+    approvalQueue:'Admin', auditLog:'Admin',
+    portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Admin',
+  };
+  const _wsTabDefs = {
+    Dashboard:  [{id:'today',label:'My Day'},{id:'teamView',label:'Team'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'gwRecords',label:'Records'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
+    Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
+    Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
+    Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
+  };
+  const _isDirectWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    'gwRecords','gwResources','gwWorkflow','gwAudit','gwAccessModes'].includes(viewName);
+  if (!_isDirectWsCall) {
+    const _wsName = _wsHeaderMap[viewName];
+    if (_wsName && _wsTabDefs[_wsName]) {
+      // Map aliases: some views (lead, clients, properties) display as Records tab;
+      // assetList/maintenanceQueue/inventoryList/toolsConsumables display as Resources tab
+      const _recordViews = ['lead','clients','properties'];
+      const _resourceViews = ['assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
+      const _workflowViews = ['systemTemplates','approvalQueue','automations','automationCenter','manager'];
+      const _accessViews  = ['portalAdmin','fieldMode'];
+      let _tabHighlight = viewName;
+      if (_recordViews.includes(viewName))   _tabHighlight = 'gwRecords';
+      else if (_resourceViews.includes(viewName)) _tabHighlight = 'gwResources';
+      else if (_workflowViews.includes(viewName)) _tabHighlight = 'gwWorkflow';
+      else if (_accessViews.includes(viewName))   _tabHighlight = 'gwAccessModes';
+      else if (viewName === 'auditLog')            _tabHighlight = 'gwAudit';
+      _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
+      // Clear sub-header; it will be re-set if needed by gwRecords / gwResources etc.
+      window._gwPendingSubHeader = null;
+      window._gwActiveSubTabs = null;
+    } else {
+      // Non-workspace views (platform admin, deep links, etc.)
+      _gwClearHeader();
+      window._gwPendingSubHeader = null;
+      window._gwActiveSubTabs = null;
+    }
   }
   // ────────────────────────────────────────────────────────
   activateNav(viewName);
@@ -635,7 +1028,34 @@ function show(viewName='today', param){
     playbooks:  ()   => playbooks(),
     aiAssist:   ()   => ai(),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ai};
+  // ── Workspace hub routes ──────────────────────────────────────────────────
+  const wsRoute = {
+    gwDashboard:  (t) => gwDashboard(t),
+    gwSales:      (t) => gwSales(t),
+    gwFinancial:  (t) => gwFinancial(t),
+    gwOperations: (t) => gwOperations(t),
+    gwAdmin:      (t) => gwAdmin(t),
+    gwRecords:    (s) => gwRecords(s),
+    gwResources:  (s) => gwResources(s),
+    gwWorkflow:   (s) => gwWorkflow(s),
+    gwAudit:      ()  => gwAuditTab(),
+    gwAccessModes:(s) => gwAccessModes(s),
+  };
+  // ── Legacy alias routing — old view names open correct workspace + tab ─────
+  // Dashboard aliases
+  const dashAliases = ['myDashboard','teamView','revenueAdmin','salesReports','financialReports','opsReports','teamReports'];
+  const salesAliases = ['lead','clients','properties','estimates','communications','templates',
+    'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
+    'process','forms','scripts','emailTemplates','objections','calculator','academy'];
+  const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
+  const opsAliases   = ['dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+    'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
+  const adminAliases = ['userManagement','integrations','manager','systemConfig','systemTemplates',
+    'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'];
+  // Alias redirect: open workspace shell, then let the workspace render the right tab
+  // For legacy direct calls, we route them to the individual functions directly
+  // (workspace shell not needed — direct render is the legacy behavior)
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -9963,7 +10383,7 @@ window.superAdmin = superAdmin;
     if (typeof window._gwShouldStartFieldMode === 'function' && window._gwShouldStartFieldMode()) {
       show('fieldMode');
     } else {
-      show('today');
+      show('gwDashboard');
     }
   } else {
     // ── No session (unauthenticated) — show login screen ────────────────────
