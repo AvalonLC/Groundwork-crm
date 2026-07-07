@@ -77,15 +77,20 @@ function activateNav(viewName) {
   }
 }
 
-// ── Sidebar panel toggle (chevron button) ───────────────────────────────────
-// Toggles the --collapsed class on the .nav-ws-group wrapper.
-// CSS handles the show/hide animation via max-height transition.
+// ── Sidebar panel toggle (workspace heading click) ──────────────────────────
+// Click heading = toggle open/close. If opening, also navigate into that workspace.
+// CSS handles the animation via max-height transition on .nav-ws-group--collapsed.
 function _gwTogglePanel(wsId) {
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
   const group = panel.closest('.nav-ws-group');
   if (!group) return;
+  const isCollapsed = group.classList.contains('nav-ws-group--collapsed');
   group.classList.toggle('nav-ws-group--collapsed');
+  // If we just opened it, navigate into the workspace
+  if (isCollapsed) {
+    show(wsId);
+  }
 }
 const navItems = [...document.querySelectorAll('.nav-item')];
 const sidebar = document.getElementById('sidebar');
