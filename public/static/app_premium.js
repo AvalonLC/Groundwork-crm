@@ -532,9 +532,10 @@ function fallbackCopy(text){
 // Legacy view names route into these via aliases in show().
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── Workspace header helper ───────────────────────────────────────────────────
-// Renders workspace tab list into the sidebar subtabs div (#gw-subtabs-<wsId>).
-// wsName is the display label ("Dashboard"); wsId is the data-view key ("gwDashboard").
+// ── Workspace sidebar tree helpers ────────────────────────────────────────────
+// Renders the full nested tab tree into the sidebar panel for the active workspace.
+// tabsConfig supports optional `children: [{id, label}]` for L2 sub-items.
+// activeTabId may be an L1 or L2 id — both levels are matched for highlighting.
 const _gwWsNameToId = {
   Dashboard: 'gwDashboard',
   Sales: 'gwSales',
@@ -542,18 +543,49 @@ const _gwWsNameToId = {
   Operations: 'gwOperations',
   Admin: 'gwAdmin',
 };
+
+// Which L1 tab "owns" a given L2 view id (so the L1 row stays highlighted too)
+const _gwL2Parent = {
+  // Sales > Records
+  lead: 'gwRecords', clients: 'gwRecords', properties: 'gwRecords',
+  // Operations > Resources
+  assetList: 'gwResources', maintenanceQueue: 'gwResources',
+  inventoryList: 'gwResources', toolsConsumables: 'gwResources',
+  // Admin > Workflow
+  systemTemplates: 'gwAdminWorkflow', approvalQueue: 'gwAdminWorkflow',
+  // Admin > Access Modes
+  portalAdmin: 'gwAccessModes', fieldMode: 'gwAccessModes',
+};
+
 function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   const wsId = _gwWsNameToId[wsName] || null;
-  // Clear all sidebar subtab panels first
+  // Collapse all sidebar panels first
   document.querySelectorAll('.nav-subtabs').forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
   if (!wsId) return;
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
+
+  // Resolve the active L1 tab: direct match OR parent of active L2
+  const activeL1 = tabsConfig.find(t => t.id === activeTabId) ? activeTabId
+                 : (_gwL2Parent[activeTabId] || activeTabId);
+
   let html = '';
   tabsConfig.forEach(t => {
-    const active = t.id === activeTabId ? ' nav-subtab--active' : '';
-    html += `<button class="nav-subtab${active}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+    const isL1Active = t.id === activeL1;
+    const l1Active = isL1Active ? ' nav-subtab--active' : '';
+    html += `<button class="nav-subtab${l1Active}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+
+    // Render L2 children if this L1 is active and has children
+    if (isL1Active && t.children && t.children.length) {
+      html += '<div class="nav-subtabs-l2">';
+      t.children.forEach(c => {
+        const l2Active = c.id === activeTabId ? ' nav-subtab--active' : '';
+        html += `<button class="nav-subtab nav-subtab--l2${l2Active}" data-tab="${c.id}" onclick="show('${c.id}')">${c.label}</button>`;
+      });
+      html += '</div>';
+    }
   });
+
   panel.innerHTML = html;
   panel.style.display = 'flex';
   panel.style.flexDirection = 'column';
@@ -586,7 +618,11 @@ function gwSales(tab) {
   tab = tab || 'pipeline';
   _gwSetHeader('Sales', [
     {id:'pipeline',      label:'Pipeline'},
-    {id:'gwRecords',     label:'Records'},
+    {id:'gwRecords',     label:'Records', children:[
+      {id:'lead',        label:'Leads'},
+      {id:'clients',     label:'Clients'},
+      {id:'properties',  label:'Properties'},
+    ]},
     {id:'estimates',     label:'Estimates'},
     {id:'communications',label:'Communications'},
     {id:'templates',     label:'Templates'},
@@ -595,32 +631,48 @@ function gwSales(tab) {
     {id:'playbooks',     label:'Playbooks'},
     {id:'aiAssist',      label:'AI Assist'},
   ], tab);
-  if (tab === 'pipeline')       pipeline();
-  else if (tab === 'gwRecords') gwRecords('lead');
-  else if (tab === 'estimates') (typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates');
+  if (tab === 'pipeline')            pipeline();
+  else if (tab === 'gwRecords')      gwRecords('lead');
+  // L2 Records children — route directly
+  else if (tab === 'lead')           lead();
+  else if (tab === 'clients')        clients();
+  else if (tab === 'properties')     (typeof properties==='function') ? properties() : _gwTabStub('Properties');
+  else if (tab === 'estimates')      (typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates');
   else if (tab === 'communications') (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
-  else if (tab === 'templates') (typeof templates==='function') ? templates() : _gwTabStub('Templates');
-  else if (tab === 'sequences') (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
-  else if (tab === 'talkTracks')(typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
-  else if (tab === 'playbooks') (typeof playbooks==='function') ? playbooks() : _gwTabStub('Playbooks');
-  else if (tab === 'aiAssist')  (typeof ai==='function') ? ai() : _gwTabStub('AI Assist');
+  else if (tab === 'templates')      (typeof templates==='function') ? templates() : _gwTabStub('Templates');
+  else if (tab === 'sequences')      (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
+  else if (tab === 'talkTracks')     (typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
+  else if (tab === 'playbooks')      (typeof playbooks==='function') ? playbooks() : _gwTabStub('Playbooks');
+  else if (tab === 'aiAssist')       (typeof ai==='function') ? ai() : _gwTabStub('AI Assist');
   else pipeline();
 }
 window.gwSales = gwSales;
 
 // Records sub-workspace (Leads / Clients / Properties)
-// Renders sub-tab bar into #view then calls the legacy function (which re-renders #view).
-// Sub-tab bar is re-injected as a sticky header via _gwSetSubHeader.
+// Sidebar tree is rendered via _gwSetHeader with the L2 id as activeTabId,
+// which triggers the children block to expand and highlight the right item.
 function gwRecords(sub) {
   sub = sub || 'lead';
   window._gwActiveSubTabs = {fn:'gwRecords', sub};
-  _gwSetSubHeader([
-    {id:'lead',       label:'Leads'},
-    {id:'clients',    label:'Clients'},
-    {id:'properties', label:'Properties'},
-  ], sub, 'show');
+  window._gwPendingSubHeader = null;
+  _gwSetHeader('Sales', [
+    {id:'pipeline',      label:'Pipeline'},
+    {id:'gwRecords',     label:'Records', children:[
+      {id:'lead',        label:'Leads'},
+      {id:'clients',     label:'Clients'},
+      {id:'properties',  label:'Properties'},
+    ]},
+    {id:'estimates',     label:'Estimates'},
+    {id:'communications',label:'Communications'},
+    {id:'templates',     label:'Templates'},
+    {id:'sequences',     label:'Sequences'},
+    {id:'talkTracks',    label:'Talk Tracks'},
+    {id:'playbooks',     label:'Playbooks'},
+    {id:'aiAssist',      label:'AI Assist'},
+  ], sub); // pass L2 id — _gwSetHeader resolves parent via _gwL2Parent
+  activateNav(sub);
   window._currentView = sub;
-  if (sub === 'lead')       lead();
+  if (sub === 'lead')            lead();
   else if (sub === 'clients')    clients();
   else if (sub === 'properties') (typeof properties==='function') ? properties() : _gwTabStub('Properties');
 }
@@ -655,15 +707,25 @@ function gwOperations(tab) {
     {id:'dispatchBoard',     label:'Dispatch'},
     {id:'workOrderList',     label:'Work Orders'},
     {id:'recurringServices', label:'Recurring Services'},
-    {id:'gwResources',       label:'Resources'},
+    {id:'gwResources',       label:'Resources', children:[
+      {id:'assetList',        label:'Assets'},
+      {id:'maintenanceQueue', label:'Maintenance'},
+      {id:'inventoryList',    label:'Inventory'},
+      {id:'toolsConsumables', label:'Tools'},
+    ]},
     {id:'timeTracker',       label:'Time'},
   ], tab);
-  if (tab === 'scheduleBoard')     (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
-  else if (tab === 'dispatchBoard')(typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
-  else if (tab === 'workOrderList')(typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
+  if (tab === 'scheduleBoard')        (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
+  else if (tab === 'dispatchBoard')   (typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
+  else if (tab === 'workOrderList')   (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
   else if (tab === 'recurringServices')(typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
-  else if (tab === 'gwResources')  gwResources('assetList');
-  else if (tab === 'timeTracker')  (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time');
+  else if (tab === 'gwResources')     gwResources('assetList');
+  // L2 Resources children — route directly
+  else if (tab === 'assetList')       (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
+  else if (tab === 'maintenanceQueue')(typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
+  else if (tab === 'inventoryList')   (typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
+  else if (tab === 'toolsConsumables')(typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
+  else if (tab === 'timeTracker')     (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time');
   else scheduleBoard();
 }
 window.gwOperations = gwOperations;
@@ -672,16 +734,25 @@ window.gwOperations = gwOperations;
 function gwResources(sub) {
   sub = sub || 'assetList';
   window._gwActiveSubTabs = {fn:'gwResources', sub};
-  _gwSetSubHeader([
-    {id:'assetList',        label:'Assets'},
-    {id:'maintenanceQueue', label:'Maintenance'},
-    {id:'inventoryList',    label:'Inventory'},
-    {id:'toolsConsumables', label:'Tools'},
-  ], sub, 'show');
+  window._gwPendingSubHeader = null;
+  _gwSetHeader('Operations', [
+    {id:'scheduleBoard',     label:'Schedule'},
+    {id:'dispatchBoard',     label:'Dispatch'},
+    {id:'workOrderList',     label:'Work Orders'},
+    {id:'recurringServices', label:'Recurring Services'},
+    {id:'gwResources',       label:'Resources', children:[
+      {id:'assetList',        label:'Assets'},
+      {id:'maintenanceQueue', label:'Maintenance'},
+      {id:'inventoryList',    label:'Inventory'},
+      {id:'toolsConsumables', label:'Tools'},
+    ]},
+    {id:'timeTracker',       label:'Time'},
+  ], sub);
+  activateNav(sub);
   window._currentView = sub;
-  if (sub === 'assetList')        (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
+  if (sub === 'assetList')           (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
   else if (sub === 'maintenanceQueue')(typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
-  else if (sub === 'inventoryList')(typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
+  else if (sub === 'inventoryList')  (typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
   else if (sub === 'toolsConsumables')(typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
 }
 window.gwResources = gwResources;
@@ -696,41 +767,68 @@ function gwAdmin(tab) {
     {id:'settings',      label:'General'},
     ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
     {id:'integrations',  label:'Integrations'},
-    {id:'gwAdminWorkflow',    label:'Workflow'},
+    {id:'gwAdminWorkflow', label:'Workflow', children:[
+      {id:'systemTemplates', label:'Templates & Automations'},
+      {id:'approvalQueue',   label:'Approval Queue'},
+    ]},
     {id:'gwAudit',       label:'Audit'},
-    {id:'gwAccessModes', label:'Access Modes'},
+    {id:'gwAccessModes', label:'Access Modes', children:[
+      {id:'portalAdmin', label:'Client Portal'},
+      {id:'fieldMode',   label:'Field Mode'},
+    ]},
     ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
   ];
   _gwSetHeader('Admin', tabs, tab);
-  if (tab === 'settings')        (typeof settings==='function') ? settings() : _gwTabStub('General');
-  else if (tab === 'userManagement')(typeof userManagement==='function') ? userManagement() : _gwTabStub('Users & Roles');
-  else if (tab === 'integrations')(typeof integrations==='function') ? integrations() : _gwTabStub('Integrations');
-  else if (tab === 'gwAdminWorkflow') gwAdminWorkflow('systemTemplates');
-  else if (tab === 'gwAudit')    gwAuditTab();
-  else if (tab === 'gwAccessModes') gwAccessModes('portalAdmin');
-  else if (tab === 'systemConfig')(typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
+  if (tab === 'settings')            (typeof settings==='function') ? settings() : _gwTabStub('General');
+  else if (tab === 'userManagement') (typeof userManagement==='function') ? userManagement() : _gwTabStub('Users & Roles');
+  else if (tab === 'integrations')   (typeof integrations==='function') ? integrations() : _gwTabStub('Integrations');
+  else if (tab === 'gwAdminWorkflow')  gwAdminWorkflow('systemTemplates');
+  else if (tab === 'systemTemplates')  (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
+  else if (tab === 'approvalQueue')    (typeof window.approvalQueue==='function') ? window.approvalQueue() : _gwTabStub('Approval Queue');
+  else if (tab === 'gwAudit')          gwAuditTab();
+  else if (tab === 'gwAccessModes')    gwAccessModes('portalAdmin');
+  else if (tab === 'portalAdmin')      (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
+  else if (tab === 'fieldMode')        (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
+  else if (tab === 'systemConfig')     (typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
   else settings();
 }
 window.gwAdmin = gwAdmin;
 
 // Workflow sub-workspace (systemTemplates + approvalQueue)
+// Sidebar tree rendered by gwAdmin with L2 children — just sync and dispatch.
 function gwAdminWorkflow(sub) {
   sub = sub || 'systemTemplates';
   window._gwActiveSubTabs = {fn:'gwAdminWorkflow', sub};
-  _gwSetSubHeader([
-    {id:'systemTemplates', label:'Templates & Automations'},
-    {id:'approvalQueue',   label:'Approval Queue'},
-  ], sub, 'show');
+  window._gwPendingSubHeader = null;
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const isAdmin = !rep || rep.role === 'admin';
+  const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
+  _gwSetHeader('Admin', [
+    {id:'settings',      label:'General'},
+    ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
+    {id:'integrations',  label:'Integrations'},
+    {id:'gwAdminWorkflow', label:'Workflow', children:[
+      {id:'systemTemplates', label:'Templates & Automations'},
+      {id:'approvalQueue',   label:'Approval Queue'},
+    ]},
+    {id:'gwAudit',       label:'Audit'},
+    {id:'gwAccessModes', label:'Access Modes', children:[
+      {id:'portalAdmin', label:'Client Portal'},
+      {id:'fieldMode',   label:'Field Mode'},
+    ]},
+    ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
+  ], sub);
+  activateNav(sub);
   window._currentView = sub;
-  if (sub === 'systemTemplates') (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
-  else if (sub === 'approvalQueue') (typeof window.approvalQueue==='function') ? window.approvalQueue() : _gwTabStub('Approval Queue');
+  if (sub === 'systemTemplates')   (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
+  else if (sub === 'approvalQueue')(typeof window.approvalQueue==='function') ? window.approvalQueue() : _gwTabStub('Approval Queue');
 }
 window.gwAdminWorkflow = gwAdminWorkflow;
 
 // Audit tab
 function gwAuditTab() {
   window._gwActiveSubTabs = null;
-  _gwClearSubHeader();
+  window._gwPendingSubHeader = null;
   if (typeof window.auditLog === 'function') window.auditLog();
   else _gwTabStub('Audit Log');
 }
@@ -740,10 +838,26 @@ window.gwAuditTab = gwAuditTab;
 function gwAccessModes(sub) {
   sub = sub || 'portalAdmin';
   window._gwActiveSubTabs = {fn:'gwAccessModes', sub};
-  _gwSetSubHeader([
-    {id:'portalAdmin', label:'Client Portal'},
-    {id:'fieldMode',   label:'Field Mode'},
-  ], sub, 'show');
+  window._gwPendingSubHeader = null;
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const isAdmin = !rep || rep.role === 'admin';
+  const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
+  _gwSetHeader('Admin', [
+    {id:'settings',      label:'General'},
+    ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
+    {id:'integrations',  label:'Integrations'},
+    {id:'gwAdminWorkflow', label:'Workflow', children:[
+      {id:'systemTemplates', label:'Templates & Automations'},
+      {id:'approvalQueue',   label:'Approval Queue'},
+    ]},
+    {id:'gwAudit',       label:'Audit'},
+    {id:'gwAccessModes', label:'Access Modes', children:[
+      {id:'portalAdmin', label:'Client Portal'},
+      {id:'fieldMode',   label:'Field Mode'},
+    ]},
+    ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
+  ], sub);
+  activateNav(sub);
   window._currentView = sub;
   if (sub === 'portalAdmin') (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
   else if (sub === 'fieldMode') (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
