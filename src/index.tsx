@@ -2496,7 +2496,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260707gw25">
+  <link rel="stylesheet" href="/static/premium.css?v=20260707gw26">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -2976,7 +2976,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260707gw25">
+  <link rel="stylesheet" href="/static/premium.css?v=20260707gw26">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw9">
   <style>
@@ -3219,46 +3219,71 @@ function getHtml(): string {
 
       <!-- ── Dashboard ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace active" data-view="gwDashboard" onclick="show('gwDashboard')">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
-          Dashboard
-        </button>
+        <div class="nav-workspace-row">
+          <button class="nav-item nav-workspace active" data-view="gwDashboard" onclick="show('gwDashboard')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+            Dashboard
+          </button>
+          <button class="nav-ws-chevron" onclick="_gwTogglePanel('gwDashboard')" title="Toggle" aria-label="Toggle Dashboard">
+            <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l3 3 3-3"/></svg>
+          </button>
+        </div>
         <div class="nav-subtabs" id="gw-subtabs-gwDashboard"></div>
       </div>
 
       <!-- ── Sales ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwSales" onclick="show('gwSales')">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
-          Sales
-        </button>
+        <div class="nav-workspace-row">
+          <button class="nav-item nav-workspace" data-view="gwSales" onclick="show('gwSales')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
+            Sales
+          </button>
+          <button class="nav-ws-chevron" onclick="_gwTogglePanel('gwSales')" title="Toggle" aria-label="Toggle Sales">
+            <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l3 3 3-3"/></svg>
+          </button>
+        </div>
         <div class="nav-subtabs" id="gw-subtabs-gwSales"></div>
       </div>
 
       <!-- ── Financial ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwFinancial" onclick="show('gwFinancial')">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
-          Financial
-        </button>
+        <div class="nav-workspace-row">
+          <button class="nav-item nav-workspace" data-view="gwFinancial" onclick="show('gwFinancial')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
+            Financial
+          </button>
+          <button class="nav-ws-chevron" onclick="_gwTogglePanel('gwFinancial')" title="Toggle" aria-label="Toggle Financial">
+            <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l3 3 3-3"/></svg>
+          </button>
+        </div>
         <div class="nav-subtabs" id="gw-subtabs-gwFinancial"></div>
       </div>
 
       <!-- ── Operations ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwOperations" onclick="show('gwOperations')">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
-          Operations
-        </button>
+        <div class="nav-workspace-row">
+          <button class="nav-item nav-workspace" data-view="gwOperations" onclick="show('gwOperations')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
+            Operations
+          </button>
+          <button class="nav-ws-chevron" onclick="_gwTogglePanel('gwOperations')" title="Toggle" aria-label="Toggle Operations">
+            <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l3 3 3-3"/></svg>
+          </button>
+        </div>
         <div class="nav-subtabs" id="gw-subtabs-gwOperations"></div>
       </div>
 
       <!-- ── Admin ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwAdmin" onclick="show('gwAdmin')">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
-          Admin
-        </button>
+        <div class="nav-workspace-row">
+          <button class="nav-item nav-workspace" data-view="gwAdmin" onclick="show('gwAdmin')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
+            Admin
+          </button>
+          <button class="nav-ws-chevron" onclick="_gwTogglePanel('gwAdmin')" title="Toggle" aria-label="Toggle Admin">
+            <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l3 3 3-3"/></svg>
+          </button>
+        </div>
         <div class="nav-subtabs" id="gw-subtabs-gwAdmin"></div>
       </div>
 
@@ -3356,7 +3381,7 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260630gw12"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/app_premium.js?v=20260707gw24"></script>
+<script src="/static/app_premium.js?v=20260707gw25"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>

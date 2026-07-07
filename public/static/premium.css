@@ -7705,7 +7705,14 @@ h1.pl-title,
   margin-bottom: 2px;
 }
 
-/* ── L0: workspace section button ── */
+/* ── Row: workspace label + chevron side-by-side ── */
+.nav-workspace-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* ── L0: workspace section button (grows to fill row) ── */
 .nav-workspace {
   display: flex;
   align-items: center;
@@ -7713,8 +7720,9 @@ h1.pl-title,
   padding: 9px 14px;
   font-size: 13px;
   font-weight: 500;
-  border-radius: 6px;
-  width: 100%;
+  border-radius: 6px 0 0 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   text-align: left;
   color: rgba(255,255,255,.55);
   background: transparent;
@@ -7738,13 +7746,52 @@ h1.pl-title,
   border-radius: 0 3px 3px 0;
 }
 
-/* ── L1: subtab panel — always flex; empty panels have zero height naturally ── */
+/* ── Chevron toggle button (right side of workspace row) ── */
+.nav-ws-chevron {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 34px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: rgba(255,255,255,.3);
+  border-radius: 0 6px 6px 0;
+  transition: color .12s, background .12s;
+  padding: 0;
+}
+.nav-ws-chevron:hover {
+  color: rgba(255,255,255,.7);
+  background: rgba(255,255,255,.07);
+}
+/* Chevron SVG rotates based on collapsed state */
+.nav-ws-chevron .nav-chevron-icon {
+  transition: transform .2s ease;
+  transform: rotate(0deg); /* open = chevron points down */
+}
+.nav-ws-group--collapsed .nav-ws-chevron .nav-chevron-icon {
+  transform: rotate(-90deg); /* collapsed = chevron points right */
+}
+
+/* ── L1: subtab panel — always flex; collapses via class ── */
 .nav-subtabs {
   display: flex;
   flex-direction: column;
   margin: 1px 6px 4px 20px;
   padding: 0;
   border-left: 1px solid rgba(255,255,255,.13);
+  overflow: hidden;
+  transition: max-height .2s ease;
+  max-height: 600px; /* large enough for any panel */
+}
+/* Collapsed: hide panel content */
+.nav-ws-group--collapsed .nav-subtabs {
+  max-height: 0 !important;
+  margin-top: 0;
+  margin-bottom: 0;
+  border-left-color: transparent;
 }
 
 /* ── L1: individual subtab button ── */

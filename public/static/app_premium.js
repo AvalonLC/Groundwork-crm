@@ -67,6 +67,25 @@ function activateNav(viewName) {
   document.querySelectorAll('.nav-subtab').forEach(b => {
     b.classList.toggle('nav-subtab--active', b.dataset.tab === viewName);
   });
+  // Auto-expand the active workspace panel (keep others as-is)
+  if (wsTarget) {
+    const panel = document.getElementById('gw-subtabs-' + wsTarget);
+    if (panel) {
+      const group = panel.closest('.nav-ws-group');
+      if (group) group.classList.remove('nav-ws-group--collapsed');
+    }
+  }
+}
+
+// ── Sidebar panel toggle (chevron button) ───────────────────────────────────
+// Toggles the --collapsed class on the .nav-ws-group wrapper.
+// CSS handles the show/hide animation via max-height transition.
+function _gwTogglePanel(wsId) {
+  const panel = document.getElementById('gw-subtabs-' + wsId);
+  if (!panel) return;
+  const group = panel.closest('.nav-ws-group');
+  if (!group) return;
+  group.classList.toggle('nav-ws-group--collapsed');
 }
 const navItems = [...document.querySelectorAll('.nav-item')];
 const sidebar = document.getElementById('sidebar');
