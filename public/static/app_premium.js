@@ -28,10 +28,10 @@ const _VIEW_WORKSPACE_MAP = {
   // Dashboard workspace
   today:'gwDashboard', myDashboard:'gwDashboard',
   revenueAdmin:'gwDashboard', salesReports:'gwDashboard',
-  financialReports:'gwDashboard', opsReports:'gwDashboard', teamReports:'gwDashboard',
+  financialReports:'gwDashboard', opsReports:'gwDashboard',
   fieldDashboard:'gwDashboard',
   // Sales workspace
-  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales', teamView:'gwSales',
+  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
   estimates:'gwSales', communications:'gwSales', templates:'gwSales',
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
   aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
@@ -659,6 +659,7 @@ function gwSales(tab) {
     {id:'pipeline',      label:'Pipeline'},
     {id:'lead',          label:'Leads'},
     {id:'clients',       label:'Clients'},
+    {id:'properties',    label:'Properties'},
     {id:'teamView',      label:'Team'},
     {id:'estimates',     label:'Estimates'},
     {id:'communications',label:'Communications'},
@@ -905,6 +906,7 @@ window.gwAccessModes = gwAccessModes;
     {id:'pipeline',       label:'Pipeline'},
     {id:'lead',           label:'Leads'},
     {id:'clients',        label:'Clients'},
+    {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
@@ -1108,9 +1110,9 @@ function show(viewName='today', param){
     // Dashboard workspace tab aliases
     today:'Dashboard', myDashboard:'Dashboard',
     revenueAdmin:'Dashboard', salesReports:'Dashboard',
-    financialReports:'Dashboard', opsReports:'Dashboard', teamReports:'Dashboard',
+    financialReports:'Dashboard', opsReports:'Dashboard',
     // Sales workspace tab aliases
-    pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales',
+    pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales', teamReports:'Sales',
     estimates:'Sales', communications:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
@@ -1136,7 +1138,7 @@ function show(viewName='today', param){
   };
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
-    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
     Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
@@ -1178,6 +1180,7 @@ function show(viewName='today', param){
       else if (_accessViews.includes(viewName))   _tabHighlight = 'gwAccessModes';
       else if (viewName === 'auditLog')            _tabHighlight = 'gwAudit';
       else if (viewName === 'crewView')            _tabHighlight = 'scheduleBoard';
+      else if (viewName === 'teamReports')         _tabHighlight = 'teamView'; // team reports lives under Sales > Team
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
       // Set up sub-header for sub-tab views so the bar survives legacy innerHTML writes
       if (_resourceViews.includes(viewName)) {
@@ -1313,8 +1316,8 @@ function show(viewName='today', param){
   };
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
-  const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports','teamReports'];
-  const salesAliases = ['lead','clients','properties','estimates','communications','templates',
+  const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports'];
+  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','communications','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
     'process','forms','scripts','emailTemplates','objections','calculator','academy'];
   const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
@@ -1589,7 +1592,7 @@ function _gwTodayFinanceSnap() {
     return `<div class="gw-today-fin-card">
       <div class="gw-today-fin-head">
         <span class="gw-today-fin-title">Financial Pulse</span>
-        <button class="gw-today-fin-link" onclick="show('revenueAdmin')">Full View</button>
+        <button class="gw-today-fin-link" onclick="show('financialReports')">Full View</button>
       </div>
       <div class="gw-today-fin-kpis">
         <div class="gw-today-fin-kpi">
@@ -13302,12 +13305,12 @@ function teamView() {
   <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Manager Cockpit</div>
+        <div class="eyebrow">Sales · Team</div>
         <h1 class="rp-title">Team View</h1>
         <p class="rp-subtitle">${reps.length} team member${reps.length!==1?'s':''} · pipeline + task rollup</p>
       </div>
       <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
+        <button class="rp-btn" onclick="show('teamReports')">Productivity Report</button>
         <button class="rp-btn rp-btn--primary" onclick="show('lead')">+ New Lead</button>
       </div>
     </header>
@@ -14681,7 +14684,7 @@ function salesReports() {
   <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Sales</div>
+        <div class="eyebrow">Dashboard · Business Pulse</div>
         <h1 class="rp-title">Sales Performance</h1>
         <p class="rp-subtitle">Pipeline · close rates · rep performance · lead sources</p>
       </div>
@@ -14945,7 +14948,7 @@ function financialReports() {
   <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Financial</div>
+        <div class="eyebrow">Dashboard · Financial Snapshot</div>
         <h1 class="rp-title">Financial Snapshot</h1>
         <p class="rp-subtitle">Estimates · invoices · payments · budget vs actual</p>
       </div>
@@ -15078,7 +15081,7 @@ function opsReports() {
   <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Operations</div>
+        <div class="eyebrow">Dashboard · Operations Snapshot</div>
         <h1 class="rp-title">Operations Snapshot</h1>
         <p class="rp-subtitle">Today's jobs · upcoming · schedule health</p>
       </div>
@@ -15195,13 +15198,13 @@ function teamReports() {
   <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Reports</div>
+        <div class="eyebrow">Sales · Team</div>
         <h1 class="rp-title">Team & Productivity</h1>
         <p class="rp-subtitle">Activity, wins, comms, and pipeline per team member</p>
       </div>
       <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('teamView')">Team View</button>
-        <button class="rp-btn" onclick="show('salesReports')">Sales Reports</button>
+        <button class="rp-btn" onclick="show('teamView')">Team Overview</button>
+        <button class="rp-btn" onclick="show('salesReports')">Business Pulse</button>
       </div>
     </header>
 
