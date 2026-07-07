@@ -559,11 +559,13 @@ const _gwL2Parent = {
 
 function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   const wsId = _gwWsNameToId[wsName] || null;
-  // Collapse all sidebar panels first
-  document.querySelectorAll('.nav-subtabs').forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
   if (!wsId) return;
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
+
+  // All panels stay open — just show this one if it isn't already
+  panel.style.display = 'flex';
+  panel.style.flexDirection = 'column';
 
   // Resolve the active L1 tab: direct match OR parent of active L2
   const activeL1 = tabsConfig.find(t => t.id === activeTabId) ? activeTabId
@@ -591,7 +593,8 @@ function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   panel.style.flexDirection = 'column';
 }
 function _gwClearHeader() {
-  document.querySelectorAll('.nav-subtabs').forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
+  // No-op: all workspace panels stay open permanently.
+  // Individual panels are only re-rendered when their workspace is visited.
 }
 
 // ── Dashboard workspace ───────────────────────────────────────────────────────
@@ -863,6 +866,80 @@ function gwAccessModes(sub) {
   else if (sub === 'fieldMode') (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
 }
 window.gwAccessModes = gwAccessModes;
+
+// ── Pre-populate all 5 sidebar panels on first load ───────────────────────────
+// Called once after DOM ready so all workspace sub-lists are visible immediately.
+// Each panel renders with no active tab (activeTabId = null) — activateNav() will
+// highlight the correct item once the initial route fires.
+(function _gwInitAllPanels() {
+  // Dashboard
+  _gwSetHeader('Dashboard', [
+    {id:'today',            label:'My Day'},
+    {id:'teamView',         label:'Team'},
+    {id:'salesReports',     label:'Business Pulse'},
+    {id:'financialReports', label:'Financial Snapshot'},
+    {id:'opsReports',       label:'Operations Snapshot'},
+  ], null);
+
+  // Sales
+  _gwSetHeader('Sales', [
+    {id:'pipeline',       label:'Pipeline'},
+    {id:'gwRecords',      label:'Records', children:[
+      {id:'lead',         label:'Leads'},
+      {id:'clients',      label:'Clients'},
+      {id:'properties',   label:'Properties'},
+    ]},
+    {id:'estimates',      label:'Estimates'},
+    {id:'communications', label:'Communications'},
+    {id:'templates',      label:'Templates'},
+    {id:'sequences',      label:'Sequences'},
+    {id:'talkTracks',     label:'Talk Tracks'},
+    {id:'playbooks',      label:'Playbooks'},
+    {id:'aiAssist',       label:'AI Assist'},
+  ], null);
+
+  // Financial
+  _gwSetHeader('Financial', [
+    {id:'financialHub',      label:'Overview'},
+    {id:'invoices',          label:'Invoices'},
+    {id:'payments',          label:'Payments'},
+    {id:'deposits',          label:'Deposits'},
+    {id:'statements',        label:'Statements'},
+    {id:'financialActivity', label:'Activity'},
+  ], null);
+
+  // Operations
+  _gwSetHeader('Operations', [
+    {id:'scheduleBoard',     label:'Schedule'},
+    {id:'dispatchBoard',     label:'Dispatch'},
+    {id:'workOrderList',     label:'Work Orders'},
+    {id:'recurringServices', label:'Recurring Services'},
+    {id:'gwResources',       label:'Resources', children:[
+      {id:'assetList',        label:'Assets'},
+      {id:'maintenanceQueue', label:'Maintenance'},
+      {id:'inventoryList',    label:'Inventory'},
+      {id:'toolsConsumables', label:'Tools'},
+    ]},
+    {id:'timeTracker',       label:'Time'},
+  ], null);
+
+  // Admin — use defaults (no rep context yet at parse time)
+  _gwSetHeader('Admin', [
+    {id:'settings',        label:'General'},
+    {id:'userManagement',  label:'Users & Roles'},
+    {id:'integrations',    label:'Integrations'},
+    {id:'gwAdminWorkflow', label:'Workflow', children:[
+      {id:'systemTemplates', label:'Templates & Automations'},
+      {id:'approvalQueue',   label:'Approval Queue'},
+    ]},
+    {id:'gwAudit',         label:'Audit'},
+    {id:'gwAccessModes',   label:'Access Modes', children:[
+      {id:'portalAdmin',   label:'Client Portal'},
+      {id:'fieldMode',     label:'Field Mode'},
+    ]},
+    {id:'systemConfig',    label:'System Config'},
+  ], null);
+})();
 
 // ── Sub-tab header helper ─────────────────────────────────────────────────────
 // Injects a sub-tab row into #view BEFORE the legacy function renders its content.
