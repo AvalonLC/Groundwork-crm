@@ -3585,14 +3585,14 @@ function getHtml(): string {
       if (adminBtn) {
         // Show Admin nav for admin and office_manager roles
         const canSeeAdmin = !rep || rep.role === 'admin' || rep.role === 'office_manager';
-        (adminBtn as HTMLElement).style.display = canSeeAdmin ? '' : 'none';
+        adminBtn.style.display = canSeeAdmin ? '' : 'none';
       }
       // Super-admin nav: visible only if is_super_admin from D1 session rep
       const d1Rep = window._d1SessionRep;
       const isSuperAdmin = d1Rep && (d1Rep.is_super_admin === 1 || d1Rep.is_super_admin === true);
       const saBtn = document.getElementById('superAdminNavBtn');
       if (saBtn) {
-        (saBtn as HTMLElement).style.display = isSuperAdmin ? '' : 'none';
+        saBtn.style.display = isSuperAdmin ? '' : 'none';
       }
     }
     // Run on load and expose so login/logout can call it
