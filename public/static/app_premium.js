@@ -604,7 +604,7 @@ function gwRecords(sub) {
     {id:'lead',       label:'Leads'},
     {id:'clients',    label:'Clients'},
     {id:'properties', label:'Properties'},
-  ], sub, 'gwRecords');
+  ], sub, 'show');
   window._currentView = sub;
   if (sub === 'lead')       lead();
   else if (sub === 'clients')    clients();
@@ -663,7 +663,7 @@ function gwResources(sub) {
     {id:'maintenanceQueue', label:'Maintenance'},
     {id:'inventoryList',    label:'Inventory'},
     {id:'toolsConsumables', label:'Tools'},
-  ], sub, 'gwResources');
+  ], sub, 'show');
   window._currentView = sub;
   if (sub === 'assetList')        (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
   else if (sub === 'maintenanceQueue')(typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
@@ -682,7 +682,7 @@ function gwAdmin(tab) {
     {id:'settings',      label:'General'},
     ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
     {id:'integrations',  label:'Integrations'},
-    {id:'gwWorkflow',    label:'Workflow'},
+    {id:'gwAdminWorkflow',    label:'Workflow'},
     {id:'gwAudit',       label:'Audit'},
     {id:'gwAccessModes', label:'Access Modes'},
     ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
@@ -691,7 +691,7 @@ function gwAdmin(tab) {
   if (tab === 'settings')        (typeof settings==='function') ? settings() : _gwTabStub('General');
   else if (tab === 'userManagement')(typeof userManagement==='function') ? userManagement() : _gwTabStub('Users & Roles');
   else if (tab === 'integrations')(typeof integrations==='function') ? integrations() : _gwTabStub('Integrations');
-  else if (tab === 'gwWorkflow') gwWorkflow('systemTemplates');
+  else if (tab === 'gwAdminWorkflow') gwAdminWorkflow('systemTemplates');
   else if (tab === 'gwAudit')    gwAuditTab();
   else if (tab === 'gwAccessModes') gwAccessModes('portalAdmin');
   else if (tab === 'systemConfig')(typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
@@ -700,18 +700,18 @@ function gwAdmin(tab) {
 window.gwAdmin = gwAdmin;
 
 // Workflow sub-workspace (systemTemplates + approvalQueue)
-function gwWorkflow(sub) {
+function gwAdminWorkflow(sub) {
   sub = sub || 'systemTemplates';
-  window._gwActiveSubTabs = {fn:'gwWorkflow', sub};
+  window._gwActiveSubTabs = {fn:'gwAdminWorkflow', sub};
   _gwSetSubHeader([
     {id:'systemTemplates', label:'Templates & Automations'},
     {id:'approvalQueue',   label:'Approval Queue'},
-  ], sub, 'gwWorkflow');
+  ], sub, 'show');
   window._currentView = sub;
   if (sub === 'systemTemplates') (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
   else if (sub === 'approvalQueue') (typeof window.approvalQueue==='function') ? window.approvalQueue() : _gwTabStub('Approval Queue');
 }
-window.gwWorkflow = gwWorkflow;
+window.gwAdminWorkflow = gwAdminWorkflow;
 
 // Audit tab
 function gwAuditTab() {
@@ -729,7 +729,7 @@ function gwAccessModes(sub) {
   _gwSetSubHeader([
     {id:'portalAdmin', label:'Client Portal'},
     {id:'fieldMode',   label:'Field Mode'},
-  ], sub, 'gwAccessModes');
+  ], sub, 'show');
   window._currentView = sub;
   if (sub === 'portalAdmin') (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
   else if (sub === 'fieldMode') (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
@@ -741,6 +741,7 @@ window.gwAccessModes = gwAccessModes;
 // Uses a MutationObserver to prepend the sub-tab bar after view.innerHTML is wiped.
 function _gwSetSubHeader(subTabsConfig, activeSub, fnName) {
   // Build the sub-tab HTML
+  // fnName='show' generates onclick="show('id')" for show()-routed sub-tabs
   const html = `<div class="gw-sub-tabs" id="gw-sub-header" role="tablist">${
     subTabsConfig.map(t =>
       `<button class="gw-sub-tab${t.id===activeSub?' gw-sub-tab--active':''}" role="tab" data-tab="${t.id}" onclick="${fnName}('${t.id}')">${t.label}</button>`
@@ -904,10 +905,29 @@ function show(viewName='today', param){
     Sales:      [{id:'pipeline',label:'Pipeline'},{id:'gwRecords',label:'Records'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
-    Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
+    Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
   };
-  const _isDirectWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
-    'gwRecords','gwResources','gwWorkflow','gwAudit','gwAccessModes'].includes(viewName);
+  const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin'].includes(viewName);
+  const _isSubWsCall = ['gwRecords','gwResources','gwAdminWorkflow','gwAudit','gwAccessModes'].includes(viewName);
+  const _isDirectWsCall = _isTopWsCall || _isSubWsCall;
+  // Sub-workspace direct calls: set parent workspace header so tab bar is visible
+  if (_isSubWsCall) {
+    const _subWsParent = {
+      gwRecords:'Sales', gwResources:'Operations',
+      gwAdminWorkflow:'Admin', gwAudit:'Admin', gwAccessModes:'Admin',
+    };
+    const _subWsTabHighlight = {
+      gwRecords:'gwRecords', gwResources:'gwResources',
+      gwAdminWorkflow:'gwAdminWorkflow', gwAudit:'gwAudit', gwAccessModes:'gwAccessModes',
+    };
+    const _wsTabDefs2 = {
+      Sales:      [{id:'pipeline',label:'Pipeline'},{id:'gwRecords',label:'Records'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
+      Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
+      Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
+    };
+    const _pName = _subWsParent[viewName];
+    if (_pName) _gwSetHeader(_pName, _wsTabDefs2[_pName], _subWsTabHighlight[viewName]);
+  }
   if (!_isDirectWsCall) {
     const _wsName = _wsHeaderMap[viewName];
     if (_wsName && _wsTabDefs[_wsName]) {
@@ -917,16 +937,34 @@ function show(viewName='today', param){
       const _resourceViews = ['assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
       const _workflowViews = ['systemTemplates','approvalQueue','automations','automationCenter','manager'];
       const _accessViews  = ['portalAdmin','fieldMode'];
+      // Schedule-family views map to scheduleBoard tab highlight
+      const _scheduleViews = ['crewView','recurringServices','dispatchBoard'];
       let _tabHighlight = viewName;
-      if (_recordViews.includes(viewName))   _tabHighlight = 'gwRecords';
+      if (_recordViews.includes(viewName))        _tabHighlight = 'gwRecords';
       else if (_resourceViews.includes(viewName)) _tabHighlight = 'gwResources';
-      else if (_workflowViews.includes(viewName)) _tabHighlight = 'gwWorkflow';
+      else if (_workflowViews.includes(viewName)) _tabHighlight = 'gwAdminWorkflow';
       else if (_accessViews.includes(viewName))   _tabHighlight = 'gwAccessModes';
       else if (viewName === 'auditLog')            _tabHighlight = 'gwAudit';
+      else if (viewName === 'crewView')            _tabHighlight = 'scheduleBoard';
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
-      // Clear sub-header; it will be re-set if needed by gwRecords / gwResources etc.
-      window._gwPendingSubHeader = null;
-      window._gwActiveSubTabs = null;
+      // Set up sub-header for sub-tab views so the bar survives legacy innerHTML writes
+      if (_recordViews.includes(viewName)) {
+        const subTabs = [{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'}];
+        _gwSetSubHeader(subTabs, viewName, 'show');
+      } else if (_resourceViews.includes(viewName)) {
+        const subTabs = [{id:'assetList',label:'Assets'},{id:'maintenanceQueue',label:'Maintenance'},{id:'inventoryList',label:'Inventory'},{id:'toolsConsumables',label:'Tools'}];
+        _gwSetSubHeader(subTabs, viewName, 'show');
+      } else if (_workflowViews.includes(viewName) && ['systemTemplates','approvalQueue'].includes(viewName)) {
+        const subTabs = [{id:'systemTemplates',label:'Templates & Automations'},{id:'approvalQueue',label:'Approval Queue'}];
+        _gwSetSubHeader(subTabs, viewName, 'show');
+      } else if (_accessViews.includes(viewName)) {
+        const subTabs = [{id:'portalAdmin',label:'Client Portal'},{id:'fieldMode',label:'Field Mode'}];
+        _gwSetSubHeader(subTabs, viewName, 'show');
+      } else {
+        // No sub-header needed; clear any stale one
+        window._gwPendingSubHeader = null;
+        window._gwActiveSubTabs = null;
+      }
     } else {
       // Non-workspace views (platform admin, deep links, etc.)
       _gwClearHeader();
@@ -1037,7 +1075,7 @@ function show(viewName='today', param){
     gwAdmin:      (t) => gwAdmin(t),
     gwRecords:    (s) => gwRecords(s),
     gwResources:  (s) => gwResources(s),
-    gwWorkflow:   (s) => gwWorkflow(s),
+    gwAdminWorkflow: (s) => gwAdminWorkflow(s),
     gwAudit:      ()  => gwAuditTab(),
     gwAccessModes:(s) => gwAccessModes(s),
   };
