@@ -958,6 +958,15 @@ window.gwAccessModes = gwAccessModes;
     ]},
     {id:'systemConfig',    label:'System Config'},
   ], null);
+
+  // Collapse everything except Dashboard — user opens sections manually
+  ['gwSales','gwFinancial','gwOperations','gwAdmin'].forEach(wsId => {
+    const panel = document.getElementById('gw-subtabs-' + wsId);
+    if (panel) {
+      const group = panel.closest('.nav-ws-group');
+      if (group) group.classList.add('nav-ws-group--collapsed');
+    }
+  });
 })();
 
 // ── Sub-tab header helper ─────────────────────────────────────────────────────
@@ -1324,6 +1333,14 @@ function show(viewName='today', param){
 
   // Track current view so background sync can re-render after data arrives
   window._currentView = viewName;
+
+  // ── Persist view in URL hash so reload restores the same page ────────────
+  // Use replaceState to avoid polluting browser history on every tab click.
+  try {
+    history.replaceState(null, '', '#' + viewName);
+  } catch(e) {
+    location.hash = viewName;
+  }
 
   // ── Nav history trail ─────────────────────────────────────
   if (typeof window._gwPushTrail === 'function') window._gwPushTrail(viewName);
@@ -10639,13 +10656,17 @@ window.superAdmin = superAdmin;
   } else if (d1Rep) {
     // ── Standard authenticated tenant flow ───────────────────────────────────
     // Bootstrap complete: REPS hydrated, _gwNavPerms set, getCurrentRep() works.
-    // Refresh admin nav visibility then show Today (or Field Mode for field roles on mobile).
     if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
-    // Phase 8: Auto-route field roles to Field Mode on mobile
+    // Field mode override takes priority on mobile for field roles
     if (typeof window._gwShouldStartFieldMode === 'function' && window._gwShouldStartFieldMode()) {
       show('fieldMode');
     } else {
-      show('gwDashboard');
+      // ── Hash-based restore: reload stays on the same page ──────────────────
+      const _hashView = (location.hash || '').replace(/^#/, '').trim();
+      // Only restore if hash looks like a valid view name and user has access
+      const _hashValid = _hashView && /^[a-zA-Z][a-zA-Z0-9_]+$/.test(_hashView)
+        && typeof canViewTab === 'function' && canViewTab(_hashView);
+      show(_hashValid ? _hashView : 'gwDashboard');
     }
   } else {
     // ── No session (unauthenticated) — show login screen ────────────────────
