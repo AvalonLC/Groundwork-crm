@@ -29,6 +29,7 @@ const _VIEW_WORKSPACE_MAP = {
   today:'gwDashboard', myDashboard:'gwDashboard', teamView:'gwDashboard',
   revenueAdmin:'gwDashboard', salesReports:'gwDashboard',
   financialReports:'gwDashboard', opsReports:'gwDashboard', teamReports:'gwDashboard',
+  fieldDashboard:'gwDashboard',
   // Sales workspace
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales',
   estimates:'gwSales', communications:'gwSales', templates:'gwSales',
@@ -48,6 +49,7 @@ const _VIEW_WORKSPACE_MAP = {
   maintenanceQueue:'gwOperations', inventoryList:'gwOperations',
   materialAllocation:'gwOperations', toolsConsumables:'gwOperations',
   timeTracker:'gwOperations', opsHub:'gwOperations',
+  gwTimesheetAdmin:'gwOperations', gwWorkdaySettings:'gwAdmin',
   // Admin workspace
   settings:'gwAdmin', userManagement:'gwAdmin', integrations:'gwAdmin',
   manager:'gwAdmin', systemConfig:'gwAdmin', systemTemplates:'gwAdmin',
@@ -256,13 +258,13 @@ const DEFAULT_NAV_PERMS = {
     'today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
   // Field Supervisor: full operations hub + ops/team reports, no sales/financial/admin
   field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
-    'today','myDashboard',
+    'today','fieldDashboard','myDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-    'opsReports','teamReports','approvalQueue','fieldMode'],
+    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin'],
   // Laborer: self-service field only — assigned schedule, work orders, time
-  laborer: ['gwOperations','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+  laborer: ['gwDashboard','gwOperations','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
   view_only: ['gwDashboard','today','pipeline']
 };
@@ -619,19 +621,36 @@ function _gwClearHeader() {
 // ── Dashboard workspace ───────────────────────────────────────────────────────
 function gwDashboard(tab) {
   tab = tab || 'today';
-  _gwSetHeader('Dashboard', [
-    {id:'today',           label:'My Day'},
-    {id:'teamView',        label:'Team'},
-    {id:'salesReports',    label:'Business Pulse'},
-    {id:'financialReports',label:'Financial Snapshot'},
-    {id:'opsReports',      label:'Operations Snapshot'},
-  ], tab);
-  if (tab === 'today')            today();
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const isField = rep && (rep.role === 'field_supervisor' || rep.role === 'laborer');
+  // For field roles, default tab is fieldDashboard
+  if (!tab || tab === 'gwDashboard') tab = isField ? 'fieldDashboard' : 'today';
+  const dashTabs = isField
+    ? [
+        {id:'fieldDashboard', label:'My Day'},
+        {id:'today',          label:'Overview'},
+        {id:'scheduleBoard',  label:'Schedule'},
+        {id:'workOrderList',  label:'Work Orders'},
+        {id:'timeTracker',    label:'Timesheet'},
+      ]
+    : [
+        {id:'today',           label:'My Day'},
+        {id:'teamView',        label:'Team'},
+        {id:'salesReports',    label:'Business Pulse'},
+        {id:'financialReports',label:'Financial Snapshot'},
+        {id:'opsReports',      label:'Operations Snapshot'},
+      ];
+  _gwSetHeader('Dashboard', dashTabs, tab);
+  if (tab === 'fieldDashboard')  (typeof window.fieldDashboard==='function') ? window.fieldDashboard() : _gwTabStub('Field Dashboard');
+  else if (tab === 'today')            today();
   else if (tab === 'teamView')    (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
   else if (tab === 'salesReports')(typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
   else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
   else if (tab === 'opsReports')  (typeof opsReports==='function') ? opsReports() : _gwTabStub('Operations Snapshot');
-  else today();
+  else if (tab === 'scheduleBoard') (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
+  else if (tab === 'workOrderList') (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
+  else if (tab === 'timeTracker') (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Timesheet');
+  else isField ? (typeof window.fieldDashboard==='function' ? window.fieldDashboard() : _gwTabStub('Field Dashboard')) : today();
 }
 window.gwDashboard = gwDashboard;
 
@@ -735,19 +754,22 @@ function gwOperations(tab) {
       {id:'inventoryList',    label:'Inventory'},
       {id:'toolsConsumables', label:'Tools'},
     ]},
-    {id:'timeTracker',       label:'Time'},
+    {id:'timeTracker',       label:'Time', children:[
+      {id:'gwTimesheetAdmin', label:'Timesheet Review'},
+    ]},
   ], tab);
-  if (tab === 'scheduleBoard')        (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
-  else if (tab === 'dispatchBoard')   (typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
-  else if (tab === 'workOrderList')   (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
-  else if (tab === 'recurringServices')(typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
-  else if (tab === 'gwResources')     gwResources('assetList');
+  if (tab === 'scheduleBoard')          (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
+  else if (tab === 'dispatchBoard')     (typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
+  else if (tab === 'workOrderList')     (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
+  else if (tab === 'recurringServices') (typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
+  else if (tab === 'gwResources')       gwResources('assetList');
   // L2 Resources children — route directly
-  else if (tab === 'assetList')       (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
-  else if (tab === 'maintenanceQueue')(typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
-  else if (tab === 'inventoryList')   (typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
-  else if (tab === 'toolsConsumables')(typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
-  else if (tab === 'timeTracker')     (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time');
+  else if (tab === 'assetList')         (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
+  else if (tab === 'maintenanceQueue')  (typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
+  else if (tab === 'inventoryList')     (typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
+  else if (tab === 'toolsConsumables')  (typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
+  else if (tab === 'timeTracker')       (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time');
+  else if (tab === 'gwTimesheetAdmin')  (typeof window.gwTimesheetAdmin==='function') ? window.gwTimesheetAdmin() : _gwTabStub('Timesheet Review');
   else scheduleBoard();
 }
 window.gwOperations = gwOperations;
@@ -768,7 +790,9 @@ function gwResources(sub) {
       {id:'inventoryList',    label:'Inventory'},
       {id:'toolsConsumables', label:'Tools'},
     ]},
-    {id:'timeTracker',       label:'Time'},
+    {id:'timeTracker',       label:'Time', children:[
+      {id:'gwTimesheetAdmin', label:'Timesheet Review'},
+    ]},
   ], sub);
   activateNav(sub);
   window._currentView = sub;
@@ -799,6 +823,7 @@ function gwAdmin(tab) {
       {id:'fieldMode',   label:'Field Mode'},
     ]},
     ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
+  ...(isAdmin || canManageUsers ? [{id:'gwWorkdaySettings', label:'Workday Settings'}] : []),
   ];
   _gwSetHeader('Admin', tabs, tab);
   if (tab === 'settings')            (typeof settings==='function') ? settings() : _gwTabStub('General');
@@ -812,6 +837,7 @@ function gwAdmin(tab) {
   else if (tab === 'portalAdmin')      (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
   else if (tab === 'fieldMode')        (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
   else if (tab === 'systemConfig')     (typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
+  else if (tab === 'gwWorkdaySettings')(typeof window.gwWorkdaySettings==='function') ? window.gwWorkdaySettings() : _gwTabStub('Workday Settings');
   else settings();
 }
 window.gwAdmin = gwAdmin;
@@ -939,7 +965,9 @@ window.gwAccessModes = gwAccessModes;
       {id:'inventoryList',    label:'Inventory'},
       {id:'toolsConsumables', label:'Tools'},
     ]},
-    {id:'timeTracker',       label:'Time'},
+    {id:'timeTracker',       label:'Time', children:[
+      {id:'gwTimesheetAdmin', label:'Timesheet Review'},
+    ]},
   ], null);
 
   // Admin — use defaults (no rep context yet at parse time)
@@ -957,6 +985,7 @@ window.gwAccessModes = gwAccessModes;
       {id:'fieldMode',     label:'Field Mode'},
     ]},
     {id:'systemConfig',    label:'System Config'},
+    {id:'gwWorkdaySettings', label:'Workday Settings'},
   ], null);
 
   // Collapse everything except Dashboard — user opens sections manually
@@ -1291,6 +1320,9 @@ function show(viewName='today', param){
     portalAdmin:      () => (typeof window.portalAdmin      === 'function') ? window.portalAdmin()      : _p8Stub('Client Portal'),
     automationCenter: () => (typeof window.automationCenter === 'function') ? window.automationCenter() : _p8Stub('Automation Center'),
     fieldMode:        () => (typeof window.fieldMode        === 'function') ? window.fieldMode()        : _p8Stub('Field Mode'),
+    fieldDashboard:   () => (typeof window.fieldDashboard   === 'function') ? window.fieldDashboard()   : _p8Stub('Field Dashboard'),
+    gwTimesheetAdmin: () => (typeof window.gwTimesheetAdmin === 'function') ? window.gwTimesheetAdmin() : _p8Stub('Timesheet Review'),
+    gwWorkdaySettings:() => (typeof window.gwWorkdaySettings=== 'function') ? window.gwWorkdaySettings(): _p8Stub('Workday Settings'),
   };
   // Engagement consolidated routes
   const engRoute = {
@@ -10657,9 +10689,9 @@ window.superAdmin = superAdmin;
     // ── Standard authenticated tenant flow ───────────────────────────────────
     // Bootstrap complete: REPS hydrated, _gwNavPerms set, getCurrentRep() works.
     if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
-    // Field mode override takes priority on mobile for field roles
+    // Field roles (laborer, field_supervisor) land on fieldDashboard on ALL screen sizes
     if (typeof window._gwShouldStartFieldMode === 'function' && window._gwShouldStartFieldMode()) {
-      show('fieldMode');
+      show('fieldDashboard');
     } else {
       // ── Hash-based restore: reload stays on the same page ──────────────────
       const _hashView = (location.hash || '').replace(/^#/, '').trim();

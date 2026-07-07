@@ -7831,3 +7831,244 @@ h1.pl-title,
   .nav-subtab { font-size: 12px; padding: 5px 8px 5px 10px; }
   .nav-subtab--l2 { font-size: 11px; padding: 4px 6px 4px 10px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   PHASE 9 — WORKDAY CLOCK + FIELD DASHBOARD
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Header clock pill ── */
+.gw-clock-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 20px;
+  border: 1.5px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,.7);
+  white-space: nowrap;
+  transition: background .15s, border-color .15s;
+  user-select: none;
+  flex-shrink: 0;
+}
+.gw-clock-pill:hover { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.25); }
+.gw-clock-pill.clocked-in  { border-color: #22c55e55; background: #16a34a18; color: #86efac; }
+.gw-clock-pill.on-break    { border-color: #f59e0b55; background: #d9770618; color: #fcd34d; }
+.gw-clock-pill.clocked-out { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(255,255,255,.45); }
+
+.gw-clock-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.35);
+  flex-shrink: 0;
+}
+.gw-clock-pill.clocked-in .gw-clock-dot  { background: #4ade80; box-shadow: 0 0 6px #4ade8099; animation: gwPulse 1.8s ease-in-out infinite; }
+.gw-clock-pill.on-break .gw-clock-dot    { background: #fbbf24; box-shadow: 0 0 6px #fbbf2499; }
+.gw-clock-pill.clocked-out .gw-clock-dot { background: rgba(255,255,255,.2); }
+
+@keyframes gwPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .65; transform: scale(1.15); }
+}
+
+.gw-clock-label { font-size: 12px; font-weight: 600; }
+.gw-clock-timer { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .04em; opacity: .85; }
+
+/* Dropdown menu */
+.gw-clock-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: #1C2B26;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  z-index: 9999;
+  padding: 8px;
+  overflow: hidden;
+}
+.gw-clock-menu-hd {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.35);
+  padding: 4px 8px 6px;
+}
+.gw-clock-menu-action {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 9px 10px;
+  background: transparent; border: 0;
+  border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: #fff;
+  text-align: left; transition: background .12s;
+}
+.gw-clock-menu-action:hover { background: rgba(255,255,255,.09); }
+.gw-clock-menu-action.danger { color: #fca5a5; }
+.gw-clock-menu-action.danger:hover { background: rgba(239,68,68,.12); }
+.gw-clock-menu-divider { height: 1px; background: rgba(255,255,255,.09); margin: 4px 0; }
+.gw-clock-menu-status {
+  font-size: 11px; color: rgba(255,255,255,.45);
+  padding: 6px 10px 4px;
+}
+.gw-clock-menu-job {
+  font-size: 11px; font-weight: 600; color: #86efac;
+  padding: 0 10px 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Field Dashboard view ── */
+.fd-shell {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 0 80px;
+}
+.fd-hero {
+  background: linear-gradient(135deg, #0F2419 0%, #1A3A2A 100%);
+  border: 1px solid rgba(52,211,153,.18);
+  border-radius: 16px;
+  padding: 24px 20px 20px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.fd-hero::before {
+  content: '';
+  position: absolute; top: 0; right: 0;
+  width: 120px; height: 120px;
+  background: radial-gradient(circle, rgba(52,211,153,.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.fd-hero-greeting { font-size: 13px; color: rgba(255,255,255,.5); margin-bottom: 2px; }
+.fd-hero-name     { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 12px; letter-spacing: -.01em; }
+.fd-status-badge  {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.fd-status-badge.not-in  { background: rgba(255,255,255,.08); color: rgba(255,255,255,.5); border: 1px solid rgba(255,255,255,.12); }
+.fd-status-badge.clocked-in  { background: rgba(34,197,94,.15); color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+.fd-status-badge.on-break    { background: rgba(251,191,36,.15); color: #fcd34d; border: 1px solid rgba(251,191,36,.25); }
+.fd-status-badge.clocked-out { background: rgba(100,116,139,.1); color: rgba(255,255,255,.35); border: 1px solid rgba(255,255,255,.1); }
+
+.fd-timer { font-size: 36px; font-weight: 900; color: #fff; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 6px; }
+.fd-timer-sub { font-size: 12px; color: rgba(255,255,255,.4); margin-bottom: 20px; }
+
+.fd-cta-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.fd-btn-primary {
+  flex: 1; min-width: 120px;
+  padding: 14px 18px; border-radius: 12px;
+  background: #16a34a; border: 0; color: #fff;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: background .15s, transform .1s;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.fd-btn-primary:active { transform: scale(.97); }
+.fd-btn-primary:hover  { background: #15803d; }
+.fd-btn-primary.break  { background: #b45309; }
+.fd-btn-primary.break:hover  { background: #92400e; }
+.fd-btn-primary.end-break    { background: #1d4ed8; }
+.fd-btn-primary.end-break:hover { background: #1e40af; }
+.fd-btn-primary.clock-out { background: #dc2626; }
+.fd-btn-primary.clock-out:hover { background: #b91c1c; }
+.fd-btn-secondary {
+  padding: 12px 16px; border-radius: 12px;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.7); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background .15s;
+}
+.fd-btn-secondary:hover { background: rgba(255,255,255,.13); }
+
+/* Section cards */
+.fd-section { margin-bottom: 14px; }
+.fd-section-hd {
+  font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F); margin-bottom: 8px; padding: 0 2px;
+}
+.fd-card {
+  background: var(--gw-surface, #fff);
+  border: 1px solid var(--gw-line, #E0DDD5);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+}
+.fd-card + .fd-card { margin-top: 0; }
+.fd-card-row { display: flex; align-items: center; gap: 10px; }
+.fd-card-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.fd-card-label { font-size: 12px; color: var(--gw-muted, #5E6E6F); margin-bottom: 1px; }
+.fd-card-value { font-size: 14px; font-weight: 600; color: var(--gw-ink, #1F2A2B); }
+.fd-card-meta  { font-size: 11px; color: var(--gw-muted, #5E6E6F); }
+
+/* Job selection (9B) */
+.fd-job-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 10px;
+  border: 1.5px solid var(--gw-line, #E0DDD5);
+  background: var(--gw-surface, #fff);
+  cursor: pointer; margin-bottom: 8px;
+  transition: border-color .15s, background .15s;
+}
+.fd-job-item:hover    { border-color: #4D8A86; background: #4D8A8608; }
+.fd-job-item.selected { border-color: #16a34a; background: #16a34a0D; }
+.fd-job-check {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--gw-line, #D0CCC3);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all .15s;
+}
+.fd-job-item.selected .fd-job-check {
+  background: #16a34a; border-color: #16a34a;
+}
+.fd-job-body { flex: 1; min-width: 0; }
+.fd-job-name { font-size: 13px; font-weight: 600; color: var(--gw-ink, #1F2A2B); }
+.fd-job-meta { font-size: 11px; color: var(--gw-muted, #5E6E6F); }
+.fd-job-time { font-size: 11px; color: #4D8A86; font-weight: 600; white-space: nowrap; }
+
+/* 9C timesheet roll-up table */
+.ts-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ts-table th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--gw-muted,#5E6E6F); padding: 6px 12px; border-bottom: 1px solid var(--gw-line,#E0DDD5); }
+.ts-table td { padding: 10px 12px; border-bottom: 1px solid var(--gw-line,#F0EDE5); color: var(--gw-ink,#1F2A2B); }
+.ts-table tr:last-child td { border-bottom: 0; }
+.ts-table tr:hover td { background: var(--gw-surface-2, #FAFAF8); }
+.ts-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+.ts-badge.approved  { background: #dcfce7; color: #166534; }
+.ts-badge.pending   { background: #fef9c3; color: #854d0e; }
+.ts-badge.rejected  { background: #fee2e2; color: #991b1b; }
+.ts-badge.open      { background: #dbeafe; color: #1d4ed8; }
+.ts-badge.overtime  { background: #fff7ed; color: #c2410c; }
+.ts-badge.missed    { background: #fee2e2; color: #991b1b; }
+
+/* Workday settings form */
+.wd-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .wd-settings-grid { grid-template-columns: 1fr; } }
+.wd-field label { font-size: 11px; font-weight: 700; color: var(--gw-muted,#5E6E6F); text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 5px; }
+.wd-field input, .wd-field select {
+  width: 100%; padding: 9px 11px;
+  background: var(--gw-surface-2, #FAFAF8);
+  border: 1px solid var(--gw-line, #E0DDD5);
+  border-radius: 8px; font-size: 13px; color: var(--gw-ink, #1F2A2B);
+  box-sizing: border-box;
+}
+.wd-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--gw-line,#F0EDE5); }
+.wd-toggle-row:last-child { border-bottom: 0; }
+.wd-toggle-label { font-size: 13px; font-weight: 500; color: var(--gw-ink,#1F2A2B); }
+.wd-toggle-sub { font-size: 11px; color: var(--gw-muted,#5E6E6F); margin-top: 1px; }
+
+/* Mobile adjustments */
+@media (max-width: 640px) {
+  .fd-hero { padding: 20px 16px 16px; }
+  .fd-timer { font-size: 30px; }
+  .fd-btn-primary { font-size: 14px; padding: 13px 14px; }
+  .gw-clock-label { display: none; }
+  .gw-clock-pill { padding: 6px 10px; }
+}

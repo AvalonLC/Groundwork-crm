@@ -2190,6 +2190,180 @@ app.post('/api/time/approve-batch', requireAuth, async (c) => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
+// PHASE 9 — WORKDAY / BREAK / SETTINGS APIs
+// ══════════════════════════════════════════════════════════════════════════════
+
+// POST /api/time/clock-in  (extended: accepts work_order_id)
+// Replaces generic clock-in above — same route, we patch the existing handler
+// by overwriting it here (Hono uses last-match for duplicate routes? No — Hono
+// matches first. So we add work_order_id support via PATCH on the existing INSERT)
+// Instead: add a separate route for job-linked clock-in
+// POST /api/time/clock-in/job  { workOrderId?, jobLabel?, jobType? }
+app.post('/api/time/clock-in/job', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const open = await c.env.DB.prepare(
+    `SELECT id FROM time_entries WHERE rep_id=? AND company_id=? AND clock_out IS NULL LIMIT 1`
+  ).bind(repId, companyId).first<{ id: string }>()
+  if (open) return err(c, 'Already clocked in', 409)
+  const b = await c.req.json().catch(() => ({})) as any
+  const id = 'te_' + uid()
+  const now = new Date().toISOString()
+  await c.env.DB.prepare(
+    `INSERT INTO time_entries (id,rep_id,company_id,clock_in,job_type,work_order_id,notes,approved)
+     VALUES (?,?,?,?,?,?,?,0)`
+  ).bind(id, repId, companyId, now, b.jobType||'General Work', b.workOrderId||null, b.notes||'').run()
+  return json(c, { id, clock_in: now, work_order_id: b.workOrderId||null }, 201)
+})
+
+// POST /api/time/break/start   — start a break on active entry
+app.post('/api/time/break/start', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  // Must be clocked in
+  const entry = await c.env.DB.prepare(
+    `SELECT id FROM time_entries WHERE rep_id=? AND company_id=? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1`
+  ).bind(repId, companyId).first<{ id: string }>()
+  if (!entry) return err(c, 'Not clocked in', 404)
+  // No open break already
+  const openBreak = await c.env.DB.prepare(
+    `SELECT id FROM break_entries WHERE rep_id=? AND company_id=? AND break_end IS NULL LIMIT 1`
+  ).bind(repId, companyId).first<{ id: string }>()
+  if (openBreak) return err(c, 'Break already active', 409)
+  const id = 'br_' + uid()
+  const now = new Date().toISOString()
+  await c.env.DB.prepare(
+    `INSERT INTO break_entries (id,time_entry_id,rep_id,company_id,break_start) VALUES (?,?,?,?,?)`
+  ).bind(id, entry.id, repId, companyId, now).run()
+  return json(c, { id, break_start: now }, 201)
+})
+
+// POST /api/time/break/end   — end the active break
+app.post('/api/time/break/end', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const openBreak = await c.env.DB.prepare(
+    `SELECT * FROM break_entries WHERE rep_id=? AND company_id=? AND break_end IS NULL ORDER BY break_start DESC LIMIT 1`
+  ).bind(repId, companyId).first<any>()
+  if (!openBreak) return err(c, 'No active break', 404)
+  const now      = new Date()
+  const start    = new Date(openBreak.break_start)
+  const durMin   = Math.round((now.getTime() - start.getTime()) / 60000)
+  await c.env.DB.prepare(
+    `UPDATE break_entries SET break_end=?, duration_min=? WHERE id=? AND company_id=?`
+  ).bind(now.toISOString(), durMin, openBreak.id, companyId).run()
+  // Accumulate break_minutes on time_entry
+  await c.env.DB.prepare(
+    `UPDATE time_entries SET break_minutes=COALESCE(break_minutes,0)+? WHERE id=? AND company_id=?`
+  ).bind(durMin, openBreak.time_entry_id, companyId).run()
+  return json(c, { id: openBreak.id, duration_min: durMin })
+})
+
+// GET /api/time/break/active   — currently open break for rep
+app.get('/api/time/break/active', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const row = await c.env.DB.prepare(
+    `SELECT * FROM break_entries WHERE rep_id=? AND company_id=? AND break_end IS NULL ORDER BY break_start DESC LIMIT 1`
+  ).bind(repId, companyId).first()
+  return json(c, row || null)
+})
+
+// GET /api/time/timesheet-summary?from=&to=   — 9C admin roll-up
+app.get('/api/time/timesheet-summary', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  const myRepId   = c.var.repId as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  const from = c.req.query('from') || new Date(Date.now() - 7*86400000).toISOString().slice(0,10)
+  const to   = c.req.query('to')   || new Date().toISOString().slice(0,10)
+  const rows = await c.env.DB.prepare(`
+    SELECT te.rep_id, r.name AS rep_name, r.role AS rep_role,
+           COUNT(te.id) AS entry_count,
+           SUM(te.duration_min) AS total_minutes,
+           SUM(COALESCE(te.break_minutes,0)) AS total_break_minutes,
+           SUM(CASE WHEN te.approved=1 THEN te.duration_min ELSE 0 END) AS approved_minutes,
+           SUM(CASE WHEN te.clock_out IS NULL THEN 1 ELSE 0 END) AS open_entries,
+           SUM(CASE WHEN te.approved=0 AND te.clock_out IS NOT NULL THEN 1 ELSE 0 END) AS pending_approval,
+           GROUP_CONCAT(DISTINCT te.work_order_id) AS work_order_ids
+    FROM time_entries te
+    JOIN reps r ON r.id=te.rep_id AND r.company_id=te.company_id
+    WHERE te.company_id=?
+      AND date(te.clock_in) BETWEEN ? AND ?
+    GROUP BY te.rep_id
+    ORDER BY r.name
+  `).bind(companyId, from, to).all()
+  return json(c, rows.results || [])
+})
+
+// GET /api/time/exceptions?from=&to=   — missed punches + overtime flags
+app.get('/api/time/exceptions', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  const from = c.req.query('from') || new Date(Date.now() - 7*86400000).toISOString().slice(0,10)
+  const to   = c.req.query('to')   || new Date().toISOString().slice(0,10)
+  // Open entries older than today = missed clock-out
+  const open = await c.env.DB.prepare(`
+    SELECT te.*, r.name AS rep_name FROM time_entries te
+    JOIN reps r ON r.id=te.rep_id AND r.company_id=te.company_id
+    WHERE te.company_id=? AND te.clock_out IS NULL
+      AND date(te.clock_in) < date('now')
+  `).bind(companyId).all()
+  // Entries > 10h = overtime flag
+  const overtime = await c.env.DB.prepare(`
+    SELECT te.*, r.name AS rep_name FROM time_entries te
+    JOIN reps r ON r.id=te.rep_id AND r.company_id=te.company_id
+    WHERE te.company_id=? AND te.duration_min > 600
+      AND date(te.clock_in) BETWEEN ? AND ?
+  `).bind(companyId, from, to).all()
+  return json(c, { missed_clock_out: open.results || [], overtime: overtime.results || [] })
+})
+
+// GET /api/workday-settings   — fetch company workday config
+app.get('/api/workday-settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const row = await c.env.DB.prepare(
+    `SELECT * FROM workday_settings WHERE company_id=? LIMIT 1`
+  ).bind(companyId).first()
+  return json(c, row || {
+    working_days: '1,2,3,4,5', shift_start: '07:00', shift_end: '17:00',
+    lunch_minutes: 30, grace_period_minutes: 10, late_threshold_minutes: 15,
+    overtime_threshold_hours: 8.0, missed_punch_flag: 1, prompt_clock_in: 1
+  })
+})
+
+// PUT /api/workday-settings   — save company workday config (admin only)
+app.put('/api/workday-settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role      = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager') return err(c, 'Admin only', 403)
+  const b = await c.req.json() as any
+  await c.env.DB.prepare(`
+    INSERT INTO workday_settings
+      (id, company_id, working_days, shift_start, shift_end, lunch_minutes,
+       grace_period_minutes, late_threshold_minutes, overtime_threshold_hours,
+       missed_punch_flag, prompt_clock_in, updated_at)
+    VALUES ('default_'||?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(company_id) DO UPDATE SET
+      working_days=excluded.working_days, shift_start=excluded.shift_start,
+      shift_end=excluded.shift_end, lunch_minutes=excluded.lunch_minutes,
+      grace_period_minutes=excluded.grace_period_minutes,
+      late_threshold_minutes=excluded.late_threshold_minutes,
+      overtime_threshold_hours=excluded.overtime_threshold_hours,
+      missed_punch_flag=excluded.missed_punch_flag,
+      prompt_clock_in=excluded.prompt_clock_in,
+      updated_at=datetime('now')
+  `).bind(
+    companyId, companyId,
+    b.working_days||'1,2,3,4,5', b.shift_start||'07:00', b.shift_end||'17:00',
+    b.lunch_minutes??30, b.grace_period_minutes??10, b.late_threshold_minutes??15,
+    b.overtime_threshold_hours??8.0, b.missed_punch_flag??1, b.prompt_clock_in??1
+  ).run()
+  return json(c, { ok: true })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SUPER-ADMIN API  (is_super_admin = 1 required)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -3346,6 +3520,17 @@ function getHtml(): string {
       <!-- Live sync status pill — shown during/after background sync -->
       <div id="gw-sync-status" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:var(--gw-surface-2,rgba(255,255,255,.07));border:1px solid var(--gw-line,rgba(255,255,255,.12));border-radius:20px;font-size:11px;font-weight:600;cursor:pointer" onclick="window._manualSync()" title="Click to sync now"></div>
 
+      <!-- ── Phase 9A: Workday Clock pill ── -->
+      <div id="gw-clock-pill" class="gw-clock-pill" style="display:none" onclick="gwClockPillClick()">
+        <span id="gw-clock-dot" class="gw-clock-dot"></span>
+        <span id="gw-clock-label" class="gw-clock-label">Clock In</span>
+        <span id="gw-clock-timer" class="gw-clock-timer" style="display:none"></span>
+        <!-- dropdown menu -->
+        <div id="gw-clock-menu" class="gw-clock-menu" style="display:none" onclick="event.stopPropagation()">
+          <div id="gw-clock-menu-inner"></div>
+        </div>
+      </div>
+
       <button class="topbar-settings" onclick="show('gwAdmin')" title="Admin"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg>Admin</button>
     </header>
     <nav id="gw-trail" class="gw-trail" aria-label="Navigation history" style="display:none"></nav>
@@ -3367,6 +3552,7 @@ function getHtml(): string {
 <script src="/static/user_management.js?v=20260707gw24"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
+<script src="/static/field_workday.js?v=20260707p9a1"></script>
 <script src="/static/platform_core.js?v=20260707gw8p1"></script>
 <script src="/static/approval_engine.js?v=20260707gw8p1"></script>
 <script src="/static/automation_engine.js?v=20260707gw8p1"></script>
@@ -3475,6 +3661,8 @@ function getHtml(): string {
         if (typeof window._d1FlushQueue === 'function') window._d1FlushQueue();
         if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
         if (typeof window._d1BootstrapResolve === 'function') window._d1BootstrapResolve({ authed: true });
+        // Phase 9A: initialize header clock pill
+        if (typeof window.gwInitClockPill === 'function') window.gwInitClockPill();
 
         // ── STEP 4: Load data in background (after UI is already shown) ───────
         // Run one-time localStorage → D1 migration

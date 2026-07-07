@@ -316,9 +316,9 @@ function _gwMaybeFieldMode() {
   }
 }
 
-// Called from app_premium.js _initialRoute — checks if we should start in field mode
+// Called from app_premium.js _initialRoute — field roles land on fieldDashboard on all screen sizes
 window._gwShouldStartFieldMode = function() {
-  return _isFieldRole() && _isMobile();
+  return _isFieldRole();
 };
 
 // Listen for resize — if a field user switches to mobile, offer field mode
