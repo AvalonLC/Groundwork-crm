@@ -476,6 +476,14 @@ function fallbackCopy(text){
 })();
 
 function show(viewName='today', param){
+  // ── Dismiss any stray full-screen overlays left by previous view ──────────
+  // Prevents phantom overlays (e.g. #gw-auto-overlay from automationManager)
+  // from blocking sidebar clicks after navigating away.
+  ['gw-auto-overlay','gw-ap-overlay','gw-portal-overlay'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
   // ── Permission gate (admin-configurable) ─────────────────
   // Platform super-admin bypasses all tenant permission gates
   const _d1 = window._d1SessionRep;
@@ -12766,17 +12774,22 @@ function sequences(tab) {
 </div>`;
 
   if (activeTab === 'automations') {
-    // Render automation manager into the slot
+    // Render automation manager into the slot.
+    // IMPORTANT: Do NOT use the document.body.appendChild(tmp) trick here —
+    // automationManager() creates #gw-auto-overlay on document.body with display:flex,
+    // leaving a full-screen z-index:9999 overlay that blocks all sidebar clicks.
+    // Instead, temporarily swap window.view to a detached div (never touching body).
     const slot = document.getElementById('seq-auto-slot');
     if (slot && typeof automationManager === 'function') {
-      const tmp = document.createElement('div');
-      document.body.appendChild(tmp);
+      const tmp = document.createElement('div');  // detached — never appended to body
       const origView = window.view;
       window.view = tmp;
       automationManager();
       window.view = origView;
       slot.innerHTML = tmp.innerHTML;
-      document.body.removeChild(tmp);
+      // Clean up any overlay that automationManager may have appended to body
+      const strayOverlay = document.getElementById('gw-auto-overlay');
+      if (strayOverlay) strayOverlay.style.display = 'none';
     } else if (slot) {
       slot.innerHTML = `<div style="text-align:center;padding:48px;color:var(--muted)">Automation rules module loading…</div>`;
     }
