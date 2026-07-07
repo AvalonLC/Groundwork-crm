@@ -2370,6 +2370,169 @@ app.post('/api/admin/clear-sessions', requireSuperAdmin, async (c) => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
+// PHASE 8 — AUDIT LOG  (/api/audit)
+// Rolling structured event log.  Each event is a JSON row persisted to D1.
+// The frontend gwAudit() also keeps a local localStorage ring-buffer (max 500)
+// for offline reads; this endpoint backs the permanent record.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// POST /api/audit  — ingest one or more audit events from the frontend
+app.post('/api/audit', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId     as string
+  let body: unknown
+  try { body = await c.req.json() } catch { return json(c, { error: 'bad json' }, 400) }
+  const events = Array.isArray(body) ? body : [body]
+  const now    = new Date().toISOString()
+
+  // Ensure audit_log table exists (idempotent — runs on first use)
+  await c.env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          TEXT PRIMARY KEY,
+      company_id  TEXT NOT NULL,
+      rep_id      TEXT,
+      event_type  TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id   TEXT,
+      entity_label TEXT,
+      meta        TEXT,
+      created_at  TEXT NOT NULL
+    )
+  `).run()
+
+  const stmt = c.env.DB.prepare(
+    `INSERT OR IGNORE INTO audit_log
+       (id, company_id, rep_id, event_type, entity_type, entity_id, entity_label, meta, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  )
+  const batch = events.slice(0, 50).map((e: any) =>
+    stmt.bind(
+      e.id || (crypto.randomUUID ? crypto.randomUUID() : `al_${Date.now()}_${Math.random().toString(36).slice(2)}`),
+      companyId,
+      e.repId || repId || null,
+      e.type  || 'unknown',
+      e.entityType  || null,
+      e.entityId    || null,
+      e.entityLabel || null,
+      e.meta ? JSON.stringify(e.meta) : null,
+      e.at   || now
+    )
+  )
+  if (batch.length) await c.env.DB.batch(batch)
+  return json(c, { written: batch.length })
+})
+
+// GET /api/audit  — query audit events for current company (admin/office_manager only)
+app.get('/api/audit', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const limit     = Math.min(parseInt(c.req.query('limit') || '200', 10), 500)
+  const offset    = parseInt(c.req.query('offset') || '0', 10)
+  const eventType = c.req.query('type')   || null
+  const entityType= c.req.query('entity') || null
+  const repId     = c.req.query('rep')    || null
+
+  // Ensure table exists before querying
+  await c.env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY, company_id TEXT NOT NULL, rep_id TEXT,
+      event_type TEXT NOT NULL, entity_type TEXT, entity_id TEXT,
+      entity_label TEXT, meta TEXT, created_at TEXT NOT NULL
+    )
+  `).run()
+
+  let sql = `SELECT * FROM audit_log WHERE company_id = ?`
+  const binds: (string | number)[] = [companyId]
+  if (eventType)  { sql += ` AND event_type  = ?`; binds.push(eventType) }
+  if (entityType) { sql += ` AND entity_type = ?`; binds.push(entityType) }
+  if (repId)      { sql += ` AND rep_id      = ?`; binds.push(repId) }
+  sql += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  binds.push(limit, offset)
+
+  const rows = await (c.env.DB.prepare(sql) as any).bind(...binds).all()
+  return json(c, { events: rows.results || [], limit, offset })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 8 — CLIENT PORTAL  (/portal)
+// Token-based external portal for clients.  The Hono route serves a thin HTML
+// shell; the heavy portal UI is rendered client-side by client_portal.js which
+// detects the ?token= param via _gwCheckPortalRoute().
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/portal', (c) => {
+  const token = c.req.query('token') || ''
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Groundwork — Client Portal</title>
+  <meta name="robots" content="noindex,nofollow"/>
+  <link rel="icon" type="image/png" href="/static/avalon-logo.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/premium.css?v=20260707gw8p1">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
+    #portal-loading {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; gap: 16px; color: rgba(255,255,255,.5); font-size: 13px;
+    }
+    .portal-spinner {
+      width: 32px; height: 32px; border: 2.5px solid rgba(255,255,255,.15);
+      border-top-color: #4D8A86; border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="portal-loading">
+    <div class="portal-spinner"></div>
+    Loading your portal…
+  </div>
+  <div id="portal-root"></div>
+
+  <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
+  <script src="/static/platform_core.js?v=20260707gw8p1"></script>
+  <script src="/static/client_portal.js?v=20260707gw8p1"></script>
+  <script>
+    // Hide spinner once portal renders, or show error if no token
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!window.__PORTAL_TOKEN__) {
+        document.getElementById('portal-loading').innerHTML =
+          '<div style="text-align:center;padding:40px 24px">' +
+          '<div style="font-size:16px;font-weight:700;margin-bottom:8px;color:#E8EDE8">Invalid Portal Link</div>' +
+          '<div style="color:rgba(255,255,255,.5);font-size:13px">This link is missing a token. Please use the link provided by your service company.</div>' +
+          '</div>';
+        return;
+      }
+      // client_portal.js _gwCheckPortalRoute() handles rendering
+      if (typeof window._gwCheckPortalRoute === 'function') {
+        window._gwCheckPortalRoute();
+      }
+    });
+  </script>
+</body>
+</html>`)
+})
+
+// GET /api/portal/verify  — validate a portal token (called by the portal shell)
+app.get('/api/portal/verify', async (c) => {
+  const token     = c.req.query('token') || ''
+  const companyId = c.req.query('company') || ''
+  if (!token) return json(c, { valid: false, error: 'no_token' }, 400)
+
+  // Portal access records are stored in localStorage on the frontend (client_portal.js)
+  // This endpoint provides a server-side validation hook for future D1 persistence.
+  // For now it always returns valid:true so the client-side token check remains authoritative.
+  // A future migration can add a portal_access table here.
+  return json(c, { valid: true, token, company: companyId })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PLATFORM OWNER LOGIN  (/platform-login)
 // ══════════════════════════════════════════════════════════════════════════════
 

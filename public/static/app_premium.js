@@ -3602,6 +3602,17 @@ window.sendComm = async function(oppId){
 
   saveState();
 
+  // Phase 8: unified comms registry + audit + workflow hook
+  if (typeof window.gwLogComm === 'function') {
+    window.gwLogComm({ id:msg.id, entityType:'lead', entityId:oppId, entityLabel:opp?opp.client||'Lead':'Lead', type, method:type, direction, subject:msg.subject, body:(msg.body||'').slice(0,200), sentBy:msg.sentBy, at:msg.ts });
+  }
+  if (typeof window.gwAudit === 'function') {
+    window.gwAudit({ type:'communication_sent', entityType:'lead', entityId:oppId, entityLabel:opp?opp.client||'Lead':'Lead', meta:{ commType:type, direction } });
+  }
+  if (typeof window.gwWorkflow === 'object') {
+    window.gwWorkflow.communicationSent({ entityType:'lead', entityId:oppId, entityLabel:opp?opp.client:'Lead', type, method:type });
+  }
+
   const typeLabels = { sms:'SMS sent', email:'Email logged', call:'Call logged', note:'Note saved', proposal:'Proposal logged' };
   if(type !== 'email') showToast((typeLabels[type]||'Logged') + (files.length?' + '+files.length+' file(s)':''));
 
@@ -3682,7 +3693,7 @@ function saveOpportunity(id){
 
   // COMM-14: Track commission-driving fields before save to detect material changes
   const commFields = ['workType','leadSource','jobValue','repId','collected'];
-  const before = {};
+  const before = { _gwPrevStatus: o.status };
   commFields.forEach(f => before[f] = o[f]);
 
   Object.assign(o, Object.fromEntries(fd.entries()), {updatedAt:new Date().toISOString()});
@@ -3714,6 +3725,20 @@ function saveOpportunity(id){
     }
   }
 
+  // Phase 8: Audit + workflow hooks on status/stage transitions
+  const prevStatus = before._gwPrevStatus || o._gwPrevStatusSnapshot;
+  const newStatus  = o.status;
+  if (prevStatus && prevStatus !== newStatus) {
+    if (typeof window.gwAudit === 'function') {
+      window.gwAudit({ type:'lead_stage_changed', entityType:'lead', entityId:id, entityLabel:o.client||id, meta:{ from:prevStatus, to:newStatus } });
+    }
+    if (newStatus === 'Sold / Activation' && typeof window.gwWorkflow === 'object') {
+      window.gwWorkflow.estimateApproved({ entityId:id, entityLabel:o.client||id, client:o.client, jobValue:o.jobValue });
+      window.gwWorkflow.depositReceived({ entityType:'lead', entityId:id, entityLabel:o.client||id, client:o.client, amount:Math.round(Number(o.jobValue||0)*0.3) });
+    }
+  }
+  // Snapshot current status so next save can detect the delta
+  o._gwPrevStatusSnapshot = newStatus;
   saveState(); showToast('Opportunity saved'); show('pipeline', id);
 }
 function setOppField(id,field,value){
@@ -10416,18 +10441,22 @@ function estimateDetail(id){
       <div class="est-notes-area">${escapeHtml((opp.notes||[]).slice(-1)[0]?.body||'No notes')}</div>`:''}
 
       <div class="est-action-bar">
-        <button class="est-btn est-btn--send" onclick="showToast('Estimate sent via email','success')">
+        <button class="est-btn est-btn--send" onclick="_estSendToClient('${opp?opp.id:''}')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>
           Send to Client
         </button>
-        ${status==='sent'?`<button class="est-btn est-btn--approve" onclick="showToast('Marked approved — ready to invoice','success')">✓ Mark Approved</button>`:''}
-        ${status==='sent'?`<button class="est-btn est-btn--decline" onclick="showToast('Estimate marked declined','error')">✗ Mark Declined</button>`:''}
+        ${status==='sent'?`<button class="est-btn est-btn--approve" onclick="_estMarkApproved('${opp?opp.id:''}')">✓ Mark Approved</button>`:''}
+        ${status==='sent'?`<button class="est-btn est-btn--decline" onclick="_estMarkDeclined('${opp?opp.id:''}')">✗ Mark Declined</button>`:''}
         <button class="est-btn est-btn--secondary" onclick="showToast('PDF download coming soon','info')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
           Download PDF
         </button>
         ${opp?`<button class="est-btn est-btn--secondary" onclick="show('pipeline','${opp.id}')">View Lead →</button>`:''}
       </div>
+
+      ${opp ? `
+      <div class="est-section-head" style="margin-top:28px">Approvals</div>
+      <div id="est-approval-panel-${opp.id}" style="margin-bottom:8px"></div>` : ''}
     </div>
   </div>`;
 
@@ -10437,6 +10466,49 @@ function estimateDetail(id){
     if(!bar) return;
     window.addEventListener('scroll',()=>{ bar.classList.toggle('is-pinned',window.scrollY>60); },{passive:true});
   },100);
+
+  // Wire approval panel if engine loaded
+  if (opp && typeof window.gwApproval === 'object') {
+    const panelEl = document.getElementById(`est-approval-panel-${opp.id}`);
+    if (panelEl) window.gwApproval.renderPanel(panelEl, 'estimate', opp.id, `EST-${String(opp.id).slice(-4).toUpperCase()} — ${opp.client||'Client'}`);
+  }
+
+  // Estimate action handlers
+  window._estSendToClient = function(oppId) {
+    const o = oppId ? state.opportunities.find(x=>x.id===oppId) : null;
+    if (o) {
+      o.estimateStatus = 'sent';
+      state.opportunities = state.opportunities.map(x=>x.id===oppId?o:x);
+      saveState();
+      if (typeof window.gwWorkflow === 'object') window.gwWorkflow.communicationSent({ entityType:'estimate', entityId:oppId, entityLabel:`EST for ${o.client||'Client'}`, type:'estimate_sent', method:'email' });
+      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'estimate_sent', entityType:'estimate', entityId:oppId, entityLabel:`EST for ${o.client||'Client'}` });
+    }
+    showToast('Estimate sent via email', 'success');
+    if (oppId) estimateDetail(oppId);
+  };
+  window._estMarkApproved = function(oppId) {
+    const o = oppId ? state.opportunities.find(x=>x.id===oppId) : null;
+    if (o) {
+      o.estimateStatus = 'accepted';
+      state.opportunities = state.opportunities.map(x=>x.id===oppId?o:x);
+      saveState();
+      if (typeof window.gwWorkflow === 'object') window.gwWorkflow.estimateApproved({ entityId:oppId, entityLabel:`EST for ${o.client||'Client'}`, client:o.client, jobValue:o.jobValue });
+      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'estimate_approved', entityType:'estimate', entityId:oppId, entityLabel:`EST for ${o.client||'Client'}`, meta:{ jobValue:o.jobValue } });
+    }
+    showToast('Estimate approved — ready to invoice', 'success');
+    if (oppId) estimateDetail(oppId);
+  };
+  window._estMarkDeclined = function(oppId) {
+    const o = oppId ? state.opportunities.find(x=>x.id===oppId) : null;
+    if (o) {
+      o.estimateStatus = 'declined';
+      state.opportunities = state.opportunities.map(x=>x.id===oppId?o:x);
+      saveState();
+      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'estimate_declined', entityType:'estimate', entityId:oppId, entityLabel:`EST for ${o.client||'Client'}` });
+    }
+    showToast('Estimate marked declined', 'error');
+    if (oppId) estimateDetail(oppId);
+  };
 }
 window.estimateDetail = estimateDetail;
 
@@ -10545,11 +10617,11 @@ function invoiceDetail(id){
       </div>`:''}
 
       <div class="inv-action-bar">
-        ${status!=='paid'?`<button class="inv-btn inv-btn--record" onclick="showToast('Record payment modal coming soon','info')">
+        ${status!=='paid'?`<button class="inv-btn inv-btn--record" onclick="_invRecordPayment('${opp?opp.id:''}')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l6 6 6-6" transform="rotate(180 8 8)"/><rect x="1" y="4" width="14" height="9" rx="1.5"/></svg>
           Record Payment
         </button>`:''}
-        <button class="inv-btn inv-btn--send" onclick="showToast('Invoice sent via email','success')">
+        <button class="inv-btn inv-btn--send" onclick="_invSend('${opp?opp.id:''}')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg>
           Send Invoice
         </button>
@@ -10558,6 +10630,10 @@ function invoiceDetail(id){
         </button>
         ${opp?`<button class="inv-btn inv-btn--secondary" onclick="show('pipeline','${opp.id}')">View Lead →</button>`:''}
       </div>
+
+      ${opp ? `
+      <div class="inv-section-head" style="margin-top:28px">Approvals</div>
+      <div id="inv-approval-panel-${opp.id}" style="margin-bottom:8px"></div>` : ''}
     </div>
   </div>`;
 
@@ -10566,6 +10642,36 @@ function invoiceDetail(id){
     if(!bar) return;
     window.addEventListener('scroll',()=>{ bar.classList.toggle('is-pinned',window.scrollY>60); },{passive:true});
   },100);
+
+  // Wire approval panel
+  if (opp && typeof window.gwApproval === 'object') {
+    const panelEl = document.getElementById(`inv-approval-panel-${opp.id}`);
+    if (panelEl) window.gwApproval.renderPanel(panelEl, 'invoice', opp.id, `INV-${String(opp.id).slice(-4).toUpperCase()} — ${opp.client||'Client'}`);
+  }
+
+  // Invoice action handlers
+  window._invSend = function(oppId) {
+    const o = oppId ? state.opportunities.find(x=>x.id===oppId) : null;
+    if (o && typeof window.gwWorkflow === 'object') window.gwWorkflow.communicationSent({ entityType:'invoice', entityId:oppId, entityLabel:`INV for ${o?.client||'Client'}`, type:'invoice_sent', method:'email' });
+    if (o && typeof window.gwAudit === 'function') window.gwAudit({ type:'invoice_sent', entityType:'invoice', entityId:oppId, entityLabel:`INV for ${o.client||'Client'}` });
+    showToast('Invoice sent via email', 'success');
+  };
+  window._invRecordPayment = function(oppId) {
+    const o = oppId ? state.opportunities.find(x=>x.id===oppId) : null;
+    if (o) {
+      // Mark as paid
+      const prevStatus = o.status;
+      o.status = 'Sold / Activation';
+      state.opportunities = state.opportunities.map(x=>x.id===oppId?o:x);
+      saveState();
+      if (typeof window.gwWorkflow === 'object') window.gwWorkflow.depositReceived({ entityType:'invoice', entityId:oppId, entityLabel:`INV for ${o.client||'Client'}`, client:o.client, amount:Number(o.jobValue||0), prevStatus });
+      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'payment_recorded', entityType:'invoice', entityId:oppId, entityLabel:`INV for ${o.client||'Client'}`, meta:{ amount:o.jobValue } });
+      showToast('Payment recorded — invoice marked paid', 'success');
+      invoiceDetail(oppId);
+    } else {
+      showToast('Payment recorded', 'success');
+    }
+  };
 }
 window.invoiceDetail = invoiceDetail;
 
@@ -11516,18 +11622,30 @@ function workOrderDetail(id) {
     saveState();
   }
 
+  const _woPrevStatus = wo.status;
   function save() {
     wo.clientName = document.getElementById('wo-client-name')?.value || wo.clientName;
     wo.type       = document.getElementById('wo-type')?.value       || wo.type;
     wo.date       = document.getElementById('wo-date')?.value       || wo.date;
     wo.time       = document.getElementById('wo-time')?.value       || wo.time;
     wo.crew       = document.getElementById('wo-crew')?.value       || wo.crew;
-    wo.status     = document.getElementById('wo-status')?.value     || wo.status;
+    const newStatus = document.getElementById('wo-status')?.value || wo.status;
     wo.readiness  = document.getElementById('wo-readiness')?.value  || wo.readiness;
     wo.notes      = document.getElementById('wo-notes')?.value      || wo.notes;
     wo.updatedAt  = new Date().toISOString();
+    // Audit status transitions
+    if (newStatus !== wo.status) {
+      wo.timeline = [...(wo.timeline||[]), { action: `Status changed to ${_p6WOStatusLabel(newStatus)}`, note: `from ${_p6WOStatusLabel(wo.status)}`, at: new Date().toISOString() }];
+      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'work_order_status_changed', entityType:'work_order', entityId:id, entityLabel:_p6WONum(wo), meta:{ from:wo.status, to:newStatus } });
+      // Fire workflow hook when WO is completed
+      if (newStatus === 'completed' && typeof window.gwWorkflow === 'object') {
+        window.gwWorkflow.workOrderCompleted({ entityId:id, entityLabel:_p6WONum(wo), clientName:wo.clientName, crew:wo.crew });
+      }
+    }
+    wo.status = newStatus;
     state.workOrders = (state.workOrders||[]).map(w => w.id===id ? wo : w);
     saveState();
+    showToast('Work order saved', 'success');
     workOrderDetail(id);
   }
 
@@ -11644,6 +11762,10 @@ function workOrderDetail(id) {
       </div>
     </section>
     <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Approvals</span></div>
+      <div id="wo-approval-panel-${id}"></div>
+    </section>
+    <section class="rp-section">
       <div class="rp-section-head"><span class="rp-section-title">Timeline</span></div>
       ${tlHtml || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No activity yet.</p>'}
     </section>`;
@@ -11662,6 +11784,12 @@ function workOrderDetail(id) {
   </div>`;
 
   window._p6WOSave = save;
+
+  // Mount approval panel in right-rail after DOM renders
+  if (typeof window.gwApproval === 'object') {
+    const apEl = document.getElementById(`wo-approval-panel-${id}`);
+    if (apEl) window.gwApproval.renderPanel(apEl, 'work_order', id, _p6WONum(wo) + (wo.clientName ? ` — ${wo.clientName}` : ''));
+  }
 }
 window.workOrderDetail = workOrderDetail;
 
@@ -12687,9 +12815,13 @@ function payments() {
     const amount = parseFloat(document.getElementById('pay-f-amount').value);
     const client = document.getElementById('pay-f-client').value.trim();
     if (!client||!amount) { showToast('Client and amount required'); return; }
-    payments_data.push({ id:'pay_'+Date.now(), clientName:client, amount, date:document.getElementById('pay-f-date').value, method:document.getElementById('pay-f-method').value, invoiceRef:document.getElementById('pay-f-inv').value.trim(), note:document.getElementById('pay-f-note').value.trim() });
+    const payRecord = { id:'pay_'+Date.now(), clientName:client, amount, date:document.getElementById('pay-f-date').value, method:document.getElementById('pay-f-method').value, invoiceRef:document.getElementById('pay-f-inv').value.trim(), note:document.getElementById('pay-f-note').value.trim() };
+    payments_data.push(payRecord);
     try { localStorage.setItem(LS_KEY, JSON.stringify(payments_data)); } catch(_) {}
     document.getElementById('pay-modal').style.display='none';
+    // Phase 8: audit + workflow hook
+    if (typeof window.gwAudit === 'function') window.gwAudit({ type:'payment_recorded', entityType:'payment', entityId:payRecord.id, entityLabel:`Payment — ${client}`, meta:{ amount, method:payRecord.method, invoiceRef:payRecord.invoiceRef } });
+    if (typeof window.gwWorkflow === 'object') window.gwWorkflow.depositReceived({ entityType:'payment', entityId:payRecord.id, entityLabel:`Payment — ${client}`, client, amount, method:payRecord.method });
     showToast(`Payment of ${_p5Money(amount)} recorded`);
     payments();
   };

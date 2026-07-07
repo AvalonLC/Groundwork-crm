@@ -832,6 +832,19 @@ function umRenderUsers(container) {
       umSaveUsers(users);
       umAddAuditEntry({ type: existingId ? 'user_updated' : 'user_created', userId, userName: name, by: window.getCurrentRep?.()?.name || 'Admin' });
 
+      // Phase 8: gwAudit + gwWorkflow hooks for role/permission changes
+      const prevUser = existingIdx >= 0 ? users[existingIdx] : null;
+      const prevRole = prevUser?.role;
+      if (typeof window.gwAudit === 'function') {
+        window.gwAudit({ type: existingId ? 'user_updated' : 'user_created', entityType:'rep', entityId:userId, entityLabel:name, meta:{ role } });
+      }
+      if (existingId && prevRole && prevRole !== role && typeof window.gwWorkflow === 'object') {
+        window.gwWorkflow.roleChanged({ entityId:userId, entityLabel:name, from:prevRole, to:role, by:window.getCurrentRep?.()?.name||'Admin' });
+      }
+      if (existingId && prevRole !== role && typeof window.gwAudit === 'function') {
+        window.gwAudit({ type:'permission_changed', entityType:'rep', entityId:userId, entityLabel:name, meta:{ from:prevRole, to:role } });
+      }
+
       // Persist to D1 so email+password auth works server-side
       const apiPayload = {
         name,
