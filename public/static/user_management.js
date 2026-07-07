@@ -1553,8 +1553,23 @@ function umRenderOnboarding(container) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB 3 — ROLES & PERMISSIONS
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── Company-default nav perms (stored separately from live perms) ──────────
+const LS_COMPANY_DEFAULTS_KEY = 'avalonCompanyRoleDefaults';
+function _umLoadCompanyDefaults() {
+  try { return JSON.parse(localStorage.getItem(LS_COMPANY_DEFAULTS_KEY) || 'null') || null; } catch(_){ return null; }
+}
+function _umSaveCompanyDefaults(d) {
+  localStorage.setItem(LS_COMPANY_DEFAULTS_KEY, JSON.stringify(d));
+}
+// Checks if a role has been customised away from the factory default
+function _umRoleIsCustomized(roleId, companyDefaults, factoryDefaults) {
+  if (!companyDefaults || !companyDefaults[roleId]) return false;
+  const factory = (factoryDefaults[roleId] || []).slice().sort().join(',');
+  const company = (companyDefaults[roleId] || []).slice().sort().join(',');
+  return factory !== company;
+}
+
 function umRenderRoles(container) {
-  // We re-use the existing nav permissions system and extend it with userManagement
   const loadNavPerms = window.loadNavPerms || (() => {
     try { return JSON.parse(localStorage.getItem('avalonNavPermissions') || '{}'); } catch(e) { return {}; }
   });
@@ -1562,21 +1577,19 @@ function umRenderRoles(container) {
     localStorage.setItem('avalonNavPermissions', JSON.stringify(p));
   });
 
-  // ── Hub hub-color map ──────────────────────────────────────────────────────
+  // ── Hub color map ──────────────────────────────────────────────────────────
   const HUB_META = {
-    Dashboard:   { color: '#3A7CA5', bg: '#EAF3FA' },
-    Sales:       { color: '#2D7A55', bg: '#EAF4EE' },
-    Financial:   { color: '#8B6914', bg: '#F8F3E6' },
-    Operations:  { color: '#6B5EA8', bg: '#F0EDF8' },
-    Reports:     { color: '#5B7FA6', bg: '#EDF1F7' },
-    Settings:    { color: '#6F7E6A', bg: '#F2F3EF' }
+    Dashboard:   { color: '#3A7CA5', bg: '#EAF3FA', icon: '📊' },
+    Sales:       { color: '#2D7A55', bg: '#EAF4EE', icon: '💼' },
+    Financial:   { color: '#8B6914', bg: '#F8F3E6', icon: '💰' },
+    Operations:  { color: '#6B5EA8', bg: '#F0EDF8', icon: '⚙️' },
+    Reports:     { color: '#5B7FA6', bg: '#EDF1F7', icon: '📈' },
+    Settings:    { color: '#6F7E6A', bg: '#F2F3EF', icon: '🔧' }
   };
-
-  // ── KIND badge labels ──────────────────────────────────────────────────────
   const KIND_LABEL = { page: '', report: 'Report', admin: 'Admin' };
 
-  // ── Canonical DEFAULT_NAV_PERMS (7 roles) ─────────────────────────────────
-  const DEFAULT_NAV_PERMS = window.DEFAULT_NAV_PERMS || {
+  // ── Factory defaults (built-in, never user-modified) ──────────────────────
+  const FACTORY_NAV_PERMS = window.DEFAULT_NAV_PERMS || {
     admin: UM_ALL_VIEWS.map(v => v.key),
     office_manager: ['today','myDashboard','teamView',
       'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
@@ -1596,73 +1609,220 @@ function umRenderRoles(container) {
     view_only: ['today','pipeline']
   };
 
+  // ── Company defaults (user-saved, used as "Default" preset baseline) ───────
+  let companyDefaults = _umLoadCompanyDefaults() || { ...FACTORY_NAV_PERMS };
+
+  // The "live" per-session overrides — what's currently checked in the matrix
   const perms = loadNavPerms();
-  // Use .hub field — group by hub in defined order
+
   const HUB_ORDER = ['Dashboard','Sales','Financial','Operations','Reports','Settings'];
   const hubs = HUB_ORDER.filter(h => UM_ALL_VIEWS.some(v => v.hub === h));
-
   const nonAdminRoles = UM_ROLE_DEFS.filter(r => r.id !== 'admin');
 
+  // Role group metadata for the visual role cards
+  const ROLE_GROUP = {
+    office_manager: { group: 'Management', icon: '🏢' },
+    rep:            { group: 'Sales',      icon: '🤝' },
+    estimator:      { group: 'Sales',      icon: '📐' },
+    field_supervisor:{ group: 'Field',     icon: '🦺' },
+    laborer:        { group: 'Field',      icon: '👷' },
+    view_only:      { group: 'Other',      icon: '👁' }
+  };
+
+  // Helper: get effective perms for a role (live override → company default → factory)
+  function effectivePerms(roleId) {
+    if (perms[roleId]) return perms[roleId];
+    if (companyDefaults[roleId]) return companyDefaults[roleId];
+    return FACTORY_NAV_PERMS[roleId] || [];
+  }
+
+  // Helper: is there a company-level customization for this role?
+  function roleHasCompanyDefault(roleId) {
+    return !!(_umLoadCompanyDefaults() || {})[roleId];
+  }
+
   container.innerHTML = `
-<div style="margin-bottom:20px">
-  <h3 style="margin:0 0 4px;font-size:16px">Role Permission Matrix</h3>
-  <p style="color:#6F7E6A;font-size:13px;margin:0">Control which views each role can access. Admin always has full access and bypasses all gates.</p>
+<style>
+  .rp-page-header { margin-bottom:24px }
+  .rp-page-title { font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B);margin:0 0 4px }
+  .rp-page-sub { font-size:12.5px;color:#6B7280;margin:0;line-height:1.5 }
+
+  /* Role Cards */
+  .rp-role-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:12px;margin-bottom:28px }
+  .rp-role-card { background:#fff;border:1.5px solid var(--gw-line,#E0DDD5);border-radius:14px;padding:15px 15px 12px;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:box-shadow .15s;position:relative;overflow:hidden }
+  .rp-role-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.09) }
+  .rp-role-card-accent { position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0 }
+  .rp-role-badge { display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em }
+  .rp-role-name { font-size:13px;font-weight:800;margin-bottom:5px }
+  .rp-role-desc { font-size:11px;color:#6B7280;line-height:1.45;margin-bottom:12px }
+  .rp-preset-row { display:flex;gap:4px;flex-wrap:wrap }
+  .rp-preset-btn { font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid var(--gw-line,#E0DDD5);background:#F9FAFB;color:#374151;cursor:pointer;font-weight:600;transition:all .15s;white-space:nowrap }
+  .rp-preset-btn:hover { background:#F0F0ED;border-color:#9CA3AF }
+  .rp-preset-btn.danger:hover { background:#FEF2F2;border-color:#FECACA;color:#DC2626 }
+  .rp-preset-btn.primary { background:#4D8A86;color:#fff;border-color:#4D8A86 }
+  .rp-preset-btn.primary:hover { background:#3a6e6b;border-color:#3a6e6b }
+  .rp-custom-badge { display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;margin-left:4px;vertical-align:middle }
+
+  /* Section dividers between role groups in matrix */
+  .rp-group-divider { border-top:3px solid transparent;display:flex;align-items:center;gap:8px;padding:5px 0 3px }
+
+  /* Matrix table */
+  .rp-matrix-wrap { overflow-x:auto;border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.05) }
+  .rp-matrix-table { width:100%;border-collapse:collapse;min-width:800px }
+  .rp-matrix-table thead { position:sticky;top:0;z-index:10 }
+  .rp-col-view { width:200px;min-width:160px;position:sticky;left:0;z-index:5 }
+
+  /* Action perms */
+  .rp-action-card { background:#fff;border:1px solid var(--gw-line,#E0DDD5);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05) }
+  .rp-action-header { background:linear-gradient(135deg,#F8F9FC,#F2F5FA);border-bottom:1px solid var(--gw-line,#E0DDD5);padding:13px 18px;display:flex;align-items:center;gap:8px }
+  .rp-action-row { padding:13px 18px;border-bottom:1px solid #F3F4F6;display:grid;align-items:center;gap:0 }
+  .rp-action-row:last-child { border-bottom:none }
+
+  /* Save defaults banner */
+  .rp-save-banner { background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:1px solid #6EE7B7;border-radius:12px;padding:14px 18px;margin-top:20px;display:flex;align-items:center;gap:14px }
+  .rp-info-strip { background:#F0F7F6;border:1px solid #C0E0DE;border-radius:10px;padding:11px 16px;font-size:11.5px;color:#2D4D4B;line-height:1.6;margin-top:16px }
+</style>
+
+<!-- Page header -->
+<div class="rp-page-header">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:5px">
+    <h3 class="rp-page-title">Roles &amp; Permissions</h3>
+    <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#4D8A86;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:20px;padding:2px 9px;letter-spacing:.05em">🔒 Live</span>
+  </div>
+  <p class="rp-page-sub">Control which views each role can access. Use <strong>Set as Company Default</strong> to save your preferred access levels as the baseline for new hires — future role assignments will start from those defaults.</p>
 </div>
 
-<!-- Role Cards -->
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:28px">
-  ${UM_ROLE_DEFS.map(r => `
-  <div class="gw-um-role-card" style="border:1px solid ${r.color}40">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <span style="width:9px;height:9px;border-radius:50%;background:${r.color};flex-shrink:0"></span>
-      <div style="font-weight:700;font-size:13px;color:${r.color}">${r.label}</div>
+<!-- ══ Role Cards ══════════════════════════════════════════════════════════ -->
+<div class="rp-role-grid">
+  <!-- Admin card — special -->
+  ${(() => {
+    const r = UM_ROLE_DEFS.find(x => x.id === 'admin');
+    if (!r) return '';
+    return `<div class="rp-role-card" style="border-color:${r.color}50;background:linear-gradient(135deg,#F0FAF9,#E6F5F4)">
+      <div class="rp-role-card-accent" style="background:${r.color}"></div>
+      <div class="rp-role-badge" style="background:${r.color}18;color:${r.color}">👑 Owner</div>
+      <div class="rp-role-name" style="color:${r.color}">${r.label}</div>
+      <div class="rp-role-desc">${r.description||''}</div>
+      <div style="font-size:10px;font-weight:700;color:${r.color};text-transform:uppercase;letter-spacing:.07em;padding:5px 8px;background:${r.color}12;border-radius:6px;text-align:center">Always Full Access — No Restrictions</div>
+    </div>`;
+  })()}
+
+  <!-- Non-admin role cards -->
+  ${nonAdminRoles.map(r => {
+    const meta = ROLE_GROUP[r.id] || { group: 'Other', icon: '👤' };
+    const isCustomized = _umRoleIsCustomized(r.id, _umLoadCompanyDefaults(), FACTORY_NAV_PERMS);
+    const viewCount = effectivePerms(r.id).length;
+    return `<div class="rp-role-card" id="rpc-${r.id}" style="border-color:${r.color}40">
+      <div class="rp-role-card-accent" style="background:linear-gradient(90deg,${r.color},${r.color}88)"></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
+        <div class="rp-role-badge" style="background:${r.color}15;color:${r.color}">${meta.icon} ${meta.group}</div>
+        ${isCustomized ? `<span class="rp-custom-badge">✏️ Custom</span>` : ''}
+      </div>
+      <div class="rp-role-name" style="color:${r.color}">${r.label}</div>
+      <div class="rp-role-desc">${r.description||''}</div>
+      <div style="font-size:10px;color:#9CA3AF;margin-bottom:10px">${viewCount} view${viewCount!==1?'s':''} enabled</div>
+      <div class="rp-preset-row">
+        <button class="rp-preset-btn" onclick="window._umPreset('${r.id}','full')" title="Grant access to all views">All ✓</button>
+        <button class="rp-preset-btn" onclick="window._umPreset('${r.id}','company')" title="Reset to your saved company defaults">Company Default</button>
+        <button class="rp-preset-btn danger" onclick="window._umPreset('${r.id}','none')" title="Remove all view access">None ✕</button>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid #F3F4F6">
+        <button class="rp-preset-btn primary" onclick="window._umSaveRoleAsDefault('${r.id}')" title="Save current permission set as company default for this role">💾 Set as Company Default</button>
+        ${isCustomized ? `<button class="rp-preset-btn danger" style="margin-left:4px" onclick="window._umResetToFactory('${r.id}')" title="Revert to Groundwork built-in defaults">↺ Factory</button>` : ''}
+      </div>
+    </div>`;
+  }).join('')}
+</div>
+
+<!-- ══ Company Defaults Banner ════════════════════════════════════════════ -->
+<div id="rp-company-defaults-banner" style="${_umLoadCompanyDefaults() ? '' : 'display:none'}">
+  <div class="rp-save-banner">
+    <span style="font-size:22px">🏢</span>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700;color:#065F46;margin-bottom:2px">Company Defaults Active</div>
+      <div style="font-size:12px;color:#047857;line-height:1.4">Your custom role defaults are saved. New team members assigned a role will receive your company's access baseline, not the Groundwork factory defaults. Use <strong>↺ Factory</strong> on any role card to revert a role.</div>
     </div>
-    <div style="font-size:11px;color:#6F7E6A;line-height:1.4;margin-bottom:10px">${r.description || ''}</div>
-    ${r.id !== 'admin' ? `
-    <div style="display:flex;gap:5px;flex-wrap:wrap">
-      <button class="secondary-btn" style="font-size:10px;padding:3px 8px" onclick="window._umPreset('${r.id}','full')">Full</button>
-      <button class="secondary-btn" style="font-size:10px;padding:3px 8px" onclick="window._umPreset('${r.id}','default')">Default</button>
-      <button class="secondary-btn" style="font-size:10px;padding:3px 8px" onclick="window._umPreset('${r.id}','none')">None</button>
-    </div>` : `<div style="font-size:10px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Always Full Access</div>`}
-  </div>`).join('')}
+    <button class="rp-preset-btn danger" onclick="window._umClearAllCompanyDefaults()" style="flex-shrink:0">Clear All Defaults</button>
+  </div>
 </div>
 
-<!-- Permission Matrix Table -->
-<div class="gw-um-perm-table" style="overflow-x:auto">
-  <table style="width:100%;border-collapse:collapse;min-width:700px">
+<!-- ══ Permission Matrix ═══════════════════════════════════════════════════ -->
+<div style="margin:24px 0 12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+  <div>
+    <h4 style="margin:0 0 3px;font-size:14px;font-weight:800;color:var(--gds-ink,#1F2A2B)">View Access Matrix</h4>
+    <p style="margin:0;font-size:12px;color:#6B7280">Check or uncheck views per role. Changes apply immediately. Use role cards above to set/save defaults.</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span style="font-size:11px;color:#9CA3AF">Jump to hub:</span>
+    ${['Dashboard','Sales','Financial','Operations','Reports','Settings'].map(h => {
+      const hm = HUB_META[h];
+      return `<a href="#rp-hub-${h}" style="font-size:10px;font-weight:700;color:${hm.color};background:${hm.bg};border:1px solid ${hm.color}30;padding:3px 8px;border-radius:8px;text-decoration:none">${hm.icon} ${h}</a>`;
+    }).join('')}
+  </div>
+</div>
+
+<div class="rp-matrix-wrap">
+  <table class="rp-matrix-table">
     <thead>
-      <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-        <th style="text-align:left;padding:10px 14px;font-size:11px;color:#6F7E6A;font-weight:600;width:190px;position:sticky;left:0;background:var(--gw-surface)">View</th>
-        ${nonAdminRoles.map(r => `
-        <th style="text-align:center;padding:10px 6px;font-size:11px;font-weight:700;color:${r.color};min-width:70px">
-          ${r.label}
-        </th>`).join('')}
+      <!-- Role group headers -->
+      <tr style="background:#F8F9FC;border-bottom:1px solid #E5E9F0">
+        <th class="rp-col-view" style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.08em;background:#F8F9FC">View</th>
+        <!-- Management group -->
+        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#8B6914;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #8B691420">🏢 Mgmt</th>
+        <!-- Sales group -->
+        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #2D7A5520">💼 Sales</th>
+        <!-- Field group -->
+        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6B5EA8;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6B5EA820">🦺 Field</th>
+        <!-- Other -->
+        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6F7E6A;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6F7E6A20">👁 Other</th>
+      </tr>
+      <!-- Role name headers -->
+      <tr style="background:#fff;border-bottom:2px solid #E5E9F0">
+        <th class="rp-col-view" style="padding:10px 16px;text-align:left;background:#fff"></th>
+        ${nonAdminRoles.map((r,i) => {
+          const isGroupStart = i === 0 || ROLE_GROUP[r.id]?.group !== ROLE_GROUP[nonAdminRoles[i-1]?.id]?.group;
+          const custIcon = _umRoleIsCustomized(r.id, _umLoadCompanyDefaults(), FACTORY_NAV_PERMS) ? ' ✏️' : '';
+          return `<th style="text-align:center;padding:8px 6px;min-width:80px;${isGroupStart?'border-left:2px solid '+r.color+'30':''}">
+            <div style="font-size:11px;font-weight:800;color:${r.color};line-height:1.2">${r.label.split(' ').map((w,wi)=>wi===0?w:`<br><span style="font-weight:600">${w}</span>`).join('')}${custIcon}</div>
+            <div style="font-size:9px;color:#9CA3AF;margin-top:2px">${effectivePerms(r.id).length} views</div>
+          </th>`;
+        }).join('')}
       </tr>
     </thead>
     <tbody>
       ${hubs.map(hub => {
-        const hMeta = HUB_META[hub] || { color: '#6F7E6A', bg: '#F5F5F0' };
+        const hMeta = HUB_META[hub] || { color: '#6F7E6A', bg: '#F5F5F0', icon: '•' };
         const hViews = UM_ALL_VIEWS.filter(v => v.hub === hub);
         return `
-        <tr>
-          <td colspan="${nonAdminRoles.length + 1}" style="padding:7px 14px;background:${hMeta.bg};border-top:2px solid ${hMeta.color}30;border-bottom:1px solid ${hMeta.color}30">
-            <span style="font-size:10px;font-weight:800;color:${hMeta.color};text-transform:uppercase;letter-spacing:.1em">${hub}</span>
+        <!-- Hub header row -->
+        <tr id="rp-hub-${hub}">
+          <td colspan="${nonAdminRoles.length + 1}" style="padding:0">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:linear-gradient(135deg,${hMeta.bg},${hMeta.bg}CC);border-top:2px solid ${hMeta.color}25;border-bottom:1px solid ${hMeta.color}20">
+              <span style="font-size:14px">${hMeta.icon}</span>
+              <span style="font-size:10px;font-weight:800;color:${hMeta.color};text-transform:uppercase;letter-spacing:.12em">${hub}</span>
+              <span style="font-size:10px;color:${hMeta.color}80;margin-left:auto">${hViews.length} view${hViews.length!==1?'s':''}</span>
+            </div>
           </td>
         </tr>
-        ${hViews.map(v => {
+        <!-- View rows -->
+        ${hViews.map((v,vi) => {
           const kindBadge = v.kind && v.kind !== 'page'
-            ? `<span style="margin-left:5px;font-size:9px;padding:1px 5px;border-radius:3px;background:${hMeta.bg};color:${hMeta.color};border:1px solid ${hMeta.color}40;font-weight:600;text-transform:uppercase;letter-spacing:.04em">${KIND_LABEL[v.kind]||v.kind}</span>`
+            ? `<span style="margin-left:6px;font-size:9px;padding:1px 5px;border-radius:4px;background:${hMeta.bg};color:${hMeta.color};border:1px solid ${hMeta.color}35;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${KIND_LABEL[v.kind]||v.kind}</span>`
             : '';
+          const rowBg = vi % 2 === 0 ? 'transparent' : 'rgba(0,0,0,.015)';
           return `
-        <tr style="border-bottom:1px solid var(--gw-line)">
-          <td style="padding:9px 14px;font-size:12px;color:#D6D1C4;position:sticky;left:0;background:var(--gw-bg,#1A2020)">${v.label}${kindBadge}</td>
-          ${nonAdminRoles.map(r => {
-            const rolePerms = perms[r.id] || DEFAULT_NAV_PERMS[r.id] || [];
+        <tr style="border-bottom:1px solid #F3F4F6;background:${rowBg}" class="rp-view-row" onmouseover="this.style.background='#F9FDF9'" onmouseout="this.style.background='${rowBg}'">
+          <td class="rp-col-view" style="padding:8px 16px;font-size:12px;color:var(--gds-ink,#1F2A2B);background:${rowBg};border-right:1px solid #F0F0ED">
+            ${v.label}${kindBadge}
+          </td>
+          ${nonAdminRoles.map((r,ri) => {
+            const isGroupStart = ri === 0 || ROLE_GROUP[r.id]?.group !== ROLE_GROUP[nonAdminRoles[ri-1]?.id]?.group;
+            const rolePerms = effectivePerms(r.id);
             const checked = rolePerms.includes(v.key);
-            return `<td style="text-align:center;padding:7px">
+            return `<td style="text-align:center;padding:7px 4px;${isGroupStart?'border-left:2px solid '+r.color+'20':''}">
               <input type="checkbox" ${checked ? 'checked' : ''}
                 onchange="window._umTogglePerm('${r.id}','${v.key}',this.checked)"
-                style="width:15px;height:15px;accent-color:${r.color};cursor:pointer">
+                style="width:16px;height:16px;accent-color:${r.color};cursor:pointer;border-radius:3px">
             </td>`;
           }).join('')}
         </tr>`;
@@ -1672,51 +1832,140 @@ function umRenderRoles(container) {
   </table>
 </div>
 
-<div style="margin-top:12px;font-size:11px;color:#5C6B58">Changes take effect immediately. Admin always bypasses all checks regardless of matrix state.</div>
+<div class="rp-info-strip" style="margin-bottom:0">
+  💡 <strong>Tip:</strong> After customizing a role's checkboxes, click <strong>💾 Set as Company Default</strong> on that role's card to save it as the starting point for all future hires in that role. Changes to live checkboxes take effect immediately for existing users — defaults only apply to new assignments.
+</div>
 
-<!-- ── Action Permissions ─────────────────────────────────────────────── -->
+<!-- ══ Action Permissions ═════════════════════════════════════════════════ -->
 <div style="margin-top:28px">
   <div style="margin-bottom:14px">
     <h4 style="margin:0 0 3px;font-size:14px;font-weight:800;color:var(--gds-ink,#1F2A2B)">Action Permissions</h4>
-    <p style="margin:0;font-size:12px;color:var(--gw-muted,#5E6E6F)">Control what destructive or elevated actions each role can perform beyond their nav access.</p>
+    <p style="margin:0;font-size:12px;color:#6B7280">Control destructive or elevated actions beyond nav access. These override individual capability flags.</p>
   </div>
-  <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:12px;overflow:hidden">
-    <!-- Header row -->
-    <div style="display:grid;grid-template-columns:1fr ${nonAdminRoles.map(()=>'80px').join(' ')};gap:0;padding:10px 16px;border-bottom:1px solid var(--gw-line,#E0DDD5);background:var(--gw-surface,#FFFFFF)">
-      <div style="font-size:11px;font-weight:700;color:var(--gw-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.06em">Permission</div>
-      ${nonAdminRoles.map(r => `<div style="font-size:11px;font-weight:700;color:${r.color};text-align:center;text-transform:uppercase;letter-spacing:.05em">${r.label.split(' ')[0]}</div>`).join('')}
+
+  <div class="rp-action-card">
+    <!-- Header -->
+    <div class="rp-action-header">
+      <span style="font-size:15px">⚡</span>
+      <span style="font-size:11px;font-weight:800;color:#4A5568;text-transform:uppercase;letter-spacing:.1em">Capability Toggles</span>
     </div>
-    <!-- can_delete_leads row -->
-    <div style="display:grid;grid-template-columns:1fr ${nonAdminRoles.map(()=>'80px').join(' ')};gap:0;padding:12px 16px;align-items:center">
+
+    <!-- Grid: Permission label + per-role toggle columns -->
+    <!-- Sub-header row -->
+    <div class="rp-action-row" style="background:#FAFBFC;padding:9px 18px;border-bottom:2px solid #E5E9F0"
+      style="grid-template-columns:1fr ${nonAdminRoles.map(()=>'72px').join(' ')}">
+      <div style="font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.08em;grid-column:1">Permission</div>
+      ${nonAdminRoles.map((r,i) => {
+        const isGroupStart = i === 0 || ROLE_GROUP[r.id]?.group !== ROLE_GROUP[nonAdminRoles[i-1]?.id]?.group;
+        return `<div style="text-align:center;font-size:10px;font-weight:800;color:${r.color};${isGroupStart?'border-left:2px solid '+r.color+'30;padding-left:4px':''}">${r.label.split(' / ')[0].split(' ')[0]}</div>`;
+      }).join('')}
+    </div>
+
+    ${[
+      { key:'can_delete_leads',   label:'Delete Leads',     desc:'Permanently delete leads from the pipeline' },
+      { key:'can_send_invoice',   label:'Send Invoices',    desc:'Send invoices to clients from Financial hub' },
+      { key:'can_approve_time',   label:'Approve Time',     desc:'Approve or reject time entries for crew' },
+      { key:'can_dispatch_crews', label:'Dispatch Crews',   desc:'Assign and dispatch crews from the dispatch board' },
+      { key:'can_manage_users',   label:'Manage Users',     desc:'Add, edit, and deactivate team member accounts' }
+    ].map((cap, capIdx) => `
+    <div class="rp-action-row" style="grid-template-columns:1fr ${nonAdminRoles.map(()=>'72px').join(' ')};${capIdx%2===1?'background:#FAFBFC':''}">
       <div>
-        <div style="font-size:13px;font-weight:600;color:var(--gds-ink,#1F2A2B);margin-bottom:2px">Delete Leads</div>
-        <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Allow this role to permanently delete any lead from the pipeline</div>
+        <div style="font-size:12.5px;font-weight:600;color:var(--gds-ink,#1F2A2B);margin-bottom:2px">${cap.label}</div>
+        <div style="font-size:11px;color:#6B7280">${cap.desc}</div>
       </div>
-      ${nonAdminRoles.map(r => {
+      ${nonAdminRoles.map((r,ri) => {
         const roleD1 = window._gwRoles ? window._gwRoles.find(d => d.id === r.id) : null;
-        const caps = (roleD1 && roleD1.permissions && roleD1.permissions.capabilities) || (roleD1 && roleD1.permissions) || {};
-        const isOn = !!(caps.can_delete_leads);
-        return `<div style="text-align:center">
-          <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer" title="${r.label}">
-            <input type="checkbox" ${isOn ? 'checked' : ''} id="acp-del-${r.id}"
-              onchange="window._umToggleActionPerm('${r.id}','can_delete_leads',this.checked)"
+        const caps2 = (roleD1 && roleD1.permissions && roleD1.permissions.capabilities) || (roleD1 && roleD1.permissions) || {};
+        const defCap = (getRoleDefs().find(d=>d.id===r.id)||{}).capabilities||{};
+        const isOn = (cap.key in caps2) ? !!caps2[cap.key] : !!defCap[cap.key];
+        const isGroupStart = ri === 0 || ROLE_GROUP[r.id]?.group !== ROLE_GROUP[nonAdminRoles[ri-1]?.id]?.group;
+        return `<div style="text-align:center;${isGroupStart?'border-left:2px solid '+r.color+'20':''}">
+          <label style="position:relative;display:inline-flex;align-items:center;cursor:pointer" title="${r.label}: ${cap.label}">
+            <input type="checkbox" ${isOn?'checked':''} id="acp-${cap.key}-${r.id}"
+              onchange="window._umToggleActionPerm('${r.id}','${cap.key}',this.checked)"
               style="position:absolute;opacity:0;width:0;height:0">
-            <span style="display:inline-block;width:36px;height:20px;border-radius:10px;background:${isOn ? r.color : '#CBD0C8'};transition:background .2s;position:relative;flex-shrink:0" id="acp-del-track-${r.id}">
-              <span style="position:absolute;top:2px;left:${isOn ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s" id="acp-del-thumb-${r.id}"></span>
+            <span style="display:inline-block;width:36px;height:20px;border-radius:10px;background:${isOn?r.color:'#D1D5DB'};transition:background .2s;position:relative;flex-shrink:0;box-shadow:inset 0 1px 2px rgba(0,0,0,.1)" id="acp-track-${cap.key}-${r.id}">
+              <span style="position:absolute;top:2px;left:${isOn?'18px':'2px'};width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);transition:left .18s" id="acp-thumb-${cap.key}-${r.id}"></span>
             </span>
           </label>
         </div>`;
       }).join('')}
-    </div>
+    </div>`).join('')}
   </div>
-  <div style="margin-top:8px;font-size:11px;color:var(--gw-muted,#5E6E6F)">
-    <strong>Owner</strong> can always delete leads regardless of this setting.
+
+  <div style="margin-top:8px;font-size:11px;color:#6B7280">
+    <strong>Owner</strong> always retains all capabilities regardless of these settings.
   </div>
 </div>
 `;
 
+  // ── Wire up all event handlers ────────────────────────────────────────────
+  window._umTogglePerm = function(roleId, viewKey, enabled) {
+    const p = loadNavPerms();
+    if (!p[roleId]) p[roleId] = [...effectivePerms(roleId)];
+    if (enabled) { if (!p[roleId].includes(viewKey)) p[roleId].push(viewKey); }
+    else { p[roleId] = p[roleId].filter(v => v !== viewKey); }
+    saveNavPerms(p);
+    // Update view count badge in header + card
+    const th = document.querySelector(`th[data-role="${roleId}"] .rp-view-count`);
+    if (th) th.textContent = p[roleId].length + ' views';
+  };
+
+  window._umPreset = function(roleId, preset) {
+    const ALL     = UM_ALL_VIEWS.map(v => v.key);
+    const COMPANY = (companyDefaults[roleId]) || FACTORY_NAV_PERMS[roleId] || [];
+    const views   = preset === 'full' ? ALL : preset === 'none' ? [] : COMPANY;
+    const p = loadNavPerms();
+    p[roleId] = [...views];
+    saveNavPerms(p);
+    const role = umRoleDef(roleId);
+    const label = preset === 'full' ? 'Full Access' : preset === 'none' ? 'No Access' : 'Company Default';
+    umToast(`${role.label} → ${label}`);
+    umRenderRoles(container);
+  };
+
+  window._umSaveRoleAsDefault = function(roleId) {
+    const p = loadNavPerms();
+    const current = p[roleId] ? [...p[roleId]] : [...effectivePerms(roleId)];
+    const cd = _umLoadCompanyDefaults() || { ...FACTORY_NAV_PERMS };
+    cd[roleId] = current;
+    _umSaveCompanyDefaults(cd);
+    companyDefaults = cd;
+    const role = umRoleDef(roleId);
+    umToast(`✅ "${role.label}" company default saved — ${current.length} views`);
+    // Show banner
+    const banner = document.getElementById('rp-company-defaults-banner');
+    if (banner) banner.style.display = '';
+    // Refresh card to show Custom badge
+    umRenderRoles(container);
+  };
+
+  window._umResetToFactory = function(roleId) {
+    if (!confirm(`Reset "${umRoleDef(roleId).label}" to Groundwork built-in defaults? This removes your company customization for this role.`)) return;
+    const cd = _umLoadCompanyDefaults() || {};
+    delete cd[roleId];
+    _umSaveCompanyDefaults(Object.keys(cd).length ? cd : null);
+    if (Object.keys(cd).length === 0) localStorage.removeItem(LS_COMPANY_DEFAULTS_KEY);
+    companyDefaults = _umLoadCompanyDefaults() || { ...FACTORY_NAV_PERMS };
+    // Also reset live perms for this role
+    const p = loadNavPerms();
+    delete p[roleId];
+    saveNavPerms(p);
+    umToast(`${umRoleDef(roleId).label} → Factory defaults restored`);
+    umRenderRoles(container);
+  };
+
+  window._umClearAllCompanyDefaults = function() {
+    if (!confirm('Clear ALL company role defaults? All roles will revert to Groundwork built-in factory defaults.')) return;
+    localStorage.removeItem(LS_COMPANY_DEFAULTS_KEY);
+    companyDefaults = { ...FACTORY_NAV_PERMS };
+    const banner = document.getElementById('rp-company-defaults-banner');
+    if (banner) banner.style.display = 'none';
+    umToast('All company defaults cleared — using factory defaults');
+    umRenderRoles(container);
+  };
+
   window._umToggleActionPerm = async function(roleId, permKey, enabled) {
-    // Update in-memory _gwRoles immediately for instant UI feedback
     if (window._gwRoles) {
       const rd = window._gwRoles.find(r => r.id === roleId);
       if (rd) {
@@ -1724,14 +1973,11 @@ function umRenderRoles(container) {
         rd.permissions[permKey] = enabled;
       }
     }
-    // Animate toggle
-    const track = document.getElementById(`acp-del-track-${roleId}`);
-    const thumb = document.getElementById(`acp-del-thumb-${roleId}`);
-    const roleDef = (window._gwRoles || []).find(r => r.id === roleId);
-    if (track) track.style.background = enabled ? (roleDef?.color || '#4D8A86') : '#CBD0C8';
+    const track = document.getElementById(`acp-track-${permKey}-${roleId}`);
+    const thumb = document.getElementById(`acp-thumb-${permKey}-${roleId}`);
+    const roleDef2 = (window._gwRoles || []).find(r => r.id === roleId) || umRoleDef(roleId);
+    if (track) track.style.background = enabled ? (roleDef2?.color || '#4D8A86') : '#D1D5DB';
     if (thumb) thumb.style.left = enabled ? '18px' : '2px';
-
-    // Persist to D1 via PUT /api/roles/:id
     try {
       const rd = window._gwRoles ? window._gwRoles.find(r => r.id === roleId) : null;
       const currentPerms = (rd && rd.permissions) ? { ...rd.permissions } : {};
@@ -1744,41 +1990,16 @@ function umRenderRoles(container) {
       });
       const j = await res.json();
       if (j.ok === false) throw new Error(j.error || 'Save failed');
-      umToast(`${permKey === 'can_delete_leads' ? 'Delete Leads' : permKey} ${enabled ? 'enabled' : 'disabled'} for ${roleDef?.label || roleId}`);
+      umToast(`${roleDef2?.label || roleId}: ${permKey.replace('can_','').replace(/_/g,' ')} ${enabled?'enabled':'disabled'}`);
     } catch(e) {
-      umToast('Failed to save: ' + e.message, 'error');
-      // Revert in-memory on failure
+      umToast('Save failed: ' + e.message, 'error');
       if (window._gwRoles) {
         const rd = window._gwRoles.find(r => r.id === roleId);
         if (rd && rd.permissions) rd.permissions[permKey] = !enabled;
       }
-      if (track) track.style.background = !enabled ? (roleDef?.color || '#4D8A86') : '#CBD0C8';
+      if (track) track.style.background = !enabled ? (roleDef2?.color || '#4D8A86') : '#D1D5DB';
       if (thumb) thumb.style.left = !enabled ? '18px' : '2px';
     }
-  };
-
-  window._umTogglePerm = function(roleId, viewKey, enabled) {
-    const perms = loadNavPerms();
-    if (!perms[roleId]) perms[roleId] = [...(DEFAULT_NAV_PERMS[roleId] || [])];
-    if (enabled) {
-      if (!perms[roleId].includes(viewKey)) perms[roleId].push(viewKey);
-    } else {
-      perms[roleId] = perms[roleId].filter(v => v !== viewKey);
-    }
-    saveNavPerms(perms);
-    umToast('Permission updated');
-  };
-
-  window._umPreset = function(roleId, preset) {
-    const ALL  = UM_ALL_VIEWS.map(v => v.key);
-    const DEFAULT = (window.DEFAULT_NAV_PERMS || {})[roleId] || [];
-    const views = preset === 'full' ? ALL : preset === 'none' ? [] : DEFAULT;
-    const perms = loadNavPerms();
-    perms[roleId] = [...views];
-    saveNavPerms(perms);
-    const role = umRoleDef(roleId);
-    umToast(`${role.label} → ${preset === 'full' ? 'Full Access' : preset === 'none' ? 'No Access' : 'Defaults'}`);
-    umRenderRoles(container);
   };
 }
 
