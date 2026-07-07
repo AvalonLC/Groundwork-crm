@@ -163,7 +163,9 @@ const NAV_PERMS_KEY = 'avalonNavPermissions';
 const DEFAULT_NAV_PERMS = {
   // Admin: all views — bypasses gate anyway but listed for completeness
   admin: ['today','myDashboard','teamView',
-    'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+    'pipeline','lead','clients','properties','estimates',
+    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
@@ -171,17 +173,21 @@ const DEFAULT_NAV_PERMS = {
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
   // Office Manager: everything except system-level admin settings
   office_manager: ['today','myDashboard','teamView',
-    'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+    'pipeline','lead','clients','properties','estimates',
+    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
     'approvalQueue','auditLog','portalAdmin','automationCenter'],
-  // Sales Rep: full sales workflow — pipeline through academy, no ops/financial/settings
+  // Sales Rep: full sales workflow, no ops/financial/settings
   rep: ['today','myDashboard',
-    'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    'pipeline','lead','clients','properties','estimates',
+    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
   // Estimator: narrow quote/pricing specialist only
-  estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+  estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
   // Field Supervisor: full operations hub + ops/team reports, no sales/financial/settings
   field_supervisor: ['today','myDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
@@ -399,7 +405,9 @@ function fallbackCopy(text){
       today:'Today', myDashboard:'My Dashboard', teamView:'Team View',
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
       estimates:'Estimates', communications:'Communications', automations:'Automations',
-      templates:'Templates', campaigns:'Campaigns', process:'Sales Process',
+      templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
+      playbooks:'Playbooks', aiAssist:'AI Assist',
+      campaigns:'Campaigns', process:'Sales Process',
       forms:'Forms', scripts:'Scripts', emailTemplates:'Email Templates',
       objections:'Objections', calculator:'Pricing Tools', ai:'AI Assistant',
       academy:'Academy', financialHub:'Financial', invoices:'Invoices',
@@ -482,8 +490,9 @@ function show(viewName='today', param){
       // Sales
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
       estimates:'Estimates', communications:'Communications', automations:'Automations',
-      templates:'Templates', campaigns:'Campaigns / Drips',
-      process:'Sales Process', forms:'Forms & Checklists', scripts:'Scripts',
+      templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
+      playbooks:'Playbooks', aiAssist:'AI Assist',
+      campaigns:'Campaigns / Drips', process:'Sales Process', forms:'Forms & Checklists', scripts:'Scripts',
       emailTemplates:'Email Templates', objections:'Objection Handling',
       calculator:'Pricing Tools', ai:'AI Assistant', academy:'Academy',
       // Financial
@@ -611,7 +620,14 @@ function show(viewName='today', param){
     automationCenter: () => (typeof window.automationCenter === 'function') ? window.automationCenter() : _p8Stub('Automation Center'),
     fieldMode:        () => (typeof window.fieldMode        === 'function') ? window.fieldMode()        : _p8Stub('Field Mode'),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ai};
+  // Engagement consolidated routes
+  const engRoute = {
+    sequences:  ()   => sequences(),
+    talkTracks: ()   => talkTracks(),
+    playbooks:  ()   => playbooks(),
+    aiAssist:   ()   => ai(),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -4521,9 +4537,9 @@ function scripts(){
 function templates(){
   const cats = ['All', ...new Set(data.templates.map(t=>t.category))];
   view.innerHTML = `
-<div class="eyebrow">Copy-Ready Communication</div>
-<h1 style="color:var(--ink)">Email Templates</h1>
-<p class="lede">Templates for every stage of the sales conversation. Personalize with a live lead to auto-fill client name, project, service line, and follow-up date.</p>
+<div class="eyebrow">Engagement</div>
+<h1 style="color:var(--ink)">Templates</h1>
+<p class="lede">Message templates for every stage of the sales conversation. Covers email, follow-up, SMS-style, and closing language. Personalize with a live lead to auto-fill client name, project, service line, and follow-up date.</p>
 
 <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
   <input id="tmplSearch" type="search" placeholder="Search templates…" style="flex:1;min-width:180px;max-width:280px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:.88rem;color:var(--ink);background:var(--surface)">
@@ -12668,6 +12684,366 @@ function emailTemplates() {
   // Route to existing templates view — emailTemplates is an alias for templates
   templates();
   window._currentView = 'emailTemplates';
+}
+
+// ── Engagement: Sequences (merged: Automations + Campaigns / Drips) ───────────
+function sequences(tab) {
+  window._currentView = 'sequences';
+  activateNav('sequences');
+  const activeTab = tab || window._seqTab || 'campaigns';
+  window._seqTab = activeTab;
+
+  const LS_KEY = 'avalonCampaigns';
+  let campaigns_data = [];
+  try { campaigns_data = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(_) {}
+  const statusColor = { active:'#2D7A55', paused:'#8B6914', draft:'#5B7FA6', completed:'#6F7E6A' };
+
+  function tabBtn(id, label) {
+    return `<button class="tab ${activeTab===id?'active':''}" onclick="sequences('${id}')">${label}</button>`;
+  }
+
+  let content = '';
+
+  if (activeTab === 'campaigns') {
+    const cards = campaigns_data.map(cam => `
+      <div style="background:var(--gw-card,var(--surface));border:1px solid var(--gw-line,var(--line));border-radius:10px;padding:16px;position:relative">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14px;color:var(--ink);margin-bottom:3px">${escapeHtml(cam.name||'Untitled')}</div>
+            <div style="font-size:12px;color:var(--muted)">${escapeHtml(cam.description||'')}</div>
+          </div>
+          <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;background:${statusColor[cam.status]||'#6F7E6A'}22;color:${statusColor[cam.status]||'#6F7E6A'};border:1px solid ${statusColor[cam.status]||'#6F7E6A'}44">${cam.status||'draft'}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+          <div style="text-align:center;background:var(--surface);border-radius:7px;padding:8px"><div style="font-size:18px;font-weight:800;color:var(--ink)">${cam.steps?.length||0}</div><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase">Steps</div></div>
+          <div style="text-align:center;background:var(--surface);border-radius:7px;padding:8px"><div style="font-size:18px;font-weight:800;color:var(--ink)">${cam.contacts?.length||0}</div><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase">Contacts</div></div>
+          <div style="text-align:center;background:var(--surface);border-radius:7px;padding:8px"><div style="font-size:18px;font-weight:800;color:#2D7A55">${cam.sent||0}</div><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase">Sent</div></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="secondary-btn" style="font-size:12px;padding:5px 12px" onclick="window._seqCamEdit('${cam.id}')">Edit</button>
+          <button class="secondary-btn" style="font-size:12px;padding:5px 12px;color:${cam.status==='active'?'#8B6914':'#2D7A55'}" onclick="window._seqCamToggle('${cam.id}')">${cam.status==='active'?'Pause':'Activate'}</button>
+          <button class="secondary-btn" style="font-size:12px;padding:5px 12px;color:#A05050;margin-left:auto" onclick="window._seqCamDelete('${cam.id}')">Delete</button>
+        </div>
+      </div>`).join('');
+
+    content = campaigns_data.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">${cards}</div>`
+      : `<div style="text-align:center;padding:60px 24px;background:var(--surface);border:1px solid var(--line);border-radius:12px">
+           <h3 style="margin:0 0 8px;color:var(--ink)">No sequences yet</h3>
+           <p style="color:var(--muted);font-size:14px;max-width:360px;margin:0 auto 20px">Create a multi-step follow-up sequence to nurture leads or re-engage past clients.</p>
+           <button class="primary-btn" onclick="window._seqCamNew()">Create First Sequence</button>
+         </div>`;
+  } else {
+    // Automations tab — delegates to automationManager
+    content = `<div id="seq-auto-slot"></div>`;
+  }
+
+  view.innerHTML = `
+<div style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="eyebrow">Engagement</div>
+  <h1 style="color:var(--ink)">Sequences</h1>
+  <p class="lede">Multi-step outreach sequences, drip campaigns, and automation rules.</p>
+  <div class="tabs" style="margin:0 0 24px">${tabBtn('campaigns','Drip Campaigns')}${tabBtn('automations','Automation Rules')}</div>
+  ${content}
+
+  <div id="seq-cam-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--surface);border-radius:14px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;padding:24px">
+      <h3 style="margin:0 0 16px;font-size:16px" id="seq-cam-modal-title">New Sequence</h3>
+      <div style="display:grid;gap:12px;margin-bottom:16px">
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600">Sequence Name</label>
+          <input id="seq-f-name" type="text" placeholder="e.g. 30-Day Estimate Follow-Up" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);box-sizing:border-box"></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600">Description</label>
+          <textarea id="seq-f-desc" rows="2" placeholder="What is this sequence for?" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);resize:vertical;box-sizing:border-box"></textarea></div>
+        <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;font-weight:600">Steps (one per line: Day X — Action)</label>
+          <textarea id="seq-f-steps" rows="5" placeholder="Day 1 — Send thank-you email&#10;Day 3 — Follow-up call&#10;Day 7 — Send pricing reminder" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:12px;font-family:monospace;background:var(--card);color:var(--ink);resize:vertical;box-sizing:border-box"></textarea></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="secondary-btn" onclick="document.getElementById('seq-cam-modal').style.display='none'">Cancel</button>
+        <button class="primary-btn" onclick="window._seqCamSave()">Save Sequence</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+
+  if (activeTab === 'automations') {
+    // Render automation manager into the slot
+    const slot = document.getElementById('seq-auto-slot');
+    if (slot && typeof automationManager === 'function') {
+      const tmp = document.createElement('div');
+      document.body.appendChild(tmp);
+      const origView = window.view;
+      window.view = tmp;
+      automationManager();
+      window.view = origView;
+      slot.innerHTML = tmp.innerHTML;
+      document.body.removeChild(tmp);
+    } else if (slot) {
+      slot.innerHTML = `<div style="text-align:center;padding:48px;color:var(--muted)">Automation rules module loading…</div>`;
+    }
+  }
+
+  let _editingSeqId = null;
+
+  window._seqCamNew = function() {
+    _editingSeqId = null;
+    document.getElementById('seq-cam-modal-title').textContent = 'New Sequence';
+    document.getElementById('seq-f-name').value = '';
+    document.getElementById('seq-f-desc').value = '';
+    document.getElementById('seq-f-steps').value = '';
+    document.getElementById('seq-cam-modal').style.display = 'flex';
+  };
+  document.querySelector('[onclick="window._seqCamNew()"]')?.addEventListener('click', window._seqCamNew);
+  window._seqCamEdit = function(id) {
+    const cam = campaigns_data.find(c=>c.id===id); if (!cam) return;
+    _editingSeqId = id;
+    document.getElementById('seq-cam-modal-title').textContent = 'Edit Sequence';
+    document.getElementById('seq-f-name').value  = cam.name || '';
+    document.getElementById('seq-f-desc').value  = cam.description || '';
+    document.getElementById('seq-f-steps').value = (cam.steps||[]).join('\n');
+    document.getElementById('seq-cam-modal').style.display = 'flex';
+  };
+  window._seqCamSave = function() {
+    const name  = document.getElementById('seq-f-name').value.trim();
+    const desc  = document.getElementById('seq-f-desc').value.trim();
+    const steps = document.getElementById('seq-f-steps').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    if (!name) { showToast('Sequence name is required'); return; }
+    if (_editingSeqId) {
+      campaigns_data = campaigns_data.map(c => c.id===_editingSeqId ? {...c,name,description:desc,steps} : c);
+    } else {
+      campaigns_data.push({ id:'cam_'+Date.now(), name, description:desc, steps, status:'draft', contacts:[], sent:0, createdAt:new Date().toISOString() });
+    }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(campaigns_data)); } catch(_) {}
+    document.getElementById('seq-cam-modal').style.display = 'none';
+    sequences('campaigns');
+  };
+  window._seqCamToggle = function(id) {
+    campaigns_data = campaigns_data.map(c => c.id===id ? {...c, status: c.status==='active'?'paused':'active'} : c);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(campaigns_data)); } catch(_) {}
+    sequences('campaigns');
+  };
+  window._seqCamDelete = function(id) {
+    if (!confirm('Delete this sequence? This cannot be undone.')) return;
+    campaigns_data = campaigns_data.filter(c=>c.id!==id);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(campaigns_data)); } catch(_) {}
+    sequences('campaigns');
+  };
+}
+
+// ── Engagement: Talk Tracks (merged: Scripts + Objection Handling) ─────────────
+function talkTracks(tab) {
+  window._currentView = 'talkTracks';
+  activateNav('talkTracks');
+  const activeTab = tab || window._ttTab || 'scripts';
+  window._ttTab = activeTab;
+
+  const FAV_KEY = 'avalonScriptFavs';
+  function loadFavs(){ try{ return JSON.parse(localStorage.getItem(FAV_KEY)||'[]'); }catch(e){ return []; } }
+  function saveFavs(arr){ localStorage.setItem(FAV_KEY, JSON.stringify(arr)); }
+
+  const SEVERITY_COLORS = { high:'#8B3A2A', medium:'#8B6914', low:'#2D7A55' };
+  const SEVERITY_MAP    = { 'Your price is too high.':'high','I got a cheaper quote.':'high','Can you do it cheaper?':'high','I need to think about it.':'medium','I\'m not sure this is the right time.':'medium','I want to get a few more quotes.':'low' };
+
+  function tabBtn(id, label) {
+    return `<button class="tab ${activeTab===id?'active':''}" onclick="talkTracks('${id}')">${label}</button>`;
+  }
+
+  function renderScripts() {
+    const cats = ['All', ...new Set(data.scripts.map(s=>s.category))];
+    let showFavs = false;
+    let currentCat = 'All';
+    let searchVal = '';
+
+    function getList(){
+      let list = data.scripts;
+      if(showFavs){ const favs=loadFavs(); list=list.filter(s=>favs.includes(s.title)); }
+      if(currentCat!=='All') list=list.filter(s=>s.category===currentCat);
+      if(searchVal) list=list.filter(s=>(s.title+' '+s.body+' '+(s.situation||'')).toLowerCase().includes(searchVal));
+      return list;
+    }
+
+    function renderCards(){
+      const box = document.getElementById('tt-script-list');
+      if(!box) return;
+      const list = getList();
+      if(!list.length){ box.innerHTML=`<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--muted)">No scripts match.</div>`; return; }
+      box.innerHTML = list.map(s=>{
+        const favs=loadFavs(); const isFav=favs.includes(s.title);
+        const verbatim=s.category&&s.category.toLowerCase().includes('verbatim');
+        return `<article class="card" style="position:relative;border:1px solid var(--line);border-top:3px solid ${verbatim?'#8B6914':'var(--blue)'}">
+          <button onclick="toggleScriptFav('${escapeForJs(s.title)}')" style="position:absolute;top:12px;right:12px;background:none;border:none;cursor:pointer;color:${isFav?'#8B6914':'var(--muted)'}">${isFav?gwIcon('star',14,'#8B6914'):gwIcon('star',14,'#C8C3B6')}</button>
+          ${verbatim?`<div style="display:inline-block;font-size:.68rem;font-weight:700;background:#8B691422;color:#8B6914;border:1px solid #8B691444;border-radius:4px;padding:2px 7px;margin-bottom:6px">VERBATIM</div>`:''}
+          <span class="badge" style="display:block;margin-bottom:6px">${escapeHtml(s.category)}</span>
+          <h3 style="color:var(--ink);margin:0 0 6px;padding-right:28px">${escapeHtml(s.title)}</h3>
+          ${s.situation?`<p style="font-size:.8rem;color:#1A4740;font-weight:600;margin:0 0 8px;font-style:italic">When: ${escapeHtml(s.situation)}</p>`:''}
+          <div class="script-box" style="font-size:.84rem">${nl2br(s.body)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+            <button class="secondary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(s.body)}',this)">Copy Script</button>
+            <button class="secondary-btn" style="font-size:.78rem" onclick="scriptUseForLead('${escapeForJs(s.title)}','${escapeForJs(s.body)}')">Link to Lead</button>
+            <button class="secondary-btn" style="font-size:.78rem" onclick="scriptToAI('${escapeForJs(s.title)}','${escapeForJs(s.situation||'')}')">${gwIcon('ai-spark',14,'currentColor')} AI Coach</button>
+          </div>
+        </article>`;
+      }).join('');
+    }
+
+    return `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input id="tt-script-search" type="search" placeholder="Search scripts…" style="flex:1;min-width:180px;max-width:280px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:.88rem;color:var(--ink);background:var(--surface)">
+      <div class="tabs" style="margin:0;flex:1">${cats.map((c,i)=>`<button class="tab ${i===0?'active':''}" data-cat="${c}">${escapeHtml(c)}</button>`).join('')}</div>
+      <button id="tt-fav-toggle" class="secondary-btn" style="font-size:.8rem;white-space:nowrap">Favorites</button>
+    </div>
+    <div id="tt-script-list" class="grid grid-2" style="gap:14px"></div>
+    <script_render_hook></script_render_hook>`;
+  }
+
+  function renderObjections() {
+    return `<div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap">
+      <button class="tab active" data-sev="all">All Objections</button>
+      <button class="tab" data-sev="high" style="border-color:#8B3A2A44">Price / Budget</button>
+      <button class="tab" data-sev="medium" style="border-color:#8B691444">Timing / Commitment</button>
+      <button class="tab" data-sev="low" style="border-color:#2D7A5544">Shopping</button>
+    </div>
+    <div id="tt-obj-list" class="grid grid-2" style="gap:14px"></div>`;
+  }
+
+  view.innerHTML = `
+<div class="eyebrow">Engagement</div>
+<h1 style="color:var(--ink)">Talk Tracks</h1>
+<p class="lede">Conversation guides, call scripts, and objection responses for every stage of the sales process.</p>
+<div class="tabs" style="margin:0 0 24px">${tabBtn('scripts','Scripts')}${tabBtn('objections','Objection Handling')}</div>
+${activeTab==='scripts' ? renderScripts() : renderObjections()}`;
+
+  if (activeTab === 'scripts') {
+    // Wire up script tab interactivity
+    const box    = document.getElementById('tt-script-list');
+    const search = document.getElementById('tt-script-search');
+    const favBtn = document.getElementById('tt-fav-toggle');
+    let currentCat = 'All';
+    let showFavs = false;
+
+    function rerender(){
+      let list = data.scripts;
+      if(showFavs){ const favs=loadFavs(); list=list.filter(s=>favs.includes(s.title)); }
+      if(currentCat!=='All') list=list.filter(s=>s.category===currentCat);
+      const q=(search?.value||'').toLowerCase().trim();
+      if(q) list=list.filter(s=>(s.title+' '+s.body+' '+(s.situation||'')).toLowerCase().includes(q));
+      if(!list.length){ box.innerHTML=`<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--muted)">No scripts match.</div>`; return; }
+      box.innerHTML=list.map(s=>{
+        const favs=loadFavs(); const isFav=favs.includes(s.title);
+        const verbatim=s.category&&s.category.toLowerCase().includes('verbatim');
+        return `<article class="card" style="position:relative;border:1px solid var(--line);border-top:3px solid ${verbatim?'#8B6914':'var(--blue)'}">
+          <button onclick="window._ttToggleFav('${escapeForJs(s.title)}')" style="position:absolute;top:12px;right:12px;background:none;border:none;cursor:pointer;color:${isFav?'#8B6914':'var(--muted)'}">${isFav?gwIcon('star',14,'#8B6914'):gwIcon('star',14,'#C8C3B6')}</button>
+          ${verbatim?`<div style="display:inline-block;font-size:.68rem;font-weight:700;background:#8B691422;color:#8B6914;border:1px solid #8B691444;border-radius:4px;padding:2px 7px;margin-bottom:6px">VERBATIM</div>`:''}
+          <span class="badge" style="display:block;margin-bottom:6px">${escapeHtml(s.category)}</span>
+          <h3 style="color:var(--ink);margin:0 0 6px;padding-right:28px">${escapeHtml(s.title)}</h3>
+          ${s.situation?`<p style="font-size:.8rem;color:#1A4740;font-weight:600;margin:0 0 8px;font-style:italic">When: ${escapeHtml(s.situation)}</p>`:''}
+          <div class="script-box" style="font-size:.84rem">${nl2br(s.body)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+            <button class="secondary-btn" style="font-size:.78rem" onclick="copyText('${escapeForJs(s.body)}',this)">Copy Script</button>
+            <button class="secondary-btn" style="font-size:.78rem" onclick="scriptUseForLead('${escapeForJs(s.title)}','${escapeForJs(s.body)}')">Link to Lead</button>
+            <button class="secondary-btn" style="font-size:.78rem" onclick="scriptToAI('${escapeForJs(s.title)}','${escapeForJs(s.situation||'')}')">${gwIcon('ai-spark',14,'currentColor')} AI Coach</button>
+          </div>
+        </article>`;
+      }).join('');
+    }
+    rerender();
+    search?.addEventListener('input', rerender);
+    view.querySelectorAll('.tabs')[1]?.addEventListener('click',e=>{
+      if(!e.target.matches('.tab')) return;
+      view.querySelectorAll('.tabs')[1].querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      e.target.classList.add('active');
+      currentCat=e.target.dataset.cat; rerender();
+    });
+    favBtn?.addEventListener('click',()=>{
+      showFavs=!showFavs;
+      favBtn.style.color=showFavs?'#8B6914':''; favBtn.style.borderColor=showFavs?'#8B6914':'';
+      rerender();
+    });
+    window._ttToggleFav=function(title){
+      const favs=loadFavs(); const idx=favs.indexOf(title);
+      if(idx>=0) favs.splice(idx,1); else favs.push(title);
+      saveFavs(favs); rerender();
+    };
+    // keep legacy alias working
+    window.toggleScriptFav=window._ttToggleFav;
+  } else {
+    // Objections tab
+    const SEVERITY = { 'Your price is too high.':'high','I got a cheaper quote.':'high','Can you do it cheaper?':'high','I need to think about it.':'medium','I\'m not sure this is the right time.':'medium','I want to get a few more quotes.':'low' };
+    let currentSev = 'all';
+    const box = document.getElementById('tt-obj-list');
+
+    function renderObj(){
+      let list = data.objections;
+      if(currentSev!=='all') list=list.filter(o=>SEVERITY[o.objection]===currentSev);
+      if(!list.length){ box.innerHTML=`<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--muted)">No objections in this category.</div>`; return; }
+      box.innerHTML=list.map(o=>{
+        const sev=SEVERITY[o.objection]||'low';
+        const col=SEVERITY_COLORS[sev]||'#2D7A55';
+        return `<article class="card" style="border:1px solid var(--line);border-top:3px solid ${col}">
+          <div style="display:inline-block;font-size:.7rem;font-weight:700;background:${col}22;color:${col};border:1px solid ${col}44;border-radius:4px;padding:2px 8px;margin-bottom:8px">${sev.toUpperCase()}</div>
+          <h3 style="color:var(--ink);margin:0 0 10px;font-size:1rem">"${escapeHtml(o.objection)}"</h3>
+          ${o.reframes?.map(r=>`<div style="margin-bottom:12px"><div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${escapeHtml(r.label)}</div><div class="script-box" style="font-size:.83rem">${nl2br(r.script)}</div></div>`).join('')||''}
+          <button class="secondary-btn" style="font-size:.78rem;margin-top:4px" onclick="copyText('${escapeForJs((o.reframes||[])[0]?.script||'')}',this)">Copy Best Response</button>
+        </article>`;
+      }).join('');
+    }
+    renderObj();
+    view.querySelectorAll('[data-sev]').forEach(btn=>btn.addEventListener('click',()=>{
+      view.querySelectorAll('[data-sev]').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSev=btn.dataset.sev; renderObj();
+    }));
+  }
+}
+
+// ── Engagement: Playbooks (merged: Sales Process + Forms & Checklists + Pricing Tools + Academy) ──
+function playbooks(tab) {
+  window._currentView = 'playbooks';
+  activateNav('playbooks');
+  const activeTab = tab || window._pbTab || 'process';
+  window._pbTab = activeTab;
+
+  function tabBtn(id, label) {
+    return `<button class="tab ${activeTab===id?'active':''}" onclick="playbooks('${id}')">${label}</button>`;
+  }
+
+  view.innerHTML = `
+<div class="eyebrow">Engagement</div>
+<h1 style="color:var(--ink)">Playbooks</h1>
+<p class="lede">Sales process guidance, field checklists, pricing tools, and training — all in one place.</p>
+<div class="tabs" style="margin:0 0 28px">
+  ${tabBtn('process','Sales Process')}
+  ${tabBtn('forms','Forms & Checklists')}
+  ${tabBtn('pricing','Pricing Tools')}
+  ${tabBtn('academy','Academy')}
+</div>
+<div id="pb-content"></div>`;
+
+  const slot = document.getElementById('pb-content');
+  if (!slot) return;
+
+  // Delegate to existing view functions, rendering into slot
+  function renderIntoSlot(fn) {
+    const tmp = document.createElement('div');
+    document.body.appendChild(tmp);
+    const origView = window.view;
+    window.view = tmp;
+    fn();
+    window.view = origView;
+    slot.innerHTML = tmp.innerHTML;
+    document.body.removeChild(tmp);
+  }
+
+  if (activeTab === 'process') {
+    renderIntoSlot(() => process());
+    // Re-wire stage click handler since process() uses onclick with processShowStep
+    // (handlers are global so they still work)
+  } else if (activeTab === 'forms') {
+    renderIntoSlot(() => forms());
+  } else if (activeTab === 'pricing') {
+    renderIntoSlot(() => calculator());
+    // Re-wire calc functions (they are global window.calcMargin etc — still work)
+  } else if (activeTab === 'academy') {
+    renderIntoSlot(() => academy());
+  }
 }
 
 // ── Financial ─────────────────────────────────────────────────────────────────

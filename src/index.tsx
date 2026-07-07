@@ -278,10 +278,10 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
-    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
-    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
     field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports'],
     laborer: ['scheduleBoard','workOrderList','timeTracker'],
     view_only: ['today','pipeline']
@@ -634,10 +634,10 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
-    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
-    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
+    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
     field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
     laborer: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
     view_only: ['today','pipeline']
@@ -3238,62 +3238,37 @@ function getHtml(): string {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/><path d="M11 10l1.5 1.5L14 10" stroke-width="1.5"/></svg>
             Estimates
           </button>
-          <!-- Engagement -->
-          <div class="nav-subgroup">
-            <div class="nav-subgroup-label">Engagement</div>
-            <button class="nav-item nav-item--sub" data-view="communications" onclick="show('communications')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
-              Communications
-            </button>
-            <button class="nav-item nav-item--sub" data-view="automations" onclick="show('automations')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1.5"/></svg>
-              Automations
-            </button>
-            <button class="nav-item nav-item--sub" data-view="templates" onclick="show('templates')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
-              Templates
-            </button>
-            <button class="nav-item nav-item--sub" data-view="campaigns" onclick="show('campaigns')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/></svg>
-              Campaigns / Drips
-            </button>
-          </div>
-          <!-- Sales Resources -->
-          <div class="nav-subgroup">
-            <div class="nav-subgroup-label">Sales Resources</div>
-            <button class="nav-item nav-item--sub" data-view="process" onclick="show('process')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/></svg>
-              Sales Process
-            </button>
-            <button class="nav-item nav-item--sub" data-view="forms" onclick="show('forms')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
-              Forms &amp; Checklists
-            </button>
-            <button class="nav-item nav-item--sub" data-view="scripts" onclick="show('scripts')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v9a1 1 0 01-1 1H5l-3 2V3a1 1 0 011-1z"/></svg>
-              Scripts
-            </button>
-            <button class="nav-item nav-item--sub" data-view="emailTemplates" onclick="show('emailTemplates')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3M10 10.5h2"/></svg>
-              Email Templates
-            </button>
-            <button class="nav-item nav-item--sub" data-view="objections" onclick="show('objections')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor"/></svg>
-              Objection Handling
-            </button>
-            <button class="nav-item nav-item--sub" data-view="calculator" onclick="show('calculator')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1.5"/><path d="M5 4h6M5 7.5h2M9 7.5h2M5 10.5h2M9 10.5h2M5 13h2M9 13h2"/></svg>
-              Pricing Tools
-            </button>
-            <button class="nav-item nav-item--sub" data-view="ai" onclick="show('ai')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
-              AI Assistant
-            </button>
-            <button class="nav-item nav-item--sub" data-view="academy" onclick="show('academy')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 6l7 4 7-4-7-4z"/><path d="M1 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>
-              Academy
-            </button>
-          </div>
+        </div>
+      </details>
+
+      <!-- ── Engagement ── -->
+      <details class="nav-group tenant-nav">
+        <summary class="nav-summary">Engagement</summary>
+        <div class="nav-items">
+          <button class="nav-item" data-view="communications" onclick="show('communications')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z"/></svg>
+            Communications
+          </button>
+          <button class="nav-item" data-view="templates" onclick="show('templates')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v2H2zM4 8h8v1H4zM4 11h6v1H4z"/><rect x="1" y="2" width="14" height="12" rx="1.5"/></svg>
+            Templates
+          </button>
+          <button class="nav-item" data-view="sequences" onclick="show('sequences')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/></svg>
+            Sequences
+          </button>
+          <button class="nav-item" data-view="talkTracks" onclick="show('talkTracks')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v9a1 1 0 01-1 1H5l-3 2V3a1 1 0 011-1z"/></svg>
+            Talk Tracks
+          </button>
+          <button class="nav-item" data-view="playbooks" onclick="show('playbooks')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/></svg>
+            Playbooks
+          </button>
+          <button class="nav-item" data-view="aiAssist" onclick="show('aiAssist')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 100 12A6 6 0 008 2z"/><path d="M6 6.5c.3-.8 1-1.5 2-1.5s2 .7 2 1.5c0 1.3-2 2-2 3"/><circle cx="8" cy="11" r=".6" fill="currentColor"/></svg>
+            AI Assist
+          </button>
         </div>
       </details>
 
