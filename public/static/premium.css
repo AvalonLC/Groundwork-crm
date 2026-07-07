@@ -7738,9 +7738,9 @@ h1.pl-title,
   border-radius: 0 3px 3px 0;
 }
 
-/* ── L1: subtab panel (hidden until workspace is active) ── */
+/* ── L1: subtab panel — always flex; empty panels have zero height naturally ── */
 .nav-subtabs {
-  display: none;
+  display: flex;
   flex-direction: column;
   margin: 1px 6px 4px 20px;
   padding: 0;

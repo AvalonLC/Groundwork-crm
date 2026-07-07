@@ -563,10 +563,6 @@ function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
 
-  // All panels stay open — just show this one if it isn't already
-  panel.style.display = 'flex';
-  panel.style.flexDirection = 'column';
-
   // Resolve the active L1 tab: direct match OR parent of active L2
   const activeL1 = tabsConfig.find(t => t.id === activeTabId) ? activeTabId
                  : (_gwL2Parent[activeTabId] || activeTabId);
@@ -588,9 +584,8 @@ function _gwSetHeader(wsName, tabsConfig, activeTabId) {
     }
   });
 
+  // CSS keeps .nav-subtabs always flex — just set content, no display override needed
   panel.innerHTML = html;
-  panel.style.display = 'flex';
-  panel.style.flexDirection = 'column';
 }
 function _gwClearHeader() {
   // No-op: all workspace panels stay open permanently.
