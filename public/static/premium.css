@@ -8661,3 +8661,624 @@ h1.pl-title,
   color: var(--gw-muted, #5E6E6F);
   text-align: right;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LEARNING HUB — .gl-* classes
+   Track cards, lesson modals, module rows, progress bars
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Learning hub landing grid ───────────────────────────────────────────────── */
+.gl-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  margin-top: 8px;
+}
+
+/* ── Track card shell ────────────────────────────────────────────────────────── */
+.gl-track-card {
+  background: var(--gw-surface, #FFFFFF);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: box-shadow .18s ease, transform .18s ease;
+  cursor: pointer;
+}
+.gl-track-card:hover {
+  box-shadow: 0 6px 24px rgba(77,138,134,.14);
+  transform: translateY(-2px);
+}
+.gl-track-card--soon {
+  cursor: default;
+  opacity: .72;
+}
+.gl-track-card--soon:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── Track card header band ──────────────────────────────────────────────────── */
+.gl-track-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+}
+.gl-track-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.gl-track-info {
+  flex: 1;
+  min-width: 0;
+}
+.gl-track-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+  margin-bottom: 3px;
+}
+.gl-track-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gw-ink, #1F2A2B);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Coming-soon badge ───────────────────────────────────────────────────────── */
+.gl-coming-soon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--gw-sand, #F5F0E8);
+  color: var(--gw-amber, #B97B2A);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 20px;
+  margin-top: 4px;
+}
+
+/* ── Progress bar (inside card) ──────────────────────────────────────────────── */
+.gl-track-progress {
+  padding: 14px 20px 0;
+}
+.gl-track-prog-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gw-muted, #5E6E6F);
+  margin-bottom: 6px;
+}
+.gl-track-prog-bar {
+  height: 6px;
+  background: var(--gw-line, #E2EAE9);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.gl-track-prog-bar > div {
+  height: 100%;
+  border-radius: 99px;
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+  min-width: 0;
+}
+
+/* ── Module list (inside card) ───────────────────────────────────────────────── */
+.gl-mod-list {
+  padding: 8px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gl-mod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.gl-mod-row:hover {
+  background: var(--gw-bg, #F6F9F9);
+}
+.gl-mod-row--done {
+  opacity: .7;
+}
+.gl-mod-row--done .gl-mod-title {
+  text-decoration: line-through;
+  color: var(--gw-muted, #5E6E6F);
+}
+.gl-mod-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--gw-line, #E2EAE9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  transition: background .15s ease, border-color .15s ease;
+  color: #fff;
+}
+.gl-mod-check--done {
+  background: var(--gw-pine, #4D8A86);
+  border-color: var(--gw-pine, #4D8A86);
+}
+.gl-mod-body {
+  flex: 1;
+  min-width: 0;
+}
+.gl-mod-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gw-ink, #1F2A2B);
+  line-height: 1.3;
+}
+.gl-mod-meta {
+  font-size: 11px;
+  color: var(--gw-muted, #5E6E6F);
+  margin-top: 1px;
+}
+
+/* ── Status badge (Go / Done / Soon) ────────────────────────────────────────── */
+.gl-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+.gl-badge--go {
+  background: #EAF4F3;
+  color: var(--gw-pine, #4D8A86);
+}
+.gl-badge--done {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+.gl-badge--soon {
+  background: var(--gw-sand, #F5F0E8);
+  color: var(--gw-amber, #B97B2A);
+}
+
+/* ── Lesson overlay & modal ──────────────────────────────────────────────────── */
+.gl-lesson-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 28, 30, .55);
+  backdrop-filter: blur(3px);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: glOverlayIn .18s ease;
+}
+@keyframes glOverlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.gl-lesson-modal {
+  background: var(--gw-surface, #FFFFFF);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 700px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0,0,0,.22);
+  animation: glModalIn .2s cubic-bezier(.34,1.3,.64,1);
+  overflow: hidden;
+}
+@keyframes glModalIn {
+  from { transform: scale(.94) translateY(12px); opacity: 0; }
+  to   { transform: scale(1) translateY(0);      opacity: 1; }
+}
+.gl-lesson-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 24px 18px;
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+  flex-shrink: 0;
+}
+.gl-lesson-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+  margin-bottom: 5px;
+}
+.gl-lesson-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--gw-ink, #1F2A2B);
+  line-height: 1.25;
+}
+.gl-lesson-close {
+  background: var(--gw-bg, #F6F9F9);
+  border: none;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--gw-muted, #5E6E6F);
+  flex-shrink: 0;
+  transition: background .12s ease, color .12s ease;
+  line-height: 1;
+}
+.gl-lesson-close:hover {
+  background: var(--gw-line, #E2EAE9);
+  color: var(--gw-ink, #1F2A2B);
+}
+.gl-lesson-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--gw-ink, #1F2A2B);
+  overscroll-behavior: contain;
+}
+.gl-lesson-body h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 20px 0 8px;
+  color: var(--gw-ink, #1F2A2B);
+}
+.gl-lesson-body h3:first-child {
+  margin-top: 0;
+}
+.gl-lesson-body p {
+  margin: 0 0 12px;
+}
+.gl-lesson-body ul,
+.gl-lesson-body ol {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+.gl-lesson-body li {
+  margin-bottom: 6px;
+}
+.gl-lesson-body strong {
+  font-weight: 700;
+  color: var(--gw-ink, #1F2A2B);
+}
+.gl-lesson-body .gl-callout {
+  background: #EAF4F3;
+  border-left: 3px solid var(--gw-pine, #4D8A86);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.gl-lesson-body .gl-callout strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--gw-pine, #4D8A86);
+}
+.gl-lesson-body .gl-example {
+  background: var(--gw-bg, #F6F9F9);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.gl-lesson-body .gl-example-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--gw-muted, #5E6E6F);
+  margin-bottom: 6px;
+}
+.gl-lesson-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 16px 0;
+}
+.gl-lesson-body th {
+  background: var(--gw-bg, #F6F9F9);
+  font-weight: 700;
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid var(--gw-line, #E2EAE9);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--gw-muted, #5E6E6F);
+}
+.gl-lesson-body td {
+  padding: 8px 12px;
+  border: 1px solid var(--gw-line, #E2EAE9);
+  vertical-align: top;
+}
+.gl-lesson-body tr:nth-child(even) td {
+  background: #FAFCFC;
+}
+
+/* ── Lesson footer (Mark Complete) ───────────────────────────────────────────── */
+.gl-lesson-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+  flex-shrink: 0;
+  background: var(--gw-bg, #F6F9F9);
+}
+.gl-lesson-footer-left {
+  font-size: 12px;
+  color: var(--gw-muted, #5E6E6F);
+}
+.gl-lesson-done-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2E7D32;
+}
+.gl-btn-mark {
+  background: var(--gw-pine, #4D8A86);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .14s ease, transform .1s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gl-btn-mark:hover {
+  background: #3d7470;
+  transform: translateY(-1px);
+}
+.gl-btn-mark:disabled {
+  background: var(--gw-line, #E2EAE9);
+  color: var(--gw-muted, #5E6E6F);
+  cursor: default;
+  transform: none;
+}
+
+/* ── Learning hub landing page header ────────────────────────────────────────── */
+.gl-hub-header {
+  margin-bottom: 24px;
+}
+.gl-hub-hero {
+  background: linear-gradient(135deg, #EAF4F3 0%, #F5F0E8 100%);
+  border-radius: 16px;
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.gl-hub-hero-icon {
+  font-size: 40px;
+  flex-shrink: 0;
+}
+.gl-hub-hero-text h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--gw-ink, #1F2A2B);
+  margin: 0 0 6px;
+}
+.gl-hub-hero-text p {
+  font-size: 14px;
+  color: var(--gw-muted, #5E6E6F);
+  margin: 0;
+  line-height: 1.5;
+}
+.gl-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+  margin: 0 0 14px;
+}
+
+/* ── Track detail page (learnEstimating, learnFinancial, learnCrmGuide) ─────── */
+.gl-track-detail {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 24px 60px;
+}
+.gl-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 28px;
+  padding: 22px 24px;
+  background: var(--gw-surface, #FFFFFF);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 14px;
+}
+.gl-detail-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+}
+.gl-detail-meta {
+  flex: 1;
+}
+.gl-detail-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+  margin-bottom: 4px;
+}
+.gl-detail-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--gw-ink, #1F2A2B);
+  margin-bottom: 6px;
+}
+.gl-detail-desc {
+  font-size: 13px;
+  color: var(--gw-muted, #5E6E6F);
+  line-height: 1.5;
+}
+.gl-detail-prog {
+  text-align: right;
+  flex-shrink: 0;
+}
+.gl-detail-prog-num {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--gw-pine, #4D8A86);
+  line-height: 1;
+}
+.gl-detail-prog-label {
+  font-size: 11px;
+  color: var(--gw-muted, #5E6E6F);
+  margin-top: 3px;
+}
+.gl-module-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gl-module-item {
+  background: var(--gw-surface, #FFFFFF);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+}
+.gl-module-item:hover {
+  box-shadow: 0 4px 16px rgba(77,138,134,.1);
+  transform: translateY(-1px);
+  border-color: var(--gw-pine, #4D8A86);
+}
+.gl-module-item--done {
+  background: #FAFCFC;
+}
+.gl-module-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  flex-shrink: 0;
+  border: 2px solid var(--gw-line, #E2EAE9);
+  color: var(--gw-muted, #5E6E6F);
+  background: var(--gw-bg, #F6F9F9);
+}
+.gl-module-num--done {
+  background: var(--gw-pine, #4D8A86);
+  border-color: var(--gw-pine, #4D8A86);
+  color: #fff;
+}
+.gl-module-info {
+  flex: 1;
+  min-width: 0;
+}
+.gl-module-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gw-ink, #1F2A2B);
+  margin-bottom: 3px;
+}
+.gl-module-name--done {
+  text-decoration: line-through;
+  color: var(--gw-muted, #5E6E6F);
+}
+.gl-module-desc {
+  font-size: 12px;
+  color: var(--gw-muted, #5E6E6F);
+  line-height: 1.4;
+}
+.gl-module-arrow {
+  font-size: 18px;
+  color: var(--gw-muted, #5E6E6F);
+  flex-shrink: 0;
+}
+
+/* ── Responsive adjustments ──────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .gl-hub-grid {
+    grid-template-columns: 1fr;
+  }
+  .gl-hub-hero {
+    flex-direction: column;
+    text-align: center;
+    padding: 22px 20px;
+  }
+  .gl-lesson-modal {
+    border-radius: 14px;
+    max-height: 94vh;
+  }
+  .gl-lesson-header {
+    padding: 18px 18px 14px;
+  }
+  .gl-lesson-body {
+    padding: 18px;
+  }
+  .gl-lesson-footer {
+    padding: 14px 18px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .gl-btn-mark {
+    width: 100%;
+    justify-content: center;
+  }
+  .gl-detail-hero {
+    flex-direction: column;
+    text-align: center;
+  }
+  .gl-detail-prog {
+    text-align: center;
+  }
+}

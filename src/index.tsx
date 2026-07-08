@@ -3629,6 +3629,16 @@ function getHtml(): string {
         <div class="nav-subtabs" id="gw-subtabs-gwOperations"></div>
       </div>
 
+      <!-- ── Learning ── -->
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwLearning" onclick="_gwTogglePanel('gwLearning')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L8 2l6 10H2z"/><path d="M5 12v2M11 12v2M3 14h10"/></svg>
+          Learning
+          <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwLearning"></div>
+      </div>
+
       <!-- ── Admin ── -->
       <div class="nav-ws-group tenant-nav">
         <button class="nav-item nav-workspace" data-view="gwAdmin" onclick="_gwTogglePanel('gwAdmin')">

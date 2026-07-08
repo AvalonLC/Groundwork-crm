@@ -32,6 +32,8 @@ const _VIEW_WORKSPACE_MAP = {
   fieldDashboard:'gwDashboard',
   // Sales workspace
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
+  // Learning workspace
+  gwLearning:'gwLearning', academy:'gwLearning', learnEstimating:'gwLearning', learnFinancial:'gwLearning', learnCrmGuide:'gwLearning',
   estimates:'gwSales', communications:'gwSales', templates:'gwSales',
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
   aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
@@ -224,11 +226,12 @@ const NAV_PERMS_KEY = 'avalonNavPermissions';
 // top-level sidebar buttons. Legacy view names kept for alias routing and deep-link support.
 const DEFAULT_NAV_PERMS = {
   // Admin: all views — bypasses gate anyway but listed for completeness
-  admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+  admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+    'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
@@ -236,33 +239,37 @@ const DEFAULT_NAV_PERMS = {
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
   // Office Manager: everything except system-level admin settings
-  office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+  office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
+    'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
     'approvalQueue','auditLog','portalAdmin','automationCenter'],
-  // Sales Rep: full sales workflow, no ops/financial/settings
-  rep: ['gwDashboard','gwSales',
+  // Sales Rep: full sales workflow + learning
+  rep: ['gwDashboard','gwSales','gwLearning',
     'today','myDashboard',
     'pipeline','lead','clients','properties','estimates',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
-    'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
-  // Estimator: narrow quote/pricing specialist only
-  estimator: ['gwDashboard','gwSales',
-    'today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
-  // Field Supervisor: full operations hub + ops/team reports, no sales/financial/admin
-  field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
+    'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai',
+    'academy','learnEstimating','learnFinancial','learnCrmGuide'],
+  // Estimator: quote/pricing specialist + learning
+  estimator: ['gwDashboard','gwSales','gwLearning',
+    'today','pipeline','clients','properties','estimates','calculator','forms','playbooks',
+    'academy','learnEstimating','learnCrmGuide'],
+  // Field Supervisor: full operations hub + learning
+  field_supervisor: ['gwDashboard','gwOperations','gwLearning','gwAdmin',
     'today','fieldDashboard','myDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin'],
+    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
+    'learnCrmGuide'],
   // Laborer: self-service field only — assigned schedule, work orders, time
   laborer: ['gwDashboard','gwOperations','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
@@ -473,7 +480,7 @@ function fallbackCopy(text){
     const labels = {
       // Workspace top-level
       gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
-      gwOperations:'Operations', gwAdmin:'Admin',
+      gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard workspace tabs
       today:'My Day', myDashboard:'My Day', teamView:'Team',
       revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
@@ -567,6 +574,7 @@ const _gwWsNameToId = {
   Sales: 'gwSales',
   Financial: 'gwFinancial',
   Operations: 'gwOperations',
+  Learning: 'gwLearning',
   Admin: 'gwAdmin',
 };
 
@@ -715,6 +723,23 @@ function gwFinancial(tab) {
   else financialHub();
 }
 window.gwFinancial = gwFinancial;
+
+// ── Learning workspace ────────────────────────────────────────────────────────
+function gwLearning(tab) {
+  tab = tab || 'academy';
+  _gwSetHeader('Learning', [
+    {id:'academy',         label:'Sales Academy'},
+    {id:'learnEstimating', label:'Estimating 101'},
+    {id:'learnFinancial',  label:'Financial Literacy'},
+    {id:'learnCrmGuide',   label:'CRM Guide'},
+  ], tab);
+  if (tab === 'academy')           (typeof academy==='function') ? academy() : _gwTabStub('Sales Academy');
+  else if (tab === 'learnEstimating') learnEstimating();
+  else if (tab === 'learnFinancial')  learnFinancial();
+  else if (tab === 'learnCrmGuide')   learnCrmGuide();
+  else (typeof academy==='function') ? academy() : _gwTabStub('Sales Academy');
+}
+window.gwLearning = gwLearning;
 
 // ── Operations workspace ──────────────────────────────────────────────────────
 function gwOperations(tab) {
@@ -944,6 +969,14 @@ window.gwAccessModes = gwAccessModes;
     ]},
   ], null);
 
+  // Learning
+  _gwSetHeader('Learning', [
+    {id:'academy',          label:'Sales Academy'},
+    {id:'learnEstimating',  label:'Estimating 101'},
+    {id:'learnFinancial',   label:'Financial Literacy'},
+    {id:'learnCrmGuide',    label:'CRM Guide'},
+  ], null);
+
   // Admin — use defaults (no rep context yet at parse time)
   _gwSetHeader('Admin', [
     {id:'settings',        label:'General'},
@@ -963,7 +996,7 @@ window.gwAccessModes = gwAccessModes;
   ], null);
 
   // Collapse everything except Dashboard — user opens sections manually
-  ['gwSales','gwFinancial','gwOperations','gwAdmin'].forEach(wsId => {
+  ['gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].forEach(wsId => {
     const panel = document.getElementById('gw-subtabs-' + wsId);
     if (panel) {
       const group = panel.closest('.nav-ws-group');
@@ -1055,11 +1088,13 @@ function show(viewName='today', param){
     const _viewLabels = {
       // Workspace top-level
       gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
-      gwOperations:'Operations', gwAdmin:'Admin',
+      gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard
       today:'My Day', myDashboard:'My Day', teamView:'Team',
       revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
       financialReports:'Financial Snapshot', opsReports:'Operations Snapshot', teamReports:'Team',
+      // Learning
+      academy:'Sales Academy', learnEstimating:'Estimating 101', learnFinancial:'Financial Literacy', learnCrmGuide:'CRM Guide',
       // Sales
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
       estimates:'Estimates', communications:'Communications', automations:'Sequences',
@@ -1113,6 +1148,8 @@ function show(viewName='today', param){
     financialReports:'Dashboard', opsReports:'Dashboard',
     // Sales workspace tab aliases
     pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales', teamReports:'Sales',
+    // Learning workspace tab aliases
+    academy:'Learning', learnEstimating:'Learning', learnFinancial:'Learning', learnCrmGuide:'Learning',
     estimates:'Sales', communications:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
@@ -1139,11 +1176,12 @@ function show(viewName='today', param){
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
     Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
+    Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
     Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
   };
-  const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin'].includes(viewName);
+  const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].includes(viewName);
   const _isSubWsCall = ['gwResources','gwAdminWorkflow','gwAudit','gwAccessModes'].includes(viewName); // gwRecords removed — now shims via show()
   const _isDirectWsCall = _isTopWsCall || _isSubWsCall;
   // Sub-workspace direct calls: set parent workspace header so tab bar is visible
@@ -1307,6 +1345,7 @@ function show(viewName='today', param){
     gwSales:      (t) => gwSales(t),
     gwFinancial:  (t) => gwFinancial(t),
     gwOperations: (t) => gwOperations(t),
+    gwLearning:   (t) => gwLearning(t),
     gwAdmin:      (t) => gwAdmin(t),
     gwRecords:    (s) => gwRecords(s),
     gwResources:  (s) => gwResources(s),
@@ -13237,6 +13276,360 @@ function _p7Placeholder(title, icon, description, group) {
         <span style="display:inline-block;padding:4px 14px;background:var(--gw-line);border-radius:20px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.08em">Coming in a future phase</span>
       </div>
     </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LEARNING HUB — Estimating 101, Financial Literacy, CRM Guide
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Shared helper: render a lesson-list card ──────────────────────────────────
+function _learnCard(icon, title, eyebrow, color, modules, viewId, comingSoon) {
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const prog = (() => {
+    try {
+      const key = 'gwLearnProgress_' + viewId;
+      return JSON.parse(localStorage.getItem(key) || '{}');
+    } catch(_) { return {}; }
+  })();
+  const done = modules.filter(m => prog[m.id]).length;
+  const pct  = modules.length ? Math.round((done / modules.length) * 100) : 0;
+
+  const modRows = modules.map(m => {
+    const isDone = !!prog[m.id];
+    return `<div class="gl-mod-row${isDone?' gl-mod-row--done':''}" onclick="${comingSoon?'':'_glOpenLesson(\''+viewId+'\',\''+m.id+'\')'}">
+      <div class="gl-mod-check" style="border-color:${isDone?color:'var(--gw-line)'};background:${isDone?color:'transparent'}">
+        ${isDone?`<svg width="9" height="9" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`:''}
+      </div>
+      <div class="gl-mod-body">
+        <div class="gl-mod-title">${escapeHtml(m.title)}</div>
+        <div class="gl-mod-meta">${escapeHtml(m.type||'Lesson')}${m.duration?' · '+m.duration:''}</div>
+      </div>
+      ${comingSoon?'<span class="gl-badge gl-badge--soon">Soon</span>':isDone?'<span class="gl-badge gl-badge--done">Done</span>':'<span class="gl-badge gl-badge--go">Start →</span>'}
+    </div>`;
+  }).join('');
+
+  return `<div class="gl-track-card">
+    <div class="gl-track-head" style="border-left:3px solid ${color}">
+      <div class="gl-track-icon" style="background:${color}22;color:${color}">${icon}</div>
+      <div class="gl-track-info">
+        <div class="gl-track-eyebrow" style="color:${color}">${escapeHtml(eyebrow)}</div>
+        <div class="gl-track-title">${escapeHtml(title)}</div>
+        ${modules.length ? `<div class="gl-track-progress">
+          <div class="gl-track-prog-bar"><div style="width:${pct}%;background:${color}"></div></div>
+          <span class="gl-track-prog-label">${done}/${modules.length} complete</span>
+        </div>` : ''}
+      </div>
+      ${comingSoon?'<span class="gl-coming-soon">Coming Soon</span>':''}
+    </div>
+    <div class="gl-mod-list">${modRows}</div>
+  </div>`;
+}
+
+// ── Lesson modal ──────────────────────────────────────────────────────────────
+window._glOpenLesson = function(trackId, moduleId) {
+  const tracks = {
+    learnEstimating: _glEstimatingModules(),
+    learnFinancial:  _glFinancialModules(),
+    learnCrmGuide:   _glCrmModules(),
+  };
+  const mods = tracks[trackId] || [];
+  const mod  = mods.find(m => m.id === moduleId);
+  if (!mod) return;
+
+  const progKey = 'gwLearnProgress_' + trackId;
+  let prog = {};
+  try { prog = JSON.parse(localStorage.getItem(progKey)||'{}'); } catch(_){}
+  const isDone = !!prog[moduleId];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'gl-lesson-overlay';
+  overlay.className = 'gl-lesson-overlay';
+  overlay.innerHTML = `
+    <div class="gl-lesson-modal">
+      <div class="gl-lesson-header">
+        <div>
+          <div class="gl-lesson-eyebrow">${escapeHtml(mod.type||'Lesson')}</div>
+          <h2 class="gl-lesson-title">${escapeHtml(mod.title)}</h2>
+        </div>
+        <button class="gl-lesson-close" onclick="document.getElementById('gl-lesson-overlay').remove()">✕</button>
+      </div>
+      <div class="gl-lesson-body">
+        ${mod.content||'<p style="color:var(--gw-muted)">Content coming soon.</p>'}
+      </div>
+      <div class="gl-lesson-footer">
+        ${isDone
+          ? `<span style="color:#2D7A55;font-weight:700;font-size:13px">✓ Marked complete</span>`
+          : `<button class="primary-btn" onclick="_glMarkDone('${trackId}','${moduleId}')">Mark Complete ✓</button>`}
+        <button class="secondary-btn" onclick="document.getElementById('gl-lesson-overlay').remove()">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+window._glMarkDone = function(trackId, moduleId) {
+  const progKey = 'gwLearnProgress_' + trackId;
+  let prog = {};
+  try { prog = JSON.parse(localStorage.getItem(progKey)||'{}'); } catch(_){}
+  prog[moduleId] = new Date().toISOString();
+  localStorage.setItem(progKey, JSON.stringify(prog));
+  document.getElementById('gl-lesson-overlay')?.remove();
+  // Re-render current view
+  if (typeof show === 'function') show(window._currentView || trackId);
+};
+
+// ── Module data ───────────────────────────────────────────────────────────────
+function _glEstimatingModules() {
+  return [
+    { id:'est01', title:'What Is an Estimate?', type:'Lesson', duration:'5 min',
+      content:`<p>An estimate is a formal promise of what a job will cost. It sets expectations on both sides — what you'll deliver, how long it'll take, and what the client pays.</p>
+      <h3>Why accuracy matters</h3>
+      <p>Underestimating costs you margin. Overestimating costs you the deal. The goal is a number you can defend on site and still hit your gross margin target.</p>
+      <h3>The estimate document</h3>
+      <ul><li>Scope of work — exactly what's included</li><li>Materials — quantities and unit costs</li><li>Labor — hours × rate</li><li>Overhead allocation</li><li>Profit margin</li></ul>
+      <p>Every line item should be something you can explain to a client if asked.</p>` },
+    { id:'est02', title:'Reading a Site Walk', type:'Lesson', duration:'8 min',
+      content:`<p>The site walk is where the estimate is made or lost. What you observe — and what you <em>miss</em> — determines whether you win and whether you make money.</p>
+      <h3>What to document on every site walk</h3>
+      <ul>
+        <li><strong>Linear footage</strong> — measure everything, don't guess</li>
+        <li><strong>Access constraints</strong> — gates, setbacks, slopes, trees</li>
+        <li><strong>Existing conditions</strong> — rot, damage, prior work quality</li>
+        <li><strong>Material requirements</strong> — substrate type, compatibility</li>
+        <li><strong>Scope creep risks</strong> — areas that look simple but aren't</li>
+      </ul>
+      <h3>The 10% rule</h3>
+      <p>Always add a 10% materials buffer for waste, cuts, and mistakes. Never assume zero waste.</p>` },
+    { id:'est03', title:'Material Pricing Basics', type:'Lesson', duration:'6 min',
+      content:`<p>Material costs change. A price from 3 months ago may be wrong today. Always pull current pricing before building a quote.</p>
+      <h3>Cost components</h3>
+      <ul>
+        <li><strong>Purchase price</strong> — what you pay the supplier</li>
+        <li><strong>Waste factor</strong> — typically 8–12% for most materials</li>
+        <li><strong>Delivery / staging</strong> — distance, lift requirements</li>
+        <li><strong>Storage / damage risk</strong> — materials left on-site</li>
+      </ul>
+      <h3>Markup vs margin</h3>
+      <p>These are not the same. A 25% markup on $1,000 = $1,250. A 25% <em>margin</em> means the job is $1,333 (because $333 is 25% of $1,333). Confusing them costs money.</p>
+      <blockquote style="border-left:3px solid var(--gw-pine,#4D8A86);padding:8px 16px;margin:12px 0;color:var(--gw-muted);font-style:italic">Margin = Profit ÷ Revenue. Markup = Profit ÷ Cost. Always think in margin terms.</blockquote>` },
+    { id:'est04', title:'Labor Costing', type:'Lesson', duration:'7 min',
+      content:`<p>Labor is usually your biggest cost and your biggest risk. Getting hours wrong is how you lose margin on otherwise well-scoped jobs.</p>
+      <h3>Calculating labor cost</h3>
+      <ul>
+        <li><strong>Burdened rate</strong> = wage + payroll taxes + benefits + workers comp</li>
+        <li>Typically 1.3–1.5× the employee's hourly wage</li>
+        <li>Always use burdened rate in estimates — never bare wage</li>
+      </ul>
+      <h3>Productivity factors</h3>
+      <p>How long does it really take? Track actual hours against estimated hours on every job. After 20 jobs you'll have real data to work from — not guesses.</p>
+      <h3>Crew composition</h3>
+      <p>A 2-man crew on a simple job may be faster per man-hour than a 3-man crew. Don't over-crew just because you have bodies available.</p>` },
+    { id:'est05', title:'Building Your Margin', type:'Lesson', duration:'6 min',
+      content:`<p>Gross margin is what pays for everything that isn't direct job cost: your truck, your office, your time, your insurance, your growth.</p>
+      <h3>Target margin by job type</h3>
+      <ul>
+        <li>Residential replacement — 40–55% GM typical</li>
+        <li>Commercial work — 30–45% GM (higher volume, lower margin)</li>
+        <li>Service / repair — 55–70% GM (complexity premium)</li>
+      </ul>
+      <h3>Common margin mistakes</h3>
+      <ul>
+        <li>Not including overhead allocation in job cost</li>
+        <li>Using markup instead of margin in pricing</li>
+        <li>Discounting off the top without adjusting scope</li>
+        <li>Not tracking actuals vs estimate after job completion</li>
+      </ul>` },
+    { id:'est06', title:'Presenting the Estimate', type:'Lesson', duration:'5 min',
+      content:`<p>An estimate is a sales document, not just a math exercise. How you present it matters as much as the number itself.</p>
+      <h3>Structure for confidence</h3>
+      <ul>
+        <li>Lead with the value delivered — what they get, not just what it costs</li>
+        <li>Show the scope clearly — line items build trust</li>
+        <li>Anchor high — present the full scope first, options second</li>
+        <li>Don't apologize for the price — you know what it costs to do it right</li>
+      </ul>
+      <h3>Handling "It's too high"</h3>
+      <p>Before reducing price, reduce scope. Ask: "What part of the scope matters most to you?" This protects margin and shows you understand what they need.</p>` },
+  ];
+}
+
+function _glFinancialModules() {
+  return [
+    { id:'fin01', title:'Reading a P&L Statement', type:'Lesson', duration:'8 min',
+      content:`<p>The Profit & Loss statement (P&L) shows whether the business made money over a period of time. Every team member who influences costs or revenue should understand how to read one.</p>
+      <h3>The basic structure</h3>
+      <ul>
+        <li><strong>Revenue</strong> — total sales billed</li>
+        <li><strong>Cost of Goods Sold (COGS)</strong> — direct job costs (labor, materials)</li>
+        <li><strong>Gross Profit</strong> = Revenue − COGS</li>
+        <li><strong>Operating Expenses</strong> — overhead (office, trucks, insurance, salaries)</li>
+        <li><strong>Net Profit</strong> = Gross Profit − Operating Expenses</li>
+      </ul>
+      <p>A company can have high revenue and still lose money if margins are thin or overhead is too high. Revenue is vanity; profit is sanity.</p>` },
+    { id:'fin02', title:'Gross Margin vs Net Margin', type:'Lesson', duration:'6 min',
+      content:`<p>These two numbers tell very different stories about the business.</p>
+      <h3>Gross Margin</h3>
+      <p>Gross margin is revenue minus direct costs. It tells you how well you price and execute individual jobs. A 45% gross margin on a $10,000 job means $4,500 left over before overhead.</p>
+      <h3>Net Margin</h3>
+      <p>Net margin is what's left after everything — overhead, salaries, taxes. A healthy service business typically targets 8–15% net margin.</p>
+      <blockquote style="border-left:3px solid var(--gw-pine,#4D8A86);padding:8px 16px;margin:12px 0;color:var(--gw-muted);font-style:italic">If gross margin is healthy but net margin is thin, overhead is the problem. If gross margin is thin, pricing or job costing is the problem.</blockquote>` },
+    { id:'fin03', title:'Cash Flow Basics', type:'Lesson', duration:'7 min',
+      content:`<p>A profitable company can still run out of cash. Cash flow is the difference between when money comes in and when it goes out.</p>
+      <h3>Why cash flow matters</h3>
+      <ul>
+        <li>You may win a $50K job in April but not get paid until June</li>
+        <li>Materials and labor are paid before the invoice is collected</li>
+        <li>Seasonality creates peaks and valleys in revenue</li>
+      </ul>
+      <h3>How to improve cash flow</h3>
+      <ul>
+        <li><strong>Collect deposits upfront</strong> — cover your material costs before you start</li>
+        <li><strong>Invoice quickly</strong> — don't wait until the end of the month</li>
+        <li><strong>Follow up on overdue invoices</strong> — 30-day-old invoices collect at 90%; 90-day-old invoices collect at 50%</li>
+        <li><strong>Negotiate supplier terms</strong> — net-30 on materials buys you breathing room</li>
+      </ul>` },
+    { id:'fin04', title:'Understanding Invoices & Deposits', type:'Lesson', duration:'5 min',
+      content:`<p>In Groundwork, invoices and deposits are the two primary ways money flows toward the business. Understanding the difference keeps cash and records clean.</p>
+      <h3>Invoices</h3>
+      <p>An invoice is a formal billing document sent after work is completed (or at a milestone). It tracks what is owed, the due date, and payment status.</p>
+      <h3>Deposits</h3>
+      <p>A deposit is collected before the job starts. It covers material costs and protects the business if a client cancels. Deposits should be applied to the final invoice when the job closes.</p>
+      <h3>In the CRM</h3>
+      <p>Track both in the Financial workspace. Unapplied deposits show up in the Financial Snapshot so you always know what's held versus what's been applied.</p>` },
+    { id:'fin05', title:'Budget vs Actual — Why It Matters', type:'Lesson', duration:'6 min',
+      content:`<p>A budget is a plan. Actual numbers are what happened. The gap between them tells you where to focus.</p>
+      <h3>Reading the variance</h3>
+      <ul>
+        <li><strong>Positive variance</strong> — actual is better than budget (you're ahead)</li>
+        <li><strong>Negative variance</strong> — actual is behind budget (you need to catch up)</li>
+      </ul>
+      <h3>By division</h3>
+      <p>In Groundwork, the Financial Data Hub breaks budget vs actual down by division (Roofing, Siding, Windows, etc.). This tells you which business lines are performing and which need attention — not just the total.</p>
+      <h3>Using this to drive action</h3>
+      <p>If Siding is 20% behind budget in July, the question is: is it a sales problem (not enough proposals?) or an ops problem (jobs slipping into Q3?). The budget variance surfaces the conversation.</p>` },
+  ];
+}
+
+function _glCrmModules() {
+  return [
+    { id:'crm01', title:'The 5-Workspace Model', type:'Overview', duration:'4 min',
+      content:`<p>Groundwork is organized into five workspaces, each with its own job. Understanding the structure helps you navigate faster and use the right tool for the right task.</p>
+      <ul>
+        <li><strong>Dashboard</strong> — Your home base. My Day shows your tasks, pipeline stats, and (for admins) a financial pulse. Business Pulse, Financial Snapshot, and Operations Snapshot give you a cross-sectional view of the business.</li>
+        <li><strong>Sales</strong> — Pipeline, Leads, Clients, Properties, Estimates, and team tools. This is where deals live and move.</li>
+        <li><strong>Financial</strong> — Invoices, Payments, Deposits, Statements. The money side of completed and in-progress work.</li>
+        <li><strong>Operations</strong> — Schedule, Dispatch, Work Orders, Resources. Field execution from scheduling to completion.</li>
+        <li><strong>Learning</strong> — You're here. Training tracks for sales, estimating, financial literacy, and CRM usage.</li>
+      </ul>` },
+    { id:'crm02', title:'Managing Leads & the Pipeline', type:'Walkthrough', duration:'6 min',
+      content:`<p>Every sale starts as a lead. The Pipeline view shows all active opportunities and where they stand in the process.</p>
+      <h3>Creating a lead</h3>
+      <p>Go to Sales → Leads → + New Lead. Fill in the client name, contact info, job type, estimated value, and lead source. A good lead source field tells you which marketing channels are working.</p>
+      <h3>Moving through stages</h3>
+      <p>Drag or update the status as the deal progresses: Initial Inquiry → Discovery → Site Walk → Proposal Sent → Follow-Up → Closed Won/Lost.</p>
+      <h3>Proposal workflow</h3>
+      <p>Once you've done the site walk and built the estimate, attach it to the lead and update the status to "Proposal Sent." This triggers the Proposals Out count on the My Day pipeline strip and the Business Pulse report.</p>
+      <h3>Won vs Lost</h3>
+      <p>Always close out leads — don't leave them in limbo. A lost lead with a reason tells you more than a forgotten lead in the pipeline.</p>` },
+    { id:'crm03', title:'Clients, Properties & History', type:'Walkthrough', duration:'5 min',
+      content:`<p>Clients in Groundwork are companies or individuals you've done business with or are in active conversations with. Properties are the physical locations tied to a client.</p>
+      <h3>Why separate clients from leads?</h3>
+      <p>A lead is an opportunity. A client is an ongoing relationship. Once someone buys, they move from the pipeline into the client record — where their full history lives.</p>
+      <h3>Properties</h3>
+      <p>One client can have multiple properties (a property manager with 10 buildings, a homeowner with a rental). Each property tracks its own work order history, making it easy to pull up "what did we do at this address last spring?"</p>
+      <h3>The account view</h3>
+      <p>Open a client record to see: all estimates, invoices, work orders, communications, and account statement in one place. This is your source of truth for the relationship.</p>` },
+    { id:'crm04', title:'Estimates → Invoices → Payments', type:'Walkthrough', duration:'7 min',
+      content:`<p>Groundwork tracks the financial lifecycle of a job from quote to payment. Understanding this flow keeps revenue from falling through the cracks.</p>
+      <h3>Estimates</h3>
+      <p>Built in Sales → Estimates. Attach to a lead or client. Once approved, convert to an invoice or work order in one click.</p>
+      <h3>Invoices</h3>
+      <p>Created from an approved estimate or directly. Set a due date, send to the client, and track payment. Overdue invoices appear in the Financial Snapshot.</p>
+      <h3>Payments</h3>
+      <p>Log payments against invoices in Financial → Payments. Mark the invoice paid — it drops off the outstanding balance.</p>
+      <h3>Deposits</h3>
+      <p>Collected upfront before work starts. Always apply the deposit to the final invoice when closing out — don't leave unapplied deposits sitting in the system.</p>` },
+    { id:'crm05', title:'Work Orders & Scheduling', type:'Walkthrough', duration:'6 min',
+      content:`<p>Work Orders are the bridge between a sold job and field execution. They live in Operations and connect the sale to the schedule and the crew.</p>
+      <h3>Creating a Work Order</h3>
+      <p>Either convert from an approved estimate or create directly in Operations → Work Orders. Set the job title, client, property, scheduled date, crew assignment, and scope notes.</p>
+      <h3>The Schedule Board</h3>
+      <p>Operations → Schedule shows all work orders in a calendar view. Field supervisors use this daily to see what's happening and where.</p>
+      <h3>Completing a Work Order</h3>
+      <p>Update the status to Completed when the job is done. This populates the Operations Snapshot with today's completed jobs and feeds the productivity metrics for the field team.</p>` },
+    { id:'crm06', title:'Tasks & My Day', type:'Walkthrough', duration:'5 min',
+      content:`<p>Tasks in Groundwork are follow-up items tied to a rep, a record, or standalone. They show up in My Day so nothing falls through the cracks.</p>
+      <h3>Creating a task</h3>
+      <p>From My Day → + New Task, or from inside any lead/client record via the Tasks panel. Set a type (follow up, call, site visit, proposal, etc.), due date, and assignee.</p>
+      <h3>My Day layout</h3>
+      <p>My Day shows: the pipeline strip at the top (open leads, proposals, pipeline value, won MTD), your task workspace in the main column, and a financial pulse on the right side (admin/OM roles only).</p>
+      <h3>Overdue tasks</h3>
+      <p>Tasks past their due date show in red. The Team View (Sales → Team) lets managers see task overdue counts across the whole team so nothing gets buried.</p>` },
+    { id:'crm07', title:'Reports & Data Reads', type:'Walkthrough', duration:'5 min',
+      content:`<p>Groundwork has four built-in snapshot views on the Dashboard that give you cross-sectional visibility without needing to export anything.</p>
+      <h3>Business Pulse</h3>
+      <p>Sales performance: funnel stages, rep table (9 columns including Won MTD), monthly won trend, lead sources. Best for Monday morning pipeline reviews.</p>
+      <h3>Financial Snapshot</h3>
+      <p>Estimates, invoices, payments, deposits — plus the Budget vs Actual block with per-division progress. Best for owner/OM weekly financial review.</p>
+      <h3>Operations Snapshot</h3>
+      <p>Today's scheduled jobs, upcoming 7-day schedule, and 5 operations KPIs. Best for field supervisor daily check-in.</p>
+      <h3>Financial Data Hub (Admin only)</h3>
+      <p>Found under the Financial workspace via "Budget Admin" — this is where annual budget targets are set, divisional actuals are entered monthly, and the fiscal year cascade is configured.</p>` },
+  ];
+}
+
+// ── Estimating 101 view ───────────────────────────────────────────────────────
+function learnEstimating() {
+  window._currentView = 'learnEstimating';
+  activateNav('learnEstimating');
+  const mods = _glEstimatingModules();
+  const card = _learnCard(
+    `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="14" height="16" rx="2"/><path d="M7 7h6M7 11h6M7 15h4"/></svg>`,
+    'Estimating 101', 'Scope · Pricing · Margin', '#4D8A86', mods, 'learnEstimating', false
+  );
+  view.innerHTML = _glShell('Estimating 101', 'How to scope, price, and present a job', card);
+}
+
+// ── Financial Literacy view ───────────────────────────────────────────────────
+function learnFinancial() {
+  window._currentView = 'learnFinancial';
+  activateNav('learnFinancial');
+  const mods = _glFinancialModules();
+  const card = _learnCard(
+    `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v16M6 14c0 1.7 1.3 3 4 3s4-1.3 4-3c0-1.8-1.7-2.4-4-3S6 9.3 6 7.5C6 5.9 7.3 5 10 5s4 1.3 4 2.5"/></svg>`,
+    'Financial Literacy', 'P&L · Cash Flow · Budget vs Actual', '#2D7A55', mods, 'learnFinancial', false
+  );
+  view.innerHTML = _glShell('Financial Literacy', 'Read and use financial data with confidence', card);
+}
+
+// ── CRM Guide view ────────────────────────────────────────────────────────────
+function learnCrmGuide() {
+  window._currentView = 'learnCrmGuide';
+  activateNav('learnCrmGuide');
+  const mods = _glCrmModules();
+  const card = _learnCard(
+    `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M10 6v4l3 3"/></svg>`,
+    'CRM Guide', 'Navigation · Workflows · Best Practices', '#6B5EA8', mods, 'learnCrmGuide', false
+  );
+  view.innerHTML = _glShell('CRM Guide', 'Walkthroughs of every major section of Groundwork', card);
+}
+
+// ── Shell wrapper ─────────────────────────────────────────────────────────────
+function _glShell(title, subtitle, body) {
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  return `
+  <div style="max-width:860px;margin:0 auto;padding:20px 24px 60px">
+    <header class="rp-header" style="margin-bottom:24px">
+      <div class="rp-header-left">
+        <div class="eyebrow">Learning</div>
+        <h1 class="rp-title">${escapeHtml(title)}</h1>
+        <p class="rp-subtitle">${escapeHtml(subtitle)}</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('gwLearning')">All Tracks</button>
+      </div>
+    </header>
+    ${body}
+  </div>`;
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
