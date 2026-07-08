@@ -7836,7 +7836,7 @@ h1.pl-title,
    PHASE 9 — WORKDAY CLOCK + FIELD DASHBOARD
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── Header clock pill ── */
+/* ── Header clock pill (light topbar theme) ── */
 .gw-clock-pill {
   position: relative;
   display: flex;
@@ -7844,31 +7844,31 @@ h1.pl-title,
   gap: 6px;
   padding: 6px 12px 6px 10px;
   border-radius: 20px;
-  border: 1.5px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.06);
+  border: 1.5px solid var(--gw-line, rgba(32,74,67,.18));
+  background: var(--gw-surface-2, #FDFCF9);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255,255,255,.7);
+  color: var(--gw-ink, #1A2E2B);
   white-space: nowrap;
-  transition: background .15s, border-color .15s;
+  transition: background .15s, border-color .15s, color .15s;
   user-select: none;
   flex-shrink: 0;
 }
-.gw-clock-pill:hover { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.25); }
-.gw-clock-pill.clocked-in  { border-color: #22c55e55; background: #16a34a18; color: #86efac; }
-.gw-clock-pill.on-break    { border-color: #f59e0b55; background: #d9770618; color: #fcd34d; }
-.gw-clock-pill.clocked-out { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(255,255,255,.45); }
+.gw-clock-pill:hover { background: var(--gw-surface-3, #EAF1EE); border-color: rgba(32,74,67,.28); }
+.gw-clock-pill.clocked-in  { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
+.gw-clock-pill.on-break    { border-color: #d97706; background: #fffbeb; color: #b45309; }
+.gw-clock-pill.clocked-out { border-color: var(--gw-line); background: var(--gw-surface-2); color: var(--gw-muted); }
 
 .gw-clock-dot {
   width: 7px; height: 7px;
   border-radius: 50%;
-  background: rgba(255,255,255,.35);
+  background: var(--gw-muted, #9CA3A0);
   flex-shrink: 0;
 }
-.gw-clock-pill.clocked-in .gw-clock-dot  { background: #4ade80; box-shadow: 0 0 6px #4ade8099; animation: gwPulse 1.8s ease-in-out infinite; }
-.gw-clock-pill.on-break .gw-clock-dot    { background: #fbbf24; box-shadow: 0 0 6px #fbbf2499; }
-.gw-clock-pill.clocked-out .gw-clock-dot { background: rgba(255,255,255,.2); }
+.gw-clock-pill.clocked-in .gw-clock-dot  { background: #16a34a; box-shadow: 0 0 6px #16a34a66; animation: gwPulse 1.8s ease-in-out infinite; }
+.gw-clock-pill.on-break .gw-clock-dot    { background: #d97706; box-shadow: 0 0 6px #d9770666; }
+.gw-clock-pill.clocked-out .gw-clock-dot { background: #9CA3A0; }
 
 @keyframes gwPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
