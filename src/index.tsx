@@ -2767,6 +2767,273 @@ app.post('/api/admin/clear-sessions', requireSuperAdmin, async (c) => {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PHASE 8 — AUDIT LOG  (/api/audit)
+// ══════════════════════════════════════════════════════════════════════════════
+// CREWS & WORK ORDERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/crews — list all crews for company (with members)
+app.get('/api/crews', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const crews = await db.prepare(
+    `SELECT c.*, GROUP_CONCAT(cm.rep_id||':'||cm.crew_role) as member_list
+     FROM crews c
+     LEFT JOIN crew_members cm ON cm.crew_id = c.id
+     WHERE c.company_id = ? AND c.active = 1
+     GROUP BY c.id ORDER BY c.name`
+  ).bind(companyId).all()
+  // Also get rep details for member names
+  const reps = await db.prepare(`SELECT id, name, role FROM reps WHERE company_id = ? AND active = 1`).bind(companyId).all()
+  const repMap: Record<string, any> = {}
+  for (const r of (reps.results || [])) { repMap[(r as any).id] = r }
+  const result = (crews.results || []).map((cr: any) => {
+    const members = cr.member_list ? cr.member_list.split(',').map((m: string) => {
+      const [repId, crewRole] = m.split(':')
+      return { repId, crewRole, name: repMap[repId]?.name || repId }
+    }) : []
+    return { ...cr, member_list: undefined, members }
+  })
+  return c.json({ ok: true, data: result })
+})
+
+// POST /api/crews — create a new crew
+app.post('/api/crews', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const body: any = await c.req.json()
+  const id = 'crew-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+  const name  = (body.name  || '').trim()
+  const color = body.color || '#22c55e'
+  if (!name) return c.json({ ok: false, error: 'Crew name required' }, 400)
+  await db.prepare(
+    `INSERT INTO crews (id, company_id, name, color) VALUES (?,?,?,?)`
+  ).bind(id, companyId, name, color).run()
+  // Add members if provided
+  const members: { repId: string; crewRole: string }[] = body.members || []
+  for (const m of members) {
+    if (!m.repId) continue
+    const mid = 'cm-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+    await db.prepare(
+      `INSERT OR IGNORE INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`
+    ).bind(mid, id, m.repId, companyId, m.crewRole || 'laborer').run()
+  }
+  return c.json({ ok: true, id })
+})
+
+// PUT /api/crews/:id — update crew name/color
+app.put('/api/crews/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const crewId = c.req.param('id')
+  const body: any = await c.req.json()
+  await db.prepare(
+    `UPDATE crews SET name=?, color=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
+  ).bind(body.name, body.color, crewId, companyId).run()
+  return c.json({ ok: true })
+})
+
+// PUT /api/crews/:id/members — replace member list
+app.put('/api/crews/:id/members', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const crewId = c.req.param('id')
+  const body: any = await c.req.json()
+  const members: { repId: string; crewRole: string }[] = body.members || []
+  // Delete existing, re-insert
+  await db.prepare(`DELETE FROM crew_members WHERE crew_id=? AND company_id=?`).bind(crewId, companyId).run()
+  for (const m of members) {
+    if (!m.repId) continue
+    const mid = 'cm-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+    await db.prepare(
+      `INSERT OR IGNORE INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`
+    ).bind(mid, crewId, m.repId, companyId, m.crewRole || 'laborer').run()
+  }
+  return c.json({ ok: true })
+})
+
+// DELETE /api/crews/:id — soft-delete
+app.delete('/api/crews/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const crewId = c.req.param('id')
+  await db.prepare(`UPDATE crews SET active=0, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(crewId, companyId).run()
+  return c.json({ ok: true })
+})
+
+// ── WORK ORDERS (D1) ──────────────────────────────────────────────────────────
+
+// GET /api/work-orders — list work orders (optional ?status=&crew_id=&date_from=&date_to=)
+app.get('/api/work-orders', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const status    = c.req.query('status')
+  const crewId    = c.req.query('crew_id')
+  const dateFrom  = c.req.query('date_from')
+  const dateTo    = c.req.query('date_to')
+  let sql = `SELECT wo.*, cr.name as crew_name, cr.color as crew_color
+             FROM work_orders wo
+             LEFT JOIN crews cr ON cr.id = wo.crew_id
+             WHERE wo.company_id = ?`
+  const params: any[] = [companyId]
+  if (status)   { sql += ` AND wo.status = ?`;          params.push(status) }
+  if (crewId)   { sql += ` AND wo.crew_id = ?`;         params.push(crewId) }
+  if (dateFrom) { sql += ` AND wo.scheduled_date >= ?`; params.push(dateFrom) }
+  if (dateTo)   { sql += ` AND wo.scheduled_date <= ?`; params.push(dateTo) }
+  sql += ` ORDER BY wo.scheduled_date DESC, wo.created_at DESC LIMIT 500`
+  const rows = await db.prepare(sql).bind(...params).all()
+  // Parse JSON fields
+  const data = (rows.results || []).map((r: any) => ({
+    ...r,
+    checklist:    JSON.parse(r.checklist    || '[]'),
+    materials:    JSON.parse(r.materials    || '[]'),
+    timeline:     JSON.parse(r.timeline     || '[]'),
+    before_photos: JSON.parse(r.before_photos || '[]'),
+    after_photos:  JSON.parse(r.after_photos  || '[]'),
+  }))
+  return c.json({ ok: true, data })
+})
+
+// POST /api/work-orders — create a work order
+app.post('/api/work-orders', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const body: any = await c.req.json()
+  const id = 'wo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+  // Auto-number
+  const countRow = await db.prepare(`SELECT COUNT(*) as cnt FROM work_orders WHERE company_id=?`).bind(companyId).first() as any
+  const woNum = 'WO-' + String((countRow?.cnt || 0) + 1).padStart(5, '0')
+  await db.prepare(`
+    INSERT INTO work_orders
+      (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
+       type, status, readiness, scheduled_date, scheduled_time, duration_hours, notes,
+       amount_est, checklist, materials, timeline, before_photos, after_photos, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    id, companyId, woNum,
+    body.opp_id || null, body.crew_id || null,
+    body.client_name || '', body.client_id || null, body.property_addr || '',
+    body.title || '', body.type || 'Service',
+    body.status || 'scheduled', body.readiness || 'ready',
+    body.scheduled_date || null, body.scheduled_time || null,
+    body.duration_hours || null, body.notes || '',
+    body.amount_est || 0,
+    JSON.stringify(body.checklist || []),
+    JSON.stringify(body.materials || []),
+    JSON.stringify([{ action: 'Work Order Created', note: `by ${repId}`, at: new Date().toISOString() }]),
+    JSON.stringify(body.before_photos || []),
+    JSON.stringify(body.after_photos || []),
+    repId
+  ).run()
+  // Add employees if provided
+  const employees: string[] = body.employee_ids || []
+  for (const eId of employees) {
+    const eid = 'woe-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+    await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
+      .bind(eid, id, eId, companyId).run()
+  }
+  return c.json({ ok: true, id, wo_number: woNum })
+})
+
+// GET /api/work-orders/:id — single work order
+app.get('/api/work-orders/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  const row: any = await db.prepare(
+    `SELECT wo.*, cr.name as crew_name, cr.color as crew_color
+     FROM work_orders wo LEFT JOIN crews cr ON cr.id = wo.crew_id
+     WHERE wo.id=? AND wo.company_id=?`
+  ).bind(woId, companyId).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  // Get assigned employees
+  const emps = await db.prepare(
+    `SELECT woe.rep_id, r.name, r.role FROM work_order_employees woe
+     JOIN reps r ON r.id = woe.rep_id WHERE woe.wo_id=?`
+  ).bind(woId).all()
+  return c.json({ ok: true, data: {
+    ...row,
+    checklist:     JSON.parse(row.checklist     || '[]'),
+    materials:     JSON.parse(row.materials     || '[]'),
+    timeline:      JSON.parse(row.timeline      || '[]'),
+    before_photos: JSON.parse(row.before_photos || '[]'),
+    after_photos:  JSON.parse(row.after_photos  || '[]'),
+    employees:     emps.results || [],
+  }})
+})
+
+// PUT /api/work-orders/:id — update work order
+app.put('/api/work-orders/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  const body: any = await c.req.json()
+  // Get current WO for timeline diff
+  const cur: any = await db.prepare(`SELECT status, timeline FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
+  if (!cur) return c.json({ ok: false, error: 'Not found' }, 404)
+  let tl = JSON.parse(cur.timeline || '[]')
+  if (body.status && body.status !== cur.status) {
+    tl.push({ action: `Status → ${body.status}`, note: `by ${repId}`, at: new Date().toISOString() })
+  }
+  await db.prepare(`
+    UPDATE work_orders SET
+      crew_id=COALESCE(?,crew_id), client_name=COALESCE(?,client_name),
+      property_addr=COALESCE(?,property_addr), title=COALESCE(?,title),
+      type=COALESCE(?,type), status=COALESCE(?,status), readiness=COALESCE(?,readiness),
+      scheduled_date=COALESCE(?,scheduled_date), scheduled_time=COALESCE(?,scheduled_time),
+      duration_hours=COALESCE(?,duration_hours), notes=COALESCE(?,notes),
+      completion_notes=COALESCE(?,completion_notes),
+      amount_est=COALESCE(?,amount_est), amount_actual=COALESCE(?,amount_actual),
+      checklist=COALESCE(?,checklist), materials=COALESCE(?,materials),
+      before_photos=COALESCE(?,before_photos), after_photos=COALESCE(?,after_photos),
+      timeline=?, updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(
+    body.crew_id !== undefined ? body.crew_id : null,
+    body.client_name !== undefined ? body.client_name : null,
+    body.property_addr !== undefined ? body.property_addr : null,
+    body.title !== undefined ? body.title : null,
+    body.type !== undefined ? body.type : null,
+    body.status !== undefined ? body.status : null,
+    body.readiness !== undefined ? body.readiness : null,
+    body.scheduled_date !== undefined ? body.scheduled_date : null,
+    body.scheduled_time !== undefined ? body.scheduled_time : null,
+    body.duration_hours !== undefined ? body.duration_hours : null,
+    body.notes !== undefined ? body.notes : null,
+    body.completion_notes !== undefined ? body.completion_notes : null,
+    body.amount_est !== undefined ? body.amount_est : null,
+    body.amount_actual !== undefined ? body.amount_actual : null,
+    body.checklist !== undefined ? JSON.stringify(body.checklist) : null,
+    body.materials !== undefined ? JSON.stringify(body.materials) : null,
+    body.before_photos !== undefined ? JSON.stringify(body.before_photos) : null,
+    body.after_photos  !== undefined ? JSON.stringify(body.after_photos)  : null,
+    JSON.stringify(tl),
+    woId, companyId
+  ).run()
+  // Update employee list if provided
+  if (body.employee_ids !== undefined) {
+    await db.prepare(`DELETE FROM work_order_employees WHERE wo_id=? AND company_id=?`).bind(woId, companyId).run()
+    for (const eId of (body.employee_ids as string[])) {
+      const eid = 'woe-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+      await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
+        .bind(eid, woId, eId, companyId).run()
+    }
+  }
+  return c.json({ ok: true })
+})
+
+// DELETE /api/work-orders/:id
+app.delete('/api/work-orders/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  await db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).run()
+  return c.json({ ok: true })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Rolling structured event log.  Each event is a JSON row persisted to D1.
 // The frontend gwAudit() also keeps a local localStorage ring-buffer (max 500)
 // for offline reads; this endpoint backs the permanent record.

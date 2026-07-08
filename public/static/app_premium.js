@@ -11397,6 +11397,10 @@ function estimateDetail(id){
         </button>
         ${status==='sent'?`<button class="est-btn est-btn--approve" onclick="_estMarkApproved('${opp?opp.id:''}')">✓ Mark Approved</button>`:''}
         ${status==='sent'?`<button class="est-btn est-btn--decline" onclick="_estMarkDeclined('${opp?opp.id:''}')">✗ Mark Declined</button>`:''}
+        ${(status==='accepted'||status==='approved')?`<button class="est-btn est-btn--schedule" onclick="_estScheduleVisit('${opp?opp.id:''}')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="12" rx="1.5"/><path d="M5 1v4M11 1v4M1 7h14"/></svg>
+          Schedule Visit
+        </button>`:''}
         <button class="est-btn est-btn--secondary" onclick="showToast('PDF download coming soon','info')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h8a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>
           Download PDF
@@ -11459,8 +11463,33 @@ function estimateDetail(id){
     showToast('Estimate marked declined', 'error');
     if (oppId) estimateDetail(oppId);
   };
+  window._estScheduleVisit = function(oppId) {
+    const o = oppId ? state.opportunities.find(x=>x.id===oppId) : null;
+    // Pre-populate the new visit modal with estimate data
+    if (!window._sbState.loaded) {
+      _sbLoadData().then(()=> _sbOpenNewVisitFromEst(o));
+    } else {
+      _sbOpenNewVisitFromEst(o);
+    }
+    show('scheduleBoard');
+    setTimeout(()=> _sbOpenNewVisitFromEst(o), 300);
+  };
 }
 window.estimateDetail = estimateDetail;
+window._sbOpenNewVisitFromEst = function(opp) {
+  if (!opp) { _sbOpenNewVisit(null); return; }
+  const preDate = null; // Let user pick
+  _sbOpenNewVisit(preDate);
+  // Pre-fill after modal opens
+  setTimeout(()=>{
+    const clientEl = document.getElementById('snv-client');
+    const addrEl   = document.getElementById('snv-addr');
+    const notesEl  = document.getElementById('snv-notes');
+    if (clientEl) clientEl.value = opp.client||'';
+    if (addrEl)   addrEl.value   = opp.address||'';
+    if (notesEl)  notesEl.value  = `From estimate: ${opp.project||opp.serviceLine||''}`;
+  }, 100);
+};
 
 // ── INVOICE DETAIL ────────────────────────────────────────────────────────
 function invoiceDetail(id){
@@ -12280,74 +12309,980 @@ function opsHub() {
 window.opsHub = opsHub;
 
 // ── 2. Schedule Board ─────────────────────────────────────────────────────────
-function scheduleBoard() {
-  const wos   = state.workOrders || [];
+// ── Schedule Board State ──────────────────────────────────────────────────────
+window._sbState = window._sbState || {
+  viewMode: 'week',      // 'week' | 'month'
+  weekOffset: 0,         // 0 = current week, -1 = last week, +1 = next week
+  monthOffset: 0,
+  hiddenCrews: new Set(), // crew IDs toggled off
+  crews: [],             // cached from API
+  workOrders: [],        // cached from API
+  loaded: false,
+};
+
+async function _sbLoadData() {
+  try {
+    const [cr, wo] = await Promise.all([
+      fetch('/api/crews').then(r=>r.json()),
+      fetch('/api/work-orders?limit=500').then(r=>r.json()),
+    ]);
+    if (cr.ok)  window._sbState.crews      = cr.data  || [];
+    if (wo.ok)  window._sbState.workOrders = wo.data  || [];
+    window._sbState.loaded = true;
+  } catch(e) {
+    console.warn('[scheduleBoard] API load failed, using localStorage fallback', e);
+    // Fallback: convert localStorage workOrders to D1 shape
+    window._sbState.workOrders = (state.workOrders||[]).map(w=>({
+      id:w.id, wo_number:w.woNumber||w.id,
+      client_name:w.clientName||'', type:w.type||'Service',
+      status:w.status||'scheduled', readiness:w.readiness||'ready',
+      scheduled_date:w.date||null, scheduled_time:w.time||null,
+      notes:w.notes||'', crew_id:null, crew_name:w.crew||'',
+      crew_color:'#94a3b8', checklist:w.checklist||[], materials:w.materials||[],
+    }));
+    window._sbState.loaded = true;
+  }
+}
+
+function _sbGetWeekDays(offset) {
   const today = new Date();
   const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay()+6)%7));
+  monday.setDate(today.getDate() - ((today.getDay()+6)%7) + offset*7);
+  return Array.from({length:7}, (_,i) => {
+    const d = new Date(monday); d.setDate(monday.getDate()+i); return d;
+  });
+}
 
-  const days = Array.from({length:5}, (_,i) => {
-    const d = new Date(monday); d.setDate(monday.getDate()+i);
-    return d;
+function _sbGetMonthDays(offset) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + offset;
+  const first = new Date(y, m, 1);
+  const last  = new Date(y, m+1, 0);
+  return { first, last, month: first.toLocaleDateString('en-US',{month:'long',year:'numeric'}) };
+}
+
+function _sbCrewPill(crew) {
+  if (!crew) return '';
+  const c = crew.crew_color || crew.color || '#94a3b8';
+  return `<span class="sb-crew-pill" style="background:${c}20;color:${c};border-color:${c}40">${escapeHtml(crew.crew_name||crew.name||'')}</span>`;
+}
+
+function _sbJobCard(wo, crews) {
+  const crew = crews.find(c=>c.id===wo.crew_id);
+  const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
+  const statusCls = _p6WOStatusClass(wo.status);
+  const time = wo.scheduled_time ? `<span class="sb-card-time">${wo.scheduled_time}</span>` : '';
+  return `
+    <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}" onclick="_sbOpenVisitModal('${wo.id}')">
+      <div class="sb-card-top">
+        <span class="sb-card-num">${wo.wo_number||wo.id}</span>
+        ${time}
+      </div>
+      <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
+      ${crew||wo.crew_name ? `<div class="sb-card-crew" style="color:${crewColor}">${escapeHtml(wo.crew_name||crew?.name||'')}</div>` : ''}
+      <div class="sb-card-type">${escapeHtml(wo.type||'Service')}</div>
+      <span class="sb-card-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
+    </div>`;
+}
+
+async function scheduleBoard() {
+  const sb = window._sbState;
+
+  // Show loading skeleton
+  view.innerHTML = `<div class="sched-shell"><div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
+    <div class="sb-spinner"></div><p style="margin-top:12px">Loading schedule…</p></div></div>`;
+
+  if (!sb.loaded) await _sbLoadData();
+  _sbRender();
+}
+
+function _sbRender() {
+  const sb = window._sbState;
+  const today = new Date().toISOString().slice(0,10);
+  const allCrews = sb.crews;
+  const allWOs   = sb.workOrders;
+
+  // Crew toggle bar
+  const crewToggleBar = allCrews.length ? `
+    <div class="sb-crew-bar">
+      <span class="sb-crew-bar-label">Crews</span>
+      ${allCrews.map(cr=>{
+        const active = !sb.hiddenCrews.has(cr.id);
+        return `<button class="sb-crew-toggle${active?' active':''}" style="--crew-color:${cr.color}"
+          onclick="_sbToggleCrew('${cr.id}')" title="${escapeHtml(cr.name)}">
+          <span class="sb-crew-dot" style="background:${cr.color}"></span>
+          ${escapeHtml(cr.name)}
+          ${cr.members?.length ? `<span class="sb-crew-count">${cr.members.length}</span>` : ''}
+        </button>`;
+      }).join('')}
+      <button class="sb-crew-manage-btn" onclick="_sbOpenCrewManager()">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a1 1 0 011 1v2h2a1 1 0 010 2H9v2a1 1 0 01-2 0V9H5a1 1 0 010-2h2V5a1 1 0 011-1z"/></svg>
+        Manage Crews
+      </button>
+    </div>` : `<div class="sb-crew-bar">
+      <span style="font-size:12px;color:var(--gw-text-muted)">No crews yet.</span>
+      <button class="sb-crew-manage-btn" onclick="_sbOpenCrewManager()">+ Create First Crew</button>
+    </div>`;
+
+  // Filter WOs by visible crews
+  const visibleWOs = allWOs.filter(wo => {
+    if (!wo.crew_id) return true; // unassigned always visible
+    return !sb.hiddenCrews.has(wo.crew_id);
   });
 
-  const dayNames = ['Mon','Tue','Wed','Thu','Fri'];
+  let gridHtml = '';
+  let headerLabel = '';
 
-  function jobsForDay(d) {
-    const iso = d.toISOString().slice(0,10);
-    return wos.filter(w => w.date && w.date.slice(0,10) === iso);
+  if (sb.viewMode === 'week') {
+    const days = _sbGetWeekDays(sb.weekOffset);
+    const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    headerLabel = `${days[1].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[5].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+
+    const cols = days.map(d => {
+      const iso = d.toISOString().slice(0,10);
+      const isToday = iso === today;
+      const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
+      const cards = jobs.map(wo => _sbJobCard(wo, allCrews)).join('');
+      return `
+        <div class="sb-day-col${isToday?' sb-day-col--today':''}">
+          <div class="sb-day-head">
+            <span class="sb-day-name">${wdNames[d.getDay()]}</span>
+            <span class="sb-day-date" style="font-size:18px;font-weight:700">${d.getDate()}</span>
+            ${jobs.length ? `<span class="sb-day-count">${jobs.length}</span>` : ''}
+          </div>
+          <div class="sb-day-body">
+            ${cards || '<div class="sb-empty-day">No jobs</div>'}
+            <button class="sb-add-btn" onclick="_sbOpenNewVisit('${iso}')">+</button>
+          </div>
+        </div>`;
+    });
+    gridHtml = `<div class="sb-week-grid">${cols.join('')}</div>`;
+
+  } else {
+    // Month view — calendar grid
+    const { first, last, month } = _sbGetMonthDays(sb.monthOffset);
+    headerLabel = month;
+    const startDow = first.getDay(); // 0=Sun
+    const totalDays = last.getDate();
+    let cells = '';
+    // Blank prefix cells
+    for (let i=0;i<startDow;i++) cells += `<div class="sb-month-cell sb-month-cell--blank"></div>`;
+    for (let d=1;d<=totalDays;d++) {
+      const iso = `${first.getFullYear()}-${String(first.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isToday = iso === today;
+      const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
+      const dots = jobs.slice(0,5).map(wo => {
+        const crewColor = wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8';
+        return `<span class="sb-month-dot" style="background:${crewColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}"></span>`;
+      }).join('');
+      cells += `
+        <div class="sb-month-cell${isToday?' sb-month-cell--today':''}" onclick="_sbOpenNewVisit('${iso}')">
+          <div class="sb-month-num">${d}</div>
+          ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
+          ${jobs.slice(0,2).map(wo=>{
+            const crewColor = wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8';
+            return `<div class="sb-month-chip" style="border-left:2px solid ${crewColor}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
+              <span>${escapeHtml((wo.client_name||wo.title||'Job').slice(0,20))}</span>
+            </div>`;
+          }).join('')}
+          ${jobs.length>2 ? `<div class="sb-month-more-link" onclick="event.stopPropagation();">+${jobs.length-2} more</div>` : ''}
+        </div>`;
+    }
+    const dowHeaders = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(n=>`<div class="sb-month-dow">${n}</div>`).join('');
+    gridHtml = `<div class="sb-month-grid">${dowHeaders}${cells}</div>`;
   }
 
-  const weekCols = days.map((d, i) => {
-    const isToday = d.toISOString().slice(0,10) === today.toISOString().slice(0,10);
-    const jobs = jobsForDay(d);
-    const jobCards = jobs.map(wo => `
-      <div class="sched-job-card ${_p6WOStatusClass(wo.status)}" onclick="show('workOrderDetail','${wo.id}')" style="cursor:pointer">
-        <div class="sched-job-head">
-          <span class="sched-job-num">${_p6WONum(wo)}</span>
-          <span class="sched-job-time">${wo.time || '—'}</span>
-        </div>
-        <div class="sched-job-client">${escapeHtml(wo.clientName||wo.oppId||'Job')}</div>
-        <div class="sched-job-crew">${escapeHtml(wo.crew||'Unassigned')}</div>
-        <div class="sched-job-type">${escapeHtml(wo.type||'Service')}</div>
-      </div>`).join('') || `<div class="sched-empty">No jobs</div>`;
+  // Stats bar
+  const totalScheduled = visibleWOs.filter(w=>w.status==='scheduled').length;
+  const totalInProgress = visibleWOs.filter(w=>w.status==='in-progress').length;
+  const totalCompleted = visibleWOs.filter(w=>w.status==='completed').length;
 
-    return `
-      <div class="sched-day-col${isToday?' sched-day-col--today':''}">
-        <div class="sched-day-head">
-          <span class="sched-day-name">${dayNames[i]}</span>
-          <span class="sched-day-date">${d.getMonth()+1}/${d.getDate()}</span>
-          <span class="sched-day-count">${jobs.length}</span>
+  view.innerHTML = `
+  <div class="sched-shell">
+    <header class="sb-header">
+      <div class="sb-header-left">
+        <h1 class="rp-title">Schedule Board</h1>
+        <div class="sb-nav-controls">
+          <button class="sb-nav-btn" onclick="_sbNav(-1)">‹</button>
+          <span class="sb-period-label">${headerLabel}</span>
+          <button class="sb-nav-btn" onclick="_sbNav(1)">›</button>
+          <button class="sb-today-btn" onclick="_sbGoToday()">Today</button>
         </div>
-        <div class="sched-day-body">
-          ${jobCards}
-          <button class="sched-add-btn" onclick="show('workOrderList')" title="Add WO for this day">+</button>
+      </div>
+      <div class="sb-header-right">
+        <div class="sb-view-toggle">
+          <button class="sb-view-btn${sb.viewMode==='week'?' active':''}" onclick="_sbSetView('week')">Week</button>
+          <button class="sb-view-btn${sb.viewMode==='month'?' active':''}" onclick="_sbSetView('month')">Month</button>
+        </div>
+        <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch</button>
+        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">+ Work Order</button>
+      </div>
+    </header>
+
+    <div class="sb-stats-bar">
+      <div class="sb-stat"><span class="sb-stat-num">${totalScheduled}</span><span class="sb-stat-lbl">Scheduled</span></div>
+      <div class="sb-stat"><span class="sb-stat-num sb-stat-num--blue">${totalInProgress}</span><span class="sb-stat-lbl">In Progress</span></div>
+      <div class="sb-stat"><span class="sb-stat-num sb-stat-num--green">${totalCompleted}</span><span class="sb-stat-lbl">Completed</span></div>
+      <div class="sb-stat"><span class="sb-stat-num sb-stat-num--muted">${allCrews.length}</span><span class="sb-stat-lbl">Crews</span></div>
+    </div>
+
+    ${crewToggleBar}
+
+    <div class="sb-grid-wrap">
+      ${gridHtml}
+    </div>
+  </div>`;
+}
+
+window.scheduleBoard = scheduleBoard;
+window._sbNav = function(dir) {
+  const sb = window._sbState;
+  if (sb.viewMode==='week') sb.weekOffset += dir; else sb.monthOffset += dir;
+  _sbRender();
+};
+window._sbGoToday = function() {
+  window._sbState.weekOffset = 0; window._sbState.monthOffset = 0; _sbRender();
+};
+window._sbSetView = function(v) { window._sbState.viewMode = v; _sbRender(); };
+window._sbToggleCrew = function(id) {
+  const sb = window._sbState;
+  if (sb.hiddenCrews.has(id)) sb.hiddenCrews.delete(id); else sb.hiddenCrews.add(id);
+  _sbRender();
+};
+window._sbRefresh = async function() {
+  window._sbState.loaded = false;
+  await _sbLoadData();
+  _sbRender();
+};
+
+// ── Visit / Work Order Modal ──────────────────────────────────────────────────
+window._sbOpenVisitModal = async function(woId) {
+  let wo = null;
+  try {
+    const r = await fetch(`/api/work-orders/${woId}`);
+    const d = await r.json();
+    if (d.ok) wo = d.data;
+  } catch(e) {}
+  // Fallback to localStorage
+  if (!wo) wo = (state.workOrders||[]).find(w=>w.id===woId);
+  if (!wo) { showToast('Work order not found','error'); return; }
+
+  const crews   = window._sbState.crews || [];
+  const allReps = window._gwAllReps || [];
+
+  const crewOptions = crews.map(c=>`<option value="${c.id}"${wo.crew_id===c.id?' selected':''}>${escapeHtml(c.name)}</option>`).join('');
+  const assignedEmpIds = new Set((wo.employees||[]).map(e=>e.rep_id||e));
+  const empChips = (wo.employees||[]).map(e=>`
+    <span class="sb-emp-chip" data-rep-id="${e.rep_id||e}">
+      <span class="sb-emp-dot" style="background:${allReps.find(r=>r.id===(e.rep_id||e))?.color||'#6366f1'}"></span>
+      ${escapeHtml(e.name||e.rep_id||e)}
+      <button onclick="_sbRemoveEmployee('${e.rep_id||e}')" title="Remove">×</button>
+    </span>`).join('');
+
+  const checklistHtml = (wo.checklist||[]).map((item,i)=>`
+    <div class="sb-check-item">
+      <button class="sb-check-box${item.done?' done':''}" onclick="_sbToggleCheck(${i})">
+        ${item.done?'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 6l3 3 5-5"/></svg>':''}
+      </button>
+      <span class="sb-check-label${item.done?' done':''}">${escapeHtml(item.text||'')}</span>
+      <button class="sb-check-del" onclick="_sbRemoveCheck(${i})">×</button>
+    </div>`).join('');
+
+  const beforePhotos = (wo.before_photos||[]);
+  const afterPhotos  = (wo.after_photos||[]);
+
+  const photosHtml = (label, photos, field) => `
+    <div class="sb-photo-group">
+      <div class="sb-photo-label">${label}</div>
+      <div class="sb-photo-row" id="sb-photos-${field}">
+        ${photos.map(url=>`<div class="sb-photo-thumb"><img src="${escapeHtml(url)}" alt="photo"><button onclick="_sbRemovePhoto('${field}','${url}')">×</button></div>`).join('')}
+        <label class="sb-photo-add" title="Add photo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <input type="file" accept="image/*" style="display:none" onchange="_sbUploadPhoto(event,'${field}')">
+        </label>
+      </div>
+    </div>`;
+
+  // Work tracking
+  const budgetedHrs = wo.duration_hours || 0;
+  const actualHrs   = wo.actual_hours   || 0;
+
+  const modal = document.createElement('div');
+  modal.id = 'sb-visit-modal';
+  modal.className = 'sb-modal-overlay';
+  modal.innerHTML = `
+    <div class="sb-modal-panel">
+      <div class="sb-modal-header">
+        <div class="sb-modal-title-block">
+          <span class="sb-modal-wo-num">${wo.wo_number||wo.id}</span>
+          <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" id="sb-status-badge">${_p6WOStatusLabel(wo.status)}</span>
+        </div>
+        <div class="sb-modal-header-meta">
+          <span>${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : 'No date'}</span>
+          ${wo.scheduled_time ? `<span> · ${wo.scheduled_time}</span>` : ''}
+        </div>
+        <button class="sb-modal-close" onclick="_sbCloseModal()">×</button>
+      </div>
+
+      <div class="sb-modal-body">
+        <!-- Left Col -->
+        <div class="sb-modal-left">
+          <!-- Visit Info -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Visit Details</h3>
+            <div class="sb-modal-date-row">
+              <label class="sb-modal-field">
+                <span>Date</span>
+                <input class="rp-input" id="sbm-date" type="date" value="${wo.scheduled_date||''}">
+              </label>
+              <label class="sb-modal-field">
+                <span>Time</span>
+                <input class="rp-input" id="sbm-time" type="time" value="${wo.scheduled_time||''}">
+              </label>
+              <label class="sb-modal-field">
+                <span>Status</span>
+                <select class="rp-input" id="sbm-status">
+                  ${['scheduled','in-progress','completed','on-hold','cancelled'].map(s=>
+                    `<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+
+            <div class="sb-modal-field" style="margin-top:8px">
+              <span>Visit Notes (visible to crew)</span>
+              <textarea class="rp-input" id="sbm-notes" rows="3" placeholder="Scope, special instructions…">${escapeHtml(wo.notes||'')}</textarea>
+            </div>
+          </section>
+
+          <!-- Completion Details -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Completion Details</h3>
+            <div class="sb-line-items" id="sbm-line-items">
+              ${(wo.materials||[]).length ? wo.materials.map((m,i)=>`
+                <div class="sb-line-row">
+                  <input class="rp-input" value="${escapeHtml(m.name||'')}" placeholder="Item / Service" style="flex:2">
+                  <input class="rp-input" value="${m.qty||1}" type="number" min="0" style="width:60px" placeholder="Qty">
+                  <input class="rp-input" value="${m.unit||''}" placeholder="Unit" style="width:70px">
+                  <input class="rp-input" value="${m.cost||0}" type="number" min="0" placeholder="Rate" style="width:80px">
+                  <button class="rp-btn-sm rp-btn-sm--danger" onclick="_sbRemoveLine(${i})">×</button>
+                </div>`).join('') : ''}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="rp-btn-sm" onclick="_sbAddLine()">+ Add Line</button>
+              <button class="rp-btn-sm" onclick="_sbAddPackage()">Add Package</button>
+            </div>
+            <div class="sb-total-row">
+              <span>Total</span>
+              <span id="sbm-total">$${((wo.amount_est||0)).toFixed(2)}</span>
+            </div>
+            <div class="sb-modal-field" style="margin-top:8px">
+              <span>Completion Notes</span>
+              <textarea class="rp-input" id="sbm-completion-notes" rows="2" placeholder="What was done, any issues…">${escapeHtml(wo.completion_notes||'')}</textarea>
+            </div>
+          </section>
+
+          <!-- Checklist -->
+          <section class="sb-modal-section">
+            <div class="sb-modal-section-head">
+              <h3 class="sb-modal-section-title">Checklist</h3>
+              <button class="rp-btn-sm" onclick="_sbAddCheck()">+ Item</button>
+            </div>
+            <div id="sbm-checklist">${checklistHtml||'<p class="sb-empty-note">No items. Add checklist items above.</p>'}</div>
+          </section>
+        </div>
+
+        <!-- Right Col -->
+        <div class="sb-modal-right">
+          <!-- Crew Assignment -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+              Crew
+            </h3>
+            <label class="sb-modal-field">
+              <span>Assigned Crew</span>
+              <select class="rp-input" id="sbm-crew" onchange="_sbCrewChanged()">
+                <option value="">— Unassigned —</option>
+                ${crewOptions}
+              </select>
+            </label>
+            <div class="sb-modal-field" style="margin-top:8px">
+              <span>Employees on this visit</span>
+              <div class="sb-emp-chips" id="sbm-emp-chips">${empChips||'<span class="sb-empty-note">None assigned.</span>'}</div>
+              <div class="sb-emp-add-row">
+                <select class="rp-input" id="sbm-add-emp-select" style="flex:1">
+                  <option value="">+ Add employee…</option>
+                  ${allReps.filter(r=>r.active!==false&&r.active!==0).map(r=>
+                    `<option value="${r.id}"${assignedEmpIds.has(r.id)?' disabled':''}>
+                      ${escapeHtml(r.name)} (${r.role||'rep'})
+                    </option>`).join('')}
+                </select>
+                <button class="rp-btn-sm" onclick="_sbAddEmployee()">Add</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Photos -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Before &amp; After Photos</h3>
+            ${photosHtml('Before', beforePhotos, 'before_photos')}
+            ${photosHtml('After',  afterPhotos,  'after_photos')}
+          </section>
+
+          <!-- Work Tracking -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Work Tracking</h3>
+            <div class="sb-work-track">
+              <div class="sb-work-stat">
+                <span class="sb-work-num">${budgetedHrs}h</span>
+                <span class="sb-work-lbl">Budgeted</span>
+              </div>
+              <div class="sb-work-stat">
+                <span class="sb-work-num sb-work-num--blue">${actualHrs}h</span>
+                <span class="sb-work-lbl">Actual</span>
+              </div>
+            </div>
+            <label class="sb-modal-field" style="margin-top:8px">
+              <span>Budgeted Hours</span>
+              <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||''}">
+            </label>
+          </section>
+
+          <!-- Customer / Property -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Customer</h3>
+            <div><strong>${escapeHtml(wo.client_name||'—')}</strong></div>
+            ${wo.property_addr ? `<div style="font-size:12px;color:var(--gw-text-muted);margin-top:4px">${escapeHtml(wo.property_addr)}</div>` : ''}
+            ${wo.amount_est ? `<div style="font-size:12px;margin-top:4px">Estimate: <strong>$${wo.amount_est.toFixed(2)}</strong></div>` : ''}
+          </section>
+        </div>
+      </div>
+
+      <!-- Action Bar -->
+      <div class="sb-modal-actions">
+        <div class="sb-modal-actions-left">
+          <button class="sb-action-btn sb-action-skip" onclick="_sbSkipVisit('${wo.id}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Skip
+          </button>
+          <button class="sb-action-btn sb-action-wo" onclick="show('workOrderDetail','${wo.id}');_sbCloseModal()">
+            Work Order
+          </button>
+          ${wo.opp_id ? `<button class="sb-action-btn sb-action-upsell" onclick="_sbUpsell('${wo.opp_id}')">Up-sell</button>` : ''}
+        </div>
+        <div class="sb-modal-actions-right">
+          <button class="sb-action-btn sb-action-delete" onclick="_sbDeleteVisit('${wo.id}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            Delete
+          </button>
+          <button class="rp-btn" onclick="_sbSaveVisit('${wo.id}',false)">Save</button>
+          <button class="rp-btn rp-btn--primary" onclick="_sbSaveVisit('${wo.id}',true)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+            Complete &amp; Invoice
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  // Store current WO for handlers
+  window._sbCurrentWO = JSON.parse(JSON.stringify(wo));
+  window._sbCurrentWOId = wo.id;
+};
+
+window._sbCloseModal = function() {
+  const m = document.getElementById('sb-visit-modal');
+  if (m) m.remove();
+  window._sbCurrentWO = null;
+};
+
+window._sbSaveVisit = async function(woId, andComplete) {
+  const body = {
+    scheduled_date: document.getElementById('sbm-date')?.value || null,
+    scheduled_time: document.getElementById('sbm-time')?.value || null,
+    status:         document.getElementById('sbm-status')?.value || 'scheduled',
+    notes:          document.getElementById('sbm-notes')?.value  || '',
+    completion_notes: document.getElementById('sbm-completion-notes')?.value || '',
+    crew_id:        document.getElementById('sbm-crew')?.value   || null,
+    duration_hours: parseFloat(document.getElementById('sbm-duration')?.value||'0') || null,
+    employee_ids:   [...document.querySelectorAll('#sbm-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId),
+  };
+  if (andComplete) body.status = 'completed';
+  try {
+    const r = await fetch(`/api/work-orders/${woId}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    showToast(andComplete ? 'Visit completed! Invoice flow next.' : 'Visit saved', 'success');
+    _sbCloseModal();
+    await _sbRefresh();
+    if (andComplete) {
+      // Could trigger invoice creation flow here
+      setTimeout(()=>showToast('Ready to invoice — use Work Orders > Create Invoice','info'),1500);
+    }
+  } catch(e) {
+    showToast('Save failed: '+e.message,'error');
+  }
+};
+
+window._sbDeleteVisit = async function(woId) {
+  if (!confirm('Delete this work order? This cannot be undone.')) return;
+  try {
+    await fetch(`/api/work-orders/${woId}`,{method:'DELETE'});
+    showToast('Work order deleted','success');
+    _sbCloseModal();
+    await _sbRefresh();
+  } catch(e) { showToast('Delete failed','error'); }
+};
+
+window._sbSkipVisit = async function(woId) {
+  if (!confirm('Mark this visit as skipped/cancelled?')) return;
+  try {
+    await fetch(`/api/work-orders/${woId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'cancelled'})});
+    showToast('Visit skipped','success');
+    _sbCloseModal();
+    await _sbRefresh();
+  } catch(e) { showToast('Failed','error'); }
+};
+
+window._sbCrewChanged = function() {
+  const crewId = document.getElementById('sbm-crew')?.value;
+  const crews = window._sbState.crews||[];
+  const crew = crews.find(c=>c.id===crewId);
+  if (!crew?.members?.length) return;
+  // Auto-suggest crew members
+  const chipsEl = document.getElementById('sbm-emp-chips');
+  const selectEl = document.getElementById('sbm-add-emp-select');
+  crew.members.forEach(m=>{
+    const existing = chipsEl?.querySelector(`[data-rep-id="${m.repId}"]`);
+    if (!existing) {
+      const allReps = window._gwAllReps||[];
+      const rep = allReps.find(r=>r.id===m.repId)||{id:m.repId,name:m.name||m.repId};
+      const chip = document.createElement('span');
+      chip.className='sb-emp-chip'; chip.dataset.repId=m.repId;
+      chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>
+        ${escapeHtml(rep.name||m.repId)}
+        <button onclick="_sbRemoveEmployee('${m.repId}')">×</button>`;
+      const placeholder = chipsEl?.querySelector('.sb-empty-note');
+      if (placeholder) placeholder.remove();
+      chipsEl?.appendChild(chip);
+    }
+  });
+};
+
+window._sbAddEmployee = function() {
+  const sel = document.getElementById('sbm-add-emp-select');
+  if (!sel || !sel.value) return;
+  const repId = sel.value;
+  const allReps = window._gwAllReps||[];
+  const rep = allReps.find(r=>r.id===repId)||{id:repId,name:repId};
+  const chipsEl = document.getElementById('sbm-emp-chips');
+  const existing = chipsEl?.querySelector(`[data-rep-id="${repId}"]`);
+  if (existing) { showToast('Already added','info'); return; }
+  const placeholder = chipsEl?.querySelector('.sb-empty-note');
+  if (placeholder) placeholder.remove();
+  const chip = document.createElement('span');
+  chip.className='sb-emp-chip'; chip.dataset.repId=repId;
+  chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>
+    ${escapeHtml(rep.name||repId)}
+    <button onclick="_sbRemoveEmployee('${repId}')">×</button>`;
+  chipsEl?.appendChild(chip);
+  // Disable in select
+  const opt = sel.querySelector(`option[value="${repId}"]`);
+  if (opt) opt.disabled=true;
+  sel.value='';
+};
+
+window._sbRemoveEmployee = function(repId) {
+  const chip = document.querySelector(`#sbm-emp-chips [data-rep-id="${repId}"]`);
+  if (chip) chip.remove();
+  const opt = document.querySelector(`#sbm-add-emp-select option[value="${repId}"]`);
+  if (opt) opt.disabled=false;
+};
+
+window._sbToggleCheck = function(idx) {
+  const wo = window._sbCurrentWO;
+  if (!wo) return;
+  if (wo.checklist[idx]) wo.checklist[idx].done = !wo.checklist[idx].done;
+  const box = document.querySelectorAll('#sbm-checklist .sb-check-box')[idx];
+  const lbl = document.querySelectorAll('#sbm-checklist .sb-check-label')[idx];
+  if (box) { box.classList.toggle('done',wo.checklist[idx].done); box.innerHTML=wo.checklist[idx].done?'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 6l3 3 5-5"/></svg>':''; }
+  if (lbl) lbl.classList.toggle('done',wo.checklist[idx].done);
+};
+window._sbRemoveCheck = function(idx) {
+  const wo = window._sbCurrentWO; if (!wo) return;
+  wo.checklist.splice(idx,1);
+  const el = document.querySelectorAll('#sbm-checklist .sb-check-item')[idx];
+  if (el) el.remove();
+};
+window._sbAddCheck = function() {
+  const text = prompt('Checklist item:'); if (!text) return;
+  const wo = window._sbCurrentWO; if (!wo) return;
+  wo.checklist.push({text,done:false});
+  const container = document.getElementById('sbm-checklist');
+  const placeholder = container?.querySelector('.sb-empty-note');
+  if (placeholder) placeholder.remove();
+  const idx = wo.checklist.length-1;
+  const div=document.createElement('div'); div.className='sb-check-item';
+  div.innerHTML=`<button class="sb-check-box" onclick="_sbToggleCheck(${idx})"></button>
+    <span class="sb-check-label">${escapeHtml(text)}</span>
+    <button class="sb-check-del" onclick="_sbRemoveCheck(${idx})">×</button>`;
+  container?.appendChild(div);
+};
+
+window._sbAddLine = function() {
+  const container = document.getElementById('sbm-line-items');
+  if (!container) return;
+  const wo = window._sbCurrentWO;
+  if (!wo.materials) wo.materials=[];
+  const idx = wo.materials.length;
+  wo.materials.push({name:'',qty:1,unit:'ea',cost:0});
+  const div=document.createElement('div'); div.className='sb-line-row';
+  div.innerHTML=`<input class="rp-input" placeholder="Item / Service" style="flex:2">
+    <input class="rp-input" value="1" type="number" min="0" style="width:60px" placeholder="Qty">
+    <input class="rp-input" placeholder="Unit" style="width:70px">
+    <input class="rp-input" value="0" type="number" min="0" placeholder="Rate" style="width:80px">
+    <button class="rp-btn-sm rp-btn-sm--danger" onclick="_sbRemoveLine(${idx})">×</button>`;
+  container.appendChild(div);
+};
+window._sbAddPackage = function() { showToast('Package library coming soon','info'); };
+window._sbRemoveLine = function(idx) {
+  const rows=document.querySelectorAll('#sbm-line-items .sb-line-row');
+  if (rows[idx]) rows[idx].remove();
+};
+window._sbUploadPhoto = function(evt, field) {
+  const file = evt.target?.files?.[0]; if (!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const url=e.target.result;
+    const wo=window._sbCurrentWO; if (!wo) return;
+    if (!wo[field]) wo[field]=[];
+    wo[field].push(url);
+    const container=document.getElementById(`sb-photos-${field}`);
+    const addBtn=container?.querySelector('.sb-photo-add');
+    const thumb=document.createElement('div'); thumb.className='sb-photo-thumb';
+    thumb.innerHTML=`<img src="${url}" alt="photo"><button onclick="_sbRemovePhoto('${field}','${url}')">×</button>`;
+    if(addBtn) container.insertBefore(thumb,addBtn); else container?.appendChild(thumb);
+  };
+  reader.readAsDataURL(file);
+};
+window._sbRemovePhoto = function(field,url) {
+  const wo=window._sbCurrentWO; if(!wo) return;
+  wo[field]=(wo[field]||[]).filter(u=>u!==url);
+  const container=document.getElementById(`sb-photos-${field}`);
+  container?.querySelectorAll('.sb-photo-thumb').forEach(el=>{
+    if(el.querySelector('img')?.src===url) el.remove();
+  });
+};
+window._sbUpsell = function(oppId) { show('oppDetail',oppId); _sbCloseModal(); };
+
+// ── New Visit Modal ──────────────────────────────────────────────────────────
+window._sbOpenNewVisit = async function(prefilledDate) {
+  const crews   = window._sbState.crews||[];
+  const allReps = window._gwAllReps||[];
+
+  const modal = document.createElement('div');
+  modal.id='sb-new-visit-modal';
+  modal.className='sb-modal-overlay';
+
+  const crewOptions = crews.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const repOptions  = allReps.filter(r=>r.active!==false&&r.active!==0)
+    .map(r=>`<option value="${r.id}">${escapeHtml(r.name)} (${r.role||'rep'})</option>`).join('');
+
+  modal.innerHTML=`
+    <div class="sb-modal-panel sb-modal-panel--new">
+      <div class="sb-modal-header">
+        <div class="sb-modal-title-block"><span class="sb-modal-wo-num">New Work Order / Visit</span></div>
+        <button class="sb-modal-close" onclick="document.getElementById('sb-new-visit-modal')?.remove()">×</button>
+      </div>
+      <div class="sb-modal-body" style="display:block">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <label class="sb-modal-field">
+            <span>Client / Job Name</span>
+            <input class="rp-input" id="snv-client" placeholder="Client name">
+          </label>
+          <label class="sb-modal-field">
+            <span>Service Type</span>
+            <select class="rp-input" id="snv-type">
+              <option>Landscaping</option><option>Lawn Care</option><option>Install</option>
+              <option>Maintenance</option><option>Cleanup</option><option>Snow</option><option>Other</option>
+            </select>
+          </label>
+          <label class="sb-modal-field">
+            <span>Date</span>
+            <input class="rp-input" id="snv-date" type="date" value="${prefilledDate||''}">
+          </label>
+          <label class="sb-modal-field">
+            <span>Time</span>
+            <input class="rp-input" id="snv-time" type="time">
+          </label>
+          <label class="sb-modal-field">
+            <span>Crew</span>
+            <select class="rp-input" id="snv-crew" onchange="_snvCrewChanged()">
+              <option value="">— Unassigned —</option>
+              ${crewOptions}
+            </select>
+          </label>
+          <label class="sb-modal-field">
+            <span>Budgeted Hours</span>
+            <input class="rp-input" id="snv-duration" type="number" min="0" step="0.5" placeholder="e.g. 4">
+          </label>
+          <label class="sb-modal-field" style="grid-column:span 2">
+            <span>Property Address</span>
+            <input class="rp-input" id="snv-addr" placeholder="123 Main St, City, State">
+          </label>
+          <label class="sb-modal-field" style="grid-column:span 2">
+            <span>Scope / Notes</span>
+            <textarea class="rp-input" id="snv-notes" rows="3" placeholder="Job scope, crew instructions…"></textarea>
+          </label>
+          <div style="grid-column:span 2">
+            <span style="font-size:12px;font-weight:600;color:var(--gw-text-muted);display:block;margin-bottom:6px">Employees</span>
+            <div class="sb-emp-chips" id="snv-emp-chips"><span class="sb-empty-note">None — select crew to auto-fill, or add individually.</span></div>
+            <div class="sb-emp-add-row" style="margin-top:6px">
+              <select class="rp-input" id="snv-add-emp">${repOptions}</select>
+              <button class="rp-btn-sm" onclick="_snvAddEmployee()">+ Add</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="sb-modal-actions">
+        <button class="rp-btn" onclick="document.getElementById('sb-new-visit-modal')?.remove()">Cancel</button>
+        <button class="rp-btn rp-btn--primary" onclick="_snvCreate()">Create Work Order</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+};
+
+window._snvCrewChanged = function() {
+  const crewId = document.getElementById('snv-crew')?.value;
+  const crews = window._sbState.crews||[];
+  const crew = crews.find(c=>c.id===crewId);
+  if (!crew?.members?.length) return;
+  const allReps = window._gwAllReps||[];
+  const chipsEl = document.getElementById('snv-emp-chips');
+  const placeholder = chipsEl?.querySelector('.sb-empty-note');
+  if(placeholder) placeholder.remove();
+  crew.members.forEach(m=>{
+    if(chipsEl?.querySelector(`[data-rep-id="${m.repId}"]`)) return;
+    const rep=allReps.find(r=>r.id===m.repId)||{id:m.repId,name:m.name||m.repId};
+    const chip=document.createElement('span');
+    chip.className='sb-emp-chip'; chip.dataset.repId=m.repId;
+    chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>${escapeHtml(rep.name||m.repId)}<button onclick="this.parentElement.remove()">×</button>`;
+    chipsEl?.appendChild(chip);
+  });
+};
+window._snvAddEmployee = function() {
+  const sel=document.getElementById('snv-add-emp'); if(!sel||!sel.value) return;
+  const repId=sel.value;
+  const allReps=window._gwAllReps||[];
+  const rep=allReps.find(r=>r.id===repId)||{id:repId,name:repId};
+  const chipsEl=document.getElementById('snv-emp-chips');
+  if(chipsEl?.querySelector(`[data-rep-id="${repId}"]`)) return;
+  const placeholder=chipsEl?.querySelector('.sb-empty-note'); if(placeholder) placeholder.remove();
+  const chip=document.createElement('span');
+  chip.className='sb-emp-chip'; chip.dataset.repId=repId;
+  chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>${escapeHtml(rep.name||repId)}<button onclick="this.parentElement.remove()">×</button>`;
+  chipsEl?.appendChild(chip);
+};
+window._snvCreate = async function() {
+  const clientName = document.getElementById('snv-client')?.value?.trim();
+  if(!clientName) { showToast('Client name required','error'); return; }
+  const body={
+    client_name: clientName,
+    type:        document.getElementById('snv-type')?.value||'Service',
+    scheduled_date: document.getElementById('snv-date')?.value||null,
+    scheduled_time: document.getElementById('snv-time')?.value||null,
+    crew_id:        document.getElementById('snv-crew')?.value||null,
+    duration_hours: parseFloat(document.getElementById('snv-duration')?.value||'0')||null,
+    property_addr:  document.getElementById('snv-addr')?.value||'',
+    notes:          document.getElementById('snv-notes')?.value||'',
+    employee_ids:   [...document.querySelectorAll('#snv-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId),
+  };
+  try {
+    const r=await fetch('/api/work-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.error);
+    showToast(`Work Order ${d.wo_number} created`,'success');
+    document.getElementById('sb-new-visit-modal')?.remove();
+    await _sbRefresh();
+  } catch(e) { showToast('Create failed: '+e.message,'error'); }
+};
+
+// ── Crew Manager Modal ────────────────────────────────────────────────────────
+window._sbOpenCrewManager = async function() {
+  // Ensure fresh data
+  try {
+    const [cr,rr] = await Promise.all([
+      fetch('/api/crews').then(r=>r.json()),
+      fetch('/api/reps').then(r=>r.json()),
+    ]);
+    if(cr.ok) window._sbState.crews = cr.data||[];
+    if(rr.ok) window._gwAllReps = rr.data||rr.reps||[];
+  } catch(e){}
+
+  _sbRenderCrewManager();
+};
+
+function _sbRenderCrewManager() {
+  const existing = document.getElementById('sb-crew-manager-modal');
+  if(existing) existing.remove();
+
+  const crews   = window._sbState.crews||[];
+  const allReps = window._gwAllReps||[];
+
+  const PALETTE = ['#22c55e','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+
+  const crewRows = crews.map(cr=>{
+    const memberNames = (cr.members||[]).map(m=>{
+      const r=allReps.find(x=>x.id===m.repId); return `${r?.name||m.repId} (${m.crewRole})`;
+    }).join(', ');
+    return `
+      <div class="sb-cm-crew-row" id="cm-crew-${cr.id}">
+        <span class="sb-crew-dot-lg" style="background:${cr.color}"></span>
+        <div class="sb-cm-crew-info">
+          <strong>${escapeHtml(cr.name)}</strong>
+          <span class="sb-cm-members">${memberNames||'No members'}</span>
+        </div>
+        <div class="sb-cm-crew-actions">
+          <button class="rp-btn-sm" onclick="_sbEditCrew('${cr.id}')">Edit</button>
+          <button class="rp-btn-sm rp-btn-sm--danger" onclick="_sbDeleteCrew('${cr.id}')">Delete</button>
         </div>
       </div>`;
   }).join('');
 
-  const weekLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[4].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+  const repOptions = allReps.filter(r=>r.active!==false&&r.active!==0)
+    .map(r=>`<option value="${r.id}">${escapeHtml(r.name)} (${r.role||'rep'})</option>`).join('');
 
-  view.innerHTML = `
-  <div class="sched-shell">
-    <header class="rp-header" style="max-width:1200px;margin:0 auto;padding:20px 24px 16px">
-      <div class="rp-header-left">
-        <h1 class="rp-title">Schedule Board</h1>
-        <p class="rp-subtitle">${weekLabel}</p>
+  const colorSwatches = PALETTE.map(c=>`
+    <button class="sb-color-swatch" style="background:${c}" data-color="${c}" onclick="_sbPickColor('${c}',this)"></button>`).join('');
+
+  const modal=document.createElement('div');
+  modal.id='sb-crew-manager-modal';
+  modal.className='sb-modal-overlay';
+  modal.innerHTML=`
+    <div class="sb-modal-panel sb-modal-panel--crew-mgr">
+      <div class="sb-modal-header">
+        <div class="sb-modal-title-block"><span class="sb-modal-wo-num">Crew Manager</span></div>
+        <button class="sb-modal-close" onclick="document.getElementById('sb-crew-manager-modal')?.remove()">×</button>
       </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch View</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+      <div class="sb-modal-body" style="display:block;max-height:70vh;overflow-y:auto">
+        <!-- Existing Crews -->
+        <section class="sb-modal-section">
+          <h3 class="sb-modal-section-title">Your Crews</h3>
+          <div id="sb-cm-crew-list">
+            ${crewRows||'<p class="sb-empty-note">No crews yet. Create your first crew below.</p>'}
+          </div>
+        </section>
+
+        <!-- Create New Crew -->
+        <section class="sb-modal-section" style="border-top:1px solid var(--gw-border);padding-top:20px;margin-top:8px">
+          <h3 class="sb-modal-section-title">Create New Crew</h3>
+          <div style="display:grid;gap:12px">
+            <label class="sb-modal-field">
+              <span>Crew Name</span>
+              <input class="rp-input" id="cm-crew-name" placeholder="e.g. Landscape Crew, Snow Team A">
+            </label>
+            <div class="sb-modal-field">
+              <span>Crew Color</span>
+              <div class="sb-color-palette" id="cm-color-palette">${colorSwatches}</div>
+              <input type="hidden" id="cm-crew-color" value="${PALETTE[0]}">
+            </div>
+            <div class="sb-modal-field">
+              <span>Members</span>
+              <div class="sb-emp-chips" id="cm-emp-chips"><span class="sb-empty-note">Add employees below.</span></div>
+              <div class="sb-emp-add-row" style="margin-top:6px">
+                <select class="rp-input" id="cm-emp-role">
+                  <option value="laborer">Laborer</option>
+                  <option value="foreman">Foreman</option>
+                </select>
+                <select class="rp-input" id="cm-emp-select">${repOptions}</select>
+                <button class="rp-btn-sm" onclick="_sbCmAddMember()">+ Add</button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
-    </header>
-    <div style="max-width:1200px;margin:0 auto;padding:0 24px 32px">
-      <div class="sched-week-grid">
-        ${weekCols}
+      <div class="sb-modal-actions">
+        <button class="rp-btn" onclick="document.getElementById('sb-crew-manager-modal')?.remove()">Close</button>
+        <button class="rp-btn rp-btn--primary" onclick="_sbCreateCrew()">Create Crew</button>
       </div>
-    </div>
-  </div>`;
+    </div>`;
+
+  document.body.appendChild(modal);
+  // Pre-select first color
+  const firstSwatch = modal.querySelector('.sb-color-swatch');
+  if(firstSwatch) firstSwatch.classList.add('selected');
 }
-window.scheduleBoard = scheduleBoard;
+
+window._sbPickColor = function(color, btn) {
+  document.querySelectorAll('#cm-color-palette .sb-color-swatch').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  const inp = document.getElementById('cm-crew-color');
+  if(inp) inp.value = color;
+};
+window._sbCmAddMember = function() {
+  const sel=document.getElementById('cm-emp-select');
+  const roleEl=document.getElementById('cm-emp-role');
+  if(!sel||!sel.value) return;
+  const repId=sel.value; const crewRole=roleEl?.value||'laborer';
+  const allReps=window._gwAllReps||[];
+  const rep=allReps.find(r=>r.id===repId)||{id:repId,name:repId};
+  const chipsEl=document.getElementById('cm-emp-chips');
+  if(chipsEl?.querySelector(`[data-rep-id="${repId}"]`)) { showToast('Already added','info'); return; }
+  const placeholder=chipsEl?.querySelector('.sb-empty-note'); if(placeholder) placeholder.remove();
+  const chip=document.createElement('span');
+  chip.className='sb-emp-chip'; chip.dataset.repId=repId; chip.dataset.crewRole=crewRole;
+  chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>
+    <strong style="font-size:11px;color:var(--gw-text-muted);text-transform:uppercase">${crewRole}</strong>
+    &nbsp;${escapeHtml(rep.name||repId)}<button onclick="this.parentElement.remove()">×</button>`;
+  chipsEl?.appendChild(chip);
+};
+window._sbCreateCrew = async function() {
+  const name=document.getElementById('cm-crew-name')?.value?.trim();
+  if(!name) { showToast('Crew name required','error'); return; }
+  const color=document.getElementById('cm-crew-color')?.value||'#22c55e';
+  const chips=[...document.querySelectorAll('#cm-emp-chips .sb-emp-chip')];
+  const members=chips.map(c=>({repId:c.dataset.repId, crewRole:c.dataset.crewRole||'laborer'}));
+  try {
+    const r=await fetch('/api/crews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,color,members})});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.error);
+    showToast(`Crew "${name}" created`,'success');
+    document.getElementById('sb-crew-manager-modal')?.remove();
+    window._sbState.loaded=false;
+    await _sbLoadData();
+    _sbRenderCrewManager();
+    _sbRender();
+  } catch(e) { showToast('Create failed: '+e.message,'error'); }
+};
+
+window._sbEditCrew = async function(crewId) {
+  const crew = (window._sbState.crews||[]).find(c=>c.id===crewId);
+  if(!crew) return;
+  const newName = prompt('Crew name:', crew.name);
+  if(newName===null) return;
+  try {
+    await fetch(`/api/crews/${crewId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName,color:crew.color})});
+    showToast('Crew updated','success');
+    window._sbState.loaded=false; await _sbLoadData();
+    document.getElementById('sb-crew-manager-modal')?.remove();
+    _sbRenderCrewManager(); _sbRender();
+  } catch(e) { showToast('Update failed','error'); }
+};
+window._sbDeleteCrew = async function(crewId) {
+  const crew=(window._sbState.crews||[]).find(c=>c.id===crewId);
+  if(!confirm(`Delete crew "${crew?.name}"? Work orders will become unassigned.`)) return;
+  try {
+    await fetch(`/api/crews/${crewId}`,{method:'DELETE'});
+    showToast('Crew deleted','success');
+    window._sbState.loaded=false; await _sbLoadData();
+    document.getElementById('sb-crew-manager-modal')?.remove();
+    _sbRenderCrewManager(); _sbRender();
+  } catch(e) { showToast('Delete failed','error'); }
+};
 
 // ── 3. Dispatch Board ─────────────────────────────────────────────────────────
 function dispatchBoard() {
@@ -12488,38 +13423,47 @@ function recurringServices() {
 window.recurringServices = recurringServices;
 
 // ── 5. Work Order List ────────────────────────────────────────────────────────
-function workOrderList() {
-  const wos = state.workOrders || [];
+async function workOrderList() {
+  // Show skeleton
+  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)"><div class="sb-spinner"></div><p style="margin-top:12px">Loading work orders…</p></div>`;
 
-  // Summary bar
+  // Load from D1 + localStorage fallback
+  let wos = [];
+  try {
+    const r = await fetch('/api/work-orders');
+    const d = await r.json();
+    if (d.ok) wos = d.data||[];
+  } catch(e) {
+    wos = (state.workOrders||[]).map(w=>({
+      id:w.id, wo_number:w.woNumber||w.id, client_name:w.clientName||'',
+      type:w.type||'Service', status:w.status||'scheduled',
+      scheduled_date:w.date||null, crew_name:w.crew||'', crew_color:'#94a3b8',
+    }));
+  }
+
   const counts = { scheduled:0, 'in-progress':0, completed:0, cancelled:0, 'on-hold':0 };
   wos.forEach(w => { if (counts[w.status]!==undefined) counts[w.status]++; });
 
-  function newWO() {
-    const id = 'wo-' + Date.now();
-    const woNum = 'WO-' + String(wos.length+1).padStart(5,'0');
-    const wo = { id, woNumber: woNum, status:'scheduled', crew:'', date:'', type:'Service',
-      clientName:'', notes:'', checklist:[], materials:[], assets:[], readiness:'ready',
-      createdAt: new Date().toISOString() };
-    state.workOrders = [...wos, wo];
-    saveState();
-    show('workOrderDetail', id);
-  }
-
-  const rows = wos.length ? [...wos].reverse().map(wo => `
-    <div class="wo-row" onclick="show('workOrderDetail','${wo.id}')" style="cursor:pointer">
-      <span class="wo-number">${_p6WONum(wo)}</span>
-      <span class="wo-client">${escapeHtml(wo.clientName||wo.oppId||'—')}</span>
+  const rows = wos.length ? wos.map(wo => {
+    const crewColor = wo.crew_color || '#94a3b8';
+    return `
+    <div class="wo-row" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer">
+      <span class="wo-number">${escapeHtml(wo.wo_number||wo.id)}</span>
+      <span class="wo-client">${escapeHtml(wo.client_name||wo.title||'—')}</span>
       <span class="wo-type">${escapeHtml(wo.type||'Service')}</span>
-      <span class="wo-date">${wo.date ? _p5FmtDate(wo.date) : '—'}</span>
-      <span class="wo-date">${escapeHtml(wo.crew||'Unassigned')}</span>
+      <span class="wo-date">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : '—'}</span>
+      <span style="display:flex;align-items:center;gap:6px">
+        ${wo.crew_name?`<span style="width:8px;height:8px;border-radius:50%;background:${crewColor};display:inline-block"></span>`:''}
+        ${escapeHtml(wo.crew_name||'Unassigned')}
+      </span>
       <span><span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></span>
       <span class="wo-actions">
-        <button class="rp-btn-sm" onclick="event.stopPropagation();show('workOrderDetail','${wo.id}')">Open</button>
-        <button class="rp-btn-sm rp-btn-sm--danger" onclick="event.stopPropagation();_p6DeleteWO('${wo.id}')">✕</button>
+        <button class="rp-btn-sm" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">Open</button>
+        <button class="rp-btn-sm rp-btn-sm--danger" onclick="event.stopPropagation();_wlDeleteWO('${wo.id}')">✕</button>
       </span>
-    </div>`) .join('')
-    : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:12px">No work orders yet.</p></div>`;
+    </div>`;
+  }).join('')
+  : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:16px">No work orders yet.</p><button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">+ Create First Work Order</button></div>`;
 
   view.innerHTML = `
   <div class="wo-list-shell">
@@ -12530,7 +13474,7 @@ function workOrderList() {
       </div>
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('scheduleBoard')">Schedule Board</button>
-        <button class="rp-btn rp-btn--primary" onclick="_p6NewWO()">+ New Work Order</button>
+        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">+ New Work Order</button>
       </div>
     </header>
 
@@ -12547,9 +13491,20 @@ function workOrderList() {
     </div>
   </div>`;
 
-  window._p6NewWO = newWO;
+  // Preload sbState so modal works from work order list
+  if (!window._sbState.loaded) {
+    _sbLoadData().catch(()=>{});
+  }
 }
 window.workOrderList = workOrderList;
+window._wlDeleteWO = async function(id) {
+  if (!confirm('Delete this work order?')) return;
+  try {
+    await fetch(`/api/work-orders/${id}`,{method:'DELETE'});
+    showToast('Work order deleted','success');
+    workOrderList();
+  } catch(e) { showToast('Delete failed','error'); }
+};
 
 window._p6DeleteWO = function(id) {
   if (!confirm('Delete this work order?')) return;
