@@ -38,7 +38,7 @@ const _VIEW_WORKSPACE_MAP = {
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
   aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
   process:'gwSales', forms:'gwSales', scripts:'gwSales', emailTemplates:'gwSales',
-  objections:'gwSales', calculator:'gwSales', academy:'gwSales',
+  objections:'gwSales', calculator:'gwSales',
   // Financial workspace
   financialHub:'gwFinancial', invoices:'gwFinancial', payments:'gwFinancial',
   deposits:'gwFinancial', statements:'gwFinancial', financialActivity:'gwFinancial',
@@ -494,7 +494,6 @@ function fallbackCopy(text){
       campaigns:'Sequences', process:'Playbooks',
       forms:'Playbooks', scripts:'Talk Tracks', emailTemplates:'Templates',
       objections:'Talk Tracks', calculator:'Pricing Tools', ai:'AI Assist',
-      academy:'Playbooks',
       // Financial workspace tabs
       financialHub:'Overview', invoices:'Invoices',
       payments:'Payments', deposits:'Deposits', statements:'Statements',
@@ -1102,7 +1101,7 @@ function show(viewName='today', param){
       playbooks:'Playbooks', aiAssist:'AI Assist',
       campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
       emailTemplates:'Templates', objections:'Talk Tracks',
-      calculator:'Pricing Tools', ai:'AI Assist', academy:'Playbooks',
+      calculator:'Pricing Tools', ai:'AI Assist',
       // Financial
       financialHub:'Overview', invoices:'Invoices', payments:'Payments',
       deposits:'Deposits', statements:'Statements', financialActivity:'Activity',
@@ -1154,7 +1153,7 @@ function show(viewName='today', param){
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
     scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
-    calculator:'Sales', ai:'Sales', academy:'Sales',
+    calculator:'Sales', ai:'Sales',
     // Financial workspace tab aliases
     financialHub:'Financial', invoices:'Financial', payments:'Financial',
     deposits:'Financial', statements:'Financial', financialActivity:'Financial',
@@ -1352,13 +1351,19 @@ function show(viewName='today', param){
     gwAdminWorkflow: (s) => gwAdminWorkflow(s),
     gwAudit:      ()  => gwAuditTab(),
     gwAccessModes:(s) => gwAccessModes(s),
+    // Learning track views — must be in routes so show('learnEstimating') etc.
+    // resolve correctly on reload (hash restore) and after _glMarkDone re-render
+    academy:         () => gwLearning('academy'),
+    learnEstimating: () => learnEstimating(),
+    learnFinancial:  () => learnFinancial(),
+    learnCrmGuide:   () => learnCrmGuide(),
   };
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
   const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports'];
   const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','communications','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
-    'process','forms','scripts','emailTemplates','objections','calculator','academy'];
+    'process','forms','scripts','emailTemplates','objections','calculator'];
   const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
   const opsAliases   = ['dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
@@ -1367,7 +1372,7 @@ function show(viewName='today', param){
   // Alias redirect: open workspace shell, then let the workspace render the right tab
   // For legacy direct calls, we route them to the individual functions directly
   // (workspace shell not needed — direct render is the legacy behavior)
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, academy, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ai};
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
