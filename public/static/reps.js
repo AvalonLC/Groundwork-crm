@@ -752,10 +752,21 @@ function renderLoginScreen() {
             }
 
             // 4. Store nav perms globally (replaces localStorage avalonNavPermissions)
+            // Merge D1 perms with DEFAULT_NAV_PERMS so newly-added views are never
+            // blocked by a stale D1 record that predates their addition.
             if (bs.data.navPerms) {
-              window._gwNavPerms = bs.data.navPerms;
+              const _defaults = (typeof DEFAULT_NAV_PERMS !== 'undefined') ? DEFAULT_NAV_PERMS : {};
+              const _merged = {};
+              const _allRoles = new Set([...Object.keys(_defaults), ...Object.keys(bs.data.navPerms)]);
+              _allRoles.forEach(role => {
+                const dv = _defaults[role] || [];
+                const sv = bs.data.navPerms[role] || [];
+                // Union: default views + server views (server can restrict via admin UI later)
+                _merged[role] = [...new Set([...dv, ...sv])];
+              });
+              window._gwNavPerms = _merged;
               // Also write to localStorage as fallback cache for offline use
-              try { localStorage.setItem('avalonNavPermissions', JSON.stringify(bs.data.navPerms)); } catch(_) {}
+              try { localStorage.setItem('avalonNavPermissions', JSON.stringify(_merged)); } catch(_) {}
             }
           }
         }

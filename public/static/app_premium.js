@@ -308,9 +308,11 @@ function canViewTab(viewName) {
   // Admin always has full access (no permission gate for admin role)
   if (rep.role === 'admin') return true;
   const perms = loadNavPerms();
-  // Check role-specific permissions; fall back to DEFAULT_NAV_PERMS for unknown roles
-  const roleAllowed = perms[rep.role] || DEFAULT_NAV_PERMS[rep.role] || [];
-  if (roleAllowed.includes(viewName)) return true;
+  // Check cached/D1-sourced perms first, then always supplement with DEFAULT_NAV_PERMS
+  // so newly-added views are never blocked by a stale cached permission set.
+  const cachedAllowed  = perms[rep.role] || [];
+  const defaultAllowed = DEFAULT_NAV_PERMS[rep.role] || [];
+  if (cachedAllowed.includes(viewName) || defaultAllowed.includes(viewName)) return true;
   // For custom roles not in DEFAULT_NAV_PERMS, check D1-sourced role permissions
   if (window._gwRoles) {
     const roleDef = window._gwRoles.find(r => r.id === rep.role);
