@@ -567,12 +567,9 @@ function fallbackCopy(text){
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════════════
-// SIDEBAR NAV TREE — v2 flat design
-// ─────────────────────────────────────────────────────────────────────────────
-// Config format per item:
-//   { id, label, icon? }          → standard nav button
-//   { divider: 'Label Text' }     → section label (non-clickable)
-//   { id, label, icon?, sub:true }→ indented sub-item (always visible)
+// SIDEBAR NAV TREE — v3 clean rebuild
+// Config: { id, label }          → regular item
+//         { id, label, sub:true }→ permanently-visible indented child
 // ════════════════════════════════════════════════════════════════════════════
 
 const _gwWsNameToId = {
@@ -584,83 +581,21 @@ const _gwWsNameToId = {
   Admin: 'gwAdmin',
 };
 
-// SVG icon library for nav items (14×14 viewBox)
-const _gwNavIcons = {
-  today:           `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5.5 10.5l1.5 1.5 3-3"/></svg>`,
-  fieldDashboard:  `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.5"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>`,
-  salesReports:    `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12l3-4 3 2 3-5 3 3"/></svg>`,
-  financialReports:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>`,
-  opsReports:      `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>`,
-  pipeline:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>`,
-  lead:            `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.5"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>`,
-  clients:         `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-3 2.2-5 5-5"/><circle cx="11.5" cy="6" r="2"/><path d="M9 14c0-2.8 1.7-4 2.5-4 .8 0 2.5 1.2 2.5 4"/></svg>`,
-  properties:      `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8L8 2l6 6v6H2V8z"/><path d="M6 14V9h4v5"/></svg>`,
-  teamView:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2"/><circle cx="11" cy="5" r="2"/><path d="M1 13c0-2.2 1.8-4 4-4M10 13c0-2.2 1.8-4 4-4M7 13c0-2.8 1.8-4 4-4"/></svg>`,
-  estimates:       `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 6h4M6 9h4M6 12h2"/></svg>`,
-  communications:  `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H2a1 1 0 00-1 1v8a1 1 0 001 1h4l2 2 2-2h4a1 1 0 001-1V3a1 1 0 00-1-1z"/></svg>`,
-  templates:       `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6h12M6 6v8"/></svg>`,
-  sequences:       `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/><path d="M4.5 8h2M9.5 8h2"/></svg>`,
-  talkTracks:      `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-8 5H2v2h3l8 5V3z"/></svg>`,
-  playbooks:       `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3"/><path d="M3 2a1 1 0 00-1 1v10a1 1 0 001 1"/><path d="M6 6h4M6 9h4M6 12h2"/></svg>`,
-  aiAssist:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z"/></svg>`,
-  financialHub:    `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>`,
-  invoices:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h8a1 1 0 011 1v10l-2-1-2 1-2-1-2 1V3a1 1 0 011-1z"/><path d="M6 6h4M6 9h3"/></svg>`,
-  payments:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M1 7.5h14"/><path d="M4 10.5h3"/></svg>`,
-  deposits:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v8M4 11l4 3 4-3"/><path d="M2 6h3M11 6h3"/></svg>`,
-  statements:      `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 6h6M5 9h6M5 12h3"/></svg>`,
-  financialActivity:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10l3-4 3 2 3-5 3 3"/><circle cx="14" cy="6" r="1.5" fill="currentColor" stroke="none"/></svg>`,
-  scheduleBoard:   `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>`,
-  dispatchBoard:   `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L2 6v7h4v-4h4v4h4V6z"/></svg>`,
-  workOrderList:   `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5.5 7.5l1.5 1.5 3-3M6 11h4"/></svg>`,
-  recurringServices:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8A6 6 0 112 8"/><path d="M14 8l-2-2M14 8l2-2"/></svg>`,
-  assetList:       `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>`,
-  maintenanceQueue:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-2 2-2-2 2-2 2 2z"/><path d="M11 5l-7 7a1.4 1.4 0 002 2l7-7"/></svg>`,
-  inventoryList:   `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l5 3v5l-5 3-5-3V5z"/><path d="M8 2v8M3 5l5 3 5-3"/></svg>`,
-  toolsConsumables:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-2 2-2-2 2-2 2 2z"/><path d="M11 5l-7 7a1.4 1.4 0 002 2l7-7"/><path d="M3 3l2 2"/></svg>`,
-  timeTracker:     `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.5v3l2 1.5"/><path d="M6 1h4"/></svg>`,
-  gwTimesheetAdmin:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 6h6M5 9h4M5 12h2"/></svg>`,
-  academy:         `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L1 6l7 4 7-4-7-4z"/><path d="M3.5 8v4c0 1 2 2 4.5 2s4.5-1 4.5-2V8"/></svg>`,
-  learnEstimating: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M6 6h4M6 9h2"/></svg>`,
-  learnFinancial:  `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5"/></svg>`,
-  learnCrmGuide:   `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3"/><path d="M3 2a1 1 0 00-1 1v10a1 1 0 001 1"/></svg>`,
-  settings:        `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>`,
-  userManagement:  `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 14c0-3 2.2-5 5-5"/><path d="M11 9l2 2 2-2M13 11V7"/></svg>`,
-  integrations:    `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="10" y="1" width="5" height="5" rx="1"/><rect x="1" y="10" width="5" height="5" rx="1"/><rect x="10" y="10" width="5" height="5" rx="1"/><path d="M6 3.5h4M3.5 6v4M12.5 6v4M6 12.5h4"/></svg>`,
-  systemTemplates: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6h12M6 6v8"/></svg>`,
-  approvalQueue:   `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l2 2 4-4"/><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>`,
-  gwAudit:         `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2H5a1 1 0 00-1 1v10a1 1 0 001 1h6a1 1 0 001-1V3a1 1 0 00-1-1z"/><path d="M5 6h6M5 9h4M5 12h2"/><circle cx="12" cy="4" r="2.5" fill="currentColor" stroke="none" opacity=".3"/><path d="M11 3.5l.8.8 1.4-1.4" stroke="currentColor" stroke-width="1.3"/></svg>`,
-  portalAdmin:     `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 7h14"/><path d="M5 10.5h6"/></svg>`,
-  fieldMode:       `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="1" width="8" height="14" rx="1.5"/><path d="M7 13h2"/></svg>`,
-  systemConfig:    `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M3 8h10M3 12h6"/></svg>`,
-  gwWorkdaySettings:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.5v3l2 1.5"/><path d="M8 1v2"/></svg>`,
-};
-
-function _gwNavIcon(id) {
-  return _gwNavIcons[id] || `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="3"/></svg>`;
-}
-
 // Render a flat tab config into the sidebar panel.
-// Config array supports: {id, label} | {id, label, sub:true} | {divider:'Label'}
+// Config: {id, label} | {id, label, sub:true} — dividers silently ignored.
 function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   const wsId = _gwWsNameToId[wsName] || null;
   if (!wsId) return;
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
-
   let html = '';
   tabsConfig.forEach(t => {
-    // Section divider label
-    if (t.divider) {
-      html += `<span class="nav-subtab-divider">${t.divider}</span>`;
-      return;
-    }
-    const isActive = t.id === activeTabId;
+    if (t.divider) return;
+    const isActive    = t.id === activeTabId;
     const activeClass = isActive ? ' nav-subtab--active' : '';
-    const subClass    = t.sub    ? ' nav-subtab--sub'    : '';
-    const icon = _gwNavIcon(t.id);
-    html += `<button class="nav-subtab${activeClass}${subClass}" data-tab="${t.id}" onclick="show('${t.id}')">${icon}${t.label}</button>`;
+    const subClass    = t.sub   ? ' nav-subtab--sub'    : '';
+    html += `<button class="nav-subtab${activeClass}${subClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
   });
-
   panel.innerHTML = html;
 }
 
@@ -708,10 +643,8 @@ function gwSales(tab) {
     {id:'clients',        label:'Clients'},
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
-    {divider: 'Outreach'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
-    {divider: 'Resources'},
     {id:'templates',      label:'Templates'},
     {id:'sequences',      label:'Sequences'},
     {id:'talkTracks',     label:'Talk Tracks'},
@@ -789,12 +722,10 @@ function _gwOpsNavConfig() {
     {id:'dispatchBoard',      label:'Dispatch'},
     {id:'workOrderList',      label:'Work Orders'},
     {id:'recurringServices',  label:'Recurring Services'},
-    {divider: 'Resources'},
     {id:'assetList',          label:'Assets',      sub:true},
     {id:'maintenanceQueue',   label:'Maintenance', sub:true},
     {id:'inventoryList',      label:'Inventory',   sub:true},
     {id:'toolsConsumables',   label:'Tools',       sub:true},
-    {divider: 'Time'},
     {id:'timeTracker',        label:'Time Tracker'},
     {id:'gwTimesheetAdmin',   label:'Timesheet Review', sub:true},
   ];
@@ -839,11 +770,9 @@ function _gwAdminNavConfig(canManageUsers, isAdmin) {
     {id:'settings',        label:'General'},
     ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
     {id:'integrations',    label:'Integrations'},
-    {divider: 'Workflow'},
     {id:'systemTemplates', label:'Templates',      sub:true},
     {id:'approvalQueue',   label:'Approval Queue', sub:true},
     {id:'gwAudit',         label:'Audit Log'},
-    {divider: 'Access'},
     {id:'portalAdmin',     label:'Client Portal',  sub:true},
     {id:'fieldMode',       label:'Field Mode',     sub:true},
     ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),

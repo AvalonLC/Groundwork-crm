@@ -7692,168 +7692,144 @@ h1.pl-title,
 .gw-ws-tab { display: none !important; }
 
 /* ══════════════════════════════════════════════════════════════
-   SIDEBAR TREE — redesigned flat nav (v2)
-   ─────────────────────────────────────────────────────────────
-   L0  .nav-workspace   → top-level section heading (collapsible)
-   L1  .nav-subtab      → visible nav item (always shown when section open)
-   L2  .nav-subtab--sub → indented child item (always visible, no toggle)
-   L1d .nav-subtab-divider → section label inside an open panel
+   SIDEBAR NAV TREE — v3 clean rebuild
+   L0  .nav-workspace   → section heading button (icon + label + chevron)
+   L1  .nav-subtab      → item inside open section
+   L2  .nav-subtab--sub → permanently-visible indented child (no toggle)
    ══════════════════════════════════════════════════════════════ */
 
-/* ── Wrapper (section header + its content panel) ── */
+/* ── Section wrapper ── */
 .nav-ws-group {
   display: flex;
   flex-direction: column;
-  margin-bottom: 1px;
 }
 
-/* ── L0: top-level section heading ── */
+/* ── L0: section heading button ── */
 .nav-workspace {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 14px 8px 12px;
-  font-size: 11.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  border-radius: 0;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  border-radius: 8px;
   width: 100%;
   text-align: left;
-  color: rgba(255,255,255,.38);
+  color: rgba(255,255,255,.58);
   background: transparent;
   border: 0;
   cursor: pointer;
   transition: color .12s, background .12s;
   position: relative;
-  margin-top: 4px;
+  margin-top: 1px;
 }
-.nav-workspace svg { flex-shrink: 0; opacity: .55; transition: opacity .12s; }
-.nav-workspace:hover { color: rgba(255,255,255,.72); background: rgba(255,255,255,.05); }
-.nav-workspace:hover svg { opacity: .8; }
-/* Active section: heading lights up */
-.nav-workspace.active { color: rgba(255,255,255,.82); }
-.nav-workspace.active svg { opacity: .9; }
-/* Chevron */
+.nav-workspace svg { flex-shrink: 0; opacity: .6; transition: opacity .12s; }
+.nav-workspace:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.90); }
+.nav-workspace:hover svg { opacity: .85; }
+.nav-workspace.active { color: #fff; background: rgba(255,255,255,.10); font-weight: 700; }
+.nav-workspace.active svg { opacity: 1; }
+.nav-workspace.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 22%; bottom: 22%;
+  width: 3px;
+  background: #34d399;
+  border-radius: 0 3px 3px 0;
+}
 .nav-workspace .nav-chevron-icon {
   margin-left: auto;
-  transition: transform .2s ease;
-  opacity: .4;
+  transition: transform .18s ease;
+  opacity: .35;
   flex-shrink: 0;
 }
-.nav-ws-group--collapsed .nav-workspace .nav-chevron-icon {
-  transform: rotate(-90deg);
-}
-/* Collapsed section: no top margin bleed */
-.nav-ws-group--collapsed { margin-bottom: 0; }
+.nav-ws-group--collapsed .nav-workspace .nav-chevron-icon { transform: rotate(-90deg); }
 
-/* ── L1 panel — slides open/closed ── */
+/* ── L1 panel ── */
 .nav-subtabs {
   display: flex;
   flex-direction: column;
-  padding: 2px 6px 6px 6px;
+  padding: 1px 4px 4px 4px;
   overflow: hidden;
-  transition: max-height .22s ease, opacity .18s ease;
-  max-height: 700px;
-  opacity: 1;
+  transition: max-height .2s ease;
+  max-height: 800px;
 }
 .nav-ws-group--collapsed .nav-subtabs {
   max-height: 0 !important;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
+  padding: 0;
 }
 
-/* ── L1: each nav item inside the panel ── */
+/* ── L1: item row ── */
 .nav-subtab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
   width: 100%;
   text-align: left;
   background: transparent;
   border: 0;
-  padding: 7px 10px 7px 10px;
+  padding: 6px 10px 6px 28px;
   font-size: 13px;
-  font-weight: 500;
-  color: rgba(255,255,255,.52);
+  font-weight: 400;
+  color: rgba(255,255,255,.54);
   cursor: pointer;
-  border-radius: 7px;
-  transition: color .12s, background .12s;
+  border-radius: 6px;
+  transition: color .1s, background .1s;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1;
+  line-height: 1.5;
   position: relative;
 }
-.nav-subtab svg { flex-shrink: 0; opacity: .65; width: 14px; height: 14px; transition: opacity .12s; }
 .nav-subtab:hover {
   color: rgba(255,255,255,.88);
   background: rgba(255,255,255,.07);
 }
-.nav-subtab:hover svg { opacity: 1; }
 .nav-subtab--active {
   color: #fff;
   font-weight: 600;
   background: rgba(255,255,255,.10);
 }
-.nav-subtab--active svg { opacity: 1; }
-.nav-subtab--active::after {
+.nav-subtab--active::before {
   content: '';
   position: absolute;
-  left: 0; top: 20%; bottom: 20%;
-  width: 2.5px;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
   background: #34d399;
-  border-radius: 0 2px 2px 0;
 }
 
-/* ── Section divider label inside a panel ── */
-.nav-subtab-divider {
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .10em;
-  color: rgba(255,255,255,.22);
-  padding: 10px 10px 3px 10px;
-  pointer-events: none;
-  user-select: none;
-  display: block;
-}
-/* First divider gets less top padding */
-.nav-subtab-divider:first-child { padding-top: 4px; }
-
-/* ── L2 sub-items (indented, always visible) ── */
+/* ── L2: permanently-visible indented child ── */
 .nav-subtabs-l2 {
   display: flex;
   flex-direction: column;
-  margin: 0 0 2px 6px;
-  border-left: 1px solid rgba(255,255,255,.10);
-  padding-left: 2px;
 }
 .nav-subtab--sub {
+  padding-left: 40px;
   font-size: 12.5px;
-  font-weight: 400;
-  padding: 6px 8px 6px 14px;
   color: rgba(255,255,255,.44);
-  border-radius: 6px;
 }
-.nav-subtab--sub svg { width: 13px; height: 13px; }
-.nav-subtab--sub:hover { color: rgba(255,255,255,.82); background: rgba(255,255,255,.06); }
+.nav-subtab--sub:hover { color: rgba(255,255,255,.80); background: rgba(255,255,255,.06); }
 .nav-subtab--sub.nav-subtab--active {
-  color: #fff;
+  color: #d1fae5;
   font-weight: 600;
-  background: rgba(255,255,255,.09);
+  background: rgba(52,211,153,.10);
 }
-.nav-subtab--sub.nav-subtab--active::after {
-  background: #38bdf8; /* sky accent for sub-items */
+.nav-subtab--sub.nav-subtab--active::before {
+  left: 26px;
+  width: 4px; height: 4px;
+  background: #34d399;
 }
+
+/* ── divider label (hidden — not used in clean design) ── */
+.nav-subtab-divider { display: none; }
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
-  .nav-workspace { font-size: 10.5px; padding: 7px 12px; }
-  .nav-subtab { font-size: 12.5px; padding: 6px 9px; gap: 7px; }
-  .nav-subtab--sub { font-size: 12px; padding: 5px 8px 5px 13px; }
-  .nav-subtab-divider { font-size: 9px; padding: 8px 9px 2px; }
+  .nav-workspace { font-size: 12.5px; padding: 8px 11px; }
+  .nav-subtab { font-size: 12.5px; padding: 5px 8px 5px 26px; }
+  .nav-subtab--sub { padding-left: 38px; font-size: 12px; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
