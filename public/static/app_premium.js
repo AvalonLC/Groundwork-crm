@@ -1076,7 +1076,7 @@ function show(viewName='today', param){
       <button class="secondary-btn" onclick="show('today')">Back to Today</button>
     </div>`;
     activateNav(viewName);
-    sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible');
+    if (window.innerWidth <= 768) { sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible'); }
     window.scrollTo({top:0, behavior:'smooth'});
     return;
   }
@@ -1188,7 +1188,7 @@ function show(viewName='today', param){
   }
   // ────────────────────────────────────────────────────────
   activateNav(viewName);
-  sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible');
+  if (window.innerWidth <= 768) { sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible'); }
   // integrations is loaded from integrations.js
   const intRoute = (typeof integrations === 'function') ? {integrations} : {};
   // repDashboard is loaded from reps.js
@@ -9339,19 +9339,75 @@ document.addEventListener('click', e => {
 const sidebarScrim = document.getElementById('sidebarScrim');
 function openSidebar()  { sidebar.classList.add('open');    if (sidebarScrim) sidebarScrim.classList.add('visible'); }
 function closeSidebar() { sidebar.classList.remove('open'); if (sidebarScrim) sidebarScrim.classList.remove('visible'); }
-menuBtn.addEventListener('click', (e) => { e.stopPropagation(); sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); });
+
+// ── Desktop: hamburger button toggles collapsed rail ─────────────────────────
+// On mobile it still opens/closes the overlay sidebar.
+// On desktop (>768px) it collapses/expands the sidebar to icon-only rail.
+const _SB_COLLAPSED_KEY = 'gw_sidebar_collapsed';
+function _applySidebarCollapse(collapsed) {
+  sidebar.classList.toggle('sidebar--collapsed', collapsed);
+  // Update all toggle buttons in the sidebar
+  document.querySelectorAll('.nav-sidebar-toggle').forEach(btn => {
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  });
+  try { localStorage.setItem(_SB_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch(e) {}
+}
+function _toggleSidebarCollapse() {
+  const isCollapsed = sidebar.classList.contains('sidebar--collapsed');
+  _applySidebarCollapse(!isCollapsed);
+}
+
+// Restore persisted state on load (desktop only)
+if (window.innerWidth > 768) {
+  try {
+    const saved = localStorage.getItem(_SB_COLLAPSED_KEY);
+    if (saved === '1') _applySidebarCollapse(true);
+  } catch(e) {}
+}
+
+menuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (window.innerWidth <= 768) {
+    // Mobile: overlay open/close
+    sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+  } else {
+    // Desktop: collapse/expand rail
+    _toggleSidebarCollapse();
+  }
+});
+
 if (sidebarScrim) sidebarScrim.addEventListener('click', closeSidebar);
+
+// Desktop: clicking outside does NOT close the sidebar — it stays persistent.
+// Mobile: clicking outside still closes the overlay.
 document.addEventListener('click', e => {
+  if (window.innerWidth > 768) return; // desktop: no auto-close
   if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) closeSidebar();
 });
+
 // ── Mobile: close sidebar when a nav-item is tapped ──────────────────────────
 sidebar.addEventListener('click', e => {
   const item = e.target.closest('.nav-item');
   if (item && window.innerWidth <= 768) closeSidebar();
 });
+
+// ── Sidebar toggle button inside the sidebar (desktop) ───────────────────────
+sidebar.addEventListener('click', e => {
+  if (e.target.closest('.nav-sidebar-toggle')) {
+    e.stopPropagation();
+    _toggleSidebarCollapse();
+  }
+});
+
 // ── Mobile: close button in sidebar ──────────────────────────────────────────
 const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
 if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', closeSidebar);
+
+// ── When collapsed, clicking a workspace button opens that workspace ──────────
+// (the _gwTogglePanel click still fires; we just also expand on desktop if collapsed)
+// Actually: clicking workspace icon when collapsed just navigates — keeps it collapsed.
+// User can expand with the toggle button when they want labels.
 
 // ── + New dropdown ──────────────────────────────────────────────────────────
 const _newBtn  = document.getElementById('topbarNewBtn');

@@ -3617,7 +3617,7 @@ function getHtml(): string {
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/premium.css?v=20260708gw29">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260704gw9">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260708gw30">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -3854,13 +3854,23 @@ function getHtml(): string {
         <div class="brand-subtitle">Sales CRM</div>
       </div>
     </div>
+
+      <!-- ── Sidebar collapse toggle (desktop) ── -->
+      <div style="padding:4px 8px 0;">
+        <button class="nav-sidebar-toggle" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"
+          style="display:flex;align-items:center;gap:8px;width:100%;background:transparent;border:0;color:rgba(255,255,255,.35);cursor:pointer;padding:7px 4px;border-radius:6px;font-size:12px;transition:color .12s,background .12s;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M5 2v12"/></svg>
+          <span class="nav-sidebar-toggle-label">Collapse</span>
+        </button>
+      </div>
+
       <!-- ── Tenant nav (hidden when platform admin session active) ── -->
 
       <!-- ── Dashboard ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace active" data-view="gwDashboard" onclick="_gwTogglePanel('gwDashboard')">
+        <button class="nav-item nav-workspace active" data-view="gwDashboard" data-label="Dashboard" onclick="_gwTogglePanel('gwDashboard')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
-          Dashboard
+          <span class="nav-workspace-label">Dashboard</span>
           <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
         </button>
         <div class="nav-subtabs" id="gw-subtabs-gwDashboard"></div>
@@ -3868,9 +3878,9 @@ function getHtml(): string {
 
       <!-- ── Sales ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwSales" onclick="_gwTogglePanel('gwSales')">
+        <button class="nav-item nav-workspace" data-view="gwSales" data-label="Sales" onclick="_gwTogglePanel('gwSales')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h3v8H2zM6.5 2h3v12h-3zM11 6h3v6h-3z"/></svg>
-          Sales
+          <span class="nav-workspace-label">Sales</span>
           <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
         </button>
         <div class="nav-subtabs" id="gw-subtabs-gwSales"></div>
@@ -3878,9 +3888,9 @@ function getHtml(): string {
 
       <!-- ── Financial ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwFinancial" onclick="_gwTogglePanel('gwFinancial')">
+        <button class="nav-item nav-workspace" data-view="gwFinancial" data-label="Financial" onclick="_gwTogglePanel('gwFinancial')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1v14M5 10.5c0 1.4.9 2.5 3 2.5s3-1.1 3-2.5c0-1.7-1.5-2.3-3-2.8S5 6 5 4.5C5 3.1 5.9 2 8 2s3 1.1 3 2.5"/></svg>
-          Financial
+          <span class="nav-workspace-label">Financial</span>
           <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
         </button>
         <div class="nav-subtabs" id="gw-subtabs-gwFinancial"></div>
@@ -3888,9 +3898,9 @@ function getHtml(): string {
 
       <!-- ── Operations ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwOperations" onclick="_gwTogglePanel('gwOperations')">
+        <button class="nav-item nav-workspace" data-view="gwOperations" data-label="Operations" onclick="_gwTogglePanel('gwOperations')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v3M11 1v3M2 7h12"/><path d="M5 10h2M9 10h2"/></svg>
-          Operations
+          <span class="nav-workspace-label">Operations</span>
           <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
         </button>
         <div class="nav-subtabs" id="gw-subtabs-gwOperations"></div>
@@ -3898,9 +3908,9 @@ function getHtml(): string {
 
       <!-- ── Learning ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwLearning" onclick="_gwTogglePanel('gwLearning')">
+        <button class="nav-item nav-workspace" data-view="gwLearning" data-label="Learning" onclick="_gwTogglePanel('gwLearning')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L8 2l6 10H2z"/><path d="M5 12v2M11 12v2M3 14h10"/></svg>
-          Learning
+          <span class="nav-workspace-label">Learning</span>
           <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
         </button>
         <div class="nav-subtabs" id="gw-subtabs-gwLearning"></div>
@@ -3908,9 +3918,9 @@ function getHtml(): string {
 
       <!-- ── Admin ── -->
       <div class="nav-ws-group tenant-nav">
-        <button class="nav-item nav-workspace" data-view="gwAdmin" onclick="_gwTogglePanel('gwAdmin')">
+        <button class="nav-item nav-workspace" data-view="gwAdmin" data-label="Admin" onclick="_gwTogglePanel('gwAdmin')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42"/></svg>
-          Admin
+          <span class="nav-workspace-label">Admin</span>
           <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
         </button>
         <div class="nav-subtabs" id="gw-subtabs-gwAdmin"></div>
@@ -4022,7 +4032,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260707p10a1"></script>
-<script src="/static/app_premium.js?v=20260708p12"></script>
+<script src="/static/app_premium.js?v=20260708p13"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
