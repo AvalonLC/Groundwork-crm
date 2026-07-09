@@ -3135,7 +3135,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260708gw29">
+  <link rel="stylesheet" href="/static/premium.css?v=20260708gw29b">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -3615,9 +3615,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260708gw29">
+  <link rel="stylesheet" href="/static/premium.css?v=20260708gw29b">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260708gw30">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260708gw31">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -3855,14 +3855,10 @@ function getHtml(): string {
       </div>
     </div>
 
-      <!-- ── Sidebar collapse toggle (desktop) ── -->
-      <div style="padding:4px 8px 0;">
-        <button class="nav-sidebar-toggle" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"
-          style="display:flex;align-items:center;gap:8px;width:100%;background:transparent;border:0;color:rgba(255,255,255,.35);cursor:pointer;padding:7px 4px;border-radius:6px;font-size:12px;transition:color .12s,background .12s;">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M5 2v12"/></svg>
-          <span class="nav-sidebar-toggle-label">Collapse</span>
-        </button>
-      </div>
+      <!-- ── Sidebar collapse toggle (desktop only) ── -->
+      <button class="nav-sidebar-toggle" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M5 2v12"/></svg>
+      </button>
 
       <!-- ── Tenant nav (hidden when platform admin session active) ── -->
 
@@ -4032,7 +4028,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260707p10a1"></script>
-<script src="/static/app_premium.js?v=20260708p13"></script>
+<script src="/static/app_premium.js?v=20260708p13b"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>

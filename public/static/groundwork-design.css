@@ -269,55 +269,89 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   transition: width .22s ease !important;
 }
 
+/* ── Sidebar collapse toggle button ── */
+.nav-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: rgba(255,255,255,.3);
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 0;
+  transition: color .12s;
+}
+.nav-sidebar-toggle:hover {
+  color: rgba(255,255,255,.65);
+}
+
 /* ── Collapsed rail (icon-only, desktop) ── */
 .sidebar--collapsed {
   width: 52px !important;
   overflow: hidden !important;
 }
-/* Recalc the grid column when collapsed — sidebar width var drives grid-template-columns */
+/* Recalc the grid column — sidebar width var drives grid-template-columns */
 :root:has(.sidebar--collapsed) {
   --gw-sidebar-w: 52px;
 }
 
-/* Hide text / chevrons / subtab panels in collapsed mode */
+/* Collapsed: hide every text/label/panel — HEIGHT must go to zero too */
 .sidebar--collapsed .brand-name,
-.sidebar--collapsed .brand-subtitle,
-.sidebar--collapsed .nav-chevron-icon,
-.sidebar--collapsed .nav-subtabs,
-.sidebar--collapsed .nav-sidebar-toggle-label,
-.sidebar--collapsed .sidebar-footer-text {
-  opacity: 0 !important;
-  width: 0 !important;
-  overflow: hidden !important;
-  pointer-events: none !important;
-  white-space: nowrap !important;
+.sidebar--collapsed .brand-subtitle {
+  display: none !important;
 }
-
-/* Collapsed: center the brand logo */
-.sidebar--collapsed .brand {
-  padding: 16px 8px !important;
-  justify-content: center !important;
-  gap: 0 !important;
+.sidebar--collapsed .nav-chevron-icon {
+  display: none !important;
 }
-
-/* Collapsed: center workspace buttons and hide label text */
-.sidebar--collapsed .nav-workspace {
-  padding: 9px 0 !important;
-  justify-content: center !important;
-  gap: 0 !important;
-}
-.sidebar--collapsed .nav-workspace svg:first-child {
-  width: 18px !important;
-  height: 18px !important;
-}
-/* Collapsed: workspace text node — hide via overflow/clip trick */
 .sidebar--collapsed .nav-workspace-label {
   display: none !important;
 }
+/* KEY FIX: collapse the subtab panels so they take no height */
+.sidebar--collapsed .nav-subtabs {
+  max-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
 
-/* Collapsed: sidebar footer */
-.sidebar--collapsed .sidebar-footer {
+/* Collapsed: brand — center the logo only */
+.sidebar--collapsed .brand {
+  padding: 14px 0 !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,.07) !important;
+}
+
+/* Collapsed: toggle button — center the icon, flip direction */
+.sidebar--collapsed .nav-sidebar-toggle {
+  justify-content: center !important;
+  padding: 8px 0 !important;
+  color: rgba(255,255,255,.3) !important;
+}
+.sidebar--collapsed .nav-sidebar-toggle svg {
+  transform: scaleX(-1);
+}
+
+/* Collapsed: workspace nav buttons — centered icon, full width */
+.sidebar--collapsed .nav-workspace {
   padding: 10px 0 !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  position: relative;
+}
+.sidebar--collapsed .nav-workspace svg:first-child {
+  width: 17px !important;
+  height: 17px !important;
+  opacity: .65;
+}
+.sidebar--collapsed .nav-workspace.active svg:first-child {
+  opacity: 1;
+}
+
+/* Collapsed: sidebar footer — center avatar only */
+.sidebar--collapsed .sidebar-footer {
+  padding: 8px 0 !important;
   justify-content: center !important;
   gap: 0 !important;
 }
@@ -325,36 +359,15 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   display: none !important;
 }
 
-/* Collapsed: nav toggle button centered */
-.sidebar--collapsed .nav-sidebar-toggle {
-  padding: 7px 0 !important;
-  justify-content: center !important;
-  width: 52px !important;
-}
-
-/* Toggle button hover */
-.nav-sidebar-toggle:hover {
-  color: rgba(255,255,255,.7) !important;
-  background: rgba(255,255,255,.07) !important;
-}
-
-/* Collapsed: flip the panel icon to point right (expand arrow) */
-.sidebar--collapsed .nav-sidebar-toggle svg {
-  transform: scaleX(-1);
-}
-
-/* Tooltip for collapsed items */
-.sidebar--collapsed .nav-workspace {
-  position: relative;
-}
+/* Tooltip: label floats right on hover when collapsed */
 .sidebar--collapsed .nav-workspace::after {
   content: attr(data-label);
   position: absolute;
-  left: calc(100% + 10px);
+  left: calc(100% + 8px);
   top: 50%;
   transform: translateY(-50%);
-  background: #1a1f2b;
-  color: #fff;
+  background: #111c1a;
+  color: rgba(255,255,255,.92);
   font-size: 12px;
   font-weight: 500;
   padding: 5px 10px;
@@ -362,9 +375,9 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity .1s;
+  transition: opacity .12s;
   z-index: 9999;
-  box-shadow: 0 2px 10px rgba(0,0,0,.35);
+  box-shadow: 0 2px 12px rgba(0,0,0,.4);
 }
 .sidebar--collapsed .nav-workspace:hover::after {
   opacity: 1;
