@@ -67,9 +67,21 @@ function activateNav(viewName) {
     const isActive = bView === viewName || bView === wsTarget;
     b.classList.toggle('active', isActive);
   });
-  // Highlight the correct sidebar subtab button
+  // Highlight the correct sidebar subtab button and auto-open its sub-group if needed
   document.querySelectorAll('.nav-subtab').forEach(b => {
-    b.classList.toggle('nav-subtab--active', b.dataset.tab === viewName);
+    const isActive = b.dataset.tab === viewName;
+    b.classList.toggle('nav-subtab--active', isActive);
+    // If this sub-item is now active, make sure its parent group is open
+    if (isActive && b.classList.contains('nav-subtab--sub')) {
+      const group = b.closest('.nav-subtab-group');
+      if (group) {
+        group.classList.add('nav-subtab-group--open');
+        const parentBtn = group.previousElementSibling;
+        if (parentBtn && parentBtn.classList.contains('nav-subtab--has-children')) {
+          parentBtn.classList.add('nav-subtab--group-open');
+        }
+      }
+    }
   });
   // Auto-expand the active workspace panel (keep others as-is)
   if (wsTarget) {
@@ -582,20 +594,92 @@ const _gwWsNameToId = {
 
 // Render a flat tab config into the sidebar panel.
 // Config: {id, label} | {id, label, sub:true} — dividers silently ignored.
+// Items with sub:true are grouped under the preceding non-sub parent item.
+// The parent gets a chevron indicator; sub-items live in a collapsible .nav-subtab-group.
+// Clicking the parent toggles the sub-group open/closed AND navigates to that view.
 function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   const wsId = _gwWsNameToId[wsName] || null;
   if (!wsId) return;
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
-  let html = '';
+
+  // Pre-scan: figure out which tab IDs have sub-children
+  const _hasChildren = new Set();
+  let _lastParent = null;
   tabsConfig.forEach(t => {
     if (t.divider) return;
-    const isActive    = t.id === activeTabId;
-    const activeClass = isActive ? ' nav-subtab--active' : '';
-    const subClass    = t.sub   ? ' nav-subtab--sub'    : '';
-    html += `<button class="nav-subtab${activeClass}${subClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+    if (t.sub) { if (_lastParent) _hasChildren.add(_lastParent); }
+    else { _lastParent = t.id; }
   });
+
+  // Determine which parent group should be open:
+  // The group whose child (or itself) matches activeTabId
+  const _subParentOf = {};
+  _lastParent = null;
+  tabsConfig.forEach(t => {
+    if (t.divider) return;
+    if (!t.sub) { _lastParent = t.id; }
+    else if (_lastParent) { _subParentOf[t.id] = _lastParent; }
+  });
+  // activeParent = the parent whose group should be open
+  const _activeParent = _subParentOf[activeTabId] || ((_hasChildren.has(activeTabId)) ? activeTabId : null);
+
+  // Build HTML
+  const _chevSVG = `<svg class="nav-subtab-chevron" width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l2.5 2.5 2.5-2.5"/></svg>`;
+  let html = '';
+  let _inGroup = false;
+
+  tabsConfig.forEach((t, i) => {
+    if (t.divider) return;
+
+    if (!t.sub) {
+      // Close any open sub-group
+      if (_inGroup) { html += `</div>`; _inGroup = false; }
+
+      const isActive    = t.id === activeTabId;
+      const hasKids     = _hasChildren.has(t.id);
+      const groupOpen   = hasKids && (t.id === _activeParent);
+      const activeClass = isActive ? ' nav-subtab--active' : '';
+      const kidClass    = hasKids  ? ' nav-subtab--has-children' : '';
+      const openClass   = groupOpen ? ' nav-subtab--group-open' : '';
+
+      if (hasKids) {
+        // Parent item: clicking toggles sub-group AND navigates
+        html += `<button class="nav-subtab${activeClass}${kidClass}${openClass}" data-tab="${t.id}" onclick="_gwToggleSubGroup(this,'${t.id}')">${t.label}${_chevSVG}</button>`;
+        // Sub-group container — open if active child is inside, or parent itself is active
+        html += `<div class="nav-subtab-group${groupOpen ? ' nav-subtab-group--open' : ''}">`;
+        _inGroup = true;
+      } else {
+        html += `<button class="nav-subtab${activeClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+      }
+    } else {
+      // Sub-item — always inside a group div
+      const isActive    = t.id === activeTabId;
+      const activeClass = isActive ? ' nav-subtab--active' : '';
+      html += `<button class="nav-subtab nav-subtab--sub${activeClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+    }
+  });
+
+  if (_inGroup) html += `</div>`;
   panel.innerHTML = html;
+}
+
+// Open a sub-group when parent item is clicked, close all sibling groups.
+// Always navigates to the parent view — never a dead click.
+function _gwToggleSubGroup(btn, viewId) {
+  const panel = btn.closest('.nav-subtabs');
+  if (panel) {
+    // Close all sibling groups in this panel first
+    panel.querySelectorAll('.nav-subtab-group--open').forEach(g => g.classList.remove('nav-subtab-group--open'));
+    panel.querySelectorAll('.nav-subtab--group-open').forEach(b => b.classList.remove('nav-subtab--group-open'));
+  }
+  // Open this group
+  const group = btn.nextElementSibling;
+  if (group && group.classList.contains('nav-subtab-group')) {
+    group.classList.add('nav-subtab-group--open');
+    btn.classList.add('nav-subtab--group-open');
+  }
+  show(viewId);
 }
 
 function _gwClearHeader() { /* no-op — panels stay rendered */ }

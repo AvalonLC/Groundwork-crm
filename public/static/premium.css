@@ -7800,24 +7800,62 @@ h1.pl-title,
   background: #34d399;
 }
 
-/* ── L2: permanently-visible indented child ── */
+/* ── L2: collapsible sub-group ── */
 .nav-subtabs-l2 {
   display: flex;
   flex-direction: column;
 }
+
+/* Parent item that has sub-children */
+.nav-subtab--has-children {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 10px;
+}
+.nav-subtab-chevron {
+  flex-shrink: 0;
+  opacity: .45;
+  transition: transform .18s ease, opacity .12s;
+  margin-left: auto;
+}
+/* Rotate chevron when group is open */
+.nav-subtab--group-open .nav-subtab-chevron {
+  transform: rotate(180deg);
+  opacity: .7;
+}
+
+/* Sub-group container: collapsed by default, expands when --open */
+.nav-subtab-group {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height .2s ease;
+  /* Left connector line showing children belong to parent */
+  border-left: 1.5px solid rgba(52,211,153,.20);
+  margin-left: 20px;
+  padding-left: 0;
+  margin-bottom: 0;
+}
+.nav-subtab-group--open {
+  max-height: 300px;
+}
+
+/* Sub-item inside a collapsible group */
 .nav-subtab--sub {
-  padding-left: 40px;
+  padding-left: 18px;
   font-size: 12.5px;
   color: rgba(255,255,255,.44);
 }
-.nav-subtab--sub:hover { color: rgba(255,255,255,.80); background: rgba(255,255,255,.06); }
+.nav-subtab--sub:hover { color: rgba(255,255,255,.82); background: rgba(255,255,255,.06); }
 .nav-subtab--sub.nav-subtab--active {
   color: #d1fae5;
   font-weight: 600;
   background: rgba(52,211,153,.10);
 }
 .nav-subtab--sub.nav-subtab--active::before {
-  left: 26px;
+  left: 5px;
   width: 4px; height: 4px;
   background: #34d399;
 }
