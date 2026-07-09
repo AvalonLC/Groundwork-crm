@@ -58,6 +58,11 @@ const _VIEW_WORKSPACE_MAP = {
   approvalQueue:'gwAdmin', auditLog:'gwAdmin',
   portalAdmin:'gwAdmin', automationCenter:'gwAdmin', fieldMode:'gwAdmin',
 };
+// Tracks which workspace panels the user has manually collapsed.
+// activateNav respects this so navigating within a workspace doesn't
+// re-open a section the user just intentionally closed.
+const _gwManuallyClosed = new Set();
+
 function activateNav(viewName) {
   // Resolve workspace button to highlight (handles aliases and direct workspace calls)
   const wsTarget = _VIEW_WORKSPACE_MAP[viewName] || viewName;
@@ -83,41 +88,39 @@ function activateNav(viewName) {
       }
     }
   });
-  // Auto-expand the active workspace panel (keep others as-is)
+  // Auto-expand the active workspace panel — but respect manual closes.
+  // Only force-open if the user hasn't explicitly collapsed this panel themselves.
   if (wsTarget) {
     const panel = document.getElementById('gw-subtabs-' + wsTarget);
     if (panel) {
       const group = panel.closest('.nav-ws-group');
-      if (group) group.classList.remove('nav-ws-group--collapsed');
+      if (group && !_gwManuallyClosed.has(wsTarget)) {
+        group.classList.remove('nav-ws-group--collapsed');
+      }
     }
   }
 }
 
 // ── Sidebar panel toggle (workspace heading click) ──────────────────────────
 // • If section is COLLAPSED → expand it and navigate in.
-// • If section is OPEN and this is NOT the active workspace → collapse it (tidy up).
-// • If section is OPEN and this IS the active workspace → just navigate to top (no collapse).
+// • If section is OPEN → collapse it (always — read state BEFORE show() changes it).
 // CSS handles the animation via max-height transition on .nav-ws-group--collapsed.
 function _gwTogglePanel(wsId) {
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
   const group = panel.closest('.nav-ws-group');
   if (!group) return;
+  // Read collapsed state NOW, before show() runs and activateNav() alters classes
   const isCollapsed = group.classList.contains('nav-ws-group--collapsed');
   if (isCollapsed) {
-    // Open + navigate
+    // Opening: clear manual-close flag so activateNav can manage it normally
+    _gwManuallyClosed.delete(wsId);
     group.classList.remove('nav-ws-group--collapsed');
     show(wsId);
   } else {
-    // Already open: collapse only if it's not the current active workspace
-    const isActive = group.querySelector('.nav-workspace')?.classList.contains('active');
-    if (isActive) {
-      // Active section — just re-navigate to the workspace top (don't close)
-      show(wsId);
-    } else {
-      // Inactive open section — collapse it
-      group.classList.add('nav-ws-group--collapsed');
-    }
+    // Closing: record that the user explicitly closed this panel
+    _gwManuallyClosed.add(wsId);
+    group.classList.add('nav-ws-group--collapsed');
   }
 }
 const navItems = [...document.querySelectorAll('.nav-item')];
