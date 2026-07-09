@@ -94,18 +94,31 @@ function activateNav(viewName) {
 }
 
 // ── Sidebar panel toggle (workspace heading click) ──────────────────────────
-// Click heading = always expand + navigate. Never collapses on click.
-// Sections can only be hidden via the sidebar rail-collapse toggle (hamburger).
+// • If section is COLLAPSED → expand it and navigate in.
+// • If section is OPEN and this is NOT the active workspace → collapse it (tidy up).
+// • If section is OPEN and this IS the active workspace → just navigate to top (no collapse).
 // CSS handles the animation via max-height transition on .nav-ws-group--collapsed.
 function _gwTogglePanel(wsId) {
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
   const group = panel.closest('.nav-ws-group');
   if (!group) return;
-  // Always ensure the section is expanded, then navigate into it.
-  // Removing already-absent class is a no-op, so this is always safe.
-  group.classList.remove('nav-ws-group--collapsed');
-  show(wsId);
+  const isCollapsed = group.classList.contains('nav-ws-group--collapsed');
+  if (isCollapsed) {
+    // Open + navigate
+    group.classList.remove('nav-ws-group--collapsed');
+    show(wsId);
+  } else {
+    // Already open: collapse only if it's not the current active workspace
+    const isActive = group.querySelector('.nav-workspace')?.classList.contains('active');
+    if (isActive) {
+      // Active section — just re-navigate to the workspace top (don't close)
+      show(wsId);
+    } else {
+      // Inactive open section — collapse it
+      group.classList.add('nav-ws-group--collapsed');
+    }
+  }
 }
 const navItems = [...document.querySelectorAll('.nav-item')];
 const sidebar = document.getElementById('sidebar');

@@ -4028,7 +4028,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260707p10a1"></script>
-<script src="/static/app_premium.js?v=20260709p14"></script>
+<script src="/static/app_premium.js?v=20260709p15"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
