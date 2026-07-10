@@ -1039,6 +1039,7 @@ function umRenderUsers(container) {
       const res = await fetch('/api/auth/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email, name, inviteRole: role, title: pos, color, message })
       });
       const data = await res.json();
@@ -1077,9 +1078,9 @@ function umRenderUsers(container) {
           : `Invite refreshed for ${userName}. (Email delivery requires SendGrid setup.)`);
         userManagement('users');
       } else {
-        umToast(data.error || 'Failed to resend invite');
+        umToast(`[${res.status}] ${data.error || 'Failed to resend invite'}`);
       }
-    } catch(e) { umToast('Network error'); }
+    } catch(e) { umToast('Network error: ' + e.message); }
   };
 
   // Send onboarding packet shortcut — switches to onboarding tab with email pre-filled
