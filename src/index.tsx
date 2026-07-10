@@ -3166,7 +3166,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260710gw34">
+  <link rel="stylesheet" href="/static/premium.css?v=20260710gw35">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -3652,7 +3652,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260710gw34">
+  <link rel="stylesheet" href="/static/premium.css?v=20260710gw35">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260709gw32">
   <style>
@@ -4058,7 +4058,6 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<!-- Foundation scripts (no dependency on app_premium) -->
 <script src="/static/gw-icons.js?v=20260628gw1"></script>
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
@@ -4066,8 +4065,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260707p10a1"></script>
-<!-- Module scripts — must load BEFORE app_premium.js so window.* functions
-     exist when _initialRoute() fires on hash restore (e.g. #timeTracker) -->
+<script src="/static/app_premium.js?v=20260710p20"></script>
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
@@ -4079,8 +4077,6 @@ function getHtml(): string {
 <script src="/static/automation_engine.js?v=20260707gw8p1"></script>
 <script src="/static/client_portal.js?v=20260707gw8p1"></script>
 <script src="/static/field_mode.js?v=20260707gw8p1"></script>
-<!-- app_premium.js last — _initialRoute() runs here and all window.* are ready -->
-<script src="/static/app_premium.js?v=20260710p19"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
