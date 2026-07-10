@@ -4619,7 +4619,10 @@ function saveOpportunity(id){
   }
   // Snapshot current status so next save can detect the delta
   o._gwPrevStatusSnapshot = newStatus;
-  saveState(); showToast('Opportunity saved'); show('pipeline', id);
+  saveState();
+  // Write-through to D1 so fields persist across reloads
+  _d1SaveOpp(o);
+  showToast('Opportunity saved'); show('pipeline', id);
 }
 function setOppField(id,field,value){
   const o = state.opportunities.find(x=>x.id===id);
