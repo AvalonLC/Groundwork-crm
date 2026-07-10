@@ -1043,15 +1043,16 @@ function umRenderUsers(container) {
         body: JSON.stringify({ email, name, inviteRole: role, title: pos, color, message })
       });
       const data = await res.json();
-      if (res.ok && data.invited) {
+      const payload = data.data || data;
+      if (res.ok && payload.invited) {
         document.getElementById('um-invite-modal')?.remove();
-        umToast(data.emailSent
+        umToast(payload.emailSent
           ? `Invite sent to ${email}! They'll get an email with a setup link.`
           : `Invite created for ${email}. (Email delivery requires SendGrid setup.)`);
         umAddAuditEntry({ type:'invite_sent', userName:name, by:window.getCurrentRep?.()?.name||'Admin' });
         userManagement('users');
       } else {
-        errEl.textContent = data.error || 'Failed to send invite. Please try again.';
+        errEl.textContent = data.error || payload.error || 'Failed to send invite. Please try again.';
         errEl.style.display = 'block';
         btn.disabled = false; btn.textContent = 'Send Invite →';
       }
@@ -1072,13 +1073,14 @@ function umRenderUsers(container) {
         body: JSON.stringify({ repId: userId })
       });
       const data = await res.json();
-      if (res.ok && data.resent) {
-        umToast(data.emailSent
-          ? `Invite resent to ${data.email}`
+      const payload = data.data || data;
+      if (res.ok && payload.resent) {
+        umToast(payload.emailSent
+          ? `Invite resent to ${payload.email}`
           : `Invite refreshed for ${userName}. (Email delivery requires SendGrid setup.)`);
         userManagement('users');
       } else {
-        umToast(`[${res.status}] ${data.error || 'Failed to resend invite'}`);
+        umToast(data.error || payload.error || 'Failed to resend invite');
       }
     } catch(e) { umToast('Network error: ' + e.message); }
   };
@@ -1201,19 +1203,24 @@ async function umRenderCrews(container) {
       const memberNames = (cr.members||[]).map(m => {
         const rep = allReps.find(r=>r.id===m.repId); return rep?.name||m.repId;
       }).join(', ');
+      const memberCount = (cr.members||[]).length;
       return `
         <div class="um-crew-card" style="border-left:4px solid ${cr.color}">
           <div class="um-crew-card-header">
             <span class="um-crew-dot" style="background:${cr.color}"></span>
             <div class="um-crew-info">
-              <strong style="font-size:14px">${umEscape(cr.name)}</strong>
+              <strong style="font-size:14px;color:var(--gw-text,#E8E4D9)">${umEscape(cr.name)}</strong>
               ${cr.division ? `<span class="um-crew-division">${umEscape(cr.division)}</span>` : ''}
             </div>
-            <div class="um-crew-member-count">${(cr.members||[]).length} member${(cr.members||[]).length!==1?'s':''}</div>
-            <button class="rp-btn-sm" onclick="umEditCrew('${cr.id}')">Edit</button>
-            <button class="rp-btn-sm rp-btn-sm--danger" onclick="umDeleteCrew('${cr.id}')">Delete</button>
+            <div class="um-crew-member-count">${memberCount} member${memberCount!==1?'s':''}</div>
+            <button onclick="umEditCrew('${cr.id}')" style="padding:6px 14px;border-radius:7px;border:1px solid var(--gw-border,#2a3a27);background:var(--gw-surface,#1a2318);color:var(--gw-text,#E8E4D9);font-size:12px;font-weight:600;cursor:pointer">✏ Edit</button>
+            <button onclick="umDeleteCrew('${cr.id}')" style="padding:6px 14px;border-radius:7px;border:1px solid #ef444440;background:#ef444410;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer">🗑 Delete</button>
           </div>
-          <div class="um-crew-members-preview">${memberNames||'<span style="color:var(--gw-text-muted);font-size:12px">No members yet</span>'}</div>
+          <div class="um-crew-members-preview">
+            ${memberNames
+              ? memberNames.split(', ').map(n=>`<span style="display:inline-block;background:var(--gw-surface-3,#1f2d1c);border:1px solid var(--gw-border,#2a3a27);border-radius:20px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0">${umEscape(n)}</span>`).join('')
+              : '<span style="color:var(--gw-text-muted,#6F7E6A);font-size:12px;font-style:italic">No members yet — click Edit to add employees</span>'}
+          </div>
         </div>`;
     }).join('') : `<p style="color:var(--gw-text-muted);padding:20px 0">No crews yet. Create your first crew below.</p>`;
   }
@@ -1357,23 +1364,154 @@ async function umRenderCrews(container) {
     umToast('Crew deleted','ok');
   };
 
-  window.umEditCrew = async function(crewId) {
+  window.umEditCrew = function(crewId) {
     const crew = crews.find(c=>c.id===crewId);
     if (!crew) return;
-    const newName = prompt('Crew name:', crew.name);
-    if (!newName?.trim()) return;
-    const newDiv = prompt('Division (Landscaping, Lawn Care, etc.):', crew.division||'');
-    await fetch('/api/crews/'+crewId, {
-      method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include',
-      body: JSON.stringify({ name: newName.trim(), color: crew.color, division: newDiv||null })
-    });
-    // Update members via separate endpoint if needed
-    const cr2 = await fetch('/api/crews', { credentials:'include' }).then(r=>r.json());
-    crews = cr2.data||[];
-    window._sbState && (window._sbState.crews = crews);
-    window._sbState && (window._sbState.loaded = false);
-    renderCrewList();
-    umToast('Crew updated','ok');
+
+    // Deep-copy members so cancel doesn't mutate
+    let editMembers = (crew.members||[]).map(m=>({ ...m }));
+    let editColor = crew.color || PALETTE[0];
+
+    // Remove any existing modal
+    document.getElementById('um-edit-crew-modal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'um-edit-crew-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+
+    function buildMemberChips() {
+      return editMembers.map(m => {
+        const rep = allReps.find(r=>r.id===m.repId);
+        const nm  = rep?.name || m.repId;
+        return `<span class="um-member-chip" data-rep="${m.repId}">
+          <span style="font-weight:600">${umEscape(nm)}</span>
+          <span style="font-size:10px;opacity:.6;margin-left:3px">${m.crewRole||'laborer'}</span>
+          <button onclick="umEditCrewRemoveMember('${m.repId}')" style="background:none;border:none;cursor:pointer;padding:0 0 0 4px;font-size:15px;line-height:1;opacity:.5;color:inherit">×</button>
+        </span>`;
+      }).join('');
+    }
+
+    const activeReps = allReps.filter(r=>r.active!==false&&r.active!==0);
+
+    modal.innerHTML = `
+    <div style="background:var(--gw-surface,#1a2318);border:1px solid var(--gw-border,#2a3a27);border-radius:16px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.5)">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--gw-border,#2a3a27)">
+        <h2 style="margin:0;font-size:17px;font-weight:700;color:var(--gw-text,#E8E4D9)">Edit Crew</h2>
+        <button onclick="document.getElementById('um-edit-crew-modal').remove()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--gw-text-muted,#6F7E6A);line-height:1;padding:4px">×</button>
+      </div>
+
+      <!-- Body -->
+      <div style="padding:24px">
+
+        <!-- Name + Division -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--gw-text-muted,#6F7E6A)">
+            Crew Name
+            <input class="rp-input" id="ec-name" value="${umEscape(crew.name)}" placeholder="Crew name" style="font-size:14px">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--gw-text-muted,#6F7E6A)">
+            Division
+            <select class="rp-input" id="ec-div" style="font-size:14px">
+              <option value="">— No division —</option>
+              ${DIVISIONS.map(d=>`<option ${crew.division===d?'selected':''}>${umEscape(d)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+
+        <!-- Color -->
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--gw-text-muted,#6F7E6A);margin-bottom:8px">Crew Color</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="ec-palette">
+            ${PALETTE.map(c=>`<button onclick="umEditCrewPickColor('${c}',this)" style="width:28px;height:28px;border-radius:50%;background:${c};border:${c===editColor?'3px solid #fff':'2px solid transparent'};outline:${c===editColor?'2px solid '+c:'none'};cursor:pointer;flex-shrink:0"></button>`).join('')}
+          </div>
+        </div>
+
+        <!-- Members -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:12px;font-weight:600;color:var(--gw-text-muted,#6F7E6A);margin-bottom:8px">Members</div>
+          <div id="ec-members" style="display:flex;flex-wrap:wrap;gap:6px;min-height:36px;padding:8px;background:var(--gw-surface-2,#131c11);border:1px solid var(--gw-border,#2a3a27);border-radius:8px;margin-bottom:8px">
+            ${editMembers.length ? buildMemberChips() : '<span style="font-size:12px;color:var(--gw-text-muted,#6F7E6A)">No members yet — add below</span>'}
+          </div>
+          <div style="display:flex;gap:8px">
+            <select class="rp-input" id="ec-emp-sel" style="flex:1;font-size:13px">
+              <option value="">+ Add employee…</option>
+              ${activeReps.map(r=>`<option value="${r.id}">${umEscape(r.name)} (${r.role||'rep'})</option>`).join('')}
+            </select>
+            <select class="rp-input" id="ec-emp-role" style="width:110px;font-size:13px">
+              <option value="laborer">Laborer</option>
+              <option value="foreman">Foreman</option>
+            </select>
+            <button class="rp-btn-sm" onclick="umEditCrewAddMember()">Add</button>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div id="ec-error" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
+
+        <!-- Footer -->
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="rp-btn" onclick="document.getElementById('um-edit-crew-modal').remove()">Cancel</button>
+          <button class="rp-btn rp-btn--primary" onclick="umSaveEditCrew('${crewId}')">Save Changes</button>
+        </div>
+      </div>
+    </div>`;
+
+    document.body.appendChild(modal);
+    // close on backdrop click
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+    // ── helpers scoped to this modal ──────────────────────────────────────────
+    window.umEditCrewPickColor = function(color, btn) {
+      editColor = color;
+      document.querySelectorAll('#ec-palette button').forEach(b => {
+        b.style.border = '2px solid transparent'; b.style.outline = 'none';
+      });
+      btn.style.border = '3px solid #fff'; btn.style.outline = '2px solid ' + color;
+    };
+
+    window.umEditCrewAddMember = function() {
+      const sel = document.getElementById('ec-emp-sel');
+      const roleSel = document.getElementById('ec-emp-role');
+      if (!sel?.value) return;
+      if (editMembers.find(m=>m.repId===sel.value)) { umToast('Already in crew'); return; }
+      const rep = allReps.find(r=>r.id===sel.value);
+      editMembers.push({ repId: sel.value, crewRole: roleSel?.value||'laborer', name: rep?.name||sel.value });
+      const el = document.getElementById('ec-members');
+      if (el) el.innerHTML = buildMemberChips();
+      sel.value = '';
+    };
+
+    window.umEditCrewRemoveMember = function(repId) {
+      editMembers = editMembers.filter(m=>m.repId!==repId);
+      const el = document.getElementById('ec-members');
+      if (el) el.innerHTML = editMembers.length ? buildMemberChips() : '<span style="font-size:12px;color:var(--gw-text-muted,#6F7E6A)">No members yet</span>';
+    };
+
+    window.umSaveEditCrew = async function(crewId) {
+      const name = document.getElementById('ec-name')?.value?.trim();
+      const div  = document.getElementById('ec-div')?.value || null;
+      const errEl = document.getElementById('ec-error');
+      if (!name) { errEl.textContent='Crew name is required'; errEl.style.display='block'; return; }
+      errEl.style.display = 'none';
+      try {
+        await fetch('/api/crews/'+crewId, {
+          method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include',
+          body: JSON.stringify({ name, color: editColor, division: div||null })
+        });
+        await fetch('/api/crews/'+crewId+'/members', {
+          method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include',
+          body: JSON.stringify({ members: editMembers })
+        });
+        const cr2 = await fetch('/api/crews', { credentials:'include' }).then(r=>r.json());
+        crews = cr2.data||[];
+        window._sbState && (window._sbState.crews = crews);
+        window._sbState && (window._sbState.loaded = false);
+        renderCrewList();
+        document.getElementById('um-edit-crew-modal')?.remove();
+        umToast('Crew updated!');
+      } catch(e) { errEl.textContent='Error: '+e.message; errEl.style.display='block'; }
+    };
   };
 }
 
