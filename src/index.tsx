@@ -13,7 +13,13 @@ app.use('/api/*', cors())
 
 // ── Static files ──────────────────────────────────────────────────────────────
 app.use('/static/*', serveStatic({ root: './public' }))
-app.use('/sw.js', serveStatic({ root: './public', path: 'sw.js' }))
+app.get('/sw.js', (c) => {
+  const sw = `const CACHE='groundwork-crm-v1';
+self.addEventListener('install',e=>self.skipWaiting());
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
+  return c.text(sw, 200, { 'Content-Type': 'application/javascript' });
+})
 app.get('/site.webmanifest', (c) => {
   const manifest = {
     name: 'Groundwork CRM',
