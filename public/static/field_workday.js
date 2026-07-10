@@ -37,7 +37,7 @@ function _fwElapsedStr(clockInIso) {
 function _fwIsFieldRole() {
   if (typeof _isFieldRole === 'function') return _isFieldRole();
   const rep = window._d1SessionRep;
-  return rep && ['field_supervisor', 'laborer'].includes(rep.role);
+  return rep && ['foreman', 'field_supervisor', 'laborer'].includes(rep.role);
 }
 
 function _fwRep() {
@@ -398,7 +398,7 @@ window.fieldDashboard = function fieldDashboard() {
     return;
   }
 
-  const isSupervisor = rep.role === 'field_supervisor';
+  const isSupervisor = rep.role === 'foreman' || rep.role === 'field_supervisor';
   const todayJobs    = (typeof _getMySchedule === 'function') ? _getMySchedule() : [];
   const state        = window._gwPillState || 'not-in';
   const entry        = window._ttState && window._ttState.activeEntry;

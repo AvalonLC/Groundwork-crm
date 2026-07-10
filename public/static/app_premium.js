@@ -277,18 +277,26 @@ const DEFAULT_NAV_PERMS = {
   estimator: ['gwDashboard','gwSales','gwLearning',
     'today','pipeline','clients','properties','estimates','calculator','forms','playbooks',
     'academy','learnEstimating','learnCrmGuide'],
-  // Field Supervisor: full operations hub + learning
-  field_supervisor: ['gwDashboard','gwOperations','gwLearning','gwAdmin',
+  // Foreman: field lead — full operations hub, crew/dispatch oversight, time approval
+  foreman: ['gwDashboard','gwOperations','gwLearning','gwAdmin',
     'today','fieldDashboard','myDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
     'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
     'learnCrmGuide'],
-  // Laborer: self-service field only — assigned schedule, work orders, time
-  laborer: ['gwDashboard','gwOperations','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+  // Laborer: self-service field only — own schedule, assigned work orders, own time
+  laborer: ['gwDashboard','gwOperations','today','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
-  view_only: ['gwDashboard','today','pipeline']
+  view_only: ['gwDashboard','today','pipeline'],
+  // Legacy alias — field_supervisor rows in D1 resolve to foreman permissions
+  field_supervisor: ['gwDashboard','gwOperations','gwLearning','gwAdmin',
+    'today','fieldDashboard','myDashboard',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView',
+    'workOrderList','workOrderDetail','assetList','assetDetail',
+    'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
+    'learnCrmGuide']
 };
 
 function loadNavPerms() {
@@ -620,7 +628,7 @@ function _gwClearHeader() { /* no-op — panels stay rendered */ }
 function gwDashboard(tab) {
   tab = tab || 'today';
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
-  const isField = rep && (rep.role === 'field_supervisor' || rep.role === 'laborer');
+  const isField = rep && (rep.role === 'foreman' || rep.role === 'field_supervisor' || rep.role === 'laborer');
   if (!tab || tab === 'gwDashboard') tab = isField ? 'fieldDashboard' : 'today';
   const dashTabs = isField
     ? [
@@ -9420,6 +9428,76 @@ if (_newBtn && _newDrop) {
   });
 }
 
+// ── Role-aware +New menu builder ─────────────────────────────────────────────
+// Called after login to tailor the +New dropdown to the user's role.
+// Field roles get a focused create set; office/sales roles get the full set.
+window._gwBuildNewMenu = function() {
+  const drop = document.getElementById('topbarNewDropdown');
+  if (!drop) return;
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  if (!rep) return;
+
+  const role = rep.role || 'rep';
+  const isAdmin  = role === 'admin' || role === 'office_manager';
+  const isSales  = role === 'rep' || role === 'estimator';
+  const isForeman = role === 'foreman' || role === 'field_supervisor';
+  const isLaborer = role === 'laborer';
+
+  // Build items based on role
+  let html = '';
+  if (isAdmin || isSales) {
+    html += `
+      <div class="tnd-section-label">Pipeline</div>
+      <button class="tnd-item" onclick="window._closeNewMenu();show('lead')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
+        Add Lead
+      </button>
+      <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
+        Add Client
+      </button>`;
+  }
+  if (isAdmin) {
+    html += `
+      <div class="tnd-section-label">Operations</div>
+      <button class="tnd-item" onclick="window._closeNewMenu();show('scheduleBoard');setTimeout(()=>window._sbOpenNewVisit&&window._sbOpenNewVisit(),80)" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="2" x2="5" y2="5"/><line x1="11" y1="2" x2="11" y2="5"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
+        Schedule Visit
+      </button>`;
+  }
+  if (isForeman) {
+    html += `
+      <div class="tnd-section-label">Field</div>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwTodayNewTask&&window._gwTodayNewTask()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-7 7-3-3"/><rect x="1" y="1" width="14" height="14" rx="2"/></svg>
+        Add To-Do
+      </button>
+      <button class="tnd-item" onclick="window._closeNewMenu();show('workOrderList')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="8" y1="5" x2="8" y2="11"/></svg>
+        View Work Orders
+      </button>`;
+  }
+  if (isLaborer) {
+    html += `
+      <div class="tnd-section-label">My Work</div>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwTodayNewTask&&window._gwTodayNewTask()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-7 7-3-3"/><rect x="1" y="1" width="14" height="14" rx="2"/></svg>
+        Add To-Do
+      </button>`;
+  }
+  // Always: To-Do for admin/sales if not already added
+  if (isAdmin || isSales) {
+    html += `
+      <div class="tnd-section-label">Tasks</div>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwTodayNewTask&&window._gwTodayNewTask()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l-7 7-3-3"/><rect x="1" y="1" width="14" height="14" rx="2"/></svg>
+        Add To-Do
+      </button>`;
+  }
+
+  if (html) drop.innerHTML = html;
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // UNIVERSAL EXPORT MODAL — showExportModal(title, buildDataFn)
 // Opens an overlay with 3 format buttons: CSV / Excel (.xlsx) / PDF
@@ -10871,7 +10949,9 @@ window.superAdmin = superAdmin;
     // ── Standard authenticated tenant flow ───────────────────────────────────
     // Bootstrap complete: REPS hydrated, _gwNavPerms set, getCurrentRep() works.
     if (typeof window._refreshAdminNav === 'function') window._refreshAdminNav();
-    // Field roles (laborer, field_supervisor) land on fieldDashboard on ALL screen sizes
+    // Tailor the +New dropdown to the logged-in user's role
+    if (typeof window._gwBuildNewMenu === 'function') window._gwBuildNewMenu();
+    // Field roles (foreman, laborer) land on fieldDashboard on ALL screen sizes
     if (typeof window._gwShouldStartFieldMode === 'function' && window._gwShouldStartFieldMode()) {
       show('fieldDashboard');
     } else {

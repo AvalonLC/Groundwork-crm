@@ -2,10 +2,10 @@
  * Groundwork CRM — Phase 8 Field / Mobile Mode
  *
  * Provides a narrow, high-utility mobile experience for field roles:
- *   field_supervisor, laborer
+ *   foreman, laborer
  *
  * Activated automatically when:
- *   a) User role is field_supervisor or laborer AND screen width <= 768px
+ *   a) User role is foreman or laborer AND screen width <= 768px
  *   b) User manually activates via show('fieldMode')
  *
  * Field mode surfaces:
@@ -23,7 +23,7 @@
 'use strict';
 
 // ── Field Role Detection ──────────────────────────────────────────────────────
-const GW_FIELD_ROLES = ['field_supervisor', 'laborer'];
+const GW_FIELD_ROLES = ['foreman', 'laborer', 'field_supervisor'];
 
 function _isFieldRole() {
   const rep = window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
@@ -38,7 +38,7 @@ function _isMobile() {
 function _fieldRoleLabel() {
   const rep = window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
   if (!rep) return '';
-  return rep.role === 'field_supervisor' ? 'Field Supervisor' : 'Crew Member';
+  return rep.role === 'foreman' ? 'Foreman' : rep.role === 'field_supervisor' ? 'Foreman' : 'Crew Member';
 }
 
 function _currentRep() {
@@ -64,7 +64,7 @@ function _getMyWorkOrders() {
   const state = window._avalonState || {};
   const wos = state.workOrders || [];
   // Field mode shows: assigned to me, or any open if supervisor
-  const isSupervisor = rep.role === 'field_supervisor';
+  const isSupervisor = rep.role === 'foreman' || rep.role === 'field_supervisor';
   const today = _todayISO();
   return wos.filter(wo => {
     if (isSupervisor) return wo.status !== 'cancelled';
@@ -92,7 +92,7 @@ function fieldMode() {
   if (!view) return;
 
   const rep = _currentRep();
-  const isSupervisor = rep?.role === 'field_supervisor';
+  const isSupervisor = rep?.role === 'foreman' || rep?.role === 'field_supervisor';
   const myWOs = _getMyWorkOrders();
   const todayWOs = myWOs.filter(wo => wo.date === _todayISO());
   const upcomingWOs = myWOs.filter(wo => wo.date > _todayISO()).slice(0,5);
@@ -199,7 +199,7 @@ window._fieldWODetail = function(woId) {
   const view = document.getElementById('view');
   if (!view) return;
 
-  const isSupervisor = _currentRep()?.role === 'field_supervisor';
+  const isSupervisor = _currentRep()?.role === 'foreman' || _currentRep()?.role === 'field_supervisor';
   const canComplete = window.gwCan ? gwCan('can_mark_work_order_complete') : isSupervisor;
 
   const checklist = wo.checklist || [];

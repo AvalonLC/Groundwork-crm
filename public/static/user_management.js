@@ -165,12 +165,12 @@ const _UM_ROLE_DEFS_DEFAULT = [
     scope: { sales: 'assigned', ops: 'none', financial: 'none', people: 'none' }
   },
 
-  // ── 5. FIELD SUPERVISOR (foreman) ─────────────────────────────────────────
+  // ── 5. FOREMAN (field lead / crew supervisor) ────────────────────────────
   {
-    id: 'field_supervisor',
-    label: 'Field Supervisor',
+    id: 'foreman',
+    label: 'Foreman',
     color: '#6B5EA8',
-    description: 'Operations lead / foreman. Full Operations hub access, crew and schedule oversight, limited ops reports. No Sales or Financial.',
+    description: 'Field lead for daily operations, crew execution, work orders, dispatch, and crew time visibility. No Sales or Financial access.',
     defaultViews: ['today','myDashboard',
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail',
@@ -187,20 +187,20 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
-      // Phase 8 platform capabilities
       can_approve_requests: true, can_manage_automations: false,
       can_view_audit_logs: false, can_manage_portal_access: false,
     },
-    scope: { sales: 'none', ops: 'team', financial: 'none', people: 'team' }
+    // Foreman scope: crew-level ops, no financial or sales visibility
+    scope: { sales: 'none', ops: 'crew', financial: 'none', people: 'crew' }
   },
 
-  // ── 6. LABORER (field crew member) ────────────────────────────────────────
+  // ── 6. LABORER (self-service field crew member) ──────────────────────────
   {
     id: 'laborer',
     label: 'Laborer',
     color: '#7A7A6E',
-    description: 'Self-service field access only. Assigned work orders, schedule, and time tracking. Nothing else.',
-    defaultViews: ['scheduleBoard','workOrderList','timeTracker','fieldMode'],
+    description: 'Self-service field role for assigned jobs, personal schedule, own time tracking, and simple field updates. No dispatch, financial, or admin access.',
+    defaultViews: ['today','scheduleBoard','workOrderList','timeTracker','fieldMode'],
     capabilities: {
       can_create_lead: false, can_edit_lead: false,
       can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
@@ -212,10 +212,10 @@ const _UM_ROLE_DEFS_DEFAULT = [
       can_manage_users: false, can_manage_roles: false,
       can_manage_integrations: false, can_edit_system_settings: false,
       can_delete_leads: false,
-      // Phase 8 platform capabilities
       can_approve_requests: false, can_manage_automations: false,
       can_view_audit_logs: false, can_manage_portal_access: false,
     },
+    // Laborer scope: self only — cannot see others' time, schedule, or data
     scope: { sales: 'none', ops: 'self', financial: 'none', people: 'self' }
   },
 
@@ -297,7 +297,7 @@ const UM_POSITIONS = [
   'Office Manager',
   'Estimator',
   'Admin Support',
-  'Field Supervisor / Foreman',
+  'Foreman',
   'Crew Lead',
   'Laborer',
   'Technician',
@@ -330,7 +330,8 @@ function umBootstrapUsersFromReps() {
     r.role === 'admin'            ? 'Owner' :
     r.role === 'office_manager'   ? 'Office Manager' :
     r.role === 'estimator'        ? 'Estimator' :
-    r.role === 'field_supervisor' ? 'Field Supervisor / Foreman' :
+    r.role === 'foreman'          ? 'Foreman' :
+    r.role === 'field_supervisor' ? 'Foreman' :
     r.role === 'laborer'          ? 'Laborer' :
     r.role === 'view_only'        ? 'View Only' : 'Sales Rep';
 
@@ -1818,12 +1819,12 @@ function umRenderRoles(container) {
 
   // ── Hub color map ──────────────────────────────────────────────────────────
   const HUB_META = {
-    Dashboard:   { color: '#3A7CA5', bg: '#EAF3FA', icon: '📊' },
-    Sales:       { color: '#2D7A55', bg: '#EAF4EE', icon: '💼' },
-    Financial:   { color: '#8B6914', bg: '#F8F3E6', icon: '💰' },
-    Operations:  { color: '#6B5EA8', bg: '#F0EDF8', icon: '⚙️' },
-    Reports:     { color: '#5B7FA6', bg: '#EDF1F7', icon: '📈' },
-    Settings:    { color: '#6F7E6A', bg: '#F2F3EF', icon: '🔧' }
+    Dashboard:   { color: '#3A7CA5', bg: '#EAF3FA', icon: '' },
+    Sales:       { color: '#2D7A55', bg: '#EAF4EE', icon: '' },
+    Financial:   { color: '#8B6914', bg: '#F8F3E6', icon: '' },
+    Operations:  { color: '#6B5EA8', bg: '#F0EDF8', icon: '' },
+    Reports:     { color: '#5B7FA6', bg: '#EDF1F7', icon: '' },
+    Settings:    { color: '#6F7E6A', bg: '#F2F3EF', icon: '' }
   };
   const KIND_LABEL = { page: '', report: 'Report', admin: 'Admin' };
 
@@ -1839,12 +1840,18 @@ function umRenderRoles(container) {
     rep: ['today','myDashboard',
       'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['today','pipeline','clients','properties','estimates','calculator','forms'],
+    foreman: ['today','myDashboard',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+      'opsReports','teamReports'],
+    laborer: ['today','scheduleBoard','workOrderList','timeTracker'],
+    // Legacy alias — kept so old D1 rows with field_supervisor still resolve
     field_supervisor: ['today','myDashboard',
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
       'opsReports','teamReports'],
-    laborer: ['scheduleBoard','workOrderList','timeTracker'],
     view_only: ['today','pipeline']
   };
 
@@ -1860,12 +1867,14 @@ function umRenderRoles(container) {
 
   // Role group metadata for the visual role cards
   const ROLE_GROUP = {
-    office_manager: { group: 'Management', icon: '🏢' },
-    rep:            { group: 'Sales',      icon: '🤝' },
-    estimator:      { group: 'Sales',      icon: '📐' },
-    field_supervisor:{ group: 'Field',     icon: '🦺' },
-    laborer:        { group: 'Field',      icon: '👷' },
-    view_only:      { group: 'Other',      icon: '👁' }
+    office_manager: { group: 'Management', icon: '' },
+    rep:            { group: 'Sales',      icon: '' },
+    estimator:      { group: 'Sales',      icon: '' },
+    foreman:        { group: 'Field',      icon: '' },
+    laborer:        { group: 'Field',      icon: '' },
+    view_only:      { group: 'Other',      icon: '' },
+    // Legacy fallback
+    field_supervisor: { group: 'Field',   icon: '' }
   };
 
   // Helper: get effective perms for a role (live override → company default → factory)
@@ -1926,7 +1935,7 @@ function umRenderRoles(container) {
 <div class="rp-page-header">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:5px">
     <h3 class="rp-page-title">Roles &amp; Permissions</h3>
-    <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#4D8A86;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:20px;padding:2px 9px;letter-spacing:.05em">🔒 Live</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#4D8A86;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:20px;padding:2px 9px;letter-spacing:.05em">Live</span>
   </div>
   <p class="rp-page-sub">Control which views each role can access. Use <strong>Set as Company Default</strong> to save your preferred access levels as the baseline for new hires — future role assignments will start from those defaults.</p>
 </div>
@@ -1939,7 +1948,7 @@ function umRenderRoles(container) {
     if (!r) return '';
     return `<div class="rp-role-card" style="border-color:${r.color}50;background:linear-gradient(135deg,#F0FAF9,#E6F5F4)">
       <div class="rp-role-card-accent" style="background:${r.color}"></div>
-      <div class="rp-role-badge" style="background:${r.color}18;color:${r.color}">👑 Owner</div>
+      <div class="rp-role-badge" style="background:${r.color}18;color:${r.color}">Owner</div>
       <div class="rp-role-name" style="color:${r.color}">${r.label}</div>
       <div class="rp-role-desc">${r.description||''}</div>
       <div style="font-size:10px;font-weight:700;color:${r.color};text-transform:uppercase;letter-spacing:.07em;padding:5px 8px;background:${r.color}12;border-radius:6px;text-align:center">Always Full Access — No Restrictions</div>
@@ -1948,14 +1957,14 @@ function umRenderRoles(container) {
 
   <!-- Non-admin role cards -->
   ${nonAdminRoles.map(r => {
-    const meta = ROLE_GROUP[r.id] || { group: 'Other', icon: '👤' };
+    const meta = ROLE_GROUP[r.id] || { group: 'Other', icon: '' };
     const isCustomized = _umRoleIsCustomized(r.id, _umLoadCompanyDefaults(), FACTORY_NAV_PERMS);
     const viewCount = effectivePerms(r.id).length;
     return `<div class="rp-role-card" id="rpc-${r.id}" style="border-color:${r.color}40">
       <div class="rp-role-card-accent" style="background:linear-gradient(90deg,${r.color},${r.color}88)"></div>
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
-        <div class="rp-role-badge" style="background:${r.color}15;color:${r.color}">${meta.icon} ${meta.group}</div>
-        ${isCustomized ? `<span class="rp-custom-badge">✏️ Custom</span>` : ''}
+        <div class="rp-role-badge" style="background:${r.color}15;color:${r.color}">${meta.group}</div>
+        ${isCustomized ? `<span class="rp-custom-badge">Custom</span>` : ''}
       </div>
       <div class="rp-role-name" style="color:${r.color}">${r.label}</div>
       <div class="rp-role-desc">${r.description||''}</div>
@@ -1966,7 +1975,7 @@ function umRenderRoles(container) {
         <button class="rp-preset-btn danger" onclick="window._umPreset('${r.id}','none')" title="Remove all view access">None ✕</button>
       </div>
       <div style="margin-top:8px;padding-top:8px;border-top:1px solid #F3F4F6">
-        <button class="rp-preset-btn primary" onclick="window._umSaveRoleAsDefault('${r.id}')" title="Save current permission set as company default for this role">💾 Set as Company Default</button>
+        <button class="rp-preset-btn primary" onclick="window._umSaveRoleAsDefault('${r.id}')" title="Save current permission set as company default for this role">Set as Company Default</button>
         ${isCustomized ? `<button class="rp-preset-btn danger" style="margin-left:4px" onclick="window._umResetToFactory('${r.id}')" title="Revert to Groundwork built-in defaults">↺ Factory</button>` : ''}
       </div>
     </div>`;
@@ -1976,7 +1985,7 @@ function umRenderRoles(container) {
 <!-- ══ Company Defaults Banner ════════════════════════════════════════════ -->
 <div id="rp-company-defaults-banner" style="${_umLoadCompanyDefaults() ? '' : 'display:none'}">
   <div class="rp-save-banner">
-    <span style="font-size:22px">🏢</span>
+    <span style="width:22px;height:22px;flex-shrink:0"></span>
     <div style="flex:1">
       <div style="font-size:13px;font-weight:700;color:#065F46;margin-bottom:2px">Company Defaults Active</div>
       <div style="font-size:12px;color:#047857;line-height:1.4">Your custom role defaults are saved. New team members assigned a role will receive your company's access baseline, not the Groundwork factory defaults. Use <strong>↺ Factory</strong> on any role card to revert a role.</div>
@@ -1995,7 +2004,7 @@ function umRenderRoles(container) {
     <span style="font-size:11px;color:#9CA3AF">Jump to hub:</span>
     ${['Dashboard','Sales','Financial','Operations','Reports','Settings'].map(h => {
       const hm = HUB_META[h];
-      return `<a href="#rp-hub-${h}" style="font-size:10px;font-weight:700;color:${hm.color};background:${hm.bg};border:1px solid ${hm.color}30;padding:3px 8px;border-radius:8px;text-decoration:none">${hm.icon} ${h}</a>`;
+      return `<a href="#rp-hub-${h}" style="font-size:10px;font-weight:700;color:${hm.color};background:${hm.bg};border:1px solid ${hm.color}30;padding:3px 8px;border-radius:8px;text-decoration:none">${h}</a>`;
     }).join('')}
   </div>
 </div>
@@ -2007,20 +2016,20 @@ function umRenderRoles(container) {
       <tr style="background:#F8F9FC;border-bottom:1px solid #E5E9F0">
         <th class="rp-col-view" style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.08em;background:#F8F9FC">View</th>
         <!-- Management group -->
-        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#8B6914;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #8B691420">🏢 Mgmt</th>
+        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#8B6914;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #8B691420">Mgmt</th>
         <!-- Sales group -->
-        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #2D7A5520">💼 Sales</th>
+        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #2D7A5520">Sales</th>
         <!-- Field group -->
-        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6B5EA8;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6B5EA820">🦺 Field</th>
+        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6B5EA8;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6B5EA820">Field</th>
         <!-- Other -->
-        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6F7E6A;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6F7E6A20">👁 Other</th>
+        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6F7E6A;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6F7E6A20">Other</th>
       </tr>
       <!-- Role name headers -->
       <tr style="background:#fff;border-bottom:2px solid #E5E9F0">
         <th class="rp-col-view" style="padding:10px 16px;text-align:left;background:#fff"></th>
         ${nonAdminRoles.map((r,i) => {
           const isGroupStart = i === 0 || ROLE_GROUP[r.id]?.group !== ROLE_GROUP[nonAdminRoles[i-1]?.id]?.group;
-          const custIcon = _umRoleIsCustomized(r.id, _umLoadCompanyDefaults(), FACTORY_NAV_PERMS) ? ' ✏️' : '';
+          const custIcon = _umRoleIsCustomized(r.id, _umLoadCompanyDefaults(), FACTORY_NAV_PERMS) ? ' *' : '';
           return `<th style="text-align:center;padding:8px 6px;min-width:80px;${isGroupStart?'border-left:2px solid '+r.color+'30':''}">
             <div style="font-size:11px;font-weight:800;color:${r.color};line-height:1.2">${r.label.split(' ').map((w,wi)=>wi===0?w:`<br><span style="font-weight:600">${w}</span>`).join('')}${custIcon}</div>
             <div style="font-size:9px;color:#9CA3AF;margin-top:2px">${effectivePerms(r.id).length} views</div>
@@ -2037,7 +2046,6 @@ function umRenderRoles(container) {
         <tr id="rp-hub-${hub}">
           <td colspan="${nonAdminRoles.length + 1}" style="padding:0">
             <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:linear-gradient(135deg,${hMeta.bg},${hMeta.bg}CC);border-top:2px solid ${hMeta.color}25;border-bottom:1px solid ${hMeta.color}20">
-              <span style="font-size:14px">${hMeta.icon}</span>
               <span style="font-size:10px;font-weight:800;color:${hMeta.color};text-transform:uppercase;letter-spacing:.12em">${hub}</span>
               <span style="font-size:10px;color:${hMeta.color}80;margin-left:auto">${hViews.length} view${hViews.length!==1?'s':''}</span>
             </div>
@@ -2072,7 +2080,7 @@ function umRenderRoles(container) {
 </div>
 
 <div class="rp-info-strip" style="margin-bottom:0">
-  💡 <strong>Tip:</strong> After customizing a role's checkboxes, click <strong>💾 Set as Company Default</strong> on that role's card to save it as the starting point for all future hires in that role. Changes to live checkboxes take effect immediately for existing users — defaults only apply to new assignments.
+  <strong>Tip:</strong> After customizing a role's checkboxes, click <strong>Set as Company Default</strong> on that role's card to save it as the starting point for all future hires in that role. Changes to live checkboxes take effect immediately for existing users — defaults only apply to new assignments.
 </div>
 
 <!-- ══ Action Permissions ═════════════════════════════════════════════════ -->
@@ -2085,7 +2093,7 @@ function umRenderRoles(container) {
   <div class="rp-action-card">
     <!-- Header -->
     <div class="rp-action-header">
-      <span style="font-size:15px">⚡</span>
+
       <span style="font-size:11px;font-weight:800;color:#4A5568;text-transform:uppercase;letter-spacing:.1em">Capability Toggles</span>
     </div>
 

@@ -4134,12 +4134,13 @@ function getHtml(): string {
           <svg class="topbar-new-caret" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3.5 5,6.5 8,3.5"/></svg>
         </button>
         <div class="topbar-new-dropdown" id="topbarNewDropdown" hidden role="menu">
-          <div class="tnd-section-label">Pipeline</div>
-          <button class="tnd-item" onclick="window._closeNewMenu();show('lead')" role="menuitem">
+          <!-- Content populated by _gwBuildNewMenu() after login -->
+          <div class="tnd-section-label">Create</div>
+          <button class="tnd-item" onclick="window._closeNewMenu();show('lead')" role="menuitem" data-new-item="lead">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
             Add Lead
           </button>
-          <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
+          <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem" data-new-item="client">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
             Add Client
           </button>
@@ -4176,18 +4177,18 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260710p26"></script>
+<script src="/static/app_premium.js?v=20260710p27"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260710um25"></script>
+<script src="/static/user_management.js?v=20260710um26"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
-<script src="/static/field_workday.js?v=20260707p9a1"></script>
+<script src="/static/field_workday.js?v=20260710p9a2"></script>
 <script src="/static/platform_core.js?v=20260707gw8p1"></script>
 <script src="/static/approval_engine.js?v=20260707gw8p1"></script>
 <script src="/static/automation_engine.js?v=20260707gw8p1"></script>
 <script src="/static/client_portal.js?v=20260707gw8p1"></script>
-<script src="/static/field_mode.js?v=20260707gw8p1"></script>
+<script src="/static/field_mode.js?v=20260710gw8p2"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
