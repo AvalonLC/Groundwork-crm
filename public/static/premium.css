@@ -9549,21 +9549,41 @@ h1.pl-title,
 
 /* Job card */
 .sb-job-card {
-  border-radius: 7px;
-  padding: 8px 9px;
-  background: var(--gw-bg-surface-2);
+  border-radius: 8px;
+  padding: 9px 10px 8px;
+  background: var(--gw-bg-surface);
   cursor: pointer;
-  transition: transform .1s, box-shadow .1s;
+  transition: transform .12s, box-shadow .12s;
   border: 1px solid var(--gw-border);
+  position: relative;
+  user-select: none;
 }
-.sb-job-card:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.08); }
-.sb-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
-.sb-card-num { font-size: 10px; font-weight: 700; color: var(--gw-text-muted); }
-.sb-card-time { font-size: 10px; color: var(--gw-text-muted); }
-.sb-card-client { font-size: 12px; font-weight: 700; color: var(--gw-text); line-height: 1.3; }
-.sb-card-crew { font-size: 10px; font-weight: 600; margin-top: 2px; }
-.sb-card-type { font-size: 10px; color: var(--gw-text-muted); margin-top: 2px; }
-.sb-card-status { margin-top: 4px; font-size: 9px !important; padding: 2px 6px !important; }
+.sb-job-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+/* top row: drag dots | WO# | time */
+.sb-card-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+.sb-card-num { font-size: 10px; font-weight: 700; color: var(--gw-text-muted); flex: 1; }
+.sb-card-time { font-size: 10px; color: var(--gw-text-muted); white-space: nowrap; }
+/* client name — prominent */
+.sb-card-client { font-size: 13px; font-weight: 700; color: var(--gw-text); line-height: 1.3; margin-bottom: 3px; }
+/* crew pill */
+.sb-card-crew {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 10px;
+  padding: 1px 7px;
+  margin-bottom: 4px;
+}
+/* meta row: type + hours */
+.sb-card-meta { display: flex; align-items: center; gap: 6px; }
+.sb-card-type { font-size: 10px; color: var(--gw-text-muted); }
+.sb-card-hrs  { font-size: 10px; color: var(--gw-text-muted); }
+.sb-card-status { margin-top: 5px; font-size: 9px !important; padding: 2px 7px !important; display: inline-block; }
 
 /* Month grid */
 .sb-month-grid {
@@ -9866,16 +9886,117 @@ h1.pl-title,
 /* ── Drag handle on job cards ─────────────────────────────────────────────── */
 .sb-card-drag-handle {
   cursor: default;
-  padding: 2px 4px 2px 0;
+  padding: 2px 5px 2px 0;
   color: var(--gw-text-muted);
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
   border-radius: 3px;
+  opacity: 0;
   transition: opacity .15s;
+  pointer-events: none;   /* never intercepts clicks — only onmousedown fires */
 }
-.sb-card-drag-handle:hover { opacity: 1; cursor: grab; }
+.sb-job-card:hover .sb-card-drag-handle { opacity: .55; pointer-events: auto; cursor: grab; }
 .sb-card-drag-handle:active { cursor: grabbing; }
+
+/* ── Crew-lane week view ──────────────────────────────────────────────────── */
+.sb-lane-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 700px;
+  border: 1px solid var(--gw-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--gw-bg-surface);
+}
+/* Each row (header row + every crew row) is an 8-col grid: label + 7 day cells */
+.sb-lane-grid {
+  display: grid;
+  grid-template-columns: 110px repeat(7, 1fr);
+  border-bottom: 1px solid var(--gw-border);
+}
+.sb-lane-grid:last-child { border-bottom: none; }
+
+/* Header row — label corner + day name cells */
+.sb-lane-label-cell {
+  background: var(--gw-bg-surface-2);
+  border-right: 1px solid var(--gw-border);
+}
+.sb-lane-day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  background: var(--gw-bg-surface-2);
+  border-right: 1px solid var(--gw-border);
+  gap: 2px;
+}
+.sb-lane-day-head:last-child { border-right: none; }
+.sb-lane-day-head .sb-day-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--gw-text-muted); }
+.sb-lane-day-head .sb-day-date { font-size: 15px; font-weight: 700; color: var(--gw-text); }
+.sb-lane-day-head.today { background: color-mix(in srgb, var(--gw-pine-500) 8%, transparent); }
+.sb-lane-day-head.today .sb-day-date {
+  background: var(--gw-pine-500);
+  color: #fff;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+
+/* Crew label cell */
+.sb-lane-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 10px;
+  background: var(--gw-bg-surface-2);
+  border-right: 1px solid var(--gw-border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gw-text);
+  min-height: 64px;
+}
+.sb-lane-crew-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sb-lane-crew-name { line-height: 1.2; }
+
+/* Day cells within a crew row */
+.sb-lane-cell {
+  padding: 5px 6px;
+  border-right: 1px solid var(--gw-border);
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background .1s;
+}
+.sb-lane-cell:last-child { border-right: none; }
+.sb-lane-cell.today { background: color-mix(in srgb, var(--gw-pine-500) 4%, transparent); }
+.sb-lane-cell.drag-over { background: color-mix(in srgb, var(--gw-pine-500) 10%, transparent); }
+
+/* Add button in each cell */
+.sb-lane-add-btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--gw-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 0;
+  cursor: pointer;
+  opacity: 0;
+  border-radius: 4px;
+  transition: opacity .15s, background .15s;
+  margin-top: auto;
+}
+.sb-lane-cell:hover .sb-lane-add-btn { opacity: 1; }
+.sb-lane-add-btn:hover { background: color-mix(in srgb, var(--gw-pine-500) 10%, transparent); color: var(--gw-pine-500); }
 
 /* ── Client / address links in visit modal ───────────────────────────────── */
 .sb-client-link {

@@ -12932,7 +12932,6 @@ function _sbJobCard(wo, crews, draggable) {
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule"
-          onclick="event.stopPropagation()"
           ${draggable ? `onmousedown="_sbHandleMouseDown(event,'${wo.id}')"` : ''}>
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
             <circle cx="3" cy="2" r="1.3"/><circle cx="7" cy="2" r="1.3"/>
