@@ -737,6 +737,9 @@ async function sendInviteEmail(
   const roleLabel = role === 'admin' ? 'Owner / Admin'
     : role === 'office_manager' ? 'Office Manager'
     : role === 'estimator' ? 'Estimator'
+    : role === 'foreman' ? 'Foreman'
+    : role === 'field_supervisor' ? 'Foreman'
+    : role === 'laborer' ? 'Laborer'
     : role === 'view_only' ? 'View Only' : 'Sales Rep'
   const personalNote = message
     ? `<p style="font-size:15px;color:#b8bfb0;margin:0 0 24px;padding:16px;background:#1a2318;border-left:3px solid #4D8A86;border-radius:0 8px 8px 0;font-style:italic">"${message}"</p>`
@@ -878,6 +881,9 @@ app.get('/invite/:token', async (c) => {
   const roleLabel = !rep ? '' : rep.role === 'admin' ? 'Owner / Admin'
     : rep.role === 'office_manager' ? 'Office Manager'
     : rep.role === 'estimator' ? 'Estimator'
+    : rep.role === 'foreman' ? 'Foreman'
+    : rep.role === 'field_supervisor' ? 'Foreman'
+    : rep.role === 'laborer' ? 'Laborer'
     : rep.role === 'view_only' ? 'View Only' : 'Sales Rep'
 
   if (!rep) {

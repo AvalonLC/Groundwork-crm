@@ -1054,6 +1054,7 @@ function umRenderUsers(container) {
       const res = await fetch('/api/auth/resend-invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ repId: userId })
       });
       const data = await res.json();
