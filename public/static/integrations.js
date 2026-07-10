@@ -1442,7 +1442,6 @@ function _buildComposeModalHTML() {
   </div>
 </div>`;
 }
-}
 
 // Ensure the compose modal exists in the DOM — inject into body if not yet rendered
 // (handles calls from outside the Integrations view)
