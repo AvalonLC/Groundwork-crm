@@ -2535,12 +2535,14 @@ app.put('/api/tasks/:id/complete', requireAuth, async (c) => {
     return err(c, 'Forbidden', 403)
 
   const now = new Date().toISOString()
+  // Set status='archived' so the task never reappears in open/completed fetches on reload.
+  // completed_at and completed_by are preserved for audit history.
   await c.env.DB.prepare(`
-    UPDATE tasks SET status='completed', completed_at=?, completed_by=?, updated_at=datetime('now')
+    UPDATE tasks SET status='archived', completed_at=?, completed_by=?, archived_at=?, archived_by=?, updated_at=datetime('now')
     WHERE id=? AND company_id=?
-  `).bind(now, repId, id, companyId).run()
+  `).bind(now, repId, now, repId, id, companyId).run()
 
-  return json(c, { id, status: 'completed', completed_at: now })
+  return json(c, { id, status: 'archived', completed_at: now })
 })
 
 // PUT /api/tasks/:id/archive  — archive a task (soft-delete)
@@ -4064,8 +4066,8 @@ function getHtml(): string {
 <script src="/static/reps.js?v=20260710r1"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
-<script src="/static/task_engine.js?v=20260710p11"></script>
-<script src="/static/app_premium.js?v=20260710p22"></script>
+<script src="/static/task_engine.js?v=20260710p12"></script>
+<script src="/static/app_premium.js?v=20260710p23"></script>
 <script src="/static/integrations.js?v=20260710int2"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>

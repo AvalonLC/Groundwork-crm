@@ -158,22 +158,19 @@ async function _apiFetch(method, path, body) {
 async function gwTasksLoadToday() {
   const rep = typeof window.getCurrentRep === 'function' ? window.getCurrentRep() : null;
   if (!rep) return [];
-  const today = _todayISO();
   try {
-    // Open tasks for this user
+    // Only fetch open tasks — completed tasks are immediately archived server-side
+    // so they never reappear on reload. Never fetch status=completed here.
     const open = await _apiFetch('GET',
       `/api/tasks?assignedUserId=${encodeURIComponent(rep.id)}&status=open`
     );
-    // Completed today
-    const completed = await _apiFetch('GET',
-      `/api/tasks?assignedUserId=${encodeURIComponent(rep.id)}&status=completed&from=${today}&to=${today}`
-    );
-    const all = [...(open || []), ...(completed || [])];
-    _mergeIntoCache(all);
+    const all = open || [];
+    // Replace cache with fresh open-only list (evicts any stale completed/archived entries)
+    _setCache(all);
     return all;
   } catch(e) {
     console.warn('[TaskEngine] gwTasksLoadToday failed:', e.message);
-    return _getCache().filter(t => t.assigned_user_id === rep.id);
+    return _getCache().filter(t => t.assigned_user_id === rep.id && t.status === 'open');
   }
 }
 
@@ -235,7 +232,8 @@ async function gwTaskUpdate(id, patch) {
  */
 async function gwTaskComplete(id) {
   const result = await _apiFetch('PUT', `/api/tasks/${id}/complete`, {});
-  _patchCache(id, { status: 'completed', completed_at: result.completed_at });
+  // Server now archives on complete so task never reappears on reload
+  _patchCache(id, { status: 'archived', completed_at: result.completed_at });
   return result;
 }
 

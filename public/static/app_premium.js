@@ -1500,8 +1500,6 @@ function _gwTodayRenderTaskWorkspace(rep) {
     .filter(t => t.due_date && t.due_date > today)
     .sort((a,b) => a.due_date.localeCompare(b.due_date)).slice(0, 10);
   const noDue      = (window.gwTask.openForUser(repId)).filter(t => !t.due_date);
-  const donesToday = window.gwTask.completedToday(repId);
-
   const allOpen = [...overdue, ...dueToday, ...upcoming, ...noDue];
 
   function mkSection(label, tasks, emptyMsg, addlClass) {
@@ -1514,13 +1512,7 @@ function _gwTodayRenderTaskWorkspace(rep) {
   const upcomingHtml  = upcoming.length  ? `<div class="gw-today-group-label">Upcoming</div>${mkSection('Upcoming',upcoming)}` : '';
   const noDueHtml     = noDue.length     ? `<div class="gw-today-group-label">No Date</div>${mkSection('No Date',noDue)}` : '';
 
-  const doneHtml = donesToday.length ? `
-    <details class="gw-task-done-details" style="margin-top:12px">
-      <summary class="gw-task-done-summary">Completed today (${donesToday.length})</summary>
-      ${donesToday.map(t => window.gwTask.renderRow(t, { showRecord: true, showCompleteBtn: false, showEditBtn: false, showArchiveBtn: true })).join('')}
-    </details>` : '';
-
-  const emptyAll = !allOpen.length && !donesToday.length
+  const emptyAll = !allOpen.length
     ? `<div class="gw-task-empty" style="padding:24px 0">No tasks scheduled — add one to get started.</div>` : '';
 
   return `<section class="card app-card" style="grid-column:1/-1">
@@ -1533,7 +1525,7 @@ function _gwTodayRenderTaskWorkspace(rep) {
       </div>
     </div>
     <div class="gw-task-workspace">
-      ${overdueHtml}${todayHtml}${upcomingHtml}${noDueHtml}${emptyAll}${doneHtml}
+      ${overdueHtml}${todayHtml}${upcomingHtml}${noDueHtml}${emptyAll}
     </div>
   </section>`;
 }
