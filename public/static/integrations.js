@@ -305,20 +305,96 @@ async function gmailGetThread(id) {
   return r.json();
 }
 
-async function gmailSendEmail({ to, subject, body, replyToMessageId }) {
+// ── Unicode-safe base64url encoder ─────────────────────────────────────────────
+// btoa() only handles Latin-1. For emails with Unicode (emoji, accented chars,
+// HTML entities from signatures, etc.) we use TextEncoder + manual base64.
+function _gwBase64url(str) {
+  // Encode the string as UTF-8 bytes, then base64url-encode the bytes
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ── MIME builder helpers ────────────────────────────────────────────────────────
+function _gwMimeBoundary() {
+  return '----=_GW_' + Math.random().toString(36).slice(2) + Date.now();
+}
+
+async function gmailSendEmail({ to, cc, bcc, subject, body, replyToMessageId, attachments }) {
   const fromEmail = getGoogleUserEmail();
-  let rawEmail = `From: ${fromEmail}\r\nTo: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${body}`;
-  if (replyToMessageId) rawEmail += `\r\nIn-Reply-To: ${replyToMessageId}`;
-  const encoded = btoa(rawEmail).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  attachments = attachments || [];
+
+  // ── Encode subject as UTF-8 quoted-printable base64 (RFC 2047) ─────────────
+  // This handles special chars in subject lines correctly
+  const encSubject = '=?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject))) + '?=';
+
+  let rawEmail;
+
+  if (attachments.length === 0) {
+    // ── Simple HTML-only email (no attachments) ─────────────────────────────
+    const headers = [
+      `From: ${fromEmail}`,
+      `To: ${to}`,
+      cc  ? `Cc: ${cc}`   : null,
+      bcc ? `Bcc: ${bcc}` : null,
+      `Subject: ${encSubject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: base64`,
+      replyToMessageId ? `In-Reply-To: ${replyToMessageId}` : null,
+    ].filter(Boolean).join('\r\n');
+
+    // base64 the body in chunks of 76 chars (RFC 2045)
+    const bodyB64 = _gwBase64url(body)
+      .replace(/-/g, '+').replace(/_/g, '/') // undo url-safe for Content-Transfer-Encoding
+      .match(/.{1,76}/g)?.join('\r\n') || '';
+
+    rawEmail = headers + '\r\n\r\n' + bodyB64;
+
+  } else {
+    // ── Multipart/mixed (message + attachments) ─────────────────────────────
+    const boundary = _gwMimeBoundary();
+    const headers = [
+      `From: ${fromEmail}`,
+      `To: ${to}`,
+      cc  ? `Cc: ${cc}`   : null,
+      bcc ? `Bcc: ${bcc}` : null,
+      `Subject: ${encSubject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      replyToMessageId ? `In-Reply-To: ${replyToMessageId}` : null,
+    ].filter(Boolean).join('\r\n');
+
+    // HTML part
+    const bodyB64 = _gwBase64url(body)
+      .replace(/-/g, '+').replace(/_/g, '/')
+      .match(/.{1,76}/g)?.join('\r\n') || '';
+
+    let parts = `--${boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${bodyB64}\r\n`;
+
+    // Attachment parts
+    for (const att of attachments) {
+      const attB64 = att.data.match(/.{1,76}/g)?.join('\r\n') || att.data;
+      parts += `--${boundary}\r\nContent-Type: ${att.mimeType}; name="${att.name}"\r\nContent-Disposition: attachment; filename="${att.name}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${attB64}\r\n`;
+    }
+    parts += `--${boundary}--`;
+
+    rawEmail = headers + '\r\n\r\n' + parts;
+  }
+
+  // ── Send via Gmail API using base64url-encoded raw RFC 2822 message ─────────
+  const encoded = _gwBase64url(rawEmail);
   const payload = { raw: encoded };
   if (replyToMessageId) payload.threadId = replyToMessageId;
+
   const r = await gFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
   if (!r.ok) {
-    const err = await r.json();
-    throw new Error(err.error?.message || 'Failed to send email');
+    const errData = await r.json().catch(() => ({}));
+    throw new Error(errData.error?.message || 'Failed to send email');
   }
   return r.json();
 }
@@ -1094,37 +1170,209 @@ window.gwSendReply = async function(threadId, lastMessageId) {
 window._intSigActive   = false;
 window._intSigHtml     = '';
 window._intSigSource   = '';  // 'gmail' | 'manual' | ''
+window._intAttachments = [];  // [{ name, mimeType, data: base64 }]
 
 // Build the compose modal HTML string (used both by integrations() template
 // and by gwEnsureComposeModal for self-contained injection)
 function _buildComposeModalHTML() {
   return `
-<div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000088;z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div class="gw-modal-card" style="border-radius:16px;padding:28px;width:100%;max-width:600px;box-shadow:0 24px 64px #000a;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">${gwIcon('email',16)} New Email</h3>
+<style>
+#int-compose-modal * { box-sizing: border-box; }
+/* ── Rich-text toolbar ── */
+.gw-compose-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  padding: 6px 8px; background: var(--gw-surface-2,#1e2e2a);
+  border: 1px solid var(--gw-line,#2e4040); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+}
+.gw-compose-toolbar button {
+  background: none; border: none; color: var(--gw-muted,#6F7E6A);
+  cursor: pointer; border-radius: 4px; padding: 3px 6px;
+  font-size: 13px; font-weight: 700; transition: background .12s, color .12s;
+  display: flex; align-items: center; min-width: 26px; justify-content: center;
+}
+.gw-compose-toolbar button:hover { background: var(--gw-surface-3,#263532); color: var(--gw-ink,#E8E4D9); }
+.gw-compose-toolbar button.active { background: var(--gw-teal,#4D8A86); color: #fff; }
+.gw-compose-toolbar .tb-sep { width: 1px; height: 18px; background: var(--gw-line,#2e4040); margin: 0 3px; flex-shrink: 0; }
+.gw-compose-toolbar select {
+  background: var(--gw-surface-3,#263532); border: 1px solid var(--gw-line,#2e4040);
+  color: var(--gw-ink,#E8E4D9); border-radius: 4px; font-size: 12px;
+  padding: 2px 4px; cursor: pointer;
+}
+/* ── Editor body ── */
+#int-email-editor {
+  min-height: 180px; max-height: 300px; overflow-y: auto;
+  padding: 10px 12px; background: var(--gw-surface-3,#263532);
+  border: 1px solid var(--gw-line,#2e4040); border-top: none;
+  border-radius: 0 0 8px 8px; color: var(--gw-ink,#E8E4D9);
+  font-size: 13.5px; line-height: 1.6; outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+#int-email-editor:empty:before {
+  content: attr(data-placeholder); color: var(--gw-muted,#6F7E6A); pointer-events: none;
+}
+#int-email-editor ul, #int-email-editor ol { padding-left: 20px; margin: 4px 0; }
+#int-email-editor blockquote { border-left: 3px solid var(--gw-line); margin: 4px 0 4px 6px; padding-left: 10px; color: var(--gw-muted); }
+/* ── Recipient chips ── */
+.gw-chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 10px; background: var(--gw-surface-3,#263532); border: 1px solid var(--gw-line,#2e4040); border-radius: 8px; cursor: text; min-height: 38px; }
+.gw-chip { display:inline-flex; align-items:center; gap:4px; background:var(--gw-surface-2,#1e2e2a); border:1px solid var(--gw-line,#2e4040); border-radius:20px; padding:2px 8px; font-size:12px; color:var(--gw-ink,#E8E4D9); }
+.gw-chip-x { cursor:pointer; color:var(--gw-muted,#6F7E6A); font-size:14px; line-height:1; padding: 0 1px; }
+.gw-chip-x:hover { color: #C97B6A; }
+.gw-chip-input { flex:1; min-width:120px; border:none; background:transparent; color:var(--gw-ink,#E8E4D9); font-size:13px; outline:none; padding:0; }
+/* ── Autocomplete dropdown ── */
+.gw-ac-list { position:absolute; z-index:10001; background:var(--gw-surface-2,#1e2e2a); border:1px solid var(--gw-line,#2e4040); border-radius:8px; box-shadow:0 8px 24px #0008; max-height:180px; overflow-y:auto; min-width:240px; }
+.gw-ac-item { padding:8px 12px; cursor:pointer; font-size:13px; color:var(--gw-ink,#E8E4D9); border-bottom:1px solid var(--gw-line,#2e4040); display:flex; flex-direction:column; gap:1px; }
+.gw-ac-item:last-child { border-bottom:none; }
+.gw-ac-item:hover, .gw-ac-item.active { background:var(--gw-teal,#4D8A86); color:#fff; }
+.gw-ac-item:hover .gw-ac-sub, .gw-ac-item.active .gw-ac-sub { color:rgba(255,255,255,.7); }
+.gw-ac-sub { font-size:11px; color:var(--gw-muted,#6F7E6A); }
+/* ── Attachment pills ── */
+.gw-attach-pill { display:inline-flex; align-items:center; gap:5px; background:var(--gw-surface-2,#1e2e2a); border:1px solid var(--gw-line,#2e4040); border-radius:6px; padding:3px 8px 3px 10px; font-size:11px; color:var(--gw-ink,#E8E4D9); }
+.gw-attach-pill-x { cursor:pointer; color:var(--gw-muted,#6F7E6A); font-size:13px; }
+.gw-attach-pill-x:hover { color:#C97B6A; }
+/* ── Bottom bar ── */
+.gw-compose-bottom { display:flex; align-items:center; gap:8px; padding-top:10px; border-top:1px solid var(--gw-line,#2e4040); margin-top:10px; flex-wrap:wrap; }
+</style>
+
+<div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000099;z-index:9999;align-items:center;justify-content:center;padding:16px">
+  <div class="gw-modal-card" style="border-radius:16px;padding:24px;width:100%;max-width:680px;box-shadow:0 24px 64px #000c;max-height:95vh;overflow-y:auto;display:flex;flex-direction:column;gap:0">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--gds-ink,#1F2A2B);display:flex;align-items:center;gap:7px">
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style="flex-shrink:0"><rect x="1" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M1 7l9 6 9-6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        New Email
+      </h3>
       <div style="display:flex;align-items:center;gap:10px">
         <div id="int-sig-status" style="font-size:10px;color:#6F7E6A"></div>
-        <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1">×</button>
+        <button onclick="document.getElementById('int-compose-modal').style.display='none'" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">To</label>
-        <input id="int-email-to" type="email" placeholder="recipient@example.com"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+
+      <!-- TO field with chip autocomplete -->
+      <div style="position:relative">
+        <div style="display:flex;align-items:center;gap:0">
+          <span style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;width:52px;flex-shrink:0">To</span>
+          <div class="gw-chip-row" id="gw-to-chips" style="flex:1" onclick="_gwChipRowClick('to')">
+            <input id="int-to-input" class="gw-chip-input" type="text" placeholder="Name or email…" autocomplete="off"
+              oninput="_gwChipInputChange('to')" onkeydown="_gwChipInputKey(event,'to')">
+          </div>
+          <button onclick="_gwToggleCcBcc()" id="gw-ccbcc-btn" style="background:none;border:none;color:#6F7E6A;font-size:11px;font-weight:700;cursor:pointer;padding:0 0 0 8px;white-space:nowrap">CC BCC</button>
+        </div>
+        <div id="gw-to-ac" class="gw-ac-list" style="display:none;left:52px;right:0;top:100%;margin-top:2px"></div>
       </div>
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Subject</label>
+
+      <!-- CC field -->
+      <div style="position:relative;display:none" id="gw-cc-row">
+        <div style="display:flex;align-items:center;gap:0">
+          <span style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;width:52px;flex-shrink:0">CC</span>
+          <div class="gw-chip-row" id="gw-cc-chips" style="flex:1" onclick="_gwChipRowClick('cc')">
+            <input id="int-cc-input" class="gw-chip-input" type="text" placeholder="CC recipients…" autocomplete="off"
+              oninput="_gwChipInputChange('cc')" onkeydown="_gwChipInputKey(event,'cc')">
+          </div>
+        </div>
+        <div id="gw-cc-ac" class="gw-ac-list" style="display:none;left:52px;right:0;top:100%;margin-top:2px"></div>
+      </div>
+
+      <!-- BCC field -->
+      <div style="position:relative;display:none" id="gw-bcc-row">
+        <div style="display:flex;align-items:center;gap:0">
+          <span style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;width:52px;flex-shrink:0">BCC</span>
+          <div class="gw-chip-row" id="gw-bcc-chips" style="flex:1" onclick="_gwChipRowClick('bcc')">
+            <input id="int-bcc-input" class="gw-chip-input" type="text" placeholder="BCC recipients…" autocomplete="off"
+              oninput="_gwChipInputChange('bcc')" onkeydown="_gwChipInputKey(event,'bcc')">
+          </div>
+        </div>
+        <div id="gw-bcc-ac" class="gw-ac-list" style="display:none;left:52px;right:0;top:100%;margin-top:2px"></div>
+      </div>
+
+      <!-- Subject -->
+      <div style="display:flex;align-items:center;gap:0">
+        <span style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;width:52px;flex-shrink:0">Subject</span>
         <input id="int-email-subject" type="text" placeholder="Email subject"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
+          style="flex:1;padding:8px 12px;background:var(--gw-surface-3,#263532);border:1px solid var(--gw-line,#2e4040);border-radius:8px;color:var(--gw-ink,#E8E4D9);font-size:13px;outline:none">
       </div>
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">Message</label>
-        <textarea id="int-email-body" rows="7" placeholder="Write your message…"
-          style="width:100%;margin-top:5px;padding:9px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>
+
+      <!-- Rich text editor -->
+      <div style="margin-top:4px">
+        <!-- Toolbar -->
+        <div class="gw-compose-toolbar" id="gw-rte-toolbar">
+          <!-- Font family -->
+          <select onchange="document.execCommand('fontName',false,this.value)" title="Font">
+            <option value="Arial" selected>Arial</option>
+            <option value="Georgia">Georgia</option>
+            <option value="'Courier New'">Courier New</option>
+            <option value="Verdana">Verdana</option>
+            <option value="'Times New Roman'">Times New Roman</option>
+          </select>
+          <!-- Font size -->
+          <select onchange="_gwRteFontSize(this.value)" title="Size" style="margin-left:2px;width:52px">
+            <option value="1">10</option>
+            <option value="2" selected>13</option>
+            <option value="3">16</option>
+            <option value="4">18</option>
+            <option value="5">24</option>
+            <option value="6">32</option>
+          </select>
+          <div class="tb-sep"></div>
+          <!-- Format -->
+          <button onclick="_gwRteCmd('bold')" title="Bold (Ctrl+B)" id="gw-tb-bold"><b>B</b></button>
+          <button onclick="_gwRteCmd('italic')" title="Italic (Ctrl+I)" id="gw-tb-italic"><i>I</i></button>
+          <button onclick="_gwRteCmd('underline')" title="Underline (Ctrl+U)" id="gw-tb-underline" style="text-decoration:underline">U</button>
+          <button onclick="_gwRteCmd('strikeThrough')" title="Strikethrough" style="text-decoration:line-through">S</button>
+          <div class="tb-sep"></div>
+          <!-- Text color -->
+          <button onclick="document.getElementById('gw-tb-color-inp').click()" title="Text color" style="font-size:16px;position:relative">
+            <span id="gw-tb-color-icon" style="font-size:12px;font-weight:800;border-bottom:3px solid #E8E4D9">A</span>
+            <input type="color" id="gw-tb-color-inp" value="#E8E4D9" style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none"
+              onchange="_gwRteForeColor(this.value)">
+          </button>
+          <!-- Highlight color -->
+          <button onclick="document.getElementById('gw-tb-hl-inp').click()" title="Highlight" style="font-size:16px;position:relative">
+            <span style="font-size:12px;font-weight:800;background:#FFFF00;padding:0 2px;color:#111">H</span>
+            <input type="color" id="gw-tb-hl-inp" value="#FFFF00" style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none"
+              onchange="document.execCommand('backColor',false,this.value)">
+          </button>
+          <div class="tb-sep"></div>
+          <!-- Lists & alignment -->
+          <button onclick="_gwRteCmd('insertUnorderedList')" title="Bullet list" id="gw-tb-ul">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="4" y="2" width="9" height="1.5" rx=".7"/><rect x="4" y="6.2" width="9" height="1.5" rx=".7"/><rect x="4" y="10.4" width="9" height="1.5" rx=".7"/><circle cx="1.5" cy="2.75" r="1.2"/><circle cx="1.5" cy="6.95" r="1.2"/><circle cx="1.5" cy="11.15" r="1.2"/></svg>
+          </button>
+          <button onclick="_gwRteCmd('insertOrderedList')" title="Numbered list" id="gw-tb-ol">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="5" y="2" width="8" height="1.5" rx=".7"/><rect x="5" y="6.2" width="8" height="1.5" rx=".7"/><rect x="5" y="10.4" width="8" height="1.5" rx=".7"/><text x="0" y="4" font-size="4.5" font-family="Arial">1.</text><text x="0" y="8.5" font-size="4.5" font-family="Arial">2.</text><text x="0" y="13" font-size="4.5" font-family="Arial">3.</text></svg>
+          </button>
+          <button onclick="_gwRteCmd('indent')" title="Indent">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="13" height="1.5" rx=".7"/><rect x="3" y="5" width="10" height="1.5" rx=".7"/><rect x="3" y="9" width="10" height="1.5" rx=".7"/><rect x="0" y="12.5" width="13" height="1.5" rx=".7"/></svg>
+          </button>
+          <button onclick="_gwRteCmd('outdent')" title="Outdent">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="13" height="1.5" rx=".7"/><rect x="0" y="5" width="10" height="1.5" rx=".7"/><rect x="0" y="9" width="10" height="1.5" rx=".7"/><rect x="0" y="12.5" width="13" height="1.5" rx=".7"/></svg>
+          </button>
+          <div class="tb-sep"></div>
+          <!-- Alignment -->
+          <button onclick="_gwRteCmd('justifyLeft')" title="Align left">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect x="0" y="0" width="13" height="1.4" rx=".5"/><rect x="0" y="3.8" width="9" height="1.4" rx=".5"/><rect x="0" y="7.5" width="13" height="1.4" rx=".5"/><rect x="0" y="11.2" width="7" height="1.4" rx=".5"/></svg>
+          </button>
+          <button onclick="_gwRteCmd('justifyCenter')" title="Center">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect x="0" y="0" width="13" height="1.4" rx=".5"/><rect x="2" y="3.8" width="9" height="1.4" rx=".5"/><rect x="0" y="7.5" width="13" height="1.4" rx=".5"/><rect x="3" y="11.2" width="7" height="1.4" rx=".5"/></svg>
+          </button>
+          <div class="tb-sep"></div>
+          <!-- Link -->
+          <button onclick="_gwRteInsertLink()" title="Insert link">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7.5 12.5a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66L9 5.34"/><path d="M12.5 7.5a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66L11 14.66"/></svg>
+          </button>
+          <!-- Blockquote -->
+          <button onclick="_gwRteCmd('formatBlock','blockquote')" title="Blockquote" style="font-size:15px;font-weight:900;color:#6F7E6A">"</button>
+        </div>
+        <!-- Editable content area -->
+        <div id="int-email-editor" contenteditable="true" data-placeholder="Write your message…"
+          onkeydown="_gwRteKeyDown(event)"
+          onmouseup="_gwRteUpdateToolbar()" onkeyup="_gwRteUpdateToolbar()">
+        </div>
       </div>
-      <!-- Signature section — always rendered, content varies by state -->
+
+      <!-- Signature section -->
       <div id="int-sig-section" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div style="display:flex;align-items:center;gap:6px;flex:1">
@@ -1137,21 +1385,38 @@ function _buildComposeModalHTML() {
             Remove
           </button>
         </div>
-        <!-- Rendered HTML signature preview -->
         <div id="int-sig-preview"
-          style="padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;line-height:1.5;color:var(--gw-ink,#1F2A2B);overflow:hidden;max-height:160px;overflow-y:auto">
+          style="padding:10px 12px;background:var(--gw-surface-3,#263532);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;line-height:1.5;color:var(--gw-ink,#1F2A2B);overflow:hidden;max-height:160px;overflow-y:auto">
         </div>
-        <!-- CTA shown when sig is empty or needs reconnect -->
-        <div id="int-sig-cta" style="display:none;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;color:#6F7E6A"></div>
+        <div id="int-sig-cta" style="display:none;padding:10px 12px;background:var(--gw-surface-3,#263532);border:1px solid var(--gw-line);border-radius:8px;font-size:12px;color:#6F7E6A"></div>
         <div style="font-size:10px;color:#6F7E6A;margin-top:4px" id="int-sig-source-label"></div>
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
-        <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn">Cancel</button>
-        <button onclick="intSendEmail()" class="primary-btn" id="int-send-btn">${gwIcon('plane',16)} Send via Gmail</button>
+
+      <!-- Attachment pills -->
+      <div id="gw-attach-list" style="display:none;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
+
+      <!-- Bottom action bar -->
+      <div class="gw-compose-bottom">
+        <!-- Send button -->
+        <button onclick="intSendEmail()" class="primary-btn" id="int-send-btn" style="display:flex;align-items:center;gap:6px;padding:8px 18px">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 10L17 3l-4 14-3-7-7-3z"/></svg>
+          Send
+        </button>
+
+        <!-- Attach file -->
+        <label title="Attach file" style="cursor:pointer;display:flex;align-items:center;gap:5px;color:#6F7E6A;font-size:12px;padding:6px 8px;border-radius:6px;transition:background .12s" onmouseover="this.style.background='var(--gw-surface-2)'" onmouseout="this.style.background='none'">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16.5 10.5l-6.5 6.5a5 5 0 0 1-7.07-7.07l7.78-7.78a3 3 0 0 1 4.24 4.24L7.17 14.17a1 1 0 0 1-1.41-1.41L12 6.5"/></svg>
+          Attach
+          <input type="file" id="gw-attach-input" multiple style="display:none" onchange="_gwHandleAttachments(event)">
+        </label>
+
+        <div style="flex:1"></div>
+        <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn" style="padding:8px 14px">Discard</button>
       </div>
     </div>
   </div>
 </div>`;
+}
 }
 
 // Ensure the compose modal exists in the DOM — inject into body if not yet rendered
@@ -1170,10 +1435,43 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='') {
   const modal = document.getElementById('int-compose-modal');
   if (!modal) { showIntToast('Could not open compose window', 'warn'); return; }
 
-  // Reset fields
-  const toEl       = document.getElementById('int-email-to');
-  const subjEl     = document.getElementById('int-email-subject');
-  const bodyEl     = document.getElementById('int-email-body');
+  // ── Reset chip recipients ─────────────────────────────────────────────────
+  window._gwChips = { to: [], cc: [], bcc: [] };
+  window._intAttachments = [];
+  ['to','cc','bcc'].forEach(function(field) {
+    const inp = document.getElementById('int-' + field + '-input');
+    if (inp) inp.value = '';
+    const row = document.getElementById('gw-' + field + '-chips');
+    if (row) {
+      // Remove all chips, keep the input
+      Array.from(row.querySelectorAll('.gw-chip')).forEach(c => c.remove());
+    }
+  });
+
+  // Prefill To if provided
+  if (prefillTo) _gwChipAdd('to', prefillTo);
+
+  // ── Reset subject ─────────────────────────────────────────────────────────
+  const subjEl = document.getElementById('int-email-subject');
+  if (subjEl) subjEl.value = prefillSubject || '';
+
+  // ── Reset rich text editor ────────────────────────────────────────────────
+  const editor = document.getElementById('int-email-editor');
+  if (editor) editor.innerHTML = '';
+
+  // ── Reset CC/BCC rows ─────────────────────────────────────────────────────
+  const ccRow  = document.getElementById('gw-cc-row');
+  const bccRow = document.getElementById('gw-bcc-row');
+  if (ccRow)  ccRow.style.display  = 'none';
+  if (bccRow) bccRow.style.display = 'none';
+
+  // ── Reset attachments ─────────────────────────────────────────────────────
+  const attachList = document.getElementById('gw-attach-list');
+  if (attachList) { attachList.innerHTML = ''; attachList.style.display = 'none'; }
+  const attachInput = document.getElementById('gw-attach-input');
+  if (attachInput) attachInput.value = '';
+
+  // ── Reset sig state while loading ─────────────────────────────────────────
   const sigSection = document.getElementById('int-sig-section');
   const sigPreview = document.getElementById('int-sig-preview');
   const sigCta     = document.getElementById('int-sig-cta');
@@ -1181,23 +1479,31 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='') {
   const sigSrcLbl  = document.getElementById('int-sig-source-label');
   const sigToggle  = document.getElementById('int-sig-toggle-btn');
 
-  if (toEl)   toEl.value   = prefillTo || '';
-  if (subjEl) subjEl.value = prefillSubject || '';
-  if (bodyEl) bodyEl.value = '';
-
-  // Reset sig state while loading
   if (sigSection) sigSection.style.display = 'none';
   if (sigPreview) sigPreview.innerHTML = '';
   if (sigCta)     { sigCta.style.display = 'none'; sigCta.innerHTML = ''; }
   if (sigStatus)  sigStatus.textContent = '⏳ Loading signature…';
   if (sigSrcLbl)  sigSrcLbl.textContent = '';
-  if (sigToggle)  sigToggle.textContent = 'Remove';
+  if (sigToggle)  { sigToggle.textContent = 'Remove'; sigToggle.style.display = ''; }
   window._intSigActive = false;
   window._intSigHtml   = '';
   window._intSigSource = '';
 
+  // ── Reset send button ─────────────────────────────────────────────────────
+  const sendBtn = document.getElementById('int-send-btn');
+  if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 10L17 3l-4 14-3-7-7-3z"/></svg> Send'; }
+
   // Show modal immediately — signature loads async below
   modal.style.display = 'flex';
+  // Focus the To input (if empty) or Subject
+  setTimeout(function() {
+    if (!window._gwChips?.to?.length) {
+      const toInp = document.getElementById('int-to-input');
+      if (toInp) toInp.focus();
+    } else {
+      if (subjEl) subjEl.focus();
+    }
+  }, 80);
 
   // ── Async: load signature (Gmail API → manual fallback) ──────────────────
   try {
@@ -1312,10 +1618,9 @@ window.gwSigReconnect = async function() {
   if (ok) {
     showIntToast('Google reconnected ✓', 'success');
     // Re-trigger the signature load in the currently open compose window
-    const toEl   = document.getElementById('int-email-to');
     const subjEl = document.getElementById('int-email-subject');
-    const to     = toEl?.value || '';
     const subj   = subjEl?.value || '';
+    const to     = (window._gwChips?.to || [])[0] || '';
     // Brief pause then reopen
     setTimeout(() => window.gwOpenCompose(to, subj), 300);
   } else {
@@ -1350,6 +1655,256 @@ function intToggleSig() {
     sigSection.style.display = 'block';
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COMPOSE HELPERS — chip recipients, rich-text editor, attachments
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Chip recipient system ─────────────────────────────────────────────────────
+window._gwChips = { to: [], cc: [], bcc: [] };
+
+function _gwGetContactList() {
+  // Merge leads + clients into a searchable contact list
+  const contacts = [];
+  try {
+    const opps = window._avalonState?.opportunities || [];
+    opps.forEach(function(o) {
+      if (o.email) contacts.push({ name: o.client || o.name || '', email: o.email });
+      else if (o.client) contacts.push({ name: o.client, email: '' });
+    });
+  } catch(_) {}
+  try {
+    const clients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
+    clients.forEach(function(c) {
+      if (c.email) contacts.push({ name: c.name || (c.firstName + ' ' + (c.lastName || '')).trim(), email: c.email });
+    });
+  } catch(_) {}
+  // Deduplicate by email
+  const seen = new Set();
+  return contacts.filter(function(c) {
+    if (!c.email) return false;
+    const key = c.email.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function _gwChipAdd(field, value) {
+  value = value.trim();
+  if (!value) return;
+  if (!window._gwChips) window._gwChips = { to: [], cc: [], bcc: [] };
+  if (window._gwChips[field].includes(value)) return;
+  window._gwChips[field].push(value);
+
+  // Render chip in DOM
+  const row = document.getElementById('gw-' + field + '-chips');
+  const inp = document.getElementById('int-' + field + '-input');
+  if (!row || !inp) return;
+  const chip = document.createElement('span');
+  chip.className = 'gw-chip';
+  chip.dataset.email = value;
+  chip.innerHTML = escapeHtml(value) + '<span class="gw-chip-x" onclick="_gwChipRemove(\'' + field + '\',\'' + value.replace(/'/g, "\\'") + '\',this.parentElement)">×</span>';
+  row.insertBefore(chip, inp);
+  inp.value = '';
+}
+
+window._gwChipRemove = function(field, value, chipEl) {
+  if (!window._gwChips) return;
+  window._gwChips[field] = (window._gwChips[field] || []).filter(function(v) { return v !== value; });
+  if (chipEl) chipEl.remove();
+};
+
+function _gwChipCommit(field) {
+  const inp = document.getElementById('int-' + field + '-input');
+  if (!inp) return;
+  const val = inp.value.trim();
+  if (val) _gwChipAdd(field, val);
+}
+
+window._gwChipRowClick = function(field) {
+  const inp = document.getElementById('int-' + field + '-input');
+  if (inp) inp.focus();
+};
+
+window._gwChipInputKey = function(event, field) {
+  const inp = event.target;
+  if (event.key === 'Enter' || event.key === ',' || event.key === 'Tab') {
+    event.preventDefault();
+    const val = inp.value.trim().replace(/,+$/, '');
+    if (val) _gwChipAdd(field, val);
+    _gwAcHide(field);
+  } else if (event.key === 'Backspace' && !inp.value) {
+    // Remove last chip on backspace when input is empty
+    const chips = window._gwChips?.[field] || [];
+    if (chips.length) _gwChipRemove(field, chips[chips.length - 1], document.querySelector('#gw-' + field + '-chips .gw-chip:last-of-type'));
+  } else if (event.key === 'ArrowDown') {
+    _gwAcMoveFocus(field, 1);
+  } else if (event.key === 'ArrowUp') {
+    _gwAcMoveFocus(field, -1);
+  } else if (event.key === 'Escape') {
+    _gwAcHide(field);
+  }
+};
+
+window._gwChipInputChange = function(field) {
+  const inp = document.getElementById('int-' + field + '-input');
+  if (!inp) return;
+  const q = inp.value.toLowerCase().trim();
+  if (q.length < 1) { _gwAcHide(field); return; }
+  const contacts = _gwGetContactList();
+  const matches = contacts.filter(function(c) {
+    return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
+  }).slice(0, 8);
+  if (!matches.length) { _gwAcHide(field); return; }
+  _gwAcShow(field, matches, inp);
+};
+
+let _gwAcActive = null; // { field, items, focusIdx }
+
+function _gwAcShow(field, items, anchorEl) {
+  _gwAcHide(field);
+  const list = document.getElementById('gw-' + field + '-ac');
+  if (!list) return;
+  list.innerHTML = items.map(function(c, i) {
+    return '<div class="gw-ac-item" data-idx="' + i + '" data-email="' + escapeHtml(c.email) + '"' +
+      ' onclick="_gwAcSelect(\'' + field + '\',' + i + ')">' +
+      '<span>' + escapeHtml(c.name || c.email) + '</span>' +
+      (c.name && c.email !== c.name ? '<span class="gw-ac-sub">' + escapeHtml(c.email) + '</span>' : '') +
+      '</div>';
+  }).join('');
+  list.style.display = 'block';
+  _gwAcActive = { field, items, focusIdx: -1 };
+}
+
+function _gwAcHide(field) {
+  const list = document.getElementById('gw-' + (field || (_gwAcActive && _gwAcActive.field) || 'to') + '-ac');
+  if (list) list.style.display = 'none';
+  _gwAcActive = null;
+}
+
+window._gwAcSelect = function(field, idx) {
+  if (!_gwAcActive) return;
+  const item = _gwAcActive.items[idx];
+  if (item) _gwChipAdd(field, item.email);
+  _gwAcHide(field);
+};
+
+function _gwAcMoveFocus(field, dir) {
+  if (!_gwAcActive) return;
+  const items = document.querySelectorAll('#gw-' + field + '-ac .gw-ac-item');
+  if (!items.length) return;
+  _gwAcActive.focusIdx = Math.max(0, Math.min(items.length - 1, _gwAcActive.focusIdx + dir));
+  items.forEach(function(el, i) { el.classList.toggle('active', i === _gwAcActive.focusIdx); });
+  // Enter selects focused
+  const focused = items[_gwAcActive.focusIdx];
+  if (focused) {
+    const overrideKey = function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); _gwAcSelect(field, _gwAcActive.focusIdx); document.removeEventListener('keydown', overrideKey); }
+    };
+    document.addEventListener('keydown', overrideKey, { once: true });
+  }
+}
+
+// Close autocomplete on outside click
+document.addEventListener('click', function(e) {
+  if (_gwAcActive && !e.target.closest('.gw-chip-row') && !e.target.closest('.gw-ac-list')) {
+    _gwAcHide(_gwAcActive.field);
+  }
+}, true);
+
+// ── CC / BCC toggle ───────────────────────────────────────────────────────────
+window._gwToggleCcBcc = function() {
+  const ccRow  = document.getElementById('gw-cc-row');
+  const bccRow = document.getElementById('gw-bcc-row');
+  const btn    = document.getElementById('gw-ccbcc-btn');
+  if (!ccRow || !bccRow) return;
+  const showing = ccRow.style.display !== 'none';
+  ccRow.style.display  = showing ? 'none' : '';
+  bccRow.style.display = showing ? 'none' : '';
+  if (btn) btn.textContent = showing ? 'CC BCC' : 'Hide';
+  if (!showing) {
+    const ccInp = document.getElementById('int-cc-input');
+    if (ccInp) ccInp.focus();
+  }
+};
+
+// ── Rich-text editor helpers ──────────────────────────────────────────────────
+window._gwRteCmd = function(cmd, val) {
+  const editor = document.getElementById('int-email-editor');
+  if (!editor) return;
+  editor.focus();
+  document.execCommand(cmd, false, val || null);
+  _gwRteUpdateToolbar();
+};
+
+window._gwRteFontSize = function(size) {
+  document.execCommand('fontSize', false, size);
+};
+
+window._gwRteForeColor = function(color) {
+  document.execCommand('foreColor', false, color);
+  const icon = document.getElementById('gw-tb-color-icon');
+  if (icon) icon.style.borderBottomColor = color;
+};
+
+window._gwRteUpdateToolbar = function() {
+  try {
+    ['bold','italic','underline'].forEach(function(cmd) {
+      const btn = document.getElementById('gw-tb-' + cmd);
+      if (btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+    });
+  } catch(_) {}
+};
+
+window._gwRteKeyDown = function(e) {
+  // Tab → indent (don't lose focus)
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
+  }
+};
+
+window._gwRteInsertLink = function() {
+  const url = prompt('Enter URL:', 'https://');
+  if (url) document.execCommand('createLink', false, url);
+};
+
+// ── Attachment handler ────────────────────────────────────────────────────────
+window._gwHandleAttachments = function(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  const listEl = document.getElementById('gw-attach-list');
+  if (!listEl) return;
+  listEl.style.display = 'flex';
+
+  files.forEach(function(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      // Strip data URI prefix to get raw base64
+      const b64 = e.target.result.split(',')[1];
+      const att = { name: file.name, mimeType: file.type || 'application/octet-stream', data: b64 };
+      window._intAttachments = window._intAttachments || [];
+      window._intAttachments.push(att);
+
+      // Render pill
+      const pill = document.createElement('span');
+      pill.className = 'gw-attach-pill';
+      const sizeStr = file.size > 1024*1024 ? (file.size/1024/1024).toFixed(1)+'MB' : (file.size/1024).toFixed(0)+'KB';
+      pill.innerHTML = '📎 ' + escapeHtml(file.name) + ' <span style="color:var(--gw-muted);font-size:10px">(' + sizeStr + ')</span>' +
+        '<span class="gw-attach-pill-x" onclick="_gwRemoveAttachment(\'' + escapeHtml(file.name).replace(/'/g,"\\'") + '\',this.parentElement)">×</span>';
+      listEl.appendChild(pill);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+window._gwRemoveAttachment = function(name, pillEl) {
+  window._intAttachments = (window._intAttachments || []).filter(function(a) { return a.name !== name; });
+  if (pillEl) pillEl.remove();
+  const listEl = document.getElementById('gw-attach-list');
+  if (listEl && !listEl.children.length) listEl.style.display = 'none';
+};
 
 // Keep legacy aliases
 function intShowGmail()    { gwSwitchTab('gmail'); }
@@ -1858,54 +2413,77 @@ function intGoogleDisconnect() { googleDisconnect(); integrations(); }
 
 // ── Compose Email (global modal) ──────────────────────────────────────────────
 function intComposeFromTemplateModal(prefillTo = '') {
-  const modal = document.getElementById('int-compose-modal');
-  if (!modal) return;
-  modal.style.display = 'flex';
-  if (prefillTo) { const el = document.getElementById('int-email-to'); if(el) el.value = prefillTo; }
+  window.gwOpenCompose(prefillTo || '', '');
 }
 function intFillTemplate() {
   const idx = parseInt(document.getElementById('int-tmpl-select')?.value, 10);
   if (isNaN(idx)) return;
   const tmpl = (window.AVALON_DATA?.templates || [])[idx];
   if (!tmpl) return;
-  const subj = document.getElementById('int-email-subject');
-  const body = document.getElementById('int-email-body');
-  if (subj) subj.value = tmpl.subject || '';
-  if (body) body.value = (tmpl.body || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+  const subj   = document.getElementById('int-email-subject');
+  const editor = document.getElementById('int-email-editor');
+  if (subj)   subj.value = tmpl.subject || '';
+  if (editor) {
+    // Templates may be plain text or HTML — normalise to HTML for RTE
+    const html = (tmpl.body || '').includes('<') ? tmpl.body : (tmpl.body || '').replace(/\n/g, '<br>');
+    editor.innerHTML = html;
+  }
 }
 function intOpenInGmail() {
-  const to = document.getElementById('int-email-to')?.value || '';
+  _gwChipCommit('to');
+  const to      = (window._gwChips?.to || []).join(', ');
   const subject = document.getElementById('int-email-subject')?.value || '';
-  const body = document.getElementById('int-email-body')?.value || '';
+  const editor  = document.getElementById('int-email-editor');
+  const body    = editor ? editor.innerText : '';
   window.open(gmailComposeUrl(to, subject, body), '_blank', 'width=800,height=600');
 }
 async function intSendEmail() {
-  const to      = document.getElementById('int-email-to')?.value?.trim();
+  // ── Gather recipients ──────────────────────────────────────────────────────
+  // Commit any typed-but-not-chipped addresses first
+  _gwChipCommit('to');
+  _gwChipCommit('cc');
+  _gwChipCommit('bcc');
+
+  const toList  = (window._gwChips?.to  || []);
+  const ccList  = (window._gwChips?.cc  || []);
+  const bccList = (window._gwChips?.bcc || []);
+
+  if (!toList.length) { showIntToast('Add at least one recipient in the To field', 'warn'); return; }
+
   const subject = document.getElementById('int-email-subject')?.value?.trim();
-  const bodyRaw = document.getElementById('int-email-body')?.value?.trim();
-  if (!to || !subject || !bodyRaw) { showIntToast('Fill in To, Subject, and Body', 'warn'); return; }
+  if (!subject)   { showIntToast('Add a subject line', 'warn'); return; }
+
+  const editor = document.getElementById('int-email-editor');
+  const bodyHtml = editor ? editor.innerHTML.trim() : '';
+  if (!bodyHtml || bodyHtml === '<br>') { showIntToast('Write your message first', 'warn'); return; }
+
   if (!isGoogleConnected()) { showIntToast('Connect Google first', 'warn'); return; }
 
-  // Build full HTML body: message text + optional signature
-  const bodyHtml = bodyRaw.replace(/\n/g, '<br>');
-  let fullHtml   = bodyHtml;
+  // Build full HTML body: message content + optional signature
+  let fullHtml = `<div style="font-family:Arial,sans-serif;font-size:13.5px;line-height:1.6;color:#202124">${bodyHtml}</div>`;
   if (window._intSigActive && window._intSigHtml) {
-    // Separator + signature, matching Gmail's convention
-    fullHtml += `<br><br><div style="border-top:1px solid #e0e0e0;padding-top:8px;margin-top:8px">${window._intSigHtml}</div>`;
+    fullHtml += `<br><div style="border-top:1px solid #e0e0e0;padding-top:8px;margin-top:8px">${window._intSigHtml}</div>`;
   }
 
+  const btn = document.getElementById('int-send-btn');
   try {
-    const btn = document.getElementById('int-send-btn');
-    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
-    await gmailSendEmail({ to, subject, body: fullHtml });
-    showIntToast('Email sent ✓');
+    if (btn) { btn.innerHTML = '⏳ Sending…'; btn.disabled = true; }
+
+    await gmailSendEmail({
+      to:      toList.join(', '),
+      cc:      ccList.join(', ')  || null,
+      bcc:     bccList.join(', ') || null,
+      subject,
+      body:    fullHtml,
+      attachments: window._intAttachments || []
+    });
+
+    showIntToast('Email sent ✓', 'success');
     document.getElementById('int-compose-modal').style.display = 'none';
     if (_gwTab === 'gmail') gwLoadGmail();
-    if (btn) { btn.textContent = `${gwIcon('plane',16)} Send via Gmail`; btn.disabled = false; }
   } catch(e) {
-    showIntToast(e.message, 'error');
-    const btn = document.getElementById('int-send-btn');
-    if (btn) { btn.textContent = `${gwIcon('plane',16)} Send via Gmail`; btn.disabled = false; }
+    showIntToast(e.message || 'Send failed', 'error');
+    if (btn) { btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 10L17 3l-4 14-3-7-7-3z"/></svg> Send'; btn.disabled = false; }
   }
 }
 
