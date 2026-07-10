@@ -4189,6 +4189,9 @@ function commsBoardHtml(oppId, opp){
         (clientEmail ? '<a class="comm-contact-chip" href="mailto:'+opp.email+'">' +
           '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' +
           clientEmail+'</a>' : '') +
+        (clientEmail ? '<button class="comm-contact-chip" style="border:none;cursor:pointer;background:var(--gw-teal,#4D8A86);color:#fff;font-weight:700" title="Send email via Gmail — will be linked to this lead" onclick="(function(){if(typeof intComposeToLead===\'function\'){intComposeToLead(\''+opp.email.replace(/'/g,"\\'")+'\',' + '\''+clientName.replace(/'/g,"\\'")+'\'' + ',\''+oppId+'\',\''+clientName.replace(/'/g,"\\'")+'\');}else{window.location=\'mailto:'+opp.email+'\';}})()">'+
+          '<svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 10L17 3l-4 14-3-7-7-3z"/></svg>' +
+          ' Send via Gmail</button>' : '') +
       '</div>' +
     '</div>' +
     /* ── Thread ── */
@@ -4552,7 +4555,7 @@ window.qaAction = function(type, oppId, btn) {
   } else if (type === 'gmail') {
     try {
       if (typeof intComposeToLead === 'function') {
-        intComposeToLead(o.email || '', o.client || '');
+        intComposeToLead(o.email || '', o.client || '', o.id || '', o.client || '');
         setTimeout(() => done(true, 'Gmail compose opened'), 600);
       } else {
         done(false, 'Gmail not connected — visit Integrations');

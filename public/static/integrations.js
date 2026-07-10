@@ -1232,6 +1232,14 @@ function _buildComposeModalHTML() {
 .gw-attach-pill-x:hover { color:#C97B6A; }
 /* ── Bottom bar ── */
 .gw-compose-bottom { display:flex; align-items:center; gap:8px; padding-top:10px; border-top:1px solid var(--gw-line,#2e4040); margin-top:10px; flex-wrap:wrap; }
+/* ── Link-to-Lead picker ── */
+#gw-link-lead-row { display:flex; align-items:center; gap:0; }
+#gw-link-lead-input { flex:1; padding:7px 10px; background:var(--gw-surface-3,#263532); border:1px solid var(--gw-line,#2e4040); border-radius:8px; color:var(--gw-ink,#E8E4D9); font-size:13px; outline:none; }
+#gw-link-lead-input::placeholder { color:var(--gw-muted,#6F7E6A); }
+#gw-link-lead-badge { display:none; align-items:center; gap:6px; background:#1A4740; border:1px solid #2D7A55; border-radius:20px; padding:3px 10px 3px 8px; font-size:12px; color:#5CC8A8; font-weight:600; }
+#gw-link-lead-badge-x { cursor:pointer; color:#5CC8A8; font-size:14px; line-height:1; margin-left:4px; opacity:.7; }
+#gw-link-lead-badge-x:hover { opacity:1; }
+#gw-link-lead-ac { position:absolute; z-index:10002; background:var(--gw-surface-2,#1e2e2a); border:1px solid var(--gw-line,#2e4040); border-radius:8px; box-shadow:0 8px 24px #0008; max-height:200px; overflow-y:auto; min-width:280px; left:52px; right:0; top:100%; margin-top:2px; }
 </style>
 
 <div id="int-compose-modal" style="display:none;position:fixed;inset:0;background:#00000099;z-index:9999;align-items:center;justify-content:center;padding:16px">
@@ -1293,6 +1301,23 @@ function _buildComposeModalHTML() {
         <span style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;width:52px;flex-shrink:0">Subject</span>
         <input id="int-email-subject" type="text" placeholder="Email subject"
           style="flex:1;padding:8px 12px;background:var(--gw-surface-3,#263532);border:1px solid var(--gw-line,#2e4040);border-radius:8px;color:var(--gw-ink,#E8E4D9);font-size:13px;outline:none">
+      </div>
+
+      <!-- Link to Lead picker -->
+      <div style="position:relative" id="gw-link-lead-row">
+        <div style="display:flex;align-items:center;gap:0">
+          <span style="font-size:11px;font-weight:700;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;width:52px;flex-shrink:0">Lead</span>
+          <!-- Badge shown when a lead is linked -->
+          <div id="gw-link-lead-badge" style="display:none">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".6"/></svg>
+            <span id="gw-link-lead-label">—</span>
+            <span id="gw-link-lead-badge-x" onclick="_gwLinkLeadClear()" title="Remove lead link">×</span>
+          </div>
+          <!-- Search input shown when no lead linked -->
+          <input id="gw-link-lead-input" type="text" placeholder="Search leads to link this email…" autocomplete="off"
+            oninput="_gwLinkLeadInputChange()" onkeydown="_gwLinkLeadInputKey(event)" onfocus="_gwLinkLeadInputChange()">
+        </div>
+        <div id="gw-link-lead-ac" class="gw-ac-list" style="display:none"></div>
       </div>
 
       <!-- Rich text editor -->
@@ -1428,7 +1453,7 @@ function gwEnsureComposeModal() {
   document.body.appendChild(div.firstElementChild);
 }
 
-window.gwOpenCompose = async function(prefillTo='', prefillSubject='') {
+window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOppId='', prefillOppLabel='') {
   // Self-heal: inject modal into DOM if integrations() hasn't been called yet
   gwEnsureComposeModal();
 
@@ -1470,6 +1495,11 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='') {
   if (attachList) { attachList.innerHTML = ''; attachList.style.display = 'none'; }
   const attachInput = document.getElementById('gw-attach-input');
   if (attachInput) attachInput.value = '';
+
+  // ── Reset / pre-populate Link-to-Lead picker ──────────────────────────────
+  window._gwComposeLinkedOppId    = prefillOppId    || '';
+  window._gwComposeLinkedOppLabel = prefillOppLabel || '';
+  _gwLinkLeadRender();
 
   // ── Reset sig state while loading ─────────────────────────────────────────
   const sigSection = document.getElementById('int-sig-section');
@@ -1659,6 +1689,83 @@ function intToggleSig() {
 // ══════════════════════════════════════════════════════════════════════════════
 // COMPOSE HELPERS — chip recipients, rich-text editor, attachments
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── Link-to-Lead picker ───────────────────────────────────────────────────────
+window._gwComposeLinkedOppId    = '';
+window._gwComposeLinkedOppLabel = '';
+
+function _gwLinkLeadRender() {
+  const badge  = document.getElementById('gw-link-lead-badge');
+  const input  = document.getElementById('gw-link-lead-input');
+  const label  = document.getElementById('gw-link-lead-label');
+  const ac     = document.getElementById('gw-link-lead-ac');
+  if (!badge || !input) return;
+  if (window._gwComposeLinkedOppId) {
+    badge.style.display = 'flex';
+    input.style.display = 'none';
+    if (label) label.textContent = window._gwComposeLinkedOppLabel || 'Lead';
+    if (ac) ac.style.display = 'none';
+  } else {
+    badge.style.display = 'none';
+    input.style.display = '';
+    input.value = '';
+    if (ac) ac.style.display = 'none';
+  }
+}
+
+function _gwLinkLeadClear() {
+  window._gwComposeLinkedOppId    = '';
+  window._gwComposeLinkedOppLabel = '';
+  _gwLinkLeadRender();
+  const input = document.getElementById('gw-link-lead-input');
+  if (input) { input.value = ''; input.focus(); }
+}
+
+function _gwLinkLeadSelect(oppId, oppLabel) {
+  window._gwComposeLinkedOppId    = oppId;
+  window._gwComposeLinkedOppLabel = oppLabel;
+  _gwLinkLeadRender();
+}
+
+function _gwLinkLeadInputChange() {
+  const input = document.getElementById('gw-link-lead-input');
+  const ac    = document.getElementById('gw-link-lead-ac');
+  if (!input || !ac) return;
+  const q = (input.value || '').toLowerCase().trim();
+  const opps = window._avalonState?.opportunities || [];
+  const matches = opps.filter(function(o) {
+    if (!o.id) return false;
+    const name  = (o.client || o.name || '').toLowerCase();
+    const email = (o.email || '').toLowerCase();
+    const proj  = (o.project || '').toLowerCase();
+    return !q || name.includes(q) || email.includes(q) || proj.includes(q);
+  }).slice(0, 12);
+
+  if (!matches.length) { ac.style.display = 'none'; return; }
+
+  ac.innerHTML = matches.map(function(o, idx) {
+    const name    = escapeHtml(o.client || o.name || 'Lead');
+    const sub     = escapeHtml((o.project || o.serviceLine || o.status || '').slice(0, 50));
+    const email   = escapeHtml(o.email || '');
+    return `<div class="gw-ac-item" data-idx="${idx}" onmousedown="_gwLinkLeadSelect('${o.id.replace(/'/g,"\\'")}','${name.replace(/'/g,"\\'")}')" style="cursor:pointer">
+      <span>${name}</span>
+      <span class="gw-ac-sub">${sub}${email ? (sub ? ' · ' : '') + email : ''}</span>
+    </div>`;
+  }).join('');
+  ac.style.display = 'block';
+}
+
+function _gwLinkLeadInputKey(event) {
+  if (event.key === 'Escape') {
+    const ac = document.getElementById('gw-link-lead-ac');
+    if (ac) ac.style.display = 'none';
+  }
+}
+
+window._gwLinkLeadClear        = _gwLinkLeadClear;
+window._gwLinkLeadSelect       = _gwLinkLeadSelect;
+window._gwLinkLeadInputChange  = _gwLinkLeadInputChange;
+window._gwLinkLeadInputKey     = _gwLinkLeadInputKey;
 
 // ── Chip recipient system ─────────────────────────────────────────────────────
 window._gwChips = { to: [], cc: [], bcc: [] };
@@ -2478,7 +2585,64 @@ async function intSendEmail() {
       attachments: window._intAttachments || []
     });
 
-    showIntToast('Email sent ✓', 'success');
+    // ── Log to linked lead (if one was selected) ───────────────────────────
+    const linkedOppId    = window._gwComposeLinkedOppId    || '';
+    const linkedOppLabel = window._gwComposeLinkedOppLabel || '';
+    if (linkedOppId) {
+      try {
+        const repName = (window.getCurrentRep ? window.getCurrentRep() : null)?.name || 'Rep';
+        const repId   = (window.getCurrentRep ? window.getCurrentRep() : null)?.id   || null;
+
+        // 1. Write to D1 via the comms API endpoint
+        const commPayload = {
+          type:      'email',
+          direction: 'out',
+          subject:   subject,
+          body:      bodyHtml.slice(0, 4000),   // truncate for DB storage
+          repId:     repId
+        };
+        try {
+          await fetch('/api/opportunities/' + encodeURIComponent(linkedOppId) + '/comms', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(commPayload)
+          });
+        } catch(dbErr) {
+          console.warn('[gwCompose] D1 comms write failed:', dbErr);
+        }
+
+        // 2. Push to local state.communications so the comms tab updates immediately
+        const localComm = {
+          id:        'comm_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+          oppId:     linkedOppId,
+          type:      'email',
+          direction: 'out',
+          subject:   subject,
+          body:      bodyHtml.slice(0, 2000),
+          callDuration: null,
+          files:     [],
+          ts:        new Date().toISOString(),
+          sentBy:    repName,
+          gmailSent: true,
+          linkedViaCompose: true   // flag so we can distinguish compose-modal sends
+        };
+        const st = window._avalonState || window.state;
+        if (st) {
+          if (!st.communications) st.communications = [];
+          st.communications.push(localComm);
+          // Persist to localStorage if saveState is available
+          if (typeof saveState === 'function') try { saveState(); } catch(_) {}
+        }
+
+        showIntToast('Email sent & linked to "' + linkedOppLabel + '" ✓', 'success');
+      } catch(linkErr) {
+        console.warn('[gwCompose] Lead link failed:', linkErr);
+        showIntToast('Email sent ✓ (lead link failed)', 'warn');
+      }
+    } else {
+      showIntToast('Email sent ✓', 'success');
+    }
+
     document.getElementById('int-compose-modal').style.display = 'none';
     if (_gwTab === 'gmail') gwLoadGmail();
   } catch(e) {
@@ -2709,24 +2873,18 @@ function intAdminSaveClientId() {
 window.intAdminSaveClientId = intAdminSaveClientId;
 
 // ── intComposeToLead — called from Quick Actions "Compose Email" on a lead ─────
-// Pre-fills the Gmail compose modal with the lead's email address, or falls back
-// to the Communications tab compose bar on that lead.
-function intComposeToLead(toEmail, clientName) {
+// Pre-fills the Gmail compose modal with the lead's email address AND links the
+// email internally to that lead's Communications tab.
+function intComposeToLead(toEmail, clientName, oppId, oppLabel) {
   if (isGoogleConnected()) {
-    // Open the in-app Gmail compose modal pre-filled
+    // Open the compose modal (works from any view — gwEnsureComposeModal handles DOM injection)
+    gwEnsureComposeModal();
     if (typeof gwOpenCompose === 'function') {
-      // Navigate to Integrations and open compose
-      if (typeof show === 'function') show('integrations');
-      setTimeout(() => {
-        if (typeof gwSwitchTab === 'function') gwSwitchTab('gmail');
-        setTimeout(() => {
-          if (typeof gwOpenCompose === 'function') gwOpenCompose(toEmail, '');
-        }, 300);
-      }, 400);
+      gwOpenCompose(toEmail || '', '', oppId || '', oppLabel || clientName || '');
     }
   } else {
     // Not connected — open mailto: as fallback
-    const url = 'mailto:' + encodeURIComponent(toEmail) + (clientName ? '?body=Hi ' + encodeURIComponent(clientName) + ',' : '');
+    const url = 'mailto:' + encodeURIComponent(toEmail || '') + (clientName ? '?body=Hi ' + encodeURIComponent(clientName) + ',' : '');
     window.open(url, '_blank');
   }
 }
