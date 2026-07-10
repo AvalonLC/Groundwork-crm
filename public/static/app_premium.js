@@ -12911,7 +12911,7 @@ window._sbOpenVisitModal = async function(woId) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
               <label class="sb-modal-field">
                 <span>Budgeted Hours <em style="font-size:10px;font-weight:400;opacity:.6">(total man-hrs)</em></span>
-                <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||}">
+                <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||''}">
               </label>
               <label class="sb-modal-field">
                 <span>Scheduled End</span>
