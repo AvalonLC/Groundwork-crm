@@ -851,6 +851,7 @@ function umRenderUsers(container) {
       // Persist to D1 so email+password auth works server-side
       const apiPayload = {
         name,
+        title: pos,
         email,
         role,
         color,
@@ -860,7 +861,19 @@ function umRenderUsers(container) {
       const apiCall = existingId
         ? window.API?.reps?.update?.(existingId, apiPayload) || fetch(`/api/reps/${existingId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(apiPayload) })
         : window.API?.reps?.create?.({ ...apiPayload, id: userId }) || fetch('/api/reps', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ ...apiPayload, id: userId }) });
-      apiCall.then(r => (r.ok ? null : r.json().then(d => umToast(`Server sync: ${d?.error || 'error'}`)))).catch(() => {});
+      apiCall.then(r => {
+        if (r.ok) {
+          // Refresh REPS from D1 so the new user persists across reloads
+          const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
+          const companyId = currentRep?.company_id || window._d1SessionRep?.company_id || 'avalon';
+          fetch(`/api/reps?companyId=${encodeURIComponent(companyId)}`, { credentials: 'include' })
+            .then(r2 => r2.json())
+            .then(d => { if (d.data && Array.isArray(d.data)) window.REPS = d.data; })
+            .catch(() => {});
+        } else {
+          r.json().then(d => umToast(`Save failed: ${d?.error || 'Server error — user may not have been saved'}`)).catch(() => umToast('Save failed: Server error'));
+        }
+      }).catch(() => umToast('Network error — user may not have been saved'));
 
       document.getElementById('um-user-modal')?.remove();
       umToast(existingId ? `${name} updated` : `${name} added`);

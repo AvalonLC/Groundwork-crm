@@ -420,18 +420,22 @@ app.get('/api/reps/:id', requireAuth, async (c) => {
   return json(c, row)
 })
 
-// POST /api/reps  — add a rep to a company
+// POST /api/reps  — add a rep to a company (admin/office_manager only)
 // Accepts password (preferred) or pin (legacy) for the initial credential
-app.post('/api/reps', async (c) => {
+app.post('/api/reps', requireAuth, async (c) => {
   const b = await c.req.json()
+  // companyId comes from the session (authoritative); b.companyId ignored for security
+  const companyId = c.var.companyId as string
+  const sessionRole = c.var.role as string
+  if (sessionRole !== 'admin' && sessionRole !== 'office_manager') return err(c, 'Only admins can add users', 403)
   const credential = b.password || b.pin
-  if (!b.id || !b.name || !credential || !b.companyId) return err(c, 'id, name, password, companyId required')
+  if (!b.id || !b.name || !credential) return err(c, 'id, name, and password are required')
   if (!b.email) return err(c, 'email required — users log in with their email address')
   const pinHash = await hashPin(String(credential))
   await c.env.DB.prepare(`
     INSERT INTO reps (id, name, title, role, pin, pin_hash, email, color, commission_plan, company_id, active)
     VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, 1)
-  `).bind(b.id, b.name, b.title||'', b.role||'rep', pinHash, b.email, b.color||'#6366f1', b.commissionPlan||'standard', b.companyId).run()
+  `).bind(b.id, b.name, b.title||'', b.role||'rep', pinHash, b.email, b.color||'#6366f1', b.commissionPlan||'standard', companyId).run()
   return json(c, { id: b.id }, 201)
 })
 
