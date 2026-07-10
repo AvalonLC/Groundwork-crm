@@ -1180,8 +1180,8 @@ async function umRenderCrews(container) {
   let crews = [], allReps = [];
   try {
     const [cr, rr] = await Promise.all([
-      fetch('/api/crews').then(r=>r.json()),
-      fetch('/api/reps').then(r=>r.json()),
+      fetch('/api/crews', { credentials:'include' }).then(r=>r.json()),
+      fetch('/api/reps', { credentials:'include' }).then(r=>r.json()),
     ]);
     crews   = cr.ok  ? (cr.data  || []) : [];
     allReps = rr.ok  ? (rr.data  || rr.reps || []) : [];
@@ -1221,7 +1221,7 @@ async function umRenderCrews(container) {
     <div style="padding:24px 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <h2 style="font-size:18px;font-weight:700;margin:0">Crews</h2>
-        <button class="rp-btn rp-btn--primary" onclick="document.getElementById('um-new-crew-form').style.display='block';this.style.display='none'">+ New Crew</button>
+        <button id="um-new-crew-btn" class="rp-btn rp-btn--primary" onclick="document.getElementById('um-new-crew-form').style.display='block';this.style.display='none'">+ New Crew</button>
       </div>
 
       <!-- New Crew Form -->
@@ -1262,7 +1262,7 @@ async function umRenderCrews(container) {
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="rp-btn" onclick="document.getElementById('um-new-crew-form').style.display='none';document.querySelector('[onclick*=New\\ Crew]').style.display=''">Cancel</button>
+          <button class="rp-btn" onclick="document.getElementById('um-new-crew-form').style.display='none';document.getElementById('um-new-crew-btn').style.display=''">Cancel</button>
           <button class="rp-btn rp-btn--primary" onclick="umSaveNewCrew()">Create Crew</button>
         </div>
       </div>
@@ -1325,19 +1325,20 @@ async function umRenderCrews(container) {
     const div = document.getElementById('um-new-crew-div')?.value||null;
     try {
       const r = await fetch('/api/crews', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
         body: JSON.stringify({ name, color: window._umNewCrewColor, division: div||null, members: window._umNewCrewMembers })
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error);
       umToast('Crew created!','ok');
       // Refresh crews
-      const cr2 = await fetch('/api/crews').then(r2=>r2.json());
+      const cr2 = await fetch('/api/crews', { credentials:'include' }).then(r2=>r2.json());
       crews = cr2.data||[];
       window._sbState && (window._sbState.crews = crews);
       window._sbState && (window._sbState.loaded = false);
       renderCrewList();
       document.getElementById('um-new-crew-form').style.display='none';
+      document.getElementById('um-new-crew-btn').style.display='';
       window._umNewCrewMembers = [];
       document.getElementById('um-new-crew-members').innerHTML='';
       document.getElementById('um-new-crew-name').value='';
@@ -1346,8 +1347,8 @@ async function umRenderCrews(container) {
 
   window.umDeleteCrew = async function(crewId) {
     if (!confirm('Delete this crew? Jobs using it will keep the crew reference but the crew will be inactive.')) return;
-    await fetch('/api/crews/'+crewId, { method:'DELETE' });
-    const cr2 = await fetch('/api/crews').then(r=>r.json());
+    await fetch('/api/crews/'+crewId, { method:'DELETE', credentials:'include' });
+    const cr2 = await fetch('/api/crews', { credentials:'include' }).then(r=>r.json());
     crews = cr2.data||[];
     window._sbState && (window._sbState.crews = crews);
     window._sbState && (window._sbState.loaded = false);
@@ -1362,11 +1363,11 @@ async function umRenderCrews(container) {
     if (!newName?.trim()) return;
     const newDiv = prompt('Division (Landscaping, Lawn Care, etc.):', crew.division||'');
     await fetch('/api/crews/'+crewId, {
-      method:'PUT', headers:{'Content-Type':'application/json'},
+      method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include',
       body: JSON.stringify({ name: newName.trim(), color: crew.color, division: newDiv||null })
     });
     // Update members via separate endpoint if needed
-    const cr2 = await fetch('/api/crews').then(r=>r.json());
+    const cr2 = await fetch('/api/crews', { credentials:'include' }).then(r=>r.json());
     crews = cr2.data||[];
     window._sbState && (window._sbState.crews = crews);
     window._sbState && (window._sbState.loaded = false);
