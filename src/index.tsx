@@ -307,9 +307,11 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
     rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
-    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports'],
-    laborer: ['scheduleBoard','workOrderList','timeTracker'],
-    view_only: ['today','pipeline']
+    foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
+    laborer: ['today','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+    view_only: ['today','pipeline'],
+    // Legacy alias — D1 rows where role='field_supervisor' still resolve correctly
+    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode']
   }
 
   let stages = defaultStages
@@ -683,13 +685,19 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'communications','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['gwDashboard','gwSales','today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
-    field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
-      'today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
+    foreman: ['gwDashboard','gwOperations','gwAdmin',
+      'today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-      'opsReports','teamReports','approvalQueue','fieldMode'],
-    laborer: ['gwOperations','scheduleBoard','workOrderList','timeTracker','fieldMode'],
-    view_only: ['gwDashboard','today','pipeline']
+      'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin'],
+    laborer: ['gwDashboard','gwOperations','today','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+    view_only: ['gwDashboard','today','pipeline'],
+    // Legacy alias — field_supervisor rows in D1 still get correct permissions
+    field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
+      'today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+      'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin']
   }
   let perms = defaultPerms
   if (row?.value) {
