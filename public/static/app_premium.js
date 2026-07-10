@@ -3364,10 +3364,7 @@ function opportunityDetail(id){
       </div>
     </div>
     <div class="rp-command-actions">
-      <button class="rp-btn rp-btn--primary" style="padding:6px 13px;font-size:12.5px" onclick="saveOpportunity('${o.id}')">
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Save
-      </button>
+      <span id="oppAutosaveIndicator" style="font-size:11px;font-weight:600;color:var(--gw-success,#2D7A55);opacity:0;transition:opacity .4s;padding:4px 8px">✓ Saved</span>
       ${!_isSold && !_isClosed ? `<button class="rp-btn rp-btn--sold" style="padding:6px 13px;font-size:12.5px" onclick="openMarkSoldModal('${o.id}')">Mark Sold</button>` : _isSold ? `<span class="rp-sold-badge" style="font-size:11px;padding:4px 10px">Sold</span>` : ''}
     </div>`;
 
@@ -3397,10 +3394,7 @@ function opportunityDetail(id){
         </div>
       </div>
       <div class="ld-hero-actions">
-        <button class="ld-btn-primary" onclick="saveOpportunity('${o.id}')">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7.5L5.5 11 12 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Save Changes
-        </button>
+        <span id="oppAutosaveIndicator" style="font-size:11px;font-weight:600;color:var(--gw-success,#2D7A55);opacity:0;transition:opacity .4s;padding:4px 8px">✓ Saved</span>
         ${!_isSold && !_isClosed ? `<button class="ld-btn-sold" onclick="openMarkSoldModal('${o.id}')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".9"/></svg>
           Mark Sold
@@ -4057,6 +4051,72 @@ function opportunityDetail(id){
   `;
 
   // ── POST-RENDER WIRING ────────────────────────────────────────────────────
+
+  // ── AUTOSAVE: oppForm fields save on blur/change, no Save button needed ──
+  // Debounce helper — waits 600ms after last keystroke before saving
+  const _oppAutosaveDebounce = {};
+  function _oppAutosave(field, value) {
+    clearTimeout(_oppAutosaveDebounce[field]);
+    _oppAutosaveDebounce[field] = setTimeout(function() {
+      const opp = state.opportunities.find(x => x.id === o.id);
+      if (!opp) return;
+      if (String(opp[field] || '') === String(value || '')) return; // no change
+      opp[field] = value;
+      opp.updatedAt = new Date().toISOString();
+      saveState();
+      _d1SaveOpp(opp);
+      // Show subtle saved indicator
+      const indicator = document.getElementById('oppAutosaveIndicator');
+      if (indicator) {
+        indicator.textContent = '✓ Saved';
+        indicator.style.opacity = '1';
+        clearTimeout(indicator._fadeTimer);
+        indicator._fadeTimer = setTimeout(() => { indicator.style.opacity = '0'; }, 1800);
+      }
+    }, 600);
+  }
+
+  // Attach listeners to all oppForm inputs after a tick (DOM must be ready)
+  setTimeout(function() {
+    const form = document.getElementById('oppForm');
+    if (form) {
+      // Text inputs + textareas: autosave 600ms after last keystroke
+      form.querySelectorAll('input[name], textarea[name]').forEach(function(el) {
+        el.addEventListener('input', function() { _oppAutosave(el.name, el.value); });
+        el.addEventListener('blur',  function() { _oppAutosave(el.name, el.value); });
+      });
+      // Selects: autosave immediately on change
+      form.querySelectorAll('select[name]').forEach(function(el) {
+        el.addEventListener('change', function() { _oppAutosave(el.name, el.value); });
+      });
+    }
+
+    // Qual note textareas: autosave on blur (collapse back to view mode)
+    const qualFields = ['prompt','desiredOutcome','painPoints','decisionDrivers','fitConcerns'];
+    qualFields.forEach(function(field) {
+      const ta = document.getElementById('qfta-' + field + '-' + o.id);
+      if (!ta) return;
+      ta.addEventListener('blur', function() {
+        // Small delay so clicking Save button still works
+        setTimeout(function() {
+          const activeEl = document.activeElement;
+          const editBlock = document.getElementById('qfedit-' + field + '-' + o.id);
+          if (editBlock && editBlock.contains(activeEl)) return; // focus moved inside same block
+          ldQualSave(field, o.id);
+        }, 150);
+      });
+    });
+
+    // Estimate section selects/inputs (outside oppForm)
+    const estimateFields = [
+      { id: 'estimateStatusEdit', name: 'estimateStatus', type: 'change' },
+    ];
+    estimateFields.forEach(function(f) {
+      const el = document.getElementById(f.id);
+      if (!el) return;
+      el.addEventListener(f.type, function() { _oppAutosave(f.name, el.value); });
+    });
+  }, 0);
 
   // Wire checklist checkboxes + progress bars immediately after render
   wireChecks();
