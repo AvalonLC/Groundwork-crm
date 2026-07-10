@@ -4058,6 +4058,7 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
+<!-- Foundation scripts (no dependency on app_premium) -->
 <script src="/static/gw-icons.js?v=20260628gw1"></script>
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
@@ -4065,7 +4066,8 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260707p10a1"></script>
-<script src="/static/app_premium.js?v=20260710p19"></script>
+<!-- Module scripts — must load BEFORE app_premium.js so window.* functions
+     exist when _initialRoute() fires on hash restore (e.g. #timeTracker) -->
 <script src="/static/integrations.js?v=20260630gw13"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
@@ -4077,6 +4079,8 @@ function getHtml(): string {
 <script src="/static/automation_engine.js?v=20260707gw8p1"></script>
 <script src="/static/client_portal.js?v=20260707gw8p1"></script>
 <script src="/static/field_mode.js?v=20260707gw8p1"></script>
+<!-- app_premium.js last — _initialRoute() runs here and all window.* are ready -->
+<script src="/static/app_premium.js?v=20260710p19"></script>
 <script>
   // Service Worker registration
   if ('serviceWorker' in navigator) {
