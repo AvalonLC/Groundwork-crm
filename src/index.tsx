@@ -14,6 +14,25 @@ app.use('/api/*', cors())
 // ── Static files ──────────────────────────────────────────────────────────────
 app.use('/static/*', serveStatic({ root: './public' }))
 app.use('/sw.js', serveStatic({ root: './public', path: 'sw.js' }))
+app.get('/site.webmanifest', (c) => {
+  const manifest = {
+    name: 'Groundwork CRM',
+    short_name: 'Groundwork',
+    description: 'Field sales and operations management for home service companies',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#113931',
+    theme_color: '#113931',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: '/static/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/static/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    ],
+  };
+  return c.json(manifest, 200, { 'Content-Type': 'application/manifest+json' });
+})
+// Apple requests the touch icon at the root — redirect to our static copy
+app.get('/apple-touch-icon.png', (c) => c.redirect('/static/apple-touch-icon.png', 301))
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -1718,8 +1737,14 @@ app.get('/onboard', (c) => {
   <title>Get Started — Groundwork CRM</title>
   <meta name="theme-color" content="#113931" />
   <meta name="description" content="Set up your team on Groundwork CRM in 2 minutes." />
-  <link rel="icon" type="image/png" href="/static/avalon-logo.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png" />
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Groundwork" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -3608,9 +3633,15 @@ function getHtml(): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Groundwork CRM</title>
-  <link rel="icon" type="image/png" href="/static/avalon-logo.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png" />
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
   <meta name="theme-color" content="#113931" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Groundwork" />
   <meta name="description" content="Field sales CRM built for home services teams." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
