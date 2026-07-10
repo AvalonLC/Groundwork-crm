@@ -523,7 +523,7 @@ function fallbackCopy(text){
       inventoryList:'Resources', materialAllocation:'Resources',
       toolsConsumables:'Resources', timeTracker:'Time', opsHub:'Operations',
       // Admin workspace tabs
-      settings:'General', userManagement:'Users & Roles', integrations:'Integrations',
+      settings:'General', userManagement:'Employees', integrations:'Integrations',
       manager:'Workflow', systemConfig:'System Config',
       systemTemplates:'Workflow', approvalQueue:'Workflow',
       auditLog:'Audit', portalAdmin:'Access Modes',
@@ -783,7 +783,7 @@ window.gwResources = gwResources;
 function _gwAdminNavConfig(canManageUsers, isAdmin) {
   return [
     {id:'settings',        label:'General'},
-    ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
+    ...(canManageUsers ? [{id:'userManagement', label:'Employees'}] : []),
     {id:'integrations',    label:'Integrations'},
     {id:'systemTemplates', label:'Templates',      sub:true},
     {id:'approvalQueue',   label:'Approval Queue', sub:true},
@@ -802,7 +802,7 @@ function gwAdmin(tab) {
   const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
   _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), tab);
   if (tab === 'settings')              (typeof settings==='function') ? settings() : _gwTabStub('General');
-  else if (tab === 'userManagement')   (typeof userManagement==='function') ? userManagement() : _gwTabStub('Users & Roles');
+  else if (tab === 'userManagement')   (typeof userManagement==='function') ? userManagement() : _gwTabStub('Employees');
   else if (tab === 'integrations')     (typeof integrations==='function') ? integrations() : _gwTabStub('Integrations');
   else if (tab === 'gwAdminWorkflow')   gwAdminWorkflow('systemTemplates');
   else if (tab === 'systemTemplates')  (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
@@ -852,7 +852,7 @@ function gwAccessModes(sub) {
   const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
   _gwSetHeader('Admin', [
     {id:'settings',      label:'General'},
-    ...(canManageUsers ? [{id:'userManagement', label:'Users & Roles'}] : []),
+    ...(canManageUsers ? [{id:'userManagement', label:'Employees'}] : []),
     {id:'integrations',  label:'Integrations'},
     {id:'gwAdminWorkflow', label:'Workflow', children:[
       {id:'systemTemplates', label:'Templates & Automations'},
@@ -936,7 +936,7 @@ window.gwAccessModes = gwAccessModes;
   // Admin — use defaults (no rep context yet at parse time)
   _gwSetHeader('Admin', [
     {id:'settings',          label:'General'},
-    {id:'userManagement',    label:'Users & Roles'},
+    {id:'userManagement',    label:'Employees'},
     {id:'integrations',      label:'Integrations'},
     {id:'systemTemplates',   label:'Templates'},
     {id:'approvalQueue',     label:'Approval Queue'},
@@ -1065,7 +1065,7 @@ function show(viewName='today', param){
       inventoryList:'Resources', materialAllocation:'Resources',
       toolsConsumables:'Resources', timeTracker:'Time',
       // Admin
-      settings:'General', userManagement:'Users & Roles', integrations:'Integrations',
+      settings:'General', userManagement:'Employees', integrations:'Integrations',
       manager:'Workflow', systemConfig:'System Config', systemTemplates:'Workflow',
       approvalQueue:'Workflow', auditLog:'Audit',
       portalAdmin:'Access Modes', automationCenter:'Workflow', fieldMode:'Access Modes',
@@ -1138,7 +1138,7 @@ function show(viewName='today', param){
       {id:'timeTracker',label:'Time Tracker'},{id:'gwTimesheetAdmin',label:'Timesheet Review'},
     ],
     Admin: [
-      {id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},
+      {id:'settings',label:'General'},{id:'userManagement',label:'Employees'},
       {id:'integrations',label:'Integrations'},{id:'systemTemplates',label:'Templates'},
       {id:'approvalQueue',label:'Approval Queue'},{id:'gwAudit',label:'Audit Log'},
       {id:'portalAdmin',label:'Client Portal'},{id:'fieldMode',label:'Field Mode'},
@@ -1175,7 +1175,7 @@ function show(viewName='today', param){
   // repDashboard is loaded from reps.js
   const repRoute = (typeof repDashboard === 'function') ? {myDashboard: repDashboard} : {};
   const revenueRoute = (typeof revenueAdmin === 'function') ? {revenueAdmin} : {};
-  const umRoute = (typeof userManagement === 'function') ? {userManagement} : {};
+  const umRoute = (typeof userManagement === 'function') ? {userManagement: (tab) => userManagement(tab)} : {};
   const saRoute = (typeof superAdmin === 'function') ? {superAdmin} : {};
   // Platform admin module routes (loaded from platform_admin.js)
   const paRoute = (typeof window.gwPlatformAdmin === 'object' && window.gwPlatformAdmin)
@@ -11468,7 +11468,7 @@ function estimateDetail(id){
 }
 window.estimateDetail = estimateDetail;
 window._sbOpenNewVisitFromEst = function(opp) {
-  if (!opp) { _sbOpenNewVisit(null); return; }
+  if (!opp) { _sbOpenNewVisit(null, null); return; }
   const preDate = null; // Let user pick
   _sbOpenNewVisit(preDate);
   // Pre-fill after modal opens
@@ -12302,13 +12302,14 @@ window.opsHub = opsHub;
 // ── 2. Schedule Board ─────────────────────────────────────────────────────────
 // ── Schedule Board State ──────────────────────────────────────────────────────
 window._sbState = window._sbState || {
-  viewMode: 'week',      // 'week' | 'month'
-  weekOffset: 0,         // 0 = current week, -1 = last week, +1 = next week
+  viewMode: 'week',        // 'week' | 'month' | 'crew'
+  weekOffset: 0,
   monthOffset: 0,
-  hiddenCrews: new Set(), // crew IDs toggled off
-  crews: [],             // cached from API
-  workOrders: [],        // cached from API
+  hiddenCrews: new Set(),
+  crews: [],
+  workOrders: [],
   loaded: false,
+  crewLanes: true,         // show crew-lane rows in week view
 };
 
 async function _sbLoadData() {
@@ -12358,20 +12359,31 @@ function _sbCrewPill(crew) {
   return `<span class="sb-crew-pill" style="background:${c}20;color:${c};border-color:${c}40">${escapeHtml(crew.crew_name||crew.name||'')}</span>`;
 }
 
-function _sbJobCard(wo, crews) {
+function _sbJobCard(wo, crews, draggable) {
   const crew = crews.find(c=>c.id===wo.crew_id);
   const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
   const statusCls = _p6WOStatusClass(wo.status);
-  const time = wo.scheduled_time ? `<span class="sb-card-time">${wo.scheduled_time}</span>` : '';
+  const timeStr = wo.scheduled_time ? wo.scheduled_time.slice(0,5) : '';
+  const endStr  = wo.scheduled_end_time ? ' – '+wo.scheduled_end_time.slice(0,5) : '';
+  const hrs = wo.duration_hours ? `${wo.duration_hours}h` : '';
   return `
-    <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}" onclick="_sbOpenVisitModal('${wo.id}')">
+    <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}"
+        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')"` : ''}
+        onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
-        ${time}
+        ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
+        <button class="sb-card-dup-btn" title="Duplicate to next day"
+          onclick="event.stopPropagation();_sbDuplicateJob('${wo.id}')">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
+        </button>
       </div>
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
       ${crew||wo.crew_name ? `<div class="sb-card-crew" style="color:${crewColor}">${escapeHtml(wo.crew_name||crew?.name||'')}</div>` : ''}
-      <div class="sb-card-type">${escapeHtml(wo.type||'Service')}</div>
+      <div class="sb-card-meta">
+        <span class="sb-card-type">${escapeHtml(wo.type||'Service')}</span>
+        ${hrs ? `<span class="sb-card-hrs">${hrs}</span>` : ''}
+      </div>
       <span class="sb-card-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
     </div>`;
 }
@@ -12393,31 +12405,35 @@ function _sbRender() {
   const allCrews = sb.crews;
   const allWOs   = sb.workOrders;
 
-  // Crew toggle bar
-  const crewToggleBar = allCrews.length ? `
+  // Crew filter bar (toggle visibility per crew)
+  const crewFilterBar = `
     <div class="sb-crew-bar">
-      <span class="sb-crew-bar-label">Crews</span>
-      ${allCrews.map(cr=>{
-        const active = !sb.hiddenCrews.has(cr.id);
-        return `<button class="sb-crew-toggle${active?' active':''}" style="--crew-color:${cr.color}"
-          onclick="_sbToggleCrew('${cr.id}')" title="${escapeHtml(cr.name)}">
-          <span class="sb-crew-dot" style="background:${cr.color}"></span>
-          ${escapeHtml(cr.name)}
-          ${cr.members?.length ? `<span class="sb-crew-count">${cr.members.length}</span>` : ''}
-        </button>`;
-      }).join('')}
-      <button class="sb-crew-manage-btn" onclick="_sbOpenCrewManager()">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a1 1 0 011 1v2h2a1 1 0 010 2H9v2a1 1 0 01-2 0V9H5a1 1 0 010-2h2V5a1 1 0 011-1z"/></svg>
-        Manage Crews
-      </button>
-    </div>` : `<div class="sb-crew-bar">
-      <span style="font-size:12px;color:var(--gw-text-muted)">No crews yet.</span>
-      <button class="sb-crew-manage-btn" onclick="_sbOpenCrewManager()">+ Create First Crew</button>
+      <div class="sb-crew-bar-chips">
+        ${allCrews.length ? allCrews.map(cr=>{
+          const active = !sb.hiddenCrews.has(cr.id);
+          return `<button class="sb-crew-toggle${active?' active':''}" style="--crew-color:${cr.color}"
+            onclick="_sbToggleCrew('${cr.id}')" title="${escapeHtml(cr.name)}">
+            <span class="sb-crew-dot" style="background:${cr.color}"></span>
+            ${escapeHtml(cr.name)}
+            ${cr.members?.length ? `<span class="sb-crew-count">${cr.members.length}</span>` : ''}
+          </button>`;
+        }).join('') : `<span style="font-size:12px;color:var(--gw-text-muted)">No crews yet.</span>`}
+      </div>
+      <div class="sb-crew-bar-actions">
+        ${sb.viewMode==='week' ? `<button class="sb-crew-lane-btn${sb.crewLanes?' active':''}" onclick="_sbToggleCrewLanes()" title="Toggle crew-lane rows">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="1" y="2" width="14" height="3" rx="1"/><rect x="1" y="7" width="14" height="3" rx="1"/><rect x="1" y="12" width="14" height="3" rx="1"/></svg>
+          Crew Lanes
+        </button>` : ''}
+        <button class="sb-crew-manage-btn" onclick="show('userManagement','crews')">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a1 1 0 011 1v2h2a1 1 0 010 2H9v2a1 1 0 01-2 0V9H5a1 1 0 010-2h2V5a1 1 0 011-1z"/></svg>
+          Manage Crews
+        </button>
+      </div>
     </div>`;
 
   // Filter WOs by visible crews
   const visibleWOs = allWOs.filter(wo => {
-    if (!wo.crew_id) return true; // unassigned always visible
+    if (!wo.crew_id) return true;
     return !sb.hiddenCrews.has(wo.crew_id);
   });
 
@@ -12429,34 +12445,88 @@ function _sbRender() {
     const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     headerLabel = `${days[1].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[5].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
 
-    const cols = days.map(d => {
-      const iso = d.toISOString().slice(0,10);
-      const isToday = iso === today;
-      const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
-      const cards = jobs.map(wo => _sbJobCard(wo, allCrews)).join('');
-      return `
-        <div class="sb-day-col${isToday?' sb-day-col--today':''}">
-          <div class="sb-day-head">
+    if (sb.crewLanes && allCrews.length) {
+      // ── Crew-Lane week view ──────────────────────────────────────────────────
+      // Rows = crews (+1 Unassigned row), Cols = Mon–Sun
+      const dayHeaders = `<div class="sb-lane-grid">
+        <div class="sb-lane-label-cell"></div>
+        ${days.map(d=>{
+          const iso = d.toISOString().slice(0,10);
+          const isToday = iso===today;
+          return `<div class="sb-lane-day-head${isToday?' today':''}">
             <span class="sb-day-name">${wdNames[d.getDay()]}</span>
-            <span class="sb-day-date" style="font-size:18px;font-weight:700">${d.getDate()}</span>
-            ${jobs.length ? `<span class="sb-day-count">${jobs.length}</span>` : ''}
+            <span class="sb-day-date">${d.getDate()}</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+
+      // Unassigned + each crew as a row
+      const laneCrews = [
+        { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
+        ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
+      ];
+
+      const laneRows = laneCrews.map(cr=>{
+        const isUnassigned = cr.id==='__unassigned__';
+        const dayCells = days.map(d=>{
+          const iso = d.toISOString().slice(0,10);
+          const isToday = iso===today;
+          const jobs = isUnassigned
+            ? visibleWOs.filter(w => (!w.crew_id) && w.scheduled_date?.slice(0,10)===iso)
+            : visibleWOs.filter(w => w.crew_id===cr.id && w.scheduled_date?.slice(0,10)===iso);
+          return `<div class="sb-lane-cell${isToday?' today':''}"
+              data-date="${iso}" data-crew="${cr.id}"
+              ondragover="event.preventDefault();this.classList.add('drag-over')"
+              ondragleave="this.classList.remove('drag-over')"
+              ondrop="_sbDropOnCell(event,'${iso}','${cr.id}')">
+            ${jobs.map(wo=>_sbJobCard(wo,allCrews,true)).join('')}
+            <button class="sb-lane-add-btn" onclick="_sbOpenNewVisit('${iso}','${isUnassigned?'':cr.id}')">+</button>
+          </div>`;
+        }).join('');
+        return `<div class="sb-lane-grid">
+          <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
+            <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
+            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}</span>
           </div>
-          <div class="sb-day-body">
-            ${cards || '<div class="sb-empty-day">No jobs</div>'}
-            <button class="sb-add-btn" onclick="_sbOpenNewVisit('${iso}')">+</button>
-          </div>
+          ${dayCells}
         </div>`;
-    });
-    gridHtml = `<div class="sb-week-grid">${cols.join('')}</div>`;
+      }).join('');
+
+      gridHtml = `<div class="sb-lane-wrap">${dayHeaders}${laneRows}</div>`;
+
+    } else {
+      // ── Standard column week view ────────────────────────────────────────────
+      const cols = days.map(d => {
+        const iso = d.toISOString().slice(0,10);
+        const isToday = iso === today;
+        const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
+        return `
+          <div class="sb-day-col${isToday?' sb-day-col--today':''}"
+              data-date="${iso}"
+              ondragover="event.preventDefault();this.querySelector('.sb-day-body').classList.add('drag-over')"
+              ondragleave="this.querySelector('.sb-day-body').classList.remove('drag-over')"
+              ondrop="_sbDropOnCell(event,'${iso}',null)">
+            <div class="sb-day-head">
+              <span class="sb-day-name">${wdNames[d.getDay()]}</span>
+              <span class="sb-day-date">${d.getDate()}</span>
+              ${jobs.length ? `<span class="sb-day-count">${jobs.length}</span>` : ''}
+            </div>
+            <div class="sb-day-body">
+              ${jobs.map(wo => _sbJobCard(wo, allCrews, true)).join('') || '<div class="sb-empty-day">No jobs</div>'}
+              <button class="sb-add-btn" onclick="_sbOpenNewVisit('${iso}',null)">+</button>
+            </div>
+          </div>`;
+      });
+      gridHtml = `<div class="sb-week-grid">${cols.join('')}</div>`;
+    }
 
   } else {
-    // Month view — calendar grid
+    // ── Month view ─────────────────────────────────────────────────────────────
     const { first, last, month } = _sbGetMonthDays(sb.monthOffset);
     headerLabel = month;
-    const startDow = first.getDay(); // 0=Sun
+    const startDow = first.getDay();
     const totalDays = last.getDate();
     let cells = '';
-    // Blank prefix cells
     for (let i=0;i<startDow;i++) cells += `<div class="sb-month-cell sb-month-cell--blank"></div>`;
     for (let d=1;d<=totalDays;d++) {
       const iso = `${first.getFullYear()}-${String(first.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -12467,16 +12537,21 @@ function _sbRender() {
         return `<span class="sb-month-dot" style="background:${crewColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}"></span>`;
       }).join('');
       cells += `
-        <div class="sb-month-cell${isToday?' sb-month-cell--today':''}" onclick="_sbOpenNewVisit('${iso}')">
+        <div class="sb-month-cell${isToday?' sb-month-cell--today':''}"
+            data-date="${iso}"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="_sbDropOnCell(event,'${iso}',null)"
+            onclick="_sbOpenNewVisit('${iso}',null)">
           <div class="sb-month-num">${d}</div>
           ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
-          ${jobs.slice(0,2).map(wo=>{
+          ${jobs.slice(0,3).map(wo=>{
             const crewColor = wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8';
             return `<div class="sb-month-chip" style="border-left:2px solid ${crewColor}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
-              <span>${escapeHtml((wo.client_name||wo.title||'Job').slice(0,20))}</span>
+              ${escapeHtml((wo.client_name||wo.title||'Job').slice(0,22))}
             </div>`;
           }).join('')}
-          ${jobs.length>2 ? `<div class="sb-month-more-link" onclick="event.stopPropagation();">+${jobs.length-2} more</div>` : ''}
+          ${jobs.length>3 ? `<div class="sb-month-more-link">+${jobs.length-3} more</div>` : ''}
         </div>`;
     }
     const dowHeaders = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(n=>`<div class="sb-month-dow">${n}</div>`).join('');
@@ -12484,15 +12559,15 @@ function _sbRender() {
   }
 
   // Stats bar
-  const totalScheduled = visibleWOs.filter(w=>w.status==='scheduled').length;
+  const totalScheduled  = visibleWOs.filter(w=>w.status==='scheduled').length;
   const totalInProgress = visibleWOs.filter(w=>w.status==='in-progress').length;
-  const totalCompleted = visibleWOs.filter(w=>w.status==='completed').length;
+  const totalCompleted  = visibleWOs.filter(w=>w.status==='completed').length;
 
   view.innerHTML = `
   <div class="sched-shell">
     <header class="sb-header">
       <div class="sb-header-left">
-        <h1 class="rp-title">Schedule Board</h1>
+        <h1 class="rp-title">Schedule</h1>
         <div class="sb-nav-controls">
           <button class="sb-nav-btn" onclick="_sbNav(-1)">‹</button>
           <span class="sb-period-label">${headerLabel}</span>
@@ -12506,7 +12581,7 @@ function _sbRender() {
           <button class="sb-view-btn${sb.viewMode==='month'?' active':''}" onclick="_sbSetView('month')">Month</button>
         </div>
         <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch</button>
-        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">+ Work Order</button>
+        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null,null)">+ Work Order</button>
       </div>
     </header>
 
@@ -12517,7 +12592,7 @@ function _sbRender() {
       <div class="sb-stat"><span class="sb-stat-num sb-stat-num--muted">${allCrews.length}</span><span class="sb-stat-lbl">Crews</span></div>
     </div>
 
-    ${crewToggleBar}
+    ${crewFilterBar}
 
     <div class="sb-grid-wrap">
       ${gridHtml}
@@ -12544,6 +12619,83 @@ window._sbRefresh = async function() {
   window._sbState.loaded = false;
   await _sbLoadData();
   _sbRender();
+};
+
+window._sbToggleCrewLanes = function() {
+  window._sbState.crewLanes = !window._sbState.crewLanes;
+  _sbRender();
+};
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+window._sbDragStart = function(e, woId) {
+  e.dataTransfer.setData('text/plain', woId);
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '0.5';
+  setTimeout(() => { if (e.currentTarget) e.currentTarget.style.opacity = ''; }, 0);
+};
+
+window._sbDropOnCell = async function(e, iso, crewId) {
+  e.preventDefault();
+  document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  const woId = e.dataTransfer.getData('text/plain');
+  if (!woId) return;
+  // Optimistically update local state
+  const wo = window._sbState.workOrders.find(w=>w.id===woId);
+  if (!wo) return;
+  const oldDate = wo.scheduled_date;
+  const oldCrew = wo.crew_id;
+  wo.scheduled_date = iso;
+  if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
+  else if (crewId === '__unassigned__') wo.crew_id = null;
+  _sbRender();
+  // Persist
+  try {
+    const body = { scheduled_date: iso };
+    if (crewId !== null) body.crew_id = crewId === '__unassigned__' ? null : crewId;
+    await fetch(`/api/work-orders/${woId}/reschedule`, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    // If crew changed, update via PUT
+    if (crewId !== null && crewId !== oldCrew) {
+      await fetch(`/api/work-orders/${woId}`, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ crew_id: crewId === '__unassigned__' ? null : crewId })
+      });
+    }
+    showToast('Job rescheduled','success');
+  } catch(err) {
+    // Rollback
+    wo.scheduled_date = oldDate;
+    wo.crew_id = oldCrew;
+    _sbRender();
+    showToast('Reschedule failed','error');
+  }
+};
+
+// ── Duplicate Job ─────────────────────────────────────────────────────────────
+window._sbDuplicateJob = async function(woId) {
+  const wo = window._sbState.workOrders.find(w=>w.id===woId);
+  if (!wo) return;
+  // Default: next day
+  let nextDate = null;
+  if (wo.scheduled_date) {
+    const d = new Date(wo.scheduled_date + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    nextDate = d.toISOString().slice(0,10);
+  }
+  const userDate = prompt('Duplicate to date (YYYY-MM-DD):', nextDate || '');
+  if (!userDate) return;
+  try {
+    const r = await fetch(`/api/work-orders/${woId}/duplicate`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ scheduled_date: userDate })
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    showToast(`Duplicated → ${d.wo_number}`,'success');
+    await _sbRefresh();
+  } catch(err) { showToast('Duplicate failed: '+err.message,'error'); }
 };
 
 // ── Visit / Work Order Modal ──────────────────────────────────────────────────
@@ -12713,6 +12865,29 @@ window._sbOpenVisitModal = async function(woId) {
             </div>
           </section>
 
+          <!-- Materials & Equipment (crew-visible) -->
+          <section class="sb-modal-section">
+            <div class="sb-modal-section-head">
+              <h3 class="sb-modal-section-title">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+                Materials &amp; Equipment
+              </h3>
+              <button class="rp-btn-sm" onclick="_sbAddCrewItem()">+ Item</button>
+            </div>
+            <div id="sbm-equip-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+              ${(wo.equipment||[]).length ? wo.equipment.map((eq,i)=>`
+                <div class="sb-equip-row" data-idx="${i}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--gw-surface-3);border-radius:6px">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+                  <span style="flex:1;font-size:13px">${escapeHtml(typeof eq==='string'?eq:eq.name||'')}</span>
+                  <button class="sb-check-del" onclick="_sbRemoveEquipItem(${i})">×</button>
+                </div>`).join('') : '<p class="sb-empty-note">No equipment assigned.</p>'}
+            </div>
+            <div style="display:flex;gap:6px">
+              <input class="rp-input" id="sbm-equip-input" placeholder="Truck, skid steer, mower…" style="flex:1">
+              <button class="rp-btn-sm" onclick="_sbAddCrewItem()">Add</button>
+            </div>
+          </section>
+
           <!-- Photos -->
           <section class="sb-modal-section">
             <h3 class="sb-modal-section-title">Before &amp; After Photos</h3>
@@ -12733,10 +12908,16 @@ window._sbOpenVisitModal = async function(woId) {
                 <span class="sb-work-lbl">Actual</span>
               </div>
             </div>
-            <label class="sb-modal-field" style="margin-top:8px">
-              <span>Budgeted Hours</span>
-              <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||''}">
-            </label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+              <label class="sb-modal-field">
+                <span>Budgeted Hours <em style="font-size:10px;font-weight:400;opacity:.6">(total man-hrs)</em></span>
+                <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||}">
+              </label>
+              <label class="sb-modal-field">
+                <span>Scheduled End</span>
+                <input class="rp-input" id="sbm-end-time" type="time" value="${wo.scheduled_end_time||''}">
+              </label>
+            </div>
           </section>
 
           <!-- Customer / Property -->
@@ -12755,6 +12936,10 @@ window._sbOpenVisitModal = async function(woId) {
           <button class="sb-action-btn sb-action-skip" onclick="_sbSkipVisit('${wo.id}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             Skip
+          </button>
+          <button class="sb-action-btn" style="gap:5px" onclick="_sbDuplicateJob('${wo.id}')">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
+            Duplicate
           </button>
           <button class="sb-action-btn sb-action-wo" onclick="show('workOrderDetail','${wo.id}');_sbCloseModal()">
             Work Order
@@ -12789,15 +12974,21 @@ window._sbCloseModal = function() {
 };
 
 window._sbSaveVisit = async function(woId, andComplete) {
+  // Collect equipment list
+  const equipItems = [...document.querySelectorAll('#sbm-equip-list .sb-equip-row')].map(row => {
+    return row.querySelector('span')?.textContent?.trim() || '';
+  }).filter(Boolean);
   const body = {
     scheduled_date: document.getElementById('sbm-date')?.value || null,
     scheduled_time: document.getElementById('sbm-time')?.value || null,
+    scheduled_end_time: document.getElementById('sbm-end-time')?.value || null,
     status:         document.getElementById('sbm-status')?.value || 'scheduled',
     notes:          document.getElementById('sbm-notes')?.value  || '',
     completion_notes: document.getElementById('sbm-completion-notes')?.value || '',
     crew_id:        document.getElementById('sbm-crew')?.value   || null,
     duration_hours: parseFloat(document.getElementById('sbm-duration')?.value||'0') || null,
-    employee_ids:   [...document.querySelectorAll('#sbm-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId),
+    equipment:      equipItems,
+    employee_ids:   [...document.querySelectorAll('#sbm-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId).filter(Boolean),
   };
   if (andComplete) body.status = 'completed';
   try {
@@ -12893,6 +13084,30 @@ window._sbRemoveEmployee = function(repId) {
   if (opt) opt.disabled=false;
 };
 
+// Equipment item helpers for the edit modal
+window._sbAddCrewItem = function() {
+  const inp = document.getElementById('sbm-equip-input');
+  if (!inp?.value?.trim()) return;
+  const val = inp.value.trim();
+  const list = document.getElementById('sbm-equip-list');
+  const empty = list?.querySelector('.sb-empty-note');
+  if (empty) empty.remove();
+  const idx = list?.querySelectorAll('.sb-equip-row').length || 0;
+  const row = document.createElement('div');
+  row.className = 'sb-equip-row';
+  row.dataset.idx = idx;
+  row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--gw-surface-3);border-radius:6px';
+  row.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+    <span style="flex:1;font-size:13px">${escapeHtml(val)}</span>
+    <button class="sb-check-del" onclick="this.closest('.sb-equip-row').remove()">×</button>`;
+  list?.appendChild(row);
+  inp.value = '';
+};
+window._sbRemoveEquipItem = function(idx) {
+  const rows = document.querySelectorAll('#sbm-equip-list .sb-equip-row');
+  if (rows[idx]) rows[idx].remove();
+};
+
 window._sbToggleCheck = function(idx) {
   const wo = window._sbCurrentWO;
   if (!wo) return;
@@ -12970,7 +13185,7 @@ window._sbRemovePhoto = function(field,url) {
 window._sbUpsell = function(oppId) { show('oppDetail',oppId); _sbCloseModal(); };
 
 // ── New Visit Modal ──────────────────────────────────────────────────────────
-window._sbOpenNewVisit = async function(prefilledDate) {
+window._sbOpenNewVisit = async function(prefilledDate, prefilledCrewId) {
   const crews   = window._sbState.crews||[];
   const allReps = window._gwAllReps||[];
 
@@ -12978,7 +13193,7 @@ window._sbOpenNewVisit = async function(prefilledDate) {
   modal.id='sb-new-visit-modal';
   modal.className='sb-modal-overlay';
 
-  const crewOptions = crews.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const crewOptions = crews.map(c=>`<option value="${c.id}"${c.id===prefilledCrewId?' selected':''}>${escapeHtml(c.name)}</option>`).join('');
   const repOptions  = allReps.filter(r=>r.active!==false&&r.active!==0)
     .map(r=>`<option value="${r.id}">${escapeHtml(r.name)} (${r.role||'rep'})</option>`).join('');
 
@@ -12988,8 +13203,10 @@ window._sbOpenNewVisit = async function(prefilledDate) {
         <div class="sb-modal-title-block"><span class="sb-modal-wo-num">New Work Order / Visit</span></div>
         <button class="sb-modal-close" onclick="document.getElementById('sb-new-visit-modal')?.remove()">×</button>
       </div>
-      <div class="sb-modal-body" style="display:block">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="sb-modal-body" style="display:block;max-height:80vh;overflow-y:auto">
+
+        <!-- ── Row 1: Client + Type ── -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <label class="sb-modal-field">
             <span>Client / Job Name</span>
             <input class="rp-input" id="snv-client" placeholder="Client name">
@@ -13001,14 +13218,22 @@ window._sbOpenNewVisit = async function(prefilledDate) {
               <option>Maintenance</option><option>Cleanup</option><option>Snow</option><option>Other</option>
             </select>
           </label>
+        </div>
+
+        <!-- ── Row 2: Date + Start Time ── -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <label class="sb-modal-field">
             <span>Date</span>
             <input class="rp-input" id="snv-date" type="date" value="${prefilledDate||''}">
           </label>
           <label class="sb-modal-field">
-            <span>Time</span>
-            <input class="rp-input" id="snv-time" type="time">
+            <span>Start Time</span>
+            <input class="rp-input" id="snv-time" type="time" value="07:00" oninput="_snvCalcEndTime()">
           </label>
+        </div>
+
+        <!-- ── Row 3: Crew + Budgeted Hours ── -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <label class="sb-modal-field">
             <span>Crew</span>
             <select class="rp-input" id="snv-crew" onchange="_snvCrewChanged()">
@@ -13017,27 +13242,68 @@ window._sbOpenNewVisit = async function(prefilledDate) {
             </select>
           </label>
           <label class="sb-modal-field">
-            <span>Budgeted Hours</span>
-            <input class="rp-input" id="snv-duration" type="number" min="0" step="0.5" placeholder="e.g. 4">
+            <span>Budgeted Hours <em style="font-size:11px;font-weight:400;opacity:.6">(total man-hours)</em></span>
+            <input class="rp-input" id="snv-duration" type="number" min="0" step="0.5" placeholder="e.g. 30" oninput="_snvCalcEndTime()">
           </label>
-          <label class="sb-modal-field" style="grid-column:span 2">
+        </div>
+
+        <!-- ── End-time preview ── -->
+        <div id="snv-endtime-preview" style="display:none;background:var(--gw-surface-2);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+          <strong>Estimated finish:</strong> <span id="snv-endtime-val" style="color:var(--gw-teal,#4D8A86);font-weight:700"></span>
+          <span id="snv-endtime-note" style="color:var(--gw-text-muted);margin-left:8px"></span>
+        </div>
+
+        <!-- ── Address ── -->
+        <div style="margin-bottom:12px">
+          <label class="sb-modal-field">
             <span>Property Address</span>
             <input class="rp-input" id="snv-addr" placeholder="123 Main St, City, State">
           </label>
-          <label class="sb-modal-field" style="grid-column:span 2">
-            <span>Scope / Notes</span>
-            <textarea class="rp-input" id="snv-notes" rows="3" placeholder="Job scope, crew instructions…"></textarea>
+        </div>
+
+        <!-- ── Scope / Notes ── -->
+        <div style="margin-bottom:12px">
+          <label class="sb-modal-field">
+            <span>Scope / Instructions for crew</span>
+            <textarea class="rp-input" id="snv-notes" rows="3" placeholder="Describe the work, special instructions…"></textarea>
           </label>
-          <div style="grid-column:span 2">
-            <span style="font-size:12px;font-weight:600;color:var(--gw-text-muted);display:block;margin-bottom:6px">Employees</span>
-            <div class="sb-emp-chips" id="snv-emp-chips"><span class="sb-empty-note">None — select crew to auto-fill, or add individually.</span></div>
-            <div class="sb-emp-add-row" style="margin-top:6px">
-              <select class="rp-input" id="snv-add-emp">${repOptions}</select>
-              <button class="rp-btn-sm" onclick="_snvAddEmployee()">+ Add</button>
+        </div>
+
+        <!-- ── Materials & Equipment section ── -->
+        <div style="background:var(--gw-surface-2);border:1px solid var(--gw-border);border-radius:10px;padding:14px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h3 style="font-size:13px;font-weight:700;margin:0;display:flex;align-items:center;gap:6px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+              Materials &amp; Equipment
+              <span style="font-size:11px;font-weight:400;color:var(--gw-text-muted)">(visible to crew)</span>
+            </h3>
+            <button class="rp-btn-sm" onclick="_snvAddMaterial()">+ Add Item</button>
+          </div>
+          <div id="snv-materials-list" style="display:flex;flex-direction:column;gap:6px">
+            <p style="font-size:12px;color:var(--gw-text-muted);margin:0" id="snv-materials-empty">No items yet. Add materials, tools, or equipment the crew needs.</p>
+          </div>
+          <!-- Equipment / Vehicles row -->
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--gw-border)">
+            <span style="font-size:12px;font-weight:600;color:var(--gw-text-muted);display:block;margin-bottom:6px">Vehicles / Equipment</span>
+            <div id="snv-equip-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px">
+              <input class="rp-input" id="snv-equip-input" placeholder="e.g. Truck #2, Skid Steer" style="flex:1">
+              <button class="rp-btn-sm" onclick="_snvAddEquip()">Add</button>
             </div>
           </div>
         </div>
+
+        <!-- ── Employees ── -->
+        <div>
+          <span style="font-size:12px;font-weight:600;color:var(--gw-text-muted);display:block;margin-bottom:6px">Employees on this visit</span>
+          <div class="sb-emp-chips" id="snv-emp-chips"><span class="sb-empty-note">None — select crew to auto-fill, or add individually.</span></div>
+          <div class="sb-emp-add-row" style="margin-top:6px">
+            <select class="rp-input" id="snv-add-emp" style="flex:1">${repOptions}</select>
+            <button class="rp-btn-sm" onclick="_snvAddEmployee()">+ Add</button>
+          </div>
+        </div>
       </div>
+
       <div class="sb-modal-actions">
         <button class="rp-btn" onclick="document.getElementById('sb-new-visit-modal')?.remove()">Cancel</button>
         <button class="rp-btn rp-btn--primary" onclick="_snvCreate()">Create Work Order</button>
@@ -13045,15 +13311,23 @@ window._sbOpenNewVisit = async function(prefilledDate) {
     </div>`;
 
   document.body.appendChild(modal);
+
+  // Auto-populate crew if prefilled
+  if (prefilledCrewId && prefilledCrewId !== '__unassigned__') {
+    setTimeout(() => _snvCrewChanged(), 50);
+  }
+  // Init material tracking
+  window._snvMaterials = [];
+  window._snvEquipment = [];
 };
 
 window._snvCrewChanged = function() {
   const crewId = document.getElementById('snv-crew')?.value;
   const crews = window._sbState.crews||[];
   const crew = crews.find(c=>c.id===crewId);
-  if (!crew?.members?.length) return;
-  const allReps = window._gwAllReps||[];
   const chipsEl = document.getElementById('snv-emp-chips');
+  if (!crew?.members?.length) { _snvCalcEndTime(); return; }
+  const allReps = window._gwAllReps||[];
   const placeholder = chipsEl?.querySelector('.sb-empty-note');
   if(placeholder) placeholder.remove();
   crew.members.forEach(m=>{
@@ -13061,10 +13335,12 @@ window._snvCrewChanged = function() {
     const rep=allReps.find(r=>r.id===m.repId)||{id:m.repId,name:m.name||m.repId};
     const chip=document.createElement('span');
     chip.className='sb-emp-chip'; chip.dataset.repId=m.repId;
-    chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>${escapeHtml(rep.name||m.repId)}<button onclick="this.parentElement.remove()">×</button>`;
+    chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>${escapeHtml(rep.name||m.repId)}<button onclick="this.parentElement.remove();_snvCalcEndTime()">×</button>`;
     chipsEl?.appendChild(chip);
   });
+  _snvCalcEndTime();
 };
+
 window._snvAddEmployee = function() {
   const sel=document.getElementById('snv-add-emp'); if(!sel||!sel.value) return;
   const repId=sel.value;
@@ -13075,22 +13351,94 @@ window._snvAddEmployee = function() {
   const placeholder=chipsEl?.querySelector('.sb-empty-note'); if(placeholder) placeholder.remove();
   const chip=document.createElement('span');
   chip.className='sb-emp-chip'; chip.dataset.repId=repId;
-  chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>${escapeHtml(rep.name||repId)}<button onclick="this.parentElement.remove()">×</button>`;
+  chip.innerHTML=`<span class="sb-emp-dot" style="background:${rep.color||'#6366f1'}"></span>${escapeHtml(rep.name||repId)}<button onclick="this.parentElement.remove();_snvCalcEndTime()">×</button>`;
   chipsEl?.appendChild(chip);
+  _snvCalcEndTime();
 };
+
+// ── End-time calculator ───────────────────────────────────────────────────────
+// Logic: budgetedHours / numEmployees = work hours per person
+// Add 30-min lunch break if shift > 5h. Start from snv-time.
+window._snvCalcEndTime = function() {
+  const totalHours = parseFloat(document.getElementById('snv-duration')?.value||'0');
+  const startTime  = document.getElementById('snv-time')?.value||'07:00';
+  const numEmps    = Math.max(1, document.querySelectorAll('#snv-emp-chips .sb-emp-chip').length);
+  const preview    = document.getElementById('snv-endtime-preview');
+  const valEl      = document.getElementById('snv-endtime-val');
+  const noteEl     = document.getElementById('snv-endtime-note');
+  if (!totalHours || totalHours <= 0) { if(preview) preview.style.display='none'; return; }
+  const hoursPerWorker = totalHours / numEmps;
+  const lunchBreak = hoursPerWorker > 5 ? 0.5 : 0;
+  const shiftHours = hoursPerWorker + lunchBreak;
+  // Parse start
+  const [sh, sm] = startTime.split(':').map(Number);
+  const startMin = sh*60 + sm;
+  const endMin   = startMin + Math.round(shiftHours * 60);
+  const endH = Math.floor(endMin/60) % 24;
+  const endM = endMin % 60;
+  const endStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`;
+  // Human readable
+  const fmt = t => { const [h,m]=t.split(':').map(Number); const ampm=h>=12?'PM':'AM'; return `${h%12||12}:${String(m).padStart(2,'0')} ${ampm}`; };
+  if(preview) preview.style.display='';
+  if(valEl)   valEl.textContent = fmt(endStr);
+  if(noteEl)  noteEl.textContent = `(${totalHours}h total ÷ ${numEmps} worker${numEmps>1?'s':''} = ${hoursPerWorker.toFixed(1)}h/person${lunchBreak?', +30min lunch':''})`; 
+  // Store computed end time
+  window._snvComputedEndTime = endStr;
+};
+
+// ── Materials helpers ─────────────────────────────────────────────────────────
+window._snvAddMaterial = function() {
+  window._snvMaterials = window._snvMaterials||[];
+  const idx = window._snvMaterials.length;
+  window._snvMaterials.push({ name:'', qty:1, unit:'', cost:0 });
+  const empty = document.getElementById('snv-materials-empty');
+  if(empty) empty.style.display='none';
+  const list = document.getElementById('snv-materials-list');
+  if(!list) return;
+  const row = document.createElement('div');
+  row.className='sb-line-row'; row.dataset.idx=idx;
+  row.innerHTML=`
+    <input class="rp-input" placeholder="Material / item name" style="flex:2" oninput="window._snvMaterials[${idx}].name=this.value">
+    <input class="rp-input" type="number" min="0" value="1" style="width:60px" placeholder="Qty" oninput="window._snvMaterials[${idx}].qty=parseFloat(this.value)||1">
+    <input class="rp-input" placeholder="Unit" style="width:70px" oninput="window._snvMaterials[${idx}].unit=this.value">
+    <button class="rp-btn-sm rp-btn-sm--danger" onclick="this.closest('.sb-line-row').remove();window._snvMaterials.splice(${idx},1)">×</button>`;
+  list.appendChild(row);
+};
+
+window._snvAddEquip = function() {
+  const inp = document.getElementById('snv-equip-input');
+  if(!inp?.value?.trim()) return;
+  const val = inp.value.trim();
+  window._snvEquipment = window._snvEquipment||[];
+  window._snvEquipment.push(val);
+  const list = document.getElementById('snv-equip-list');
+  if(list) {
+    const chip = document.createElement('span');
+    chip.className='sb-emp-chip';
+    chip.style.cssText='background:var(--gw-surface-3);border:1px solid var(--gw-border)';
+    chip.innerHTML=`${escapeHtml(val)}<button onclick="this.parentElement.remove();window._snvEquipment=window._snvEquipment.filter(e=>e!=='${val.replace(/'/g,"\\'")}')">×</button>`;
+    list.appendChild(chip);
+  }
+  inp.value='';
+};
+
 window._snvCreate = async function() {
   const clientName = document.getElementById('snv-client')?.value?.trim();
   if(!clientName) { showToast('Client name required','error'); return; }
+  const durationVal = parseFloat(document.getElementById('snv-duration')?.value||'0')||null;
   const body={
-    client_name: clientName,
-    type:        document.getElementById('snv-type')?.value||'Service',
+    client_name:    clientName,
+    type:           document.getElementById('snv-type')?.value||'Service',
     scheduled_date: document.getElementById('snv-date')?.value||null,
     scheduled_time: document.getElementById('snv-time')?.value||null,
+    scheduled_end_time: window._snvComputedEndTime||null,
     crew_id:        document.getElementById('snv-crew')?.value||null,
-    duration_hours: parseFloat(document.getElementById('snv-duration')?.value||'0')||null,
+    duration_hours: durationVal,
     property_addr:  document.getElementById('snv-addr')?.value||'',
     notes:          document.getElementById('snv-notes')?.value||'',
-    employee_ids:   [...document.querySelectorAll('#snv-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId),
+    materials:      (window._snvMaterials||[]).filter(m=>m.name),
+    equipment:      window._snvEquipment||[],
+    employee_ids:   [...document.querySelectorAll('#snv-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId).filter(Boolean),
   };
   try {
     const r=await fetch('/api/work-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -13098,6 +13446,7 @@ window._snvCreate = async function() {
     if(!d.ok) throw new Error(d.error);
     showToast(`Work Order ${d.wo_number} created`,'success');
     document.getElementById('sb-new-visit-modal')?.remove();
+    window._snvMaterials=[]; window._snvEquipment=[]; window._snvComputedEndTime=null;
     await _sbRefresh();
   } catch(e) { showToast('Create failed: '+e.message,'error'); }
 };

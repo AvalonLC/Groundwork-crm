@@ -6221,4 +6221,143 @@ h1.ld-name {
 
 /* ─── END PHASE 6 CSS ────────────────────────────────────────────────────── */
 
+/* ─── SCHEDULE BOARD v2 — Crew Lanes, Drag-Drop, End-Time ───────────────── */
+
+/* Crew filter bar */
+.sb-crew-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--gw-surface-2);
+  border-bottom: 1px solid var(--gw-border);
+  flex-wrap: wrap;
+}
+.sb-crew-bar-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
+.sb-crew-bar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.sb-crew-lane-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 6px; border: 1.5px solid var(--gw-border);
+  background: var(--gw-surface); color: var(--gw-text-muted);
+  font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.sb-crew-lane-btn.active {
+  background: var(--gw-teal, #4D8A86);
+  border-color: var(--gw-teal, #4D8A86);
+  color: #fff;
+}
+.sb-crew-lane-btn:hover:not(.active) { background: var(--gw-surface-3); }
+
+/* ── Crew Lane Grid ── */
+.sb-lane-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+}
+.sb-lane-grid {
+  display: grid;
+  grid-template-columns: 120px repeat(7, 1fr);
+  min-width: 800px;
+}
+.sb-lane-label-cell {
+  border-bottom: 1px solid var(--gw-border);
+  background: var(--gw-surface-2);
+}
+.sb-lane-day-head {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--gw-border);
+  border-left: 1px solid var(--gw-border);
+  background: var(--gw-surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gw-text-muted);
+  gap: 2px;
+}
+.sb-lane-day-head.today {
+  background: rgba(77,138,134,.1);
+  color: var(--gw-teal, #4D8A86);
+}
+.sb-lane-day-head .sb-day-date {
+  font-size: 17px; font-weight: 700; color: var(--gw-text);
+}
+.sb-lane-day-head.today .sb-day-date {
+  background: var(--gw-teal, #4D8A86);
+  color: #fff;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.sb-lane-label {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
+  padding: 10px 8px;
+  border-right: 1px solid var(--gw-border);
+  border-bottom: 1px solid var(--gw-border);
+  background: var(--gw-surface-2);
+  gap: 4px;
+  min-height: 80px;
+}
+.sb-lane-crew-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sb-lane-crew-name { font-size: 11px; font-weight: 700; color: var(--gw-text); word-break: break-word; }
+
+.sb-lane-cell {
+  border-bottom: 1px solid var(--gw-border);
+  border-left: 1px solid var(--gw-border);
+  padding: 6px;
+  min-height: 80px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--gw-surface);
+  transition: background .1s;
+  position: relative;
+}
+.sb-lane-cell.today { background: rgba(77,138,134,.04); }
+.sb-lane-cell.drag-over { background: rgba(77,138,134,.15) !important; outline: 2px dashed var(--gw-teal, #4D8A86); }
+
+.sb-lane-add-btn {
+  margin-top: auto; align-self: flex-end;
+  width: 22px; height: 22px;
+  border-radius: 50%; border: 1.5px dashed var(--gw-border);
+  background: transparent; color: var(--gw-text-muted);
+  font-size: 14px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s;
+}
+.sb-lane-cell:hover .sb-lane-add-btn { opacity: 1; }
+
+/* ── Job Cards v2 (draggable) ── */
+.sb-job-card {
+  cursor: grab;
+  user-select: none;
+}
+.sb-job-card:active { cursor: grabbing; opacity: .8; }
+.sb-card-top { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+.sb-card-num { font-size: 10px; font-weight: 700; color: var(--gw-text-muted); flex: 1; }
+.sb-card-time { font-size: 10px; color: var(--gw-text-muted); white-space: nowrap; }
+.sb-card-dup-btn {
+  width: 18px; height: 18px; border-radius: 4px;
+  background: none; border: none; cursor: pointer;
+  color: var(--gw-text-muted); opacity: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .12s, background .12s;
+  flex-shrink: 0;
+}
+.sb-job-card:hover .sb-card-dup-btn { opacity: 1; }
+.sb-card-dup-btn:hover { background: rgba(255,255,255,.15); color: #fff; }
+.sb-card-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.sb-card-type { font-size: 10px; color: var(--gw-text-muted); }
+.sb-card-hrs  { font-size: 10px; color: var(--gw-text-muted); background: rgba(255,255,255,.1); padding: 1px 5px; border-radius: 10px; }
+
+/* Drag-over for standard day columns */
+.sb-day-body.drag-over { background: rgba(77,138,134,.1); outline: 2px dashed var(--gw-teal, #4D8A86); border-radius: 8px; }
+.sb-month-cell.drag-over { background: rgba(77,138,134,.1) !important; outline: 2px dashed var(--gw-teal, #4D8A86); }
+
+/* Equipment section in modal */
+.sb-equip-row { transition: background .1s; }
+.sb-equip-row:hover { background: var(--gw-surface-2) !important; }
+
+/* ─── END SCHEDULE BOARD v2 ─────────────────────────────────────────────── */
+
 /* ─── END GROUNDWORK DESIGN SYSTEM v2.0 ─────────────────────────────────── */

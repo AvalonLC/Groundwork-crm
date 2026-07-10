@@ -2836,12 +2836,13 @@ app.post('/api/crews', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   const body: any = await c.req.json()
   const id = 'crew-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
-  const name  = (body.name  || '').trim()
-  const color = body.color || '#22c55e'
+  const name     = (body.name  || '').trim()
+  const color    = body.color || '#22c55e'
+  const division = body.division || null
   if (!name) return c.json({ ok: false, error: 'Crew name required' }, 400)
   await db.prepare(
-    `INSERT INTO crews (id, company_id, name, color) VALUES (?,?,?,?)`
-  ).bind(id, companyId, name, color).run()
+    `INSERT INTO crews (id, company_id, name, color, division) VALUES (?,?,?,?,?)`
+  ).bind(id, companyId, name, color, division).run()
   // Add members if provided
   const members: { repId: string; crewRole: string }[] = body.members || []
   for (const m of members) {
@@ -2861,8 +2862,8 @@ app.put('/api/crews/:id', requireAuth, async (c) => {
   const crewId = c.req.param('id')
   const body: any = await c.req.json()
   await db.prepare(
-    `UPDATE crews SET name=?, color=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
-  ).bind(body.name, body.color, crewId, companyId).run()
+    `UPDATE crews SET name=?, color=?, division=COALESCE(?,division), updated_at=datetime('now') WHERE id=? AND company_id=?`
+  ).bind(body.name, body.color, body.division || null, crewId, companyId).run()
   return c.json({ ok: true })
 })
 
@@ -2920,6 +2921,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
     ...r,
     checklist:    JSON.parse(r.checklist    || '[]'),
     materials:    JSON.parse(r.materials    || '[]'),
+    equipment:    JSON.parse(r.equipment    || '[]'),
     timeline:     JSON.parse(r.timeline     || '[]'),
     before_photos: JSON.parse(r.before_photos || '[]'),
     after_photos:  JSON.parse(r.after_photos  || '[]'),
@@ -2940,9 +2942,9 @@ app.post('/api/work-orders', requireAuth, async (c) => {
   await db.prepare(`
     INSERT INTO work_orders
       (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
-       type, status, readiness, scheduled_date, scheduled_time, duration_hours, notes,
-       amount_est, checklist, materials, timeline, before_photos, after_photos, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours, notes,
+       amount_est, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     id, companyId, woNum,
     body.opp_id || null, body.crew_id || null,
@@ -2950,10 +2952,12 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     body.title || '', body.type || 'Service',
     body.status || 'scheduled', body.readiness || 'ready',
     body.scheduled_date || null, body.scheduled_time || null,
+    body.scheduled_end_time || null,
     body.duration_hours || null, body.notes || '',
     body.amount_est || 0,
     JSON.stringify(body.checklist || []),
     JSON.stringify(body.materials || []),
+    JSON.stringify(body.equipment || []),
     JSON.stringify([{ action: 'Work Order Created', note: `by ${repId}`, at: new Date().toISOString() }]),
     JSON.stringify(body.before_photos || []),
     JSON.stringify(body.after_photos || []),
@@ -3016,10 +3020,12 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       property_addr=COALESCE(?,property_addr), title=COALESCE(?,title),
       type=COALESCE(?,type), status=COALESCE(?,status), readiness=COALESCE(?,readiness),
       scheduled_date=COALESCE(?,scheduled_date), scheduled_time=COALESCE(?,scheduled_time),
+      scheduled_end_time=COALESCE(?,scheduled_end_time),
       duration_hours=COALESCE(?,duration_hours), notes=COALESCE(?,notes),
       completion_notes=COALESCE(?,completion_notes),
       amount_est=COALESCE(?,amount_est), amount_actual=COALESCE(?,amount_actual),
       checklist=COALESCE(?,checklist), materials=COALESCE(?,materials),
+      equipment=COALESCE(?,equipment),
       before_photos=COALESCE(?,before_photos), after_photos=COALESCE(?,after_photos),
       timeline=?, updated_at=datetime('now')
     WHERE id=? AND company_id=?
@@ -3033,6 +3039,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     body.readiness !== undefined ? body.readiness : null,
     body.scheduled_date !== undefined ? body.scheduled_date : null,
     body.scheduled_time !== undefined ? body.scheduled_time : null,
+    body.scheduled_end_time !== undefined ? body.scheduled_end_time : null,
     body.duration_hours !== undefined ? body.duration_hours : null,
     body.notes !== undefined ? body.notes : null,
     body.completion_notes !== undefined ? body.completion_notes : null,
@@ -3040,6 +3047,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     body.amount_actual !== undefined ? body.amount_actual : null,
     body.checklist !== undefined ? JSON.stringify(body.checklist) : null,
     body.materials !== undefined ? JSON.stringify(body.materials) : null,
+    body.equipment !== undefined ? JSON.stringify(body.equipment) : null,
     body.before_photos !== undefined ? JSON.stringify(body.before_photos) : null,
     body.after_photos  !== undefined ? JSON.stringify(body.after_photos)  : null,
     JSON.stringify(tl),
@@ -3064,6 +3072,93 @@ app.delete('/api/work-orders/:id', requireAuth, async (c) => {
   const woId = c.req.param('id')
   await db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).run()
   return c.json({ ok: true })
+})
+
+// POST /api/work-orders/:id/duplicate — clone a work order to a new date
+app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  const body: any = await c.req.json().catch(() => ({}))
+  const src: any = await db.prepare(
+    `SELECT * FROM work_orders WHERE id=? AND company_id=?`
+  ).bind(woId, companyId).first()
+  if (!src) return c.json({ ok: false, error: 'Not found' }, 404)
+  const newId = 'wo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+  const countRow: any = await db.prepare(`SELECT COUNT(*) as cnt FROM work_orders WHERE company_id=?`).bind(companyId).first()
+  const woNum = 'WO-' + String((countRow?.cnt || 0) + 1).padStart(5, '0')
+  const newDate = body.scheduled_date || src.scheduled_date
+  await db.prepare(`
+    INSERT INTO work_orders
+      (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
+       type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours, notes,
+       amount_est, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    newId, companyId, woNum,
+    src.opp_id, src.crew_id, src.client_name, src.client_id, src.property_addr,
+    src.title, src.type, 'scheduled', 'ready',
+    newDate, src.scheduled_time, src.scheduled_end_time, src.duration_hours, src.notes,
+    src.amount_est,
+    src.checklist, src.materials, src.equipment || '[]',
+    JSON.stringify([{ action: 'Duplicated from ' + src.wo_number, note: `by ${repId}`, at: new Date().toISOString() }]),
+    '[]', '[]', repId
+  ).run()
+  // Duplicate employee assignments
+  const emps = await db.prepare(`SELECT rep_id FROM work_order_employees WHERE wo_id=?`).bind(woId).all()
+  for (const e of (emps.results || [])) {
+    const eid = 'woe-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+    await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
+      .bind(eid, newId, (e as any).rep_id, companyId).run()
+  }
+  return c.json({ ok: true, id: newId, wo_number: woNum })
+})
+
+// PATCH /api/work-orders/:id/reschedule — quick date/time update (drag-drop)
+app.patch('/api/work-orders/:id/reschedule', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  const body: any = await c.req.json()
+  await db.prepare(`
+    UPDATE work_orders SET
+      scheduled_date=COALESCE(?,scheduled_date),
+      scheduled_time=COALESCE(?,scheduled_time),
+      scheduled_end_time=COALESCE(?,scheduled_end_time),
+      updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(
+    body.scheduled_date || null,
+    body.scheduled_time || null,
+    body.scheduled_end_time || null,
+    woId, companyId
+  ).run()
+  return c.json({ ok: true })
+})
+
+// GET /api/my-schedule — jobs assigned to the current rep today
+app.get('/api/my-schedule', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const date = c.req.query('date') || new Date().toISOString().slice(0, 10)
+  const rows = await db.prepare(`
+    SELECT wo.*, cr.name as crew_name, cr.color as crew_color
+    FROM work_orders wo
+    JOIN work_order_employees woe ON woe.wo_id = wo.id AND woe.rep_id = ?
+    LEFT JOIN crews cr ON cr.id = wo.crew_id
+    WHERE wo.company_id = ? AND wo.scheduled_date = ? AND wo.status != 'cancelled'
+    ORDER BY wo.scheduled_time ASC
+  `).bind(repId, companyId, date).all()
+  const data = (rows.results || []).map((r: any) => ({
+    ...r,
+    checklist:  JSON.parse(r.checklist  || '[]'),
+    materials:  JSON.parse(r.materials  || '[]'),
+    equipment:  JSON.parse(r.equipment  || '[]'),
+    timeline:   JSON.parse(r.timeline   || '[]'),
+  }))
+  return c.json({ ok: true, data })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3656,7 +3751,7 @@ function getHtml(): string {
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/premium.css?v=20260710gw35">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw33">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -4081,10 +4176,10 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260710p25"></script>
+<script src="/static/app_premium.js?v=20260710p26"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260707gw24"></script>
+<script src="/static/user_management.js?v=20260710um25"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
 <script src="/static/field_workday.js?v=20260707p9a1"></script>

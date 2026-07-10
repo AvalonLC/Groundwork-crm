@@ -521,7 +521,7 @@ const UM_ALL_VIEWS = [
 
   // ── SETTINGS ───────────────────────────────────────────────────────────────
   { key:'settings',           label:'General Settings',        hub:'Settings',    kind:'admin'  },
-  { key:'userManagement',     label:'Users & Roles',           hub:'Settings',    kind:'admin'  },
+  { key:'userManagement',     label:'Employees',           hub:'Settings',    kind:'admin'  },
   { key:'integrations',       label:'Integrations',            hub:'Settings',    kind:'admin'  },
   { key:'manager',            label:'Manager Tools',           hub:'Settings',    kind:'admin'  },
   { key:'systemConfig',       label:'System Config',           hub:'Settings',    kind:'admin'  },
@@ -549,6 +549,7 @@ function userManagement(tab) {
   const activeTab = tab || 'users';
   const tabs = [
     { id:'users',      label:'Team Members' },
+    { id:'crews',      label:'Crews' },
     { id:'onboarding', label:'Onboarding' },
     { id:'roles',      label:'Roles & Permissions' },
     { id:'audit',      label:'Login Audit' }
@@ -556,8 +557,8 @@ function userManagement(tab) {
 
   viewEl.innerHTML = `
 <div class="eyebrow">Admin</div>
-<h1>User &amp; Access Management</h1>
-<p class="lede" style="margin-bottom:20px">Manage team accounts, roles, and permissions. Changes take effect immediately. Google Workspace connections are configured in <button onclick="show('integrations')" style="background:none;border:none;padding:0;color:var(--gds-teal,#4D8A86);font-weight:600;font-size:inherit;cursor:pointer;text-decoration:underline">Integrations</button>.</p>
+<h1>Employees &amp; Teams</h1>
+<p class="lede" style="margin-bottom:20px">Manage employees, crews, roles, and permissions. Changes take effect immediately.</p>
 
 <div class="gw-um-tab-nav">
   ${tabs.map(t => `
@@ -582,6 +583,7 @@ function userManagement(tab) {
   if (!tc) return;
 
   if (activeTab === 'users')           umRenderUsers(tc);
+  else if (activeTab === 'crews')      umRenderCrews(tc);
   else if (activeTab === 'onboarding') umRenderOnboarding(tc);
   else if (activeTab === 'roles')      umRenderRoles(tc);
   else if (activeTab === 'audit')      umRenderAudit(tc);
@@ -1156,7 +1158,210 @@ function umUserRow(u, gc) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TAB 2 — ONBOARDING PACKET BUILDER
+// TAB 2 — CREWS (Manage crews + assign to divisions)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function umRenderCrews(container) {
+  container.innerHTML = `<div style="padding:32px;text-align:center;color:var(--gw-text-muted)">Loading crews…</div>`;
+  let crews = [], allReps = [];
+  try {
+    const [cr, rr] = await Promise.all([
+      fetch('/api/crews').then(r=>r.json()),
+      fetch('/api/reps').then(r=>r.json()),
+    ]);
+    crews   = cr.ok  ? (cr.data  || []) : [];
+    allReps = rr.ok  ? (rr.data  || rr.reps || []) : [];
+    window._sbState = window._sbState || {};
+    window._sbState.crews = crews;
+    window._gwAllReps = allReps;
+  } catch(e) {}
+
+  const PALETTE = ['#22c55e','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+  const DIVISIONS = ['General','Landscaping','Lawn Care','Hardscape','Snow & Ice','Maintenance','Irrigation','Install','Other'];
+
+  function renderCrewList() {
+    const listEl = document.getElementById('um-crew-list');
+    if (!listEl) return;
+    listEl.innerHTML = crews.length ? crews.map(cr => {
+      const memberNames = (cr.members||[]).map(m => {
+        const rep = allReps.find(r=>r.id===m.repId); return rep?.name||m.repId;
+      }).join(', ');
+      return `
+        <div class="um-crew-card" style="border-left:4px solid ${cr.color}">
+          <div class="um-crew-card-header">
+            <span class="um-crew-dot" style="background:${cr.color}"></span>
+            <div class="um-crew-info">
+              <strong style="font-size:14px">${umEscape(cr.name)}</strong>
+              ${cr.division ? `<span class="um-crew-division">${umEscape(cr.division)}</span>` : ''}
+            </div>
+            <div class="um-crew-member-count">${(cr.members||[]).length} member${(cr.members||[]).length!==1?'s':''}</div>
+            <button class="rp-btn-sm" onclick="umEditCrew('${cr.id}')">Edit</button>
+            <button class="rp-btn-sm rp-btn-sm--danger" onclick="umDeleteCrew('${cr.id}')">Delete</button>
+          </div>
+          <div class="um-crew-members-preview">${memberNames||'<span style="color:var(--gw-text-muted);font-size:12px">No members yet</span>'}</div>
+        </div>`;
+    }).join('') : `<p style="color:var(--gw-text-muted);padding:20px 0">No crews yet. Create your first crew below.</p>`;
+  }
+
+  container.innerHTML = `
+    <div style="padding:24px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h2 style="font-size:18px;font-weight:700;margin:0">Crews</h2>
+        <button class="rp-btn rp-btn--primary" onclick="document.getElementById('um-new-crew-form').style.display='block';this.style.display='none'">+ New Crew</button>
+      </div>
+
+      <!-- New Crew Form -->
+      <div id="um-new-crew-form" style="display:none;background:var(--gw-surface-2);border:1px solid var(--gw-border);border-radius:12px;padding:20px;margin-bottom:24px">
+        <h3 style="font-size:15px;font-weight:700;margin:0 0 16px">Create New Crew</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--gw-text-muted)">
+            Crew Name
+            <input class="rp-input" id="um-new-crew-name" placeholder="e.g. Alpha Crew">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--gw-text-muted)">
+            Division
+            <select class="rp-input" id="um-new-crew-div">
+              <option value="">— No division —</option>
+              ${DIVISIONS.map(d=>`<option>${d}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div style="margin-bottom:12px">
+          <span style="font-size:12px;font-weight:600;color:var(--gw-text-muted);display:block;margin-bottom:6px">Crew Color</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="um-new-crew-palette">
+            ${PALETTE.map((c,i)=>`<button class="sb-color-swatch${i===0?' selected':''}" style="background:${c};width:26px;height:26px;border-radius:50%;border:${i===0?'3px solid #fff':'2px solid transparent'};outline:${i===0?'2px solid '+c:'none'};cursor:pointer" data-color="${c}" onclick="umPickNewCrewColor('${c}',this)"></button>`).join('')}
+          </div>
+        </div>
+        <div style="margin-bottom:16px">
+          <span style="font-size:12px;font-weight:600;color:var(--gw-text-muted);display:block;margin-bottom:6px">Members</span>
+          <div id="um-new-crew-members" style="display:flex;flex-wrap:wrap;gap:6px;min-height:32px;margin-bottom:6px"></div>
+          <div style="display:flex;gap:8px">
+            <select class="rp-input" id="um-new-crew-emp-sel" style="flex:1">
+              <option value="">+ Add member…</option>
+              ${allReps.filter(r=>r.active!==false&&r.active!==0).map(r=>`<option value="${r.id}" data-role="${r.role||'laborer'}">${umEscape(r.name)} (${r.role||'rep'})</option>`).join('')}
+            </select>
+            <select class="rp-input" id="um-new-crew-emp-role" style="width:120px">
+              <option value="laborer">Laborer</option>
+              <option value="foreman">Foreman</option>
+            </select>
+            <button class="rp-btn-sm" onclick="umAddNewCrewMember()">Add</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="rp-btn" onclick="document.getElementById('um-new-crew-form').style.display='none';document.querySelector('[onclick*=New\\ Crew]').style.display=''">Cancel</button>
+          <button class="rp-btn rp-btn--primary" onclick="umSaveNewCrew()">Create Crew</button>
+        </div>
+      </div>
+
+      <!-- Crew List -->
+      <div id="um-crew-list"></div>
+    </div>
+
+    <style>
+      .um-crew-card { background:var(--gw-surface-2);border:1px solid var(--gw-border);border-radius:10px;padding:14px 16px;margin-bottom:12px; }
+      .um-crew-card-header { display:flex;align-items:center;gap:10px; }
+      .um-crew-dot { width:12px;height:12px;border-radius:50%;flex-shrink:0; }
+      .um-crew-info { flex:1;min-width:0; }
+      .um-crew-division { font-size:11px;background:var(--gw-surface-3);color:var(--gw-text-muted);padding:2px 8px;border-radius:20px;margin-left:6px; }
+      .um-crew-member-count { font-size:12px;color:var(--gw-text-muted);white-space:nowrap; }
+      .um-crew-members-preview { font-size:12px;color:var(--gw-text-muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--gw-border); }
+      .um-member-chip { display:inline-flex;align-items:center;gap:5px;background:var(--gw-surface-3);border:1px solid var(--gw-border);border-radius:16px;padding:3px 8px;font-size:12px; }
+    </style>`;
+
+  renderCrewList();
+
+  // Track new crew selected color
+  window._umNewCrewColor = PALETTE[0];
+  window._umNewCrewMembers = [];
+
+  window.umPickNewCrewColor = function(color, btn) {
+    window._umNewCrewColor = color;
+    document.querySelectorAll('#um-new-crew-palette .sb-color-swatch').forEach(b => {
+      b.style.border = '2px solid transparent'; b.style.outline = 'none';
+    });
+    btn.style.border = '3px solid #fff'; btn.style.outline = '2px solid ' + color;
+  };
+
+  window.umAddNewCrewMember = function() {
+    const sel = document.getElementById('um-new-crew-emp-sel');
+    const roleSel = document.getElementById('um-new-crew-emp-role');
+    if (!sel?.value) return;
+    if (window._umNewCrewMembers.find(m=>m.repId===sel.value)) return;
+    const rep = allReps.find(r=>r.id===sel.value);
+    window._umNewCrewMembers.push({ repId: sel.value, crewRole: roleSel?.value||'laborer', name: rep?.name||sel.value });
+    const el = document.getElementById('um-new-crew-members');
+    if (el) {
+      const chip = document.createElement('span');
+      chip.className = 'um-member-chip';
+      chip.dataset.repId = sel.value;
+      chip.innerHTML = `${umEscape(rep?.name||sel.value)} <em style="font-size:10px;opacity:.6">${roleSel?.value||'laborer'}</em> <button onclick="umRemoveNewCrewMember('${sel.value}',this.parentElement)" style="background:none;border:none;cursor:pointer;padding:0;font-size:14px;line-height:1;opacity:.5">×</button>`;
+      el.appendChild(chip);
+    }
+    sel.value = '';
+  };
+
+  window.umRemoveNewCrewMember = function(repId, chip) {
+    window._umNewCrewMembers = window._umNewCrewMembers.filter(m=>m.repId!==repId);
+    chip?.remove();
+  };
+
+  window.umSaveNewCrew = async function() {
+    const name = document.getElementById('um-new-crew-name')?.value?.trim();
+    if (!name) { umToast('Crew name required','error'); return; }
+    const div = document.getElementById('um-new-crew-div')?.value||null;
+    try {
+      const r = await fetch('/api/crews', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name, color: window._umNewCrewColor, division: div||null, members: window._umNewCrewMembers })
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error);
+      umToast('Crew created!','ok');
+      // Refresh crews
+      const cr2 = await fetch('/api/crews').then(r2=>r2.json());
+      crews = cr2.data||[];
+      window._sbState && (window._sbState.crews = crews);
+      window._sbState && (window._sbState.loaded = false);
+      renderCrewList();
+      document.getElementById('um-new-crew-form').style.display='none';
+      window._umNewCrewMembers = [];
+      document.getElementById('um-new-crew-members').innerHTML='';
+      document.getElementById('um-new-crew-name').value='';
+    } catch(e) { umToast('Error: '+e.message,'error'); }
+  };
+
+  window.umDeleteCrew = async function(crewId) {
+    if (!confirm('Delete this crew? Jobs using it will keep the crew reference but the crew will be inactive.')) return;
+    await fetch('/api/crews/'+crewId, { method:'DELETE' });
+    const cr2 = await fetch('/api/crews').then(r=>r.json());
+    crews = cr2.data||[];
+    window._sbState && (window._sbState.crews = crews);
+    window._sbState && (window._sbState.loaded = false);
+    renderCrewList();
+    umToast('Crew deleted','ok');
+  };
+
+  window.umEditCrew = async function(crewId) {
+    const crew = crews.find(c=>c.id===crewId);
+    if (!crew) return;
+    const newName = prompt('Crew name:', crew.name);
+    if (!newName?.trim()) return;
+    const newDiv = prompt('Division (Landscaping, Lawn Care, etc.):', crew.division||'');
+    await fetch('/api/crews/'+crewId, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name: newName.trim(), color: crew.color, division: newDiv||null })
+    });
+    // Update members via separate endpoint if needed
+    const cr2 = await fetch('/api/crews').then(r=>r.json());
+    crews = cr2.data||[];
+    window._sbState && (window._sbState.crews = crews);
+    window._sbState && (window._sbState.loaded = false);
+    renderCrewList();
+    umToast('Crew updated','ok');
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 3 — ONBOARDING PACKET BUILDER
 // ═══════════════════════════════════════════════════════════════════════════════
 const LS_ONBOARD_KEY = 'avalonOnboardingPacket';
 
