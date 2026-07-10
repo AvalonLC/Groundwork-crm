@@ -9334,6 +9334,15 @@ function _applySidebarCollapse(collapsed) {
     btn.setAttribute('aria-expanded', String(!collapsed));
     btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
   });
+  // Flip the brand-row chevron: ‹ when open (click to collapse), › when collapsed (click to expand)
+  const closeBtn = document.getElementById('sidebarCloseBtn');
+  if (closeBtn) {
+    closeBtn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    const path = closeBtn.querySelector('path');
+    if (path) {
+      path.setAttribute('d', collapsed ? 'M7 5l5 5-5 5' : 'M13 5l-5 5 5 5');
+    }
+  }
   try { localStorage.setItem(_SB_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch(e) {}
 }
 function _toggleSidebarCollapse() {
@@ -9383,9 +9392,17 @@ sidebar.addEventListener('click', e => {
   }
 });
 
-// ── Mobile: close button in sidebar ──────────────────────────────────────────
+// ── Sidebar close/collapse button (brand-row chevron) ────────────────────────
+// Mobile: closes the overlay. Desktop: collapses the sidebar rail.
 const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
-if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', closeSidebar);
+if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (window.innerWidth <= 768) {
+    closeSidebar();
+  } else {
+    _toggleSidebarCollapse();
+  }
+});
 
 // ── When collapsed, clicking a workspace button opens that workspace ──────────
 // (the _gwTogglePanel click still fires; we just also expand on desktop if collapsed)

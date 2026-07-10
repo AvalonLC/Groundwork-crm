@@ -3687,6 +3687,24 @@ function getHtml(): string {
     .sidebar-close-btn {
       display: none;
     }
+    /* Desktop: show the collapse chevron inside the brand row */
+    @media (min-width: 769px) {
+      .sidebar-close-btn {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: rgba(255,255,255,.35);
+        padding: 6px;
+        border-radius: 8px;
+        flex-shrink: 0;
+        transition: color .15s, background .15s;
+        margin-left: auto;
+      }
+      .sidebar-close-btn:hover { color: #fff; background: rgba(255,255,255,.08); }
+    }
 
     /* ══════════════════════════════════════════════════════════════════════════
        MOBILE OVERRIDES  @media (max-width: 768px)
@@ -3793,21 +3811,20 @@ function getHtml(): string {
       #sidebarUserName { font-size: 12px !important; }
       #sidebarUserRole { font-size: 10px !important; }
 
-      /* ── Close button visible on mobile ─────────────────────────────────── */
+      /* ── Close button on mobile — stays inside brand row ───────────────── */
       .sidebar-close-btn {
         display: flex !important;
         align-items: center;
-        justify-content: flex-end;
-        padding: 10px 14px 0;
+        justify-content: center;
         background: none;
         border: none;
         cursor: pointer;
-        color: rgba(255,255,255,.5);
-        font-size: 20px;
-        line-height: 1;
-        width: 100%;
+        color: rgba(255,255,255,.45);
+        padding: 6px;
+        border-radius: 8px;
+        flex-shrink: 0;
       }
-      .sidebar-close-btn:hover { color: #fff; }
+      .sidebar-close-btn:hover { color: #fff; background: rgba(255,255,255,.1); }
 
       /* ── Content area: tighter padding on mobile ─────────────────────────── */
       .view-wrap,
@@ -3883,15 +3900,17 @@ function getHtml(): string {
 <div id="sidebarScrim" class="sidebar-scrim"></div>
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
-    <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">&#x2715;</button>
     <div class="brand">
       <div class="brand-mark" onclick="show('today')" style="cursor:pointer;" title="Go to Today">
         <img src="/static/avalon-logo.png" alt="Groundwork" />
       </div>
-      <div>
+      <div style="flex:1;min-width:0">
         <div class="brand-name">Groundwork</div>
         <div class="brand-subtitle">Sales CRM</div>
       </div>
+      <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l-5 5 5 5"/></svg>
+      </button>
     </div>
 
       <!-- ── Sidebar collapse toggle (desktop only) ── -->
@@ -4067,7 +4086,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260710p23"></script>
+<script src="/static/app_premium.js?v=20260710p24"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>
