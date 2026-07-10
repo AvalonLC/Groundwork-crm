@@ -1146,8 +1146,7 @@ function show(viewName='today', param){
     ],
   };
   const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].includes(viewName);
-  // Legacy sub-workspace shims — these now route to flat items directly, no group header needed
-  const _isSubWsCall = false;
+  const _isDirectWsCall = _isTopWsCall;
   if (!_isDirectWsCall) {
     const _wsName = _wsHeaderMap[viewName];
     if (_wsName && _wsTabDefs[_wsName]) {
