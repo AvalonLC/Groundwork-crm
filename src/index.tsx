@@ -4198,7 +4198,7 @@ function getHtml(): string {
 <script src="/static/app_premium.js?v=20260710p27"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
-<script src="/static/user_management.js?v=20260710um26"></script>
+<script src="/static/user_management.js?v=20260710um27"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
 <script src="/static/field_workday.js?v=20260710p9a2"></script>
