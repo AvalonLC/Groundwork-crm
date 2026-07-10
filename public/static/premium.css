@@ -9865,7 +9865,7 @@ h1.pl-title,
 
 /* ── Drag handle on job cards ─────────────────────────────────────────────── */
 .sb-card-drag-handle {
-  cursor: grab;
+  cursor: default;
   padding: 2px 4px 2px 0;
   color: var(--gw-text-muted);
   display: inline-flex;
@@ -9874,7 +9874,7 @@ h1.pl-title,
   border-radius: 3px;
   transition: opacity .15s;
 }
-.sb-card-drag-handle:hover { opacity: .8; cursor: grab; }
+.sb-card-drag-handle:hover { opacity: 1; cursor: grab; }
 .sb-card-drag-handle:active { cursor: grabbing; }
 
 /* ── Client / address links in visit modal ───────────────────────────────── */

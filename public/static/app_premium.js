@@ -12929,10 +12929,11 @@ function _sbJobCard(wo, crews, draggable) {
   const hrs = wo.duration_hours ? `${wo.duration_hours}h` : '';
   return `
     <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}"
-        onclick="if(!window._sbDragging)_sbOpenVisitModal('${wo.id}')">
+        onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule"
-          ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')" ondragend="window._sbDragging=false"` : ''}>
+          onclick="event.stopPropagation()"
+          ${draggable ? `onmousedown="_sbHandleMouseDown(event,'${wo.id}')"` : ''}>
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
             <circle cx="3" cy="2" r="1.3"/><circle cx="7" cy="2" r="1.3"/>
             <circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/>
@@ -13191,11 +13192,54 @@ window._sbToggleCrewLanes = function() {
 };
 
 // ── Drag & Drop ───────────────────────────────────────────────────────────────
+// Handle mousedown on drag handle — only starts a real HTML5 drag if the user
+// actually moves the mouse (>4px), otherwise it's a click and falls through to
+// the card's onclick handler normally.
+window._sbHandleMouseDown = function(e, woId) {
+  if (e.button !== 0) return; // left button only
+  const startX = e.clientX, startY = e.clientY;
+  const handle = e.currentTarget;
+  const card = handle.closest('.sb-job-card');
+  let dragStarted = false;
+
+  function onMove(mv) {
+    if (dragStarted) return;
+    if (Math.abs(mv.clientX - startX) > 4 || Math.abs(mv.clientY - startY) > 4) {
+      dragStarted = true;
+      cleanup();
+      // Make card temporarily draggable and fire dragstart
+      card.draggable = true;
+      card.addEventListener('dragstart', function onDs(de) {
+        de.dataTransfer.setData('text/plain', woId);
+        de.dataTransfer.effectAllowed = 'move';
+        card.style.opacity = '0.5';
+        card.removeEventListener('dragstart', onDs);
+      }, {once: true});
+      card.addEventListener('dragend', function onDe() {
+        card.draggable = false;
+        card.style.opacity = '';
+        card.removeEventListener('dragend', onDe);
+      }, {once: true});
+      // Simulate a mousedown on the card to kick off the HTML5 drag
+      const evt = new MouseEvent('mousedown', {bubbles: true, cancelable: true,
+        clientX: mv.clientX, clientY: mv.clientY});
+      card.dispatchEvent(evt);
+    }
+  }
+
+  function onUp() { cleanup(); }
+  function cleanup() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+};
+
 window._sbDragStart = function(e, woId) {
-  window._sbDragging = true;
   e.dataTransfer.setData('text/plain', woId);
   e.dataTransfer.effectAllowed = 'move';
-  // style the whole card (parent of the handle span)
   const card = e.currentTarget.closest('.sb-job-card') || e.currentTarget;
   card.style.opacity = '0.5';
   setTimeout(() => { card.style.opacity = ''; }, 0);
@@ -13203,7 +13247,6 @@ window._sbDragStart = function(e, woId) {
 
 window._sbDropOnCell = async function(e, iso, crewId) {
   e.preventDefault();
-  window._sbDragging = false;
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   const woId = e.dataTransfer.getData('text/plain');
   if (!woId) return;
