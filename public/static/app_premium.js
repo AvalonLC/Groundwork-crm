@@ -12929,10 +12929,10 @@ function _sbJobCard(wo, crews, draggable) {
   const hrs = wo.duration_hours ? `${wo.duration_hours}h` : '';
   return `
     <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}"
-        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')"` : ''}
-        onclick="_sbOpenVisitModal('${wo.id}')">
+        onclick="if(!window._sbDragging)_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
-        <span class="sb-card-drag-handle" title="Drag to reschedule">
+        <span class="sb-card-drag-handle" title="Drag to reschedule"
+          ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')" ondragend="window._sbDragging=false"` : ''}>
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
             <circle cx="3" cy="2" r="1.3"/><circle cx="7" cy="2" r="1.3"/>
             <circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/>
@@ -13192,14 +13192,18 @@ window._sbToggleCrewLanes = function() {
 
 // ── Drag & Drop ───────────────────────────────────────────────────────────────
 window._sbDragStart = function(e, woId) {
+  window._sbDragging = true;
   e.dataTransfer.setData('text/plain', woId);
   e.dataTransfer.effectAllowed = 'move';
-  e.currentTarget.style.opacity = '0.5';
-  setTimeout(() => { if (e.currentTarget) e.currentTarget.style.opacity = ''; }, 0);
+  // style the whole card (parent of the handle span)
+  const card = e.currentTarget.closest('.sb-job-card') || e.currentTarget;
+  card.style.opacity = '0.5';
+  setTimeout(() => { card.style.opacity = ''; }, 0);
 };
 
 window._sbDropOnCell = async function(e, iso, crewId) {
   e.preventDefault();
+  window._sbDragging = false;
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   const woId = e.dataTransfer.getData('text/plain');
   if (!woId) return;
