@@ -7692,182 +7692,228 @@ h1.pl-title,
 .gw-ws-tab { display: none !important; }
 
 /* ══════════════════════════════════════════════════════════════
-   SIDEBAR NAV TREE — v3 clean rebuild
-   L0  .nav-workspace   → section heading button (icon + label + chevron)
-   L1  .nav-subtab      → item inside open section
-   L2  .nav-subtab--sub → permanently-visible indented child (no toggle)
+   SIDEBAR NAV TREE — v4 refined (Linear/Notion-inspired)
+   Philosophy: breathe more, ink less. Clear hierarchy without weight.
+
+   L0  .nav-workspace   → section heading row (icon + label + chevron)
+   L1  .nav-subtab      → item inside an open section
+   L2  .nav-subtab--sub → child item inside a collapsible sub-group
    ══════════════════════════════════════════════════════════════ */
 
-/* ── Section wrapper ── */
+/* ── Wrapper ─────────────────────────────────────────────────── */
 .nav-ws-group {
   display: flex;
   flex-direction: column;
+  margin-bottom: 2px;
 }
 
-/* ── L0: section heading button ── */
+/* ── L0: Section heading ─────────────────────────────────────── */
+/*
+   Design: icon (16px, 50% opacity) · label (12px, UPPERCASE, tracked) · chevron
+   Hover: label brightens to 80%, no fill background — keeps it lightweight
+   Active: label fully white, icon fully opaque, subtle left pip
+*/
 .nav-workspace {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 7px 12px 7px 10px;
   width: 100%;
   text-align: left;
-  color: rgba(255,255,255,.58);
   background: transparent;
   border: 0;
   cursor: pointer;
-  transition: color .12s, background .12s;
+  border-radius: 7px;
+  color: rgba(255,255,255,.45);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  transition: color .13s, background .13s;
   position: relative;
-  margin-top: 1px;
+  margin-top: 6px;
 }
-.nav-workspace svg { flex-shrink: 0; opacity: .6; transition: opacity .12s; }
-.nav-workspace:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.90); }
-.nav-workspace:hover svg { opacity: .85; }
-.nav-workspace.active { color: #fff; background: rgba(255,255,255,.10); font-weight: 700; }
-.nav-workspace.active svg { opacity: 1; }
+.nav-workspace svg {
+  flex-shrink: 0;
+  width: 15px; height: 15px;
+  opacity: .5;
+  transition: opacity .13s;
+}
+.nav-workspace:hover {
+  color: rgba(255,255,255,.78);
+  background: rgba(255,255,255,.05);
+}
+.nav-workspace:hover svg { opacity: .75; }
+
+/* Active section heading */
+.nav-workspace.active {
+  color: rgba(255,255,255,.92);
+  background: transparent;
+}
+.nav-workspace.active svg { opacity: .9; }
+/* Left pip — 2px teal line flush to sidebar edge */
 .nav-workspace.active::before {
   content: '';
   position: absolute;
-  left: 0; top: 22%; bottom: 22%;
-  width: 3px;
+  left: 0; top: 28%; bottom: 28%;
+  width: 2.5px;
   background: #34d399;
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 2px 2px 0;
 }
+
+/* Chevron — far right, rotates when open */
 .nav-workspace .nav-chevron-icon {
   margin-left: auto;
-  transition: transform .18s ease;
-  opacity: .35;
+  width: 10px; height: 10px;
+  opacity: .3;
+  transition: transform .18s ease, opacity .13s;
   flex-shrink: 0;
 }
+.nav-workspace:hover .nav-chevron-icon { opacity: .55; }
+.nav-workspace.active .nav-chevron-icon { opacity: .5; }
+/* Open = chevron points down; closed = chevron points right */
 .nav-ws-group--collapsed .nav-workspace .nav-chevron-icon { transform: rotate(-90deg); }
 
-/* ── L1 panel ── */
+/* ── L1 panel (the expanding container) ─────────────────────── */
 .nav-subtabs {
   display: flex;
   flex-direction: column;
-  padding: 1px 4px 4px 4px;
+  padding: 2px 6px 6px 6px;
   overflow: hidden;
-  transition: max-height .2s ease;
-  max-height: 800px;
+  transition: max-height .22s cubic-bezier(.4,0,.2,1);
+  max-height: 900px;
 }
 .nav-ws-group--collapsed .nav-subtabs {
   max-height: 0 !important;
-  padding: 0;
+  padding: 0 !important;
 }
 
-/* ── L1: item row ── */
+/* ── L1: Nav item ────────────────────────────────────────────── */
+/*
+   Design: 13px medium weight, left-padded, pill hover/active
+   Active: soft teal-tinted pill + white text + 3px left dot indicator
+   No left accent bar on items — that belongs only to section headings
+*/
 .nav-subtab {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   text-align: left;
   background: transparent;
   border: 0;
-  padding: 6px 10px 6px 28px;
+  padding: 6px 10px 6px 14px;
   font-size: 13px;
   font-weight: 400;
-  color: rgba(255,255,255,.54);
+  color: rgba(255,255,255,.52);
   cursor: pointer;
   border-radius: 6px;
-  transition: color .1s, background .1s;
+  transition: color .11s, background .11s;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.5;
+  line-height: 1.45;
   position: relative;
+  gap: 0;
 }
 .nav-subtab:hover {
-  color: rgba(255,255,255,.88);
+  color: rgba(255,255,255,.86);
   background: rgba(255,255,255,.07);
 }
+/* Active item — pill highlight */
 .nav-subtab--active {
   color: #fff;
-  font-weight: 600;
-  background: rgba(255,255,255,.10);
+  font-weight: 500;
+  background: rgba(52,211,153,.13);
 }
+/* Active dot — small teal circle left of text */
 .nav-subtab--active::before {
   content: '';
   position: absolute;
-  left: 14px;
+  left: 4px;
   top: 50%;
   transform: translateY(-50%);
-  width: 5px;
-  height: 5px;
+  width: 4px; height: 4px;
   border-radius: 50%;
   background: #34d399;
+  flex-shrink: 0;
 }
 
-/* ── L2: collapsible sub-group ── */
-.nav-subtabs-l2 {
-  display: flex;
-  flex-direction: column;
-}
-
-/* Parent item that has sub-children */
+/* ── L1: Parent item (has collapsible children) ──────────────── */
 .nav-subtab--has-children {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-right: 10px;
+  padding-right: 8px;
+  /* Don't use justify-content:space-between — text needs to truncate */
+}
+/* Label span inside parent item — lets text truncate without squeezing chevron */
+.nav-subtab--has-children .nav-subtab-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .nav-subtab-chevron {
   flex-shrink: 0;
-  opacity: .45;
-  transition: transform .18s ease, opacity .12s;
-  margin-left: auto;
+  opacity: .35;
+  transition: transform .18s ease, opacity .13s;
+  margin-left: 6px;
+  width: 9px; height: 9px;
 }
-/* Rotate chevron when group is open */
+.nav-subtab--has-children:hover .nav-subtab-chevron { opacity: .6; }
 .nav-subtab--group-open .nav-subtab-chevron {
   transform: rotate(180deg);
-  opacity: .7;
+  opacity: .55;
 }
 
-/* Sub-group container: collapsed by default, expands when --open */
+/* ── L2: Sub-group container ─────────────────────────────────── */
+/*
+   Design: no connector line (clean). Just deeper indent + smaller font.
+   Collapses to max-height:0 when parent group is closed.
+   padding-left pushes children 12px right of the parent item.
+   max-height allows up to 6 sub-items before scrolling (each ~28px).
+*/
 .nav-subtab-group {
   display: flex;
   flex-direction: column;
   overflow: hidden;
   max-height: 0;
-  transition: max-height .2s ease;
-  /* Left connector line showing children belong to parent */
-  border-left: 1.5px solid rgba(52,211,153,.20);
-  margin-left: 20px;
-  padding-left: 0;
-  margin-bottom: 0;
+  transition: max-height .22s cubic-bezier(.4,0,.2,1);
+  padding-left: 10px;
 }
 .nav-subtab-group--open {
-  max-height: 300px;
+  max-height: 400px;
 }
 
-/* Sub-item inside a collapsible group */
+/* ── L2: Sub-item ────────────────────────────────────────────── */
 .nav-subtab--sub {
-  padding-left: 18px;
+  padding: 5px 10px 5px 10px;
   font-size: 12.5px;
-  color: rgba(255,255,255,.44);
+  color: rgba(255,255,255,.40);
+  border-radius: 5px;
 }
-.nav-subtab--sub:hover { color: rgba(255,255,255,.82); background: rgba(255,255,255,.06); }
+.nav-subtab--sub:hover {
+  color: rgba(255,255,255,.78);
+  background: rgba(255,255,255,.055);
+}
 .nav-subtab--sub.nav-subtab--active {
-  color: #d1fae5;
-  font-weight: 600;
-  background: rgba(52,211,153,.10);
+  color: #e6fff5;
+  font-weight: 500;
+  background: rgba(52,211,153,.11);
 }
+/* Active dot for sub-items: slightly smaller, inherits from ::before */
 .nav-subtab--sub.nav-subtab--active::before {
-  left: 5px;
-  width: 4px; height: 4px;
+  left: 2px;
+  width: 3px; height: 3px;
   background: #34d399;
 }
 
-/* ── divider label (hidden — not used in clean design) ── */
+/* ── Divider (hidden — not used) ─────────────────────────────── */
 .nav-subtab-divider { display: none; }
 
-/* ── Mobile ── */
+/* ── Mobile ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .nav-workspace { font-size: 12.5px; padding: 8px 11px; }
-  .nav-subtab { font-size: 12.5px; padding: 5px 8px 5px 26px; }
-  .nav-subtab--sub { padding-left: 38px; font-size: 12px; }
+  .nav-workspace { font-size: 10.5px; padding: 6px 10px 6px 9px; margin-top: 4px; }
+  .nav-subtab { font-size: 12.5px; padding: 5px 8px 5px 12px; }
+  .nav-subtab--sub { font-size: 12px; padding-left: 10px; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════

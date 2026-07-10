@@ -660,8 +660,9 @@ function _gwSetHeader(wsName, tabsConfig, activeTabId) {
       const openClass   = groupOpen ? ' nav-subtab--group-open' : '';
 
       if (hasKids) {
-        // Parent item: clicking toggles sub-group AND navigates
-        html += `<button class="nav-subtab${activeClass}${kidClass}${openClass}" data-tab="${t.id}" onclick="_gwToggleSubGroup(this,'${t.id}')">${t.label}${_chevSVG}</button>`;
+        // Parent item: clicking toggles sub-group AND navigates.
+        // Label is wrapped in a span so it can truncate without squeezing the chevron.
+        html += `<button class="nav-subtab${activeClass}${kidClass}${openClass}" data-tab="${t.id}" onclick="_gwToggleSubGroup(this,'${t.id}')"><span class="nav-subtab-label">${t.label}</span>${_chevSVG}</button>`;
         // Sub-group container — open if active child is inside, or parent itself is active
         html += `<div class="nav-subtab-group${groupOpen ? ' nav-subtab-group--open' : ''}">`;
         _inGroup = true;
@@ -680,21 +681,25 @@ function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   panel.innerHTML = html;
 }
 
-// Open a sub-group when parent item is clicked, close all sibling groups.
-// Always navigates to the parent view — never a dead click.
+// Accordion sub-group toggle — true toggle on the clicked group, closes all siblings.
+// Always navigates to the parent view so clicking is never a dead action.
 function _gwToggleSubGroup(btn, viewId) {
+  const group = btn.nextElementSibling;
+  const wasOpen = group && group.classList.contains('nav-subtab-group--open');
+
+  // Close ALL open groups and their parent buttons in this panel
   const panel = btn.closest('.nav-subtabs');
   if (panel) {
-    // Close all sibling groups in this panel first
     panel.querySelectorAll('.nav-subtab-group--open').forEach(g => g.classList.remove('nav-subtab-group--open'));
     panel.querySelectorAll('.nav-subtab--group-open').forEach(b => b.classList.remove('nav-subtab--group-open'));
   }
-  // Open this group
-  const group = btn.nextElementSibling;
-  if (group && group.classList.contains('nav-subtab-group')) {
+
+  // Re-open only if this group was previously closed (true toggle)
+  if (!wasOpen && group && group.classList.contains('nav-subtab-group')) {
     group.classList.add('nav-subtab-group--open');
     btn.classList.add('nav-subtab--group-open');
   }
+
   show(viewId);
 }
 
