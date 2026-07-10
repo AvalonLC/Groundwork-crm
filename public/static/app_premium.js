@@ -13011,9 +13011,18 @@ function _sbRender() {
 
     if (sb.crewLanes && allCrews.length) {
       // ── Crew-Lane week view ──────────────────────────────────────────────────
-      // Rows = crews (+1 Unassigned row), Cols = Mon–Sun
-      const dayHeaders = `<div class="sb-lane-grid">
-        <div class="sb-lane-label-cell"></div>
+      // ONE unified grid: header row + one row per crew. All cells share column
+      // widths and row heights automatically because they are in the same grid.
+
+      // Unassigned + each visible crew
+      const laneCrews = [
+        { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
+        ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
+      ];
+
+      // Header cells (corner + 7 day heads)
+      const headerCells = `
+        <div class="sb-lane-corner"></div>
         ${days.map(d=>{
           const iso = d.toISOString().slice(0,10);
           const isToday = iso===today;
@@ -13021,16 +13030,10 @@ function _sbRender() {
             <span class="sb-day-name">${wdNames[d.getDay()]}</span>
             <span class="sb-day-date">${d.getDate()}</span>
           </div>`;
-        }).join('')}
-      </div>`;
+        }).join('')}`;
 
-      // Unassigned + each crew as a row
-      const laneCrews = [
-        { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
-        ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
-      ];
-
-      const laneRows = laneCrews.map(cr=>{
+      // One label + 7 cells per crew row — all flat inside the single grid
+      const crewCells = laneCrews.map(cr=>{
         const isUnassigned = cr.id==='__unassigned__';
         const dayCells = days.map(d=>{
           const iso = d.toISOString().slice(0,10);
@@ -13047,16 +13050,15 @@ function _sbRender() {
             <button class="sb-lane-add-btn" onclick="_sbOpenNewVisit('${iso}','${isUnassigned?'':cr.id}')">+</button>
           </div>`;
         }).join('');
-        return `<div class="sb-lane-grid">
+        return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
             <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
             <span class="sb-lane-crew-name">${escapeHtml(cr.name)}</span>
           </div>
-          ${dayCells}
-        </div>`;
+          ${dayCells}`;
       }).join('');
 
-      gridHtml = `<div class="sb-lane-wrap">${dayHeaders}${laneRows}</div>`;
+      gridHtml = `<div class="sb-lane-wrap"><div class="sb-lane-grid">${headerCells}${crewCells}</div></div>`;
 
     } else {
       // ── Standard column week view ────────────────────────────────────────────

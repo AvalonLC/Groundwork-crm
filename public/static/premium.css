@@ -9901,28 +9901,30 @@ h1.pl-title,
 
 /* ── Crew-lane week view ──────────────────────────────────────────────────── */
 .sb-lane-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
   min-width: 700px;
   border: 1px solid var(--gw-border);
   border-radius: 10px;
   overflow: hidden;
   background: var(--gw-bg-surface);
 }
-/* Each row (header row + every crew row) is an 8-col grid: label + 7 day cells */
+
+/* Single unified grid — header row + all crew rows are flat children.
+   Columns: 110px label  +  7 equal day columns.
+   Rows auto-size together so a tall card stretches the whole row. */
 .sb-lane-grid {
   display: grid;
   grid-template-columns: 110px repeat(7, 1fr);
-  border-bottom: 1px solid var(--gw-border);
+  /* no explicit rows — auto-placed, each "row" is 8 consecutive cells */
 }
-.sb-lane-grid:last-child { border-bottom: none; }
 
-/* Header row — label corner + day name cells */
-.sb-lane-label-cell {
+/* Top-left corner cell */
+.sb-lane-corner {
   background: var(--gw-bg-surface-2);
   border-right: 1px solid var(--gw-border);
+  border-bottom: 1px solid var(--gw-border);
 }
+
+/* Header day cells */
 .sb-lane-day-head {
   display: flex;
   flex-direction: column;
@@ -9931,9 +9933,10 @@ h1.pl-title,
   padding: 8px 4px;
   background: var(--gw-bg-surface-2);
   border-right: 1px solid var(--gw-border);
+  border-bottom: 1px solid var(--gw-border);
   gap: 2px;
 }
-.sb-lane-day-head:last-child { border-right: none; }
+.sb-lane-day-head:last-of-type { border-right: none; }
 .sb-lane-day-head .sb-day-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--gw-text-muted); }
 .sb-lane-day-head .sb-day-date { font-size: 15px; font-weight: 700; color: var(--gw-text); }
 .sb-lane-day-head.today { background: color-mix(in srgb, var(--gw-pine-500) 8%, transparent); }
@@ -9946,41 +9949,42 @@ h1.pl-title,
   font-size: 13px;
 }
 
-/* Crew label cell */
+/* Crew label cell — left column of each crew row */
 .sb-lane-label {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 10px 10px;
+  padding: 10px;
   background: var(--gw-bg-surface-2);
   border-right: 1px solid var(--gw-border);
+  border-bottom: 1px solid var(--gw-border);
   font-size: 11px;
   font-weight: 700;
   color: var(--gw-text);
-  min-height: 64px;
 }
-.sb-lane-crew-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
+.sb-lane-label:last-of-type { border-bottom: none; }
+.sb-lane-crew-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .sb-lane-crew-name { line-height: 1.2; }
 
-/* Day cells within a crew row */
+/* Day cells — 7 per crew row */
 .sb-lane-cell {
   padding: 5px 6px;
   border-right: 1px solid var(--gw-border);
-  min-height: 64px;
+  border-bottom: 1px solid var(--gw-border);
+  min-height: 72px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   transition: background .1s;
 }
-.sb-lane-cell:last-child { border-right: none; }
+/* Last cell in each visual row (column 8 = 7th day) has no right border */
+.sb-lane-cell:nth-child(8n) { border-right: none; }
+/* Last crew row cells have no bottom border */
+.sb-lane-label:last-of-type ~ .sb-lane-cell { border-bottom: none; }
 .sb-lane-cell.today { background: color-mix(in srgb, var(--gw-pine-500) 4%, transparent); }
 .sb-lane-cell.drag-over { background: color-mix(in srgb, var(--gw-pine-500) 10%, transparent); }
 
-/* Add button in each cell */
+/* Add button — hidden until cell hovered */
 .sb-lane-add-btn {
   width: 100%;
   border: none;
