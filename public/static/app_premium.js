@@ -913,19 +913,16 @@ window.gwAccessModes = gwAccessModes;
 
   // Operations
   _gwSetHeader('Operations', [
-    {id:'scheduleBoard',     label:'Schedule'},
-    {id:'dispatchBoard',     label:'Dispatch'},
-    {id:'workOrderList',     label:'Work Orders'},
-    {id:'recurringServices', label:'Recurring Services'},
-    {id:'gwResources',       label:'Resources', children:[
-      {id:'assetList',        label:'Assets'},
-      {id:'maintenanceQueue', label:'Maintenance'},
-      {id:'inventoryList',    label:'Inventory'},
-      {id:'toolsConsumables', label:'Tools'},
-    ]},
-    {id:'timeTracker',       label:'Time', children:[
-      {id:'gwTimesheetAdmin', label:'Timesheet Review'},
-    ]},
+    {id:'scheduleBoard',      label:'Schedule'},
+    {id:'dispatchBoard',      label:'Dispatch'},
+    {id:'workOrderList',      label:'Work Orders'},
+    {id:'recurringServices',  label:'Recurring Services'},
+    {id:'assetList',          label:'Assets'},
+    {id:'maintenanceQueue',   label:'Maintenance'},
+    {id:'inventoryList',      label:'Inventory'},
+    {id:'toolsConsumables',   label:'Tools'},
+    {id:'timeTracker',        label:'Time Tracker'},
+    {id:'gwTimesheetAdmin',   label:'Timesheet Review'},
   ], null);
 
   // Learning
@@ -938,19 +935,15 @@ window.gwAccessModes = gwAccessModes;
 
   // Admin — use defaults (no rep context yet at parse time)
   _gwSetHeader('Admin', [
-    {id:'settings',        label:'General'},
-    {id:'userManagement',  label:'Users & Roles'},
-    {id:'integrations',    label:'Integrations'},
-    {id:'gwAdminWorkflow', label:'Workflow', children:[
-      {id:'systemTemplates', label:'Templates & Automations'},
-      {id:'approvalQueue',   label:'Approval Queue'},
-    ]},
-    {id:'gwAudit',         label:'Audit'},
-    {id:'gwAccessModes',   label:'Access Modes', children:[
-      {id:'portalAdmin',   label:'Client Portal'},
-      {id:'fieldMode',     label:'Field Mode'},
-    ]},
-    {id:'systemConfig',    label:'System Config'},
+    {id:'settings',          label:'General'},
+    {id:'userManagement',    label:'Users & Roles'},
+    {id:'integrations',      label:'Integrations'},
+    {id:'systemTemplates',   label:'Templates'},
+    {id:'approvalQueue',     label:'Approval Queue'},
+    {id:'gwAudit',           label:'Audit Log'},
+    {id:'portalAdmin',       label:'Client Portal'},
+    {id:'fieldMode',         label:'Field Mode'},
+    {id:'systemConfig',      label:'System Config'},
     {id:'gwWorkdaySettings', label:'Workday Settings'},
   ], null);
 
@@ -1137,63 +1130,37 @@ function show(viewName='today', param){
     Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
-    Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
-    Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
+    Operations: [
+      {id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},
+      {id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},
+      {id:'assetList',label:'Assets'},{id:'maintenanceQueue',label:'Maintenance'},
+      {id:'inventoryList',label:'Inventory'},{id:'toolsConsumables',label:'Tools'},
+      {id:'timeTracker',label:'Time Tracker'},{id:'gwTimesheetAdmin',label:'Timesheet Review'},
+    ],
+    Admin: [
+      {id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},
+      {id:'integrations',label:'Integrations'},{id:'systemTemplates',label:'Templates'},
+      {id:'approvalQueue',label:'Approval Queue'},{id:'gwAudit',label:'Audit Log'},
+      {id:'portalAdmin',label:'Client Portal'},{id:'fieldMode',label:'Field Mode'},
+      {id:'systemConfig',label:'System Config'},{id:'gwWorkdaySettings',label:'Workday Settings'},
+    ],
   };
   const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].includes(viewName);
-  const _isSubWsCall = ['gwResources','gwAdminWorkflow','gwAudit','gwAccessModes'].includes(viewName); // gwRecords removed — now shims via show()
-  const _isDirectWsCall = _isTopWsCall || _isSubWsCall;
-  // Sub-workspace direct calls: set parent workspace header so tab bar is visible
-  if (_isSubWsCall) {
-    const _subWsParent = {
-      gwResources:'Operations',
-      gwAdminWorkflow:'Admin', gwAudit:'Admin', gwAccessModes:'Admin',
-    };
-    const _subWsTabHighlight = {
-      gwResources:'gwResources',
-      gwAdminWorkflow:'gwAdminWorkflow', gwAudit:'gwAudit', gwAccessModes:'gwAccessModes',
-    };
-    const _wsTabDefs2 = {
-      Operations: [{id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},{id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},{id:'gwResources',label:'Resources'},{id:'timeTracker',label:'Time'}],
-      Admin:      [{id:'settings',label:'General'},{id:'userManagement',label:'Users & Roles'},{id:'integrations',label:'Integrations'},{id:'gwAdminWorkflow',label:'Workflow'},{id:'gwAudit',label:'Audit'},{id:'gwAccessModes',label:'Access Modes'},{id:'systemConfig',label:'System Config'}],
-    };
-    const _pName = _subWsParent[viewName];
-    if (_pName) _gwSetHeader(_pName, _wsTabDefs2[_pName], _subWsTabHighlight[viewName]);
-  }
+  // Legacy sub-workspace shims — these now route to flat items directly, no group header needed
+  const _isSubWsCall = false;
   if (!_isDirectWsCall) {
     const _wsName = _wsHeaderMap[viewName];
     if (_wsName && _wsTabDefs[_wsName]) {
-      // Map aliases: some views (lead, clients, properties) display as Records tab;
-      // assetList/maintenanceQueue/inventoryList/toolsConsumables display as Resources tab
-      const _recordViews = []; // lead/clients now top-level Sales tabs — no sub-header injection
-      const _resourceViews = ['assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
-      const _workflowViews = ['systemTemplates','approvalQueue','automations','automationCenter','manager'];
-      const _accessViews  = ['portalAdmin','fieldMode'];
-      // Schedule-family views map to scheduleBoard tab highlight
-      const _scheduleViews = ['crewView','recurringServices','dispatchBoard'];
+      // Highlight aliases for views that don't have their own nav entry
       let _tabHighlight = viewName;
-      if (_resourceViews.includes(viewName)) _tabHighlight = 'gwResources';
-      else if (_workflowViews.includes(viewName)) _tabHighlight = 'gwAdminWorkflow';
-      else if (_accessViews.includes(viewName))   _tabHighlight = 'gwAccessModes';
-      else if (viewName === 'auditLog')            _tabHighlight = 'gwAudit';
-      else if (viewName === 'crewView')            _tabHighlight = 'scheduleBoard';
-      else if (viewName === 'teamReports')         _tabHighlight = 'teamView'; // team reports lives under Sales > Team
+      if (viewName === 'auditLog')        _tabHighlight = 'gwAudit';
+      else if (viewName === 'crewView')   _tabHighlight = 'scheduleBoard';
+      else if (viewName === 'teamReports')_tabHighlight = 'teamView';
+      else if (viewName === 'assetDetail')_tabHighlight = 'assetList';
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
-      // Set up sub-header for sub-tab views so the bar survives legacy innerHTML writes
-      if (_resourceViews.includes(viewName)) {
-        const subTabs = [{id:'assetList',label:'Assets'},{id:'maintenanceQueue',label:'Maintenance'},{id:'inventoryList',label:'Inventory'},{id:'toolsConsumables',label:'Tools'}];
-        _gwSetSubHeader(subTabs, viewName, 'show');
-      } else if (_workflowViews.includes(viewName) && ['systemTemplates','approvalQueue'].includes(viewName)) {
-        const subTabs = [{id:'systemTemplates',label:'Templates & Automations'},{id:'approvalQueue',label:'Approval Queue'}];
-        _gwSetSubHeader(subTabs, viewName, 'show');
-      } else if (_accessViews.includes(viewName)) {
-        const subTabs = [{id:'portalAdmin',label:'Client Portal'},{id:'fieldMode',label:'Field Mode'}];
-        _gwSetSubHeader(subTabs, viewName, 'show');
-      } else {
-        // No sub-header needed; clear any stale one
-        window._gwPendingSubHeader = null;
-        window._gwActiveSubTabs = null;
-      }
+      // Clear any stale sub-header
+      window._gwPendingSubHeader = null;
+      window._gwActiveSubTabs = null;
     } else {
       // Non-workspace views (platform admin, deep links, etc.)
       _gwClearHeader();
