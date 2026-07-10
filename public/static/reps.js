@@ -1015,8 +1015,14 @@ function renderLoginScreen() {
     try {
       const viewEl = document.getElementById('view');
       if (!viewEl) return;
-      // Re-render the current route if it's a data-heavy one
+      // Re-render the current route if it's a data-heavy one.
+      // Skip 'today' re-render for 3s after a task completion — the task
+      // completion handler removes the row from the DOM directly, and a sync-
+      // triggered re-render immediately after can race with the D1 write and
+      // bring the completed task back as 'open'.
       const current = window._currentView || '';
+      const msSinceComplete = window._gwTaskLastCompletedAt ? (Date.now() - window._gwTaskLastCompletedAt) : Infinity;
+      if (current === 'today' && msSinceComplete < 3000) return;
       if (['today','pipeline','myDashboard','revenueAdmin'].includes(current) && window.show) {
         window.show(current);
       }

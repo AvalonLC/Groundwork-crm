@@ -622,28 +622,104 @@ window._gwTaskCompleteClick = async function(event, taskId) {
   const row = document.querySelector(`.gw-task-row[data-task-id="${taskId}"]`);
   if (row) { row.style.opacity = '0.5'; row.style.pointerEvents = 'none'; }
   try {
-    const result = await gwTaskComplete(taskId);
-    // Remove from open list, potentially refresh panel
-    const task = _getCache().find(t => t.id === taskId);
-    if (task) _refreshRecordPanel(task.linked_record_type, task.linked_record_id, task.linked_record_label);
-    // Also refresh Today if it's the current view
-    if (typeof window._gwTodayRefreshIfActive === 'function') window._gwTodayRefreshIfActive();
-    if (typeof window.showToast === 'function') window.showToast('Task completed', 'success');
+    await gwTaskComplete(taskId);
+
+    // Set timestamp so _gwTodayRender skips the loadToday() re-fetch for 3s,
+    // preventing a race between the D1 write and the next render cycle.
+    window._gwTaskLastCompletedAt = Date.now();
+
+    // ── Remove the task from in-memory cache immediately ──────────────────────
+    // Using _removeFromCache ensures the task won't reappear when the Today
+    // workspace re-renders from cache. The next fresh D1 fetch will also
+    // correctly exclude it (status='completed', not returned in open fetch).
+    _removeFromCache(taskId);
+
+    // ── Instantly remove the row from the DOM ─────────────────────────────────
+    // This gives immediate visual feedback without waiting for a re-fetch.
+    // We update group label counts in place rather than doing a full re-render
+    // that would trigger another loadToday() → possible race with D1 write.
+    if (row) {
+      // Animate out, then remove
+      row.style.transition = 'opacity 0.2s, transform 0.2s';
+      row.style.transform = 'translateX(6px)';
+      row.style.opacity = '0';
+      setTimeout(function() {
+        row.remove();
+        // Update overdue / due-today group label counts in place
+        _gwUpdateTaskGroupCounts();
+      }, 220);
+    }
+
+    // Refresh record panel (lead page sidebar) if task was linked to a record
+    const cachedTask = _getCache().find(t => t.id === taskId);
+    if (cachedTask) _refreshRecordPanel(cachedTask.linked_record_type, cachedTask.linked_record_id, cachedTask.linked_record_label);
+
+    if (typeof window.showToast === 'function') window.showToast('Task completed ✓', 'success');
   } catch(e) {
-    if (row) { row.style.opacity = ''; row.style.pointerEvents = ''; }
+    if (row) { row.style.opacity = ''; row.style.pointerEvents = ''; row.style.transform = ''; }
     if (typeof window.showToast === 'function') window.showToast('Could not complete task', 'error');
   }
 };
 
+// ── Update group header counts after a task is removed from the DOM ───────────
+// Counts the remaining visible rows in each group and updates the label,
+// hiding the entire group header + rows when count reaches zero.
+function _gwUpdateTaskGroupCounts() {
+  const workspace = document.querySelector('.gw-task-workspace');
+  if (!workspace) return;
+  const labels = workspace.querySelectorAll('.gw-today-group-label');
+  labels.forEach(function(label) {
+    // The rows for this group are siblings between this label and the next label
+    let count = 0;
+    let el = label.nextElementSibling;
+    while (el && !el.classList.contains('gw-today-group-label') && !el.classList.contains('gw-task-done-details')) {
+      if (el.classList.contains('gw-task-row')) count++;
+      el = el.nextElementSibling;
+    }
+    if (count === 0) {
+      label.style.display = 'none';
+    } else {
+      // Update count in parentheses: "Overdue (6)" → "Overdue (5)"
+      label.textContent = label.textContent.replace(/\(\d+\)/, '(' + count + ')');
+      label.style.display = '';
+    }
+  });
+  // Also update the overdue badge in the section header
+  const overdueBadge = document.querySelector('.section-head .bad-badge');
+  const overdueLabel = workspace.querySelector('.gw-today-group-label--overdue');
+  if (overdueBadge && overdueLabel) {
+    const m = overdueLabel.textContent.match(/\((\d+)\)/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      overdueBadge.textContent = n + ' overdue';
+      overdueBadge.style.display = n > 0 ? '' : 'none';
+    }
+  }
+}
+
 window._gwTaskArchiveClick = async function(event, taskId) {
   event.stopPropagation();
+  const row = document.querySelector(`.gw-task-row[data-task-id="${taskId}"]`);
+  if (row) { row.style.opacity = '0.5'; row.style.pointerEvents = 'none'; }
   try {
-    const task = _getCache().find(t => t.id === taskId);
+    const cachedTask = _getCache().find(t => t.id === taskId);
     await gwTaskArchive(taskId);
-    if (task) _refreshRecordPanel(task.linked_record_type, task.linked_record_id, task.linked_record_label);
-    if (typeof window._gwTodayRefreshIfActive === 'function') window._gwTodayRefreshIfActive();
+    // Remove from cache and DOM immediately (same approach as complete)
+    _removeFromCache(taskId);
+    window._gwTaskLastCompletedAt = Date.now();
+    if (row) {
+      row.style.transition = 'opacity 0.2s, transform 0.2s';
+      row.style.transform = 'translateX(6px)';
+      row.style.opacity = '0';
+      setTimeout(function() {
+        row.remove();
+        _gwUpdateTaskGroupCounts();
+      }, 220);
+    }
+    if (cachedTask) _refreshRecordPanel(cachedTask.linked_record_type, cachedTask.linked_record_id, cachedTask.linked_record_label);
     if (typeof window.showToast === 'function') window.showToast('Task archived', 'success');
   } catch(e) {
+    if (row) { row.style.opacity = ''; row.style.pointerEvents = ''; row.style.transform = ''; }
     if (typeof window.showToast === 'function') window.showToast('Could not archive task', 'error');
   }
 };

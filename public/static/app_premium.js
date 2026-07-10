@@ -1481,6 +1481,8 @@ function buildSuggestedActions(currentRep){
 }
 
 // ── Today refresh hook — called by task engine after complete/archive ──────────
+// NOTE: Task completion no longer calls this — it removes rows directly from DOM.
+// This hook remains for other callers (archive from record panels, etc.).
 window._gwTodayRefreshIfActive = function() {
   if (window._currentView === 'today') {
     _gwTodayRender();
@@ -1683,8 +1685,13 @@ function _gwTodayRender() {
   `;
   wireChecks();
 
-  // Load tasks from D1 async, then re-render the task workspace in place
-  if (window.gwTask && _todayRep) {
+  // Load tasks from D1 async, then re-render the task workspace in place.
+  // Guard: skip the re-fetch if a task was just completed within the last 3s —
+  // the completion handler already removed the row from the DOM and patched the
+  // cache. Re-fetching immediately can race with the D1 write and bring the
+  // completed task back as 'open'.
+  const _msSinceComplete = window._gwTaskLastCompletedAt ? (Date.now() - window._gwTaskLastCompletedAt) : Infinity;
+  if (window.gwTask && _todayRep && _msSinceComplete > 3000) {
     window.gwTask.loadToday().then(function() {
       const ws = document.querySelector('.gw-task-workspace');
       if (!ws) return; // view changed
