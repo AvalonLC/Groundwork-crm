@@ -9884,8 +9884,11 @@ h1.pl-title,
 }
 
 /* ── Drag handle on job cards ─────────────────────────────────────────────── */
+/* pointer-events:none at all times — the handle is purely decorative.
+   Dragging is triggered by draggable="true" on the card div itself.
+   The grab cursor shows only when hovering the dots area, but since
+   pointer-events:none the cursor is overridden by the card's pointer cursor. */
 .sb-card-drag-handle {
-  cursor: default;
   padding: 2px 5px 2px 0;
   color: var(--gw-text-muted);
   display: inline-flex;
@@ -9894,10 +9897,9 @@ h1.pl-title,
   border-radius: 3px;
   opacity: 0;
   transition: opacity .15s;
-  pointer-events: none;   /* never intercepts clicks — only onmousedown fires */
+  pointer-events: none;
 }
-.sb-job-card:hover .sb-card-drag-handle { opacity: .55; pointer-events: auto; cursor: grab; }
-.sb-card-drag-handle:active { cursor: grabbing; }
+.sb-job-card:hover .sb-card-drag-handle { opacity: .5; }
 
 /* ── Crew-lane week view ──────────────────────────────────────────────────── */
 .sb-lane-wrap {
@@ -10205,4 +10207,114 @@ h1.pl-title,
 @media (max-width: 600px) {
   .cd-page-header { flex-direction: column; }
   .cd-page-header-actions { flex-wrap: wrap; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shared RP (Report/Page) components — used across Work Orders, Assets,
+   Recurring Services, and other list pages
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Page shell */
+.wo-list-shell,
+.rp-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+}
+
+/* Page header */
+.rp-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.rp-header-left { flex: 1; min-width: 0; }
+.rp-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.rp-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--gw-text);
+  margin: 0 0 4px;
+  letter-spacing: -.5px;
+}
+.rp-subtitle { font-size: 13px; color: var(--gw-text-muted); margin: 0; }
+
+/* Buttons */
+.rp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--gw-r-md, 8px);
+  border: 1px solid var(--gw-border);
+  background: var(--gw-bg-surface);
+  color: var(--gw-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.rp-btn:hover { background: var(--gw-bg-surface-2); border-color: var(--gw-text-muted); }
+.rp-btn--primary {
+  background: var(--gw-pine-500, #2D7A55);
+  color: #fff;
+  border-color: var(--gw-pine-500, #2D7A55);
+}
+.rp-btn--primary:hover { background: var(--gw-pine-600, #24613f); border-color: var(--gw-pine-600, #24613f); }
+.rp-btn--danger { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.rp-btn--danger:hover { background: #fecaca; }
+
+.rp-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--gw-border);
+  background: var(--gw-bg-surface);
+  color: var(--gw-text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.rp-btn-sm:hover { background: var(--gw-bg-surface-2); }
+.rp-btn-sm--danger { color: #dc2626; border-color: #fca5a5; background: #fee2e2; }
+.rp-btn-sm--danger:hover { background: #fecaca; }
+
+/* Empty state */
+.rp-empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--gw-text-muted);
+}
+
+/* ── Work Order list rows ─────────────────────────────────────────────────── */
+.wo-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 100px 90px 130px 100px 90px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--gw-border);
+  font-size: 13px;
+  color: var(--gw-text);
+  transition: background .1s;
+}
+.wo-row:last-child { border-bottom: none; }
+.wo-row[style*="cursor:pointer"]:hover { background: var(--gw-bg-surface-2); }
+.wo-number { font-weight: 700; font-size: 12px; color: var(--gw-text-muted); }
+.wo-client { font-weight: 600; }
+.wo-type   { font-size: 12px; color: var(--gw-text-muted); }
+.wo-date   { font-size: 12px; color: var(--gw-text-muted); }
+.wo-actions { display: flex; gap: 4px; justify-content: flex-end; }
+
+@media (max-width: 860px) {
+  .wo-row { grid-template-columns: 80px 1fr 80px 70px; }
+  .wo-type, .wo-date, .wo-row > span:nth-child(5) { display: none; }
 }
