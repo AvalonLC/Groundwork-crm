@@ -31,7 +31,7 @@ const _VIEW_WORKSPACE_MAP = {
   financialReports:'gwDashboard', opsReports:'gwDashboard',
   fieldDashboard:'gwDashboard',
   // Sales workspace
-  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
+  pipeline:'gwSales', lead:'gwSales', clients:'gwSales', customerDetail:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
   // Learning workspace
   gwLearning:'gwLearning', academy:'gwLearning', learnEstimating:'gwLearning', learnFinancial:'gwLearning', learnCrmGuide:'gwLearning',
   estimates:'gwSales', communications:'gwSales', templates:'gwSales',
@@ -1306,7 +1306,10 @@ function show(viewName='today', param){
   // Alias redirect: open workspace shell, then let the workspace render the right tab
   // For legacy direct calls, we route them to the individual functions directly
   // (workspace shell not needed — direct render is the legacy behavior)
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ai};
+  const customerRoute = {
+    customerDetail: (id) => customerDetail(id),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ai};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -2649,6 +2652,421 @@ function clientDetail(id) {
     </section>
   `;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CUSTOMER DETAIL PAGE — Full CRM customer record
+// show('customerDetail', clientId) — also accepts '__byname__ClientName'
+// ═══════════════════════════════════════════════════════════════════════════════
+async function customerDetail(clientId) {
+  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
+    <div class="sb-spinner"></div><p style="margin-top:12px">Loading customer…</p></div>`;
+
+  // Resolve by name if needed
+  let resolvedId = clientId;
+  if (clientId && clientId.startsWith('__byname__')) {
+    const name = clientId.slice(10);
+    try {
+      const r = await fetch('/api/clients', { credentials:'include' });
+      const d = await r.json();
+      const found = (d.data || d).find(c => (c.name||'').toLowerCase() === name.toLowerCase());
+      if (found) resolvedId = found.id;
+      else { view.innerHTML = `<div style="padding:32px;text-align:center"><p>Customer "${escapeHtml(name)}" not found.</p><button class="rp-btn" onclick="show('clients')">← Back to Clients</button></div>`; return; }
+    } catch(e) { resolvedId = null; }
+  }
+
+  let client = null, workOrders = [], customerNotes = [], callNotes = [];
+  try {
+    const [cr, wr, nr] = await Promise.all([
+      fetch(`/api/customers/${resolvedId}`, { credentials:'include' }).then(r=>r.json()),
+      fetch(`/api/work-orders?client_id=${resolvedId}&limit=200`, { credentials:'include' }).then(r=>r.json()),
+      fetch(`/api/customers/${resolvedId}/notes`, { credentials:'include' }).then(r=>r.json()),
+    ]);
+    client = cr.data || cr;
+    workOrders = wr.data || [];
+    customerNotes = nr.data || [];
+  } catch(e) {
+    // Fallback to localStorage clients
+    client = loadClients().find(c => c.id === resolvedId);
+  }
+
+  if (!client) {
+    view.innerHTML = `<div style="padding:32px;text-align:center"><p>Customer not found.</p><button class="rp-btn" onclick="show('clients')">← Clients</button></div>`;
+    return;
+  }
+
+  const addr = [client.street||client.address, client.city, client.state, client.zip].filter(Boolean).join(', ');
+  const totalPaid   = workOrders.filter(w=>w.status==='completed').reduce((s,w)=>s+(w.amount_actual||w.amount_est||0),0);
+  const totalJobs   = workOrders.length;
+  const completedJobs = workOrders.filter(w=>w.status==='completed').length;
+  const inProgressJobs = workOrders.filter(w=>w.status==='in-progress').length;
+  const scheduledJobs = workOrders.filter(w=>w.status==='scheduled').length;
+  const linkedOpps = (state.opportunities||[]).filter(o =>
+    o.clientId === client.id || (o.client||'').toLowerCase() === (client.name||'').toLowerCase()
+  );
+  const tags = (client.tags||[]);
+
+  // ── Sections HTML ────────────────────────────────────────────────────────────
+  const woRows = workOrders.slice(0,10).map(wo => {
+    const statusCls = _p6WOStatusClass(wo.status);
+    return `<div class="cd-wo-row" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer">
+      <span class="cd-wo-num">${escapeHtml(wo.wo_number||wo.id)}</span>
+      <span class="cd-wo-title">${escapeHtml(wo.title||wo.type||'Job')}</span>
+      <span class="cd-wo-date">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : '—'}</span>
+      <span class="ops-ready-badge ${statusCls}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
+      <span class="cd-wo-amt">${wo.amount_actual||wo.amount_est ? '$'+(wo.amount_actual||wo.amount_est).toFixed(2) : '—'}</span>
+    </div>`;
+  }).join('') || `<p class="sb-empty-note" style="padding:12px 0">No jobs yet.</p>`;
+
+  const oppRows = linkedOpps.slice(0,5).map(o => `
+    <div class="cd-opp-row" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
+      <span class="cd-opp-proj">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</span>
+      <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px">${escapeHtml(o.status||'New Lead')}</span>
+      <span class="cd-opp-val">${o.budget ? '$'+Number(o.budget).toLocaleString() : '—'}</span>
+    </div>`).join('') || `<p class="sb-empty-note" style="padding:12px 0">No opportunities.</p>`;
+
+  const notesHtml = customerNotes.map((n,i)=>`
+    <div class="cd-note-item" data-note-id="${n.id||i}">
+      <div class="cd-note-body">${escapeHtml(n.note||n.body||'')}</div>
+      <div class="cd-note-meta">${n.created_by||'Admin'} · ${n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}</div>
+    </div>`).join('') || '';
+
+  view.innerHTML = `
+  <div class="cd-shell">
+    <!-- ── Page Header ── -->
+    <div class="cd-page-header">
+      <div class="cd-page-header-left">
+        <button class="rp-btn cd-back-btn" onclick="show('clients')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Clients
+        </button>
+        <div class="cd-title-block">
+          <div class="cd-avatar">${(client.name||'?').charAt(0).toUpperCase()}</div>
+          <div>
+            <h1 class="cd-name">${escapeHtml(client.name||'Customer')}</h1>
+            <div class="cd-sub">
+              ${clientTypeBadge(client.type)}
+              <span class="cd-since">${client.since||client.created_at ? 'Since '+_p5FmtDate(client.since||client.created_at) : ''}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cd-page-header-actions">
+        <button class="rp-btn" onclick="_cdSendSms('${escapeHtml(client.phone||'')}')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          SMS
+        </button>
+        <button class="rp-btn" onclick="window.location.href='mailto:${escapeHtml(client.email||'')}'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+          Email
+        </button>
+        <button class="rp-btn" onclick="window.print()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print
+        </button>
+        <button class="rp-btn" onclick="_cdEditClient('${client.id}')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Edit
+        </button>
+        <button class="rp-btn" style="color:var(--gw-danger,#dc2626)" onclick="_cdDeleteClient('${client.id}')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          Delete
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Stats Bar ── -->
+    <div class="cd-stats-bar">
+      <div class="cd-stat">
+        <span class="cd-stat-val cd-stat-val--green">$${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <span class="cd-stat-lbl">Total Revenue</span>
+      </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val">${totalJobs}</span>
+        <span class="cd-stat-lbl">Total Jobs</span>
+      </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val cd-stat-val--blue">${inProgressJobs}</span>
+        <span class="cd-stat-lbl">In Progress</span>
+      </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val">${scheduledJobs}</span>
+        <span class="cd-stat-lbl">Scheduled</span>
+      </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val cd-stat-val--green">${completedJobs}</span>
+        <span class="cd-stat-lbl">Completed</span>
+      </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val">${linkedOpps.length}</span>
+        <span class="cd-stat-lbl">Opportunities</span>
+      </div>
+    </div>
+
+    <!-- ── Main Body: Left + Right ── -->
+    <div class="cd-body">
+      <!-- LEFT COLUMN -->
+      <div class="cd-left">
+
+        <!-- Contact Info -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Contact Info</h2>
+            <button class="rp-btn-sm" onclick="_cdEditClient('${client.id}')">Edit</button>
+          </div>
+          <div class="cd-info-grid">
+            ${client.phone||client.mobile ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Phone</span>
+              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.phone||client.mobile||'')}">${escapeHtml(client.phone||client.mobile||'')}</a>
+            </div>` : ''}
+            ${client.email ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Email</span>
+              <a class="cd-info-val cd-link" href="mailto:${escapeHtml(client.email)}">${escapeHtml(client.email)}</a>
+            </div>` : ''}
+            ${client.email2 ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">CC Email</span>
+              <a class="cd-info-val cd-link" href="mailto:${escapeHtml(client.email2)}">${escapeHtml(client.email2)}</a>
+            </div>` : ''}
+            ${addr ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Address</span>
+              <a class="cd-info-val cd-link" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank">${escapeHtml(addr)}</a>
+            </div>` : ''}
+            ${client.type ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Type</span>
+              <span class="cd-info-val">${clientTypeBadge(client.type)}</span>
+            </div>` : ''}
+          </div>
+          ${tags.length ? `<div class="cd-tags" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
+            ${tags.map(t=>`<span class="cl-tag">${escapeHtml(t)}</span>`).join('')}
+            <button class="cd-tag-add-btn" onclick="_cdAddTag('${client.id}')">+ Tag</button>
+          </div>` : `<button class="cd-tag-add-btn" style="margin-top:8px" onclick="_cdAddTag('${client.id}')">+ Add Tag</button>`}
+        </section>
+
+        <!-- Customer Notes -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Customer Notes <span style="font-size:10px;font-weight:400;opacity:.6">(internal)</span></h2>
+          </div>
+          <div id="cd-customer-notes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            ${notesHtml || '<p class="sb-empty-note">No notes yet.</p>'}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <textarea id="cd-note-input" class="rp-input" rows="3" placeholder="Add an internal note about this customer…" style="resize:vertical"></textarea>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="rp-btn rp-btn--primary" onclick="_cdSaveNote('${client.id}')">+ Save Note</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Jobs -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Jobs</h2>
+            <button class="rp-btn-sm" onclick="_sbOpenNewVisit(null,null)">+ New Job</button>
+          </div>
+          <div class="cd-tab-bar" id="cd-jobs-tabs">
+            <button class="cd-tab active" onclick="_cdJobTab(this,'all')">All (${workOrders.length})</button>
+            <button class="cd-tab" onclick="_cdJobTab(this,'scheduled')">Scheduled (${scheduledJobs})</button>
+            <button class="cd-tab" onclick="_cdJobTab(this,'in-progress')">In Progress (${inProgressJobs})</button>
+            <button class="cd-tab" onclick="_cdJobTab(this,'completed')">Completed (${completedJobs})</button>
+          </div>
+          <div id="cd-jobs-list">${woRows}</div>
+          ${workOrders.length > 10 ? `<div style="text-align:center;padding:8px 0"><button class="rp-btn-sm" onclick="_cdLoadMoreJobs('${client.id}')">Load more</button></div>` : ''}
+        </section>
+
+        <!-- Opportunities -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Pipeline</h2>
+            <button class="rp-btn-sm" onclick="show('lead')">+ Opportunity</button>
+          </div>
+          ${oppRows}
+        </section>
+
+        <!-- Properties -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Properties</h2>
+            <button class="rp-btn-sm" onclick="showAddProperty('${client.id}')">+ Add</button>
+          </div>
+          ${(client.properties||[]).length ? client.properties.map(p=>`
+            <div class="cd-property-row">
+              <div>
+                <div style="font-weight:600;font-size:13px">${escapeHtml(p.label||'Property')}</div>
+                <div style="font-size:12px;color:var(--gw-text-muted)">${escapeHtml([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}</div>
+              </div>
+              <a href="https://maps.google.com/?q=${encodeURIComponent([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}" target="_blank" class="rp-btn-sm" style="font-size:11px">Map</a>
+            </div>`).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
+        </section>
+
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="cd-right">
+
+        <!-- Activity Timeline -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Activity Timeline</h2>
+          </div>
+          <div id="cd-timeline" class="cd-timeline">
+            ${workOrders.slice(0,8).map(wo=>`
+              <div class="cd-timeline-item">
+                <div class="cd-tl-dot ${_p6WOStatusClass(wo.status)}"></div>
+                <div class="cd-tl-content">
+                  <div class="cd-tl-title">${escapeHtml(wo.wo_number||'Job')} — ${escapeHtml(wo.title||wo.type||'Service')}</div>
+                  <div class="cd-tl-meta">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : ''} · <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span></div>
+                  ${wo.amount_est||wo.amount_actual ? `<div class="cd-tl-amt">$${(wo.amount_actual||wo.amount_est||0).toFixed(2)}</div>` : ''}
+                </div>
+              </div>`).join('') || '<p class="sb-empty-note">No activity yet.</p>'}
+          </div>
+        </section>
+
+        <!-- Quick Actions -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Quick Actions</h2>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="_sbOpenNewVisit(null,null)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Schedule a Job
+            </button>
+            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="show('lead')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New Opportunity
+            </button>
+            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="_cdSendSms('${escapeHtml(client.phone||'')}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              Send SMS
+            </button>
+            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="window.location.href='mailto:${escapeHtml(client.email||'')}'">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+              Send Email
+            </button>
+            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="_cdSendPortalLink('${client.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Send Portal Link
+            </button>
+          </div>
+        </section>
+
+        <!-- Customer Portal -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Customer Portal</h2>
+          </div>
+          <div style="font-size:13px;color:var(--gw-text-muted);margin-bottom:10px">
+            Send this customer a link to access their own portal where they can view jobs, photos, invoices, and pay online.
+          </div>
+          <button class="rp-btn rp-btn--primary" onclick="_cdSendPortalLink('${client.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Send Portal Access Link
+          </button>
+        </section>
+
+      </div>
+    </div>
+  </div>`;
+
+  // Store current client for handlers
+  window._cdCurrentClient = client;
+  window._cdCurrentClientWOs = workOrders;
+}
+window.customerDetail = customerDetail;
+
+// ── Customer Detail handlers ──────────────────────────────────────────────────
+window._cdJobTab = function(btn, filter) {
+  document.querySelectorAll('#cd-jobs-tabs .cd-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const wos = window._cdCurrentClientWOs || [];
+  const filtered = filter==='all' ? wos : wos.filter(w=>w.status===filter);
+  const rows = filtered.slice(0,10).map(wo => {
+    const statusCls = _p6WOStatusClass(wo.status);
+    return `<div class="cd-wo-row" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer">
+      <span class="cd-wo-num">${escapeHtml(wo.wo_number||wo.id)}</span>
+      <span class="cd-wo-title">${escapeHtml(wo.title||wo.type||'Job')}</span>
+      <span class="cd-wo-date">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : '—'}</span>
+      <span class="ops-ready-badge ${statusCls}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
+      <span class="cd-wo-amt">${wo.amount_actual||wo.amount_est ? '$'+(wo.amount_actual||wo.amount_est).toFixed(2) : '—'}</span>
+    </div>`;
+  }).join('') || '<p class="sb-empty-note" style="padding:12px 0">No jobs in this category.</p>';
+  const list = document.getElementById('cd-jobs-list');
+  if (list) list.innerHTML = rows;
+};
+
+window._cdSaveNote = async function(clientId) {
+  const inp = document.getElementById('cd-note-input');
+  const note = inp?.value?.trim();
+  if (!note) { showToast('Please enter a note','error'); return; }
+  try {
+    const r = await fetch(`/api/customers/${clientId}/notes`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ note })
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    const container = document.getElementById('cd-customer-notes');
+    const empty = container?.querySelector('.sb-empty-note');
+    if (empty) empty.remove();
+    const item = document.createElement('div');
+    item.className = 'cd-note-item';
+    item.innerHTML = `<div class="cd-note-body">${escapeHtml(note)}</div>
+      <div class="cd-note-meta">Just now</div>`;
+    container?.appendChild(item);
+    if (inp) inp.value = '';
+    showToast('Note saved','success');
+  } catch(e) {
+    showToast('Failed to save note','error');
+  }
+};
+
+window._cdEditClient = function(clientId) {
+  showClientForm(clientId);
+};
+
+window._cdDeleteClient = async function(clientId) {
+  if (!confirm('Delete this customer? This cannot be undone.')) return;
+  try {
+    await fetch(`/api/clients/${clientId}`,{method:'DELETE',credentials:'include'});
+    showToast('Customer deleted','success');
+    show('clients');
+  } catch(e) { showToast('Failed to delete','error'); }
+};
+
+window._cdAddTag = function(clientId) {
+  const tag = prompt('Enter tag:');
+  if (!tag?.trim()) return;
+  const c = window._cdCurrentClient;
+  if (!c) return;
+  c.tags = c.tags || [];
+  if (!c.tags.includes(tag.trim())) c.tags.push(tag.trim());
+  fetch(`/api/clients/${clientId}`,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags:c.tags})})
+    .then(()=>showToast('Tag added','success'));
+  const container = document.querySelector('.cd-tags') || document.querySelector('.cd-tag-add-btn')?.parentElement;
+  const addBtn = container?.querySelector('.cd-tag-add-btn');
+  if (container && addBtn) {
+    const span = document.createElement('span');
+    span.className = 'cl-tag';
+    span.textContent = tag.trim();
+    container.insertBefore(span, addBtn);
+  }
+};
+
+window._cdSendSms = function(phone) {
+  if (!phone) { showToast('No phone number on file','error'); return; }
+  window.open(`sms:${phone}`,'_blank');
+};
+
+window._cdSendPortalLink = function(clientId) {
+  const link = `${location.origin}/portal?client=${clientId}`;
+  if (navigator.share) {
+    navigator.share({ title:'Your Customer Portal', url:link }).catch(()=>{});
+  } else {
+    navigator.clipboard?.writeText(link).then(()=>showToast('Portal link copied to clipboard','success'))
+      .catch(()=>showToast('Portal link: '+link,'info'));
+  }
+};
 
 // ── Add property modal ──────────────────────────────────────────────────────
 window.showAddProperty = function(clientId) {
@@ -12511,15 +12929,19 @@ function _sbJobCard(wo, crews, draggable) {
   const hrs = wo.duration_hours ? `${wo.duration_hours}h` : '';
   return `
     <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}"
-        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
+        <span class="sb-card-drag-handle" title="Drag to reschedule"
+          onclick="event.stopPropagation()"
+          ${draggable ? `draggable="true" ondragstart="event.stopPropagation();_sbDragStart(event,'${wo.id}')"` : ''}>
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
+            <circle cx="3" cy="2" r="1.3"/><circle cx="7" cy="2" r="1.3"/>
+            <circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/>
+            <circle cx="3" cy="12" r="1.3"/><circle cx="7" cy="12" r="1.3"/>
+          </svg>
+        </span>
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
-        <button class="sb-card-dup-btn" title="Duplicate to next day"
-          onclick="event.stopPropagation();_sbDuplicateJob('${wo.id}')">
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
-        </button>
       </div>
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
       ${crew||wo.crew_name ? `<div class="sb-card-crew" style="color:${crewColor}">${escapeHtml(wo.crew_name||crew?.name||'')}</div>` : ''}
@@ -13066,9 +13488,40 @@ window._sbOpenVisitModal = async function(woId) {
           <!-- Customer / Property -->
           <section class="sb-modal-section">
             <h3 class="sb-modal-section-title">Customer</h3>
-            <div><strong>${escapeHtml(wo.client_name||'—')}</strong></div>
-            ${wo.property_addr ? `<div style="font-size:12px;color:var(--gw-text-muted);margin-top:4px">${escapeHtml(wo.property_addr)}</div>` : ''}
-            ${wo.amount_est ? `<div style="font-size:12px;margin-top:4px">Estimate: <strong>$${wo.amount_est.toFixed(2)}</strong></div>` : ''}
+            ${wo.client_id || wo.client_name ? `
+              <div>
+                <button class="sb-client-link" onclick="_sbGoToCustomer('${wo.client_id||''}','${escapeHtml(wo.client_name||'')}');_sbCloseModal()" title="Open customer details">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <strong>${escapeHtml(wo.client_name||'—')}</strong>
+                </button>
+              </div>` : `<div><strong>—</strong></div>`}
+            ${wo.property_addr ? `
+              <div style="margin-top:6px">
+                <a class="sb-addr-link" href="https://maps.google.com/?q=${encodeURIComponent(wo.property_addr)}" target="_blank" rel="noopener" title="Open in Google Maps">
+                  <svg width="11" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                  ${escapeHtml(wo.property_addr)}
+                </a>
+              </div>` : ''}
+            ${wo.amount_est ? `<div style="font-size:12px;margin-top:6px">Estimate: <strong>$${Number(wo.amount_est).toFixed(2)}</strong></div>` : ''}
+          </section>
+
+          <!-- Attachments (photos + PDFs) -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Attachments</h3>
+            <div id="sbm-attachments-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+              ${(wo.attachments||[]).map((a,i)=>`
+                <div class="sb-attach-row" data-idx="${i}">
+                  <span class="sb-attach-icon">${a.type==='pdf'?'📄':'🖼️'}</span>
+                  <span class="sb-attach-name" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.name||'File')}</span>
+                  <a href="${escapeHtml(a.url||'#')}" target="_blank" class="rp-btn-sm" style="padding:2px 8px;font-size:11px">View</a>
+                  <button class="sb-check-del" onclick="_sbRemoveAttachment(${i})">×</button>
+                </div>`).join('') || '<p class="sb-empty-note">No attachments yet.</p>'}
+            </div>
+            <label class="sb-attach-upload-btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload Photo or PDF
+              <input type="file" accept="image/*,.pdf" multiple style="display:none" onchange="_sbUploadAttachment(event)">
+            </label>
           </section>
         </div>
       </div>
@@ -13095,9 +13548,9 @@ window._sbOpenVisitModal = async function(woId) {
             Delete
           </button>
           <button class="rp-btn" onclick="_sbSaveVisit('${wo.id}',false)">Save</button>
-          <button class="rp-btn rp-btn--primary" onclick="_sbSaveVisit('${wo.id}',true)">
+          <button class="rp-btn rp-btn--primary" id="sb-complete-btn" onclick="_sbCompleteVisit('${wo.id}','${wo.type||'Service'}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
-            Complete &amp; Invoice
+            Complete
           </button>
         </div>
       </div>
@@ -13121,6 +13574,7 @@ window._sbSaveVisit = async function(woId, andComplete) {
   const equipItems = [...document.querySelectorAll('#sbm-equip-list .sb-equip-row')].map(row => {
     return row.querySelector('span')?.textContent?.trim() || '';
   }).filter(Boolean);
+  const wo = window._sbCurrentWO || {};
   const body = {
     scheduled_date: document.getElementById('sbm-date')?.value || null,
     scheduled_time: document.getElementById('sbm-time')?.value || null,
@@ -13132,6 +13586,9 @@ window._sbSaveVisit = async function(woId, andComplete) {
     duration_hours: parseFloat(document.getElementById('sbm-duration')?.value||'0') || null,
     equipment:      equipItems,
     employee_ids:   [...document.querySelectorAll('#sbm-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId).filter(Boolean),
+    before_photos:  wo.before_photos || [],
+    after_photos:   wo.after_photos  || [],
+    attachments:    wo.attachments   || [],
   };
   if (andComplete) body.status = 'completed';
   try {
@@ -13162,14 +13619,61 @@ window._sbDeleteVisit = async function(woId) {
   } catch(e) { showToast('Delete failed','error'); }
 };
 
-window._sbSkipVisit = async function(woId) {
-  if (!confirm('Mark this visit as skipped/cancelled?')) return;
+window._sbSkipVisit = function(woId) {
+  // Prompt for skip reason via inline modal
+  const existing = document.getElementById('sb-skip-reason-modal');
+  if (existing) existing.remove();
+  const dlg = document.createElement('div');
+  dlg.id = 'sb-skip-reason-modal';
+  dlg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
+  dlg.innerHTML = `
+    <div style="background:var(--gw-surface-1,#fff);border-radius:12px;padding:28px;width:min(420px,90vw);box-shadow:0 8px 40px rgba(0,0,0,.25)">
+      <h3 style="margin:0 0 6px;font-size:16px;font-weight:700">Skip this visit?</h3>
+      <p style="font-size:13px;color:var(--gw-text-muted);margin-bottom:16px">Please enter a reason for skipping (required).</p>
+      <textarea id="sb-skip-reason-input" class="rp-input" rows="3" placeholder="e.g. Customer requested reschedule, weather, gate locked…" style="width:100%;resize:vertical"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
+        <button class="rp-btn" onclick="document.getElementById('sb-skip-reason-modal').remove()">Cancel</button>
+        <button class="rp-btn" style="background:#f97316;color:#fff;border-color:#f97316" onclick="_sbConfirmSkip('${woId}')">Skip Visit</button>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+};
+
+window._sbConfirmSkip = async function(woId) {
+  const reason = document.getElementById('sb-skip-reason-input')?.value?.trim();
+  if (!reason) { showToast('Please enter a skip reason','error'); return; }
+  document.getElementById('sb-skip-reason-modal')?.remove();
   try {
-    await fetch(`/api/work-orders/${woId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'cancelled'})});
+    await fetch(`/api/work-orders/${woId}`,{
+      method:'PUT',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status:'cancelled', completion_notes: 'SKIPPED: ' + reason})
+    });
     showToast('Visit skipped','success');
     _sbCloseModal();
     await _sbRefresh();
-  } catch(e) { showToast('Failed','error'); }
+  } catch(e) { showToast('Failed to skip visit','error'); }
+};
+
+window._sbCompleteVisit = async function(woId, woType) {
+  // For non-recurring single-service jobs, require after photos
+  const isRecurring = (woType||'').toLowerCase().includes('recurring') || (woType||'').toLowerCase().includes('maintenance');
+  const afterPhotos = window._sbCurrentWO?.after_photos || [];
+  if (!isRecurring && afterPhotos.length === 0) {
+    showToast('Please add at least one after photo before marking complete','error');
+    // Scroll to photos section
+    const photoSection = document.querySelector('#sb-photos-after_photos');
+    if (photoSection) photoSection.scrollIntoView({behavior:'smooth',block:'center'});
+    // Highlight the section
+    const section = photoSection?.closest('.sb-modal-section');
+    if (section) {
+      section.style.outline = '2px solid var(--gw-danger,#dc2626)';
+      section.style.borderRadius = '8px';
+      setTimeout(()=>{ section.style.outline=''; }, 2500);
+    }
+    return;
+  }
+  await _sbSaveVisit(woId, true);
 };
 
 window._sbCrewChanged = function() {
@@ -13325,6 +13829,61 @@ window._sbRemovePhoto = function(field,url) {
     if(el.querySelector('img')?.src===url) el.remove();
   });
 };
+
+// ── Attachment helpers (photos + PDFs) ────────────────────────────────────────
+window._sbUploadAttachment = function(evt) {
+  const files = Array.from(evt.target?.files || []);
+  if (!files.length) return;
+  const wo = window._sbCurrentWO; if (!wo) return;
+  if (!wo.attachments) wo.attachments = [];
+  const list = document.getElementById('sbm-attachments-list');
+  const emptyNote = list?.querySelector('.sb-empty-note');
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const url = e.target.result;
+      const isPdf = file.type === 'application/pdf';
+      const attach = { name: file.name, url, type: isPdf ? 'pdf' : 'image' };
+      wo.attachments.push(attach);
+      const idx = wo.attachments.length - 1;
+      if (emptyNote) emptyNote.remove();
+      const row = document.createElement('div');
+      row.className = 'sb-attach-row';
+      row.dataset.idx = idx;
+      row.innerHTML = `
+        <span class="sb-attach-icon">${isPdf ? '📄' : '🖼️'}</span>
+        <span class="sb-attach-name" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(file.name)}</span>
+        <a href="${url}" target="_blank" class="rp-btn-sm" style="padding:2px 8px;font-size:11px">View</a>
+        <button class="sb-check-del" onclick="_sbRemoveAttachment(${idx})">×</button>`;
+      list?.appendChild(row);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+window._sbRemoveAttachment = function(idx) {
+  const wo = window._sbCurrentWO; if (!wo) return;
+  wo.attachments = (wo.attachments || []).filter((_,i) => i !== idx);
+  const row = document.querySelector(`#sbm-attachments-list [data-idx="${idx}"]`);
+  if (row) row.remove();
+  if (!wo.attachments.length) {
+    const list = document.getElementById('sbm-attachments-list');
+    if (list && !list.querySelector('.sb-attach-row')) {
+      list.innerHTML = '<p class="sb-empty-note">No attachments yet.</p>';
+    }
+  }
+};
+
+// ── Go to customer detail page ────────────────────────────────────────────────
+window._sbGoToCustomer = function(clientId, clientName) {
+  if (clientId) {
+    show('customerDetail', clientId);
+  } else if (clientName) {
+    // Try to find by name
+    show('customerDetail', '__byname__' + clientName);
+  }
+};
+
 window._sbUpsell = function(oppId) { show('oppDetail',oppId); _sbCloseModal(); };
 
 // ── New Visit Modal ──────────────────────────────────────────────────────────

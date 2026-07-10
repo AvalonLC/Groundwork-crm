@@ -1525,6 +1525,75 @@ app.delete('/api/clients/:id', requireAuth, async (c) => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CUSTOMERS — rich single-customer endpoint for the Customer Detail page
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/customers/:id — fetch a single client with all fields
+app.get('/api/customers/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const id = c.req.param('id')
+  const row: any = await c.env.DB.prepare(
+    'SELECT * FROM clients WHERE id = ? AND company_id = ?'
+  ).bind(id, companyId).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  return json(c, {
+    ...row,
+    tags: JSON.parse(row.tags || '[]'),
+    properties: JSON.parse(row.properties || '[]'),
+  })
+})
+
+// PUT /api/customers/:id — update a client with all fields
+app.put('/api/customers/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const id = c.req.param('id')
+  const b: any = await c.req.json()
+  await c.env.DB.prepare(`
+    UPDATE clients SET
+      name=COALESCE(?,name), phone=COALESCE(?,phone), email=COALESCE(?,email),
+      address=COALESCE(?,address), type=COALESCE(?,type), notes=COALESCE(?,notes),
+      street=COALESCE(?,street), street2=COALESCE(?,street2), city=COALESCE(?,city),
+      state=COALESCE(?,state), zip=COALESCE(?,zip), mobile=COALESCE(?,mobile),
+      email2=COALESCE(?,email2), since=COALESCE(?,since),
+      tags=COALESCE(?,tags), properties=COALESCE(?,properties), status=COALESCE(?,status),
+      updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(
+    b.name||null, b.phone||null, b.email||null, b.address||null, b.type||null, b.notes||null,
+    b.street||null, b.street2||null, b.city||null, b.state||null, b.zip||null, b.mobile||null,
+    b.email2||null, b.since||null,
+    b.tags !== undefined ? JSON.stringify(b.tags) : null,
+    b.properties !== undefined ? JSON.stringify(b.properties) : null,
+    b.status||null,
+    id, companyId
+  ).run()
+  return json(c, { updated: id })
+})
+
+// GET /api/customers/:id/notes — get notes for a customer
+app.get('/api/customers/:id/notes', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const clientId = c.req.param('id')
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM customer_notes WHERE client_id = ? AND company_id = ? ORDER BY created_at DESC LIMIT 50'
+  ).bind(clientId, companyId).all()
+  return json(c, rows.results || [])
+})
+
+// POST /api/customers/:id/notes — add a note
+app.post('/api/customers/:id/notes', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const clientId  = c.req.param('id')
+  const b: any    = await c.req.json()
+  const id        = 'cn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+  await c.env.DB.prepare(
+    `INSERT INTO customer_notes (id, client_id, company_id, note, type, created_by) VALUES (?,?,?,?,?,?)`
+  ).bind(id, clientId, companyId, b.note || '', b.type || 'customer', repId).run()
+  return json(c, { id }, 201)
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SETTINGS  — namespaced per company: key stored as "{companyId}:{key}"
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -2921,6 +2990,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   const status    = c.req.query('status')
   const crewId    = c.req.query('crew_id')
+  const clientId  = c.req.query('client_id')
   const dateFrom  = c.req.query('date_from')
   const dateTo    = c.req.query('date_to')
   let sql = `SELECT wo.*, cr.name as crew_name, cr.color as crew_color
@@ -2930,6 +3000,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   const params: any[] = [companyId]
   if (status)   { sql += ` AND wo.status = ?`;          params.push(status) }
   if (crewId)   { sql += ` AND wo.crew_id = ?`;         params.push(crewId) }
+  if (clientId) { sql += ` AND wo.client_id = ?`;       params.push(clientId) }
   if (dateFrom) { sql += ` AND wo.scheduled_date >= ?`; params.push(dateFrom) }
   if (dateTo)   { sql += ` AND wo.scheduled_date <= ?`; params.push(dateTo) }
   sql += ` ORDER BY wo.scheduled_date DESC, wo.created_at DESC LIMIT 500`
@@ -3014,6 +3085,7 @@ app.get('/api/work-orders/:id', requireAuth, async (c) => {
     timeline:      JSON.parse(row.timeline      || '[]'),
     before_photos: JSON.parse(row.before_photos || '[]'),
     after_photos:  JSON.parse(row.after_photos  || '[]'),
+    attachments:   JSON.parse(row.attachments   || '[]'),
     employees:     emps.results || [],
   }})
 })
@@ -3045,6 +3117,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       checklist=COALESCE(?,checklist), materials=COALESCE(?,materials),
       equipment=COALESCE(?,equipment),
       before_photos=COALESCE(?,before_photos), after_photos=COALESCE(?,after_photos),
+      attachments=COALESCE(?,attachments),
       timeline=?, updated_at=datetime('now')
     WHERE id=? AND company_id=?
   `).bind(
@@ -3068,6 +3141,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     body.equipment !== undefined ? JSON.stringify(body.equipment) : null,
     body.before_photos !== undefined ? JSON.stringify(body.before_photos) : null,
     body.after_photos  !== undefined ? JSON.stringify(body.after_photos)  : null,
+    body.attachments   !== undefined ? JSON.stringify(body.attachments)   : null,
     JSON.stringify(tl),
     woId, companyId
   ).run()
@@ -4195,7 +4269,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260710p29"></script>
+<script src="/static/app_premium.js?v=20260710p30"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
