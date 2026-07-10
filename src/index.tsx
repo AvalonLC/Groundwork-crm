@@ -3656,7 +3656,7 @@ function getHtml(): string {
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/premium.css?v=20260710gw35">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260709gw32">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw33">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -3913,11 +3913,6 @@ function getHtml(): string {
       </button>
     </div>
 
-      <!-- ── Sidebar collapse toggle (desktop only) ── -->
-      <button class="nav-sidebar-toggle" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M5 2v12"/></svg>
-      </button>
-
       <!-- ── Tenant nav (hidden when platform admin session active) ── -->
 
       <!-- ── Dashboard ── -->
@@ -4086,7 +4081,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260710p24"></script>
+<script src="/static/app_premium.js?v=20260710p25"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260707gw24"></script>

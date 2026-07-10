@@ -9384,14 +9384,6 @@ sidebar.addEventListener('click', e => {
   if (item && window.innerWidth <= 768) closeSidebar();
 });
 
-// ── Sidebar toggle button inside the sidebar (desktop) ───────────────────────
-sidebar.addEventListener('click', e => {
-  if (e.target.closest('.nav-sidebar-toggle')) {
-    e.stopPropagation();
-    _toggleSidebarCollapse();
-  }
-});
-
 // ── Sidebar close/collapse button (brand-row chevron) ────────────────────────
 // Mobile: closes the overlay. Desktop: collapses the sidebar rail.
 const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');

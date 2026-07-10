@@ -269,22 +269,9 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   transition: width .22s ease !important;
 }
 
-/* ── Sidebar collapse toggle button ── */
+/* ── Sidebar collapse toggle button — DEPRECATED, hidden (sidebarCloseBtn handles this now) ── */
 .nav-sidebar-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: 100%;
-  background: transparent;
-  border: 0;
-  color: rgba(255,255,255,.3);
-  cursor: pointer;
-  padding: 6px 14px;
-  border-radius: 0;
-  transition: color .12s;
-}
-.nav-sidebar-toggle:hover {
-  color: rgba(255,255,255,.65);
+  display: none !important;
 }
 
 /* ── Collapsed rail (icon-only, desktop) ── */
@@ -315,22 +302,23 @@ p  { line-height: 1.6; margin: 0 0 10px; }
   overflow: hidden !important;
 }
 
-/* Collapsed: brand — center the logo only */
+/* Collapsed: brand — hide logo & text, show only the expand chevron centered */
 .sidebar--collapsed .brand {
-  padding: 14px 0 !important;
+  padding: 10px 0 !important;
   justify-content: center !important;
   gap: 0 !important;
   border-bottom: 1px solid rgba(255,255,255,.07) !important;
 }
-
-/* Collapsed: toggle button — center the icon, flip direction */
-.sidebar--collapsed .nav-sidebar-toggle {
-  justify-content: center !important;
-  padding: 8px 0 !important;
-  color: rgba(255,255,255,.3) !important;
+.sidebar--collapsed .brand-mark {
+  display: none !important;
 }
-.sidebar--collapsed .nav-sidebar-toggle svg {
-  transform: scaleX(-1);
+.sidebar--collapsed .brand > div {
+  display: none !important;
+}
+.sidebar--collapsed .sidebar-close-btn {
+  margin-left: 0 !important;
+  color: rgba(255,255,255,.45) !important;
+  padding: 8px !important;
 }
 
 /* Collapsed: workspace nav buttons — centered icon, full width */
