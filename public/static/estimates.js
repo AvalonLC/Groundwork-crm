@@ -561,6 +561,9 @@ function _estRenderDetail(est) {
     <button class="est-detail-action-btn" onclick="estimateBuilder('${_estEsc(est.id)}')">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 2l3 3-9 9H2v-3l9-9z"/></svg> Edit
     </button>
+    ${est.client_email ? `<button class="est-detail-action-btn" onclick="typeof window.gwSendEstimateEmail==='function'&&window.gwSendEstimateEmail('${_estEsc(est.id)}')">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg> Email
+    </button>` : ''}
     <button class="est-detail-action-btn" onclick="_estPortalPreview('${_estEsc(est.id)}')">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg> Preview
     </button>

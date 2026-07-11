@@ -230,6 +230,7 @@ function _invRenderDetail(inv) {
       ${inv.status==='draft' ? `<button class="inv-btn-secondary" onclick="_invOpenBuilder('${inv.id}',true)">${gwIcon('edit',13)} Edit</button>` : ''}
       ${inv.status==='draft' ? `<button class="inv-btn-primary" onclick="_invSend('${inv.id}',true)">${gwIcon('send',13)} Send Invoice</button>` : ''}
       ${['sent','viewed','partial'].includes(inv.status) ? `<button class="inv-btn-primary" onclick="_invRecordPaymentModal('${inv.id}')">${gwIcon('payment',13)} Record Payment</button>` : ''}
+      ${inv.client_email ? `<button class="inv-btn-secondary" onclick="typeof window.gwSendInvoiceEmail==='function'&&window.gwSendInvoiceEmail('${inv.id}')">${gwIcon('email',13)} Email</button>` : ''}
       ${inv.status==='draft' ? `<button class="inv-btn-danger" onclick="_invDelete('${inv.id}')">${gwIcon('trash',13)} Delete</button>` : ''}
       ${inv.status!=='void' && inv.status!=='paid' ? `<button class="inv-btn-ghost" onclick="_invVoid('${inv.id}')">${gwIcon('status-declined',13)} Void</button>` : ''}
     </div>

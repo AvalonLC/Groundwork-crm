@@ -11784,6 +11784,10 @@ window.superAdmin = superAdmin;
       if (d1Rep.role === 'admin' && typeof window.gwCheckOnboarding === 'function') {
         try { await window.gwCheckOnboarding(); } catch(e) { /* non-blocking */ }
       }
+      // ── Notification bell: init for all authenticated users ───────────────
+      if (typeof window.gwNotifInit === 'function') {
+        try { window.gwNotifInit(); } catch(e) { /* non-blocking */ }
+      }
       // ── Hash-based restore: reload stays on the same page ──────────────────
       const _hashView = (location.hash || '').replace(/^#/, '').trim();
       // Only restore if hash looks like a valid view name and user has access
