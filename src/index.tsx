@@ -12,7 +12,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 app.use('/api/*', cors())
 
 // ── Static files ──────────────────────────────────────────────────────────────
-app.use('/static/*', serveStatic({ root: './public' }))
+app.use('/js/*', serveStatic({ root: './public' }))
 // ── Service Worker — self-destructing killer + real SW ───────────────────────
 // /sw.js — self-destructing SW: wipes all caches then unregisters itself
 // Any browser with the old SW will fetch this new version, which immediately
@@ -48,14 +48,14 @@ app.get('/site.webmanifest', (c) => {
     theme_color: '#113931',
     orientation: 'portrait-primary',
     icons: [
-      { src: '/static/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-      { src: '/static/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      { src: '/js/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/js/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
     ],
   };
   return c.json(manifest, 200, { 'Content-Type': 'application/manifest+json' });
 })
 // Apple requests the touch icon at the root — redirect to our static copy
-app.get('/apple-touch-icon.png', (c) => c.redirect('/static/apple-touch-icon.png', 301))
+app.get('/apple-touch-icon.png', (c) => c.redirect('/js/apple-touch-icon.png', 301))
 
 // ── /reset  AND  /gw-clear-XXXXXXXX — nuclear SW killer pages ────────────────
 // The old SW intercepts every known path. We serve the reset page at BOTH a
@@ -2027,10 +2027,10 @@ app.get('/onboard', (c) => {
   <title>Get Started — Groundwork CRM</title>
   <meta name="theme-color" content="#113931" />
   <meta name="description" content="Set up your team on Groundwork CRM in 2 minutes." />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png" />
-  <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/js/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/js/favicon-16.png" />
+  <link rel="icon" type="image/x-icon" href="/js/favicon.ico" />
+  <link rel="apple-touch-icon" href="/js/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -2150,7 +2150,7 @@ app.get('/onboard', (c) => {
   <!-- Pine header -->
   <div class="card-header">
     <div class="logo-pill">
-      <img src="/static/avalon-logo.png" alt="Groundwork CRM">
+      <img src="/js/avalon-logo.png" alt="Groundwork CRM">
       <div>
         <div class="logo-pill-text">Groundwork</div>
         <div class="logo-pill-sub">CRM</div>
@@ -5016,11 +5016,11 @@ app.get('/portal', (c) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Groundwork — Client Portal</title>
   <meta name="robots" content="noindex,nofollow"/>
-  <link rel="icon" type="image/png" href="/static/avalon-logo.png"/>
+  <link rel="icon" type="image/png" href="/js/avalon-logo.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b016">
+  <link rel="stylesheet" href="/js/premium.css?v=20260711b017">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5044,8 +5044,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/static/platform_core.js?v=20260711b016"></script>
-  <script src="/static/client_portal.js?v=20260711b016"></script>
+  <script src="/js/platform_core.js?v=20260711b017"></script>
+  <script src="/js/client_portal.js?v=20260711b017"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5643,10 +5643,10 @@ function getHtml(): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Groundwork CRM</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png" />
-  <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/js/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/js/favicon-16.png" />
+  <link rel="icon" type="image/x-icon" href="/js/favicon.ico" />
+  <link rel="apple-touch-icon" href="/js/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
   <meta name="theme-color" content="#113931" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -5656,9 +5656,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b016">
-  <link rel="stylesheet" href="/static/styles.css?v=20260711b016">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b016">
+  <link rel="stylesheet" href="/js/premium.css?v=20260711b017">
+  <link rel="stylesheet" href="/js/styles.css?v=20260711b017">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260711b017">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6026,7 +6026,7 @@ function getHtml(): string {
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-mark" onclick="show('today')" style="cursor:pointer;" title="Go to Today">
-        <img src="/static/avalon-logo.png" alt="Groundwork" />
+        <img src="/js/avalon-logo.png" alt="Groundwork" />
       </div>
       <div style="flex:1;min-width:0">
         <div class="brand-name">Groundwork</div>
@@ -6199,33 +6199,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711b016"></script>
-<script src="/static/db.js?v=20260711b016"></script>
-<script src="/static/data.js?v=20260711b016"></script>
-<script src="/static/reps.js?v=20260711b016"></script>
-<script src="/static/record-page.js?v=20260711b016"></script>
-<script src="/static/academy.js?v=20260711b016"></script>
-<script src="/static/task_engine.js?v=20260711b016"></script>
-<script src="/static/app_premium.js?v=20260711b016"></script>
-<script src="/static/estimates.js?v=20260711b016"></script>
-<script src="/static/invoices.js?v=20260711b016"></script>
-<script src="/static/csv_import.js?v=20260711b016"></script>
-<script src="/static/onboarding.js?v=20260711b016"></script>
-<script src="/static/recurring_plans.js?v=20260711b016"></script>
-<script src="/static/reviews.js?v=20260711b016"></script>
-<script src="/static/stripe.js?v=20260711b016"></script>
-<script src="/static/email.js?v=20260711b016"></script>
-<script src="/static/notifications.js?v=20260711b016"></script>
-<script src="/static/integrations.js?v=20260711b016"></script>
-<script src="/static/user_management.js?v=20260711b016"></script>
-<script src="/static/platform_admin.js?v=20260711b016"></script>
-<script src="/static/time_tracker.js?v=20260711b016"></script>
-<script src="/static/field_workday.js?v=20260711b016"></script>
-<script src="/static/platform_core.js?v=20260711b016"></script>
-<script src="/static/approval_engine.js?v=20260711b016"></script>
-<script src="/static/automation_engine.js?v=20260711b016"></script>
-<script src="/static/client_portal.js?v=20260711b016"></script>
-<script src="/static/field_mode.js?v=20260711b016"></script>
+<script src="/js/gw-icons.js?v=20260711b017"></script>
+<script src="/js/db.js?v=20260711b017"></script>
+<script src="/js/data.js?v=20260711b017"></script>
+<script src="/js/reps.js?v=20260711b017"></script>
+<script src="/js/record-page.js?v=20260711b017"></script>
+<script src="/js/academy.js?v=20260711b017"></script>
+<script src="/js/task_engine.js?v=20260711b017"></script>
+<script src="/js/app_premium.js?v=20260711b017"></script>
+<script src="/js/estimates.js?v=20260711b017"></script>
+<script src="/js/invoices.js?v=20260711b017"></script>
+<script src="/js/csv_import.js?v=20260711b017"></script>
+<script src="/js/onboarding.js?v=20260711b017"></script>
+<script src="/js/recurring_plans.js?v=20260711b017"></script>
+<script src="/js/reviews.js?v=20260711b017"></script>
+<script src="/js/stripe.js?v=20260711b017"></script>
+<script src="/js/email.js?v=20260711b017"></script>
+<script src="/js/notifications.js?v=20260711b017"></script>
+<script src="/js/integrations.js?v=20260711b017"></script>
+<script src="/js/user_management.js?v=20260711b017"></script>
+<script src="/js/platform_admin.js?v=20260711b017"></script>
+<script src="/js/time_tracker.js?v=20260711b017"></script>
+<script src="/js/field_workday.js?v=20260711b017"></script>
+<script src="/js/platform_core.js?v=20260711b017"></script>
+<script src="/js/approval_engine.js?v=20260711b017"></script>
+<script src="/js/automation_engine.js?v=20260711b017"></script>
+<script src="/js/client_portal.js?v=20260711b017"></script>
+<script src="/js/field_mode.js?v=20260711b017"></script>
 <script>
   // ── Service Worker: KILL MODE ─────────────────────────────────────────────
   // SW is disabled. We unregister everything and register a self-destructing
