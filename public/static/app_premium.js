@@ -711,7 +711,7 @@ function gwFinancial(tab) {
     {id:'financialActivity',  label:'Activity'},
   ], tab);
   if (tab === 'financialHub')          (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
-  else if (tab === 'invoices')         (typeof invoiceDetail==='function') ? invoiceDetail() : _gwTabStub('Invoices');
+  else if (tab === 'invoices')         (typeof gwInvoices==='function') ? gwInvoices() : _gwTabStub('Invoices');
   else if (tab === 'payments')         (typeof payments==='function') ? payments() : _gwTabStub('Payments');
   else if (tab === 'deposits')         (typeof deposits==='function') ? deposits() : _gwTabStub('Deposits');
   else if (tab === 'statements')       (typeof statements==='function') ? statements() : _gwTabStub('Statements');
@@ -2409,7 +2409,12 @@ window._clientStatusFilter = window._clientStatusFilter || 'all';
 
 // ── Trigger file input ──────────────────────────────────────────────────────
 window.triggerClientImport = function() {
-  document.getElementById('clientImportInput')?.click();
+  // Use new bulletproof D1 CSV import modal if available
+  if (typeof gwOpenCSVImport === 'function') {
+    gwOpenCSVImport();
+  } else {
+    document.getElementById('clientImportInput')?.click();
+  }
 };
 
 // ── Handle imported CSV ─────────────────────────────────────────────────────

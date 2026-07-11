@@ -3272,6 +3272,383 @@ app.delete('/api/estimates/:id', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ── INVOICES (D1) ─────────────────────────────────────────────────────────────
+
+// GET /api/invoices — list invoices with filters
+app.get('/api/invoices', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const status   = c.req.query('status')
+  const clientId = c.req.query('client_id')
+  const search   = c.req.query('q')
+  const limit    = Math.min(Number(c.req.query('limit') || 200), 500)
+  const offset   = Number(c.req.query('offset') || 0)
+
+  let q = `SELECT * FROM invoices WHERE company_id = ?`
+  const params: any[] = [companyId]
+  if (status)   { q += ` AND status = ?`;         params.push(status) }
+  if (clientId) { q += ` AND client_id = ?`;      params.push(clientId) }
+  if (search)   { q += ` AND (client_name LIKE ? OR invoice_number LIKE ? OR title LIKE ?)`;
+                  params.push(`%${search}%`, `%${search}%`, `%${search}%`) }
+  q += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  params.push(limit, offset)
+
+  const { results } = await db.prepare(q).bind(...params).all()
+  results.forEach((r: any) => {
+    try { r.line_items = JSON.parse(r.line_items || '[]') } catch(_) { r.line_items = [] }
+  })
+  return c.json(results)
+})
+
+// GET /api/invoices/:id — single invoice
+app.get('/api/invoices/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const row: any = await db.prepare(
+    `SELECT * FROM invoices WHERE id = ? AND company_id = ? LIMIT 1`
+  ).bind(c.req.param('id'), companyId).first()
+  if (!row) return c.json({ error: 'Not found' }, 404)
+  try { row.line_items = JSON.parse(row.line_items || '[]') } catch(_) { row.line_items = [] }
+  return c.json(row)
+})
+
+// GET /api/invoices/portal/:token — public portal (no auth)
+app.get('/api/invoices/portal/:token', async (c) => {
+  const db = c.env.DB as D1Database
+  const row: any = await db.prepare(
+    `SELECT * FROM invoices WHERE portal_token = ? LIMIT 1`
+  ).bind(c.req.param('token')).first()
+  if (!row) return c.json({ error: 'Not found' }, 404)
+  // Mark as viewed
+  if (row.status === 'sent') {
+    await db.prepare(`UPDATE invoices SET status='viewed', viewed_at=datetime('now') WHERE portal_token=?`)
+      .bind(c.req.param('token')).run()
+    row.status = 'viewed'
+    row.viewed_at = new Date().toISOString()
+  }
+  try { row.line_items = JSON.parse(row.line_items || '[]') } catch(_) { row.line_items = [] }
+  return c.json(row)
+})
+
+// POST /api/invoices — create invoice
+app.post('/api/invoices', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+
+  // Auto-increment invoice number per company
+  await db.prepare(`INSERT OR IGNORE INTO invoice_counters (company_id, last_number) VALUES (?, 0)`)
+    .bind(companyId).run()
+  await db.prepare(`UPDATE invoice_counters SET last_number = last_number + 1 WHERE company_id = ?`)
+    .bind(companyId).run()
+  const counter: any = await db.prepare(`SELECT last_number FROM invoice_counters WHERE company_id = ?`)
+    .bind(companyId).first()
+  const invoiceNumber = b.invoice_number || `INV-${String(counter?.last_number || 1).padStart(4, '0')}`
+
+  const id = `inv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+  const portalToken = crypto.randomUUID()
+  const lineItems = Array.isArray(b.line_items) ? JSON.stringify(b.line_items) : b.line_items || '[]'
+  const total = b.total || 0
+  const taxAmount = b.tax_amount || 0
+  const subtotal = b.subtotal || 0
+  const discountAmount = b.discount_amount || 0
+  const balanceDue = total - (b.amount_paid || 0)
+
+  await db.prepare(`
+    INSERT INTO invoices (id, company_id, invoice_number, estimate_id, client_id, client_name,
+      client_email, client_phone, client_address, title, status, subtotal, tax_rate, tax_amount,
+      discount_amount, total, amount_paid, balance_due, due_date, line_items, notes, internal_notes,
+      terms, footer_note, portal_token, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(id, companyId, invoiceNumber,
+    b.estimate_id||'', b.client_id||'', b.client_name||'', b.client_email||'',
+    b.client_phone||'', b.client_address||'', b.title||`Invoice ${invoiceNumber}`,
+    b.status||'draft', subtotal, b.tax_rate||0, taxAmount, discountAmount,
+    total, b.amount_paid||0, balanceDue, b.due_date||'',
+    lineItems, b.notes||'', b.internal_notes||'',
+    b.terms||'Net 30', b.footer_note||'', portalToken
+  ).run()
+  return c.json({ id, invoice_number: invoiceNumber, portal_token: portalToken })
+})
+
+// PUT /api/invoices/:id — update invoice
+app.put('/api/invoices/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+  const id = c.req.param('id')
+
+  const allowed = ['title','status','client_id','client_name','client_email','client_phone',
+    'client_address','estimate_id','subtotal','tax_rate','tax_amount','discount_amount','total',
+    'amount_paid','balance_due','due_date','sent_at','viewed_at','paid_at','voided_at',
+    'line_items','notes','internal_notes','terms','footer_note','payment_intent_id',
+    'stripe_payment_status']
+  const sets: string[] = []
+  const vals: any[] = []
+  for (const key of allowed) {
+    if (key in b) {
+      sets.push(`${key} = ?`)
+      vals.push(key === 'line_items' && Array.isArray(b[key]) ? JSON.stringify(b[key]) : b[key])
+    }
+  }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400)
+  sets.push(`updated_at = datetime('now')`)
+  vals.push(id, companyId)
+  await db.prepare(`UPDATE invoices SET ${sets.join(', ')} WHERE id = ? AND company_id = ?`)
+    .bind(...vals).run()
+  return c.json({ ok: true })
+})
+
+// DELETE /api/invoices/:id — delete invoice (draft only)
+app.delete('/api/invoices/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await db.prepare(`DELETE FROM invoices WHERE id=? AND company_id=? AND status='draft'`)
+    .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/invoices/:id/send — mark as sent (email handled client-side or via SendGrid)
+app.post('/api/invoices/:id/send', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await db.prepare(`UPDATE invoices SET status='sent', sent_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/invoices/:id/record-payment — record a manual payment
+app.post('/api/invoices/:id/record-payment', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+  const id = c.req.param('id')
+
+  const inv: any = await db.prepare(`SELECT * FROM invoices WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(id, companyId).first()
+  if (!inv) return c.json({ error: 'Not found' }, 404)
+
+  const newPaid = (inv.amount_paid || 0) + (b.amount || 0)
+  const newBalance = (inv.total || 0) - newPaid
+  const newStatus = newBalance <= 0 ? 'paid' : 'partial'
+  const paidAt = newBalance <= 0 ? `datetime('now')` : inv.paid_at || ''
+
+  await db.prepare(`UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(newPaid, Math.max(0, newBalance), newStatus, id, companyId).run()
+
+  // Log to payments table
+  const payId = `pay_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+  await db.prepare(`INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, description, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`)
+    .bind(payId, companyId, id, inv.client_id||'', b.amount||0, b.amount||0, 'succeeded',
+      b.method||'check', b.note||'Manual payment recorded').run()
+
+  return c.json({ ok: true, status: newStatus, balance_due: Math.max(0, newBalance) })
+})
+
+// POST /api/invoices/from-estimate/:estimateId — convert estimate to invoice
+app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const est: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(c.req.param('estimateId'), companyId).first()
+  if (!est) return c.json({ error: 'Estimate not found' }, 404)
+
+  // Auto-number
+  await db.prepare(`INSERT OR IGNORE INTO invoice_counters (company_id, last_number) VALUES (?, 0)`)
+    .bind(companyId).run()
+  await db.prepare(`UPDATE invoice_counters SET last_number = last_number + 1 WHERE company_id = ?`)
+    .bind(companyId).run()
+  const counter: any = await db.prepare(`SELECT last_number FROM invoice_counters WHERE company_id = ?`)
+    .bind(companyId).first()
+  const invoiceNumber = `INV-${String(counter?.last_number || 1).padStart(4, '0')}`
+
+  // Parse estimate line items → invoice line items
+  let lineItems: any[] = []
+  try { lineItems = JSON.parse(est.line_items || '[]') } catch(_) {}
+
+  const id = `inv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+  const portalToken = crypto.randomUUID()
+  const total = est.total || 0
+  const depositPaid = est.deposit_paid_amount || 0
+  const balanceDue = total - depositPaid
+
+  // Get due date = today + 30 days
+  const due = new Date(); due.setDate(due.getDate() + 30)
+  const dueDate = due.toISOString().split('T')[0]
+
+  await db.prepare(`
+    INSERT INTO invoices (id, company_id, invoice_number, estimate_id, client_id, client_name,
+      client_email, client_phone, title, status, subtotal, tax_rate, tax_amount,
+      total, amount_paid, balance_due, due_date, line_items, notes, portal_token,
+      created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(id, companyId, invoiceNumber, est.id, est.client_id||'', est.client_name||'',
+    est.client_email||'', est.client_phone||'',
+    `Invoice for ${est.title || est.estimate_number}`, 'draft',
+    est.subtotal||0, est.tax_rate||0, est.tax_amount||0,
+    total, depositPaid, Math.max(0, balanceDue), dueDate,
+    JSON.stringify(lineItems), est.notes||'', portalToken
+  ).run()
+
+  // Update estimate status to invoiced
+  await db.prepare(`UPDATE estimates SET status='invoiced', updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(est.id, companyId).run()
+
+  return c.json({ id, invoice_number: invoiceNumber, portal_token: portalToken })
+})
+
+// GET /api/clients/import-preview — preview CSV rows before bulk insert
+app.post('/api/clients/import-preview', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+  const rows: any[] = b.rows || []
+
+  // For each incoming row, check if email or name already exists
+  const results = await Promise.all(rows.slice(0, 100).map(async (row: any) => {
+    let duplicate = false
+    let matchReason = ''
+    if (row.email) {
+      const existing: any = await db.prepare(`SELECT id, name FROM clients WHERE company_id=? AND email=? LIMIT 1`)
+        .bind(companyId, row.email.toLowerCase().trim()).first()
+      if (existing) { duplicate = true; matchReason = `Email matches "${existing.name}"` }
+    }
+    if (!duplicate && row.name) {
+      const existing: any = await db.prepare(`SELECT id, name FROM clients WHERE company_id=? AND LOWER(name)=? LIMIT 1`)
+        .bind(companyId, row.name.toLowerCase().trim()).first()
+      if (existing) { duplicate = true; matchReason = `Name matches "${existing.name}"` }
+    }
+    return { ...row, _duplicate: duplicate, _matchReason: matchReason }
+  }))
+  return c.json({ preview: results, total: rows.length })
+})
+
+// POST /api/clients/import-bulk — bulk insert clients from CSV
+app.post('/api/clients/import-bulk', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+  const rows: any[] = b.rows || []
+  const skipDuplicates: boolean = b.skip_duplicates !== false
+
+  let inserted = 0, skipped = 0, errors: string[] = []
+
+  for (const row of rows.slice(0, 500)) {
+    try {
+      if (skipDuplicates && row._duplicate) { skipped++; continue }
+
+      // Check live before insert
+      let isDupe = false
+      if (row.email) {
+        const ex = await db.prepare(`SELECT id FROM clients WHERE company_id=? AND email=? LIMIT 1`)
+          .bind(companyId, row.email.toLowerCase().trim()).first()
+        if (ex) isDupe = true
+      }
+      if (!isDupe && skipDuplicates && row.name) {
+        const ex = await db.prepare(`SELECT id FROM clients WHERE company_id=? AND LOWER(name)=? LIMIT 1`)
+          .bind(companyId, row.name.toLowerCase().trim()).first()
+        if (ex) isDupe = true
+      }
+      if (isDupe && skipDuplicates) { skipped++; continue }
+
+      const id = row.id || `cl_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+      await db.prepare(`
+        INSERT OR IGNORE INTO clients
+          (id, company_id, name, email, phone, address, city, state, zip, type, status, notes, tags, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+      `).bind(id, companyId,
+        row.name||'', (row.email||'').toLowerCase().trim(),
+        row.phone||row.mobile||'', row.street||row.address||'',
+        row.city||'', row.state||'', row.zip||'',
+        row.type||'Residential', row.status||'Active',
+        row.notes||'', JSON.stringify(row.tags||[])
+      ).run()
+      inserted++
+    } catch(e: any) {
+      errors.push(`Row "${row.name}": ${e.message}`)
+    }
+  }
+  return c.json({ inserted, skipped, errors: errors.slice(0, 20), total: rows.length })
+})
+
+// ── PUBLIC SIGNUP ─────────────────────────────────────────────────────────────
+
+// POST /api/auth/signup — create new company + admin user (public, no auth)
+app.post('/api/auth/signup', async (c) => {
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+  const { company_name, email, password, business_type, owner_name } = b
+
+  if (!company_name || !email || !password) {
+    return c.json({ error: 'Company name, email, and password are required' }, 400)
+  }
+  if (password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400)
+  }
+
+  // Check email uniqueness
+  const existing = await db.prepare(`SELECT id FROM reps WHERE email=? LIMIT 1`)
+    .bind(email.toLowerCase().trim()).first()
+  if (existing) return c.json({ error: 'An account with this email already exists' }, 409)
+
+  // Create company slug
+  const slug = company_name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 30)
+  const companyId = `co_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+
+  // Trial: 14 days
+  const trialStart = new Date().toISOString()
+  const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+
+  await db.prepare(`
+    INSERT INTO companies (id, name, slug, owner_email, business_type, brand_color, brand_accent,
+      subscription_status, trial_plan, trial_started_at, trial_expires_at, onboarding_step,
+      created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(companyId, company_name, slug, email.toLowerCase().trim(),
+    business_type||'home_services', '#2D7A55', '#4D8A86',
+    'trial', 'growth', trialStart, trialEnd, 0
+  ).run()
+
+  // Hash password
+  const enc = new TextEncoder()
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits'])
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256
+  )
+  const hashHex = [...new Uint8Array(bits)].map(b2 => b2.toString(16).padStart(2,'0')).join('')
+  const saltHex = [...salt].map(b2 => b2.toString(16).padStart(2,'0')).join('')
+  const passwordHash = `pbkdf2:${saltHex}:${hashHex}`
+
+  const repId = `rep_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+  const displayName = owner_name || email.split('@')[0]
+
+  await db.prepare(`
+    INSERT INTO reps (id, company_id, name, email, password_hash, role, is_active, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(repId, companyId, displayName, email.toLowerCase().trim(), passwordHash, 'admin', 1).run()
+
+  // Create a session
+  const sessionToken = crypto.randomUUID()
+  const sessionExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  await db.prepare(`INSERT INTO sessions (id, rep_id, company_id, expires_at, created_at) VALUES (?,?,?,?,datetime('now'))`)
+    .bind(sessionToken, repId, companyId, sessionExpiry).run()
+
+  const res = c.json({
+    ok: true,
+    company_id: companyId,
+    rep_id: repId,
+    trial_expires_at: trialEnd,
+    onboarding_step: 0
+  })
+
+  // Set session cookie
+  const headers = new Headers(res.headers)
+  headers.set('Set-Cookie', `avalon_session=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*24*3600}`)
+  return new Response(res.body, { status: 200, headers })
+})
+
 // ── WORK ORDERS (D1) ──────────────────────────────────────────────────────────
 
 // GET /api/work-orders — list work orders (optional ?status=&crew_id=&date_from=&date_to=)
@@ -3646,7 +4023,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p46">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p47">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -3957,6 +4334,156 @@ app.get('/auth/google/callback', (c) => {
 </html>`)
 })
 
+// ── /signup — Public trial signup page ────────────────────────────────────
+app.get('/signup', (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Start Free Trial — Groundwork CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0d2318 0%,#1a3a2a 50%,#0d2318 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .card{background:#fff;border-radius:20px;padding:40px;width:100%;max-width:440px;box-shadow:0 24px 80px rgba(0,0,0,0.4)}
+    .logo{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+    .logo-mark{width:36px;height:36px;background:#2D7A55;border-radius:8px;display:flex;align-items:center;justify-content:center}
+    .logo-mark svg{width:20px;height:20px;fill:#fff}
+    .logo-name{font-size:18px;font-weight:800;color:#0d2318;letter-spacing:-.02em}
+    .logo-name span{color:#2D7A55}
+    h1{font-size:26px;font-weight:800;color:#0d2318;line-height:1.2;margin-bottom:6px}
+    .sub{font-size:14px;color:#6B7280;margin-bottom:28px}
+    .field{margin-bottom:16px}
+    label{display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em}
+    input,select{width:100%;padding:11px 14px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:14px;font-family:inherit;color:#111;transition:border .15s;outline:none}
+    input:focus,select:focus{border-color:#2D7A55;box-shadow:0 0 0 3px rgba(45,122,85,.12)}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .btn{width:100%;padding:14px;background:#2D7A55;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;transition:background .15s;font-family:inherit}
+    .btn:hover{background:#256645}
+    .btn:disabled{opacity:.5;cursor:default}
+    .trial-badge{background:#F0FAF4;border:1px solid #A7D7BC;border-radius:8px;padding:10px 14px;font-size:13px;color:#1C3A2B;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+    .check{color:#2D7A55;font-weight:700}
+    .signin-link{text-align:center;font-size:13px;color:#6B7280;margin-top:18px}
+    .signin-link a{color:#2D7A55;font-weight:600;text-decoration:none}
+    .error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;font-size:13px;color:#991B1B;margin-bottom:16px;display:none}
+    .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7L10 2z"/></svg>
+      </div>
+      <div class="logo-name">Ground<span>work</span></div>
+    </div>
+
+    <h1>Start your free trial</h1>
+    <p class="sub">14 days free. No credit card required.</p>
+
+    <div class="trial-badge">
+      <span class="check">✓</span>
+      Full access to all features for 14 days — no limits, no credit card
+    </div>
+
+    <div id="errorMsg" class="error"></div>
+
+    <form id="signupForm">
+      <div class="field">
+        <label>Company Name</label>
+        <input type="text" id="companyName" placeholder="Avalon Landscaping" required autocomplete="organization">
+      </div>
+      <div class="field">
+        <label>Business Type</label>
+        <select id="businessType">
+          <option value="landscaping">Landscaping & Lawn Care</option>
+          <option value="excavation">Excavation & Grading</option>
+          <option value="hvac">HVAC</option>
+          <option value="plumbing">Plumbing</option>
+          <option value="electrical">Electrical</option>
+          <option value="painting">Painting</option>
+          <option value="roofing">Roofing</option>
+          <option value="cleaning">Cleaning Services</option>
+          <option value="pest_control">Pest Control</option>
+          <option value="tree_service">Tree Service</option>
+          <option value="fencing">Fencing</option>
+          <option value="flooring">Flooring</option>
+          <option value="concrete">Concrete & Masonry</option>
+          <option value="pool_service">Pool Service</option>
+          <option value="home_services" selected>General Home Services</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Your Name</label>
+          <input type="text" id="ownerName" placeholder="Tyler Smith" required autocomplete="name">
+        </div>
+        <div class="field">
+          <label>Work Email</label>
+          <input type="email" id="email" placeholder="tyler@company.com" required autocomplete="email">
+        </div>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="8+ characters" required minlength="8" autocomplete="new-password">
+      </div>
+      <button type="submit" class="btn" id="submitBtn">Create Free Account</button>
+    </form>
+
+    <div class="signin-link">
+      Already have an account? <a href="/">Sign in</a>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('signupForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const err = document.getElementById('errorMsg');
+      err.style.display = 'none';
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Creating account…';
+
+      try {
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          credentials: 'include',
+          body: JSON.stringify({
+            company_name: document.getElementById('companyName').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+            owner_name: document.getElementById('ownerName').value.trim(),
+            business_type: document.getElementById('businessType').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          err.textContent = data.error || 'Signup failed. Please try again.';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.innerHTML = 'Create Free Account';
+          return;
+        }
+        // Success — redirect to app (session cookie is set)
+        btn.innerHTML = '✓ Account created! Redirecting…';
+        window.location.href = '/';
+      } catch(e) {
+        err.textContent = 'Network error. Please try again.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = 'Create Free Account';
+      }
+    });
+  </script>
+</body>
+</html>`)
+})
+
 // ── /recover — Standalone lead-recovery page ──────────────────────────────
 // Tyler can share this URL with Jen: https://groundwork-crm.com/recover
 // Jen opens it on her device → her localStorage leads are pushed to D1
@@ -4132,7 +4659,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p46">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p47">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -4553,17 +5080,18 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711p46"></script>
+<script src="/static/gw-icons.js?v=20260711p47"></script>
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260710r1"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p46"></script>
-<script src="/static/estimates.js?v=20260711p46"></script>
+<script src="/static/app_premium.js?v=20260711p47"></script>
+<script src="/static/estimates.js?v=20260711p47"></script>
+<script src="/static/invoices.js?v=20260711p47"></script>
+<script src="/static/csv_import.js?v=20260711p47"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
-<script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
 <script src="/static/time_tracker.js?v=20260630tt3"></script>
