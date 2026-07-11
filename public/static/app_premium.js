@@ -12899,10 +12899,10 @@ async function _sbLoadData() {
 
 function _sbGetWeekDays(offset) {
   const today = new Date();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay()+6)%7) + offset*7);
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - today.getDay() + offset*7); // snap to Sunday
   return Array.from({length:7}, (_,i) => {
-    const d = new Date(monday); d.setDate(monday.getDate()+i); return d;
+    const d = new Date(sunday); d.setDate(sunday.getDate()+i); return d;
   });
 }
 
@@ -13007,7 +13007,7 @@ function _sbRender() {
   if (sb.viewMode === 'week') {
     const days = _sbGetWeekDays(sb.weekOffset);
     const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    headerLabel = `${days[1].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[5].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+    headerLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
 
     if (sb.crewLanes && allCrews.length) {
       // ── Crew-Lane week view ──────────────────────────────────────────────────
