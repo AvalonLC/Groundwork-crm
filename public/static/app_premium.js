@@ -617,15 +617,32 @@ const _gwWsNameToId = {
 // Render a flat tab config into the sidebar panel.
 // sub:true items are treated identically to regular items — everything is flat.
 // Dividers are ignored. No chevrons, no accordion groups.
+// ── Mobile tab allow-lists — only these tabs show in the side-nav on phones ──
+// Everything else still works if navigated to directly; it just won't clutter
+// the mobile nav. Keep lists small: only what you'd realistically use in the field.
+const _GW_MOBILE_TABS = {
+  Dashboard:   ['today','fieldDashboard'],
+  Sales:       ['pipeline','lead','clients','estimates'],
+  Financial:   ['financialHub','invoices','gwReviews','gwStripe'],
+  Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker',
+                 'assetList','inventoryList','toolsConsumables','maintenanceQueue'],
+  Learning:    ['academy'],
+  Admin:       ['settings','userManagement'],
+};
+
 function _gwSetHeader(wsName, tabsConfig, activeTabId) {
   const wsId = _gwWsNameToId[wsName] || null;
   if (!wsId) return;
   const panel = document.getElementById('gw-subtabs-' + wsId);
   if (!panel) return;
 
+  const isMob    = window.innerWidth <= 768;
+  const allowed  = isMob ? (_GW_MOBILE_TABS[wsName] || null) : null;
+
   let html = '';
   tabsConfig.forEach(t => {
     if (t.divider) return;
+    if (allowed && !allowed.includes(t.id)) return; // hide on mobile
     const activeClass = t.id === activeTabId ? ' nav-subtab--active' : '';
     html += `<button class="nav-subtab${activeClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
   });
@@ -1671,13 +1688,35 @@ function _gwTodayRenderMobile(opts) {
       </div>
     </div>`;
 
-  // ── Financial Pulse — always attempt on mobile; show if data available ──
-  // On mobile the logged-in user is almost always the owner/admin.
-  // We call the snap function directly here rather than relying on the
-  // showFin flag so that role detection edge-cases (e.g. role='owner')
-  // don't silently suppress the card.
-  const _mobileFinSnap = finSnap || (typeof _gwTodayFinanceSnap === 'function' ? _gwTodayFinanceSnap() : '');
-  const finHtml = _mobileFinSnap ? `<div class="gwtd-section">${_mobileFinSnap}</div>` : '';
+  // ── Financial Pulse — always show on mobile (role-gated at render level) ──
+  // Always attempt to render regardless of showFin flag; role 'admin','owner',
+  // 'office_manager' all qualify. This prevents silent suppression from role-
+  // detection timing issues. We generate the snap fresh here if finSnap is
+  // empty for any reason.
+  let _mobileFinSnap = finSnap;
+  if (!_mobileFinSnap && typeof _gwTodayFinanceSnap === 'function') {
+    _mobileFinSnap = _gwTodayFinanceSnap();
+  }
+  // Show financial pulse to admin/owner/OM. If snap still empty, show a
+  // minimal placeholder so the section isn't silently missing.
+  const _showFinMobile = isAdmin || isOM || (rep && rep.role === 'owner');
+  let finHtml = '';
+  if (_showFinMobile) {
+    if (_mobileFinSnap) {
+      finHtml = `<div class="gwtd-section">${_mobileFinSnap}</div>`;
+    } else {
+      // Snap failed — render a fallback card so we can see it's trying
+      finHtml = `<div class="gwtd-section">
+        <div class="gw-today-fin-card" style="opacity:.6">
+          <div class="gw-today-fin-head">
+            <span class="gw-today-fin-title">Financial Pulse</span>
+            <button class="gw-today-fin-link" onclick="show('financialReports')">Full View</button>
+          </div>
+          <div style="padding:12px 0;color:#9CA3AF;font-size:13px">Loading financial data…</div>
+        </div>
+      </div>`;
+    }
+  }
 
   // ── Tasks section ───────────────────────────────────────────────────────
   const tasksHtml = taskWorkspace ? `<div class="gwtd-section">${taskWorkspace}</div>` : '';
@@ -2111,9 +2150,43 @@ function pipeline(selectedId){
 
     ${statCards()}
 
-    <div class="kanban mt">
-      ${grouped.map(g=>`<section class="kanban-col"><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
-    </div>
+    ${window.innerWidth <= 768
+      ? /* ── Mobile: flat sorted list grouped by status ── */ `
+        <div class="gw-pipe-mobile">
+          ${grouped.filter(g=>g.items.length).length === 0
+            ? `<div class="gw-pipe-empty">No leads match your filters.</div>`
+            : grouped.filter(g=>g.items.length).map(g=>`
+              <div class="gw-pipe-group">
+                <div class="gw-pipe-group-head">
+                  <span class="gw-pipe-group-label">${escapeHtml(g.status)}</span>
+                  <span class="gw-pipe-group-count">${g.items.length}</span>
+                </div>
+                ${g.items.map(o => {
+                  const _t = todayISO();
+                  const overdue = o.nextFollowUp && o.nextFollowUp < _t && !['Sold / Activation','Closed Lost'].includes(o.status);
+                  const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : 999;
+                  const stale = daysSince >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
+                  const repObj = (window.REPS||[]).find(r=>r.id===o.repId);
+                  return `<div class="gw-pipe-card ${overdue?'gw-pipe-card--overdue':stale?'gw-pipe-card--stale':''}" onclick="show('pipeline','${o.id}')">
+                    <div class="gw-pipe-card-top">
+                      <span class="gw-pipe-card-name">${escapeHtml(o.client||'Unnamed Lead')}</span>
+                      ${overdue ? `<span class="gw-pipe-badge gw-pipe-badge--overdue">OVERDUE</span>` : stale ? `<span class="gw-pipe-badge gw-pipe-badge--stale">${daysSince}d</span>` : ''}
+                    </div>
+                    <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
+                    <div class="gw-pipe-card-bottom">
+                      ${o.jobValue ? `<span class="gw-pipe-card-val">${money(Number(o.jobValue))}</span>` : ''}
+                      ${o.nextFollowUp ? `<span class="gw-pipe-card-date">📅 ${prettyDate(o.nextFollowUp)}</span>` : ''}
+                      ${repObj ? `<span class="gw-pipe-card-rep" style="color:${repObj.color||'#4D8A86'}">${escapeHtml(repObj.name.split(' ')[0])}</span>` : ''}
+                    </div>
+                  </div>`;
+                }).join('')}
+              </div>`).join('')}
+        </div>`
+      : /* ── Desktop: kanban ── */ `
+        <div class="kanban mt">
+          ${grouped.map(g=>`<section class="kanban-col"><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+        </div>`
+    }
   `;
 }
 
@@ -2548,26 +2621,54 @@ function clients(selectedId) {
     </div>
     ${activeFilterBar}
 
-    <div class="cl-table-wrap card" style="padding:0;overflow:hidden">
-      <table class="cl-table">
-        <thead>
-          <tr>
-            <th style="width:26%">Client</th>
-            <th style="width:11%">Type</th>
-            <th style="width:9%">Status</th>
-            <th style="width:22%">Address</th>
-            <th style="width:20%">Contact</th>
-            <th style="width:8%">Tags</th>
-            <th style="width:4%;text-align:center" title="Linked pipeline opportunities">Opps</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-
-    <div style="margin-top:10px;font-size:11px;color:#6F7E6A;text-align:right">
-      ${filtered.length} client${filtered.length===1?'':'s'} shown
-    </div>
+    ${window.innerWidth <= 768
+      ? /* ── Mobile: card list ── */ `
+        <div class="gw-cl-mobile">
+          ${filtered.length === 0
+            ? `<div class="gw-pipe-empty">${q||typeFilter!=='all'||statusFilter!=='all' ? 'No clients match your filters.' : 'No clients yet — add one to get started.'}</div>`
+            : filtered.map(c => {
+                const addr = [c.street, c.city].filter(Boolean).join(', ');
+                const phone = c.phone || c.mobile || '';
+                const linkedOpps = state.opportunities.filter(o=>o.clientId===c.id||(o.client||'').toLowerCase()===(c.name||'').toLowerCase()).length;
+                return `<div class="gw-cl-card" onclick="show('clients','${c.id}')">
+                  <div class="gw-cl-card-top">
+                    <span class="gw-cl-avatar">${escapeHtml((c.name||'?')[0].toUpperCase())}</span>
+                    <div class="gw-cl-card-info">
+                      <div class="gw-cl-card-name">${escapeHtml(c.name)}</div>
+                      ${addr ? `<div class="gw-cl-card-addr">${escapeHtml(addr)}</div>` : ''}
+                    </div>
+                    ${linkedOpps ? `<span class="gw-cl-opp-pill">${linkedOpps} opp${linkedOpps>1?'s':''}</span>` : ''}
+                  </div>
+                  <div class="gw-cl-card-bottom">
+                    ${clientTypeBadge(c.type)}
+                    ${phone ? `<a class="gw-cl-phone" href="tel:${escapeHtml(phone)}" onclick="event.stopPropagation()">${escapeHtml(phone)}</a>` : ''}
+                    ${c.email ? `<a class="gw-cl-email" href="mailto:${escapeHtml(c.email)}" onclick="event.stopPropagation()">${escapeHtml(c.email)}</a>` : ''}
+                  </div>
+                </div>`;
+              }).join('')}
+          <div class="gw-cl-count">${filtered.length} client${filtered.length===1?'':'s'}</div>
+        </div>`
+      : /* ── Desktop: table ── */ `
+        <div class="cl-table-wrap card" style="padding:0;overflow:hidden">
+          <table class="cl-table">
+            <thead>
+              <tr>
+                <th style="width:26%">Client</th>
+                <th style="width:11%">Type</th>
+                <th style="width:9%">Status</th>
+                <th style="width:22%">Address</th>
+                <th style="width:20%">Contact</th>
+                <th style="width:8%">Tags</th>
+                <th style="width:4%;text-align:center" title="Linked pipeline opportunities">Opps</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:#6F7E6A;text-align:right">
+          ${filtered.length} client${filtered.length===1?'':'s'} shown
+        </div>`
+    }
   `;
 
   // Auto-focus search
@@ -13157,7 +13258,22 @@ function financialHub(){
       </div>
     </div>
 
-    <!-- Panels -->
+    <!-- Panels — full tables on desktop, compact cards on mobile -->
+    ${window.innerWidth <= 768 ? `
+    <div class="fhub-mobile-panels">
+      <div class="fhub-mobile-section-head">Recent Closed Deals <button class="fhub-mobile-see-all" onclick="show('pipeline')">See all</button></div>
+      ${recentSold.length ? recentSold.map(o=>`
+        <div class="fhub-mobile-row" onclick="show('pipeline','${o.id}')">
+          <span class="fhub-mobile-row-name">${escapeHtml(o.client||'—')}</span>
+          <span class="fhub-mobile-row-val" style="color:var(--gw-pine,#4D8A86)">${_p5Money(o.jobValue)}</span>
+        </div>`).join('') : `<div class="fhub-mobile-empty">No closed deals yet</div>`}
+      <div class="fhub-mobile-section-head" style="margin-top:14px">Open Estimates <button class="fhub-mobile-see-all" onclick="show('estimates')">See all</button></div>
+      ${openEstimates.length ? openEstimates.map(o=>`
+        <div class="fhub-mobile-row" onclick="show('estimates','${o.id}')">
+          <span class="fhub-mobile-row-name">${escapeHtml(o.client||'—')}</span>
+          <span class="fhub-mobile-row-val">${_p5Money(o.jobValue)}</span>
+        </div>`).join('') : `<div class="fhub-mobile-empty">No open estimates</div>`}
+    </div>` : `
     <div class="fhub-section-grid">
       <div class="fhub-panel">
         <div class="fhub-panel-head">
@@ -13171,7 +13287,6 @@ function financialHub(){
           </table>
         </div>
       </div>
-
       <div class="fhub-panel">
         <div class="fhub-panel-head">
           <div class="fhub-panel-title">Open Estimates</div>
@@ -13184,9 +13299,10 @@ function financialHub(){
           </table>
         </div>
       </div>
-    </div>
+    </div>`}
 
-    <!-- Outstanding Balances -->
+    <!-- Outstanding Balances — hidden on mobile, replaced by quick link cards -->
+    ${window.innerWidth > 768 ? `
     <div class="fhub-panel" style="margin-bottom:24px">
       <div class="fhub-panel-head">
         <div class="fhub-panel-title">Outstanding — Needs Attention</div>
@@ -13207,7 +13323,12 @@ function financialHub(){
           </tbody>
         </table>
       </div>
-    </div>
+    </div>` : `
+    <div class="fhub-mobile-links">
+      <button class="fhub-mobile-link-btn" onclick="show('pipeline')">View Full Pipeline →</button>
+      <button class="fhub-mobile-link-btn" onclick="accountStatement()">Account Statements →</button>
+      <button class="fhub-mobile-link-btn" onclick="show('invoices')">Invoices →</button>
+    </div>`}
   </div>`;
 }
 window.financialHub = financialHub;

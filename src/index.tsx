@@ -16,7 +16,7 @@ app.use('/static/*', serveStatic({ root: './public' }))
 app.get('/sw.js', (c) => {
   // Cache name includes build version — changing this string triggers a new SW install,
   // which in turn causes all open tabs to auto-reload via the postMessage below.
-  const BUILD = '20260711b005';
+  const BUILD = '20260711b006';
   const sw = `const CACHE='groundwork-crm-${BUILD}';
 // Install: skip waiting so the new SW activates immediately
 self.addEventListener('install', e => {
@@ -4900,7 +4900,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b005">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b006">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -4924,8 +4924,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/static/platform_core.js?v=20260711b005"></script>
-  <script src="/static/client_portal.js?v=20260711b005"></script>
+  <script src="/static/platform_core.js?v=20260711b006"></script>
+  <script src="/static/client_portal.js?v=20260711b006"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5536,9 +5536,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b005">
-  <link rel="stylesheet" href="/static/styles.css?v=20260711b005">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b005">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b006">
+  <link rel="stylesheet" href="/static/styles.css?v=20260711b006">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b006">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6079,33 +6079,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711b005"></script>
-<script src="/static/db.js?v=20260711b005"></script>
-<script src="/static/data.js?v=20260711b005"></script>
-<script src="/static/reps.js?v=20260711b005"></script>
-<script src="/static/record-page.js?v=20260711b005"></script>
-<script src="/static/academy.js?v=20260711b005"></script>
-<script src="/static/task_engine.js?v=20260711b005"></script>
-<script src="/static/app_premium.js?v=20260711b005"></script>
-<script src="/static/estimates.js?v=20260711b005"></script>
-<script src="/static/invoices.js?v=20260711b005"></script>
-<script src="/static/csv_import.js?v=20260711b005"></script>
-<script src="/static/onboarding.js?v=20260711b005"></script>
-<script src="/static/recurring_plans.js?v=20260711b005"></script>
-<script src="/static/reviews.js?v=20260711b005"></script>
-<script src="/static/stripe.js?v=20260711b005"></script>
-<script src="/static/email.js?v=20260711b005"></script>
-<script src="/static/notifications.js?v=20260711b005"></script>
-<script src="/static/integrations.js?v=20260711b005"></script>
-<script src="/static/user_management.js?v=20260711b005"></script>
-<script src="/static/platform_admin.js?v=20260711b005"></script>
-<script src="/static/time_tracker.js?v=20260711b005"></script>
-<script src="/static/field_workday.js?v=20260711b005"></script>
-<script src="/static/platform_core.js?v=20260711b005"></script>
-<script src="/static/approval_engine.js?v=20260711b005"></script>
-<script src="/static/automation_engine.js?v=20260711b005"></script>
-<script src="/static/client_portal.js?v=20260711b005"></script>
-<script src="/static/field_mode.js?v=20260711b005"></script>
+<script src="/static/gw-icons.js?v=20260711b006"></script>
+<script src="/static/db.js?v=20260711b006"></script>
+<script src="/static/data.js?v=20260711b006"></script>
+<script src="/static/reps.js?v=20260711b006"></script>
+<script src="/static/record-page.js?v=20260711b006"></script>
+<script src="/static/academy.js?v=20260711b006"></script>
+<script src="/static/task_engine.js?v=20260711b006"></script>
+<script src="/static/app_premium.js?v=20260711b006"></script>
+<script src="/static/estimates.js?v=20260711b006"></script>
+<script src="/static/invoices.js?v=20260711b006"></script>
+<script src="/static/csv_import.js?v=20260711b006"></script>
+<script src="/static/onboarding.js?v=20260711b006"></script>
+<script src="/static/recurring_plans.js?v=20260711b006"></script>
+<script src="/static/reviews.js?v=20260711b006"></script>
+<script src="/static/stripe.js?v=20260711b006"></script>
+<script src="/static/email.js?v=20260711b006"></script>
+<script src="/static/notifications.js?v=20260711b006"></script>
+<script src="/static/integrations.js?v=20260711b006"></script>
+<script src="/static/user_management.js?v=20260711b006"></script>
+<script src="/static/platform_admin.js?v=20260711b006"></script>
+<script src="/static/time_tracker.js?v=20260711b006"></script>
+<script src="/static/field_workday.js?v=20260711b006"></script>
+<script src="/static/platform_core.js?v=20260711b006"></script>
+<script src="/static/approval_engine.js?v=20260711b006"></script>
+<script src="/static/automation_engine.js?v=20260711b006"></script>
+<script src="/static/client_portal.js?v=20260711b006"></script>
+<script src="/static/field_mode.js?v=20260711b006"></script>
 <script>
   // ── Service Worker: registration + auto-update ───────────────────────────
   if ('serviceWorker' in navigator) {

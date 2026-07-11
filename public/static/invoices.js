@@ -133,6 +133,32 @@ async function _invLoadList() {
     return;
   }
 
+  // ── Mobile card list (≤ 768px) ──────────────────────────────────────────
+  if (window.innerWidth <= 768) {
+    body.innerHTML = `<div class="inv-mobile-list">
+      ${invoices.map(inv => {
+        const isOverdue = inv.due_date && new Date(inv.due_date+'T00:00:00') < new Date() && ['sent','viewed','partial'].includes(inv.status);
+        return `<div class="inv-mobile-card${isOverdue ? ' inv-mobile-card--overdue' : ''}" onclick="_invOpenDetail('${inv.id}')">
+          <div class="inv-mc-top">
+            <span class="inv-mc-num">${inv.invoice_number}</span>
+            <span class="inv-mc-badge">${_invBadge(inv.status)}</span>
+          </div>
+          <div class="inv-mc-client">${inv.client_name || '<span class="inv-muted">No client</span>'}</div>
+          ${inv.title ? `<div class="inv-mc-title">${inv.title}</div>` : ''}
+          <div class="inv-mc-bottom">
+            <span class="inv-mc-total">${_invFmt(inv.total)}</span>
+            ${inv.balance_due > 0
+              ? `<span class="inv-mc-bal inv-mc-bal--due">Bal: ${_invFmt(inv.balance_due)}</span>`
+              : `<span class="inv-mc-bal inv-mc-bal--paid">Paid</span>`}
+            <span class="inv-mc-date">${isOverdue ? `<span class="inv-overdue-text">Due ${_invDate(inv.due_date)}</span>` : _invAgo(inv.created_at)}</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+    return;
+  }
+
+  // ── Desktop table ────────────────────────────────────────────────────────
   body.innerHTML = `<div class="inv-table-wrap">
     <table class="inv-table">
       <thead>
@@ -1001,6 +1027,79 @@ function _invCreateOverlay(id) {
   .inv-detail-grid { grid-template-columns: 1fr; }
   .inv-li-row { grid-template-columns: 1fr 55px 75px 65px 28px; }
   .inv-table-wrap { overflow-x: auto; }
+}
+
+/* ── Mobile invoice card list ─────────────────────────────────────────────── */
+.inv-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 80px;
+}
+.inv-mobile-card {
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .15s;
+}
+.inv-mobile-card:active { background: #F9FAFB; }
+.inv-mobile-card--overdue { border-left: 3px solid #EF4444; }
+.inv-mc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.inv-mc-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6B7280;
+  letter-spacing: .03em;
+}
+.inv-mc-client {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inv-mc-title {
+  font-size: 12px;
+  color: #6B7280;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inv-mc-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.inv-mc-total {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  flex: 1;
+}
+.inv-mc-bal {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.inv-mc-bal--due { background: #FEF2F2; color: #DC2626; }
+.inv-mc-bal--paid { background: #ECFDF5; color: #065F46; }
+.inv-mc-date {
+  font-size: 11px;
+  color: #9CA3AF;
 }
 `;
   document.head.appendChild(style);

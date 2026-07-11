@@ -11845,10 +11845,16 @@ h1.pl-title,
     gap: 16px !important;
   }
 
-  /* ── rp-cols: always stack on mobile ──────────────────────────────────── */
-  .rp-cols {
+  /* ── rp-cols / rp-columns: always stack on mobile ─────────────────────── */
+  .rp-cols,
+  .rp-columns {
     flex-direction: column !important;
     gap: 12px !important;
+  }
+  .rp-col-main,
+  .rp-col-side {
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
   /* ── rp-actions / rp-footer-actions: wrap ─────────────────────────────── */
@@ -12671,3 +12677,390 @@ h1.pl-title,
 }
 
 /* ── end mobile My Day ── */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE PIPELINE  — gw-pipe-* classes
+   Replaces kanban with a grouped vertical list on screens ≤ 768px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.gw-pipe-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 0 80px;
+}
+
+.gw-pipe-group {
+  margin-bottom: 16px;
+}
+
+.gw-pipe-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #F3F4F6;
+  border-radius: 10px 10px 0 0;
+  border-bottom: 1.5px solid #E5E7EB;
+}
+
+.gw-pipe-group-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.gw-pipe-group-count {
+  background: #fff;
+  border: 1.5px solid #D1D5DB;
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6B7280;
+}
+
+.gw-pipe-card {
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-top: none;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.gw-pipe-card:last-child {
+  border-radius: 0 0 10px 10px;
+}
+.gw-pipe-card:active {
+  background: #F9FAFB;
+}
+
+.gw-pipe-card--overdue {
+  border-left: 3px solid #EF4444;
+}
+.gw-pipe-card--stale {
+  border-left: 3px solid #F59E0B;
+}
+
+.gw-pipe-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.gw-pipe-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-pipe-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gw-pipe-badge--overdue {
+  background: #FEF2F2;
+  color: #DC2626;
+}
+.gw-pipe-badge--stale {
+  background: #FFFBEB;
+  color: #B45309;
+}
+
+.gw-pipe-card-project {
+  font-size: 12px;
+  color: #6B7280;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-pipe-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gw-pipe-card-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gw-pine, #4D8A86);
+  flex: 1;
+}
+
+.gw-pipe-card-date {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+
+.gw-pipe-card-rep {
+  font-size: 11px;
+  color: #9CA3AF;
+  background: #F3F4F6;
+  border-radius: 20px;
+  padding: 2px 7px;
+}
+
+.gw-pipe-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #9CA3AF;
+  font-size: 14px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE CLIENTS  — gw-cl-* classes
+   Replaces 7-column table with a vertical card list on screens ≤ 768px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.gw-cl-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 0 80px;
+}
+
+.gw-cl-card {
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.gw-cl-card:active {
+  background: #F9FAFB;
+}
+
+.gw-cl-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.gw-cl-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--gw-pine, #4D8A86);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.gw-cl-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.gw-cl-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-cl-card-addr {
+  font-size: 12px;
+  color: #6B7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-cl-opp-pill {
+  background: #EEF7F6;
+  color: var(--gw-pine, #4D8A86);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.gw-cl-count {
+  display: inline-block;
+  background: #EEF7F6;
+  color: var(--gw-pine, #4D8A86);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gw-cl-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gw-cl-phone,
+.gw-cl-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6B7280;
+  background: #F3F4F6;
+  border-radius: 20px;
+  padding: 3px 9px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE FINANCIAL HUB  — fhub-mobile-* classes
+   Compact rows + quick-link buttons on screens ≤ 768px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* KPI row: 2-up on mobile (was 4 across) */
+@media (max-width: 768px) {
+  .fhub-kpi-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+  .fhub-quick-nav {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+}
+
+.fhub-mobile-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 16px;
+}
+
+.fhub-mobile-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.fhub-mobile-see-all {
+  background: none;
+  border: none;
+  color: var(--gw-pine, #4D8A86);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fhub-mobile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .15s;
+}
+.fhub-mobile-row:active {
+  background: #F9FAFB;
+}
+
+.fhub-mobile-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 10px;
+}
+
+.fhub-mobile-row-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gw-pine, #4D8A86);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fhub-mobile-empty {
+  text-align: center;
+  padding: 18px 14px;
+  color: #9CA3AF;
+  font-size: 13px;
+  background: #F9FAFB;
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+
+.fhub-mobile-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fhub-mobile-link-btn {
+  display: block;
+  width: 100%;
+  padding: 13px 18px;
+  background: #fff;
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .15s, border-color .15s;
+}
+.fhub-mobile-link-btn:active {
+  background: #F3F4F6;
+  border-color: var(--gw-pine, #4D8A86);
+}
+
+/* ── end mobile pipeline / clients / financial hub ── */
