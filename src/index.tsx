@@ -14,11 +14,43 @@ app.use('/api/*', cors())
 // ── Static files ──────────────────────────────────────────────────────────────
 app.use('/static/*', serveStatic({ root: './public' }))
 app.get('/sw.js', (c) => {
-  const sw = `const CACHE='groundwork-crm-v1';
-self.addEventListener('install',e=>self.skipWaiting());
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
-self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
-  return c.text(sw, 200, { 'Content-Type': 'application/javascript' });
+  // Cache name includes build version — changing this string triggers a new SW install,
+  // which in turn causes all open tabs to auto-reload via the postMessage below.
+  const BUILD = '20260711p50h';
+  const sw = `const CACHE='groundwork-crm-${BUILD}';
+// Install: skip waiting so the new SW activates immediately
+self.addEventListener('install', e => {
+  e.waitUntil(self.skipWaiting());
+});
+// Activate: delete ALL old caches, claim all clients, then tell them to reload
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .then(clients => clients.forEach(client => client.postMessage({ type: 'GW_SW_UPDATED', version: '${BUILD}' })))
+  );
+});
+// Fetch: network-first, fall back to cache for offline resilience
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    fetch(e.request)
+      .then(res => {
+        if (res.ok && e.request.url.startsWith(self.location.origin)) {
+          const clone = res.clone();
+          caches.open(CACHE).then(cache => cache.put(e.request, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request))
+  );
+});`;
+  return c.text(sw, 200, {
+    'Content-Type': 'application/javascript',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+  });
 })
 app.get('/site.webmanifest', (c) => {
   const manifest = {
@@ -4868,7 +4900,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p50g">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p50h">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5504,7 +5536,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p50g">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p50h">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -6054,7 +6086,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p50g"></script>
+<script src="/static/app_premium.js?v=20260711p50h"></script>
 <script src="/static/estimates.js?v=20260711p50"></script>
 <script src="/static/invoices.js?v=20260711p50"></script>
 <script src="/static/csv_import.js?v=20260711p50"></script>
@@ -6063,7 +6095,7 @@ function getHtml(): string {
 <script src="/static/reviews.js?v=20260711p50"></script>
 <script src="/static/stripe.js?v=20260711p50"></script>
 <script src="/static/email.js?v=20260711p50"></script>
-<script src="/static/notifications.js?v=20260711p50g"></script>
+<script src="/static/notifications.js?v=20260711p50h"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
@@ -6075,9 +6107,30 @@ function getHtml(): string {
 <script src="/static/client_portal.js?v=20260707gw8p1"></script>
 <script src="/static/field_mode.js?v=20260710gw8p2"></script>
 <script>
-  // Service Worker registration
+  // ── Service Worker: registration + auto-update ───────────────────────────
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then(reg => {
+        // Poll for updates every 60 seconds while the app is open
+        setInterval(() => reg.update(), 60_000);
+      })
+      .catch(() => {});
+
+    // When the active SW posts GW_SW_UPDATED, silently reload to apply the new build
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data && e.data.type === 'GW_SW_UPDATED') {
+        // Small delay so any in-flight API requests finish cleanly
+        setTimeout(() => window.location.reload(), 1500);
+      }
+    });
+
+    // Handle the case where a NEW SW is waiting (page was already open when deploy happened).
+    // controllerchange fires when the new SW takes control → reload.
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (window._gwSwReloading) return;
+      window._gwSwReloading = true;
+      window.location.reload();
+    });
   }
   
   // PWA install prompt
