@@ -18511,511 +18511,557 @@ function systemConfig() {
   if (!el) return;
 
   let cfg = _scLoad() || _scDefault();
-  // Load branding from D1 once — only re-render if we don't have data yet
-  const _scHasFreshBrand = window._scBrandLoaded === true;
+  // Fetch branding once — re-render only on first visit
   window._scBrand = window._scBrand || { brand_color:'#2D7A55', brand_accent:'#4D8A86', tagline:'', business_type:'home_services', crew_count:1, division_count:1, address_line1:'', address_city:'', address_state:'', address_zip:'', license_number:'', year_founded:'', terminology:{} };
-  if (!_scHasFreshBrand) {
+  if (!window._scBrandLoaded) {
     fetch('/api/company/branding', { credentials:'include' })
-      .then(r=>r.ok?r.json():null)
-      .then(data=>{ if(data){ window._scBrand=data; window._scBrandLoaded=true; systemConfig(); } })
-      .catch(()=>{ window._scBrandLoaded=true; });
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) { window._scBrand = data; window._scBrandLoaded = true; systemConfig(); } })
+      .catch(() => { window._scBrandLoaded = true; });
   }
 
+  const _b = window._scBrand;
   const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
   const DAY_LABELS = { mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday', sun:'Sunday' };
-  const TIMEZONES = [
-    'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
-    'America/Anchorage','America/Honolulu','America/Phoenix','Pacific/Honolulu'
-  ];
+  const TIMEZONES = ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Anchorage','America/Honolulu','America/Phoenix','Pacific/Honolulu'];
+
+  // ── Scoped CSS injected once ───────────────────────────────────────────────
+  if (!document.getElementById('sc-styles')) {
+    const s = document.createElement('style');
+    s.id = 'sc-styles';
+    s.textContent = `
+      .sc-page { max-width: 860px; margin: 0 auto; padding: 0 0 40px; }
+      .sc-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+      .sc-page-title { font-size: 22px; font-weight: 800; color: var(--gw-ink); letter-spacing: -.03em; margin: 0 0 4px; }
+      .sc-page-sub   { font-size: 13px; color: var(--gw-muted); margin: 0; }
+      .sc-save-btn   { display: inline-flex; align-items: center; gap: 7px; background: #2D7A55; color: #fff;
+                       border: none; border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700;
+                       cursor: pointer; white-space: nowrap; transition: background .15s; flex-shrink: 0; }
+      .sc-save-btn:hover { background: #256647; }
+      .sc-save-btn.secondary { background: var(--gw-surface); color: #2D7A55; border: 1.5px solid #2D7A55; }
+      .sc-save-btn.secondary:hover { background: #E8F3ED; }
+      .sc-section { background: var(--gw-surface); border: 1px solid var(--gw-line); border-radius: 16px;
+                    overflow: hidden; margin-bottom: 16px; box-shadow: var(--gw-shadow-xs); }
+      .sc-section-head { display: flex; align-items: center; gap: 10px; padding: 14px 20px;
+                         border-bottom: 1px solid var(--gw-line); background: var(--gw-surface-2); }
+      .sc-section-icon { width: 32px; height: 32px; border-radius: 8px; background: #E8F3ED;
+                         display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+      .sc-section-title { font-size: 14px; font-weight: 700; color: var(--gw-ink); }
+      .sc-section-badge { margin-left: auto; font-size: 11px; font-weight: 700; padding: 3px 9px;
+                          border-radius: 999px; background: #E8F3ED; color: #2D7A55; }
+      .sc-section-hint  { margin-left: auto; font-size: 12px; color: var(--gw-muted); }
+      .sc-body { padding: 20px; }
+      .sc-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .sc-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+      @media (max-width: 640px) { .sc-grid-2, .sc-grid-3 { grid-template-columns: 1fr; } }
+      .sc-full { grid-column: 1 / -1; }
+      .sc-field { display: flex; flex-direction: column; gap: 5px; }
+      .sc-label { font-size: 12px; font-weight: 600; color: var(--gw-muted); text-transform: uppercase; letter-spacing: .05em; }
+      .sc-input { width: 100%; border: 1.5px solid var(--gw-line); border-radius: 10px; padding: 9px 12px;
+                  font-size: 14px; color: var(--gw-ink); background: var(--gw-surface); outline: none;
+                  transition: border-color .15s, box-shadow .15s; box-sizing: border-box; }
+      .sc-input:focus { border-color: #2D7A55; box-shadow: 0 0 0 3px rgba(45,122,85,.12); }
+      .sc-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235A6B79' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+                   background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+      .sc-textarea { resize: vertical; min-height: 80px; }
+      .sc-day-row { display: flex; align-items: center; gap: 14px; padding: 10px 0;
+                    border-bottom: 1px solid var(--gw-line); }
+      .sc-day-row:last-child { border-bottom: none; }
+      .sc-day-toggle { display: flex; align-items: center; gap: 8px; width: 120px; flex-shrink: 0; cursor: pointer; }
+      .sc-day-toggle input[type=checkbox] { width: 16px; height: 16px; accent-color: #2D7A55; cursor: pointer; }
+      .sc-day-name { font-size: 13px; font-weight: 600; color: var(--gw-ink); }
+      .sc-day-name.closed { color: var(--gw-muted); font-weight: 400; }
+      .sc-time-wrap { display: flex; align-items: center; gap: 8px; }
+      .sc-time-input { border: 1.5px solid var(--gw-line); border-radius: 8px; padding: 7px 10px;
+                       font-size: 13px; color: var(--gw-ink); background: var(--gw-surface); outline: none;
+                       transition: border-color .15s; }
+      .sc-time-input:focus { border-color: #2D7A55; }
+      .sc-time-sep { font-size: 12px; color: var(--gw-muted); }
+      .sc-time-wrap.disabled { opacity: .38; pointer-events: none; }
+      .sc-notif-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      @media (max-width: 560px) { .sc-notif-grid { grid-template-columns: 1fr; } }
+      .sc-notif-card { display: flex; align-items: flex-start; gap: 11px; border: 1.5px solid var(--gw-line);
+                       border-radius: 10px; padding: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
+      .sc-notif-card:hover { background: var(--gw-surface-2); border-color: #2D7A55; }
+      .sc-notif-card input { width: 16px; height: 16px; accent-color: #2D7A55; margin-top: 1px; flex-shrink: 0; cursor: pointer; }
+      .sc-notif-label { font-size: 13px; font-weight: 600; color: var(--gw-ink); }
+      .sc-notif-desc  { font-size: 12px; color: var(--gw-muted); margin-top: 2px; line-height: 1.4; }
+      .sc-radio-row { display: flex; gap: 12px; margin-bottom: 14px; }
+      .sc-radio-pill { display: flex; align-items: center; gap: 7px; border: 1.5px solid var(--gw-line);
+                       border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px;
+                       color: var(--gw-ink); font-weight: 600; transition: border-color .15s, background .15s; }
+      .sc-radio-pill input { accent-color: #2D7A55; }
+      .sc-color-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+      .sc-color-swatch { display: flex; align-items: center; gap: 10px; }
+      .sc-color-swatch input[type=color] { width: 42px; height: 42px; border-radius: 10px; border: 2px solid var(--gw-line);
+                                            cursor: pointer; padding: 2px; background: none; }
+      .sc-color-info { }
+      .sc-color-name { font-size: 13px; font-weight: 600; color: var(--gw-ink); }
+      .sc-color-hint { font-size: 11px; color: var(--gw-muted); }
+      .sc-logo-row { display: flex; align-items: flex-start; gap: 20px; }
+      .sc-logo-preview { width: 80px; height: 80px; border-radius: 12px; border: 2px dashed var(--gw-line);
+                         display: flex; align-items: center; justify-content: center; background: var(--gw-surface-2);
+                         overflow: hidden; flex-shrink: 0; }
+      .sc-logo-preview img { width: 100%; height: 100%; object-fit: contain; padding: 8px; box-sizing: border-box; }
+      .sc-footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 16px; border-top: 1px solid var(--gw-line); margin-top: 4px; }
+      .sc-inline-hint { font-size: 12px; color: var(--gw-muted); margin-top: 5px; line-height: 1.5; }
+      .sc-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 640px) { .sc-2col { grid-template-columns: 1fr; } .sc-page-header { flex-direction: column; } }
+    `;
+    document.head.appendChild(s);
+  }
 
   el.innerHTML = `
-  <div class="p-6 max-w-5xl mx-auto space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
+  <div class="sc-page">
+
+    <!-- ── Page header ──────────────────────────────────────────────────────── -->
+    <div class="sc-page-header">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">${gwIcon('settings',22,'#374151')} System Configuration</h1>
-        <p class="text-sm text-gray-500 mt-1">Company-wide settings, hours, service area, notifications, and preferences.</p>
+        <p class="sc-page-title">${gwIcon('settings', 18, '#2D7A55')} System Configuration</p>
+        <p class="sc-page-sub">Company-wide settings, hours, service area, notifications, and preferences.</p>
       </div>
-      <button onclick="_scSaveAll()" class="px-5 py-2 text-white rounded-lg font-semibold text-sm shadow transition" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
+      <button class="sc-save-btn" onclick="_scSaveAll()">${gwIcon('floppy', 14, '#fff')} Save Changes</button>
     </div>
 
-    <!-- Company Info -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('office',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Company Information</h2>
+    <!-- ── Company Information ──────────────────────────────────────────────── -->
+    <div class="sc-section">
+      <div class="sc-section-head">
+        <div class="sc-section-icon">${gwIcon('office', 16, '#2D7A55')}</div>
+        <span class="sc-section-title">Company Information</span>
       </div>
-      <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Company Name</label>
-          <input id="sc-co-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.name)}">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Phone</label>
-          <input id="sc-co-phone" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.phone)}">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Email</label>
-          <input id="sc-co-email" type="email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.email)}">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Website</label>
-          <input id="sc-co-website" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.website)}">
-        </div>
-        <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-gray-500 mb-1">Street Address</label>
-          <input id="sc-co-address" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.address)}">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">City</label>
-          <input id="sc-co-city" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.city)}">
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">State</label>
-            <input id="sc-co-state" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.state)}" maxlength="2">
+      <div class="sc-body">
+        <div class="sc-grid-2">
+          <div class="sc-field">
+            <label class="sc-label">Company Name</label>
+            <input id="sc-co-name" class="sc-input" value="${escapeHtml(cfg.company.name)}" placeholder="Your Company Name">
           </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">ZIP</label>
-            <input id="sc-co-zip" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.zip)}">
+          <div class="sc-field">
+            <label class="sc-label">Phone</label>
+            <input id="sc-co-phone" class="sc-input" value="${escapeHtml(cfg.company.phone)}" placeholder="(555) 000-0000">
+          </div>
+          <div class="sc-field">
+            <label class="sc-label">Email</label>
+            <input id="sc-co-email" type="email" class="sc-input" value="${escapeHtml(cfg.company.email)}" placeholder="info@company.com">
+          </div>
+          <div class="sc-field">
+            <label class="sc-label">Website</label>
+            <input id="sc-co-website" class="sc-input" value="${escapeHtml(cfg.company.website)}" placeholder="https://yoursite.com">
+          </div>
+          <div class="sc-field sc-full">
+            <label class="sc-label">Street Address</label>
+            <input id="sc-co-address" class="sc-input" value="${escapeHtml(cfg.company.address)}" placeholder="123 Main St">
+          </div>
+          <div class="sc-field">
+            <label class="sc-label">City</label>
+            <input id="sc-co-city" class="sc-input" value="${escapeHtml(cfg.company.city)}" placeholder="Richmond">
+          </div>
+          <div class="sc-grid-2" style="gap:10px">
+            <div class="sc-field">
+              <label class="sc-label">State</label>
+              <input id="sc-co-state" class="sc-input" value="${escapeHtml(cfg.company.state)}" maxlength="2" placeholder="VA">
+            </div>
+            <div class="sc-field">
+              <label class="sc-label">ZIP</label>
+              <input id="sc-co-zip" class="sc-input" value="${escapeHtml(cfg.company.zip)}" placeholder="23219">
+            </div>
           </div>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- Business Hours -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('clock',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Business Hours</h2>
-        <span class="ml-auto text-xs text-gray-400">Toggle days on/off, set open/close times</span>
+    <!-- ── Business Hours ───────────────────────────────────────────────────── -->
+    <div class="sc-section">
+      <div class="sc-section-head">
+        <div class="sc-section-icon">${gwIcon('clock', 16, '#2D7A55')}</div>
+        <span class="sc-section-title">Business Hours</span>
+        <span class="sc-section-hint">Toggle days on/off, set open &amp; close times</span>
       </div>
-      <div class="p-6 space-y-2">
+      <div class="sc-body" style="padding-top:8px;padding-bottom:8px">
         ${DAYS.map(d => {
           const h = cfg.hours[d];
-          return `<div class="flex items-center gap-4 py-2 border-b border-gray-100 last:border-0">
-            <label class="flex items-center gap-2 w-32 cursor-pointer">
-              <input type="checkbox" id="sc-h-${d}" ${h.open?'checked':''} class="w-4 h-4 accent-green-600" onchange="_scToggleDay('${d}')">
-              <span class="text-sm font-medium ${h.open?'text-gray-800':'text-gray-400'}" id="sc-hl-${d}">${DAY_LABELS[d]}</span>
+          return `
+          <div class="sc-day-row">
+            <label class="sc-day-toggle">
+              <input type="checkbox" id="sc-h-${d}" ${h.open ? 'checked' : ''} onchange="_scToggleDay('${d}')">
+              <span class="sc-day-name${h.open ? '' : ' closed'}" id="sc-hl-${d}">${DAY_LABELS[d]}</span>
             </label>
-            <div id="sc-ht-${d}" class="${h.open?'':'opacity-30 pointer-events-none'} flex items-center gap-2">
-              <input type="time" id="sc-hs-${d}" value="${h.start}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-              <span class="text-gray-400 text-sm">to</span>
-              <input type="time" id="sc-he-${d}" value="${h.end}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+            <div id="sc-ht-${d}" class="sc-time-wrap${h.open ? '' : ' disabled'}">
+              <input type="time" id="sc-hs-${d}" value="${h.start}" class="sc-time-input">
+              <span class="sc-time-sep">to</span>
+              <input type="time" id="sc-he-${d}" value="${h.end}" class="sc-time-input">
             </div>
+            ${!h.open ? '<span style="font-size:12px;color:var(--gw-muted);margin-left:6px">Closed</span>' : ''}
           </div>`;
         }).join('')}
       </div>
-    </section>
-
-    <!-- Timezone & Service Area -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-          <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('globe',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Timezone</h2>
-        </div>
-        <div class="p-6">
-          <label class="block text-xs font-medium text-gray-500 mb-2">Company Timezone</label>
-          <select id="sc-tz" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
-            ${TIMEZONES.map(tz => `<option value="${tz}" ${cfg.timezone===tz?'selected':''}>${tz.replace('America/','').replace('_',' ')}</option>`).join('')}
-          </select>
-          <p class="text-xs text-gray-400 mt-2">Used for scheduling, reports, and notifications.</p>
-        </div>
-      </section>
-
-      <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-          <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('map-pin',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Service Area</h2>
-        </div>
-        <div class="p-6 space-y-3">
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="sc-sa-type" value="zip" ${cfg.serviceArea.type==='zip'?'checked':''} onchange="_scSAType('zip')" class="accent-green-600">
-              <span class="text-sm">ZIP Codes</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="sc-sa-type" value="radius" ${cfg.serviceArea.type==='radius'?'checked':''} onchange="_scSAType('radius')" class="accent-green-600">
-              <span class="text-sm">Radius</span>
-            </label>
-          </div>
-          <div id="sc-sa-zip" class="${cfg.serviceArea.type==='zip'?'':'hidden'}">
-            <label class="block text-xs font-medium text-gray-500 mb-1">ZIP Codes (comma-separated)</label>
-            <textarea id="sc-sa-zips" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none">${escapeHtml(cfg.serviceArea.zips)}</textarea>
-          </div>
-          <div id="sc-sa-rad" class="${cfg.serviceArea.type==='radius'?'':'hidden'} space-y-2">
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Center ZIP</label>
-              <input id="sc-sa-center" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.serviceArea.centerZip)}">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Radius (miles)</label>
-              <input id="sc-sa-radius" type="number" min="1" max="200" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${cfg.serviceArea.radiusMi}">
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
 
-    <!-- Notification Preferences -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('bell',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Notification Preferences</h2>
-        <span class="ml-auto text-xs text-gray-400">Email alerts sent to company address</span>
+    <!-- ── Timezone & Service Area (side-by-side) ──────────────────────────── -->
+    <div class="sc-2col">
+      <div class="sc-section" style="margin-bottom:0">
+        <div class="sc-section-head">
+          <div class="sc-section-icon">${gwIcon('globe', 16, '#2D7A55')}</div>
+          <span class="sc-section-title">Timezone</span>
+        </div>
+        <div class="sc-body">
+          <div class="sc-field">
+            <label class="sc-label">Company Timezone</label>
+            <select id="sc-tz" class="sc-input sc-select">
+              ${TIMEZONES.map(tz => `<option value="${tz}" ${cfg.timezone === tz ? 'selected' : ''}>${tz.replace('America/', '').replace(/_/g, ' ')}</option>`).join('')}
+            </select>
+          </div>
+          <p class="sc-inline-hint">Used for scheduling, reports, and notifications.</p>
+        </div>
       </div>
-      <div class="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        ${[
-          ['newLead','New Lead Assigned','Notify when a new lead is created or assigned'],
-          ['woAssigned','Work Order Assigned','Notify when a WO is assigned to a crew member'],
-          ['woComplete','Work Order Completed','Notify when a work order is marked complete'],
-          ['paymentReceived','Payment Received','Notify when a payment is recorded'],
-          ['lowInventory','Low Inventory Alert','Notify when an item hits its reorder threshold'],
-          ['dailyDigest','Daily Digest Email','Send a morning summary of open items']
-        ].map(([key,label,desc]) => `
-          <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-            <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key]?'checked':''} class="mt-0.5 w-4 h-4 accent-green-600">
-            <div>
-              <div class="text-sm font-medium text-gray-800">${label}</div>
-              <div class="text-xs text-gray-400">${desc}</div>
-            </div>
-          </label>`).join('')}
-      </div>
-    </section>
 
-    <!-- Data Retention -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('data-store',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Data Retention</h2>
-        <span class="ml-auto text-xs text-gray-400">Days to keep historical records</span>
-      </div>
-      <div class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        ${[
-          ['opps','Opportunities / Leads','Days to retain closed/lost opportunity records'],
-          ['comms','Communications','Days to retain call logs and message history'],
-          ['completedWOs','Completed Work Orders','Days to retain completed work order records']
-        ].map(([key,label,desc]) => `
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">${label}</label>
-            <div class="flex items-center gap-2">
-              <input id="sc-r-${key}" type="number" min="30" max="3650" step="30"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${cfg.retention[key]}">
-              <span class="text-xs text-gray-400 whitespace-nowrap">days</span>
+      <div class="sc-section" style="margin-bottom:0">
+        <div class="sc-section-head">
+          <div class="sc-section-icon">${gwIcon('map-pin', 16, '#2D7A55')}</div>
+          <span class="sc-section-title">Service Area</span>
+        </div>
+        <div class="sc-body">
+          <div class="sc-radio-row">
+            <label class="sc-radio-pill">
+              <input type="radio" name="sc-sa-type" value="zip" ${cfg.serviceArea.type === 'zip' ? 'checked' : ''} onchange="_scSAType('zip')">
+              ZIP Codes
+            </label>
+            <label class="sc-radio-pill">
+              <input type="radio" name="sc-sa-type" value="radius" ${cfg.serviceArea.type === 'radius' ? 'checked' : ''} onchange="_scSAType('radius')">
+              Radius
+            </label>
+          </div>
+          <div id="sc-sa-zip" ${cfg.serviceArea.type !== 'zip' ? 'style="display:none"' : ''}>
+            <div class="sc-field">
+              <label class="sc-label">ZIP Codes (comma-separated)</label>
+              <textarea id="sc-sa-zips" class="sc-input sc-textarea" rows="3">${escapeHtml(cfg.serviceArea.zips)}</textarea>
             </div>
-            <p class="text-xs text-gray-400 mt-1">${desc}</p>
-          </div>`).join('')}
+          </div>
+          <div id="sc-sa-rad" ${cfg.serviceArea.type !== 'radius' ? 'style="display:none"' : ''}>
+            <div class="sc-field" style="margin-bottom:10px">
+              <label class="sc-label">Center ZIP</label>
+              <input id="sc-sa-center" class="sc-input" value="${escapeHtml(cfg.serviceArea.centerZip)}" placeholder="23219">
+            </div>
+            <div class="sc-field">
+              <label class="sc-label">Radius (miles)</label>
+              <input id="sc-sa-radius" type="number" min="1" max="200" class="sc-input" value="${cfg.serviceArea.radiusMi}">
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
+    <div style="margin-bottom:16px"></div>
 
-    <!-- Company Branding (Logo, Colors, Identity) — saves to D1 -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('palette',18,'#374151')}</span>
-        <h2 class="font-semibold text-gray-800">Company Branding</h2>
-        <span class="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">Saved to Cloud</span>
+    <!-- ── Notification Preferences ────────────────────────────────────────── -->
+    <div class="sc-section">
+      <div class="sc-section-head">
+        <div class="sc-section-icon">${gwIcon('bell', 16, '#2D7A55')}</div>
+        <span class="sc-section-title">Notification Preferences</span>
+        <span class="sc-section-hint">Email alerts sent to company address</span>
       </div>
-      <div class="p-6 space-y-6" id="sc-brand-wrap">
+      <div class="sc-body">
+        <div class="sc-notif-grid">
+          ${[
+            ['newLead',        'New Lead',          'Notify when a lead is created or assigned'],
+            ['woAssigned',     'WO Assigned',       'Notify when a work order is assigned'],
+            ['woComplete',     'WO Completed',      'Notify when a work order is marked complete'],
+            ['paymentReceived','Payment Received',  'Notify when a payment is recorded'],
+            ['lowInventory',   'Low Inventory',     'Notify when an item hits reorder threshold'],
+            ['dailyDigest',    'Daily Digest',      'Morning summary email of open items'],
+          ].map(([key, label, desc]) => `
+            <label class="sc-notif-card">
+              <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key] ? 'checked' : ''}>
+              <div>
+                <div class="sc-notif-label">${label}</div>
+                <div class="sc-notif-desc">${desc}</div>
+              </div>
+            </label>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Data Retention ───────────────────────────────────────────────────── -->
+    <div class="sc-section">
+      <div class="sc-section-head">
+        <div class="sc-section-icon">${gwIcon('data-store', 16, '#2D7A55')}</div>
+        <span class="sc-section-title">Data Retention</span>
+        <span class="sc-section-hint">Days to keep historical records</span>
+      </div>
+      <div class="sc-body">
+        <div class="sc-grid-3">
+          ${[
+            ['opps',        'Opportunities / Leads',    'Closed & lost records'],
+            ['comms',       'Communications',            'Call logs & message history'],
+            ['completedWOs','Completed Work Orders',     'Completed WO records'],
+          ].map(([key, label, desc]) => `
+            <div class="sc-field">
+              <label class="sc-label">${label}</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input id="sc-r-${key}" type="number" min="30" max="3650" step="30"
+                  class="sc-input" style="flex:1" value="${cfg.retention[key]}">
+                <span style="font-size:12px;color:var(--gw-muted);white-space:nowrap">days</span>
+              </div>
+              <p class="sc-inline-hint">${desc}</p>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Company Branding ─────────────────────────────────────────────────── -->
+    <div class="sc-section">
+      <div class="sc-section-head">
+        <div class="sc-section-icon">${gwIcon('palette', 16, '#2D7A55')}</div>
+        <span class="sc-section-title">Company Branding</span>
+        <span class="sc-section-badge">Saved to Cloud</span>
+      </div>
+      <div class="sc-body" style="display:flex;flex-direction:column;gap:22px">
+
         <!-- Logo -->
         <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Company Logo</label>
-          <div class="flex items-start gap-6">
-            <div id="sc-logo-preview" class="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 overflow-hidden flex-shrink-0">
-              ${cfg.company.logo
-                ? `<img src="${escapeHtml(cfg.company.logo)}" alt="Logo" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#9CA3AF;text-align:center;padding:8px\\'>No preview</span>'">`
-                : `<span style="font-size:11px;color:#9CA3AF;text-align:center;padding:8px">${gwIcon('logo',32,'#D1D5DB')}</span>`}
+          <p class="sc-label" style="margin-bottom:10px">Company Logo</p>
+          <div class="sc-logo-row">
+            <div class="sc-logo-preview" id="sc-logo-preview">
+              ${(_b.logo_url || cfg.company.logo)
+                ? `<img src="${escapeHtml(_b.logo_url || cfg.company.logo)}" alt="Logo"
+                     onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#9CA3AF;text-align:center\\'>No preview</span>'">`
+                : `${gwIcon('logo', 32, '#D1D5DB')}`}
             </div>
-            <div class="flex-1 space-y-3">
-              <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Logo URL <span class="text-gray-400 font-normal">(paste a hosted image link)</span></label>
-                <input id="sc-b-logo" type="url" placeholder="https://yoursite.com/logo.png"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                  value="${escapeHtml(cfg.company.logo||'')}">
-                <p class="mt-1 text-xs text-gray-400">Upload your logo to any image host (Cloudinary, ImgBB, your own CDN) and paste the URL. Applied to all estimates, invoices, and customer portal pages.</p>
+            <div style="flex:1">
+              <div class="sc-field">
+                <label class="sc-label">Logo URL <span style="font-weight:400;text-transform:none;font-size:11px">(paste a hosted image link)</span></label>
+                <input id="sc-b-logo" type="url" class="sc-input" placeholder="https://yoursite.com/logo.png"
+                  value="${escapeHtml(_b.logo_url || cfg.company.logo || '')}">
               </div>
-              <div>
-                <button onclick="_scPreviewLogo()" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">${gwIcon('eye',13)} Preview</button>
-                <button onclick="_scSaveBranding()" class="ml-2 px-3 py-1.5 text-white rounded-lg text-sm font-medium transition" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',13,'#fff')} Save Branding</button>
+              <p class="sc-inline-hint">Upload to any image host (Cloudinary, ImgBB) and paste the URL here. Applied to estimates, invoices, and client portal.</p>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="sc-save-btn secondary" onclick="_scPreviewLogo()">${gwIcon('eye', 13, '#2D7A55')} Preview</button>
+                <button class="sc-save-btn" onclick="_scSaveBranding()" id="sc-brand-btn">${gwIcon('floppy', 13, '#fff')} Save Branding</button>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Tagline + Business Type -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Company Tagline <span class="text-gray-400 font-normal">(appears on estimates & portal)</span></label>
-            <input id="sc-b-tagline" type="text" placeholder="Professional Landscape Construction"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              value="${escapeHtml(_scBrand.tagline||'')}">
+        <div class="sc-grid-2">
+          <div class="sc-field">
+            <label class="sc-label">Tagline <span style="font-weight:400;text-transform:none;font-size:11px">(on estimates &amp; portal)</span></label>
+            <input id="sc-b-tagline" type="text" class="sc-input" placeholder="Professional Exterior Solutions"
+              value="${escapeHtml(_b.tagline || '')}">
           </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Business Type</label>
-            <select id="sc-b-biztype" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+          <div class="sc-field">
+            <label class="sc-label">Business Type</label>
+            <select id="sc-b-biztype" class="sc-input sc-select">
               ${[
-                ['landscaping','Landscaping / Lawn Care'],
-                ['excavation','Excavation / Earthwork'],
-                ['home_services','Home Services'],
-                ['hvac','HVAC'],
-                ['plumbing','Plumbing'],
-                ['electrical','Electrical'],
-                ['roofing','Roofing'],
-                ['concrete','Concrete / Masonry'],
-                ['painting','Painting'],
-                ['cleaning','Cleaning Services'],
-                ['pest_control','Pest Control'],
-                ['irrigation','Irrigation'],
-                ['tree_service','Tree Service / Arborist'],
-                ['general_contractor','General Contractor'],
-                ['other','Other']
-              ].map(([v,l])=>`<option value="${v}" ${_scBrand.business_type===v?'selected':''}>${l}</option>`).join('')}
+                ['landscaping','Landscaping / Lawn Care'],['excavation','Excavation / Earthwork'],
+                ['home_services','Home Services'],['hvac','HVAC'],['plumbing','Plumbing'],
+                ['electrical','Electrical'],['roofing','Roofing'],['concrete','Concrete / Masonry'],
+                ['painting','Painting'],['cleaning','Cleaning Services'],['pest_control','Pest Control'],
+                ['irrigation','Irrigation'],['tree_service','Tree Service / Arborist'],
+                ['general_contractor','General Contractor'],['other','Other'],
+              ].map(([v,l]) => `<option value="${v}" ${_b.business_type === v ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
           </div>
         </div>
 
         <!-- Brand Colors -->
         <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Brand Colors</label>
-          <div class="flex flex-wrap gap-6">
-            <div class="flex items-center gap-3">
-              <input id="sc-b-primary" type="color" value="${_scBrand.brand_color||'#2D7A55'}" class="w-10 h-10 rounded-lg cursor-pointer border-2 border-gray-200">
-              <div>
-                <div class="text-sm font-medium text-gray-700">Primary Color</div>
-                <div class="text-xs text-gray-400">Buttons, links, highlights, estimates</div>
+          <p class="sc-label" style="margin-bottom:12px">Brand Colors</p>
+          <div class="sc-color-row">
+            <div class="sc-color-swatch">
+              <input id="sc-b-primary" type="color" value="${_b.brand_color || '#2D7A55'}">
+              <div class="sc-color-info">
+                <div class="sc-color-name">Primary</div>
+                <div class="sc-color-hint">Buttons, links, estimates</div>
               </div>
             </div>
-            <div class="flex items-center gap-3">
-              <input id="sc-b-accent" type="color" value="${_scBrand.brand_accent||'#4D8A86'}" class="w-10 h-10 rounded-lg cursor-pointer border-2 border-gray-200">
-              <div>
-                <div class="text-sm font-medium text-gray-700">Accent Color</div>
-                <div class="text-xs text-gray-400">Badges, KPI cards, secondary highlights</div>
+            <div class="sc-color-swatch">
+              <input id="sc-b-accent" type="color" value="${_b.brand_accent || '#4D8A86'}">
+              <div class="sc-color-info">
+                <div class="sc-color-name">Accent</div>
+                <div class="sc-color-hint">Badges, KPI cards</div>
               </div>
             </div>
-            <div class="ml-auto self-end">
-              <button onclick="_scResetDefaults()" class="text-sm text-gray-400 hover:text-red-500 transition">↺ Reset to defaults</button>
-            </div>
+            <button onclick="_scResetDefaults()"
+              style="margin-left:auto;background:none;border:none;font-size:12px;color:var(--gw-muted);cursor:pointer;padding:4px 8px;border-radius:6px"
+              onmouseover="this.style.color='#8B3A2A'" onmouseout="this.style.color='var(--gw-muted)'">↺ Reset defaults</button>
           </div>
         </div>
 
         <!-- Company Scale -->
         <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Company Scale</label>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Active Crews</label>
-              <input id="sc-b-crews" type="number" min="1" max="500"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${_scBrand.crew_count||1}">
+          <p class="sc-label" style="margin-bottom:10px">Company Scale</p>
+          <div class="sc-grid-2" style="gap:10px">
+            <div class="sc-field">
+              <label class="sc-label">Active Crews</label>
+              <input id="sc-b-crews" type="number" min="1" max="500" class="sc-input" value="${_b.crew_count || 1}">
             </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Divisions</label>
-              <input id="sc-b-divs" type="number" min="1" max="100"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${_scBrand.division_count||1}">
+            <div class="sc-field">
+              <label class="sc-label">Divisions</label>
+              <input id="sc-b-divs" type="number" min="1" max="100" class="sc-input" value="${_b.division_count || 1}">
             </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">Year Founded</label>
-              <input id="sc-b-founded" type="number" min="1900" max="2030"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${_scBrand.year_founded||''}">
+            <div class="sc-field">
+              <label class="sc-label">Year Founded</label>
+              <input id="sc-b-founded" type="number" min="1900" max="2030" class="sc-input" value="${_b.year_founded || ''}" placeholder="2015">
             </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-500 mb-1">License #</label>
-              <input id="sc-b-license" type="text"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${escapeHtml(_scBrand.license_number||'')}" placeholder="Optional">
+            <div class="sc-field">
+              <label class="sc-label">License #</label>
+              <input id="sc-b-license" type="text" class="sc-input" value="${escapeHtml(_b.license_number || '')}" placeholder="Optional">
             </div>
           </div>
         </div>
 
-        <!-- Business Address (shown on customer-facing docs) -->
+        <!-- Business Address -->
         <div>
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Business Address <span class="text-gray-400 font-normal text-xs">(shown on estimates &amp; invoices)</span></label>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div class="md:col-span-2">
-              <input id="sc-b-addr1" type="text" placeholder="Street Address"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${escapeHtml(_scBrand.address_line1||'')}">
+          <p class="sc-label" style="margin-bottom:10px">Business Address <span style="font-weight:400;text-transform:none;font-size:11px">(shown on estimates &amp; invoices)</span></p>
+          <div class="sc-field" style="margin-bottom:10px">
+            <input id="sc-b-addr1" type="text" class="sc-input" placeholder="Street Address" value="${escapeHtml(_b.address_line1 || '')}">
+          </div>
+          <div class="sc-grid-2" style="gap:10px">
+            <div class="sc-field">
+              <input id="sc-b-city" type="text" class="sc-input" placeholder="City" value="${escapeHtml(_b.address_city || '')}">
             </div>
-            <div>
-              <input id="sc-b-city" type="text" placeholder="City"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${escapeHtml(_scBrand.address_city||'')}">
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <input id="sc-b-state" type="text" placeholder="State" maxlength="2"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${escapeHtml(_scBrand.address_state||'')}">
-              <input id="sc-b-zip" type="text" placeholder="ZIP"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                value="${escapeHtml(_scBrand.address_zip||'')}">
+            <div class="sc-grid-2" style="gap:8px">
+              <input id="sc-b-state" type="text" class="sc-input" placeholder="State" maxlength="2" value="${escapeHtml(_b.address_state || '')}">
+              <input id="sc-b-zip"   type="text" class="sc-input" placeholder="ZIP" value="${escapeHtml(_b.address_zip || '')}">
             </div>
           </div>
         </div>
 
-        <!-- Terminology Customization -->
-        <div id="sc-b-terms-wrap">
-          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Terminology Customization <span class="text-gray-400 font-normal text-xs">(rename terms to match your business culture)</span></label>
-          <p class="text-xs text-gray-400 mb-3">Excavation companies might call work orders "Dig Orders". HVAC techs call them "Service Calls". Rename to match how your team talks.</p>
-          <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <!-- Terminology -->
+        <div>
+          <p class="sc-label" style="margin-bottom:4px">Terminology Customization</p>
+          <p class="sc-inline-hint" style="margin-bottom:12px">Rename terms to match how your team talks — "Dig Order" instead of "Work Order", "Quote" instead of "Estimate", etc.</p>
+          <div class="sc-grid-3" style="gap:10px">
             ${[
-              ['workOrder','Work Order term','Work Order','Brief for a job/service task'],
-              ['estimate','Estimate term','Estimate','Quote / Proposal / Bid'],
-              ['crew','Crew term','Crew','Team / Crew / Squad'],
-              ['division','Division term','Division','Division / Branch / Region'],
-              ['client','Client term','Client','Client / Customer / Account'],
-              ['invoice','Invoice term','Invoice','Invoice / Bill / Statement'],
-            ].map(([k,lbl,ph,hint])=>`
-              <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">${lbl}</label>
-                <input type="text" id="sc-term-${k}" placeholder="${ph}"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                  value="${escapeHtml((_scBrand.terminology&&_scBrand.terminology[k])||ph)}"
-                  title="${hint}">
+              ['workOrder','Work Order','Work Order'],['estimate','Estimate','Estimate'],
+              ['crew','Crew','Crew'],['division','Division','Division'],
+              ['client','Client','Client'],['invoice','Invoice','Invoice'],
+            ].map(([k, lbl, ph]) => `
+              <div class="sc-field">
+                <label class="sc-label">${lbl}</label>
+                <input type="text" id="sc-term-${k}" class="sc-input" placeholder="${ph}"
+                  value="${escapeHtml((_b.terminology && _b.terminology[k]) || ph)}">
               </div>`).join('')}
           </div>
         </div>
 
-        <!-- Save button -->
-        <div class="flex items-center justify-between pt-2 border-t border-gray-100">
-          <p class="text-xs text-gray-400">${gwIcon('info',12,'#9CA3AF')} Branding is applied to all estimates, invoices, and customer portal pages your clients see.</p>
-          <button onclick="_scSaveBranding()" class="px-5 py-2 text-white rounded-lg text-sm font-semibold transition shadow-sm" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',14,'#fff')} Save Branding</button>
+        <!-- Save footer -->
+        <div class="sc-footer">
+          <p style="font-size:12px;color:var(--gw-muted);align-self:center;margin:0;flex:1">${gwIcon('info', 12, '#9CA3AF')} Branding is applied to all estimates, invoices, and portal pages.</p>
+          <button class="sc-save-btn" onclick="_scSaveBranding()" id="sc-brand-btn2">${gwIcon('floppy', 14, '#fff')} Save Branding</button>
         </div>
       </div>
-    </section>
-
-    <!-- Save footer (local settings) -->
-    <div class="flex justify-end pb-4">
-      <button onclick="_scSaveAll()" class="px-6 py-2.5 text-white rounded-lg font-semibold text-sm shadow transition" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
     </div>
+
+    <!-- ── Bottom save bar ─────────────────────────────────────────────────── -->
+    <div style="display:flex;justify-content:flex-end;gap:10px;padding-top:8px">
+      <button class="sc-save-btn secondary" onclick="systemConfig()">${gwIcon('sync', 13, '#2D7A55')} Refresh</button>
+      <button class="sc-save-btn" onclick="_scSaveAll()">${gwIcon('floppy', 14, '#fff')} Save All Changes</button>
+    </div>
+
   </div>`;
 
-  // Wire up helpers
+  // ── Wire helpers ─────────────────────────────────────────────────────────────
   window._scToggleDay = function(d) {
-    const cb = document.getElementById(`sc-h-${d}`);
+    const cb  = document.getElementById(`sc-h-${d}`);
     const lbl = document.getElementById(`sc-hl-${d}`);
-    const ht  = document.getElementById(`sc-ht-${d}`);
+    const tw  = document.getElementById(`sc-ht-${d}`);
     if (!cb) return;
-    lbl.className = cb.checked ? 'text-sm font-medium text-gray-800' : 'text-sm font-medium text-gray-400';
-    ht.className  = cb.checked ? 'flex items-center gap-2' : 'opacity-30 pointer-events-none flex items-center gap-2';
+    if (lbl) { lbl.className = 'sc-day-name' + (cb.checked ? '' : ' closed'); }
+    if (tw)  { tw.className  = 'sc-time-wrap' + (cb.checked ? '' : ' disabled'); }
+    // Toggle the "Closed" label
+    const row = cb.closest('.sc-day-row');
+    if (row) {
+      let tag = row.querySelector('.sc-closed-tag');
+      if (!cb.checked) {
+        if (!tag) { tag = document.createElement('span'); tag.className = 'sc-closed-tag'; tag.style.cssText = 'font-size:12px;color:var(--gw-muted);margin-left:6px'; tag.textContent = 'Closed'; row.appendChild(tag); }
+      } else { if (tag) tag.remove(); }
+    }
   };
   window._scSAType = function(t) {
-    document.getElementById('sc-sa-zip').className = t==='zip' ? '' : 'hidden';
-    document.getElementById('sc-sa-rad').className = t==='radius' ? 'space-y-2' : 'hidden';
+    const zd = document.getElementById('sc-sa-zip');
+    const rd = document.getElementById('sc-sa-rad');
+    if (zd) zd.style.display = t === 'zip'    ? '' : 'none';
+    if (rd) rd.style.display = t === 'radius' ? '' : 'none';
   };
   window._scResetDefaults = function() {
     if (!confirm('Reset all system config to defaults?')) return;
     localStorage.removeItem(LS_SYS_CONFIG_KEY);
+    window._scBrandLoaded = false;
     systemConfig();
     showToast('Settings reset to defaults');
   };
   window._scSaveAll = function() {
     const cur = _scLoad() || _scDefault();
-    // Company
-    cur.company.name    = (document.getElementById('sc-co-name')||{}).value || cur.company.name;
-    cur.company.phone   = (document.getElementById('sc-co-phone')||{}).value || cur.company.phone;
-    cur.company.email   = (document.getElementById('sc-co-email')||{}).value || cur.company.email;
-    cur.company.website = (document.getElementById('sc-co-website')||{}).value || '';
-    cur.company.address = (document.getElementById('sc-co-address')||{}).value || cur.company.address;
-    cur.company.city    = (document.getElementById('sc-co-city')||{}).value || cur.company.city;
-    cur.company.state   = (document.getElementById('sc-co-state')||{}).value || cur.company.state;
-    cur.company.zip     = (document.getElementById('sc-co-zip')||{}).value || cur.company.zip;
-    // Hours
-    const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+    const g = id => (document.getElementById(id) || {}).value;
+    const gc = id => !!(document.getElementById(id) || {}).checked;
+    cur.company.name    = g('sc-co-name')    || cur.company.name;
+    cur.company.phone   = g('sc-co-phone')   || cur.company.phone;
+    cur.company.email   = g('sc-co-email')   || cur.company.email;
+    cur.company.website = g('sc-co-website') || '';
+    cur.company.address = g('sc-co-address') || cur.company.address;
+    cur.company.city    = g('sc-co-city')    || cur.company.city;
+    cur.company.state   = g('sc-co-state')   || cur.company.state;
+    cur.company.zip     = g('sc-co-zip')     || cur.company.zip;
     DAYS.forEach(d => {
-      cur.hours[d].open  = !!(document.getElementById(`sc-h-${d}`)||{}).checked;
-      cur.hours[d].start = (document.getElementById(`sc-hs-${d}`)||{}).value || cur.hours[d].start;
-      cur.hours[d].end   = (document.getElementById(`sc-he-${d}`)||{}).value || cur.hours[d].end;
+      cur.hours[d].open  = gc(`sc-h-${d}`);
+      cur.hours[d].start = g(`sc-hs-${d}`) || cur.hours[d].start;
+      cur.hours[d].end   = g(`sc-he-${d}`) || cur.hours[d].end;
     });
-    // Timezone
-    cur.timezone = (document.getElementById('sc-tz')||{}).value || cur.timezone;
-    // Service area
-    const saType = (document.querySelector('input[name="sc-sa-type"]:checked')||{}).value || cur.serviceArea.type;
+    cur.timezone = g('sc-tz') || cur.timezone;
+    const saType = (document.querySelector('input[name="sc-sa-type"]:checked') || {}).value || cur.serviceArea.type;
     cur.serviceArea.type = saType;
-    if (saType === 'zip') cur.serviceArea.zips = (document.getElementById('sc-sa-zips')||{}).value || '';
-    else {
-      cur.serviceArea.centerZip = (document.getElementById('sc-sa-center')||{}).value || '';
-      cur.serviceArea.radiusMi  = (document.getElementById('sc-sa-radius')||{}).value || '';
-    }
-    // Notifications
-    ['newLead','woAssigned','woComplete','paymentReceived','lowInventory','dailyDigest'].forEach(k => {
-      cur.notifications[k] = !!(document.getElementById(`sc-n-${k}`)||{}).checked;
-    });
-    // Retention
-    ['opps','comms','completedWOs'].forEach(k => {
-      const v = parseInt((document.getElementById(`sc-r-${k}`)||{}).value);
-      if (!isNaN(v) && v >= 30) cur.retention[k] = v;
-    });
-    // Brand (local prefs only)
-    cur.brand.primaryColor = (document.getElementById('sc-b-primary')||{}).value || cur.brand.primaryColor;
-    cur.brand.accentColor  = (document.getElementById('sc-b-accent')||{}).value || cur.brand.accentColor;
-    cur.company.logo       = (document.getElementById('sc-b-logo')||{}).value || cur.company.logo || '';
+    if (saType === 'zip') cur.serviceArea.zips = g('sc-sa-zips') || '';
+    else { cur.serviceArea.centerZip = g('sc-sa-center') || ''; cur.serviceArea.radiusMi = g('sc-sa-radius') || ''; }
+    ['newLead','woAssigned','woComplete','paymentReceived','lowInventory','dailyDigest'].forEach(k => { cur.notifications[k] = gc(`sc-n-${k}`); });
+    ['opps','comms','completedWOs'].forEach(k => { const v = parseInt(g(`sc-r-${k}`)); if (!isNaN(v) && v >= 30) cur.retention[k] = v; });
+    cur.brand.primaryColor = g('sc-b-primary') || cur.brand.primaryColor;
+    cur.brand.accentColor  = g('sc-b-accent')  || cur.brand.accentColor;
+    cur.company.logo       = g('sc-b-logo')    || cur.company.logo || '';
     _scSave(cur);
     showToast('System configuration saved', 'success');
   };
-
-  // Preview logo inline
   window._scPreviewLogo = function() {
-    const url = (document.getElementById('sc-b-logo')||{}).value || '';
+    const url = (document.getElementById('sc-b-logo') || {}).value || '';
     const preview = document.getElementById('sc-logo-preview');
     if (!preview) return;
-    if (!url) { preview.innerHTML = `<span style="font-size:11px;color:#9CA3AF;text-align:center;padding:8px">${gwIcon('logo',32,'#D1D5DB')}</span>`; return; }
-    preview.innerHTML = `<img src="${url}" alt="Logo" style="width:100%;height:100%;object-fit:contain;padding:8px"
-      onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#C97B6A;text-align:center;padding:8px\\'>Could not load</span>'">`;
+    if (!url) { preview.innerHTML = `${gwIcon('logo', 32, '#D1D5DB')}`; return; }
+    preview.innerHTML = `<img src="${url}" alt="Logo" style="width:100%;height:100%;object-fit:contain;padding:8px;box-sizing:border-box"
+      onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#C97B6A;text-align:center\\'>Could not load</span>'">`;
   };
-
-  // Save branding to D1 via API
   window._scSaveBranding = async function() {
-    const btn = document.querySelector('[onclick="_scSaveBranding()"]');
-    const orig = btn ? btn.innerHTML : '';
-    if (btn) { btn.disabled = true; btn.innerHTML = `${gwIcon('sync',13,'#fff')} Saving…`; }
-
-    // Collect terminology
+    const btns = ['sc-brand-btn','sc-brand-btn2'].map(id => document.getElementById(id)).filter(Boolean);
+    const origs = btns.map(b => b.innerHTML);
+    btns.forEach(b => { b.disabled = true; b.innerHTML = `${gwIcon('sync', 13, '#fff')} Saving…`; });
+    const g = id => (document.getElementById(id) || {}).value || '';
     const termKeys = ['workOrder','estimate','crew','division','client','invoice'];
     const terminology = {};
-    termKeys.forEach(k => {
-      const v = (document.getElementById(`sc-term-${k}`)||{}).value || '';
-      if (v) terminology[k] = v;
-    });
-
+    termKeys.forEach(k => { const v = g(`sc-term-${k}`); if (v) terminology[k] = v; });
     const payload = {
-      logo_url:        (document.getElementById('sc-b-logo')||{}).value || '',
-      tagline:         (document.getElementById('sc-b-tagline')||{}).value || '',
-      brand_color:     (document.getElementById('sc-b-primary')||{}).value || '#2D7A55',
-      brand_accent:    (document.getElementById('sc-b-accent')||{}).value || '#4D8A86',
-      business_type:   (document.getElementById('sc-b-biztype')||{}).value || 'home_services',
-      crew_count:      parseInt((document.getElementById('sc-b-crews')||{}).value)||1,
-      division_count:  parseInt((document.getElementById('sc-b-divs')||{}).value)||1,
-      year_founded:    parseInt((document.getElementById('sc-b-founded')||{}).value)||0,
-      license_number:  (document.getElementById('sc-b-license')||{}).value || '',
-      address_line1:   (document.getElementById('sc-b-addr1')||{}).value || '',
-      address_city:    (document.getElementById('sc-b-city')||{}).value || '',
-      address_state:   (document.getElementById('sc-b-state')||{}).value || '',
-      address_zip:     (document.getElementById('sc-b-zip')||{}).value || '',
+      logo_url: g('sc-b-logo'), tagline: g('sc-b-tagline'),
+      brand_color: g('sc-b-primary') || '#2D7A55', brand_accent: g('sc-b-accent') || '#4D8A86',
+      business_type: g('sc-b-biztype') || 'home_services',
+      crew_count: parseInt(g('sc-b-crews')) || 1, division_count: parseInt(g('sc-b-divs')) || 1,
+      year_founded: parseInt(g('sc-b-founded')) || 0, license_number: g('sc-b-license'),
+      address_line1: g('sc-b-addr1'), address_city: g('sc-b-city'),
+      address_state: g('sc-b-state'), address_zip: g('sc-b-zip'),
       terminology,
     };
-    // Also sync company name/phone/website from company info section
-    const coName = (document.getElementById('sc-co-name')||{}).value;
-    const coPhone = (document.getElementById('sc-co-phone')||{}).value;
-    const coWebsite = (document.getElementById('sc-co-website')||{}).value;
-    if (coName)    payload.name    = coName;
-    if (coPhone)   payload.phone   = coPhone;
+    const coName = g('sc-co-name'); const coPhone = g('sc-co-phone'); const coWebsite = g('sc-co-website');
+    if (coName) payload.name = coName;
+    if (coPhone) payload.phone = coPhone;
     if (coWebsite) payload.website = coWebsite;
-
     try {
-      const r = await fetch('/api/company/branding', {
-        method:'PUT', credentials:'include',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(payload)
-      });
+      const r = await fetch('/api/company/branding', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!r.ok) throw new Error('Save failed');
-      // Update local _scBrand cache
       window._scBrand = { ...window._scBrand, ...payload };
-      // Also save logo to local cfg
       const cur = _scLoad() || _scDefault();
       cur.company.logo = payload.logo_url;
       _scSave(cur);
-      showToast('Branding saved — applied to all estimates &amp; portal', 'success');
+      showToast('Branding saved — applied to all estimates & portal', 'success');
     } catch(e) {
       showToast('Could not save branding — check connection', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+      btns.forEach((b, i) => { b.disabled = false; b.innerHTML = origs[i]; });
     }
   };
 }
