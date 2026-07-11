@@ -16697,16 +16697,442 @@ function deposits() {
   window._depApply  = (id)=>{ deps=deps.map(d=>d.id===id?{...d,applied:true}:d); try{localStorage.setItem(LS_KEY,JSON.stringify(deps));}catch(_){} deposits(); };
   window._depDelete = (id)=>{ deps=deps.filter(d=>d.id!==id); try{localStorage.setItem(LS_KEY,JSON.stringify(deps));}catch(_){} deposits(); };
 }
+// ── Financial Reports Hub ─────────────────────────────────────────────────────
+// Replaces the old "Statements" page with a full suite of financial reports.
+// Data sources: localStorage invoices/payments/deposits + state.opportunities + work_orders
+
 function statements() {
   window._currentView = 'statements';
-  // Route to existing accountStatement list view
-  if (typeof accountStatement === 'function') {
-    accountStatement(null);
-    window._currentView = 'statements';
-  } else {
-    _p7Placeholder('Statements', '📋', 'Generate and send account statements showing outstanding balances, payment history, and transaction summaries.', 'Financial');
-  }
+  activateNav('statements');
+  _stmtRender('pl');  // default to P&L
 }
+window.statements = statements;
+
+// Sub-report navigator — call with one of: pl|ar|ap|expenses|invoiced|revCustomer|forecast|revCrew|revCity|revCounty|tax
+function _stmtRender(report, opts) {
+  window._stmtReport = report || window._stmtReport || 'pl';
+  window._stmtOpts   = opts   || window._stmtOpts   || {};
+
+  // ── Load all data ──────────────────────────────────────────────────────────
+  let invs = [], pays = [], deps = [], opps = [], wos = [];
+  try { invs = JSON.parse(localStorage.getItem('avalonInvoices') || '[]'); } catch(_) {}
+  try { pays = JSON.parse(localStorage.getItem('avalonPayments') || '[]'); } catch(_) {}
+  try { deps = JSON.parse(localStorage.getItem('avalonDeposits') || '[]'); } catch(_) {}
+  opps = state.opportunities || [];
+  wos  = state.workOrders    || [];
+
+  const TODAY = todayISO();
+  const thisYear  = TODAY.slice(0,4);
+  const thisMonth = TODAY.slice(0,7);
+
+  // Date range filter (default: current year)
+  const dateFrom = window._stmtDateFrom || (thisYear + '-01-01');
+  const dateTo   = window._stmtDateTo   || TODAY;
+
+  function inRange(d) { const s = (d||'').slice(0,10); return s >= dateFrom && s <= dateTo; }
+
+  // Helpers
+  const inv = (i) => Number(i.amount || i.total || 0);
+  const paid = (i) => Number(i.paid || i.amountPaid || 0);
+  const bal  = (i) => inv(i) - paid(i);
+
+  // Filtered sets
+  const fInvs = invs.filter(i => inRange(i.date));
+  const fPays = pays.filter(p => inRange(p.date));
+  const fDeps = deps.filter(d => inRange(d.date));
+  const fOpps = opps.filter(o => inRange(o.closedDate || o.createdAt || o.date));
+
+  // Totals
+  const totalBilled      = fInvs.reduce((s,i) => s+inv(i), 0);
+  const totalCollected   = fPays.reduce((s,p) => s+Number(p.amount||0), 0) + fDeps.filter(d=>d.applied).reduce((s,d)=>s+Number(d.amount||0),0);
+  const totalOutstanding = fInvs.reduce((s,i) => s+Math.max(0,bal(i)), 0);
+  const totalOverdue     = fInvs.filter(i=>i.dueDate&&i.dueDate<TODAY&&bal(i)>0).reduce((s,i)=>s+bal(i),0);
+
+  // ── Nav tabs ───────────────────────────────────────────────────────────────
+  const tabs = [
+    { id:'pl',          label:'P&L'              },
+    { id:'ar',          label:'AR'               },
+    { id:'ap',          label:'AP'               },
+    { id:'expenses',    label:'Expenses'         },
+    { id:'invoiced',    label:'Invoiced Items'   },
+    { id:'revCustomer', label:'Revenue by Customer' },
+    { id:'forecast',    label:'Revenue Forecast' },
+    { id:'revCrew',     label:'Revenue by Crew'  },
+    { id:'revCity',     label:'Revenue by City'  },
+    { id:'revCounty',   label:'Revenue by County'},
+    { id:'tax',         label:'Sales Tax'        },
+  ];
+  const tabHtml = tabs.map(t => `
+    <button class="stmt-tab${window._stmtReport===t.id?' active':''}"
+      onclick="window._stmtReport='${t.id}';_stmtRender()">
+      ${t.label}
+    </button>`).join('');
+
+  // ── Date range bar ─────────────────────────────────────────────────────────
+  const rangeHtml = `
+    <div class="stmt-range-bar">
+      <label class="stmt-range-label">From
+        <input type="date" class="stmt-range-input" value="${dateFrom}"
+          onchange="window._stmtDateFrom=this.value;_stmtRender()">
+      </label>
+      <label class="stmt-range-label">To
+        <input type="date" class="stmt-range-input" value="${dateTo}"
+          onchange="window._stmtDateTo=this.value;_stmtRender()">
+      </label>
+      <button class="stmt-preset" onclick="window._stmtDateFrom='${thisYear}-01-01';window._stmtDateTo='${TODAY}';_stmtRender()">YTD</button>
+      <button class="stmt-preset" onclick="window._stmtDateFrom='${thisMonth}-01';window._stmtDateTo='${TODAY}';_stmtRender()">MTD</button>
+      <button class="stmt-preset" onclick="window._stmtDateFrom='${String(Number(thisYear)-1)}-01-01';window._stmtDateTo='${String(Number(thisYear)-1)}-12-31';_stmtRender()">Last Year</button>
+    </div>`;
+
+  // ── Render the active report body ──────────────────────────────────────────
+  let body = '';
+
+  // ── P&L ───────────────────────────────────────────────────────────────────
+  if (window._stmtReport === 'pl') {
+    // Revenue = billed invoices; COGS from manual override; expenses from overrides
+    const annualData = (() => { try { return JSON.parse(localStorage.getItem('avalonAnnualOverrides')||'{}'); } catch(_){ return {}; } })();
+    const yr = dateFrom.slice(0,4);
+    const yrData = annualData[yr] || {};
+    const revenue    = totalBilled;
+    const cogs       = Number(yrData.cogs || 0);
+    const grossProfit= revenue - cogs;
+    const expenses   = Number(yrData.totalExpenses || 0);
+    const netIncome  = grossProfit - expenses;
+    const gpm        = revenue > 0 ? ((grossProfit/revenue)*100).toFixed(1) : '—';
+
+    const plRow = (label, val, bold, indent, color) => `
+      <tr class="stmt-pl-row${bold?' bold':''}${indent?' indent':''}">
+        <td>${escapeHtml(label)}</td>
+        <td style="text-align:right;color:${color||'inherit'}">${val!==null&&val!==undefined&&val!==''?_p5Money(val):'—'}</td>
+      </tr>`;
+
+    body = `
+      <div class="stmt-section-title">Profit & Loss — ${dateFrom.slice(0,7)} to ${dateTo.slice(0,7)}</div>
+      <div class="stmt-kpi-row">
+        ${[['Revenue',revenue,'#2D7A55'],['Gross Profit',grossProfit,grossProfit>=0?'#2D7A55':'#C97B6A'],['Net Income',netIncome,netIncome>=0?'#2D7A55':'#C97B6A'],['Gross Margin %',null,'#4D8A86']].map(([l,v,c])=>`
+        <div class="stmt-kpi">
+          <div class="stmt-kpi-label">${l}</div>
+          <div class="stmt-kpi-val" style="color:${c}">${l.includes('%')?gpm+'%':_p5Money(v)}</div>
+        </div>`).join('')}
+      </div>
+      <table class="stmt-table">
+        <thead><tr><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${plRow('Revenue (Invoiced)', revenue, true, false, '#2D7A55')}
+          ${plRow('Cost of Goods Sold (COGS)', -cogs, false, true, '#C97B6A')}
+          ${plRow('Gross Profit', grossProfit, true, false, grossProfit>=0?'#2D7A55':'#C97B6A')}
+          ${plRow('Operating Expenses', -expenses, false, true, '#C97B6A')}
+          ${plRow('Net Operating Income', netIncome, true, false, netIncome>=0?'#2D7A55':'#C97B6A')}
+        </tbody>
+      </table>
+      <p class="stmt-note">💡 To update COGS and Expenses, edit them in <button class="stmt-link" onclick="show('revenueAdmin')">Financial Admin → Annual Data</button>.</p>`;
+  }
+
+  // ── AR ────────────────────────────────────────────────────────────────────
+  else if (window._stmtReport === 'ar') {
+    const open = fInvs.filter(i => bal(i) > 0);
+    const arRows = open.length
+      ? open.map(i => {
+          const b = bal(i);
+          const overdue = i.dueDate && i.dueDate < TODAY;
+          return `<tr class="stmt-row${overdue?' overdue':''}">
+            <td>${escapeHtml(i.number||i.id||'—')}</td>
+            <td>${escapeHtml(i.clientName||'—')}</td>
+            <td>${_p5FmtDate(i.date)}</td>
+            <td>${i.dueDate?_p5FmtDate(i.dueDate):'—'}</td>
+            <td style="text-align:right">${_p5Money(inv(i))}</td>
+            <td style="text-align:right;color:#2D7A55">${_p5Money(paid(i))}</td>
+            <td style="text-align:right;font-weight:700;color:${overdue?'#C97B6A':'inherit'}">${_p5Money(b)}</td>
+            <td><span class="stmt-badge ${overdue?'overdue':'open'}">${overdue?'Overdue':'Open'}</span></td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="8" class="stmt-empty">No open AR in this period</td></tr>`;
+    body = `
+      <div class="stmt-section-title">Accounts Receivable</div>
+      <div class="stmt-kpi-row">
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Total Outstanding</div><div class="stmt-kpi-val" style="color:#C97B6A">${_p5Money(totalOutstanding)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Overdue</div><div class="stmt-kpi-val" style="color:#C97B6A">${_p5Money(totalOverdue)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Open Invoices</div><div class="stmt-kpi-val">${open.length}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Collected</div><div class="stmt-kpi-val" style="color:#2D7A55">${_p5Money(totalCollected)}</div></div>
+      </div>
+      <table class="stmt-table">
+        <thead><tr><th>Invoice #</th><th>Client</th><th>Date</th><th>Due</th><th style="text-align:right">Invoiced</th><th style="text-align:right">Paid</th><th style="text-align:right">Balance</th><th>Status</th></tr></thead>
+        <tbody>${arRows}</tbody>
+      </table>`;
+  }
+
+  // ── AP ────────────────────────────────────────────────────────────────────
+  else if (window._stmtReport === 'ap') {
+    body = `
+      <div class="stmt-section-title">Accounts Payable</div>
+      <div class="stmt-kpi-row">
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Deposits Held</div><div class="stmt-kpi-val">${_p5Money(fDeps.filter(d=>!d.applied).reduce((s,d)=>s+Number(d.amount||0),0))}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Deposits Applied</div><div class="stmt-kpi-val" style="color:#2D7A55">${_p5Money(fDeps.filter(d=>d.applied).reduce((s,d)=>s+Number(d.amount||0),0))}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Total Payments Out</div><div class="stmt-kpi-val">${fPays.length}</div></div>
+      </div>
+      <table class="stmt-table">
+        <thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Reference</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead>
+        <tbody>${
+          fDeps.length ? fDeps.map(d=>`<tr class="stmt-row">
+            <td>${_p5FmtDate(d.date)}</td><td>${escapeHtml(d.clientName||'—')}</td><td>Deposit</td>
+            <td>${escapeHtml(d.jobRef||'—')}</td>
+            <td style="text-align:right">${_p5Money(d.amount)}</td>
+            <td><span class="stmt-badge ${d.applied?'paid':'open'}">${d.applied?'Applied':'Held'}</span></td>
+          </tr>`).join('')
+          : `<tr><td colspan="6" class="stmt-empty">No AP records in this period</td></tr>`
+        }</tbody>
+      </table>`;
+  }
+
+  // ── Expenses ──────────────────────────────────────────────────────────────
+  else if (window._stmtReport === 'expenses') {
+    const annualData = (() => { try { return JSON.parse(localStorage.getItem('avalonAnnualOverrides')||'{}'); } catch(_){ return {}; } })();
+    const yr = dateFrom.slice(0,4);
+    const yrData = annualData[yr] || {};
+    const expenseCategories = [
+      { key:'cogs',              label:'Cost of Goods Sold' },
+      { key:'totalExpenses',     label:'Total Operating Expenses' },
+      { key:'netOperatingIncome',label:'Net Operating Income' },
+    ];
+    body = `
+      <div class="stmt-section-title">Expenses — ${yr}</div>
+      <p class="stmt-note">Expense data is entered manually in <button class="stmt-link" onclick="show('revenueAdmin')">Financial Admin</button>. Transaction-level expense tracking coming soon.</p>
+      <table class="stmt-table">
+        <thead><tr><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${expenseCategories.map(e=>`<tr class="stmt-row"><td>${e.label}</td><td style="text-align:right">${yrData[e.key]!=null?_p5Money(yrData[e.key]):'—'}</td></tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Invoiced Items & Services ──────────────────────────────────────────────
+  else if (window._stmtReport === 'invoiced') {
+    // Group by line-item type from invoices
+    const itemMap = {};
+    fInvs.forEach(inv => {
+      const items = inv.items || inv.lineItems || [];
+      if (items.length) {
+        items.forEach(item => {
+          const k = escapeHtml(item.description || item.name || item.service || 'Service');
+          if (!itemMap[k]) itemMap[k] = { count:0, total:0, clients:new Set() };
+          itemMap[k].count++;
+          itemMap[k].total += Number(item.amount || item.qty*item.rate || 0);
+          itemMap[k].clients.add(inv.clientName||'');
+        });
+      } else {
+        // No line items — use invoice type
+        const k = escapeHtml(inv.type || inv.jobType || 'Invoice');
+        if (!itemMap[k]) itemMap[k] = { count:0, total:0, clients:new Set() };
+        itemMap[k].count++;
+        itemMap[k].total += inv(inv);
+        itemMap[k].clients.add(inv.clientName||'');
+      }
+    });
+    const rows = Object.entries(itemMap).sort((a,b)=>b[1].total-a[1].total);
+    body = `
+      <div class="stmt-section-title">Invoiced Items & Services</div>
+      <table class="stmt-table">
+        <thead><tr><th>Item / Service</th><th style="text-align:right">Count</th><th style="text-align:right">Total Billed</th><th style="text-align:right">Clients</th></tr></thead>
+        <tbody>${rows.length
+          ? rows.map(([k,v])=>`<tr class="stmt-row"><td>${k}</td><td style="text-align:right">${v.count}</td><td style="text-align:right;font-weight:700">${_p5Money(v.total)}</td><td style="text-align:right">${v.clients.size}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="stmt-empty">No invoiced items in this period</td></tr>`}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Revenue by Customer ────────────────────────────────────────────────────
+  else if (window._stmtReport === 'revCustomer') {
+    const custMap = {};
+    fInvs.forEach(i => {
+      const k = i.clientName || i.client || 'Unknown';
+      if (!custMap[k]) custMap[k] = { billed:0, collected:0, outstanding:0, count:0 };
+      custMap[k].billed      += inv(i);
+      custMap[k].collected   += paid(i);
+      custMap[k].outstanding += Math.max(0,bal(i));
+      custMap[k].count++;
+    });
+    const rows = Object.entries(custMap).sort((a,b)=>b[1].billed-a[1].billed);
+    body = `
+      <div class="stmt-section-title">Revenue by Customer</div>
+      <div class="stmt-kpi-row">
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Total Billed</div><div class="stmt-kpi-val" style="color:#2D7A55">${_p5Money(totalBilled)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Collected</div><div class="stmt-kpi-val" style="color:#2D7A55">${_p5Money(totalCollected)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Outstanding</div><div class="stmt-kpi-val" style="color:#C97B6A">${_p5Money(totalOutstanding)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Customers</div><div class="stmt-kpi-val">${rows.length}</div></div>
+      </div>
+      <table class="stmt-table">
+        <thead><tr><th>Customer</th><th style="text-align:right">Invoices</th><th style="text-align:right">Billed</th><th style="text-align:right">Collected</th><th style="text-align:right">Outstanding</th></tr></thead>
+        <tbody>${rows.length
+          ? rows.map(([k,v])=>`<tr class="stmt-row"><td style="font-weight:600">${escapeHtml(k)}</td><td style="text-align:right">${v.count}</td><td style="text-align:right">${_p5Money(v.billed)}</td><td style="text-align:right;color:#2D7A55">${_p5Money(v.collected)}</td><td style="text-align:right;color:${v.outstanding>0?'#C97B6A':'inherit'}">${_p5Money(v.outstanding)}</td></tr>`).join('')
+          : `<tr><td colspan="5" class="stmt-empty">No revenue in this period</td></tr>`}
+          ${rows.length?`<tr class="stmt-row bold"><td>Totals</td><td></td><td style="text-align:right">${_p5Money(totalBilled)}</td><td style="text-align:right;color:#2D7A55">${_p5Money(totalCollected)}</td><td style="text-align:right;color:#C97B6A">${_p5Money(totalOutstanding)}</td></tr>`:''}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Revenue Forecast ───────────────────────────────────────────────────────
+  else if (window._stmtReport === 'forecast') {
+    const openOpps = opps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+    const soldUnbilled = opps.filter(o => o.status==='Sold / Activation');
+    const forecastByMonth = {};
+    openOpps.forEach(o => {
+      const month = (o.expectedCloseDate||o.nextFollowUp||TODAY).slice(0,7);
+      if (!forecastByMonth[month]) forecastByMonth[month] = { weighted:0, total:0, count:0 };
+      const prob = Number(o.probability||o.closeProb||50) / 100;
+      forecastByMonth[month].weighted += Number(o.jobValue||0) * prob;
+      forecastByMonth[month].total    += Number(o.jobValue||0);
+      forecastByMonth[month].count++;
+    });
+    const fRows = Object.entries(forecastByMonth).sort((a,b)=>a[0].localeCompare(b[0]));
+    body = `
+      <div class="stmt-section-title">Revenue Forecast</div>
+      <div class="stmt-kpi-row">
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Open Pipeline</div><div class="stmt-kpi-val">${_p5Money(openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0))}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Weighted Forecast</div><div class="stmt-kpi-val" style="color:#4D8A86">${_p5Money(openOpps.reduce((s,o)=>s+Number(o.jobValue||0)*(Number(o.probability||50)/100),0))}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Won — Awaiting Invoice</div><div class="stmt-kpi-val" style="color:#2D7A55">${_p5Money(soldUnbilled.reduce((s,o)=>s+Number(o.jobValue||0),0))}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Open Opportunities</div><div class="stmt-kpi-val">${openOpps.length}</div></div>
+      </div>
+      <table class="stmt-table">
+        <thead><tr><th>Month</th><th style="text-align:right">Opportunities</th><th style="text-align:right">Pipeline Value</th><th style="text-align:right">Weighted Forecast</th></tr></thead>
+        <tbody>${fRows.length
+          ? fRows.map(([m,v])=>`<tr class="stmt-row"><td style="font-weight:600">${m}</td><td style="text-align:right">${v.count}</td><td style="text-align:right">${_p5Money(v.total)}</td><td style="text-align:right;color:#4D8A86;font-weight:700">${_p5Money(v.weighted)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="stmt-empty">No forecast data — add opportunities with expected close dates</td></tr>`}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Revenue by Crew ────────────────────────────────────────────────────────
+  else if (window._stmtReport === 'revCrew') {
+    const crewMap = {};
+    fInvs.forEach(i => {
+      const k = i.crewName || i.crew || 'Unassigned';
+      if (!crewMap[k]) crewMap[k] = { billed:0, collected:0, jobs:0 };
+      crewMap[k].billed    += inv(i);
+      crewMap[k].collected += paid(i);
+      crewMap[k].jobs++;
+    });
+    // Also pull from work orders that have amounts
+    wos.filter(w=>inRange(w.scheduled_date||w.date)).forEach(w => {
+      const k = w.crew_name || w.crew || 'Unassigned';
+      if (!crewMap[k]) crewMap[k] = { billed:0, collected:0, jobs:0 };
+      crewMap[k].jobs++;
+      if (w.amount_est && !crewMap[k].billed) crewMap[k].billed += Number(w.amount_est||0);
+    });
+    const rows = Object.entries(crewMap).sort((a,b)=>b[1].billed-a[1].billed);
+    body = `
+      <div class="stmt-section-title">Revenue by Crew</div>
+      <table class="stmt-table">
+        <thead><tr><th>Crew</th><th style="text-align:right">Jobs</th><th style="text-align:right">Billed</th><th style="text-align:right">Collected</th></tr></thead>
+        <tbody>${rows.length
+          ? rows.map(([k,v])=>`<tr class="stmt-row"><td style="font-weight:600">${escapeHtml(k)}</td><td style="text-align:right">${v.jobs}</td><td style="text-align:right">${_p5Money(v.billed)}</td><td style="text-align:right;color:#2D7A55">${_p5Money(v.collected)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="stmt-empty">No crew revenue in this period</td></tr>`}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Revenue by City ────────────────────────────────────────────────────────
+  else if (window._stmtReport === 'revCity') {
+    const cityMap = {};
+    fInvs.forEach(i => {
+      const addr = i.propertyAddr || i.address || '';
+      const city = addr.split(',').slice(-3,-2).map(s=>s.trim())[0] || 'Unknown';
+      if (!cityMap[city]) cityMap[city] = { billed:0, collected:0, count:0 };
+      cityMap[city].billed    += inv(i);
+      cityMap[city].collected += paid(i);
+      cityMap[city].count++;
+    });
+    const rows = Object.entries(cityMap).sort((a,b)=>b[1].billed-a[1].billed);
+    body = `
+      <div class="stmt-section-title">Revenue by City</div>
+      <table class="stmt-table">
+        <thead><tr><th>City</th><th style="text-align:right">Invoices</th><th style="text-align:right">Billed</th><th style="text-align:right">Collected</th></tr></thead>
+        <tbody>${rows.length
+          ? rows.map(([k,v])=>`<tr class="stmt-row"><td style="font-weight:600">${escapeHtml(k)}</td><td style="text-align:right">${v.count}</td><td style="text-align:right">${_p5Money(v.billed)}</td><td style="text-align:right;color:#2D7A55">${_p5Money(v.collected)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="stmt-empty">No city data in this period — ensure invoices have addresses</td></tr>`}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Revenue by County ──────────────────────────────────────────────────────
+  else if (window._stmtReport === 'revCounty') {
+    const countyMap = {};
+    fInvs.forEach(i => {
+      const county = i.county || i.countyName || (i.propertyAddr||'').split(',').slice(-2,-1).map(s=>s.trim())[0] || 'Unknown';
+      if (!countyMap[county]) countyMap[county] = { billed:0, collected:0, count:0 };
+      countyMap[county].billed    += inv(i);
+      countyMap[county].collected += paid(i);
+      countyMap[county].count++;
+    });
+    const rows = Object.entries(countyMap).sort((a,b)=>b[1].billed-a[1].billed);
+    body = `
+      <div class="stmt-section-title">Revenue by County</div>
+      <table class="stmt-table">
+        <thead><tr><th>County</th><th style="text-align:right">Invoices</th><th style="text-align:right">Billed</th><th style="text-align:right">Collected</th></tr></thead>
+        <tbody>${rows.length
+          ? rows.map(([k,v])=>`<tr class="stmt-row"><td style="font-weight:600">${escapeHtml(k)}</td><td style="text-align:right">${v.count}</td><td style="text-align:right">${_p5Money(v.billed)}</td><td style="text-align:right;color:#2D7A55">${_p5Money(v.collected)}</td></tr>`).join('')
+          : `<tr><td colspan="4" class="stmt-empty">No county data in this period</td></tr>`}
+        </tbody>
+      </table>`;
+  }
+
+  // ── Sales Tax ──────────────────────────────────────────────────────────────
+  else if (window._stmtReport === 'tax') {
+    const taxRate = 0.07; // default 7% — will make configurable
+    const taxBilled      = fInvs.reduce((s,i) => s + (inv(i) * (Number(i.taxRate||taxRate))), 0);
+    const taxCollected   = fInvs.filter(i=>paid(i)>=inv(i)).reduce((s,i) => s + (inv(i) * (Number(i.taxRate||taxRate))), 0);
+    const taxOutstanding = taxBilled - taxCollected;
+    body = `
+      <div class="stmt-section-title">Sales Tax Report</div>
+      <div class="stmt-kpi-row">
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Tax Billed</div><div class="stmt-kpi-val">${_p5Money(taxBilled)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Tax Collected</div><div class="stmt-kpi-val" style="color:#2D7A55">${_p5Money(taxCollected)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Tax Outstanding</div><div class="stmt-kpi-val" style="color:#C97B6A">${_p5Money(taxOutstanding)}</div></div>
+        <div class="stmt-kpi"><div class="stmt-kpi-label">Taxable Invoices</div><div class="stmt-kpi-val">${fInvs.length}</div></div>
+      </div>
+      <table class="stmt-table">
+        <thead><tr><th>Invoice #</th><th>Client</th><th>Date</th><th style="text-align:right">Subtotal</th><th style="text-align:right">Tax Rate</th><th style="text-align:right">Tax Amount</th><th>Status</th></tr></thead>
+        <tbody>${fInvs.length
+          ? fInvs.map(i => {
+              const rate = Number(i.taxRate||taxRate);
+              const tax  = inv(i) * rate;
+              const collected = paid(i) >= inv(i);
+              return `<tr class="stmt-row">
+                <td>${escapeHtml(i.number||i.id||'—')}</td>
+                <td>${escapeHtml(i.clientName||'—')}</td>
+                <td>${_p5FmtDate(i.date)}</td>
+                <td style="text-align:right">${_p5Money(inv(i))}</td>
+                <td style="text-align:right">${(rate*100).toFixed(1)}%</td>
+                <td style="text-align:right;font-weight:700">${_p5Money(tax)}</td>
+                <td><span class="stmt-badge ${collected?'paid':'open'}">${collected?'Collected':'Outstanding'}</span></td>
+              </tr>`;
+            }).join('')
+          : `<tr><td colspan="7" class="stmt-empty">No taxable invoices in this period</td></tr>`}
+        </tbody>
+      </table>
+      <p class="stmt-note">Tax rate defaults to 7%. Per-invoice tax rates will be configurable on the invoice form.</p>`;
+  }
+
+  // ── Render full page ───────────────────────────────────────────────────────
+  view.innerHTML = `
+  <div class="stmt-shell">
+    <header class="rp-header">
+      <div class="rp-header-left">
+        <h1 class="rp-title">Financial Reports</h1>
+        <p class="rp-subtitle">P&L · AR · AP · Revenue · Forecasts · Tax</p>
+      </div>
+      <div class="rp-header-actions">
+        <button class="rp-btn" onclick="show('invoices')">Invoices</button>
+        <button class="rp-btn" onclick="show('payments')">Payments</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('revenueAdmin')">Financial Admin</button>
+      </div>
+    </header>
+
+    <nav class="stmt-tab-bar">${tabHtml}</nav>
+    ${rangeHtml}
+    <div class="stmt-body">${body}</div>
+  </div>`;
+}
+window._stmtRender = _stmtRender;
 function financialActivity() {
   window._currentView = 'financialActivity';
   activateNav('financialActivity');
