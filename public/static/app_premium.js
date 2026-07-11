@@ -12876,8 +12876,8 @@ window._sbState = window._sbState || {
 async function _sbLoadData() {
   try {
     const [cr, wo] = await Promise.all([
-      fetch('/api/crews').then(r=>r.json()),
-      fetch('/api/work-orders?limit=500').then(r=>r.json()),
+      fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
+      fetch('/api/work-orders?limit=500', {credentials:'include'}).then(r=>r.json()),
     ]);
     if (cr.ok)  window._sbState.crews      = cr.data  || [];
     if (wo.ok)  window._sbState.workOrders = wo.data  || [];
@@ -14146,7 +14146,7 @@ window._snvCreate = async function() {
     employee_ids:   [...document.querySelectorAll('#snv-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId).filter(Boolean),
   };
   try {
-    const r=await fetch('/api/work-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/api/work-orders',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
     if(!d.ok) throw new Error(d.error);
     showToast(`Work Order ${d.wo_number} created`,'success');
@@ -14161,8 +14161,8 @@ window._sbOpenCrewManager = async function() {
   // Ensure fresh data
   try {
     const [cr,rr] = await Promise.all([
-      fetch('/api/crews').then(r=>r.json()),
-      fetch('/api/reps').then(r=>r.json()),
+      fetch('/api/crews',{credentials:'include'}).then(r=>r.json()),
+      fetch('/api/reps',{credentials:'include'}).then(r=>r.json()),
     ]);
     if(cr.ok) window._sbState.crews = cr.data||[];
     if(rr.ok) window._gwAllReps = rr.data||rr.reps||[];
@@ -14292,7 +14292,7 @@ window._sbCreateCrew = async function() {
   const chips=[...document.querySelectorAll('#cm-emp-chips .sb-emp-chip')];
   const members=chips.map(c=>({repId:c.dataset.repId, crewRole:c.dataset.crewRole||'laborer'}));
   try {
-    const r=await fetch('/api/crews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,color,members})});
+    const r=await fetch('/api/crews',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,color,members})});
     const d=await r.json();
     if(!d.ok) throw new Error(d.error);
     showToast(`Crew "${name}" created`,'success');
