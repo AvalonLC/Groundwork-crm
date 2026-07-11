@@ -13592,15 +13592,39 @@ window._sbDuplicateJob = async function(woId) {
 
 // ── Visit / Work Order Modal ──────────────────────────────────────────────────
 window._sbOpenVisitModal = async function(woId) {
+  // Remove any stale modal first
+  const _existing = document.getElementById('sb-visit-modal');
+  if (_existing) _existing.remove();
+
   let wo = null;
   try {
     const r = await fetch(`/api/work-orders/${woId}`, { credentials: 'include' });
-    const d = await r.json();
-    if (d.ok) wo = d.data;
-  } catch(e) {}
+    if (r.ok) {
+      const d = await r.json();
+      if (d.ok) wo = d.data;
+    }
+  } catch(e) { console.warn('[_sbOpenVisitModal] fetch error:', e); }
   // Fallback to localStorage
   if (!wo) wo = (state.workOrders||[]).find(w=>w.id===woId);
+  if (!wo) {
+    // Also check _sbState.workOrders
+    wo = (window._sbState?.workOrders||[]).find(w=>w.id===woId);
+  }
   if (!wo) { showToast('Work order not found','error'); return; }
+
+  // Normalize JSON columns that may arrive as strings from localStorage fallback
+  if (typeof wo.checklist  === 'string') try { wo.checklist  = JSON.parse(wo.checklist);  } catch(e) { wo.checklist  = []; }
+  if (typeof wo.materials  === 'string') try { wo.materials  = JSON.parse(wo.materials);  } catch(e) { wo.materials  = []; }
+  if (typeof wo.timeline   === 'string') try { wo.timeline   = JSON.parse(wo.timeline);   } catch(e) { wo.timeline   = []; }
+  if (typeof wo.before_photos==='string')try{wo.before_photos=JSON.parse(wo.before_photos);}catch(e){wo.before_photos=[];}
+  if (typeof wo.after_photos==='string') try{wo.after_photos =JSON.parse(wo.after_photos); }catch(e){wo.after_photos =[];}
+  if (typeof wo.attachments==='string')  try{wo.attachments  =JSON.parse(wo.attachments);  }catch(e){wo.attachments  =[];}
+  if (!Array.isArray(wo.checklist))   wo.checklist   = [];
+  if (!Array.isArray(wo.materials))   wo.materials   = [];
+  if (!Array.isArray(wo.before_photos))wo.before_photos=[];
+  if (!Array.isArray(wo.after_photos)) wo.after_photos =[];
+  if (!Array.isArray(wo.attachments))  wo.attachments  =[];
+  if (!Array.isArray(wo.employees))    wo.employees    =[];
 
   const crews   = window._sbState.crews || [];
   const allReps = window._gwAllReps || [];
@@ -13630,7 +13654,7 @@ window._sbOpenVisitModal = async function(woId) {
     <div class="sb-photo-group">
       <div class="sb-photo-label">${label}</div>
       <div class="sb-photo-row" id="sb-photos-${field}">
-        ${photos.map(url=>`<div class="sb-photo-thumb"><img src="${escapeHtml(url)}" alt="photo"><button onclick="_sbRemovePhoto('${field}','${url}')">×</button></div>`).join('')}
+        ${photos.map((url,pi)=>`<div class="sb-photo-thumb" data-pi="${pi}" data-field="${field}"><img src="${escapeHtml(url)}" alt="photo"><button onclick="_sbRemovePhoto(this.closest('.sb-photo-thumb').dataset.field,this.closest('.sb-photo-thumb').dataset.pi)">×</button></div>`).join('')}
         <label class="sb-photo-add" title="Add photo">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
           <input type="file" accept="image/*" style="display:none" onchange="_sbUploadPhoto(event,'${field}')">
@@ -13645,7 +13669,7 @@ window._sbOpenVisitModal = async function(woId) {
   const modal = document.createElement('div');
   modal.id = 'sb-visit-modal';
   modal.className = 'sb-modal-overlay';
-  modal.innerHTML = `
+  try { modal.innerHTML = `
     <div class="sb-modal-panel">
       <div class="sb-modal-header">
         <div class="sb-modal-title-block">
@@ -13817,7 +13841,7 @@ window._sbOpenVisitModal = async function(woId) {
             <h3 class="sb-modal-section-title">Customer</h3>
             ${wo.client_id || wo.client_name ? `
               <div>
-                <button class="sb-client-link" onclick="_sbGoToCustomer('${wo.client_id||''}','${escapeHtml(wo.client_name||'')}');_sbCloseModal()" title="Open customer details">
+                <button class="sb-client-link" data-cid="${escapeHtml(wo.client_id||'')}" data-cname="${escapeHtml(wo.client_name||'').replace(/"/g,'&quot;')}" onclick="_sbGoToCustomer(this.dataset.cid,this.dataset.cname);_sbCloseModal()" title="Open customer details">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   <strong>${escapeHtml(wo.client_name||'—')}</strong>
                 </button>
@@ -13881,7 +13905,14 @@ window._sbOpenVisitModal = async function(woId) {
           </button>
         </div>
       </div>
-    </div>`;
+    </div>`; } catch(renderErr) {
+    console.error('[_sbOpenVisitModal] render error:', renderErr, wo);
+    showToast('Error opening job — see console for details','error');
+    return;
+  }
+
+  // Close on backdrop click
+  modal.addEventListener('click', function(e) { if (e.target === modal) _sbCloseModal(); });
 
   document.body.appendChild(modal);
 
@@ -14148,13 +14179,27 @@ window._sbUploadPhoto = function(evt, field) {
   };
   reader.readAsDataURL(file);
 };
-window._sbRemovePhoto = function(field,url) {
+window._sbRemovePhoto = function(field, idxOrUrl) {
   const wo=window._sbCurrentWO; if(!wo) return;
-  wo[field]=(wo[field]||[]).filter(u=>u!==url);
-  const container=document.getElementById(`sb-photos-${field}`);
-  container?.querySelectorAll('.sb-photo-thumb').forEach(el=>{
-    if(el.querySelector('img')?.src===url) el.remove();
-  });
+  const idx = parseInt(idxOrUrl, 10);
+  if (!isNaN(idx)) {
+    // index-based removal (new path)
+    (wo[field]||[]).splice(idx, 1);
+    const container=document.getElementById(`sb-photos-${field}`);
+    if (container) {
+      const thumbs = container.querySelectorAll('.sb-photo-thumb');
+      if (thumbs[idx]) thumbs[idx].remove();
+      // Re-index remaining thumbs
+      container.querySelectorAll('.sb-photo-thumb').forEach((el,i) => el.dataset.pi = i);
+    }
+  } else {
+    // legacy url-based removal
+    wo[field]=(wo[field]||[]).filter(u=>u!==idxOrUrl);
+    const container=document.getElementById(`sb-photos-${field}`);
+    container?.querySelectorAll('.sb-photo-thumb').forEach(el=>{
+      if(el.querySelector('img')?.src===idxOrUrl) el.remove();
+    });
+  }
 };
 
 // ── Attachment helpers (photos + PDFs) ────────────────────────────────────────
