@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp -r public/static/. dist/static/",
+    "build": "node scripts/bump-version.js && vite build && cp -r public/static/. dist/static/",
     "sync-static": "cp -r public/static/. dist/static/",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",
