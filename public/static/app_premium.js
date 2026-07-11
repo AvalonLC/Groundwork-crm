@@ -13506,6 +13506,12 @@ function _sbRender() {
   const totalInProgress = visibleWOs.filter(w=>w.status==='in-progress').length;
   const totalCompleted  = visibleWOs.filter(w=>w.status==='completed').length;
 
+  // ── Mobile layout (≤768px): day-list view ────────────────────────────────
+  if (window.innerWidth <= 768) {
+    _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, totalInProgress, totalCompleted, headerLabel, gridHtml, crewFilterBar);
+    return;
+  }
+
   view.innerHTML = `
   <div class="sched-shell">
     <header class="sb-header">
@@ -13547,10 +13553,17 @@ window.scheduleBoard = scheduleBoard;
 window._sbNav = function(dir) {
   const sb = window._sbState;
   if (sb.viewMode==='week') sb.weekOffset += dir; else sb.monthOffset += dir;
+  // reset selected day to first day of new week when navigating
+  if (sb.viewMode === 'week') {
+    const days = _sbGetWeekDays(sb.weekOffset);
+    sb.mobileSelectedDay = days[0].toISOString().slice(0,10);
+  }
   _sbRender();
 };
 window._sbGoToday = function() {
-  window._sbState.weekOffset = 0; window._sbState.monthOffset = 0; _sbRender();
+  window._sbState.weekOffset = 0; window._sbState.monthOffset = 0;
+  window._sbState.mobileSelectedDay = new Date().toISOString().slice(0,10);
+  _sbRender();
 };
 window._sbSetView = function(v) { window._sbState.viewMode = v; _sbRender(); };
 window._sbToggleCrew = function(id) {
@@ -13563,6 +13576,257 @@ window._sbRefresh = async function() {
   await _sbLoadData();
   _sbRender();
 };
+window._sbSelectDay = function(iso) {
+  window._sbState.mobileSelectedDay = iso;
+  _sbRender();
+};
+
+// ── Mobile schedule render ────────────────────────────────────────────────────
+function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, totalInProgress, totalCompleted, headerLabel, _gridHtml, _crewFilterBar) {
+  const today = new Date().toISOString().slice(0,10);
+  const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const wdShort = ['S','M','T','W','T','F','S'];
+
+  // Month view on mobile — use a compact grid
+  if (sb.viewMode === 'month') {
+    const { first, last, month } = _sbGetMonthDays(sb.monthOffset);
+    const startDow = first.getDay();
+    const totalDays = last.getDate();
+    let cells = '';
+    for (let i=0;i<startDow;i++) cells += `<div class="sbm-month-blank"></div>`;
+    for (let d=1;d<=totalDays;d++) {
+      const iso = `${first.getFullYear()}-${String(first.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isToday = iso === today;
+      const isSelected = iso === (sb.mobileSelectedDay || today);
+      const jobs = visibleWOs.filter(w => w.scheduled_date?.slice(0,10) === iso);
+      cells += `<button class="sbm-month-day${isToday?' is-today':''}${isSelected?' is-selected':''}" onclick="_sbSelectDay('${iso}')">
+        <span class="sbm-month-num">${d}</span>
+        ${jobs.length ? `<span class="sbm-month-dot-row">${jobs.slice(0,3).map(wo=>{
+          const c = wo.crew_color || allCrews.find(cr=>cr.id===wo.crew_id)?.color || '#94a3b8';
+          return `<span style="width:5px;height:5px;border-radius:50%;background:${c};display:inline-block"></span>`;
+        }).join('')}${jobs.length>3?`<span style="font-size:8px;color:var(--gw-text-muted)">+</span>`:''}</span>` : ''}
+      </button>`;
+    }
+    const dowHeaders = wdShort.map(n=>`<div class="sbm-month-dow">${n}</div>`).join('');
+
+    // Day detail panel for selected day
+    const selDay = sb.mobileSelectedDay || today;
+    const selJobs = visibleWOs.filter(w => w.scheduled_date?.slice(0,10) === selDay);
+    const selDate = new Date(selDay + 'T12:00:00');
+    const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+
+    view.innerHTML = `
+    <div class="sched-shell sbm-shell">
+      <!-- Compact header -->
+      <div class="sbm-header">
+        <div class="sbm-header-row1">
+          <div class="sbm-title-nav">
+            <button class="sbm-nav-btn" onclick="_sbNav(-1)">‹</button>
+            <span class="sbm-period">${month}</span>
+            <button class="sbm-nav-btn" onclick="_sbNav(1)">›</button>
+          </div>
+          <div class="sbm-header-actions">
+            <button class="sbm-today-btn" onclick="_sbGoToday()">Today</button>
+            <button class="sbm-new-btn" onclick="_sbOpenNewVisit(null,null)">+ New</button>
+          </div>
+        </div>
+        <div class="sbm-view-strip">
+          <button class="sbm-view-btn" onclick="_sbSetView('week')">Week</button>
+          <button class="sbm-view-btn active" onclick="_sbSetView('month')">Month</button>
+          <button class="sbm-view-btn" onclick="show('dispatchBoard')">Dispatch</button>
+        </div>
+      </div>
+
+      <!-- Month grid -->
+      <div class="sbm-month-grid">
+        ${dowHeaders}
+        ${cells}
+      </div>
+
+      <!-- Selected day jobs -->
+      <div class="sbm-day-panel">
+        <div class="sbm-day-panel-head">
+          <span class="sbm-day-panel-label">${selLabel}</span>
+          <button class="sbm-add-day-btn" onclick="_sbOpenNewVisit('${selDay}',null)">+ Add</button>
+        </div>
+        ${selJobs.length
+          ? selJobs.map(wo => _sbMobileJobCard(wo, allCrews)).join('')
+          : `<div class="sbm-empty">No jobs scheduled</div>`
+        }
+      </div>
+
+      <!-- Crew chips scroll -->
+      <div class="sbm-crew-strip">
+        ${allCrews.map(cr=>{
+          const active = !sb.hiddenCrews.has(cr.id);
+          return `<button class="sbm-crew-chip${active?' active':''}" style="--cc:${cr.color}" onclick="_sbToggleCrew('${cr.id}')">
+            <span class="sbm-crew-dot" style="background:${cr.color}"></span>${escapeHtml(cr.name)}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>`;
+    return;
+  }
+
+  // ── Week view on mobile: day-strip + single-day list ──────────────────────
+  const days = _sbGetWeekDays(sb.weekOffset);
+  headerLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+
+  // Determine selected day
+  if (!sb.mobileSelectedDay) {
+    // Auto-select today if in current week, else first day
+    const todayInWeek = days.find(d=>d.toISOString().slice(0,10)===today);
+    sb.mobileSelectedDay = todayInWeek ? today : days[0].toISOString().slice(0,10);
+  }
+  // Ensure selected day is in current week
+  const weekIsos = days.map(d=>d.toISOString().slice(0,10));
+  if (!weekIsos.includes(sb.mobileSelectedDay)) {
+    sb.mobileSelectedDay = weekIsos[0];
+  }
+
+  // Day strip: 7 tappable day chips
+  const dayStrip = days.map(d => {
+    const iso = d.toISOString().slice(0,10);
+    const isToday = iso === today;
+    const isSelected = iso === sb.mobileSelectedDay;
+    const jobCount = visibleWOs.filter(w=>w.scheduled_date?.slice(0,10)===iso).length;
+    return `<button class="sbm-day-chip${isToday?' is-today':''}${isSelected?' is-selected':''}" onclick="_sbSelectDay('${iso}')">
+      <span class="sbm-chip-wd">${wdShort[d.getDay()]}</span>
+      <span class="sbm-chip-date">${d.getDate()}</span>
+      ${jobCount ? `<span class="sbm-chip-dot"></span>` : '<span class="sbm-chip-dot sbm-chip-dot--empty"></span>'}
+    </button>`;
+  }).join('');
+
+  // Jobs for selected day
+  const selDay = sb.mobileSelectedDay;
+  const selJobs = visibleWOs.filter(w=>w.scheduled_date?.slice(0,10)===selDay);
+  const selDate = new Date(selDay + 'T12:00:00');
+  const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+
+  // Crew lanes for selected day (if enabled)
+  let dayContent = '';
+  if (sb.crewLanes && allCrews.length) {
+    const laneCrews = [
+      { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
+      ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
+    ];
+    dayContent = laneCrews.map(cr => {
+      const isUnassigned = cr.id==='__unassigned__';
+      const crewJobs = isUnassigned
+        ? selJobs.filter(w=>!w.crew_id)
+        : selJobs.filter(w=>w.crew_id===cr.id);
+      if (!crewJobs.length && isUnassigned) return ''; // hide empty unassigned lane
+      return `<div class="sbm-crew-lane">
+        <div class="sbm-crew-lane-head" style="border-left:3px solid ${cr.color}">
+          <span class="sbm-crew-lane-dot" style="background:${cr.color}"></span>
+          <span class="sbm-crew-lane-name">${escapeHtml(cr.name)}</span>
+          <span class="sbm-crew-lane-count">${crewJobs.length} job${crewJobs.length!==1?'s':''}</span>
+          <button class="sbm-add-lane-btn" onclick="_sbOpenNewVisit('${selDay}','${isUnassigned?'':cr.id}')">+</button>
+        </div>
+        ${crewJobs.map(wo=>_sbMobileJobCard(wo,allCrews)).join('') || `<div class="sbm-lane-empty">No jobs</div>`}
+      </div>`;
+    }).join('');
+  } else {
+    dayContent = selJobs.length
+      ? selJobs.map(wo=>_sbMobileJobCard(wo,allCrews)).join('')
+      : `<div class="sbm-empty">No jobs scheduled for this day</div>`;
+  }
+
+  // Stat summary — compact single row
+  const statSummary = `<div class="sbm-stat-row">
+    <span class="sbm-stat-pill">${totalScheduled} scheduled</span>
+    ${totalInProgress ? `<span class="sbm-stat-pill sbm-stat-pill--blue">${totalInProgress} in progress</span>` : ''}
+    ${totalCompleted ? `<span class="sbm-stat-pill sbm-stat-pill--green">${totalCompleted} done</span>` : ''}
+    <span class="sbm-stat-pill sbm-stat-pill--muted">${allCrews.length} crew${allCrews.length!==1?'s':''}</span>
+  </div>`;
+
+  view.innerHTML = `
+  <div class="sched-shell sbm-shell">
+    <!-- Compact mobile header -->
+    <div class="sbm-header">
+      <div class="sbm-header-row1">
+        <div class="sbm-title-nav">
+          <h1 class="sbm-title">Schedule</h1>
+          <button class="sbm-nav-btn" onclick="_sbNav(-1)">‹</button>
+          <span class="sbm-period">${headerLabel}</span>
+          <button class="sbm-nav-btn" onclick="_sbNav(1)">›</button>
+        </div>
+        <div class="sbm-header-actions">
+          <button class="sbm-today-btn" onclick="_sbGoToday()">Today</button>
+          <button class="sbm-new-btn" onclick="_sbOpenNewVisit(null,null)">+ New</button>
+        </div>
+      </div>
+
+      <!-- View mode strip -->
+      <div class="sbm-view-strip">
+        <button class="sbm-view-btn active" onclick="_sbSetView('week')">Week</button>
+        <button class="sbm-view-btn" onclick="_sbSetView('month')">Month</button>
+        <button class="sbm-view-btn" onclick="_sbToggleCrewLanes()" style="${sb.crewLanes?'background:var(--gw-pine-500,#2D7A55);color:#fff;':''}">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="2" width="14" height="3" rx="1"/><rect x="1" y="7" width="14" height="3" rx="1"/><rect x="1" y="12" width="14" height="3" rx="1"/></svg>
+          Lanes
+        </button>
+        <button class="sbm-view-btn" onclick="show('dispatchBoard')">Dispatch</button>
+      </div>
+    </div>
+
+    <!-- Stat summary strip -->
+    ${statSummary}
+
+    <!-- Crew filter chips (horizontal scroll) -->
+    <div class="sbm-crew-strip">
+      ${allCrews.map(cr=>{
+        const active = !sb.hiddenCrews.has(cr.id);
+        return `<button class="sbm-crew-chip${active?' active':''}" style="--cc:${cr.color}" onclick="_sbToggleCrew('${cr.id}')">
+          <span class="sbm-crew-dot" style="background:${cr.color}"></span>${escapeHtml(cr.name)}
+          ${cr.members?.length ? `<span class="sbm-crew-cnt">${cr.members.length}</span>` : ''}
+        </button>`;
+      }).join('')}
+      <button class="sbm-crew-chip sbm-crew-chip--manage" onclick="show('userManagement','crews')">+ Manage</button>
+    </div>
+
+    <!-- Day selector strip -->
+    <div class="sbm-day-strip">
+      ${dayStrip}
+    </div>
+
+    <!-- Selected day label + add button -->
+    <div class="sbm-day-header">
+      <span class="sbm-day-label">${selLabel}</span>
+      <button class="sbm-add-day-btn" onclick="_sbOpenNewVisit('${selDay}',null)">+ Work Order</button>
+    </div>
+
+    <!-- Day content: job cards / crew lanes -->
+    <div class="sbm-day-content">
+      ${dayContent || `<div class="sbm-empty">No jobs scheduled for this day</div>`}
+    </div>
+
+    <!-- Bottom padding for nav bar -->
+    <div style="height:80px"></div>
+  </div>`;
+}
+
+// Mobile job card — more touch-friendly than the desktop card
+function _sbMobileJobCard(wo, crews) {
+  const crew = crews.find(c=>c.id===wo.crew_id);
+  const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
+  const statusCls = _p6WOStatusClass(wo.status);
+  const timeStr = wo.scheduled_time ? wo.scheduled_time.slice(0,5) : '';
+  const endStr  = wo.scheduled_end_time ? ' – '+wo.scheduled_end_time.slice(0,5) : '';
+  return `
+  <div class="sbm-job-card ${statusCls}" style="border-left:4px solid ${crewColor}" onclick="_sbOpenVisitModal('${wo.id}')">
+    <div class="sbm-job-top">
+      <span class="sbm-job-num">${wo.wo_number||wo.id}</span>
+      ${timeStr ? `<span class="sbm-job-time">${timeStr}${endStr}</span>` : ''}
+      <span class="sbm-job-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
+    </div>
+    <div class="sbm-job-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
+    <div class="sbm-job-meta">
+      ${crew||wo.crew_name ? `<span style="color:${crewColor};font-weight:600;font-size:12px">${escapeHtml(wo.crew_name||crew?.name||'')}</span>` : ''}
+      <span class="sbm-job-type">${escapeHtml(wo.type||'Service')}</span>
+      ${wo.duration_hours ? `<span class="sbm-job-dur">${wo.duration_hours}h</span>` : ''}
+    </div>
+  </div>`;
+}
 
 window._sbToggleCrewLanes = function() {
   window._sbState.crewLanes = !window._sbState.crewLanes;
