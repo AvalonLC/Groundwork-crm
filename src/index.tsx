@@ -14,61 +14,25 @@ app.use('/api/*', cors())
 // ── Static files ──────────────────────────────────────────────────────────────
 app.use('/static/*', serveStatic({ root: './public' }))
 // ── Service Worker — self-destructing killer + real SW ───────────────────────
-// /sw.js — the REAL SW (registered after killer runs)
+// /sw.js — self-destructing SW: wipes all caches then unregisters itself
+// Any browser with the old SW will fetch this new version, which immediately
+// kills all caches and unregisters itself. No more SW will run after this.
 app.get('/sw.js', (c) => {
-  const BUILD = '20260711b015';
-  const sw = `const CACHE='groundwork-crm-${BUILD}';
-self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(clients => clients.forEach(c => c.postMessage({ type: 'GW_SW_UPDATED', version: '${BUILD}' })))
-  );
-});
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        if (res.ok && e.request.url.startsWith(self.location.origin)) {
-          caches.open(CACHE).then(cache => cache.put(e.request, res.clone()));
-        }
-        return res;
-      })
-      .catch(() => caches.match(e.request))
-  );
-});`;
-  return c.text(sw, 200, {
-    'Content-Type': 'application/javascript',
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-  });
-})
-
-// /sw-kill.js — served at a RANDOM-LOOKING path the stale SW has never cached.
-// Unregisters ALL service workers, wipes ALL caches, then reloads.
-app.get('/sw-kill.js', (c) => {
-  const killer = `
+  const sw = `
 self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    // Wipe every cache
     const keys = await caches.keys();
     await Promise.all(keys.map(k => caches.delete(k)));
-    // Claim all clients so we can talk to them
     await self.clients.claim();
-    // Tell every tab to unregister us and reload
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    clients.forEach(c => c.postMessage({ type: 'GW_KILL_DONE' }));
+    clients.forEach(c => c.postMessage({ type: 'GW_NUKE_DONE' }));
+    await self.registration.unregister();
   })());
 });
-// Pass ALL fetches straight to the network — no caching
-self.addEventListener('fetch', e => {
-  e.respondWith(fetch(e.request));
-});`;
-  return c.text(killer, 200, {
+self.addEventListener('fetch', e => { e.respondWith(fetch(e.request)); });
+`;
+  return c.text(sw, 200, {
     'Content-Type': 'application/javascript',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
   });
@@ -5056,7 +5020,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b015">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b016">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5080,8 +5044,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/static/platform_core.js?v=20260711b015"></script>
-  <script src="/static/client_portal.js?v=20260711b015"></script>
+  <script src="/static/platform_core.js?v=20260711b016"></script>
+  <script src="/static/client_portal.js?v=20260711b016"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5692,9 +5656,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b015">
-  <link rel="stylesheet" href="/static/styles.css?v=20260711b015">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b015">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b016">
+  <link rel="stylesheet" href="/static/styles.css?v=20260711b016">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b016">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6235,57 +6199,53 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711b015"></script>
-<script src="/static/db.js?v=20260711b015"></script>
-<script src="/static/data.js?v=20260711b015"></script>
-<script src="/static/reps.js?v=20260711b015"></script>
-<script src="/static/record-page.js?v=20260711b015"></script>
-<script src="/static/academy.js?v=20260711b015"></script>
-<script src="/static/task_engine.js?v=20260711b015"></script>
-<script src="/static/app_premium.js?v=20260711b015"></script>
-<script src="/static/estimates.js?v=20260711b015"></script>
-<script src="/static/invoices.js?v=20260711b015"></script>
-<script src="/static/csv_import.js?v=20260711b015"></script>
-<script src="/static/onboarding.js?v=20260711b015"></script>
-<script src="/static/recurring_plans.js?v=20260711b015"></script>
-<script src="/static/reviews.js?v=20260711b015"></script>
-<script src="/static/stripe.js?v=20260711b015"></script>
-<script src="/static/email.js?v=20260711b015"></script>
-<script src="/static/notifications.js?v=20260711b015"></script>
-<script src="/static/integrations.js?v=20260711b015"></script>
-<script src="/static/user_management.js?v=20260711b015"></script>
-<script src="/static/platform_admin.js?v=20260711b015"></script>
-<script src="/static/time_tracker.js?v=20260711b015"></script>
-<script src="/static/field_workday.js?v=20260711b015"></script>
-<script src="/static/platform_core.js?v=20260711b015"></script>
-<script src="/static/approval_engine.js?v=20260711b015"></script>
-<script src="/static/automation_engine.js?v=20260711b015"></script>
-<script src="/static/client_portal.js?v=20260711b015"></script>
-<script src="/static/field_mode.js?v=20260711b015"></script>
+<script src="/static/gw-icons.js?v=20260711b016"></script>
+<script src="/static/db.js?v=20260711b016"></script>
+<script src="/static/data.js?v=20260711b016"></script>
+<script src="/static/reps.js?v=20260711b016"></script>
+<script src="/static/record-page.js?v=20260711b016"></script>
+<script src="/static/academy.js?v=20260711b016"></script>
+<script src="/static/task_engine.js?v=20260711b016"></script>
+<script src="/static/app_premium.js?v=20260711b016"></script>
+<script src="/static/estimates.js?v=20260711b016"></script>
+<script src="/static/invoices.js?v=20260711b016"></script>
+<script src="/static/csv_import.js?v=20260711b016"></script>
+<script src="/static/onboarding.js?v=20260711b016"></script>
+<script src="/static/recurring_plans.js?v=20260711b016"></script>
+<script src="/static/reviews.js?v=20260711b016"></script>
+<script src="/static/stripe.js?v=20260711b016"></script>
+<script src="/static/email.js?v=20260711b016"></script>
+<script src="/static/notifications.js?v=20260711b016"></script>
+<script src="/static/integrations.js?v=20260711b016"></script>
+<script src="/static/user_management.js?v=20260711b016"></script>
+<script src="/static/platform_admin.js?v=20260711b016"></script>
+<script src="/static/time_tracker.js?v=20260711b016"></script>
+<script src="/static/field_workday.js?v=20260711b016"></script>
+<script src="/static/platform_core.js?v=20260711b016"></script>
+<script src="/static/approval_engine.js?v=20260711b016"></script>
+<script src="/static/automation_engine.js?v=20260711b016"></script>
+<script src="/static/client_portal.js?v=20260711b016"></script>
+<script src="/static/field_mode.js?v=20260711b016"></script>
 <script>
-  // ── Service Worker: registration + auto-update ───────────────────────────
+  // ── Service Worker: KILL MODE ─────────────────────────────────────────────
+  // SW is disabled. We unregister everything and register a self-destructing
+  // SW that wipes caches and unregisters itself. Net result: no SW running.
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
-      .then(reg => {
-        // Poll for updates every 60 seconds while the app is open
-        setInterval(() => reg.update(), 60_000);
-      })
+    // Unregister all existing SWs immediately
+    navigator.serviceWorker.getRegistrations()
+      .then(regs => regs.forEach(r => r.unregister()))
       .catch(() => {});
-
-    // When the active SW posts GW_SW_UPDATED, silently reload to apply the new build
+    // Wipe all caches from page side too
+    if ('caches' in window) {
+      caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+    }
+    // Register self-destructing SW to catch any missed caches
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
+    // When it signals done, reload once cleanly
     navigator.serviceWorker.addEventListener('message', e => {
-      if (e.data && e.data.type === 'GW_SW_UPDATED') {
-        // Small delay so any in-flight API requests finish cleanly
-        setTimeout(() => window.location.reload(), 1500);
+      if (e.data && e.data.type === 'GW_NUKE_DONE') {
+        if (!window._gwReloading) { window._gwReloading = true; window.location.reload(); }
       }
-    });
-
-    // Handle the case where a NEW SW is waiting (page was already open when deploy happened).
-    // controllerchange fires when the new SW takes control → reload.
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (window._gwSwReloading) return;
-      window._gwSwReloading = true;
-      window.location.reload();
     });
   }
   
