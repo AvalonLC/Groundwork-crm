@@ -16,7 +16,7 @@ app.use('/static/*', serveStatic({ root: './public' }))
 // ── Service Worker — self-destructing killer + real SW ───────────────────────
 // /sw.js — the REAL SW (registered after killer runs)
 app.get('/sw.js', (c) => {
-  const BUILD = '20260711b013';
+  const BUILD = '20260711b014';
   const sw = `const CACHE='groundwork-crm-${BUILD}';
 self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
 self.addEventListener('activate', e => {
@@ -93,97 +93,97 @@ app.get('/site.webmanifest', (c) => {
 // Apple requests the touch icon at the root — redirect to our static copy
 app.get('/apple-touch-icon.png', (c) => c.redirect('/static/apple-touch-icon.png', 301))
 
-// ── /reset — SW killer page ───────────────────────────────────────────────────
-// Registers sw-kill.js (never cached by the bad SW) to nuke everything,
-// then falls back to direct unregister from the page as well.
-app.get('/reset', (c) => {
-  return c.html(`<!DOCTYPE html>
+// ── /reset  AND  /gw-clear-XXXXXXXX — nuclear SW killer pages ────────────────
+// The old SW intercepts every known path. We serve the reset page at BOTH a
+// fixed path AND a random-looking path that the stale SW has never cached.
+// The page is 100% self-contained (no external fetches), so the SW cannot
+// poison it by serving a cached response for any sub-resource.
+const RESET_HTML = (extraHeaders: Record<string,string> = {}) => {
+  const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Resetting Groundwork CRM…</title>
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, sans-serif; background: #113931; color: #fff;
-           display: flex; flex-direction: column; align-items: center; justify-content: center;
-           min-height: 100vh; margin: 0; padding: 24px; text-align: center; }
-    h1 { font-size: 22px; margin: 0 0 12px; }
-    p  { color: rgba(255,255,255,.65); font-size: 15px; margin: 0 0 24px; line-height: 1.5; }
-    #status { font-size: 14px; color: #7FC5BB; min-height: 60px; line-height: 1.6; }
-    .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,.2);
-               border-top-color: #7FC5BB; border-radius: 50%;
-               animation: spin .8s linear infinite; margin: 0 auto 20px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .done { border-top-color: #2D7A55 !important; animation: none !important; }
+    *{box-sizing:border-box}
+    body{font-family:-apple-system,sans-serif;background:#113931;color:#fff;
+         display:flex;flex-direction:column;align-items:center;justify-content:center;
+         min-height:100vh;margin:0;padding:24px;text-align:center}
+    h1{font-size:22px;margin:0 0 12px}
+    p{color:rgba(255,255,255,.65);font-size:15px;margin:0 0 24px;line-height:1.5}
+    #log{font-size:13px;color:#7FC5BB;line-height:1.8;min-height:80px;white-space:pre-line}
+    .ring{width:44px;height:44px;border:3px solid rgba(255,255,255,.15);
+          border-top-color:#7FC5BB;border-radius:50%;
+          animation:spin .7s linear infinite;margin:0 auto 20px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .ok{border-top-color:#2ecc71!important;animation:none!important}
   </style>
 </head>
 <body>
-  <div class="spinner" id="spinner"></div>
-  <h1>Clearing app cache…</h1>
-  <p>Wiping stale service workers and cached files.<br>You'll be redirected automatically.</p>
-  <div id="status">Starting…</div>
-  <script>
-  (async () => {
-    const log = (msg) => { document.getElementById('status').textContent = msg; };
-    const sp  = document.getElementById('spinner');
-    const steps = [];
+<div class="ring" id="ring"></div>
+<h1>Clearing app cache…</h1>
+<p>Wiping stale service workers &amp; cached files.<br>You'll be redirected automatically.</p>
+<div id="log">Starting…</div>
+<script>
+(async()=>{
+  const out=[];
+  const log=(s)=>{out.push(s);document.getElementById('log').textContent=out.join('\\n');};
 
-    // STEP 1: Register the killer SW at a path the bad SW has never seen
-    if ('serviceWorker' in navigator) {
-      try {
-        log('Registering SW killer…');
-        // Listen for the kill-done message
-        const killPromise = new Promise(resolve => {
-          navigator.serviceWorker.addEventListener('message', e => {
-            if (e.data && e.data.type === 'GW_KILL_DONE') resolve();
-          });
-          // Fallback timeout in case message never fires
-          setTimeout(resolve, 3000);
-        });
-        const reg = await navigator.serviceWorker.register('/sw-kill.js', { scope: '/' });
-        steps.push('killer registered');
-        log(steps.join(' · ') + '…');
-        await killPromise;
-        steps.push('caches wiped');
-      } catch(e) {
-        steps.push('killer failed: ' + e.message);
-      }
+  // ── 1. Unregister every SW directly (works even if no killer SW can register) ──
+  if('serviceWorker' in navigator){
+    try{
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const r of regs) await r.unregister();
+      log('✓ '+regs.length+' service worker(s) unregistered');
+    }catch(e){log('⚠ SW unregister: '+e.message);}
+  } else { log('ℹ SW not supported in this browser'); }
 
-      // STEP 2: Directly unregister ALL SWs from the page as backup
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for (const r of regs) { await r.unregister(); }
-        steps.push(regs.length + ' SW(s) unregistered');
-      } catch(e) { steps.push('unreg failed'); }
-    } else {
-      steps.push('SW not supported');
-    }
+  // ── 2. Wipe every cache entry ──────────────────────────────────────────────
+  if('caches' in window){
+    try{
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+      log('✓ '+keys.length+' cache bucket(s) deleted');
+    }catch(e){log('⚠ Cache wipe: '+e.message);}
+  }
 
-    // STEP 3: Wipe all caches from the page side too
-    if ('caches' in window) {
-      try {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-        steps.push(keys.length + ' cache(s) cleared');
-      } catch(e) { steps.push('cache clear failed'); }
-    }
+  // ── 3. Clear localStorage + sessionStorage ─────────────────────────────────
+  try{ localStorage.clear(); sessionStorage.clear(); log('✓ Storage cleared'); }
+  catch(e){ log('⚠ Storage: '+e.message); }
 
-    sp.classList.add('done');
-    log('✓ ' + steps.join(' · ') + ' — redirecting…');
-
-    // STEP 4: Hard reload to root with cache-bust param
-    setTimeout(() => {
-      window.location.replace('/?t=' + Date.now());
-    }, 1500);
-  })().catch(e => {
-    document.getElementById('status').textContent = 'Error: ' + e.message;
-    setTimeout(() => window.location.replace('/'), 2000);
-  });
-  </script>
+  // ── 4. Done — hard-navigate with cache-bust so browser fetches fresh HTML ──
+  document.getElementById('ring').className='ring ok';
+  log('✓ Done — loading fresh app…');
+  setTimeout(()=>{
+    // location.replace so Back button doesn't loop here
+    window.location.replace('/?nocache='+Date.now());
+  }, 1200);
+})().catch(e=>{
+  document.getElementById('log').textContent='Error: '+e.message+'\\n\\nRedirecting…';
+  setTimeout(()=>window.location.replace('/'),2500);
+});
+</script>
 </body>
-</html>`, 200, { 'Cache-Control': 'no-cache, no-store, must-revalidate' })
-})
+</html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+      'Surrogate-Control': 'no-store',
+      ...extraHeaders,
+    }
+  });
+};
+
+// /reset — known path (may be cached by old SW, but we try anyway)
+app.get('/reset', () => RESET_HTML())
+
+// /gw-nuke — random-looking path the old SW has NEVER cached
+// Users who are stuck should navigate to: groundwork-crm.com/gw-nuke
+app.get('/gw-nuke', () => RESET_HTML())
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -5013,7 +5013,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b013">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b014">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5037,8 +5037,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/static/platform_core.js?v=20260711b013"></script>
-  <script src="/static/client_portal.js?v=20260711b013"></script>
+  <script src="/static/platform_core.js?v=20260711b014"></script>
+  <script src="/static/client_portal.js?v=20260711b014"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5649,9 +5649,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b013">
-  <link rel="stylesheet" href="/static/styles.css?v=20260711b013">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b013">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b014">
+  <link rel="stylesheet" href="/static/styles.css?v=20260711b014">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b014">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6192,33 +6192,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711b013"></script>
-<script src="/static/db.js?v=20260711b013"></script>
-<script src="/static/data.js?v=20260711b013"></script>
-<script src="/static/reps.js?v=20260711b013"></script>
-<script src="/static/record-page.js?v=20260711b013"></script>
-<script src="/static/academy.js?v=20260711b013"></script>
-<script src="/static/task_engine.js?v=20260711b013"></script>
-<script src="/static/app_premium.js?v=20260711b013"></script>
-<script src="/static/estimates.js?v=20260711b013"></script>
-<script src="/static/invoices.js?v=20260711b013"></script>
-<script src="/static/csv_import.js?v=20260711b013"></script>
-<script src="/static/onboarding.js?v=20260711b013"></script>
-<script src="/static/recurring_plans.js?v=20260711b013"></script>
-<script src="/static/reviews.js?v=20260711b013"></script>
-<script src="/static/stripe.js?v=20260711b013"></script>
-<script src="/static/email.js?v=20260711b013"></script>
-<script src="/static/notifications.js?v=20260711b013"></script>
-<script src="/static/integrations.js?v=20260711b013"></script>
-<script src="/static/user_management.js?v=20260711b013"></script>
-<script src="/static/platform_admin.js?v=20260711b013"></script>
-<script src="/static/time_tracker.js?v=20260711b013"></script>
-<script src="/static/field_workday.js?v=20260711b013"></script>
-<script src="/static/platform_core.js?v=20260711b013"></script>
-<script src="/static/approval_engine.js?v=20260711b013"></script>
-<script src="/static/automation_engine.js?v=20260711b013"></script>
-<script src="/static/client_portal.js?v=20260711b013"></script>
-<script src="/static/field_mode.js?v=20260711b013"></script>
+<script src="/static/gw-icons.js?v=20260711b014"></script>
+<script src="/static/db.js?v=20260711b014"></script>
+<script src="/static/data.js?v=20260711b014"></script>
+<script src="/static/reps.js?v=20260711b014"></script>
+<script src="/static/record-page.js?v=20260711b014"></script>
+<script src="/static/academy.js?v=20260711b014"></script>
+<script src="/static/task_engine.js?v=20260711b014"></script>
+<script src="/static/app_premium.js?v=20260711b014"></script>
+<script src="/static/estimates.js?v=20260711b014"></script>
+<script src="/static/invoices.js?v=20260711b014"></script>
+<script src="/static/csv_import.js?v=20260711b014"></script>
+<script src="/static/onboarding.js?v=20260711b014"></script>
+<script src="/static/recurring_plans.js?v=20260711b014"></script>
+<script src="/static/reviews.js?v=20260711b014"></script>
+<script src="/static/stripe.js?v=20260711b014"></script>
+<script src="/static/email.js?v=20260711b014"></script>
+<script src="/static/notifications.js?v=20260711b014"></script>
+<script src="/static/integrations.js?v=20260711b014"></script>
+<script src="/static/user_management.js?v=20260711b014"></script>
+<script src="/static/platform_admin.js?v=20260711b014"></script>
+<script src="/static/time_tracker.js?v=20260711b014"></script>
+<script src="/static/field_workday.js?v=20260711b014"></script>
+<script src="/static/platform_core.js?v=20260711b014"></script>
+<script src="/static/approval_engine.js?v=20260711b014"></script>
+<script src="/static/automation_engine.js?v=20260711b014"></script>
+<script src="/static/client_portal.js?v=20260711b014"></script>
+<script src="/static/field_mode.js?v=20260711b014"></script>
 <script>
   // ── Service Worker: registration + auto-update ───────────────────────────
   if ('serviceWorker' in navigator) {
