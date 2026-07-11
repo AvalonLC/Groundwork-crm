@@ -42,10 +42,11 @@ const _VIEW_WORKSPACE_MAP = {
   // Financial workspace
   financialHub:'gwFinancial', invoices:'gwFinancial', payments:'gwFinancial',
   deposits:'gwFinancial', statements:'gwFinancial', financialActivity:'gwFinancial',
-  statement:'gwFinancial',
+  statement:'gwFinancial', gwReviews:'gwFinancial',
   // Operations workspace
   scheduleBoard:'gwOperations', dispatchBoard:'gwOperations',
   recurringServices:'gwOperations', crewView:'gwOperations',
+  gwRecurringPlans:'gwOperations',
   workOrderList:'gwOperations', workOrderDetail:'gwOperations',
   assetList:'gwOperations', assetDetail:'gwOperations',
   maintenanceQueue:'gwOperations', inventoryList:'gwOperations',
@@ -247,8 +248,8 @@ const DEFAULT_NAV_PERMS = {
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
-    'financialHub','invoices','payments','deposits','statements','financialActivity',
-    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+    'financialHub','invoices','gwReviews','payments','deposits','statements','financialActivity',
+    'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
@@ -260,8 +261,8 @@ const DEFAULT_NAV_PERMS = {
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
-    'financialHub','invoices','payments','deposits','statements','financialActivity',
-    'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
+    'financialHub','invoices','gwReviews','payments','deposits','statements','financialActivity',
+    'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
@@ -705,6 +706,7 @@ function gwFinancial(tab) {
   _gwSetHeader('Financial', [
     {id:'financialHub',       label:'Overview'},
     {id:'invoices',           label:'Invoices'},
+    {id:'gwReviews',          label:'Reviews'},
     {id:'payments',           label:'Payments'},
     {id:'deposits',           label:'Deposits'},
     {id:'statements',         label:'Statements'},
@@ -712,6 +714,7 @@ function gwFinancial(tab) {
   ], tab);
   if (tab === 'financialHub')          (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
   else if (tab === 'invoices')         (typeof gwInvoices==='function') ? gwInvoices() : _gwTabStub('Invoices');
+  else if (tab === 'gwReviews')        (typeof window.gwReviews==='function') ? window.gwReviews() : _gwTabStub('Reviews');
   else if (tab === 'payments')         (typeof payments==='function') ? payments() : _gwTabStub('Payments');
   else if (tab === 'deposits')         (typeof deposits==='function') ? deposits() : _gwTabStub('Deposits');
   else if (tab === 'statements')       (typeof statements==='function') ? statements() : _gwTabStub('Statements');
@@ -745,6 +748,7 @@ function _gwOpsNavConfig() {
     {id:'dispatchBoard',      label:'Dispatch'},
     {id:'workOrderList',      label:'Work Orders'},
     {id:'recurringServices',  label:'Recurring Services'},
+    {id:'gwRecurringPlans',   label:'Service Plans'},
     {id:'assetList',          label:'Assets',      sub:true},
     {id:'maintenanceQueue',   label:'Maintenance', sub:true},
     {id:'inventoryList',      label:'Inventory',   sub:true},
@@ -761,6 +765,7 @@ function gwOperations(tab) {
   else if (tab === 'dispatchBoard')    (typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
   else if (tab === 'workOrderList')    (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
   else if (tab === 'recurringServices')(typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
+  else if (tab === 'gwRecurringPlans') (typeof window.gwRecurringPlans==='function') ? window.gwRecurringPlans() : _gwTabStub('Service Plans');
   else if (tab === 'gwResources')      gwResources('assetList');
   else if (tab === 'assetList')        (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
   else if (tab === 'maintenanceQueue') (typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
@@ -11765,6 +11770,13 @@ window.superAdmin = superAdmin;
     if (typeof window._gwShouldStartFieldMode === 'function' && window._gwShouldStartFieldMode()) {
       show('fieldDashboard');
     } else {
+      // ── Onboarding check: admin only, runs once on first login ────────────
+      // gwCheckOnboarding() fetches /api/company/branding and shows wizard
+      // if onboarding_completed===0. It resolves immediately for non-admins
+      // or returning users, adding no perceptible delay.
+      if (d1Rep.role === 'admin' && typeof window.gwCheckOnboarding === 'function') {
+        try { await window.gwCheckOnboarding(); } catch(e) { /* non-blocking */ }
+      }
       // ── Hash-based restore: reload stays on the same page ──────────────────
       const _hashView = (location.hash || '').replace(/^#/, '').trim();
       // Only restore if hash looks like a valid view name and user has access

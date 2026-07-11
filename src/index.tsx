@@ -3649,6 +3649,273 @@ app.post('/api/auth/signup', async (c) => {
   return new Response(res.body, { status: 200, headers })
 })
 
+// ── RECURRING PLANS (D1) ──────────────────────────────────────────────────────
+
+// GET /api/recurring-plans — list all plans for company
+app.get('/api/recurring-plans', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const activeOnly = c.req.query('active')
+  let sql = `SELECT * FROM recurring_plans WHERE company_id=? ORDER BY name ASC`
+  if (activeOnly === '1') sql = `SELECT * FROM recurring_plans WHERE company_id=? AND is_active=1 ORDER BY name ASC`
+  const rows = await db.prepare(sql).bind(companyId).all()
+  return c.json(rows.results || [])
+})
+
+// GET /api/recurring-plans/:id — single plan
+app.get('/api/recurring-plans/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const planId = parseInt(c.req.param('id'))
+  const plan = await db.prepare(`SELECT * FROM recurring_plans WHERE id=? AND company_id=?`).bind(planId, companyId).first()
+  if (!plan) return c.json({ error: 'Not found' }, 404)
+  return c.json(plan)
+})
+
+// POST /api/recurring-plans — create a plan
+app.post('/api/recurring-plans', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const body = await c.req.json() as any
+  const { name, description, frequency, frequency_unit, price, visit_duration_minutes, services_included, is_active } = body
+  if (!name || !frequency || !price) return c.json({ error: 'name, frequency, price required' }, 400)
+  const id = Date.now()
+  await db.prepare(`
+    INSERT INTO recurring_plans (id, company_id, name, description, frequency, frequency_unit, price, visit_duration_minutes, services_included, is_active)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, companyId, name, description||'', frequency, frequency_unit||'weeks', price, visit_duration_minutes||60, services_included||'', is_active??1).run()
+  const created = await db.prepare(`SELECT * FROM recurring_plans WHERE id=?`).bind(id).first()
+  return c.json(created, 201)
+})
+
+// PUT /api/recurring-plans/:id — update a plan
+app.put('/api/recurring-plans/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const planId = parseInt(c.req.param('id'))
+  const plan = await db.prepare(`SELECT id FROM recurring_plans WHERE id=? AND company_id=?`).bind(planId, companyId).first()
+  if (!plan) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json() as any
+  const fields = ['name','description','frequency','frequency_unit','price','visit_duration_minutes','services_included','is_active']
+  const setClauses: string[] = []
+  const vals: any[] = []
+  fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
+  vals.push(planId, companyId)
+  await db.prepare(`UPDATE recurring_plans SET ${setClauses.join(',')} WHERE id=? AND company_id=?`).bind(...vals).run()
+  const updated = await db.prepare(`SELECT * FROM recurring_plans WHERE id=?`).bind(planId).first()
+  return c.json(updated)
+})
+
+// GET /api/recurring-subscriptions — list subscriptions
+app.get('/api/recurring-subscriptions', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const status   = c.req.query('status')
+  const upcoming = c.req.query('upcoming') // '1' = only next 30 days
+  let sql = `
+    SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price as plan_price,
+           cl.name as client_display_name, cl.phone as client_phone, cl.address as client_address
+    FROM client_plan_subscriptions cs
+    LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
+    LEFT JOIN clients cl ON cl.id = cs.client_id
+    WHERE cs.company_id=?`
+  const binds: any[] = [companyId]
+  if (status) { sql += ` AND cs.status=?`; binds.push(status) }
+  if (upcoming === '1') { sql += ` AND cs.next_visit_date <= date('now','+30 days') AND cs.status='active'` }
+  sql += ` ORDER BY cs.next_visit_date ASC, cs.created_at DESC`
+  const rows = await db.prepare(sql).bind(...binds).all()
+  return c.json(rows.results || [])
+})
+
+// GET /api/recurring-subscriptions/:id — single subscription
+app.get('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const subId = parseInt(c.req.param('id'))
+  const sub = await db.prepare(`
+    SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price as plan_price,
+           cl.name as client_display_name, cl.phone as client_phone
+    FROM client_plan_subscriptions cs
+    LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
+    LEFT JOIN clients cl ON cl.id = cs.client_id
+    WHERE cs.id=? AND cs.company_id=?`).bind(subId, companyId).first()
+  if (!sub) return c.json({ error: 'Not found' }, 404)
+  // Also fetch visit history
+  const visits = await db.prepare(`SELECT * FROM plan_visits WHERE subscription_id=? ORDER BY visit_date DESC LIMIT 50`).bind(subId).all()
+  return c.json({ ...sub, visits: visits.results || [] })
+})
+
+// POST /api/recurring-subscriptions — create subscription
+app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const body = await c.req.json() as any
+  const { plan_id, client_id, client_name, start_date, next_visit_date, price_override, notes } = body
+  if (!plan_id || !client_id) return c.json({ error: 'plan_id and client_id required' }, 400)
+  // Verify plan belongs to this company
+  const plan = await db.prepare(`SELECT * FROM recurring_plans WHERE id=? AND company_id=?`).bind(plan_id, companyId).first() as any
+  if (!plan) return c.json({ error: 'Plan not found' }, 404)
+  const id = Date.now()
+  const startDate = start_date || new Date().toISOString().split('T')[0]
+  const nextVisit = next_visit_date || startDate
+  const finalPrice = price_override ?? plan.price
+  await db.prepare(`
+    INSERT INTO client_plan_subscriptions (id, company_id, plan_id, client_id, client_name, start_date, next_visit_date, price_override, notes, status)
+    VALUES (?,?,?,?,?,?,?,?,?,'active')
+  `).bind(id, companyId, plan_id, client_id, client_name||'', startDate, nextVisit, finalPrice, notes||'').run()
+  const created = await db.prepare(`SELECT * FROM client_plan_subscriptions WHERE id=?`).bind(id).first()
+  return c.json(created, 201)
+})
+
+// PUT /api/recurring-subscriptions/:id — update subscription (status, next_visit_date, notes, price_override)
+app.put('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const subId = parseInt(c.req.param('id'))
+  const sub = await db.prepare(`SELECT id FROM client_plan_subscriptions WHERE id=? AND company_id=?`).bind(subId, companyId).first()
+  if (!sub) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json() as any
+  const fields = ['status','next_visit_date','price_override','notes']
+  const setClauses: string[] = []
+  const vals: any[] = []
+  fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
+  if (body.status === 'cancelled') { setClauses.push('cancelled_at=?'); vals.push(new Date().toISOString()) }
+  vals.push(subId, companyId)
+  await db.prepare(`UPDATE client_plan_subscriptions SET ${setClauses.join(',')} WHERE id=? AND company_id=?`).bind(...vals).run()
+  const updated = await db.prepare(`SELECT * FROM client_plan_subscriptions WHERE id=?`).bind(subId).first()
+  return c.json(updated)
+})
+
+// POST /api/recurring-subscriptions/:id/log-visit — log a completed visit + advance next date
+app.post('/api/recurring-subscriptions/:id/log-visit', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const subId = parseInt(c.req.param('id'))
+  const sub = await db.prepare(`
+    SELECT cs.*, rp.frequency, rp.frequency_unit
+    FROM client_plan_subscriptions cs
+    LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
+    WHERE cs.id=? AND cs.company_id=?`).bind(subId, companyId).first() as any
+  if (!sub) return c.json({ error: 'Not found' }, 404)
+
+  const body = await c.req.json() as any
+  const { visit_date, notes, technician_name, work_order_id } = body
+  const visitDate = visit_date || new Date().toISOString().split('T')[0]
+
+  // Log the visit
+  const visitId = Date.now()
+  await db.prepare(`
+    INSERT INTO plan_visits (id, company_id, subscription_id, visit_date, notes, technician_name, work_order_id, status)
+    VALUES (?,?,?,?,?,?,?,'completed')
+  `).bind(visitId, companyId, subId, visitDate, notes||'', technician_name||'', work_order_id||null).run()
+
+  // Advance next_visit_date based on plan frequency
+  let nextDate = new Date(visitDate)
+  const freq = sub.frequency || 1
+  const unit = sub.frequency_unit || 'weeks'
+  if (unit === 'days')   nextDate.setDate(nextDate.getDate() + freq)
+  else if (unit === 'weeks')  nextDate.setDate(nextDate.getDate() + freq * 7)
+  else if (unit === 'months') nextDate.setMonth(nextDate.getMonth() + freq)
+  else if (unit === 'years')  nextDate.setFullYear(nextDate.getFullYear() + freq)
+  const nextDateStr = nextDate.toISOString().split('T')[0]
+
+  await db.prepare(`UPDATE client_plan_subscriptions SET next_visit_date=?, last_visit_date=? WHERE id=?`)
+    .bind(nextDateStr, visitDate, subId).run()
+
+  return c.json({ success: true, visit_id: visitId, next_visit_date: nextDateStr })
+})
+
+// ── REVIEWS (D1) ──────────────────────────────────────────────────────────────
+
+// GET /api/reviews — list review requests
+app.get('/api/reviews', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const status    = c.req.query('status')
+  const clientId  = c.req.query('client_id')
+  const search    = c.req.query('search')
+  const limit     = parseInt(c.req.query('limit') || '100')
+  let sql = `SELECT * FROM review_requests WHERE company_id=?`
+  const binds: any[] = [companyId]
+  if (status)   { sql += ` AND status=?`;                  binds.push(status) }
+  if (clientId) { sql += ` AND client_id=?`;               binds.push(parseInt(clientId)) }
+  if (search)   { sql += ` AND client_name LIKE ?`;        binds.push(`%${search}%`) }
+  sql += ` ORDER BY created_at DESC LIMIT ?`
+  binds.push(limit)
+  const rows = await db.prepare(sql).bind(...binds).all()
+  return c.json(rows.results || [])
+})
+
+// GET /api/reviews/settings — get review settings for company
+app.get('/api/reviews/settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  let settings = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first()
+  if (!settings) {
+    // Auto-create default settings row
+    await db.prepare(`INSERT OR IGNORE INTO review_settings (company_id) VALUES (?)`).bind(companyId).run()
+    settings = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first()
+  }
+  return c.json(settings || {})
+})
+
+// PUT /api/reviews/settings — update review settings
+app.put('/api/reviews/settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const body = await c.req.json() as any
+  const fields = ['google_url','yelp_url','facebook_url','auto_send_on_wo_close','auto_send_on_invoice_paid','send_delay_hours','default_message','is_active']
+  const setClauses: string[] = []
+  const vals: any[] = []
+  fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
+  // Upsert settings row
+  await db.prepare(`INSERT OR IGNORE INTO review_settings (company_id) VALUES (?)`).bind(companyId).run()
+  vals.push(companyId)
+  await db.prepare(`UPDATE review_settings SET ${setClauses.join(',')} WHERE company_id=?`).bind(...vals).run()
+  const updated = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first()
+  return c.json(updated)
+})
+
+// POST /api/reviews — create a review request
+app.post('/api/reviews', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const body = await c.req.json() as any
+  const { client_id, client_name, trigger_type, work_order_id, message_sent } = body
+  if (!client_id) return c.json({ error: 'client_id required' }, 400)
+  const id = Date.now()
+  await db.prepare(`
+    INSERT INTO review_requests (id, company_id, client_id, client_name, trigger_type, work_order_id, message_sent, status)
+    VALUES (?,?,?,?,?,?,?,'pending')
+  `).bind(id, companyId, client_id, client_name||'', trigger_type||'manual', work_order_id||null, message_sent||'').run()
+  const created = await db.prepare(`SELECT * FROM review_requests WHERE id=?`).bind(id).first()
+  return c.json(created, 201)
+})
+
+// PUT /api/reviews/:id — update review request (status, rating, review_text, platform)
+app.put('/api/reviews/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rvId = parseInt(c.req.param('id'))
+  const rv = await db.prepare(`SELECT id FROM review_requests WHERE id=? AND company_id=?`).bind(rvId, companyId).first()
+  if (!rv) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json() as any
+  const fields = ['status','rating','review_text','platform']
+  const setClauses: string[] = []
+  const vals: any[] = []
+  fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  if (body.status === 'reviewed') { setClauses.push('reviewed_at=?'); vals.push(new Date().toISOString()) }
+  if (body.status === 'sent')     { setClauses.push('sent_at=?');     vals.push(new Date().toISOString()) }
+  if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
+  vals.push(rvId, companyId)
+  await db.prepare(`UPDATE review_requests SET ${setClauses.join(',')} WHERE id=? AND company_id=?`).bind(...vals).run()
+  const updated = await db.prepare(`SELECT * FROM review_requests WHERE id=?`).bind(rvId).first()
+  return c.json(updated)
+})
+
 // ── WORK ORDERS (D1) ──────────────────────────────────────────────────────────
 
 // GET /api/work-orders — list work orders (optional ?status=&crew_id=&date_from=&date_to=)
@@ -4023,7 +4290,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p47">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p48">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -4659,7 +4926,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p47">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p48">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -5080,17 +5347,20 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711p47"></script>
+<script src="/static/gw-icons.js?v=20260711p48"></script>
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260710r1"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p47"></script>
-<script src="/static/estimates.js?v=20260711p47"></script>
-<script src="/static/invoices.js?v=20260711p47"></script>
-<script src="/static/csv_import.js?v=20260711p47"></script>
+<script src="/static/app_premium.js?v=20260711p48"></script>
+<script src="/static/estimates.js?v=20260711p48"></script>
+<script src="/static/invoices.js?v=20260711p48"></script>
+<script src="/static/csv_import.js?v=20260711p48"></script>
+<script src="/static/onboarding.js?v=20260711p48"></script>
+<script src="/static/recurring_plans.js?v=20260711p48"></script>
+<script src="/static/reviews.js?v=20260711p48"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
