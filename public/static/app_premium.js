@@ -1193,7 +1193,14 @@ function show(viewName='today', param){
   }
   // ────────────────────────────────────────────────────────
   activateNav(viewName);
-  if (window.innerWidth <= 768) { sidebar.classList.remove('open'); document.getElementById('sidebarScrim')?.classList.remove('visible'); }
+  // On mobile: close the sidebar overlay for leaf views, but keep it open when
+  // the user taps a top-level workspace section (gwSales, gwAdmin, etc.) so they
+  // can see and tap the sub-items that just expanded beneath it.
+  const _topWsViews = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'];
+  if (window.innerWidth <= 768 && !_topWsViews.includes(viewName)) {
+    sidebar.classList.remove('open');
+    document.getElementById('sidebarScrim')?.classList.remove('visible');
+  }
   // integrations is loaded from integrations.js
   const intRoute = (typeof integrations === 'function') ? {integrations} : {};
   // repDashboard is loaded from reps.js
@@ -19638,13 +19645,14 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
   ${gwIcon('home','22','currentColor')}<span>Home</span>
 </button>
 <button class="gw-mnav-btn" onclick="show('gwSales')" data-view="gwSales">
-  ${gwIcon('trending-up','22','currentColor')}<span>Sales</span>
+  ${gwIcon('trending_up','22','currentColor')}<span>Sales</span>
 </button>
 <button class="gw-mnav-btn" onclick="show('gwOperations')" data-view="gwOperations">
-  ${gwIcon('tool','22','currentColor')}<span>Ops</span>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+  <span>Ops</span>
 </button>
 <button class="gw-mnav-btn" onclick="show('gwFinancial')" data-view="gwFinancial">
-  ${gwIcon('dollar-sign','22','currentColor')}<span>Finance</span>
+  ${gwIcon('dollar','22','currentColor')}<span>Finance</span>
 </button>
 <button class="gw-mnav-btn" onclick="show('gwAdmin')" data-view="gwAdmin">
   ${gwIcon('settings','22','currentColor')}<span>Admin</span>
