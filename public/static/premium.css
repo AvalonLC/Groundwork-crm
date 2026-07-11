@@ -13064,3 +13064,209 @@ h1.pl-title,
 }
 
 /* ── end mobile pipeline / clients / financial hub ── */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE ESTIMATES LIST  — responsive overrides ≤ 768px
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .est-list-shell {
+    padding: 0 0 80px !important;
+  }
+  .est-list-header {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    padding: 12px 14px 10px !important;
+  }
+  .est-list-header-right {
+    width: 100% !important;
+  }
+  .est-btn-primary {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  /* KPI row already goes 2-col at 680px via existing rule */
+  .est-filter-bar {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    padding: 8px 14px !important;
+  }
+  .est-search-wrap {
+    width: 100% !important;
+  }
+  .est-filter-select {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  .est-filter-chips {
+    width: 100% !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  /* Table: scroll horizontally — keeps all data without JS rewrite */
+  .est-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .est-table {
+    min-width: 640px !important;
+  }
+  /* Hide low-priority columns to reduce min-width */
+  .est-table thead th:nth-child(7),
+  .est-table-row td:nth-child(7) {
+    display: none !important; /* Updated column */
+  }
+  /* Engagement column narrower */
+  .est-table thead th:nth-child(6),
+  .est-table-row td:nth-child(6) {
+    display: none !important;
+  }
+  /* Drawer push doesn't apply on mobile */
+  .est-list-shell:has(#est-preview-drawer[style*="flex"]) .est-table-wrap {
+    margin-right: 0 !important;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE INVENTORY LIST  — invt-row responsive stacking ≤ 768px
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Hide the header row (it's a div, not thead) */
+  .invt-row:first-child {
+    display: none !important;
+  }
+  .invt-row {
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    grid-template-rows: auto auto auto !important;
+    gap: 4px 8px !important;
+    padding: 12px 14px !important;
+  }
+  /* Row 1: name + status badge */
+  .invt-name { grid-column: 1; grid-row: 1; }
+  /* Category under name */
+  .invt-cat  { grid-column: 1; grid-row: 2; }
+  /* Stock bar + reorder label */
+  .invt-bar-wrap { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 8px; }
+  /* Qty cell — top right */
+  .invt-qty  { grid-column: 2; grid-row: 1; text-align: right; }
+  /* Status badge — right of category */
+  .invt-row > span:nth-child(5) { grid-column: 2; grid-row: 2; text-align: right; }
+  /* Vendor — hidden on mobile to save space */
+  .invt-vendor { display: none !important; }
+  /* Actions — full width row at bottom */
+  .invt-row .wo-actions { grid-column: 1 / -1; grid-row: 4; display: flex; gap: 8px; margin-top: 4px; }
+  /* Bar itself needs to be visible */
+  .invt-bar {
+    height: 6px !important;
+    flex: 1 !important;
+    min-width: 80px !important;
+    background: #E5E7EB !important;
+    border-radius: 99px !important;
+    overflow: hidden !important;
+  }
+  .invt-bar-fill {
+    height: 100% !important;
+    border-radius: 99px !important;
+  }
+  .invt-bar-fill--ok         { background: var(--gw-pine, #4D8A86) !important; }
+  .invt-bar-fill--low-stock  { background: #F59E0B !important; }
+  .invt-bar-fill--out-of-stock { background: #EF4444 !important; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE TOOLS & CONSUMABLES  — tc-mobile-* card classes
+   ══════════════════════════════════════════════════════════════════════════ */
+.tc-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 80px;
+}
+.tc-mobile-card {
+  background: var(--gw-card, #fff);
+  border: 1.5px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.tc-mobile-card--low {
+  border-left: 3px solid #F59E0B;
+}
+.tc-mc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.tc-mc-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  flex: 1;
+  min-width: 0;
+}
+.tc-mc-low-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #8B6914;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 10px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.tc-mc-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.tc-mc-qty {
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+}
+.tc-mc-qty-label {
+  font-size: 11px;
+  color: #9CA3AF;
+  margin-left: 2px;
+}
+.tc-mc-reorder {
+  font-size: 11px;
+  color: #9CA3AF;
+}
+.tc-mc-vendor {
+  font-size: 11px;
+  color: #9CA3AF;
+  background: #F3F4F6;
+  border-radius: 20px;
+  padding: 2px 8px;
+  margin-left: auto;
+}
+.tc-mc-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #F3F4F6;
+}
+.tc-mc-actions button {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1.5px solid #E5E7EB;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tc-mc-actions button:active { background: #F9FAFB; }
+
+/* ── end mobile estimates / inventory / tools ── */

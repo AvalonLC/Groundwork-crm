@@ -1784,7 +1784,13 @@ function _gwTodayRenderMobile(opts) {
 }
 
 function _gwTodayRender() {
-  const _todayRep = window.getCurrentRep ? window.getCurrentRep() : null;
+  // Fall back to _d1SessionRep if getCurrentRep() returns null (e.g. page
+  // reload before localStorage key was written by bootstrapD1Auth).
+  let _todayRep = window.getCurrentRep ? window.getCurrentRep() : null;
+  if (!_todayRep && window._d1SessionRep) {
+    const d = window._d1SessionRep;
+    _todayRep = { id: d.id, name: d.name, role: d.role || 'admin', email: d.email, color: d.color };
+  }
   const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
   const _isOM     = _todayRep && _todayRep.role === 'office_manager';
   const _showFin  = _isAdmin || _isOM;
@@ -18287,6 +18293,48 @@ function toolsConsumables() {
   }).join('');
 
   const lowCount = tools.filter(t=>t.category==='consumable'&&t.onHand<=t.reorderAt&&t.reorderAt!=null).length;
+  const categoryColor = { tool:'#5B7FA6', consumable:'#8B6914', safety:'#2D7A55', chemical:'#6B5EA8', other:'#6F7E6A' };
+
+  // ── Mobile card list (≤ 768px) ──────────────────────────────────────────
+  const mobileBody = window.innerWidth <= 768
+    ? `<div class="tc-mobile-list">
+        ${filtered.length ? filtered.map(t => {
+          const isLow = t.category==='consumable' && t.onHand!=null && t.reorderAt!=null && t.onHand<=t.reorderAt;
+          const cc = categoryColor[t.category]||'#6F7E6A';
+          return `<div class="tc-mobile-card${isLow?' tc-mobile-card--low':''}">
+            <div class="tc-mc-top">
+              <span class="tc-mc-name">${escapeHtml(t.name)}${isLow?'<span class="tc-mc-low-badge">LOW STOCK</span>':''}</span>
+              <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;background:${cc}22;color:${cc};flex-shrink:0">${t.category||'other'}</span>
+            </div>
+            ${t.location?`<div style="font-size:12px;color:#6B7280;margin-bottom:4px">${escapeHtml(t.location)}</div>`:''}
+            <div class="tc-mc-bottom">
+              <span class="tc-mc-qty">${t.onHand!=null?t.onHand:'—'}<span class="tc-mc-qty-label">on hand</span></span>
+              ${t.reorderAt!=null?`<span class="tc-mc-reorder">reorder @ ${t.reorderAt}</span>`:''}
+              ${t.vendor?`<span class="tc-mc-vendor">${escapeHtml(t.vendor)}</span>`:''}
+            </div>
+            <div class="tc-mc-actions">
+              <button onclick="window._toolEdit('${t.id}')" style="color:#4D8A86">Edit</button>
+              <button onclick="window._toolDelete('${t.id}')" style="color:#A05050">Delete</button>
+            </div>
+          </div>`;
+        }).join('')
+        : `<div style="text-align:center;padding:40px 20px;color:#9CA3AF;font-size:14px">${search?'No matching items.':'No tools or consumables tracked yet.'}</div>`}
+      </div>`
+    : `<div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+              <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Item</th>
+              <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Type</th>
+              <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">On Hand</th>
+              <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Reorder At</th>
+              <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Vendor</th>
+              <th style="width:80px"></th>
+            </tr>
+          </thead>
+          <tbody>${rows||`<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${search?'No matching items.':'No tools or consumables tracked yet.'}</td></tr>`}</tbody>
+        </table>
+      </div>`;
 
   view.innerHTML = `
   <div class="rp-shell" style="max-width:900px;margin:0 auto;padding:20px 24px 40px">
@@ -18306,21 +18354,7 @@ function toolsConsumables() {
       oninput="window._toolSearch=this.value;toolsConsumables()"
       style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Item</th>
-            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Type</th>
-            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">On Hand</th>
-            <th style="text-align:center;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Reorder At</th>
-            <th style="text-align:left;padding:10px 10px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Vendor</th>
-            <th style="width:80px"></th>
-          </tr>
-        </thead>
-        <tbody>${rows||`<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">${search?'No matching items.':'No tools or consumables tracked yet.'}</td></tr>`}</tbody>
-      </table>
-    </div>
+    ${mobileBody}
 
     <div id="tool-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
       <div style="background:var(--gw-card);border-radius:14px;width:100%;max-width:400px;padding:24px">
