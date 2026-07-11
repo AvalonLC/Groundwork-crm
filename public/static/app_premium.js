@@ -20177,27 +20177,33 @@ function gwCCLocalSummary(transcript, opp) {
 #gw-mobile-nav {
   position:fixed;bottom:0;left:0;right:0;z-index:8000;
   background:#111827;border-top:1px solid rgba(255,255,255,.1);
-  display:flex;align-items:stretch;height:58px;
+  display:flex;align-items:stretch;
+  /* Taller bar: 68px visible + safe-area for notch phones */
+  height:calc(68px + env(safe-area-inset-bottom));
   padding-bottom:env(safe-area-inset-bottom);
   box-shadow:0 -4px 20px rgba(0,0,0,.3);
 }
 .gw-mnav-btn {
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;background:none;border:none;color:rgba(255,255,255,.55);
-  font-size:10px;font-weight:500;cursor:pointer;padding:6px 2px;
+  gap:4px;background:none;border:none;color:rgba(255,255,255,.55);
+  font-size:10px;font-weight:500;cursor:pointer;
+  /* Generous vertical padding so tap target is large */
+  padding:10px 2px 12px;
   transition:.15s;letter-spacing:.01em;
+  /* Minimum 44px tap target per Apple HIG */
+  min-height:44px;
 }
 .gw-mnav-btn:active { background:rgba(255,255,255,.08); }
 .gw-mnav-btn.gw-mnav-active { color:#2D7A55; }
 .gw-mnav-btn svg { flex-shrink:0; }
-/* ── Bottom-nav clearance: push ALL content containers above the 58px bar ── */
+/* ── Bottom-nav clearance: push ALL content containers above the 68px bar ── */
 /* Targets every layer the view content can live in */
 body.gw-mobile-mode #main-content,
 body.gw-mobile-mode .view-root,
 body.gw-mobile-mode #view,
 body.gw-mobile-mode #view > div,
 body.gw-mobile-mode #view > .rp-shell,
-body.gw-mobile-mode .main { padding-bottom:72px!important; }
+body.gw-mobile-mode .main { padding-bottom:84px!important; }
 /* Topbar Admin button is redundant on mobile — bottom nav has it */
 body.gw-mobile-mode .topbar-settings { display:none!important; }
 /* Notification bell: ensure it's never pushed off-screen on mobile */
