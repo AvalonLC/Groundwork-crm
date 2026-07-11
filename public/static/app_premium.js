@@ -18495,23 +18495,31 @@ function _scDefault() {
     serviceArea: { type:'zip', zips:'23219,23220,23221,23222,23223,23224,23225,23226', radiusMi:'30', centerZip:'23219' },
     notifications: { newLead:true, woAssigned:true, woComplete:true, paymentReceived:true, lowInventory:true, dailyDigest:false },
     retention: { opps:365, comms:180, completedWOs:730 },
-    brand: { primaryColor:'#0ea5e9', accentColor:'#f59e0b', darkMode:false }
+    brand: { primaryColor:'#2D7A55', accentColor:'#f59e0b', darkMode:false }
   };
 }
 
 function systemConfig() {
+  // Properly wire into gwAdmin tab system so other tabs remain clickable
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const isAdmin = !rep || rep.role === 'admin';
+  const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
+  _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), 'systemConfig');
   window._currentView = 'systemConfig';
-  activateNav('systemConfig');
+
   const el = document.getElementById('view');
   if (!el) return;
 
   let cfg = _scLoad() || _scDefault();
-  // Load branding from D1 (async — populates _scBrand for the template)
+  // Load branding from D1 once — only re-render if we don't have data yet
+  const _scHasFreshBrand = window._scBrandLoaded === true;
   window._scBrand = window._scBrand || { brand_color:'#2D7A55', brand_accent:'#4D8A86', tagline:'', business_type:'home_services', crew_count:1, division_count:1, address_line1:'', address_city:'', address_state:'', address_zip:'', license_number:'', year_founded:'', terminology:{} };
-  fetch('/api/company/branding', { credentials:'include' })
-    .then(r=>r.ok?r.json():null)
-    .then(data=>{ if(data){ window._scBrand=data; systemConfig(); } })
-    .catch(()=>{});
+  if (!_scHasFreshBrand) {
+    fetch('/api/company/branding', { credentials:'include' })
+      .then(r=>r.ok?r.json():null)
+      .then(data=>{ if(data){ window._scBrand=data; window._scBrandLoaded=true; systemConfig(); } })
+      .catch(()=>{ window._scBrandLoaded=true; });
+  }
 
   const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
   const DAY_LABELS = { mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday', sun:'Sunday' };
@@ -18528,7 +18536,7 @@ function systemConfig() {
         <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">${gwIcon('settings',22,'#374151')} System Configuration</h1>
         <p class="text-sm text-gray-500 mt-1">Company-wide settings, hours, service area, notifications, and preferences.</p>
       </div>
-      <button onclick="_scSaveAll()" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
+      <button onclick="_scSaveAll()" class="px-5 py-2 text-white rounded-lg font-semibold text-sm shadow transition" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
     </div>
 
     <!-- Company Info -->
@@ -18539,36 +18547,36 @@ function systemConfig() {
       <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1">Company Name</label>
-          <input id="sc-co-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.name)}">
+          <input id="sc-co-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.name)}">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1">Phone</label>
-          <input id="sc-co-phone" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.phone)}">
+          <input id="sc-co-phone" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.phone)}">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1">Email</label>
-          <input id="sc-co-email" type="email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.email)}">
+          <input id="sc-co-email" type="email" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.email)}">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1">Website</label>
-          <input id="sc-co-website" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.website)}">
+          <input id="sc-co-website" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.website)}">
         </div>
         <div class="md:col-span-2">
           <label class="block text-xs font-medium text-gray-500 mb-1">Street Address</label>
-          <input id="sc-co-address" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.address)}">
+          <input id="sc-co-address" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.address)}">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1">City</label>
-          <input id="sc-co-city" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.city)}">
+          <input id="sc-co-city" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.city)}">
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">State</label>
-            <input id="sc-co-state" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.state)}" maxlength="2">
+            <input id="sc-co-state" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.state)}" maxlength="2">
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">ZIP</label>
-            <input id="sc-co-zip" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.company.zip)}">
+            <input id="sc-co-zip" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.company.zip)}">
           </div>
         </div>
       </div>
@@ -18585,13 +18593,13 @@ function systemConfig() {
           const h = cfg.hours[d];
           return `<div class="flex items-center gap-4 py-2 border-b border-gray-100 last:border-0">
             <label class="flex items-center gap-2 w-32 cursor-pointer">
-              <input type="checkbox" id="sc-h-${d}" ${h.open?'checked':''} class="w-4 h-4 accent-sky-500" onchange="_scToggleDay('${d}')">
+              <input type="checkbox" id="sc-h-${d}" ${h.open?'checked':''} class="w-4 h-4 accent-green-600" onchange="_scToggleDay('${d}')">
               <span class="text-sm font-medium ${h.open?'text-gray-800':'text-gray-400'}" id="sc-hl-${d}">${DAY_LABELS[d]}</span>
             </label>
             <div id="sc-ht-${d}" class="${h.open?'':'opacity-30 pointer-events-none'} flex items-center gap-2">
-              <input type="time" id="sc-hs-${d}" value="${h.start}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              <input type="time" id="sc-hs-${d}" value="${h.start}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
               <span class="text-gray-400 text-sm">to</span>
-              <input type="time" id="sc-he-${d}" value="${h.end}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              <input type="time" id="sc-he-${d}" value="${h.end}" class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
             </div>
           </div>`;
         }).join('')}
@@ -18606,7 +18614,7 @@ function systemConfig() {
         </div>
         <div class="p-6">
           <label class="block text-xs font-medium text-gray-500 mb-2">Company Timezone</label>
-          <select id="sc-tz" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+          <select id="sc-tz" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
             ${TIMEZONES.map(tz => `<option value="${tz}" ${cfg.timezone===tz?'selected':''}>${tz.replace('America/','').replace('_',' ')}</option>`).join('')}
           </select>
           <p class="text-xs text-gray-400 mt-2">Used for scheduling, reports, and notifications.</p>
@@ -18620,26 +18628,26 @@ function systemConfig() {
         <div class="p-6 space-y-3">
           <div class="flex gap-4">
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="sc-sa-type" value="zip" ${cfg.serviceArea.type==='zip'?'checked':''} onchange="_scSAType('zip')" class="accent-sky-500">
+              <input type="radio" name="sc-sa-type" value="zip" ${cfg.serviceArea.type==='zip'?'checked':''} onchange="_scSAType('zip')" class="accent-green-600">
               <span class="text-sm">ZIP Codes</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="sc-sa-type" value="radius" ${cfg.serviceArea.type==='radius'?'checked':''} onchange="_scSAType('radius')" class="accent-sky-500">
+              <input type="radio" name="sc-sa-type" value="radius" ${cfg.serviceArea.type==='radius'?'checked':''} onchange="_scSAType('radius')" class="accent-green-600">
               <span class="text-sm">Radius</span>
             </label>
           </div>
           <div id="sc-sa-zip" class="${cfg.serviceArea.type==='zip'?'':'hidden'}">
             <label class="block text-xs font-medium text-gray-500 mb-1">ZIP Codes (comma-separated)</label>
-            <textarea id="sc-sa-zips" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none">${escapeHtml(cfg.serviceArea.zips)}</textarea>
+            <textarea id="sc-sa-zips" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none">${escapeHtml(cfg.serviceArea.zips)}</textarea>
           </div>
           <div id="sc-sa-rad" class="${cfg.serviceArea.type==='radius'?'':'hidden'} space-y-2">
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">Center ZIP</label>
-              <input id="sc-sa-center" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${escapeHtml(cfg.serviceArea.centerZip)}">
+              <input id="sc-sa-center" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${escapeHtml(cfg.serviceArea.centerZip)}">
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">Radius (miles)</label>
-              <input id="sc-sa-radius" type="number" min="1" max="200" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" value="${cfg.serviceArea.radiusMi}">
+              <input id="sc-sa-radius" type="number" min="1" max="200" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" value="${cfg.serviceArea.radiusMi}">
             </div>
           </div>
         </div>
@@ -18662,7 +18670,7 @@ function systemConfig() {
           ['dailyDigest','Daily Digest Email','Send a morning summary of open items']
         ].map(([key,label,desc]) => `
           <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-            <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key]?'checked':''} class="mt-0.5 w-4 h-4 accent-sky-500">
+            <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key]?'checked':''} class="mt-0.5 w-4 h-4 accent-green-600">
             <div>
               <div class="text-sm font-medium text-gray-800">${label}</div>
               <div class="text-xs text-gray-400">${desc}</div>
@@ -18687,7 +18695,7 @@ function systemConfig() {
             <label class="block text-xs font-medium text-gray-500 mb-1">${label}</label>
             <div class="flex items-center gap-2">
               <input id="sc-r-${key}" type="number" min="30" max="3650" step="30"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${cfg.retention[key]}">
               <span class="text-xs text-gray-400 whitespace-nowrap">days</span>
             </div>
@@ -18717,13 +18725,13 @@ function systemConfig() {
               <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">Logo URL <span class="text-gray-400 font-normal">(paste a hosted image link)</span></label>
                 <input id="sc-b-logo" type="url" placeholder="https://yoursite.com/logo.png"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                   value="${escapeHtml(cfg.company.logo||'')}">
                 <p class="mt-1 text-xs text-gray-400">Upload your logo to any image host (Cloudinary, ImgBB, your own CDN) and paste the URL. Applied to all estimates, invoices, and customer portal pages.</p>
               </div>
               <div>
                 <button onclick="_scPreviewLogo()" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">${gwIcon('eye',13)} Preview</button>
-                <button onclick="_scSaveBranding()" class="ml-2 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition">${gwIcon('floppy',13,'#fff')} Save Branding</button>
+                <button onclick="_scSaveBranding()" class="ml-2 px-3 py-1.5 text-white rounded-lg text-sm font-medium transition" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',13,'#fff')} Save Branding</button>
               </div>
             </div>
           </div>
@@ -18734,12 +18742,12 @@ function systemConfig() {
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Company Tagline <span class="text-gray-400 font-normal">(appears on estimates & portal)</span></label>
             <input id="sc-b-tagline" type="text" placeholder="Professional Landscape Construction"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               value="${escapeHtml(_scBrand.tagline||'')}">
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Business Type</label>
-            <select id="sc-b-biztype" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <select id="sc-b-biztype" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
               ${[
                 ['landscaping','Landscaping / Lawn Care'],
                 ['excavation','Excavation / Earthwork'],
@@ -18792,25 +18800,25 @@ function systemConfig() {
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">Active Crews</label>
               <input id="sc-b-crews" type="number" min="1" max="500"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${_scBrand.crew_count||1}">
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">Divisions</label>
               <input id="sc-b-divs" type="number" min="1" max="100"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${_scBrand.division_count||1}">
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">Year Founded</label>
               <input id="sc-b-founded" type="number" min="1900" max="2030"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${_scBrand.year_founded||''}">
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-500 mb-1">License #</label>
               <input id="sc-b-license" type="text"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${escapeHtml(_scBrand.license_number||'')}" placeholder="Optional">
             </div>
           </div>
@@ -18822,20 +18830,20 @@ function systemConfig() {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div class="md:col-span-2">
               <input id="sc-b-addr1" type="text" placeholder="Street Address"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${escapeHtml(_scBrand.address_line1||'')}">
             </div>
             <div>
               <input id="sc-b-city" type="text" placeholder="City"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${escapeHtml(_scBrand.address_city||'')}">
             </div>
             <div class="grid grid-cols-2 gap-2">
               <input id="sc-b-state" type="text" placeholder="State" maxlength="2"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${escapeHtml(_scBrand.address_state||'')}">
               <input id="sc-b-zip" type="text" placeholder="ZIP"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 value="${escapeHtml(_scBrand.address_zip||'')}">
             </div>
           </div>
@@ -18857,7 +18865,7 @@ function systemConfig() {
               <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">${lbl}</label>
                 <input type="text" id="sc-term-${k}" placeholder="${ph}"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                   value="${escapeHtml((_scBrand.terminology&&_scBrand.terminology[k])||ph)}"
                   title="${hint}">
               </div>`).join('')}
@@ -18867,14 +18875,14 @@ function systemConfig() {
         <!-- Save button -->
         <div class="flex items-center justify-between pt-2 border-t border-gray-100">
           <p class="text-xs text-gray-400">${gwIcon('info',12,'#9CA3AF')} Branding is applied to all estimates, invoices, and customer portal pages your clients see.</p>
-          <button onclick="_scSaveBranding()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition shadow-sm">${gwIcon('floppy',14,'#fff')} Save Branding</button>
+          <button onclick="_scSaveBranding()" class="px-5 py-2 text-white rounded-lg text-sm font-semibold transition shadow-sm" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',14,'#fff')} Save Branding</button>
         </div>
       </div>
     </section>
 
     <!-- Save footer (local settings) -->
     <div class="flex justify-end pb-4">
-      <button onclick="_scSaveAll()" class="px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
+      <button onclick="_scSaveAll()" class="px-6 py-2.5 text-white rounded-lg font-semibold text-sm shadow transition" style="background:#2D7A55" onmouseover="this.style.background='#256647'" onmouseout="this.style.background='#2D7A55'">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
     </div>
   </div>`;
 
