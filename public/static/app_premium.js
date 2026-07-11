@@ -13156,7 +13156,7 @@ function opsHub() {
 
   view.innerHTML = `
   <div class="ops-hub-wrap">
-    <header class="rp-header" style="max-width:1200px;margin:0 auto 0;padding:20px 24px 0">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Operations Hub</h1>
         <p class="rp-subtitle">Scheduling · Dispatch · Work Orders · Assets · Inventory</p>
@@ -14805,7 +14805,7 @@ function dispatchBoard() {
 
   view.innerHTML = `
   <div class="disp-shell">
-    <header class="rp-header" style="max-width:1200px;margin:0 auto;padding:20px 24px 16px">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Dispatch Board</h1>
         <p class="rp-subtitle">${crewNames.length} crew${crewNames.length!==1?'s':''} · ${wos.filter(w=>w.status==='in-progress').length} in progress</p>
@@ -14815,7 +14815,7 @@ function dispatchBoard() {
         <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
       </div>
     </header>
-    <div style="max-width:1200px;margin:0 auto;padding:0 24px 32px">
+    <div>
       <div class="disp-layout">
         <div class="disp-crew-panel">
           <div class="disp-panel-head">Crews</div>
@@ -14867,7 +14867,7 @@ function recurringServices() {
 
   view.innerHTML = `
   <div class="recur-shell">
-    <header class="rp-header" style="max-width:1100px;margin:0 auto;padding:20px 24px 16px">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Recurring Services</h1>
         <p class="rp-subtitle">${active.length} active · ${paused.length} paused · ${dueSoon.length} due soon</p>
@@ -14939,7 +14939,7 @@ async function workOrderList() {
 
   view.innerHTML = `
   <div class="wo-list-shell">
-    <header class="rp-header" style="padding:20px 0 0">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Work Orders</h1>
         <p class="rp-subtitle">${wos.length} total · ${counts['in-progress']} in progress · ${counts.scheduled} scheduled</p>
@@ -15256,7 +15256,7 @@ function assetList() {
 
   view.innerHTML = `
   <div class="wo-list-shell">
-    <header class="rp-header" style="padding:20px 0 16px">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Assets</h1>
         <p class="rp-subtitle">${assets.length} tracked · ${counts.active} active · ${counts.maintenance} in maintenance</p>
@@ -15469,7 +15469,7 @@ function maintenanceQueue() {
 
   view.innerHTML = `
   <div class="wo-list-shell">
-    <header class="rp-header" style="padding:20px 0 16px">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Maintenance Queue</h1>
         <p class="rp-subtitle">${overdue.length} overdue · ${dueSoon.length} due soon · ${done.length} completed</p>
@@ -15559,7 +15559,7 @@ function inventoryList() {
 
   view.innerHTML = `
   <div class="wo-list-shell">
-    <header class="rp-header" style="padding:20px 0 16px">
+    <header class="rp-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Inventory</h1>
         <p class="rp-subtitle">${inv.length} items · ${needReorder.length} need reorder</p>
@@ -16058,7 +16058,7 @@ function _glShell(title, subtitle, body) {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   return `
   <div style="max-width:860px;margin:0 auto;padding:20px 24px 60px">
-    <header class="rp-header" style="margin-bottom:24px">
+    <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Learning</div>
         <h1 class="rp-title">${escapeHtml(title)}</h1>

@@ -4868,7 +4868,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p50e">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p50f">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5504,7 +5504,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p50e">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p50f">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -5743,6 +5743,128 @@ function getHtml(): string {
         left: auto !important;
         min-width: 200px !important;
       }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         PAGE HEADER (rp-header) — definitive mobile stack fix
+         Placed here (inline <style> after all <link> stylesheets) to ensure
+         highest cascade order. Applies to every view using .rp-header pattern.
+         ══════════════════════════════════════════════════════════════════════ */
+
+      /* Force full-width block on the shell containers */
+      .wo-list-shell,
+      .disp-shell,
+      .rp-shell {
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+        overflow-x: hidden !important;
+      }
+
+      /* Stack header: title row first, actions row below */
+      .rp-header {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+        margin-bottom: 12px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        /* Remove any inline padding from the <header style="..."> attribute */
+        padding: 14px 0 0 !important;
+      }
+
+      /* Left side: full width, no truncation */
+      .rp-header-left {
+        width: 100% !important;
+        min-width: 0 !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Title: reduce size, allow wrapping */
+      .rp-title {
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        letter-spacing: -.3px !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.15 !important;
+        width: 100% !important;
+        display: block !important;
+      }
+
+      /* Subtitle: one flowing paragraph */
+      .rp-subtitle {
+        font-size: 12px !important;
+        white-space: normal !important;
+        line-height: 1.5 !important;
+        margin-top: 3px !important;
+        display: block !important;
+      }
+
+      /* Actions row: full-width, wrap, side by side */
+      .rp-header-actions {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 6px !important;
+        width: 100% !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Each action button: auto-flex, don't overflow */
+      .rp-header-actions > button,
+      .rp-header-actions > .rp-btn,
+      .rp-header-actions > .rp-btn--primary {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        font-size: 12px !important;
+        padding: 7px 10px !important;
+        text-align: center !important;
+        justify-content: center !important;
+        box-sizing: border-box !important;
+      }
+
+      /* disp-shell inner content: remove excess padding */
+      .disp-shell > div[style*="max-width"] {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        max-width: 100% !important;
+      }
+
+      /* rp-shell with inline max-width/padding: override to full-width */
+      .rp-shell[style*="max-width"],
+      .recur-shell > div[style*="max-width"],
+      .ops-hub-wrap > div[style*="max-width"] {
+        max-width: 100% !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        box-sizing: border-box !important;
+      }
+
+      /* Stat-grid / ops-hub: 2-col max on mobile */
+      .ops-hub-grid[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+        padding: 0 !important;
+      }
+      .ops-stat-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+      }
+
+      /* Bottomnav safe area */
+      .wo-list-shell,
+      .disp-shell,
+      .rp-shell,
+      .ops-hub-wrap {
+        padding-bottom: 80px !important;
+      }
     }
   </style>
 </head>
@@ -5932,7 +6054,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p50d"></script>
+<script src="/static/app_premium.js?v=20260711p50f"></script>
 <script src="/static/estimates.js?v=20260711p50"></script>
 <script src="/static/invoices.js?v=20260711p50"></script>
 <script src="/static/csv_import.js?v=20260711p50"></script>
@@ -5941,7 +6063,7 @@ function getHtml(): string {
 <script src="/static/reviews.js?v=20260711p50"></script>
 <script src="/static/stripe.js?v=20260711p50"></script>
 <script src="/static/email.js?v=20260711p50"></script>
-<script src="/static/notifications.js?v=20260711p50e"></script>
+<script src="/static/notifications.js?v=20260711p50f"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
