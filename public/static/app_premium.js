@@ -2261,7 +2261,8 @@ function clientStatusDot(status) {
 
 // ── Main clients() view ─────────────────────────────────────────────────────
 function clients(selectedId) {
-  if (selectedId) return clientDetail(selectedId);
+  // Route directly to the full CRM Customer Detail page (replaces old clientDetail)
+  if (selectedId) return customerDetail(selectedId);
 
   const list = loadClients();
   const q = (window._clientSearch||'').toLowerCase();
@@ -2661,7 +2662,7 @@ async function customerDetail(clientId) {
   view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
     <div class="sb-spinner"></div><p style="margin-top:12px">Loading customer…</p></div>`;
 
-  // Resolve by name if needed
+  // ── Resolve by name if needed ─────────────────────────────────────────────
   let resolvedId = clientId;
   if (clientId && clientId.startsWith('__byname__')) {
     const name = clientId.slice(10);
@@ -2670,11 +2671,15 @@ async function customerDetail(clientId) {
       const d = await r.json();
       const found = (d.data || d).find(c => (c.name||'').toLowerCase() === name.toLowerCase());
       if (found) resolvedId = found.id;
-      else { view.innerHTML = `<div style="padding:32px;text-align:center"><p>Customer "${escapeHtml(name)}" not found.</p><button class="rp-btn" onclick="show('clients')">← Back to Clients</button></div>`; return; }
+      else {
+        view.innerHTML = `<div style="padding:32px;text-align:center"><p>Customer "${escapeHtml(name)}" not found.</p><button class="rp-btn" onclick="show('clients')">← Back to Clients</button></div>`;
+        return;
+      }
     } catch(e) { resolvedId = null; }
   }
 
-  let client = null, workOrders = [], customerNotes = [], callNotes = [];
+  // ── Fetch all data in parallel ────────────────────────────────────────────
+  let client = null, workOrders = [], customerNotes = [];
   try {
     const [cr, wr, nr] = await Promise.all([
       fetch(`/api/customers/${resolvedId}`, { credentials:'include' }).then(r=>r.json()),
@@ -2685,8 +2690,14 @@ async function customerDetail(clientId) {
     workOrders = wr.data || [];
     customerNotes = nr.data || [];
   } catch(e) {
-    // Fallback to localStorage clients
-    client = loadClients().find(c => c.id === resolvedId);
+    // Fallback to localStorage
+    client = (loadClients()||[]).find(c => c.id === resolvedId);
+  }
+
+  // If D1 returned null/empty, try localStorage as fallback
+  if (!client || !client.name) {
+    const local = (loadClients()||[]).find(c => c.id === resolvedId);
+    if (local) client = { ...local, ...(client||{}) };
   }
 
   if (!client) {
@@ -2694,71 +2705,89 @@ async function customerDetail(clientId) {
     return;
   }
 
+  // ── Derived stats ─────────────────────────────────────────────────────────
   const addr = [client.street||client.address, client.city, client.state, client.zip].filter(Boolean).join(', ');
-  const totalPaid   = workOrders.filter(w=>w.status==='completed').reduce((s,w)=>s+(w.amount_actual||w.amount_est||0),0);
-  const totalJobs   = workOrders.length;
+  const totalRevenue  = workOrders.filter(w=>w.status==='completed').reduce((s,w)=>s+(Number(w.amount_actual)||Number(w.amount_est)||0),0);
+  const totalJobs     = workOrders.length;
   const completedJobs = workOrders.filter(w=>w.status==='completed').length;
-  const inProgressJobs = workOrders.filter(w=>w.status==='in-progress').length;
+  const inProgressJobs= workOrders.filter(w=>w.status==='in-progress').length;
   const scheduledJobs = workOrders.filter(w=>w.status==='scheduled').length;
-  const linkedOpps = (state.opportunities||[]).filter(o =>
+  const linkedOpps    = (state.opportunities||[]).filter(o =>
     o.clientId === client.id || (o.client||'').toLowerCase() === (client.name||'').toLowerCase()
   );
   const tags = (client.tags||[]);
+  // Avatar bg — cycle through a few nice colors based on first char
+  const avatarColors = ['#2D7A55','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899'];
+  const avatarBg = avatarColors[(client.name||'A').charCodeAt(0) % avatarColors.length];
 
-  // ── Sections HTML ────────────────────────────────────────────────────────────
-  const woRows = workOrders.slice(0,10).map(wo => {
+  // ── Helper: build a job row ───────────────────────────────────────────────
+  function _cdWoRow(wo) {
     const statusCls = _p6WOStatusClass(wo.status);
-    return `<div class="cd-wo-row" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer">
+    const amt = Number(wo.amount_actual)||Number(wo.amount_est)||0;
+    return `<div class="cd-wo-row" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer" title="Open job ${escapeHtml(wo.wo_number||wo.id)}">
       <span class="cd-wo-num">${escapeHtml(wo.wo_number||wo.id)}</span>
       <span class="cd-wo-title">${escapeHtml(wo.title||wo.type||'Job')}</span>
       <span class="cd-wo-date">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : '—'}</span>
       <span class="ops-ready-badge ${statusCls}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
-      <span class="cd-wo-amt">${wo.amount_actual||wo.amount_est ? '$'+(wo.amount_actual||wo.amount_est).toFixed(2) : '—'}</span>
+      <span class="cd-wo-amt">${amt ? '$'+amt.toFixed(2) : '—'}</span>
     </div>`;
-  }).join('') || `<p class="sb-empty-note" style="padding:12px 0">No jobs yet.</p>`;
+  }
+  window._cdWoRow = _cdWoRow; // expose for _cdJobTab
 
-  const oppRows = linkedOpps.slice(0,5).map(o => `
+  const woRows = workOrders.slice(0,20).map(_cdWoRow).join('')
+    || `<p class="sb-empty-note" style="padding:12px 0">No jobs yet. <button class="stmt-link" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">Schedule first job →</button></p>`;
+
+  const oppRows = linkedOpps.slice(0,6).map(o => `
     <div class="cd-opp-row" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
       <span class="cd-opp-proj">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</span>
       <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px">${escapeHtml(o.status||'New Lead')}</span>
       <span class="cd-opp-val">${o.budget ? '$'+Number(o.budget).toLocaleString() : '—'}</span>
-    </div>`).join('') || `<p class="sb-empty-note" style="padding:12px 0">No opportunities.</p>`;
+    </div>`).join('') || `<p class="sb-empty-note" style="padding:12px 0">No pipeline opportunities yet.</p>`;
 
   const notesHtml = customerNotes.map((n,i)=>`
     <div class="cd-note-item" data-note-id="${n.id||i}">
       <div class="cd-note-body">${escapeHtml(n.note||n.body||'')}</div>
-      <div class="cd-note-meta">${n.created_by||'Admin'} · ${n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}</div>
+      <div class="cd-note-meta">${escapeHtml(n.created_by||'Admin')} · ${n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
     </div>`).join('') || '';
 
+  // ── Render ────────────────────────────────────────────────────────────────
   view.innerHTML = `
   <div class="cd-shell">
-    <!-- ── Page Header ── -->
+
+    <!-- ══ Page Header ══ -->
     <div class="cd-page-header">
       <div class="cd-page-header-left">
         <button class="rp-btn cd-back-btn" onclick="show('clients')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           Clients
         </button>
-        <div class="cd-title-block">
-          <div class="cd-avatar">${(client.name||'?').charAt(0).toUpperCase()}</div>
+        <div class="cd-title-block" style="display:flex;align-items:center;gap:14px">
+          <div class="cd-avatar" style="background:${avatarBg}">${(client.name||'?').charAt(0).toUpperCase()}</div>
           <div>
             <h1 class="cd-name">${escapeHtml(client.name||'Customer')}</h1>
             <div class="cd-sub">
               ${clientTypeBadge(client.type)}
-              <span class="cd-since">${client.since||client.created_at ? 'Since '+_p5FmtDate(client.since||client.created_at) : ''}</span>
+              ${client.status ? `<span style="font-size:11px;color:var(--gw-text-muted)">${escapeHtml(client.status)}</span>` : ''}
+              ${client.since||client.created_at ? `<span class="cd-since">Since ${_p5FmtDate(client.since||client.created_at)}</span>` : ''}
             </div>
           </div>
         </div>
       </div>
       <div class="cd-page-header-actions">
-        <button class="rp-btn" onclick="_cdSendSms('${escapeHtml(client.phone||'')}')">
+        ${client.phone||client.mobile ? `
+        <a class="rp-btn" href="tel:${escapeHtml(client.phone||client.mobile||'')}" title="Call ${escapeHtml(client.phone||client.mobile||'')}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 10.81 19.79 19.79 0 01.01 2.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14v2.92z"/></svg>
+          Call
+        </a>
+        <button class="rp-btn" onclick="_cdSendSms('${escapeHtml(client.phone||client.mobile||'')}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           SMS
-        </button>
-        <button class="rp-btn" onclick="window.location.href='mailto:${escapeHtml(client.email||'')}'">
+        </button>` : ''}
+        ${client.email ? `
+        <a class="rp-btn" href="mailto:${escapeHtml(client.email)}" title="Email ${escapeHtml(client.email)}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
           Email
-        </button>
+        </a>` : ''}
         <button class="rp-btn" onclick="window.print()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           Print
@@ -2774,10 +2803,10 @@ async function customerDetail(clientId) {
       </div>
     </div>
 
-    <!-- ── Stats Bar ── -->
+    <!-- ══ Stats Bar ══ -->
     <div class="cd-stats-bar">
       <div class="cd-stat">
-        <span class="cd-stat-val cd-stat-val--green">$${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <span class="cd-stat-val cd-stat-val--green">$${totalRevenue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         <span class="cd-stat-lbl">Total Revenue</span>
       </div>
       <div class="cd-stat">
@@ -2802,9 +2831,10 @@ async function customerDetail(clientId) {
       </div>
     </div>
 
-    <!-- ── Main Body: Left + Right ── -->
+    <!-- ══ Body: Left + Right ══ -->
     <div class="cd-body">
-      <!-- LEFT COLUMN -->
+
+      <!-- ── LEFT COLUMN ── -->
       <div class="cd-left">
 
         <!-- Contact Info -->
@@ -2818,6 +2848,10 @@ async function customerDetail(clientId) {
               <span class="cd-info-lbl">Phone</span>
               <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.phone||client.mobile||'')}">${escapeHtml(client.phone||client.mobile||'')}</a>
             </div>` : ''}
+            ${client.mobile && client.phone && client.mobile!==client.phone ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Mobile</span>
+              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.mobile)}">${escapeHtml(client.mobile)}</a>
+            </div>` : ''}
             ${client.email ? `<div class="cd-info-row">
               <span class="cd-info-lbl">Email</span>
               <a class="cd-info-val cd-link" href="mailto:${escapeHtml(client.email)}">${escapeHtml(client.email)}</a>
@@ -2828,79 +2862,92 @@ async function customerDetail(clientId) {
             </div>` : ''}
             ${addr ? `<div class="cd-info-row">
               <span class="cd-info-lbl">Address</span>
-              <a class="cd-info-val cd-link" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank">${escapeHtml(addr)}</a>
+              <a class="cd-info-val cd-link" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">${escapeHtml(addr)}</a>
             </div>` : ''}
             ${client.type ? `<div class="cd-info-row">
               <span class="cd-info-lbl">Type</span>
               <span class="cd-info-val">${clientTypeBadge(client.type)}</span>
             </div>` : ''}
+            ${client.company && client.company!==client.name ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Company</span>
+              <span class="cd-info-val">${escapeHtml(client.company)}</span>
+            </div>` : ''}
           </div>
           ${tags.length ? `<div class="cd-tags" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
             ${tags.map(t=>`<span class="cl-tag">${escapeHtml(t)}</span>`).join('')}
             <button class="cd-tag-add-btn" onclick="_cdAddTag('${client.id}')">+ Tag</button>
-          </div>` : `<button class="cd-tag-add-btn" style="margin-top:8px" onclick="_cdAddTag('${client.id}')">+ Add Tag</button>`}
+          </div>` : `<button class="cd-tag-add-btn" style="margin-top:10px" onclick="_cdAddTag('${client.id}')">+ Add Tag</button>`}
         </section>
 
-        <!-- Customer Notes -->
+        <!-- Internal Notes -->
         <section class="cd-section">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Customer Notes <span style="font-size:10px;font-weight:400;opacity:.6">(internal)</span></h2>
+            <h2 class="cd-section-title">
+              Customer Notes
+              <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(internal — never shown to client)</span>
+            </h2>
           </div>
-          <div id="cd-customer-notes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-            ${notesHtml || '<p class="sb-empty-note">No notes yet.</p>'}
+          <div id="cd-customer-notes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+            ${notesHtml || '<p class="sb-empty-note">No notes yet. Add context about this customer, preferences, gate codes, etc.</p>'}
           </div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <textarea id="cd-note-input" class="rp-input" rows="3" placeholder="Add an internal note about this customer…" style="resize:vertical"></textarea>
-            <div style="display:flex;gap:8px;align-items:center">
-              <button class="rp-btn rp-btn--primary" onclick="_cdSaveNote('${client.id}')">+ Save Note</button>
-            </div>
-          </div>
+          <textarea id="cd-note-input" class="rp-input" rows="3"
+            placeholder="Gate code, dog on property, preferred schedule, special instructions…"
+            style="resize:vertical;margin-bottom:8px"></textarea>
+          <button class="rp-btn rp-btn--primary" onclick="_cdSaveNote('${client.id}')">+ Save Note</button>
         </section>
 
         <!-- Jobs -->
         <section class="cd-section">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Jobs</h2>
-            <button class="rp-btn-sm" onclick="_sbOpenNewVisit(null,null)">+ New Job</button>
+            <button class="rp-btn-sm" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule Job</button>
           </div>
           <div class="cd-tab-bar" id="cd-jobs-tabs">
-            <button class="cd-tab active" onclick="_cdJobTab(this,'all')">All (${workOrders.length})</button>
-            <button class="cd-tab" onclick="_cdJobTab(this,'scheduled')">Scheduled (${scheduledJobs})</button>
-            <button class="cd-tab" onclick="_cdJobTab(this,'in-progress')">In Progress (${inProgressJobs})</button>
-            <button class="cd-tab" onclick="_cdJobTab(this,'completed')">Completed (${completedJobs})</button>
+            <button class="cd-tab active" data-filter="all"    onclick="_cdJobTab(this,'all')">All (${totalJobs})</button>
+            <button class="cd-tab"         data-filter="scheduled"   onclick="_cdJobTab(this,'scheduled')">Scheduled (${scheduledJobs})</button>
+            <button class="cd-tab"         data-filter="in-progress" onclick="_cdJobTab(this,'in-progress')">In Progress (${inProgressJobs})</button>
+            <button class="cd-tab"         data-filter="completed"   onclick="_cdJobTab(this,'completed')">Completed (${completedJobs})</button>
           </div>
           <div id="cd-jobs-list">${woRows}</div>
-          ${workOrders.length > 10 ? `<div style="text-align:center;padding:8px 0"><button class="rp-btn-sm" onclick="_cdLoadMoreJobs('${client.id}')">Load more</button></div>` : ''}
+          ${workOrders.length >= 20 ? `
+          <div style="text-align:center;padding:10px 0">
+            <button class="rp-btn-sm" onclick="_cdLoadMoreJobs('${client.id}')">Load more jobs</button>
+          </div>` : ''}
         </section>
 
-        <!-- Opportunities -->
+        <!-- Pipeline Opportunities -->
         <section class="cd-section">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Pipeline</h2>
-            <button class="rp-btn-sm" onclick="show('lead')">+ Opportunity</button>
+            <button class="rp-btn-sm" onclick="show('lead')">+ New Opportunity</button>
           </div>
           ${oppRows}
         </section>
 
-        <!-- Properties -->
+        <!-- Service Properties -->
         <section class="cd-section">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Properties</h2>
-            <button class="rp-btn-sm" onclick="showAddProperty('${client.id}')">+ Add</button>
+            <button class="rp-btn-sm" onclick="showAddProperty('${client.id}')">+ Add Property</button>
           </div>
-          ${(client.properties||[]).length ? client.properties.map(p=>`
+          ${(client.properties||[]).length ? (client.properties||[]).map(p=>`
             <div class="cd-property-row">
               <div>
                 <div style="font-weight:600;font-size:13px">${escapeHtml(p.label||'Property')}</div>
                 <div style="font-size:12px;color:var(--gw-text-muted)">${escapeHtml([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}</div>
+                ${p.notes ? `<div style="font-size:11px;color:var(--gw-text-muted);margin-top:2px">${escapeHtml(p.notes)}</div>` : ''}
               </div>
-              <a href="https://maps.google.com/?q=${encodeURIComponent([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}" target="_blank" class="rp-btn-sm" style="font-size:11px">Map</a>
+              <a href="https://maps.google.com/?q=${encodeURIComponent([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}"
+                 target="_blank" rel="noopener" class="rp-btn-sm" style="font-size:11px">
+                 <svg width="10" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+                 Map
+              </a>
             </div>`).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
         </section>
 
       </div>
 
-      <!-- RIGHT COLUMN -->
+      <!-- ── RIGHT COLUMN ── -->
       <div class="cd-right">
 
         <!-- Activity Timeline -->
@@ -2909,15 +2956,21 @@ async function customerDetail(clientId) {
             <h2 class="cd-section-title">Activity Timeline</h2>
           </div>
           <div id="cd-timeline" class="cd-timeline">
-            ${workOrders.slice(0,8).map(wo=>`
-              <div class="cd-timeline-item">
+            ${workOrders.length ? workOrders.slice(0,10).map(wo=>`
+              <div class="cd-timeline-item" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer" title="Open job ${escapeHtml(wo.wo_number||wo.id)}">
                 <div class="cd-tl-dot ${_p6WOStatusClass(wo.status)}"></div>
                 <div class="cd-tl-content">
                   <div class="cd-tl-title">${escapeHtml(wo.wo_number||'Job')} — ${escapeHtml(wo.title||wo.type||'Service')}</div>
-                  <div class="cd-tl-meta">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : ''} · <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span></div>
-                  ${wo.amount_est||wo.amount_actual ? `<div class="cd-tl-amt">$${(wo.amount_actual||wo.amount_est||0).toFixed(2)}</div>` : ''}
+                  <div class="cd-tl-meta">
+                    ${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : ''}
+                    ${wo.scheduled_date ? ' · ' : ''}
+                    <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
+                  </div>
+                  ${Number(wo.amount_est)||Number(wo.amount_actual) ? `<div class="cd-tl-amt">$${(Number(wo.amount_actual)||Number(wo.amount_est)||0).toFixed(2)}</div>` : ''}
                 </div>
-              </div>`).join('') || '<p class="sb-empty-note">No activity yet.</p>'}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.3;flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+              </div>`).join('')
+            : '<p class="sb-empty-note">No activity yet.</p>'}
           </div>
         </section>
 
@@ -2927,25 +2980,32 @@ async function customerDetail(clientId) {
             <h2 class="cd-section-title">Quick Actions</h2>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="_sbOpenNewVisit(null,null)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              Schedule a Job
+            <button class="cd-quick-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>Schedule a Job</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>
-            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="show('lead')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              New Opportunity
+            <button class="cd-quick-btn" onclick="show('lead')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <span>New Opportunity</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>
-            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="_cdSendSms('${escapeHtml(client.phone||'')}')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              Send SMS
-            </button>
-            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="window.location.href='mailto:${escapeHtml(client.email||'')}'">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-              Send Email
-            </button>
-            <button class="rp-btn" style="justify-content:flex-start;gap:10px;text-align:left" onclick="_cdSendPortalLink('${client.id}')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              Send Portal Link
+            ${client.phone||client.mobile ? `
+            <button class="cd-quick-btn" onclick="_cdSendSms('${escapeHtml(client.phone||client.mobile||'')}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <span>Send SMS</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>` : ''}
+            ${client.email ? `
+            <a class="cd-quick-btn" href="mailto:${escapeHtml(client.email)}" style="text-decoration:none">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+              <span>Send Email</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </a>` : ''}
+            <button class="cd-quick-btn" onclick="_cdSendPortalLink('${client.id}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>Send Portal Link</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>
           </div>
         </section>
@@ -2955,20 +3015,35 @@ async function customerDetail(clientId) {
           <div class="cd-section-head">
             <h2 class="cd-section-title">Customer Portal</h2>
           </div>
-          <div style="font-size:13px;color:var(--gw-text-muted);margin-bottom:10px">
-            Send this customer a link to access their own portal where they can view jobs, photos, invoices, and pay online.
+          <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
+            One-click link lets this client view their jobs, photos, invoices, and pay online — all without logging in.
+          </p>
+          <div id="cd-portal-url-block" style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gw-text-muted);word-break:break-all;margin-bottom:12px;font-family:monospace">
+            ${location.origin}/portal?client=${client.id}
           </div>
-          <button class="rp-btn rp-btn--primary" onclick="_cdSendPortalLink('${client.id}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Send Portal Access Link
-          </button>
+          <div style="display:flex;gap:8px">
+            <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdSendPortalLink('${client.id}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              Copy Link
+            </button>
+            ${client.phone||client.mobile ? `
+            <button class="rp-btn" onclick="_cdSharePortalViaSms('${client.id}','${escapeHtml(client.phone||client.mobile||'')}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              SMS
+            </button>` : ''}
+            ${client.email ? `
+            <a class="rp-btn" href="mailto:${escapeHtml(client.email)}?subject=Your+Customer+Portal&body=Access+your+portal+here:+${encodeURIComponent(location.origin+'/portal?client='+client.id)}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+              Email
+            </a>` : ''}
+          </div>
         </section>
 
       </div>
     </div>
   </div>`;
 
-  // Store current client for handlers
+  // Store current client and work orders for tab/handler access
   window._cdCurrentClient = client;
   window._cdCurrentClientWOs = workOrders;
 }
@@ -2980,18 +3055,49 @@ window._cdJobTab = function(btn, filter) {
   btn.classList.add('active');
   const wos = window._cdCurrentClientWOs || [];
   const filtered = filter==='all' ? wos : wos.filter(w=>w.status===filter);
-  const rows = filtered.slice(0,10).map(wo => {
+  const rowFn = window._cdWoRow || function(wo) {
     const statusCls = _p6WOStatusClass(wo.status);
+    const amt = Number(wo.amount_actual)||Number(wo.amount_est)||0;
     return `<div class="cd-wo-row" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer">
       <span class="cd-wo-num">${escapeHtml(wo.wo_number||wo.id)}</span>
       <span class="cd-wo-title">${escapeHtml(wo.title||wo.type||'Job')}</span>
       <span class="cd-wo-date">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : '—'}</span>
       <span class="ops-ready-badge ${statusCls}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
-      <span class="cd-wo-amt">${wo.amount_actual||wo.amount_est ? '$'+(wo.amount_actual||wo.amount_est).toFixed(2) : '—'}</span>
+      <span class="cd-wo-amt">${amt ? '$'+amt.toFixed(2) : '—'}</span>
     </div>`;
-  }).join('') || '<p class="sb-empty-note" style="padding:12px 0">No jobs in this category.</p>';
+  };
+  const rows = filtered.slice(0,20).map(rowFn).join('')
+    || '<p class="sb-empty-note" style="padding:12px 0">No jobs in this category.</p>';
   const list = document.getElementById('cd-jobs-list');
   if (list) list.innerHTML = rows;
+};
+
+// Open new visit modal pre-filled with client info
+window._cdNewJobForClient = function(clientId, clientName) {
+  _sbOpenNewVisit(null, null, clientId, clientName);
+};
+
+// Share portal link via SMS
+window._cdSharePortalViaSms = function(clientId, phone) {
+  const link = `${location.origin}/portal?client=${clientId}`;
+  const msg = `Hi! Here's a link to your customer portal where you can view your jobs, photos, and invoices: ${link}`;
+  window.open(`sms:${phone}?body=${encodeURIComponent(msg)}`, '_blank');
+};
+
+// Load more jobs (fetches from D1 with offset)
+window._cdLoadMoreJobs = async function(clientId) {
+  const existing = window._cdCurrentClientWOs || [];
+  const offset = existing.length;
+  try {
+    const r = await fetch(`/api/work-orders?client_id=${clientId}&limit=50&offset=${offset}`, { credentials:'include' });
+    const d = await r.json();
+    const more = d.data || [];
+    if (!more.length) { showToast('No more jobs to load','info'); return; }
+    window._cdCurrentClientWOs = [...existing, ...more];
+    // Re-render the active tab
+    const activeTab = document.querySelector('#cd-jobs-tabs .cd-tab.active');
+    if (activeTab) window._cdJobTab(activeTab, activeTab.dataset.filter || 'all');
+  } catch(e) { showToast('Failed to load more jobs','error'); }
 };
 
 window._cdSaveNote = async function(clientId) {
@@ -13270,7 +13376,7 @@ window._sbDuplicateJob = async function(woId) {
 window._sbOpenVisitModal = async function(woId) {
   let wo = null;
   try {
-    const r = await fetch(`/api/work-orders/${woId}`);
+    const r = await fetch(`/api/work-orders/${woId}`, { credentials: 'include' });
     const d = await r.json();
     if (d.ok) wo = d.data;
   } catch(e) {}
@@ -13596,7 +13702,7 @@ window._sbSaveVisit = async function(woId, andComplete) {
   if (andComplete) body.status = 'completed';
   try {
     const r = await fetch(`/api/work-orders/${woId}`, {
-      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+      method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
     });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error);
@@ -13615,7 +13721,7 @@ window._sbSaveVisit = async function(woId, andComplete) {
 window._sbDeleteVisit = async function(woId) {
   if (!confirm('Delete this work order? This cannot be undone.')) return;
   try {
-    await fetch(`/api/work-orders/${woId}`,{method:'DELETE'});
+    await fetch(`/api/work-orders/${woId}`,{method:'DELETE', credentials:'include'});
     showToast('Work order deleted','success');
     _sbCloseModal();
     await _sbRefresh();
@@ -13890,7 +13996,7 @@ window._sbGoToCustomer = function(clientId, clientName) {
 window._sbUpsell = function(oppId) { show('oppDetail',oppId); _sbCloseModal(); };
 
 // ── New Visit Modal ──────────────────────────────────────────────────────────
-window._sbOpenNewVisit = async function(prefilledDate, prefilledCrewId) {
+window._sbOpenNewVisit = async function(prefilledDate, prefilledCrewId, prefilledClientId, prefilledClientName) {
   const crews   = window._sbState.crews||[];
   const allReps = window._gwAllReps||[];
 
@@ -13909,12 +14015,13 @@ window._sbOpenNewVisit = async function(prefilledDate, prefilledCrewId) {
         <button class="sb-modal-close" onclick="document.getElementById('sb-new-visit-modal')?.remove()">×</button>
       </div>
       <div class="sb-modal-body" style="display:block;max-height:80vh;overflow-y:auto">
+        ${prefilledClientId ? `<input type="hidden" id="snv-client-id" value="${escapeHtml(prefilledClientId)}">` : ''}
 
         <!-- ── Row 1: Client + Type ── -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <label class="sb-modal-field">
             <span>Client / Job Name</span>
-            <input class="rp-input" id="snv-client" placeholder="Client name">
+            <input class="rp-input" id="snv-client" placeholder="Client name" value="${escapeHtml(prefilledClientName||'')}">
           </label>
           <label class="sb-modal-field">
             <span>Service Type</span>
@@ -14131,8 +14238,10 @@ window._snvCreate = async function() {
   const clientName = document.getElementById('snv-client')?.value?.trim();
   if(!clientName) { showToast('Client name required','error'); return; }
   const durationVal = parseFloat(document.getElementById('snv-duration')?.value||'0')||null;
+  const prefilledClientId = document.getElementById('snv-client-id')?.value||null;
   const body={
     client_name:    clientName,
+    client_id:      prefilledClientId||null,
     type:           document.getElementById('snv-type')?.value||'Service',
     scheduled_date: document.getElementById('snv-date')?.value||null,
     scheduled_time: document.getElementById('snv-time')?.value||null,

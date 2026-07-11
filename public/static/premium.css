@@ -10180,8 +10180,11 @@ h1.pl-title,
 .cd-timeline { display: flex; flex-direction: column; gap: 0; }
 .cd-timeline-item {
   display: flex; gap: 12px; align-items: flex-start;
-  padding: 10px 0; border-bottom: 1px solid var(--gw-border);
+  padding: 10px 6px; border-bottom: 1px solid var(--gw-border);
+  border-radius: 6px; margin: 0 -6px;
+  cursor: pointer; transition: background .1s;
 }
+.cd-timeline-item:hover { background: var(--gw-bg-surface-2, #f8fafc); }
 .cd-timeline-item:last-child { border-bottom: none; }
 .cd-tl-dot {
   width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 3px;
@@ -10208,6 +10211,31 @@ h1.pl-title,
   .cd-page-header { flex-direction: column; }
   .cd-page-header-actions { flex-wrap: wrap; }
 }
+
+/* Quick Actions button — icon + label + chevron */
+.cd-quick-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--gw-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--gw-bg-surface, #fff);
+  color: var(--gw-text, #1e293b);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  transition: background .12s, border-color .12s, transform .1s;
+}
+.cd-quick-btn:hover {
+  background: var(--gw-bg-surface-2, #f8fafc);
+  border-color: var(--gw-pine-300, #7ecda0);
+  transform: translateX(2px);
+}
+.cd-quick-btn svg:first-child { flex-shrink: 0; color: var(--gw-pine-500, #2D7A55); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Shared RP (Report/Page) components — used across Work Orders, Assets,
