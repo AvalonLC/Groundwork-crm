@@ -16,7 +16,7 @@ app.use('/static/*', serveStatic({ root: './public' }))
 // ── Service Worker — self-destructing killer + real SW ───────────────────────
 // /sw.js — the REAL SW (registered after killer runs)
 app.get('/sw.js', (c) => {
-  const BUILD = '20260711b014';
+  const BUILD = '20260711b015';
   const sw = `const CACHE='groundwork-crm-${BUILD}';
 self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
 self.addEventListener('activate', e => {
@@ -181,9 +181,52 @@ const RESET_HTML = (extraHeaders: Record<string,string> = {}) => {
 // /reset — known path (may be cached by old SW, but we try anyway)
 app.get('/reset', () => RESET_HTML())
 
-// /gw-nuke — random-looking path the old SW has NEVER cached
-// Users who are stuck should navigate to: groundwork-crm.com/gw-nuke
-app.get('/gw-nuke', () => RESET_HTML())
+// /gw-nuke — nuclear path the old SW has NEVER cached.
+// Strategy: nuke SW + caches first, then swap in the real app HTML
+// WITHOUT any redirect (a redirect gives the dying SW one last chance to intercept).
+app.get('/gw-nuke', (c) => {
+  // We'll inject the nuke script at the TOP of the real app HTML,
+  // before anything else runs. The script runs synchronously, kills all SWs
+  // and caches, then the rest of the page loads fresh with no SW active.
+  const appHtml = getHtml();
+  const nukeScript = `<script>
+(function(){
+  // Kill every SW registration immediately, synchronously where possible
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(regs){
+      regs.forEach(function(r){ r.unregister(); });
+    });
+    // Also nuke the controller right now
+    if(navigator.serviceWorker.controller){
+      navigator.serviceWorker.controller.postMessage({type:'SKIP_WAITING'});
+    }
+  }
+  // Wipe all caches
+  if('caches' in window){
+    caches.keys().then(function(keys){
+      keys.forEach(function(k){ caches.delete(k); });
+    });
+  }
+  // Clear storage
+  try{ localStorage.clear(); }catch(e){}
+  try{ sessionStorage.clear(); }catch(e){}
+  // Replace URL so bookmarks/history show / not /gw-nuke
+  if(window.history && window.history.replaceState){
+    window.history.replaceState(null,'','/');
+  }
+})();
+</script>`;
+  // Inject nuke script immediately after <head> opens
+  const injected = appHtml.replace('<head>', '<head>' + nukeScript);
+  return new Response(injected, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+    }
+  });
+})
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -5013,7 +5056,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b014">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b015">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5037,8 +5080,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/static/platform_core.js?v=20260711b014"></script>
-  <script src="/static/client_portal.js?v=20260711b014"></script>
+  <script src="/static/platform_core.js?v=20260711b015"></script>
+  <script src="/static/client_portal.js?v=20260711b015"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5649,9 +5692,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711b014">
-  <link rel="stylesheet" href="/static/styles.css?v=20260711b014">
-  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b014">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711b015">
+  <link rel="stylesheet" href="/static/styles.css?v=20260711b015">
+  <link rel="stylesheet" href="/static/groundwork-design.css?v=20260711b015">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6192,33 +6235,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260711b014"></script>
-<script src="/static/db.js?v=20260711b014"></script>
-<script src="/static/data.js?v=20260711b014"></script>
-<script src="/static/reps.js?v=20260711b014"></script>
-<script src="/static/record-page.js?v=20260711b014"></script>
-<script src="/static/academy.js?v=20260711b014"></script>
-<script src="/static/task_engine.js?v=20260711b014"></script>
-<script src="/static/app_premium.js?v=20260711b014"></script>
-<script src="/static/estimates.js?v=20260711b014"></script>
-<script src="/static/invoices.js?v=20260711b014"></script>
-<script src="/static/csv_import.js?v=20260711b014"></script>
-<script src="/static/onboarding.js?v=20260711b014"></script>
-<script src="/static/recurring_plans.js?v=20260711b014"></script>
-<script src="/static/reviews.js?v=20260711b014"></script>
-<script src="/static/stripe.js?v=20260711b014"></script>
-<script src="/static/email.js?v=20260711b014"></script>
-<script src="/static/notifications.js?v=20260711b014"></script>
-<script src="/static/integrations.js?v=20260711b014"></script>
-<script src="/static/user_management.js?v=20260711b014"></script>
-<script src="/static/platform_admin.js?v=20260711b014"></script>
-<script src="/static/time_tracker.js?v=20260711b014"></script>
-<script src="/static/field_workday.js?v=20260711b014"></script>
-<script src="/static/platform_core.js?v=20260711b014"></script>
-<script src="/static/approval_engine.js?v=20260711b014"></script>
-<script src="/static/automation_engine.js?v=20260711b014"></script>
-<script src="/static/client_portal.js?v=20260711b014"></script>
-<script src="/static/field_mode.js?v=20260711b014"></script>
+<script src="/static/gw-icons.js?v=20260711b015"></script>
+<script src="/static/db.js?v=20260711b015"></script>
+<script src="/static/data.js?v=20260711b015"></script>
+<script src="/static/reps.js?v=20260711b015"></script>
+<script src="/static/record-page.js?v=20260711b015"></script>
+<script src="/static/academy.js?v=20260711b015"></script>
+<script src="/static/task_engine.js?v=20260711b015"></script>
+<script src="/static/app_premium.js?v=20260711b015"></script>
+<script src="/static/estimates.js?v=20260711b015"></script>
+<script src="/static/invoices.js?v=20260711b015"></script>
+<script src="/static/csv_import.js?v=20260711b015"></script>
+<script src="/static/onboarding.js?v=20260711b015"></script>
+<script src="/static/recurring_plans.js?v=20260711b015"></script>
+<script src="/static/reviews.js?v=20260711b015"></script>
+<script src="/static/stripe.js?v=20260711b015"></script>
+<script src="/static/email.js?v=20260711b015"></script>
+<script src="/static/notifications.js?v=20260711b015"></script>
+<script src="/static/integrations.js?v=20260711b015"></script>
+<script src="/static/user_management.js?v=20260711b015"></script>
+<script src="/static/platform_admin.js?v=20260711b015"></script>
+<script src="/static/time_tracker.js?v=20260711b015"></script>
+<script src="/static/field_workday.js?v=20260711b015"></script>
+<script src="/static/platform_core.js?v=20260711b015"></script>
+<script src="/static/approval_engine.js?v=20260711b015"></script>
+<script src="/static/automation_engine.js?v=20260711b015"></script>
+<script src="/static/client_portal.js?v=20260711b015"></script>
+<script src="/static/field_mode.js?v=20260711b015"></script>
 <script>
   // ── Service Worker: registration + auto-update ───────────────────────────
   if ('serviceWorker' in navigator) {
