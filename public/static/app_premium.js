@@ -1620,6 +1620,125 @@ function _gwTodayFinanceSnap() {
   } catch(_) { return ''; }
 }
 
+// ── Mobile My Day render ────────────────────────────────────────────────────
+function _gwTodayRenderMobile(opts) {
+  // opts: { rep, isAdmin, isOM, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent }
+  const { rep, isAdmin, isOM, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent } = opts;
+  const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
+  const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
+  const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
+  const _pipeVal = _open.reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const _won     = opps.filter(o=>o.status==='Sold / Activation');
+  const _wonMTD  = _won.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7) === todayISO().slice(0,7));
+  const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
+
+  const dateStr = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase();
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  const headerHtml = `
+    <div class="gwtd-header">
+      <div class="gwtd-header-top">
+        <div class="gwtd-title-group">
+          <h1 class="gwtd-title">My Day</h1>
+          <span class="gwtd-date">${dateStr}</span>
+        </div>
+      </div>
+      <div class="gwtd-actions">
+        <button class="gwtd-btn gwtd-btn--primary" onclick="window._gwTodayNewTask()">+ Task</button>
+        <button class="gwtd-btn gwtd-btn--secondary" onclick="show('lead')">+ Lead</button>
+        <button class="gwtd-btn gwtd-btn--secondary" onclick="show('pipeline')">Pipeline</button>
+      </div>
+    </div>`;
+
+  // ── Stats grid ──────────────────────────────────────────────────────────
+  const statsHtml = `
+    <div class="gwtd-stats">
+      <div class="gwtd-stat-cell" onclick="show('pipeline')">
+        <div class="gwtd-stat-label">Open Leads</div>
+        <div class="gwtd-stat-val">${_open.length}</div>
+      </div>
+      <div class="gwtd-stat-cell" onclick="window._pipelineStatusFilter='proposals';show('pipeline')">
+        <div class="gwtd-stat-label">Proposals Out</div>
+        <div class="gwtd-stat-val">${_propo.length}</div>
+      </div>
+      <div class="gwtd-stat-cell" onclick="show('pipeline')">
+        <div class="gwtd-stat-label">Pipeline Value</div>
+        <div class="gwtd-stat-val gwtd-stat-val--money">${_fmt(_pipeVal)}</div>
+      </div>
+      <div class="gwtd-stat-cell">
+        <div class="gwtd-stat-label">Won MTD</div>
+        <div class="gwtd-stat-val gwtd-stat-val--won">${_wonMTD.length}<span class="gwtd-stat-sub"> · ${_fmt(_wonMTDVal)}</span></div>
+      </div>
+    </div>`;
+
+  // ── Financial Pulse (admin/OM) ──────────────────────────────────────────
+  const finHtml = showFin && finSnap ? `<div class="gwtd-section">${finSnap}</div>` : '';
+
+  // ── Tasks section ───────────────────────────────────────────────────────
+  const tasksHtml = taskWorkspace ? `<div class="gwtd-section">${taskWorkspace}</div>` : '';
+
+  // ── Daily Start-Up checklist (collapsible) ──────────────────────────────
+  const checklistHtml = checklist ? `
+    <div class="gwtd-section">
+      <div class="gwtd-collapsible" id="gwtd-checklist-panel">
+        <button class="gwtd-collapse-btn" onclick="(function(){var p=document.getElementById('gwtd-checklist-panel');p.classList.toggle('gwtd-collapsed');})()">
+          <span>Daily Sales Start-Up</span>
+          <svg class="gwtd-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="gwtd-collapse-body">${checklist}</div>
+      </div>
+    </div>` : '';
+
+  // ── Recently Updated leads (compact 3 rows) ─────────────────────────────
+  const recentHtml = recent.length ? `
+    <div class="gwtd-section">
+      <div class="gwtd-section-head">
+        <span class="gwtd-section-title">Recently Updated</span>
+        <button class="gwtd-link-btn" onclick="show('pipeline')">See all</button>
+      </div>
+      <div class="gwtd-recent-list">
+        ${recent.slice(0,4).map(oppMini).join('')}
+      </div>
+    </div>` : '';
+
+  // ── Activity widget placeholder (admin sees reviews widget) ─────────────
+  const reviewsMount = (isAdmin || isOM) ? '<div id="gw-reviews-widget-mount" style="margin-top:12px"></div>' : '';
+
+  view.innerHTML = `
+    <div class="gwtd-shell">
+      ${unsyncedBanner}
+      ${headerHtml}
+      ${statsHtml}
+      ${finHtml}
+      ${tasksHtml}
+      ${checklistHtml}
+      ${recentHtml}
+      ${reviewsMount}
+    </div>`;
+
+  wireChecks();
+
+  if ((isAdmin || isOM) && typeof window.gwReviewsWidget === 'function') {
+    setTimeout(() => window.gwReviewsWidget('gw-reviews-widget-mount'), 400);
+  }
+
+  // Async task reload
+  const _msSinceComplete = window._gwTaskLastCompletedAt ? (Date.now() - window._gwTaskLastCompletedAt) : Infinity;
+  if (window.gwTask && rep && _msSinceComplete > 3000) {
+    window.gwTask.loadToday().then(function() {
+      const ws = document.querySelector('.gw-task-workspace');
+      if (!ws) return;
+      const newSection = _gwTodayRenderTaskWorkspace(rep);
+      const sectionEl = ws.closest('section.app-card');
+      if (sectionEl) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = newSection;
+        sectionEl.replaceWith(tmp.firstElementChild);
+      }
+    }).catch(() => {});
+  }
+}
+
 function _gwTodayRender() {
   const _todayRep = window.getCurrentRep ? window.getCurrentRep() : null;
   const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
@@ -1673,6 +1792,25 @@ function _gwTodayRender() {
 
   // Recently Updated leads
   const recent = [...opps].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
+
+  // ── Mobile path ──────────────────────────────────────────────────────────
+  if (window.innerWidth <= 768) {
+    const _dailyCl = data.checklists.find(c=>c.id==='daily');
+    const _clHtml  = _dailyCl ? renderChecklist(_dailyCl, true) : '';
+    _gwTodayRenderMobile({
+      rep: _todayRep,
+      isAdmin: _isAdmin,
+      isOM: _isOM,
+      showFin: _showFin,
+      opps,
+      unsyncedBanner: _unsyncedBanner,
+      finSnap: _finSnap,
+      taskWorkspace: _taskWorkspace,
+      checklist: _clHtml,
+      recent,
+    });
+    return;
+  }
 
   // Hero header
   const _heroBlock = `

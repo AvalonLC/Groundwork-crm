@@ -12432,3 +12432,242 @@ h1.pl-title,
   color: var(--gw-ink, #0F1C14);
 }
 /* ── end mobile schedule ────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   gwtd-* — Mobile My Day layout  (max-width: 768px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Shell -------------------------------------------------------------------- */
+.gwtd-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Header ------------------------------------------------------------------- */
+.gwtd-header {
+  padding: 14px 16px 10px;
+  background: var(--gw-surface, #fff);
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+}
+.gwtd-header-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.gwtd-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.gwtd-title {
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  letter-spacing: -.04em !important;
+  color: var(--gw-ink, #0F1C14) !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+}
+.gwtd-date {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--gw-muted, #5E6E6F);
+  text-transform: uppercase;
+}
+.gwtd-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.gwtd-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.gwtd-btn:active { opacity: .75; }
+.gwtd-btn--primary {
+  background: var(--gw-pine, #4D8A86);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(77,138,134,.25);
+}
+.gwtd-btn--secondary {
+  background: var(--gw-surface, #fff);
+  color: var(--gw-pine, #4D8A86);
+  border: 1.5px solid var(--gw-line, #E2EAE9);
+}
+
+/* Stats grid --------------------------------------------------------------- */
+.gwtd-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  background: var(--gw-surface, #fff);
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+  margin-bottom: 0;
+}
+.gwtd-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px;
+  gap: 4px;
+  cursor: pointer;
+  transition: background .15s;
+  border-right: 1px solid var(--gw-line, #E2EAE9);
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+  text-align: center;
+}
+.gwtd-stat-cell:nth-child(2),
+.gwtd-stat-cell:nth-child(4) { border-right: 0; }
+.gwtd-stat-cell:nth-child(3),
+.gwtd-stat-cell:nth-child(4) { border-bottom: 0; }
+.gwtd-stat-cell:active { background: var(--gw-bg2, #F5F8F7); }
+.gwtd-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #5E6E6F);
+}
+.gwtd-stat-val {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--gw-ink, #0F1C14);
+  line-height: 1.1;
+  letter-spacing: -.03em;
+}
+.gwtd-stat-val--money { font-size: 18px; color: var(--gw-pine, #4D8A86); }
+.gwtd-stat-val--won   { font-size: 16px; color: #2D7A55; }
+.gwtd-stat-sub {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #2D7A55;
+}
+
+/* Sections ----------------------------------------------------------------- */
+.gwtd-section {
+  padding: 14px 14px 0;
+}
+.gwtd-section + .gwtd-section { padding-top: 10px; }
+
+.gwtd-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.gwtd-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--gw-ink, #0F1C14);
+  text-transform: uppercase;
+}
+.gwtd-link-btn {
+  background: none;
+  border: none;
+  color: var(--gw-pine, #4D8A86);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Collapsible checklist ---------------------------------------------------- */
+.gwtd-collapsible {
+  background: var(--gw-surface, #fff);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.gwtd-collapse-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gw-ink, #0F1C14);
+  text-align: left;
+  gap: 8px;
+}
+.gwtd-chevron {
+  flex-shrink: 0;
+  color: var(--gw-muted, #5E6E6F);
+  transition: transform .2s;
+}
+.gwtd-collapsible.gwtd-collapsed .gwtd-chevron {
+  transform: rotate(-90deg);
+}
+.gwtd-collapse-body {
+  padding: 0 16px 12px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+  overflow: hidden;
+  transition: max-height .25s ease;
+}
+.gwtd-collapsible.gwtd-collapsed .gwtd-collapse-body {
+  display: none;
+}
+
+/* Recent leads list -------------------------------------------------------- */
+.gwtd-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--gw-surface, #fff);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.gwtd-recent-list .mini-row {
+  border-radius: 0;
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+  padding: 11px 14px;
+}
+.gwtd-recent-list .mini-row:last-child { border-bottom: 0; }
+
+/* Financial Pulse overrides for mobile ------------------------------------ */
+.gwtd-section .gw-today-fin-card {
+  border-radius: 14px;
+  padding: 14px;
+  margin: 0;
+}
+.gwtd-section .gw-today-fin-kpis {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.gwtd-section .gw-today-fin-kpi-val {
+  font-size: 17px;
+}
+
+/* Task section overrides for mobile --------------------------------------- */
+.gwtd-section .app-card {
+  border-radius: 14px;
+  padding: 14px;
+  margin: 0;
+}
+.gwtd-section section.app-card h2 {
+  font-size: 15px !important;
+  margin-bottom: 0 !important;
+}
+
+/* Bottom padding so content clears the nav bar ---------------------------- */
+.gwtd-shell {
+  padding-bottom: 80px;
+}
+
+/* ── end mobile My Day ── */
