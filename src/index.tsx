@@ -4868,7 +4868,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p50">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p50e">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5504,7 +5504,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p50">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p50e">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -5941,7 +5941,7 @@ function getHtml(): string {
 <script src="/static/reviews.js?v=20260711p50"></script>
 <script src="/static/stripe.js?v=20260711p50"></script>
 <script src="/static/email.js?v=20260711p50"></script>
-<script src="/static/notifications.js?v=20260711p50d"></script>
+<script src="/static/notifications.js?v=20260711p50e"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>

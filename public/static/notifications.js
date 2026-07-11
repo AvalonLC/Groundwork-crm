@@ -33,19 +33,23 @@
     _nfState.pollTimer = setInterval(_nfPoll, 60000);
   };
 
+  // ── Bell SVG (inline — doesn't depend on gwIcon being loaded) ─────────────
+  const _nfBellSVG = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
+
   // ── Mount bell into topbar ─────────────────────────────────────────────────
   function _nfMountBell() {
-    // Look for the install button area in topbar to insert before it
-    const installBtn = document.getElementById('installBtn');
-    if (!installBtn) return;
+    if (document.getElementById('gw-notif-bell-wrap')) return; // already mounted
+    // Insert before the +New wrap (topbarNewWrap) so it's always visible
+    const anchor = document.getElementById('topbarNewWrap') || document.getElementById('installBtn');
+    if (!anchor) return;
     const bell = document.createElement('div');
     bell.id = 'gw-notif-bell-wrap';
     bell.innerHTML = `
 <button class="gw-notif-bell" id="gwNotifBellBtn" onclick="gwNotifTogglePanel()" aria-label="Notifications" title="Notifications">
-  ${gwIcon('bell','18','currentColor')}
+  ${_nfBellSVG}
   <span class="gw-notif-badge" id="gwNotifBadge" style="display:none">0</span>
 </button>`;
-    installBtn.parentNode.insertBefore(bell, installBtn);
+    anchor.parentNode.insertBefore(bell, anchor);
   }
 
   // ── Poll notifications ─────────────────────────────────────────────────────

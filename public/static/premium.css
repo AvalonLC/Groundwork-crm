@@ -11749,3 +11749,146 @@ h1.pl-title,
   color: var(--gw-text-muted); justify-content: center;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GROUNDWORK CRM — GLOBAL MOBILE LAYOUT FIXES  @media (max-width: 768px)
+   Fixes rp-header collisions, subtitle wrapping, action button overflow,
+   table/grid cramping, and content padding across ALL views.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── rp-header: stack title above actions, never side-by-side ─────────── */
+  .rp-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+
+  /* Title: smaller on mobile, never truncate */
+  .rp-title {
+    font-size: 20px !important;
+    letter-spacing: -.3px !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Subtitle: stays as ONE flowing line, wraps gracefully */
+  .rp-subtitle {
+    font-size: 12px !important;
+    white-space: normal !important;
+    line-height: 1.5 !important;
+    color: var(--gw-text-muted) !important;
+    margin-top: 2px !important;
+  }
+
+  /* Action buttons row: wraps, full-width stretch on very small screens */
+  .rp-header-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+
+  /* Individual action buttons: auto-size, don't overflow */
+  .rp-header-actions .rp-btn,
+  .rp-header-actions .rp-btn--primary,
+  .rp-header-actions button {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    padding: 7px 10px !important;
+    justify-content: center !important;
+  }
+
+  /* ── View shell containers: consistent padding ────────────────────────── */
+  .wo-list-shell,
+  .disp-shell,
+  .rp-shell,
+  .view-wrap {
+    padding: 14px 12px !important;
+  }
+
+  /* disp-shell inner header (has its own inline padding:20px 24px) */
+  .disp-shell .rp-header {
+    padding: 14px 12px 10px !important;
+    margin: 0 !important;
+  }
+
+  /* ── wo-row table: allow horizontal scroll, keep columns readable ──────── */
+  .wo-row {
+    display: grid !important;
+    grid-template-columns: 90px 1fr auto !important;
+    gap: 4px !important;
+    padding: 10px 12px !important;
+    align-items: center !important;
+  }
+
+  /* Header row inside table: hide less important columns on mobile */
+  .wo-row > span:nth-child(3),
+  .wo-row > span:nth-child(4) {
+    display: none !important;
+  }
+
+  /* ── Ops stat grid: 3 across instead of 5 ─────────────────────────────── */
+  .ops-stat-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* ── Dispatch board layout: single column stack ───────────────────────── */
+  .disp-layout {
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  /* ── rp-cols: always stack on mobile ──────────────────────────────────── */
+  .rp-cols {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  /* ── rp-actions / rp-footer-actions: wrap ─────────────────────────────── */
+  .rp-actions,
+  .rp-footer-actions,
+  .footer-actions,
+  .gw-toolbar {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  /* ── Status badge rows: wrap tightly ──────────────────────────────────── */
+  .ops-ready-badge {
+    font-size: 11px !important;
+    padding: 3px 8px !important;
+  }
+
+  /* ── Stat/KPI grids used in Financial, Ops, Dashboard ─────────────────── */
+  .stat-row,
+  .kpi-row {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* ── Section headings with inline actions ─────────────────────────────── */
+  .section-head,
+  .gw-section-head {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* ── Record page shell inner padding ──────────────────────────────────── */
+  .rp-shell {
+    padding: 12px !important;
+  }
+
+  /* Ensure record page header has no fixed inline padding overriding ours */
+  header.rp-header[style*="padding"] {
+    padding: 0 !important;
+  }
+
+}
+/* ── end mobile layout fixes ─────────────────────────────────────────────── */
