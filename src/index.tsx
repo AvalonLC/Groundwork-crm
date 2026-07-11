@@ -5941,7 +5941,7 @@ function getHtml(): string {
 <script src="/static/reviews.js?v=20260711p50"></script>
 <script src="/static/stripe.js?v=20260711p50"></script>
 <script src="/static/email.js?v=20260711p50"></script>
-<script src="/static/notifications.js?v=20260711p50c"></script>
+<script src="/static/notifications.js?v=20260711p50d"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
 <script src="/static/platform_admin.js?v=20260628gw9"></script>
