@@ -42,7 +42,7 @@ const _VIEW_WORKSPACE_MAP = {
   // Financial workspace
   financialHub:'gwFinancial', invoices:'gwFinancial', payments:'gwFinancial',
   deposits:'gwFinancial', statements:'gwFinancial', financialActivity:'gwFinancial',
-  statement:'gwFinancial', gwReviews:'gwFinancial',
+  statement:'gwFinancial', gwReviews:'gwFinancial', gwStripe:'gwFinancial',
   // Operations workspace
   scheduleBoard:'gwOperations', dispatchBoard:'gwOperations',
   recurringServices:'gwOperations', crewView:'gwOperations',
@@ -248,7 +248,7 @@ const DEFAULT_NAV_PERMS = {
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
-    'financialHub','invoices','gwReviews','payments','deposits','statements','financialActivity',
+    'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
@@ -261,7 +261,7 @@ const DEFAULT_NAV_PERMS = {
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
-    'financialHub','invoices','gwReviews','payments','deposits','statements','financialActivity',
+    'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
@@ -707,7 +707,8 @@ function gwFinancial(tab) {
     {id:'financialHub',       label:'Overview'},
     {id:'invoices',           label:'Invoices'},
     {id:'gwReviews',          label:'Reviews'},
-    {id:'payments',           label:'Payments'},
+    {id:'gwStripe',           label:'Payments'},
+    {id:'payments',           label:'Ledger'},
     {id:'deposits',           label:'Deposits'},
     {id:'statements',         label:'Statements'},
     {id:'financialActivity',  label:'Activity'},
@@ -715,7 +716,8 @@ function gwFinancial(tab) {
   if (tab === 'financialHub')          (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
   else if (tab === 'invoices')         (typeof gwInvoices==='function') ? gwInvoices() : _gwTabStub('Invoices');
   else if (tab === 'gwReviews')        (typeof window.gwReviews==='function') ? window.gwReviews() : _gwTabStub('Reviews');
-  else if (tab === 'payments')         (typeof payments==='function') ? payments() : _gwTabStub('Payments');
+  else if (tab === 'gwStripe')         (typeof window.gwStripe==='function') ? window.gwStripe() : _gwTabStub('Payments');
+  else if (tab === 'payments')         (typeof payments==='function') ? payments() : _gwTabStub('Ledger');
   else if (tab === 'deposits')         (typeof deposits==='function') ? deposits() : _gwTabStub('Deposits');
   else if (tab === 'statements')       (typeof statements==='function') ? statements() : _gwTabStub('Statements');
   else if (tab === 'financialActivity')(typeof financialActivity==='function') ? financialActivity() : _gwTabStub('Activity');
@@ -1690,8 +1692,13 @@ function _gwTodayRender() {
       </section>
     </div>
     ${renderTodayActivityWidget()}
+    ${_isAdmin || _isOM ? '<div id="gw-reviews-widget-mount" style="margin-top:16px"></div>' : ''}
   `;
   wireChecks();
+  // Async: load reviews widget for admin/OM
+  if ((_isAdmin || _isOM) && typeof window.gwReviewsWidget === 'function') {
+    setTimeout(() => window.gwReviewsWidget('gw-reviews-widget-mount'), 400);
+  }
 
   // Load tasks from D1 async, then re-render the task workspace in place.
   // Guard: skip the re-fetch if a task was just completed within the last 3s —
@@ -14982,6 +14989,12 @@ function workOrderDetail(id) {
       if (newStatus === 'completed' && typeof window.gwWorkflow === 'object') {
         window.gwWorkflow.workOrderCompleted({ entityId:id, entityLabel:_p6WONum(wo), clientName:wo.clientName, crew:wo.crew });
       }
+      // Fire review request auto-trigger when WO completed
+      if (newStatus === 'completed' && typeof window.gwTriggerReviewRequest === 'function') {
+        const _woClient = wo.clientName || wo.client_name || '';
+        const _woEmail  = wo.client_email || wo.clientEmail || '';
+        window.gwTriggerReviewRequest(id, _woClient, _woEmail);
+      }
     }
     wo.status = newStatus;
     state.workOrders = (state.workOrders||[]).map(w => w.id===id ? wo : w);
@@ -19492,3 +19505,81 @@ function gwCCLocalSummary(transcript, opp) {
     'TIP: Connect the AI Sales Assistant for full AI-powered analysis.',
   ].join('\n');
 }
+
+// ── PWA Service Worker registration ──────────────────────────────────────────
+(function _gwRegisterSW() {
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => {
+        console.log('[Groundwork] SW registered, scope:', reg.scope);
+        // Check for updates every hour
+        setInterval(() => reg.update().catch(() => {}), 3600000);
+      })
+      .catch(err => console.warn('[Groundwork] SW registration failed:', err.message));
+  });
+})();
+
+// ── Mobile bottom nav ─────────────────────────────────────────────────────────
+(function _gwMobileNav() {
+  // Only inject on narrow screens
+  if (window.innerWidth > 768) return;
+
+  const nav = document.createElement('nav');
+  nav.id = 'gw-mobile-nav';
+  nav.innerHTML = `
+<style>
+#gw-mobile-nav {
+  position:fixed;bottom:0;left:0;right:0;z-index:8000;
+  background:#111827;border-top:1px solid rgba(255,255,255,.1);
+  display:flex;align-items:stretch;height:58px;
+  padding-bottom:env(safe-area-inset-bottom);
+  box-shadow:0 -4px 20px rgba(0,0,0,.3);
+}
+.gw-mnav-btn {
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;background:none;border:none;color:rgba(255,255,255,.55);
+  font-size:10px;font-weight:500;cursor:pointer;padding:6px 2px;
+  transition:.15s;letter-spacing:.01em;
+}
+.gw-mnav-btn:active { background:rgba(255,255,255,.08); }
+.gw-mnav-btn.gw-mnav-active { color:#2D7A55; }
+.gw-mnav-btn svg { flex-shrink:0; }
+/* Push main content up so bottom nav doesn't cover it */
+body.gw-mobile-mode #main-content,
+body.gw-mobile-mode .view-root { padding-bottom:66px!important; }
+</style>
+<button class="gw-mnav-btn" onclick="show('gwDashboard')" data-view="gwDashboard">
+  ${gwIcon('home','22','currentColor')}<span>Home</span>
+</button>
+<button class="gw-mnav-btn" onclick="show('gwSales')" data-view="gwSales">
+  ${gwIcon('trending-up','22','currentColor')}<span>Sales</span>
+</button>
+<button class="gw-mnav-btn" onclick="show('gwOperations')" data-view="gwOperations">
+  ${gwIcon('tool','22','currentColor')}<span>Ops</span>
+</button>
+<button class="gw-mnav-btn" onclick="show('gwFinancial')" data-view="gwFinancial">
+  ${gwIcon('dollar-sign','22','currentColor')}<span>Finance</span>
+</button>
+<button class="gw-mnav-btn" onclick="show('gwAdmin')" data-view="gwAdmin">
+  ${gwIcon('settings','22','currentColor')}<span>Admin</span>
+</button>`;
+
+  document.body.appendChild(nav);
+  document.body.classList.add('gw-mobile-mode');
+
+  // Highlight active tab whenever show() fires
+  const _origShow = window.show;
+  window.show = function(viewName, param) {
+    if (_origShow) _origShow(viewName, param);
+    const wsMap = { gwDashboard:'gwDashboard', today:'gwDashboard', myDashboard:'gwDashboard',
+      gwSales:'gwSales', pipeline:'gwSales', clients:'gwSales', lead:'gwSales', estimates:'gwSales',
+      gwOperations:'gwOperations', scheduleBoard:'gwOperations', workOrderList:'gwOperations',
+      gwFinancial:'gwFinancial', invoices:'gwFinancial', gwReviews:'gwFinancial',
+      gwAdmin:'gwAdmin' };
+    const active = wsMap[viewName] || '';
+    document.querySelectorAll('.gw-mnav-btn').forEach(btn => {
+      btn.classList.toggle('gw-mnav-active', btn.dataset.view === active);
+    });
+  };
+})();
