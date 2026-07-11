@@ -11640,8 +11640,12 @@ h1.pl-title,
   display: flex; align-items: center; justify-content: space-between;
   padding-bottom: 20px; border-bottom: 2px solid var(--gw-pine-800, #1C3A2B); margin-bottom: 28px;
 }
-.est-portal-company-name  { font-size: 22px; font-weight: 900; color: var(--gw-pine-800, #1C3A2B); }
-.est-portal-est-meta { font-size: 13px; color: var(--gw-text-muted); margin-top: 3px; display: flex; gap: 8px; }
+.est-portal-company-name     { font-size: 22px; font-weight: 900; color: var(--gw-pine-800, #1C3A2B); }
+.est-portal-company-logo     { margin-bottom: 4px; }
+.est-portal-company-logo img { display: block; }
+.est-portal-company-tagline  { font-size: 12px; color: var(--gw-text-muted); margin-top: 2px; margin-bottom: 4px; font-style: italic; }
+.est-portal-est-meta { font-size: 13px; color: var(--gw-text-muted); margin-top: 4px; display: flex; gap: 8px; }
+.est-portal-wave { display: inline-flex; align-items: center; vertical-align: middle; margin-left: 4px; }
 
 .est-portal-greeting  { margin-bottom: 28px; }
 .est-portal-greeting h2 { font-size: 22px; font-weight: 800; color: var(--gw-text); margin: 0 0 6px; }

@@ -363,6 +363,49 @@ app.put('/api/companies/:id', async (c) => {
   return json(c, { updated: id })
 })
 
+// ── Company Branding API ──────────────────────────────────────────────────────
+// GET /api/company/branding  — full branding/identity for authenticated company
+app.get('/api/company/branding', requireAuth, async (c) => {
+  const companyId = (c.var.companyId as string) || 'avalon'
+  const row: any = await c.env.DB.prepare(`
+    SELECT id, name, slug, phone, website, logo_url, timezone, owner_email,
+           tagline, brand_color, brand_accent, business_type,
+           crew_count, division_count,
+           address_line1, address_city, address_state, address_zip,
+           license_number, insurance_info, year_founded,
+           service_area_desc, terminology
+    FROM companies WHERE id = ? LIMIT 1
+  `).bind(companyId).first()
+  if (!row) return err(c, 'Company not found', 404)
+  try { row.terminology = JSON.parse(row.terminology || '{}') } catch(_) { row.terminology = {} }
+  return json(c, row)
+})
+
+// PUT /api/company/branding  — update branding/identity fields
+app.put('/api/company/branding', requireAuth, async (c) => {
+  const companyId = (c.var.companyId as string) || 'avalon'
+  const b = await c.req.json()
+  const allowed = [
+    'name','phone','website','logo_url','timezone','owner_email',
+    'tagline','brand_color','brand_accent','business_type',
+    'crew_count','division_count',
+    'address_line1','address_city','address_state','address_zip',
+    'license_number','insurance_info','year_founded',
+    'service_area_desc','terminology'
+  ]
+  const updates = allowed.filter(f => b[f] !== undefined)
+  if (!updates.length) return err(c, 'Nothing to update')
+  const vals = updates.map(f => {
+    if (f === 'terminology' && typeof b[f] === 'object') return JSON.stringify(b[f])
+    return b[f]
+  })
+  const set = updates.map(f => `${f} = ?`).join(', ')
+  await c.env.DB.prepare(
+    `UPDATE companies SET ${set}, updated_at = datetime('now') WHERE id = ?`
+  ).bind(...vals, companyId).run()
+  return json(c, { updated: companyId })
+})
+
 // POST /api/companies  — onboard a new company (public endpoint for signup flow)
 // Creates the company record AND seeds the company's "folder" in settings:
 //   {companyId}:created_at   — ISO timestamp when company was onboarded
@@ -3603,7 +3646,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p45">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p46">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -4089,7 +4132,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711p45">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p46">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -4510,15 +4553,15 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/static/gw-icons.js?v=20260628gw1"></script>
+<script src="/static/gw-icons.js?v=20260711p46"></script>
 <script src="/static/db.js?v=20260630gw12"></script>
 <script src="/static/data.js?v=20260628gw9"></script>
 <script src="/static/reps.js?v=20260710r1"></script>
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p45"></script>
-<script src="/static/estimates.js?v=20260711p45"></script>
+<script src="/static/app_premium.js?v=20260711p46"></script>
+<script src="/static/estimates.js?v=20260711p46"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>

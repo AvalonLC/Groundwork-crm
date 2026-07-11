@@ -46,14 +46,14 @@ function _estUID() {
 
 function _estStatusConfig(status) {
   const map = {
-    draft:             { label: 'Draft',             cls: 'est-badge--draft',    icon: '✏️' },
-    sent:              { label: 'Sent',               cls: 'est-badge--sent',     icon: '📤' },
-    viewed:            { label: 'Viewed',             cls: 'est-badge--viewed',   icon: '👁' },
-    accepted:          { label: 'Accepted',           cls: 'est-badge--accepted', icon: '✓' },
-    declined:          { label: 'Declined',           cls: 'est-badge--declined', icon: '✗' },
-    changes_requested: { label: 'Changes Requested',  cls: 'est-badge--changes',  icon: '↩' },
-    expired:           { label: 'Expired',            cls: 'est-badge--expired',  icon: '⏱' },
-    invoiced:          { label: 'Invoiced',           cls: 'est-badge--invoiced', icon: '🧾' },
+    draft:             { label: 'Draft',             cls: 'est-badge--draft',    icon: 'status-draft' },
+    sent:              { label: 'Sent',               cls: 'est-badge--sent',     icon: 'status-sent' },
+    viewed:            { label: 'Viewed',             cls: 'est-badge--viewed',   icon: 'status-viewed' },
+    accepted:          { label: 'Accepted',           cls: 'est-badge--accepted', icon: 'status-accepted' },
+    declined:          { label: 'Declined',           cls: 'est-badge--declined', icon: 'status-declined' },
+    changes_requested: { label: 'Changes Requested',  cls: 'est-badge--changes',  icon: 'status-changes' },
+    expired:           { label: 'Expired',            cls: 'est-badge--expired',  icon: 'status-expired' },
+    invoiced:          { label: 'Invoiced',           cls: 'est-badge--invoiced', icon: 'status-invoiced' },
   };
   return map[status] || { label: status || 'Draft', cls: 'est-badge--draft', icon: '·' };
 }
@@ -158,7 +158,7 @@ async function estimates() {
 
     <!-- Empty State -->
     <div class="est-empty-state" id="est-empty-state" style="display:none">
-      <div class="est-empty-icon">📋</div>
+      <div class="est-empty-icon">${gwIcon('estimate',48,'var(--gw-text-muted,#9CA3AF)')}</div>
       <div class="est-empty-title">No estimates yet</div>
       <div class="est-empty-sub">Create your first estimate to get started</div>
       <button class="est-btn-primary" onclick="_estNewEstimate()">New Estimate</button>
@@ -524,7 +524,7 @@ async function estimateDetail(id) {
     _estRenderDetail(est);
   } catch (e) {
     view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
-      <div style="font-size:32px;margin-bottom:12px">📋</div>
+      <div style="margin-bottom:12px;opacity:0.4">${gwIcon('estimate',40,'var(--gw-text-muted,#6B7280)')}</div>
       <div style="font-size:16px;font-weight:600;margin-bottom:8px">Estimate not found</div>
       <button class="est-btn-primary" onclick="estimates()">Back to Estimates</button>
     </div>`;
@@ -778,8 +778,8 @@ function _estRenderDetail(est) {
       <div class="est-rail-card">
         <div class="est-rail-card-title">Mark Result</div>
         <div class="est-rail-status-btns">
-          <button class="est-rail-status-btn est-rail-status-btn--accept" onclick="_estAcceptInternal('${_estEsc(est.id)}')">✓ Mark Accepted</button>
-          <button class="est-rail-status-btn est-rail-status-btn--decline" onclick="_estDeclineModal('${_estEsc(est.id)}')">✗ Mark Declined</button>
+          <button class="est-rail-status-btn est-rail-status-btn--accept" onclick="_estAcceptInternal('${_estEsc(est.id)}')">${gwIcon('status-accepted',14)} Mark Accepted</button>
+          <button class="est-rail-status-btn est-rail-status-btn--decline" onclick="_estDeclineModal('${_estEsc(est.id)}')">${gwIcon('status-declined',14)} Mark Declined</button>
         </div>
       </div>` : ''}
 
@@ -1510,11 +1510,11 @@ async function _estPortalPreview(estId) {
   <div class="est-portal-shell">
     <div class="est-portal-topbar">
       <div class="est-portal-topbar-left">
-        <div class="est-portal-brand">Groundwork</div>
+        <div class="est-portal-brand" id="est-portal-brand-name">…</div>
         <span class="est-portal-preview-tag">Preview Mode</span>
       </div>
       <button class="est-portal-close-btn" onclick="document.getElementById('est-portal-modal').remove()">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="2" x2="14" y2="14"/><line x1="14" y1="2" x2="2" y2="14"/></svg>
+        ${gwIcon('close',14)}
         Exit Preview
       </button>
     </div>
@@ -1525,19 +1525,54 @@ async function _estPortalPreview(estId) {
   document.body.appendChild(modal);
 
   try {
-    const r = await fetch(`/api/estimates/${estId}`, { credentials: 'include' });
-    if (!r.ok) throw new Error('Not found');
-    const { data: est } = await r.json();
+    // Fetch estimate and branding in parallel
+    const [estRes, brandRes] = await Promise.all([
+      fetch(`/api/estimates/${estId}`, { credentials: 'include' }),
+      fetch('/api/company/branding', { credentials: 'include' }).catch(()=>null)
+    ]);
+    if (!estRes.ok) throw new Error('Not found');
+    const { data: est } = await estRes.json();
     _estNormalize(est);
-    _estRenderPortal(est);
+
+    // Load branding
+    let brand = { name: 'Groundwork', logo_url: '', tagline: '', brand_color: '#2D7A55', brand_accent: '#4D8A86', address_line1: '', address_city: '', address_state: '', phone: '', website: '' };
+    if (brandRes && brandRes.ok) {
+      const bd = await brandRes.json();
+      if (bd) brand = { ...brand, ...bd };
+    }
+    // Fall back to window._scBrand if already loaded
+    if (window._scBrand) brand = { ...brand, ...window._scBrand };
+
+    // Update topbar brand name/logo
+    const brandEl = document.getElementById('est-portal-brand-name');
+    if (brandEl) {
+      if (brand.logo_url) {
+        brandEl.innerHTML = `<img src="${_estEsc(brand.logo_url)}" alt="${_estEsc(brand.name)}" style="max-height:36px;max-width:160px;object-fit:contain">`;
+      } else {
+        brandEl.textContent = brand.name || 'Groundwork';
+      }
+    }
+
+    _estRenderPortal(est, brand);
   } catch (e) {
-    document.getElementById('est-portal-body').innerHTML = `<div style="padding:40px;text-align:center">Failed to load estimate preview</div>`;
+    const body = document.getElementById('est-portal-body');
+    if (body) body.innerHTML = `<div style="padding:40px;text-align:center">Failed to load estimate preview</div>`;
   }
 }
 
-function _estRenderPortal(est) {
+function _estRenderPortal(est, brand) {
   const body = document.getElementById('est-portal-body');
   if (!body) return;
+
+  // Resolve brand defaults
+  brand = brand || { name:'Groundwork', logo_url:'', tagline:'', brand_color:'#2D7A55', address_line1:'', address_city:'', address_state:'', phone:'', website:'' };
+  const companyName   = brand.name || 'Groundwork';
+  const companyLogo   = brand.logo_url || '';
+  const companyColor  = brand.brand_color || '#2D7A55';
+  const companyTagline= brand.tagline || '';
+  const companyAddr   = [brand.address_line1, brand.address_city && brand.address_state ? `${brand.address_city}, ${brand.address_state}` : (brand.address_city || brand.address_state)].filter(Boolean).join(' · ');
+  const companyPhone  = brand.phone || '';
+  const companyWeb    = brand.website || '';
 
   const subtotal = Number(est.subtotal || 0);
   const discAmt  = Number(est.discount_amt || 0);
@@ -1553,18 +1588,29 @@ function _estRenderPortal(est) {
     <div class="est-portal-doc">
       <div class="est-portal-doc-header">
         <div>
-          <div class="est-portal-company-name">Groundwork</div>
+          ${companyLogo
+            ? `<div class="est-portal-company-logo"><img src="${_estEsc(companyLogo)}" alt="${_estEsc(companyName)}" style="max-height:48px;max-width:180px;object-fit:contain"></div>`
+            : `<div class="est-portal-company-name" style="color:${companyColor}">${_estEsc(companyName)}</div>`}
+          ${companyTagline ? `<div class="est-portal-company-tagline">${_estEsc(companyTagline)}</div>` : ''}
           <div class="est-portal-est-meta">
             <span>${_estEsc(est.est_number || 'EST')}</span>
             <span>·</span>
             <span>${_estDate(est.estimate_date || est.created_at)}</span>
           </div>
         </div>
-        <span class="est-badge ${sc.cls}">${sc.label}</span>
+        <div style="text-align:right">
+          <span class="est-badge ${sc.cls}">${sc.label}</span>
+          ${(companyAddr || companyPhone) ? `
+          <div style="margin-top:8px;font-size:11px;color:var(--gw-text-muted,#9CA3AF);line-height:1.6">
+            ${companyAddr ? `<div>${_estEsc(companyAddr)}</div>` : ''}
+            ${companyPhone ? `<div>${_estEsc(companyPhone)}</div>` : ''}
+            ${companyWeb ? `<div>${_estEsc(companyWeb)}</div>` : ''}
+          </div>` : ''}
+        </div>
       </div>
 
       <div class="est-portal-greeting">
-        <h2>Hello, ${_estEsc((est.client_name || 'there').split(' ')[0])} 👋</h2>
+        <h2>Hello, ${_estEsc((est.client_name || 'there').split(' ')[0])} <span class="est-portal-wave">${gwIcon('wave',22,'var(--gw-primary,#2D7A55)')}</span></h2>
         <p>Your estimate is ready for review. Please look it over and let us know how you'd like to proceed.</p>
       </div>
 
@@ -1637,7 +1683,7 @@ function _estRenderPortal(est) {
 
         ${depAmt > 0 ? `
         <div class="est-portal-deposit-callout">
-          <div class="est-portal-deposit-icon">💳</div>
+          <div class="est-portal-deposit-icon">${gwIcon('payment',24,'#2D7A55')}</div>
           <div>
             <div class="est-portal-deposit-title">Deposit Required</div>
             <div class="est-portal-deposit-amount">${_estFmt(depAmt)}</div>

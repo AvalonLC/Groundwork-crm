@@ -3103,11 +3103,11 @@ window._gwOpenMessageModal = function(opts = {}) {
           <div style="display:flex;gap:2px;background:var(--gw-bg-app,#f4f6f8);border-radius:8px;padding:3px">
             <button id="gwm-tab-email" onclick="_gwMsgTab('email')" style="padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;
               ${isEmail ? 'background:#fff;color:var(--gw-pine-500,#2D7A55);box-shadow:0 1px 4px rgba(0,0,0,.1)' : 'background:transparent;color:var(--gw-text-muted,#64748b)'}">
-              ✉ Email
+              ${gwIcon('email',13)} Email
             </button>
             <button id="gwm-tab-sms" onclick="_gwMsgTab('sms')" style="padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;
               ${isSms ? 'background:#fff;color:var(--gw-pine-500,#2D7A55);box-shadow:0 1px 4px rgba(0,0,0,.1)' : 'background:transparent;color:var(--gw-text-muted,#64748b)'}">
-              💬 SMS
+              ${gwIcon('message',13)} SMS
             </button>
           </div>
           <span id="gwm-type-label" style="font-size:14px;font-weight:700;color:var(--gw-text,#1e293b)">
@@ -3236,7 +3236,7 @@ window._gwMsgSend = async function() {
   if (!to) { showToast(isEmail ? 'Enter an email address' : 'Enter a phone number', 'error'); return; }
   if (!body) { showToast('Message body is required', 'error'); return; }
 
-  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '⏳ Sending…'; }
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = `${gwIcon('send',13)} Sending…`; }
   if (status)  status.textContent = '';
 
   try {
@@ -4948,7 +4948,7 @@ function commsBoardHtml(oppId, opp){
         '</div>' +
         '<div class="comm-body">'+nl2br(m.body||'')+'</div>' +
         fileChips(m.files) +
-        (m.callDuration ? '<div class="comm-call-dur">⏱ '+escapeHtml(m.callDuration)+'</div>' : '') +
+        (m.callDuration ? '<div class="comm-call-dur">'+gwIcon('clock',12)+' '+escapeHtml(m.callDuration)+'</div>' : '') +
       '</div>' +
     '</div>';
   }
@@ -8468,7 +8468,7 @@ function academyCertificationsPage() {
       statusBadge = `<span class="sa-chip" style="color:#8B6914;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.08)">Ready for Review</span>`;
       ctaHtml = `
         <div style="margin-top:14px;padding:12px 16px;background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);border-radius:10px">
-          <div style="font-size:.78rem;color:#8B6914;font-weight:700;margin-bottom:2px">⏳ Awaiting Admin Certification</div>
+          <div style="font-size:.78rem;color:#8B6914;font-weight:700;margin-bottom:2px;display:flex;align-items:center;gap:4px">${gwIcon('hourglass',13,'#8B6914')} Awaiting Admin Certification</div>
           <div style="font-size:.75rem;color:var(--muted)">All modules complete — your manager or admin will issue this certification.</div>
         </div>`;
     } else {
@@ -12803,9 +12803,9 @@ function automationManager(){
         <div class="auto-rule-name">${escapeHtml(r.name)}</div>
         <div class="auto-rule-desc">${escapeHtml(r.desc)}</div>
         <div class="auto-rule-chips">
-          <span class="auto-rule-chip auto-rule-chip--trigger">⚡ ${escapeHtml(r.trigger)}</span>
-          <span class="auto-rule-chip auto-rule-chip--action">→ ${escapeHtml(r.action)}</span>
-          <span class="auto-rule-chip auto-rule-chip--delay">⏱ ${escapeHtml(r.delay)}</span>
+          <span class="auto-rule-chip auto-rule-chip--trigger">${gwIcon('lightning',11)} ${escapeHtml(r.trigger)}</span>
+          <span class="auto-rule-chip auto-rule-chip--action">${gwIcon('arrow_right',11)} ${escapeHtml(r.action)}</span>
+          <span class="auto-rule-chip auto-rule-chip--delay">${gwIcon('clock',11)} ${escapeHtml(r.delay)}</span>
           <span class="auto-rule-chip">${r.runCount} runs · last ${fmtDate(r.lastRun)}</span>
         </div>
       </div>
@@ -13079,7 +13079,7 @@ function opsHub() {
     { val: inProgressWO, label: 'In Progress',      accent: 'accent3',  filter: 'dispatchBoard' },
     { val: dueToday,     label: 'Due Today',        accent: 'accent2',  filter: 'scheduleBoard' },
     { val: activePlans,  label: 'Active Plans',     accent: 'emerald',  filter: 'recurringServices' },
-    { val: lowInv,       label: 'Low Inventory',    accent: 'amber',    filter: 'inventoryList', delta: lowInv > 0 ? '⚠' : '' },
+    { val: lowInv,       label: 'Low Inventory',    accent: 'amber',    filter: 'inventoryList', delta: lowInv > 0 ? '!' : '' },
     { val: overdueMaint, label: 'Overdue Maint.',   accent: 'red',      filter: 'maintenanceQueue', delta: overdueMaint > 0 ? '!' : '' },
     { val: idleAssets,   label: 'Idle Assets',      accent: 'text-muted', filter: 'assetList' },
   ]) : '';
@@ -13864,7 +13864,7 @@ window._sbOpenVisitModal = async function(woId) {
             <div id="sbm-attachments-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
               ${(wo.attachments||[]).map((a,i)=>`
                 <div class="sb-attach-row" data-idx="${i}">
-                  <span class="sb-attach-icon">${a.type==='pdf'?'📄':'🖼️'}</span>
+                  <span class="sb-attach-icon">${a.type==='pdf'?gwIcon('document',14):gwIcon('image',14)}</span>
                   <span class="sb-attach-name" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.name||'File')}</span>
                   <a href="${escapeHtml(a.url||'#')}" target="_blank" class="rp-btn-sm" style="padding:2px 8px;font-size:11px">View</a>
                   <button class="sb-check-del" onclick="_sbRemoveAttachment(${i})">×</button>
@@ -14225,7 +14225,7 @@ window._sbUploadAttachment = function(evt) {
       row.className = 'sb-attach-row';
       row.dataset.idx = idx;
       row.innerHTML = `
-        <span class="sb-attach-icon">${isPdf ? '📄' : '🖼️'}</span>
+        <span class="sb-attach-icon">${isPdf ? gwIcon('document',14) : gwIcon('image',14)}</span>
         <span class="sb-attach-name" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(file.name)}</span>
         <a href="${url}" target="_blank" class="rp-btn-sm" style="padding:2px 8px;font-size:11px">View</a>
         <button class="sb-check-del" onclick="_sbRemoveAttachment(${idx})">×</button>`;
@@ -15452,7 +15452,7 @@ function inventoryList() {
   const statsHtml = R ? R.OpsStatusBar([
     { val: inv.length,           label: 'Total Items',   accent: 'action' },
     { val: ok.length,            label: 'In Stock',      accent: 'emerald' },
-    { val: needReorder.length,   label: 'Low / Reorder', accent: 'amber', delta: needReorder.length>0?'⚠':'' },
+    { val: needReorder.length,   label: 'Low / Reorder', accent: 'amber', delta: needReorder.length>0?'!':'' },
     { val: outOfStock.length,    label: 'Out of Stock',  accent: 'red',   delta: outOfStock.length>0?'!':'' },
   ]) : '';
 
@@ -16331,7 +16331,7 @@ function campaigns() {
     ${campaigns_data.length
       ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">${campaignCards}</div>`
       : `<div style="text-align:center;padding:60px 24px;background:var(--gw-card);border:1px solid var(--gw-line);border-radius:12px">
-           <div style="font-size:36px;margin-bottom:12px">📣</div>
+           <div style="margin-bottom:12px;opacity:0.4">${gwIcon('announcement',40,'var(--gw-text-muted,#9CA3AF)')}</div>
            <h3 style="margin:0 0 8px;color:var(--gds-ink)">No campaigns yet</h3>
            <p style="color:var(--gw-muted);font-size:14px;max-width:360px;margin:0 auto 20px">Create a multi-step follow-up sequence to automatically nurture leads or re-engage past clients.</p>
            <button class="primary-btn" onclick="window._camNew()">Create First Campaign</button>
@@ -17199,7 +17199,7 @@ function _stmtRender(report, opts) {
           ${plRow('Net Operating Income', netIncome, true, false, netIncome>=0?'#2D7A55':'#C97B6A')}
         </tbody>
       </table>
-      <p class="stmt-note">💡 To update COGS and Expenses, edit them in <button class="stmt-link" onclick="show('revenueAdmin')">Financial Admin → Annual Data</button>.</p>`;
+      <p class="stmt-note" style="display:flex;align-items:center;gap:6px">${gwIcon('idea',14,'#6B7280')} To update COGS and Expenses, edit them in <button class="stmt-link" onclick="show('revenueAdmin')">Financial Admin → Annual Data</button>.</p>`;
   }
 
   // ── AR ────────────────────────────────────────────────────────────────────
@@ -17519,12 +17519,12 @@ function financialActivity() {
 
   // Build unified activity ledger
   const events = [
-    ...payments_data.map(p=>({ ts:p.date+'T12:00:00', type:'payment',  label:`Payment — ${p.clientName}`, amount:+p.amount, color:'#2D7A55', icon:'💳', note:p.note||'' })),
-    ...deps.map(d=>({ ts:d.date+'T10:00:00', type:'deposit',  label:`Deposit — ${d.clientName}`, amount:+d.amount, color:'#5B7FA6', icon:'🏦', note:d.jobRef||'' })),
-    ...deps.filter(d=>d.applied).map(d=>({ ts:d.date+'T14:00:00', type:'applied',  label:`Deposit Applied — ${d.clientName}`, amount:-d.amount, color:'#8B6914', icon:'✓', note:'' })),
-    ...invList.map(i=>({ ts:i.date+'T09:00:00', type:'invoice', label:`Invoice ${i.number||''} — ${i.clientName}`, amount:+i.amount, color:'#6B5EA8', icon:'📄', note:i.status||'' })),
+    ...payments_data.map(p=>({ ts:p.date+'T12:00:00', type:'payment',  label:`Payment — ${p.clientName}`, amount:+p.amount, color:'#2D7A55', icon:'payment', note:p.note||'' })),
+    ...deps.map(d=>({ ts:d.date+'T10:00:00', type:'deposit',  label:`Deposit — ${d.clientName}`, amount:+d.amount, color:'#5B7FA6', icon:'deposit', note:d.jobRef||'' })),
+    ...deps.filter(d=>d.applied).map(d=>({ ts:d.date+'T14:00:00', type:'applied',  label:`Deposit Applied — ${d.clientName}`, amount:-d.amount, color:'#8B6914', icon:'check', note:'' })),
+    ...invList.map(i=>({ ts:i.date+'T09:00:00', type:'invoice', label:`Invoice ${i.number||''} — ${i.clientName}`, amount:+i.amount, color:'#6B5EA8', icon:'invoice', note:i.status||'' })),
     // Also pull sold opps as "job won" events
-    ...(state.opportunities||[]).filter(o=>o.status==='Sold / Activation'&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'🏆', note:o.project||'' }))
+    ...(state.opportunities||[]).filter(o=>o.status==='Sold / Activation'&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'trophy', note:o.project||'' }))
   ].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
 
   const totalIn  = events.filter(e=>e.amount>0&&['payment','deposit','won'].includes(e.type)).reduce((s,e)=>s+e.amount,0);
@@ -17533,7 +17533,7 @@ function financialActivity() {
   const rows = events.slice(0,100).map(e=>`
     <tr style="border-bottom:1px solid var(--gw-line)">
       <td style="padding:9px 14px;font-size:12px;color:var(--gw-muted);white-space:nowrap">${_p5FmtDate(e.ts)}</td>
-      <td style="padding:9px 10px;text-align:center;font-size:16px">${e.icon}</td>
+      <td style="padding:9px 10px;text-align:center">${gwIcon(e.icon,16,e.color)}</td>
       <td style="padding:9px 10px;font-size:13px;font-weight:600;color:var(--gds-ink)">${escapeHtml(e.label)}</td>
       <td style="padding:9px 10px;text-align:right;font-weight:700;font-size:14px;color:${e.amount>=0?e.color:'#A05050'}">${e.amount>=0?'+':''}${_p5Money(Math.abs(e.amount))}</td>
       <td style="padding:9px 10px">
@@ -17648,7 +17648,7 @@ function crewView() {
     ${todayWOs.length
       ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">${crewCols}</div>`
       : `<div style="text-align:center;padding:60px 24px;background:var(--gw-card);border:1px solid var(--gw-line);border-radius:12px">
-           <div style="font-size:36px;margin-bottom:12px">🦺</div>
+           <div style="margin-bottom:12px;opacity:0.4">${gwIcon('vest',40,'var(--gw-text-muted,#9CA3AF)')}</div>
            <h3 style="margin:0 0 8px;color:var(--gds-ink)">No jobs scheduled for today</h3>
            <p style="color:var(--gw-muted);font-size:14px;max-width:360px;margin:0 auto 20px">Add work orders and assign them to crews to see the crew view populate.</p>
            <button class="primary-btn" onclick="show('workOrderList')">+ Create Work Order</button>
@@ -18414,7 +18414,7 @@ function teamReports() {
 
     ${top ? `
     <div style="background:linear-gradient(135deg,#2D7A5514,#4D8A8614);border:1px solid #4D8A8640;border-radius:10px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px">
-      <div style="font-size:28px">🏆</div>
+      <div style="opacity:0.85">${gwIcon('trophy',28,'#4D8A86')}</div>
       <div>
         <div style="font-size:12px;font-weight:700;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em">Top Performer · Last 30 Days</div>
         <div style="font-size:18px;font-weight:800;color:var(--gds-ink);margin-top:2px">${escapeHtml(top.r.name)}</div>
@@ -18472,6 +18472,13 @@ function systemConfig() {
   if (!el) return;
 
   let cfg = _scLoad() || _scDefault();
+  // Load branding from D1 (async — populates _scBrand for the template)
+  window._scBrand = window._scBrand || { brand_color:'#2D7A55', brand_accent:'#4D8A86', tagline:'', business_type:'home_services', crew_count:1, division_count:1, address_line1:'', address_city:'', address_state:'', address_zip:'', license_number:'', year_founded:'', terminology:{} };
+  fetch('/api/company/branding', { credentials:'include' })
+    .then(r=>r.ok?r.json():null)
+    .then(data=>{ if(data){ window._scBrand=data; systemConfig(); } })
+    .catch(()=>{});
+
   const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
   const DAY_LABELS = { mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday', sun:'Sunday' };
   const TIMEZONES = [
@@ -18484,16 +18491,16 @@ function systemConfig() {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">⚙️ System Configuration</h1>
+        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">${gwIcon('settings',22,'#374151')} System Configuration</h1>
         <p class="text-sm text-gray-500 mt-1">Company-wide settings, hours, service area, notifications, and preferences.</p>
       </div>
-      <button onclick="_scSaveAll()" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">💾 Save All Changes</button>
+      <button onclick="_scSaveAll()" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
     </div>
 
     <!-- Company Info -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg">🏢</span><h2 class="font-semibold text-gray-800">Company Information</h2>
+        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('office',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Company Information</h2>
       </div>
       <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
@@ -18536,7 +18543,7 @@ function systemConfig() {
     <!-- Business Hours -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg">🕐</span><h2 class="font-semibold text-gray-800">Business Hours</h2>
+        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('clock',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Business Hours</h2>
         <span class="ml-auto text-xs text-gray-400">Toggle days on/off, set open/close times</span>
       </div>
       <div class="p-6 space-y-2">
@@ -18561,7 +18568,7 @@ function systemConfig() {
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-          <span class="text-lg">🌐</span><h2 class="font-semibold text-gray-800">Timezone</h2>
+          <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('globe',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Timezone</h2>
         </div>
         <div class="p-6">
           <label class="block text-xs font-medium text-gray-500 mb-2">Company Timezone</label>
@@ -18574,7 +18581,7 @@ function systemConfig() {
 
       <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-          <span class="text-lg">📍</span><h2 class="font-semibold text-gray-800">Service Area</h2>
+          <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('map-pin',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Service Area</h2>
         </div>
         <div class="p-6 space-y-3">
           <div class="flex gap-4">
@@ -18608,7 +18615,7 @@ function systemConfig() {
     <!-- Notification Preferences -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg">🔔</span><h2 class="font-semibold text-gray-800">Notification Preferences</h2>
+        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('bell',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Notification Preferences</h2>
         <span class="ml-auto text-xs text-gray-400">Email alerts sent to company address</span>
       </div>
       <div class="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -18633,7 +18640,7 @@ function systemConfig() {
     <!-- Data Retention -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg">🗄️</span><h2 class="font-semibold text-gray-800">Data Retention</h2>
+        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('data-store',18,'#374151')}</span><h2 class="font-semibold text-gray-800">Data Retention</h2>
         <span class="ml-auto text-xs text-gray-400">Days to keep historical records</span>
       </div>
       <div class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -18655,31 +18662,185 @@ function systemConfig() {
       </div>
     </section>
 
-    <!-- Brand Colors -->
+    <!-- Company Branding (Logo, Colors, Identity) — saves to D1 -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        <span class="text-lg">🎨</span><h2 class="font-semibold text-gray-800">Brand & Display</h2>
+        <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('palette',18,'#374151')}</span>
+        <h2 class="font-semibold text-gray-800">Company Branding</h2>
+        <span class="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">Saved to Cloud</span>
       </div>
-      <div class="p-6 flex flex-wrap items-center gap-6">
-        <div class="flex items-center gap-3">
-          <label class="text-sm font-medium text-gray-700">Primary Color</label>
-          <input id="sc-b-primary" type="color" value="${cfg.brand.primaryColor}" class="w-10 h-10 rounded cursor-pointer border border-gray-300">
-          <span class="text-sm text-gray-500">(Buttons, links, highlights)</span>
+      <div class="p-6 space-y-6" id="sc-brand-wrap">
+        <!-- Logo -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Company Logo</label>
+          <div class="flex items-start gap-6">
+            <div id="sc-logo-preview" class="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 overflow-hidden flex-shrink-0">
+              ${cfg.company.logo
+                ? `<img src="${escapeHtml(cfg.company.logo)}" alt="Logo" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#9CA3AF;text-align:center;padding:8px\\'>No preview</span>'">`
+                : `<span style="font-size:11px;color:#9CA3AF;text-align:center;padding:8px">${gwIcon('logo',32,'#D1D5DB')}</span>`}
+            </div>
+            <div class="flex-1 space-y-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Logo URL <span class="text-gray-400 font-normal">(paste a hosted image link)</span></label>
+                <input id="sc-b-logo" type="url" placeholder="https://yoursite.com/logo.png"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  value="${escapeHtml(cfg.company.logo||'')}">
+                <p class="mt-1 text-xs text-gray-400">Upload your logo to any image host (Cloudinary, ImgBB, your own CDN) and paste the URL. Applied to all estimates, invoices, and customer portal pages.</p>
+              </div>
+              <div>
+                <button onclick="_scPreviewLogo()" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">${gwIcon('eye',13)} Preview</button>
+                <button onclick="_scSaveBranding()" class="ml-2 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition">${gwIcon('floppy',13,'#fff')} Save Branding</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="flex items-center gap-3">
-          <label class="text-sm font-medium text-gray-700">Accent Color</label>
-          <input id="sc-b-accent" type="color" value="${cfg.brand.accentColor}" class="w-10 h-10 rounded cursor-pointer border border-gray-300">
-          <span class="text-sm text-gray-500">(Badges, KPI cards)</span>
+
+        <!-- Tagline + Business Type -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Company Tagline <span class="text-gray-400 font-normal">(appears on estimates & portal)</span></label>
+            <input id="sc-b-tagline" type="text" placeholder="Professional Landscape Construction"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              value="${escapeHtml(_scBrand.tagline||'')}">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Business Type</label>
+            <select id="sc-b-biztype" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+              ${[
+                ['landscaping','Landscaping / Lawn Care'],
+                ['excavation','Excavation / Earthwork'],
+                ['home_services','Home Services'],
+                ['hvac','HVAC'],
+                ['plumbing','Plumbing'],
+                ['electrical','Electrical'],
+                ['roofing','Roofing'],
+                ['concrete','Concrete / Masonry'],
+                ['painting','Painting'],
+                ['cleaning','Cleaning Services'],
+                ['pest_control','Pest Control'],
+                ['irrigation','Irrigation'],
+                ['tree_service','Tree Service / Arborist'],
+                ['general_contractor','General Contractor'],
+                ['other','Other']
+              ].map(([v,l])=>`<option value="${v}" ${_scBrand.business_type===v?'selected':''}>${l}</option>`).join('')}
+            </select>
+          </div>
         </div>
-        <div class="ml-auto">
-          <button onclick="_scResetDefaults()" class="text-sm text-gray-400 hover:text-red-500 transition">↺ Reset to defaults</button>
+
+        <!-- Brand Colors -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Brand Colors</label>
+          <div class="flex flex-wrap gap-6">
+            <div class="flex items-center gap-3">
+              <input id="sc-b-primary" type="color" value="${_scBrand.brand_color||'#2D7A55'}" class="w-10 h-10 rounded-lg cursor-pointer border-2 border-gray-200">
+              <div>
+                <div class="text-sm font-medium text-gray-700">Primary Color</div>
+                <div class="text-xs text-gray-400">Buttons, links, highlights, estimates</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input id="sc-b-accent" type="color" value="${_scBrand.brand_accent||'#4D8A86'}" class="w-10 h-10 rounded-lg cursor-pointer border-2 border-gray-200">
+              <div>
+                <div class="text-sm font-medium text-gray-700">Accent Color</div>
+                <div class="text-xs text-gray-400">Badges, KPI cards, secondary highlights</div>
+              </div>
+            </div>
+            <div class="ml-auto self-end">
+              <button onclick="_scResetDefaults()" class="text-sm text-gray-400 hover:text-red-500 transition">↺ Reset to defaults</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Company Scale -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Company Scale</label>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Active Crews</label>
+              <input id="sc-b-crews" type="number" min="1" max="500"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${_scBrand.crew_count||1}">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Divisions</label>
+              <input id="sc-b-divs" type="number" min="1" max="100"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${_scBrand.division_count||1}">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">Year Founded</label>
+              <input id="sc-b-founded" type="number" min="1900" max="2030"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${_scBrand.year_founded||''}">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-500 mb-1">License #</label>
+              <input id="sc-b-license" type="text"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${escapeHtml(_scBrand.license_number||'')}" placeholder="Optional">
+            </div>
+          </div>
+        </div>
+
+        <!-- Business Address (shown on customer-facing docs) -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Business Address <span class="text-gray-400 font-normal text-xs">(shown on estimates &amp; invoices)</span></label>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="md:col-span-2">
+              <input id="sc-b-addr1" type="text" placeholder="Street Address"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${escapeHtml(_scBrand.address_line1||'')}">
+            </div>
+            <div>
+              <input id="sc-b-city" type="text" placeholder="City"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${escapeHtml(_scBrand.address_city||'')}">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="sc-b-state" type="text" placeholder="State" maxlength="2"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${escapeHtml(_scBrand.address_state||'')}">
+              <input id="sc-b-zip" type="text" placeholder="ZIP"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                value="${escapeHtml(_scBrand.address_zip||'')}">
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminology Customization -->
+        <div id="sc-b-terms-wrap">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Terminology Customization <span class="text-gray-400 font-normal text-xs">(rename terms to match your business culture)</span></label>
+          <p class="text-xs text-gray-400 mb-3">Excavation companies might call work orders "Dig Orders". HVAC techs call them "Service Calls". Rename to match how your team talks.</p>
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+            ${[
+              ['workOrder','Work Order term','Work Order','Brief for a job/service task'],
+              ['estimate','Estimate term','Estimate','Quote / Proposal / Bid'],
+              ['crew','Crew term','Crew','Team / Crew / Squad'],
+              ['division','Division term','Division','Division / Branch / Region'],
+              ['client','Client term','Client','Client / Customer / Account'],
+              ['invoice','Invoice term','Invoice','Invoice / Bill / Statement'],
+            ].map(([k,lbl,ph,hint])=>`
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">${lbl}</label>
+                <input type="text" id="sc-term-${k}" placeholder="${ph}"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  value="${escapeHtml((_scBrand.terminology&&_scBrand.terminology[k])||ph)}"
+                  title="${hint}">
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Save button -->
+        <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+          <p class="text-xs text-gray-400">${gwIcon('info',12,'#9CA3AF')} Branding is applied to all estimates, invoices, and customer portal pages your clients see.</p>
+          <button onclick="_scSaveBranding()" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition shadow-sm">${gwIcon('floppy',14,'#fff')} Save Branding</button>
         </div>
       </div>
     </section>
 
-    <!-- Save footer -->
+    <!-- Save footer (local settings) -->
     <div class="flex justify-end pb-4">
-      <button onclick="_scSaveAll()" class="px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">💾 Save All Changes</button>
+      <button onclick="_scSaveAll()" class="px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm shadow transition">${gwIcon('floppy',14,'#fff')} Save All Changes</button>
     </div>
   </div>`;
 
@@ -18739,11 +18900,81 @@ function systemConfig() {
       const v = parseInt((document.getElementById(`sc-r-${k}`)||{}).value);
       if (!isNaN(v) && v >= 30) cur.retention[k] = v;
     });
-    // Brand
+    // Brand (local prefs only)
     cur.brand.primaryColor = (document.getElementById('sc-b-primary')||{}).value || cur.brand.primaryColor;
     cur.brand.accentColor  = (document.getElementById('sc-b-accent')||{}).value || cur.brand.accentColor;
+    cur.company.logo       = (document.getElementById('sc-b-logo')||{}).value || cur.company.logo || '';
     _scSave(cur);
-    showToast('✅ System configuration saved');
+    showToast('System configuration saved', 'success');
+  };
+
+  // Preview logo inline
+  window._scPreviewLogo = function() {
+    const url = (document.getElementById('sc-b-logo')||{}).value || '';
+    const preview = document.getElementById('sc-logo-preview');
+    if (!preview) return;
+    if (!url) { preview.innerHTML = `<span style="font-size:11px;color:#9CA3AF;text-align:center;padding:8px">${gwIcon('logo',32,'#D1D5DB')}</span>`; return; }
+    preview.innerHTML = `<img src="${url}" alt="Logo" style="width:100%;height:100%;object-fit:contain;padding:8px"
+      onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#C97B6A;text-align:center;padding:8px\\'>Could not load</span>'">`;
+  };
+
+  // Save branding to D1 via API
+  window._scSaveBranding = async function() {
+    const btn = document.querySelector('[onclick="_scSaveBranding()"]');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = `${gwIcon('sync',13,'#fff')} Saving…`; }
+
+    // Collect terminology
+    const termKeys = ['workOrder','estimate','crew','division','client','invoice'];
+    const terminology = {};
+    termKeys.forEach(k => {
+      const v = (document.getElementById(`sc-term-${k}`)||{}).value || '';
+      if (v) terminology[k] = v;
+    });
+
+    const payload = {
+      logo_url:        (document.getElementById('sc-b-logo')||{}).value || '',
+      tagline:         (document.getElementById('sc-b-tagline')||{}).value || '',
+      brand_color:     (document.getElementById('sc-b-primary')||{}).value || '#2D7A55',
+      brand_accent:    (document.getElementById('sc-b-accent')||{}).value || '#4D8A86',
+      business_type:   (document.getElementById('sc-b-biztype')||{}).value || 'home_services',
+      crew_count:      parseInt((document.getElementById('sc-b-crews')||{}).value)||1,
+      division_count:  parseInt((document.getElementById('sc-b-divs')||{}).value)||1,
+      year_founded:    parseInt((document.getElementById('sc-b-founded')||{}).value)||0,
+      license_number:  (document.getElementById('sc-b-license')||{}).value || '',
+      address_line1:   (document.getElementById('sc-b-addr1')||{}).value || '',
+      address_city:    (document.getElementById('sc-b-city')||{}).value || '',
+      address_state:   (document.getElementById('sc-b-state')||{}).value || '',
+      address_zip:     (document.getElementById('sc-b-zip')||{}).value || '',
+      terminology,
+    };
+    // Also sync company name/phone/website from company info section
+    const coName = (document.getElementById('sc-co-name')||{}).value;
+    const coPhone = (document.getElementById('sc-co-phone')||{}).value;
+    const coWebsite = (document.getElementById('sc-co-website')||{}).value;
+    if (coName)    payload.name    = coName;
+    if (coPhone)   payload.phone   = coPhone;
+    if (coWebsite) payload.website = coWebsite;
+
+    try {
+      const r = await fetch('/api/company/branding', {
+        method:'PUT', credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error('Save failed');
+      // Update local _scBrand cache
+      window._scBrand = { ...window._scBrand, ...payload };
+      // Also save logo to local cfg
+      const cur = _scLoad() || _scDefault();
+      cur.company.logo = payload.logo_url;
+      _scSave(cur);
+      showToast('Branding saved — applied to all estimates &amp; portal', 'success');
+    } catch(e) {
+      showToast('Could not save branding — check connection', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
   };
 }
 
@@ -18794,7 +19025,7 @@ function _stDefaultTemplates() {
       body:'Hi {{client_name}},\n\nWe wanted to follow up on the estimate we sent a few days ago for {{service_type}} at {{property_address}}.\n\nPlease feel free to reply with any questions or let us know when you\'d like to schedule.\n\n{{rep_name}} | {{company_phone}}',
       variables:['client_name','service_type','property_address','rep_name','company_phone'], created: todayISO() },
     { id:'tmpl3', name:'Review Request', category:'email', subject:'How did we do? Share your experience!',
-      body:'Hi {{client_name}},\n\nThank you for choosing Avalon Exterior Solutions! We hope you love your new {{service_type}}.\n\nWould you mind leaving us a quick review? It helps us grow and serve more homeowners like you.\n\n⭐ Leave a review: {{review_link}}\n\nThank you!\n{{company_name}}',
+      body:'Hi {{client_name}},\n\nThank you for choosing {{company_name}}! We hope you love your new {{service_type}}.\n\nWould you mind leaving us a quick review? It helps us grow and serve more clients like you.\n\n★ Leave a review: {{review_link}}\n\nThank you!\n{{company_name}}',
       variables:['client_name','service_type','review_link','company_name'], created: todayISO() },
     { id:'tmpl4', name:'WO Assigned SMS', category:'sms', subject:'',
       body:'Hi {{crew_name}}, you have a new job assigned for {{scheduled_date}} at {{property_address}}. Check your schedule in Groundwork.',
@@ -18833,7 +19064,7 @@ function systemTemplates() {
       wo_completed:'bg-green-100 text-green-700', invoice_sent:'bg-blue-100 text-blue-700',
       invoice_overdue:'bg-red-100 text-red-700', payment_received:'bg-teal-100 text-teal-700',
       recurring_due:'bg-orange-100 text-orange-700' };
-    const actIco = { send_email:'✉', send_sms:'💬', create_task:'✅', update_status:'🔄', notify_rep:'👤', notify_admin:'🔔' };
+    const actIco = { send_email:gwIcon('email',13), send_sms:gwIcon('message',13), create_task:gwIcon('check',13), update_status:gwIcon('refresh',13), notify_rep:gwIcon('user',13), notify_admin:gwIcon('bell',13) };
     return `<tr class="border-b border-gray-100 hover:bg-gray-50 transition" id="str-${a.id}">
       <td class="px-4 py-3">
         <div class="font-medium text-sm text-gray-800">${escapeHtml(a.name)}</div>
@@ -18861,7 +19092,7 @@ function systemTemplates() {
     return `<div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition" id="stc-${t.id}">
       <div class="flex items-start justify-between mb-2">
         <div class="flex items-center gap-2">
-          <span class="text-lg">${t.category==='email'?'✉':t.category==='sms'?'💬':t.category==='pdf'?'📄':'📝'}</span>
+          <span class="text-lg" style="display:inline-flex;align-items:center">${t.category==='email'?gwIcon('email',18):t.category==='sms'?gwIcon('message',18):t.category==='pdf'?gwIcon('document',18):gwIcon('notes',18)}</span>
           <div>
             <div class="font-semibold text-gray-800 text-sm">${escapeHtml(t.name)}</div>
             <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${catCol[t.category]||'bg-gray-100 text-gray-600'}">${t.category.toUpperCase()}</span>
@@ -18883,15 +19114,15 @@ function systemTemplates() {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">🤖 Templates &amp; System Automations</h1>
+        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">${gwIcon('robot',22,'#374151')} Templates &amp; System Automations</h1>
         <p class="text-sm text-gray-500 mt-1">Manage automated workflows triggered by status changes, and document/message templates.</p>
       </div>
     </div>
 
     <!-- Sub-tabs -->
     <div class="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-      <button id="st-tab-auto" onclick="_stShowTab('auto')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition">⚡ Automations (${autos.length})</button>
-      <button id="st-tab-tmpl" onclick="_stShowTab('tmpl')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition">📄 Templates (${tmpls.length})</button>
+      <button id="st-tab-auto" onclick="_stShowTab('auto')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition">${gwIcon('lightning',14)} Automations (${autos.length})</button>
+      <button id="st-tab-tmpl" onclick="_stShowTab('tmpl')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition">${gwIcon('document',14)} Templates (${tmpls.length})</button>
     </div>
 
     <!-- Automations Panel -->
@@ -18899,7 +19130,7 @@ function systemTemplates() {
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span class="text-lg">⚡</span>
+            <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('lightning',18,'#374151')}</span>
             <h2 class="font-semibold text-gray-800">Automation Rules</h2>
             <span class="ml-2 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">${autos.filter(a=>a.enabled).length} active</span>
           </div>
@@ -19064,7 +19295,7 @@ function systemTemplates() {
   window._stToggleAuto = function(id, val) {
     const autos = _stLoadAuto() || _stDefaultAutos();
     const a = autos.find(x=>x.id===id);
-    if (a) { a.enabled = val; _stSaveAuto(autos); showToast(val ? '✅ Rule enabled' : 'Rule disabled'); }
+    if (a) { a.enabled = val; _stSaveAuto(autos); showToast(val ? 'Rule enabled' : 'Rule disabled', val ? 'success' : 'info'); }
   };
 
   window._stDeleteAuto = function(id) {
@@ -19119,7 +19350,7 @@ function systemTemplates() {
 
   window._stSaveAutoModal = function() {
     const name = (document.getElementById('st-a-name').value||'').trim();
-    if (!name) { showToast('⚠ Rule name required'); return; }
+    if (!name) { showToast('Rule name is required', 'warning'); return; }
     const triggerVal = document.getElementById('st-a-trigger').value;
     const triggerLabel = TRIGGER_OPTS.find(([v])=>v===triggerVal)?.[1]||triggerVal;
     const actionVal = document.getElementById('st-a-action').value;
@@ -19140,7 +19371,7 @@ function systemTemplates() {
     window._stAutos = autos;
     _stCloseModals();
     systemTemplates();
-    showToast('✅ Automation rule saved');
+    showToast('Automation rule saved', 'success');
   };
 
   window._stFilterTmpl = function(cat) {
@@ -19206,7 +19437,7 @@ function systemTemplates() {
 
   window._stSaveTmplModal = function() {
     const name = (document.getElementById('st-t-name').value||'').trim();
-    if (!name) { showToast('⚠ Template name required'); return; }
+    if (!name) { showToast('Template name is required', 'warning'); return; }
     const cat = document.getElementById('st-t-cat').value||'email';
     const subj = document.getElementById('st-t-subject').value||'';
     const body = document.getElementById('st-t-body').value||'';
@@ -19222,7 +19453,7 @@ function systemTemplates() {
     window._stTmpls = tmpls;
     _stCloseModals();
     systemTemplates();
-    showToast('✅ Template saved');
+    showToast('Template saved', 'success');
   };
 }
 

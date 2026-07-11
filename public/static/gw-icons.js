@@ -134,6 +134,59 @@ window.gwIcon = function(name, size, color) {
     trophy:       `<svg ${s}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`,
     'process-ready':`<svg ${s}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>`,
 
+    /* ── Business / Finance ─────────────────────────── */
+    payment:      `<svg ${s}><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/></svg>`,
+    card:         `<svg ${s}><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/></svg>`,
+    invoice:      `<svg ${s}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`,
+    receipt:      `<svg ${s}><path d="M4 2v20l3-2 2 2 2-2 2 2 2-2 2 2 3-2V2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="12" y2="15"/></svg>`,
+    deposit:      `<svg ${s}><path d="M21 4H3a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/><circle cx="12" cy="12" r="3"/><line x1="6" y1="9" x2="6.01" y2="9"/></svg>`,
+    dollar:       `<svg ${s}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+    percent:      `<svg ${s}><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`,
+    discount:     `<svg ${s}><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`,
+    tax:          `<svg ${s}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="15" x2="15.01" y2="15"/><line x1="9" y1="15" x2="15" y2="9"/></svg>`,
+
+    /* ── Brand / Design ─────────────────────────────── */
+    palette:      `<svg ${s}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8z"/><circle cx="6.5" cy="11.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="9.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="14.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="17.5" cy="11.5" r="1.5" fill="currentColor" stroke="none"/></svg>`,
+    brush:        `<svg ${s}><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1 1 2.48 1.02 3.5 1.02 2.22 0 3.5-1.4 3.5-3.06 0-1.71-1.2-3-2-3z"/></svg>`,
+    logo:         `<svg ${s}><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 17l3-8 3 5 2-3 3 6"/></svg>`,
+    brand:        `<svg ${s}><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
+    photo:        `<svg ${s}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
+
+    /* ── Status Icons ───────────────────────────────── */
+    'status-draft':    `<svg ${s}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`,
+    'status-sent':     `<svg ${s}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+    'status-viewed':   `<svg ${s}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    'status-accepted': `<svg ${s}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+    'status-declined': `<svg ${s}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+    'status-changes':  `<svg ${s}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>`,
+    'status-expired':  `<svg ${s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><line x1="17" y1="7" x2="7" y2="17" stroke-dasharray="2 2.5" stroke-width="1.5"/></svg>`,
+    'status-invoiced': `<svg ${s}><path d="M4 2v20l3-2 2 2 2-2 2 2 2-2 2 2 3-2V2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="12" y2="15"/></svg>`,
+
+    /* ── Greeting / People ──────────────────────────── */
+    wave:         `<svg ${s}><path d="M18 11.5v-2a1.5 1.5 0 0 0-3 0V8a1.5 1.5 0 0 0-3 0v-.5a1.5 1.5 0 0 0-3 0V10L7.5 8.5a1.5 1.5 0 1 0-2.1 2.1L9 15a7 7 0 0 0 7 4h1a5 5 0 0 0 5-5v-2.5a1.5 1.5 0 0 0-3 0V11.5z"/></svg>`,
+    greeting:     `<svg ${s}><path d="M18 11.5v-2a1.5 1.5 0 0 0-3 0V8a1.5 1.5 0 0 0-3 0v-.5a1.5 1.5 0 0 0-3 0V10L7.5 8.5a1.5 1.5 0 1 0-2.1 2.1L9 15a7 7 0 0 0 7 4h1a5 5 0 0 0 5-5v-2.5a1.5 1.5 0 0 0-3 0V11.5z"/></svg>`,
+    'hard-hat':   `<svg ${s}><path d="M2 18v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2H2z"/><path d="M4 18v-4a8 8 0 0 1 16 0v4"/><line x1="12" y1="6" x2="12" y2="4"/><line x1="18" y1="8.5" x2="20" y2="7"/><line x1="6" y1="8.5" x2="4" y2="7"/></svg>`,
+    vest:         `<svg ${s}><path d="M8 2L4 8v14h16V8l-4-6"/><line x1="12" y1="2" x2="12" y2="22"/><path d="M4 8h16"/></svg>`,
+    crew:         `<svg ${s}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    division:     `<svg ${s}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><line x1="17.5" y1="17.5" x2="17.5" y2="21"/><line x1="14" y1="17.5" x2="21" y2="17.5"/></svg>`,
+
+    /* ── Announcements / Notifications ─────────────── */
+    megaphone:    `<svg ${s}><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>`,
+    announcement: `<svg ${s}><path d="M19 4v16"/><path d="M3 8h12l4-4v16l-4-4H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/></svg>`,
+    broadcast:    `<svg ${s}><path d="M18 8.94a10 10 0 0 1 0 6.12"/><path d="M14.12 5.06a15 15 0 0 1 0 13.88"/><circle cx="10" cy="12" r="3"/><line x1="7" y1="12" x2="2" y2="12"/></svg>`,
+    bell:         `<svg ${s}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`,
+
+    /* ── Productivity / Settings ────────────────────── */
+    robot:        `<svg ${s}><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 11V7"/><rect x="8" y="4" width="8" height="4" rx="1.5"/><circle cx="9" cy="16" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="16" r="1.5" fill="currentColor" stroke="none"/><line x1="8" y1="20" x2="16" y2="20"/></svg>`,
+    automation:   `<svg ${s}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="4"/></svg>`,
+    floppy:       `<svg ${s}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+    timer:        `<svg ${s}><circle cx="12" cy="14" r="8"/><polyline points="12 10 12 14 14 16"/><path d="M9 2h6"/><path d="M12 2v2"/></svg>`,
+    hourglass:    `<svg ${s}><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>`,
+    idea:         `<svg ${s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/></svg>`,
+    lightning:    `<svg ${s}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`,
+    company:      `<svg ${s}><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="9" y1="22" x2="9" y2="12"/><line x1="15" y1="22" x2="15" y2="12"/><rect x="9" y="6" width="6" height="4"/><rect x="9" y="12" width="6" height="6"/></svg>`,
+    office:       `<svg ${s}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>`,
+
     /* ── Integrations specific ──────────────────────── */
     google:       `<svg ${s}><path d="M21.8 10.2h-9.6v3.6h5.6c-.5 2.6-2.7 4.4-5.6 4.4-3.3 0-6-2.7-6-6s2.7-6 6-6c1.5 0 2.9.6 3.9 1.5l2.7-2.7C17.2 3.5 14.7 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c8 0 9.9-7.5 9.1-11.4z"/></svg>`,
     gmail:        `<svg ${s}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
