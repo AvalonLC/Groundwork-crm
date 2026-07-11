@@ -678,7 +678,7 @@ function gwSales(tab) {
   else if (tab === 'lead')           lead();
   else if (tab === 'clients')        clients();
   else if (tab === 'teamView')       (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
-  else if (tab === 'estimates')      (typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates');
+  else if (tab === 'estimates')      (typeof estimates==='function') ? estimates() : ((typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates'));
   else if (tab === 'communications') (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
   else if (tab === 'templates')      (typeof templates==='function') ? templates() : _gwTabStub('Templates');
   else if (tab === 'sequences')      (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
@@ -1198,7 +1198,7 @@ function show(viewName='today', param){
   // Phase 5 routes
   const p5Route = {
     financialHub,
-    estimates:      (id) => estimateDetail(id),
+    estimates:      (id) => id ? estimateDetail(id) : estimates(),
     invoices:       (id) => invoiceDetail(id),
     statement:      (id) => accountStatement(id),
     communications: ()   => communicationsBoard(),

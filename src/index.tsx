@@ -2982,6 +2982,253 @@ app.delete('/api/crews/:id', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ── ESTIMATES (D1) ────────────────────────────────────────────────────────────
+
+// GET /api/estimates — list estimates with optional filters
+app.get('/api/estimates', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const status  = c.req.query('status')
+  const repId   = c.req.query('rep_id')
+  const search  = c.req.query('q')
+  const limit   = Math.min(Number(c.req.query('limit') || 200), 500)
+  const offset  = Number(c.req.query('offset') || 0)
+
+  let q = `SELECT * FROM estimates WHERE company_id = ?`
+  const params: any[] = [companyId]
+  if (status) { q += ` AND status = ?`; params.push(status) }
+  if (repId)  { q += ` AND rep_id = ?`; params.push(repId) }
+  if (search) { q += ` AND (client_name LIKE ? OR est_number LIKE ? OR title LIKE ?)`; const s = `%${search}%`; params.push(s,s,s) }
+  q += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
+  params.push(limit, offset)
+  const rows = await db.prepare(q).bind(...params).all()
+  return c.json({ ok: true, data: rows.results || [] })
+})
+
+// GET /api/estimates/kpis — summary counts
+app.get('/api/estimates/kpis', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rows = await db.prepare(`
+    SELECT status, COUNT(*) as cnt, COALESCE(SUM(total),0) as total_val
+    FROM estimates WHERE company_id = ?
+    GROUP BY status
+  `).bind(companyId).all()
+  const kpis: Record<string,{cnt:number;val:number}> = {}
+  for (const r of (rows.results||[]) as any[]) {
+    kpis[r.status] = { cnt: r.cnt, val: r.total_val }
+  }
+  return c.json({ ok: true, data: kpis })
+})
+
+// GET /api/estimates/:id
+app.get('/api/estimates/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const row: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  return c.json({ ok: true, data: {
+    ...row,
+    line_items:  JSON.parse(row.line_items  || '[]'),
+    attachments: JSON.parse(row.attachments || '[]'),
+  }})
+})
+
+// GET /api/estimates/portal/:token — public (no auth) portal view
+app.get('/api/estimates/portal/:token', async (c) => {
+  const db = c.env.DB as D1Database
+  const row: any = await db.prepare(`SELECT * FROM estimates WHERE portal_token=? LIMIT 1`)
+    .bind(c.req.param('token')).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  // Track view
+  if (!row.viewed_at) {
+    await db.prepare(`UPDATE estimates SET viewed_at=datetime('now'), status=CASE WHEN status='sent' THEN 'viewed' ELSE status END, updated_at=datetime('now') WHERE portal_token=?`)
+      .bind(c.req.param('token')).run()
+  }
+  return c.json({ ok: true, data: {
+    ...row,
+    line_items:  JSON.parse(row.line_items  || '[]'),
+    attachments: JSON.parse(row.attachments || '[]'),
+  }})
+})
+
+// POST /api/estimates — create
+app.post('/api/estimates', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+
+  // Auto-generate est_number
+  const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM estimates WHERE company_id=?`).bind(companyId).first()
+  const num = ((countRow?.n || 0) + 1).toString().padStart(4,'0')
+  const estNumber = b.est_number || `EST-${num}`
+  const id = b.id || ('est_' + uid())
+  const portalToken = uid() + uid()
+
+  // Calc totals
+  const items: any[] = Array.isArray(b.line_items) ? b.line_items : []
+  const subtotal = items.reduce((s:number,i:any)=>s+(Number(i.qty||1)*Number(i.rate||0)),0)
+  const discAmt  = b.discount_pct ? subtotal * (Number(b.discount_pct)/100) : Number(b.discount_amt||0)
+  const taxAmt   = b.tax_pct ? (subtotal-discAmt) * (Number(b.tax_pct)/100) : Number(b.tax_amt||0)
+  const total    = subtotal - discAmt + taxAmt
+  const depAmt   = b.deposit_pct ? total * (Number(b.deposit_pct)/100) : Number(b.deposit_amt||0)
+
+  await db.prepare(`
+    INSERT INTO estimates (id,company_id,est_number,title,scope_of_work,
+      client_id,client_name,client_email,client_phone,client_address,
+      property_id,property_addr,opp_id,rep_id,assigned_to,
+      status,subtotal,discount_pct,discount_amt,tax_pct,tax_amt,total,
+      deposit_pct,deposit_amt,line_items,attachments,
+      internal_notes,customer_notes,terms,portal_token,
+      estimate_date,expiry_date,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(
+    id,companyId,estNumber,
+    b.title||'',b.scope_of_work||'',
+    b.client_id||'',b.client_name||'',b.client_email||'',b.client_phone||'',b.client_address||'',
+    b.property_id||'',b.property_addr||'',b.opp_id||'',
+    repId,b.assigned_to||repId,
+    b.status||'draft',
+    subtotal,Number(b.discount_pct||0),discAmt,
+    Number(b.tax_pct||0),taxAmt,total,
+    Number(b.deposit_pct||30),depAmt,
+    JSON.stringify(items),JSON.stringify(b.attachments||[]),
+    b.internal_notes||'',b.customer_notes||'',b.terms||'',
+    portalToken,
+    b.estimate_date||new Date().toISOString().slice(0,10),
+    b.expiry_date||''
+  ).run()
+  return c.json({ ok: true, data: { id, est_number: estNumber, portal_token: portalToken } }, 201)
+})
+
+// PUT /api/estimates/:id — update
+app.put('/api/estimates/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const id = c.req.param('id')
+  const b: any = await c.req.json()
+
+  const items: any[] = Array.isArray(b.line_items) ? b.line_items : []
+  const subtotal = items.reduce((s:number,i:any)=>s+(Number(i.qty||1)*Number(i.rate||0)),0)
+  const discAmt  = b.discount_pct ? subtotal * (Number(b.discount_pct)/100) : Number(b.discount_amt||0)
+  const taxAmt   = b.tax_pct ? (subtotal-discAmt) * (Number(b.tax_pct)/100) : Number(b.tax_amt||0)
+  const total    = subtotal - discAmt + taxAmt
+  const depAmt   = b.deposit_pct ? total * (Number(b.deposit_pct)/100) : Number(b.deposit_amt||0)
+
+  await db.prepare(`
+    UPDATE estimates SET
+      title=?,scope_of_work=?,
+      client_id=?,client_name=?,client_email=?,client_phone=?,client_address=?,
+      property_id=?,property_addr=?,assigned_to=?,
+      status=?,subtotal=?,discount_pct=?,discount_amt=?,tax_pct=?,tax_amt=?,total=?,
+      deposit_pct=?,deposit_amt=?,line_items=?,attachments=?,
+      internal_notes=?,customer_notes=?,terms=?,
+      estimate_date=?,expiry_date=?,updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(
+    b.title||'',b.scope_of_work||'',
+    b.client_id||'',b.client_name||'',b.client_email||'',b.client_phone||'',b.client_address||'',
+    b.property_id||'',b.property_addr||'',b.assigned_to||'',
+    b.status||'draft',
+    subtotal,Number(b.discount_pct||0),discAmt,
+    Number(b.tax_pct||0),taxAmt,total,
+    Number(b.deposit_pct||30),depAmt,
+    JSON.stringify(items),JSON.stringify(b.attachments||[]),
+    b.internal_notes||'',b.customer_notes||'',b.terms||'',
+    b.estimate_date||'',b.expiry_date||'',
+    id,companyId
+  ).run()
+  return c.json({ ok: true, data: { id, subtotal, total } })
+})
+
+// POST /api/estimates/:id/send — mark as sent
+app.post('/api/estimates/:id/send', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json().catch(()=>({}))
+  await db.prepare(`UPDATE estimates SET status='sent', sent_at=datetime('now'), send_method=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(b.method||'email', c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/estimates/:id/accept — portal or internal accept
+app.post('/api/estimates/:id/accept', async (c) => {
+  const db = c.env.DB as D1Database
+  await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=?`)
+    .bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/estimates/:id/decline
+app.post('/api/estimates/:id/decline', async (c) => {
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json().catch(()=>({}))
+  await db.prepare(`UPDATE estimates SET status='declined', declined_at=datetime('now'), decline_reason=?, updated_at=datetime('now') WHERE id=?`)
+    .bind(b.reason||'', c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/estimates/:id/changes — request changes
+app.post('/api/estimates/:id/changes', async (c) => {
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json().catch(()=>({}))
+  await db.prepare(`UPDATE estimates SET status='changes_requested', changes_at=datetime('now'), change_request=?, updated_at=datetime('now') WHERE id=?`)
+    .bind(b.message||'', c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/estimates/:id/duplicate
+app.post('/api/estimates/:id/duplicate', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const row: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM estimates WHERE company_id=?`).bind(companyId).first()
+  const num = ((countRow?.n || 0) + 1).toString().padStart(4,'0')
+  const newId = 'est_' + uid()
+  const newToken = uid() + uid()
+  await db.prepare(`
+    INSERT INTO estimates SELECT * FROM estimates WHERE id=?
+  `).bind(row.id).run().catch(()=>{}) // fallback below
+  await db.prepare(`
+    INSERT INTO estimates (id,company_id,est_number,title,scope_of_work,
+      client_id,client_name,client_email,client_phone,client_address,
+      property_id,property_addr,opp_id,rep_id,assigned_to,
+      status,subtotal,discount_pct,discount_amt,tax_pct,tax_amt,total,
+      deposit_pct,deposit_amt,line_items,attachments,
+      internal_notes,customer_notes,terms,portal_token,
+      estimate_date,expiry_date,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(
+    newId,companyId,`EST-${num}`,
+    `Copy of ${row.title||''}`,row.scope_of_work||'',
+    row.client_id||'',row.client_name||'',row.client_email||'',row.client_phone||'',row.client_address||'',
+    row.property_id||'',row.property_addr||'',row.opp_id||'',
+    row.rep_id||'',row.assigned_to||'',
+    'draft',
+    row.subtotal||0,row.discount_pct||0,row.discount_amt||0,
+    row.tax_pct||0,row.tax_amt||0,row.total||0,
+    row.deposit_pct||30,row.deposit_amt||0,
+    row.line_items||'[]',row.attachments||'[]',
+    row.internal_notes||'',row.customer_notes||'',row.terms||'',
+    newToken,
+    new Date().toISOString().slice(0,10),row.expiry_date||''
+  ).run()
+  return c.json({ ok: true, data: { id: newId, est_number: `EST-${num}` } }, 201)
+})
+
+// DELETE /api/estimates/:id
+app.delete('/api/estimates/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await db.prepare(`DELETE FROM estimates WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
 // ── WORK ORDERS (D1) ──────────────────────────────────────────────────────────
 
 // GET /api/work-orders — list work orders (optional ?status=&crew_id=&date_from=&date_to=)
@@ -3356,7 +3603,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711gw42">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p45">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -3842,7 +4089,7 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/premium.css?v=20260711gw42">
+  <link rel="stylesheet" href="/static/premium.css?v=20260711p45">
   <link rel="stylesheet" href="/static/styles.css?v=20260704gw9">
   <link rel="stylesheet" href="/static/groundwork-design.css?v=20260710gw34">
   <style>
@@ -4270,7 +4517,8 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p44"></script>
+<script src="/static/app_premium.js?v=20260711p45"></script>
+<script src="/static/estimates.js?v=20260711p45"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>
