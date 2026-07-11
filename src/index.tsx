@@ -3839,26 +3839,32 @@ app.get('/api/reviews', requireAuth, async (c) => {
   const limit     = parseInt(c.req.query('limit') || '100')
   let sql = `SELECT * FROM review_requests WHERE company_id=?`
   const binds: any[] = [companyId]
-  if (status)   { sql += ` AND status=?`;                  binds.push(status) }
-  if (clientId) { sql += ` AND client_id=?`;               binds.push(parseInt(clientId)) }
-  if (search)   { sql += ` AND client_name LIKE ?`;        binds.push(`%${search}%`) }
+  if (status)   { sql += ` AND status=?`;            binds.push(status) }
+  if (clientId) { sql += ` AND client_id=?`;         binds.push(clientId) }
+  if (search)   { sql += ` AND client_name LIKE ?`;  binds.push(`%${search}%`) }
   sql += ` ORDER BY created_at DESC LIMIT ?`
   binds.push(limit)
   const rows = await db.prepare(sql).bind(...binds).all()
-  return c.json(rows.results || [])
+  const reviews = rows.results || []
+  return c.json({ reviews, total: reviews.length })
 })
 
 // GET /api/reviews/settings — get review settings for company
 app.get('/api/reviews/settings', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  let settings = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first()
-  if (!settings) {
-    // Auto-create default settings row
-    await db.prepare(`INSERT OR IGNORE INTO review_settings (company_id) VALUES (?)`).bind(companyId).run()
-    settings = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first()
-  }
-  return c.json(settings || {})
+  // Auto-create default settings row if missing
+  await db.prepare(`INSERT OR IGNORE INTO review_settings (company_id) VALUES (?)`).bind(companyId).run()
+  const row = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first() as any
+  // Map DB columns → frontend field names (backwards-compatible)
+  const settings = row ? {
+    ...row,
+    auto_send_enabled:    row.trigger_on_wo || 0,
+    send_delay_hours:     row.delay_hours   || 0,
+    message_template:     row.sms_body      || '',
+    min_rating_threshold: 0,
+  } : {}
+  return c.json({ settings })
 })
 
 // PUT /api/reviews/settings — update review settings
@@ -3866,17 +3872,41 @@ app.put('/api/reviews/settings', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const body = await c.req.json() as any
-  const fields = ['google_url','yelp_url','facebook_url','auto_send_on_wo_close','auto_send_on_invoice_paid','send_delay_hours','default_message','is_active']
+  // Accept both frontend aliases and raw DB column names
   const setClauses: string[] = []
   const vals: any[] = []
-  fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  const colMap: Record<string,string> = {
+    google_review_url:    'google_review_url',
+    facebook_url:         'facebook_url',
+    yelp_url:             'yelp_url',
+    auto_send_enabled:    'trigger_on_wo',
+    send_delay_hours:     'delay_hours',
+    message_template:     'sms_body',
+    trigger_on_wo:        'trigger_on_wo',
+    trigger_on_invoice:   'trigger_on_invoice',
+    delay_hours:          'delay_hours',
+    channel:              'channel',
+    email_subject:        'email_subject',
+    email_body:           'email_body',
+    sms_body:             'sms_body',
+    enabled:              'enabled',
+  }
+  Object.entries(colMap).forEach(([frontKey, dbCol]) => {
+    if (body[frontKey] !== undefined) {
+      // Avoid duplicate SET clauses if alias points to same col
+      if (!setClauses.includes(`${dbCol}=?`)) {
+        setClauses.push(`${dbCol}=?`)
+        vals.push(body[frontKey])
+      }
+    }
+  })
   if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
   // Upsert settings row
   await db.prepare(`INSERT OR IGNORE INTO review_settings (company_id) VALUES (?)`).bind(companyId).run()
   vals.push(companyId)
   await db.prepare(`UPDATE review_settings SET ${setClauses.join(',')} WHERE company_id=?`).bind(...vals).run()
   const updated = await db.prepare(`SELECT * FROM review_settings WHERE company_id=?`).bind(companyId).first()
-  return c.json(updated)
+  return c.json({ settings: updated })
 })
 
 // POST /api/reviews — create a review request
@@ -3884,15 +3914,39 @@ app.post('/api/reviews', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const body = await c.req.json() as any
-  const { client_id, client_name, trigger_type, work_order_id, message_sent } = body
-  if (!client_id) return c.json({ error: 'client_id required' }, 400)
-  const id = Date.now()
+  const { client_id, client_name, client_name_hint, client_email, trigger_type, work_order_id, custom_message, auto_triggered } = body
+  // client_id required for manual; auto_triggered may pass work_order_id without client_id
+  const id = `rv_${Date.now()}_${Math.random().toString(36).slice(2,7)}`
+  const triggerTypeResolved = trigger_type || (auto_triggered ? 'work_order_close' : 'manual')
+  const resolvedName = client_name || client_name_hint || ''
   await db.prepare(`
-    INSERT INTO review_requests (id, company_id, client_id, client_name, trigger_type, work_order_id, message_sent, status)
-    VALUES (?,?,?,?,?,?,?,'pending')
-  `).bind(id, companyId, client_id, client_name||'', trigger_type||'manual', work_order_id||null, message_sent||'').run()
+    INSERT INTO review_requests
+      (id, company_id, client_id, client_name, client_email, trigger_type, trigger_id, status, delay_hours)
+    VALUES (?,?,?,?,?,?,?,?, 0)
+  `).bind(
+    id, companyId,
+    client_id || '',
+    resolvedName,
+    client_email || '',
+    triggerTypeResolved,
+    work_order_id ? String(work_order_id) : '',
+    auto_triggered ? 'sent' : 'pending'
+  ).run()
   const created = await db.prepare(`SELECT * FROM review_requests WHERE id=?`).bind(id).first()
-  return c.json(created, 201)
+  return c.json({ review: created }, 201)
+})
+
+// POST /api/reviews/:id/send — mark a review request as sent
+app.post('/api/reviews/:id/send', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rvId = c.req.param('id')
+  const rv = await db.prepare(`SELECT id FROM review_requests WHERE id=? AND company_id=?`).bind(rvId, companyId).first()
+  if (!rv) return c.json({ error: 'Not found' }, 404)
+  await db.prepare(`UPDATE review_requests SET status='sent', sent_at=? WHERE id=? AND company_id=?`)
+    .bind(new Date().toISOString(), rvId, companyId).run()
+  const updated = await db.prepare(`SELECT * FROM review_requests WHERE id=?`).bind(rvId).first()
+  return c.json({ review: updated })
 })
 
 // PUT /api/reviews/:id — update review request (status, rating, review_text, platform)
