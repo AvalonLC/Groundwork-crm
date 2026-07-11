@@ -1671,8 +1671,13 @@ function _gwTodayRenderMobile(opts) {
       </div>
     </div>`;
 
-  // ── Financial Pulse (admin/OM) ──────────────────────────────────────────
-  const finHtml = showFin && finSnap ? `<div class="gwtd-section">${finSnap}</div>` : '';
+  // ── Financial Pulse — always attempt on mobile; show if data available ──
+  // On mobile the logged-in user is almost always the owner/admin.
+  // We call the snap function directly here rather than relying on the
+  // showFin flag so that role detection edge-cases (e.g. role='owner')
+  // don't silently suppress the card.
+  const _mobileFinSnap = finSnap || (typeof _gwTodayFinanceSnap === 'function' ? _gwTodayFinanceSnap() : '');
+  const finHtml = _mobileFinSnap ? `<div class="gwtd-section">${_mobileFinSnap}</div>` : '';
 
   // ── Tasks section ───────────────────────────────────────────────────────
   const tasksHtml = taskWorkspace ? `<div class="gwtd-section">${taskWorkspace}</div>` : '';
@@ -1784,8 +1789,8 @@ function _gwTodayRender() {
       </div>
     </div>`;
 
-  // Finance snap (admin/OM only)
-  const _finSnap = _showFin ? _gwTodayFinanceSnap() : '';
+  // Finance snap — always compute so mobile path can use it regardless of role
+  const _finSnap = _gwTodayFinanceSnap();
 
   // Task workspace (from cache — loaded async below)
   const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep);
