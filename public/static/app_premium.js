@@ -327,7 +327,16 @@ function saveNavPerms(perms) {
   }
 }
 function canViewTab(viewName) {
-  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  let rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  // ── Mobile bootstrap guard ────────────────────────────────────────────────
+  // getCurrentRep() relies on localStorage + REPS array hydration, which may
+  // not be complete yet on first load. Fall back to _d1SessionRep (set
+  // immediately when the session cookie is verified) so canViewTab() never
+  // incorrectly returns false for authenticated users on mobile.
+  if (!rep && window._d1SessionRep) {
+    const d1 = window._d1SessionRep;
+    rep = { id: d1.id, role: d1.role || 'admin', name: d1.name };
+  }
   if (!rep) return false;
   // Admin always has full access (no permission gate for admin role)
   if (rep.role === 'admin') return true;
@@ -11793,7 +11802,16 @@ window.superAdmin = superAdmin;
       // Only restore if hash looks like a valid view name and user has access
       const _hashValid = _hashView && /^[a-zA-Z][a-zA-Z0-9_]+$/.test(_hashView)
         && typeof canViewTab === 'function' && canViewTab(_hashView);
-      show(_hashValid ? _hashView : 'gwDashboard');
+      // ── Flush any queued mobile nav tap that arrived before bootstrap ────────
+      // If the user tapped a bottom-nav button before _d1SessionRep was set,
+      // _gwPendingMobileNav captured it. Honour that intent now (overrides hash).
+      const _pendingNav = window._gwPendingMobileNav;
+      window._gwPendingMobileNav = null;
+      if (_pendingNav && typeof canViewTab === 'function' && canViewTab(_pendingNav.viewName)) {
+        show(_pendingNav.viewName, _pendingNav.param);
+      } else {
+        show(_hashValid ? _hashView : 'gwDashboard');
+      }
     }
   } else {
     // ── No session (unauthenticated) — show login screen ────────────────────
@@ -19603,9 +19621,18 @@ function gwCCLocalSummary(transcript, opp) {
 .gw-mnav-btn:active { background:rgba(255,255,255,.08); }
 .gw-mnav-btn.gw-mnav-active { color:#2D7A55; }
 .gw-mnav-btn svg { flex-shrink:0; }
-/* Push main content up so bottom nav doesn't cover it */
+/* ── Bottom-nav clearance: push ALL content containers above the 58px bar ── */
+/* Targets every layer the view content can live in */
 body.gw-mobile-mode #main-content,
-body.gw-mobile-mode .view-root { padding-bottom:66px!important; }
+body.gw-mobile-mode .view-root,
+body.gw-mobile-mode #view,
+body.gw-mobile-mode #view > div,
+body.gw-mobile-mode #view > .rp-shell,
+body.gw-mobile-mode .main { padding-bottom:72px!important; }
+/* Topbar Admin button is redundant on mobile — bottom nav has it */
+body.gw-mobile-mode .topbar-settings { display:none!important; }
+/* Notification bell: ensure it's never pushed off-screen on mobile */
+body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
 </style>
 <button class="gw-mnav-btn" onclick="show('gwDashboard')" data-view="gwDashboard">
   ${gwIcon('home','22','currentColor')}<span>Home</span>
@@ -19626,9 +19653,21 @@ body.gw-mobile-mode .view-root { padding-bottom:66px!important; }
   document.body.appendChild(nav);
   document.body.classList.add('gw-mobile-mode');
 
-  // Highlight active tab whenever show() fires
+  // ── Deferred nav: if bootstrap hasn't completed when a nav button is tapped,
+  // queue the destination and flush it once _initialRoute() finishes.
+  // This prevents the "Access Restricted" flash on first tap before canViewTab()
+  // has a valid rep from the session.
+  window._gwPendingMobileNav = null;
+
+  // Highlight active tab whenever show() fires, and guard against pre-bootstrap taps
   const _origShow = window.show;
   window.show = function(viewName, param) {
+    // If bootstrap not yet done and this is a protected workspace view, queue it
+    if (!window._d1Ready && !window._d1SessionRep &&
+        ['gwAdmin','gwSales','gwFinancial','gwOperations','gwLearning'].includes(viewName)) {
+      window._gwPendingMobileNav = { viewName, param };
+      return; // will be flushed by _initialRoute() after bootstrap
+    }
     if (_origShow) _origShow(viewName, param);
     const wsMap = { gwDashboard:'gwDashboard', today:'gwDashboard', myDashboard:'gwDashboard',
       gwSales:'gwSales', pipeline:'gwSales', clients:'gwSales', lead:'gwSales', estimates:'gwSales',

@@ -5932,7 +5932,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p50b"></script>
+<script src="/static/app_premium.js?v=20260711p50c"></script>
 <script src="/static/estimates.js?v=20260711p50"></script>
 <script src="/static/invoices.js?v=20260711p50"></script>
 <script src="/static/csv_import.js?v=20260711p50"></script>
