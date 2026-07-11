@@ -3082,6 +3082,7 @@ app.get('/api/work-orders/:id', requireAuth, async (c) => {
     ...row,
     checklist:     JSON.parse(row.checklist     || '[]'),
     materials:     JSON.parse(row.materials     || '[]'),
+    equipment:     JSON.parse(row.equipment     || '[]'),
     timeline:      JSON.parse(row.timeline      || '[]'),
     before_photos: JSON.parse(row.before_photos || '[]'),
     after_photos:  JSON.parse(row.after_photos  || '[]'),
@@ -4269,7 +4270,7 @@ function getHtml(): string {
 <script src="/static/record-page.js?v=20260704rp2"></script>
 <script src="/static/academy.js?v=20260628gw9"></script>
 <script src="/static/task_engine.js?v=20260710p12"></script>
-<script src="/static/app_premium.js?v=20260711p43"></script>
+<script src="/static/app_premium.js?v=20260711p44"></script>
 <script src="/static/integrations.js?v=20260710int3"></script>
 <script src="/static/import_clients_csv.js?v=20260628gw9"></script>
 <script src="/static/user_management.js?v=20260710um29"></script>

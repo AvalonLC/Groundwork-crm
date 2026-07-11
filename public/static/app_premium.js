@@ -13619,8 +13619,10 @@ window._sbOpenVisitModal = async function(woId) {
   if (typeof wo.before_photos==='string')try{wo.before_photos=JSON.parse(wo.before_photos);}catch(e){wo.before_photos=[];}
   if (typeof wo.after_photos==='string') try{wo.after_photos =JSON.parse(wo.after_photos); }catch(e){wo.after_photos =[];}
   if (typeof wo.attachments==='string')  try{wo.attachments  =JSON.parse(wo.attachments);  }catch(e){wo.attachments  =[];}
+  if (typeof wo.equipment  === 'string') try { wo.equipment  = JSON.parse(wo.equipment);  } catch(e) { wo.equipment  = []; }
   if (!Array.isArray(wo.checklist))   wo.checklist   = [];
   if (!Array.isArray(wo.materials))   wo.materials   = [];
+  if (!Array.isArray(wo.equipment))   wo.equipment   = [];
   if (!Array.isArray(wo.before_photos))wo.before_photos=[];
   if (!Array.isArray(wo.after_photos)) wo.after_photos =[];
   if (!Array.isArray(wo.attachments))  wo.attachments  =[];
