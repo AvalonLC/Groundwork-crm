@@ -373,7 +373,8 @@ app.get('/api/company/branding', requireAuth, async (c) => {
            crew_count, division_count,
            address_line1, address_city, address_state, address_zip,
            license_number, insurance_info, year_founded,
-           service_area_desc, terminology
+           service_area_desc, terminology,
+           onboarding_completed, onboarding_step
     FROM companies WHERE id = ? LIMIT 1
   `).bind(companyId).first()
   if (!row) return err(c, 'Company not found', 404)
@@ -391,7 +392,8 @@ app.put('/api/company/branding', requireAuth, async (c) => {
     'crew_count','division_count',
     'address_line1','address_city','address_state','address_zip',
     'license_number','insurance_info','year_founded',
-    'service_area_desc','terminology'
+    'service_area_desc','terminology',
+    'onboarding_completed','onboarding_step'
   ]
   const updates = allowed.filter(f => b[f] !== undefined)
   if (!updates.length) return err(c, 'Nothing to update')

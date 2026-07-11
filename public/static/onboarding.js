@@ -117,7 +117,11 @@ window.gwCheckOnboarding = async function() {
     // Only trigger for admin role and uncompleted onboarding
     const rep = window._d1SessionRep;
     if (!rep || rep.role !== 'admin') return;
-    if (co.onboarding_completed === 1 || co.onboarding_step >= 6) return;
+    // Treat missing field (undefined) as completed — only show for explicit 0
+    if (co.onboarding_completed !== 0) return;
+    if (co.onboarding_step >= 6) return;
+    // Extra safety: if company already has a phone/address it's an existing account
+    if (co.phone || co.address_line1) return;
     // Pre-fill state from existing company data
     _onbState.companyName   = co.name || '';
     _onbState.businessType  = co.business_type || 'home_services';
