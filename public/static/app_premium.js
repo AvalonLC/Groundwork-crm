@@ -1879,7 +1879,7 @@ function pipeline(selectedId){
     return `<div class="pl-filter-group">
       <span class="pl-filter-label">Rep</span>
       <button class="pl-filter-btn ${activeRepFilter==='all'?'pl-active':''}" onclick="window._pipelineRepFilter='all';show('pipeline')">All</button>
-      ${(window.REPS||[]).map(r=>`<button class="pl-filter-btn ${activeRepFilter===r.id?'pl-active':''}" onclick="window._pipelineRepFilter='${r.id}';show('pipeline')">${r.name.split(' ')[0]}</button>`).join('')}
+      ${(window.REPS||[]).filter(r=>!_GW_FIELD_ROLES.includes(r.role)).map(r=>`<button class="pl-filter-btn ${activeRepFilter===r.id?'pl-active':''}" onclick="window._pipelineRepFilter='${r.id}';show('pipeline')">${r.name.split(' ')[0]}</button>`).join('')}
     </div><div class="pl-filter-divider"></div>`;
   })();
 
@@ -3153,7 +3153,7 @@ function lead(){
   const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
   const repPickerHtml = _ia
     ? '<label class="lf-field"><span class="lf-label">Assigned Rep</span><select name="repId" class="lf-select"><option value="">— Select rep —</option>'
-        + (window.REPS||[]).map(r=>'<option value="' + r.id + '">' + r.name + '</option>').join('')
+        + (window.REPS||[]).filter(r=>!_GW_FIELD_ROLES.includes(r.role)).map(r=>'<option value="' + r.id + '">' + r.name + '</option>').join('')
         + '</select></label>'
     : '<input type="hidden" name="repId" value="' + (_cr ? _cr.id : '') + '">';
 
@@ -4038,7 +4038,7 @@ function opportunityDetail(id){
               <div class="ld-card-label" style="margin-bottom:6px">Reassign Rep</div>
               <select onchange="setOppField('${o.id}','repId',this.value)" style="width:100%;padding:7px 10px;border:1px solid var(--gw-border);border-radius:var(--gw-r-xs);font-size:13px;background:var(--gw-bg-surface);color:var(--gw-text-primary)">
                 <option value="">— Assign —</option>
-                ${(window.REPS||[]).map(r=>`<option value="${r.id}" ${o.repId===r.id?'selected':''}>${r.name}</option>`).join('')}
+                ${(window.REPS||[]).filter(r=>!_GW_FIELD_ROLES.includes(r.role)).map(r=>`<option value="${r.id}" ${o.repId===r.id?'selected':''}>${r.name}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -15640,10 +15640,14 @@ function _glShell(title, subtitle, body) {
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
+// Roles that belong to field/operations — excluded from the Sales Team view
+const _GW_FIELD_ROLES = ['foreman', 'laborer', 'field_supervisor'];
+
 function teamView() {
   window._currentView = 'teamView';
   activateNav('teamView');
-  const reps   = window.REPS || [];
+  // Only show sales / office roles — never field workers
+  const reps   = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
   const opps   = state.opportunities || [];
   const comms  = state.communications || [];
   const today  = todayISO();
@@ -17004,7 +17008,7 @@ function salesReports() {
   window._currentView = 'salesReports';
   activateNav('salesReports');
   const opps   = state.opportunities || [];
-  const reps   = window.REPS || [];
+  const reps   = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
   const today  = todayISO();
   const mtd    = today.slice(0,7); // YYYY-MM
 
@@ -17558,7 +17562,7 @@ function opsReports() {
 function teamReports() {
   window._currentView = 'teamReports';
   activateNav('teamReports');
-  const reps   = window.REPS || [];
+  const reps   = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
   const opps   = state.opportunities || [];
   const comms  = state.communications || [];
   const wos    = state.workOrders || [];
