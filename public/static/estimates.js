@@ -1016,6 +1016,7 @@ function _estRenderBuilder() {
         </h3>
         <div class="est-line-editor" id="est-line-editor">
           <div class="est-line-editor-header">
+            <div class="est-line-col est-line-col--handle"></div>
             <div class="est-line-col est-line-col--desc">Item / Description</div>
             <div class="est-line-col est-line-col--qty">Qty</div>
             <div class="est-line-col est-line-col--rate">Rate</div>
