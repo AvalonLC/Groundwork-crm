@@ -2327,7 +2327,7 @@ function clients(selectedId) {
       <td>${clientStatusDot(c.status)} <span style="font-size:12px;color:#5C6B58">${escapeHtml(c.status||'Active')}</span></td>
       <td class="cl-cell-addr">${addr ? escapeHtml(addr) : '<span class="cl-empty-cell">—</span>'}</td>
       <td class="cl-cell-contact">
-        ${c.email ? `<a class="cl-link" href="mailto:${escapeHtml(c.email)}" onclick="event.stopPropagation()">${escapeHtml(c.email)}</a>` : ''}
+        ${c.email ? `<button class="cl-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:inherit;color:inherit" onclick="event.stopPropagation();_gwOpenMessageModal({type:'email',to:'${escapeHtml(c.email)}',toName:'${escapeHtml(c.name||'')}'})">${escapeHtml(c.email)}</button>` : ''}
         ${(c.phone||c.mobile) && c.email ? '<br>' : ''}
         ${escapeHtml(c.phone||c.mobile||(!c.email?'—':''))}
       </td>
@@ -2622,7 +2622,7 @@ function clientDetail(id) {
       <section class="card">
         <div class="section-head"><h2>Contact Info</h2></div>
         <dl class="cl-dl">
-          ${c.email  ? `<dt>Email</dt><dd><a class="cl-link" href="mailto:${escapeHtml(c.email)}">${escapeHtml(c.email)}</a></dd>` : ''}
+          ${c.email  ? `<dt>Email</dt><dd><button class="cl-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:inherit" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(c.email)}',toName:'${escapeHtml(c.name||'')}'})">\${escapeHtml(c.email)}</button></dd>` : ''}
           ${c.phone  ? `<dt>Phone</dt><dd>${escapeHtml(c.phone)}</dd>` : ''}
           ${c.mobile ? `<dt>Mobile</dt><dd>${escapeHtml(c.mobile)}</dd>` : ''}
           ${addr     ? `<dt>Address</dt><dd>${escapeHtml(addr)}</dd>` : ''}
@@ -2784,10 +2784,10 @@ async function customerDetail(clientId) {
           SMS
         </button>` : ''}
         ${client.email ? `
-        <a class="rp-btn" href="mailto:${escapeHtml(client.email)}" title="Email ${escapeHtml(client.email)}">
+        <button class="rp-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})" title="Email ${escapeHtml(client.email)}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
           Email
-        </a>` : ''}
+        </button>` : ''}
         <button class="rp-btn" onclick="window.print()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           Print
@@ -2854,11 +2854,11 @@ async function customerDetail(clientId) {
             </div>` : ''}
             ${client.email ? `<div class="cd-info-row">
               <span class="cd-info-lbl">Email</span>
-              <a class="cd-info-val cd-link" href="mailto:${escapeHtml(client.email)}">${escapeHtml(client.email)}</a>
+              <button class="cd-info-val cd-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>${escapeHtml(client.email)}</button>
             </div>` : ''}
             ${client.email2 ? `<div class="cd-info-row">
               <span class="cd-info-lbl">CC Email</span>
-              <a class="cd-info-val cd-link" href="mailto:${escapeHtml(client.email2)}">${escapeHtml(client.email2)}</a>
+              <button class="cd-info-val cd-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email2)}',toName:'${escapeHtml(client.name||'')}'})"}>${escapeHtml(client.email2)}</button>
             </div>` : ''}
             ${addr ? `<div class="cd-info-row">
               <span class="cd-info-lbl">Address</span>
@@ -2997,11 +2997,11 @@ async function customerDetail(clientId) {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>` : ''}
             ${client.email ? `
-            <a class="cd-quick-btn" href="mailto:${escapeHtml(client.email)}" style="text-decoration:none">
+            <button class="cd-quick-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
               <span>Send Email</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </a>` : ''}
+            </button>` : ''}
             <button class="cd-quick-btn" onclick="_cdSendPortalLink('${client.id}')">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               <span>Send Portal Link</span>
@@ -3032,10 +3032,10 @@ async function customerDetail(clientId) {
               SMS
             </button>` : ''}
             ${client.email ? `
-            <a class="rp-btn" href="mailto:${escapeHtml(client.email)}?subject=Your+Customer+Portal&body=Access+your+portal+here:+${encodeURIComponent(location.origin+'/portal?client='+client.id)}">
+            <button class="rp-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}',subject:'Your Customer Portal',body:'Hi ${escapeHtml(client.name||'')},\\n\\nHere is a link to access your customer portal:\\n'+location.origin+'/portal?client=${client.id}'})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
               Email
-            </a>` : ''}
+            </button>` : ''}
           </div>
         </section>
 
@@ -3048,6 +3048,227 @@ async function customerDetail(clientId) {
   window._cdCurrentClientWOs = workOrders;
 }
 window.customerDetail = customerDetail;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UNIVERSAL IN-APP MESSAGE COMPOSE MODAL
+// _gwOpenMessageModal({ type, to, toName, subject, body, clientId })
+// type = 'email' | 'sms'
+// Never opens mailto: or sms: — always stays inside the app
+// ══════════════════════════════════════════════════════════════════════════════
+window._gwOpenMessageModal = function(opts = {}) {
+  const existing = document.getElementById('gw-message-modal');
+  if (existing) existing.remove();
+
+  const type     = opts.type || 'email';
+  const toAddr   = opts.to || '';
+  const toName   = opts.toName || '';
+  const subject  = opts.subject || '';
+  const bodyText = opts.body || '';
+  const isEmail  = type === 'email';
+  const isSms    = type === 'sms';
+
+  // Check if Gmail is connected (for live send) vs log-only
+  const googleConnected = (typeof isGoogleConnected === 'function') && isGoogleConnected();
+  const fromEmail = (typeof getGoogleUserEmail === 'function') ? getGoogleUserEmail() : '';
+
+  const emailStatusBanner = isEmail ? `
+    <div style="padding:8px 12px;border-radius:7px;font-size:12px;display:flex;align-items:center;gap:8px;margin-bottom:12px;
+      ${googleConnected
+        ? 'background:#2D7A5515;border:1px solid #2D7A5535;color:#2D7A55'
+        : 'background:#f5f0e015;border:1px solid #d4a01740;color:#92650a'}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+      ${googleConnected
+        ? `Sending from <strong style="margin-left:4px">${escapeHtml(fromEmail)}</strong> via Gmail`
+        : `Gmail not connected — email will be <strong style="margin:0 4px">logged only</strong>.
+           <button onclick="show('integrations')" style="background:rgba(146,101,10,.15);border:1px solid rgba(146,101,10,.3);border-radius:5px;padding:1px 8px;font-size:11px;font-weight:700;cursor:pointer;color:inherit">Connect →</button>`}
+    </div>` : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'gw-message-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)';
+  modal.innerHTML = `
+    <div id="gw-message-panel" style="
+      width:100%;max-width:600px;
+      background:var(--gw-bg-surface,#fff);
+      border-radius:18px 18px 0 0;
+      box-shadow:0 -8px 40px rgba(0,0,0,.18);
+      display:flex;flex-direction:column;
+      max-height:90vh;
+      animation:gwSlideUp .22s cubic-bezier(.22,1,.36,1)">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--gw-border,#e2e8f0);flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:10px">
+          <!-- Type toggle -->
+          <div style="display:flex;gap:2px;background:var(--gw-bg-app,#f4f6f8);border-radius:8px;padding:3px">
+            <button id="gwm-tab-email" onclick="_gwMsgTab('email')" style="padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;
+              ${isEmail ? 'background:#fff;color:var(--gw-pine-500,#2D7A55);box-shadow:0 1px 4px rgba(0,0,0,.1)' : 'background:transparent;color:var(--gw-text-muted,#64748b)'}">
+              ✉ Email
+            </button>
+            <button id="gwm-tab-sms" onclick="_gwMsgTab('sms')" style="padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;
+              ${isSms ? 'background:#fff;color:var(--gw-pine-500,#2D7A55);box-shadow:0 1px 4px rgba(0,0,0,.1)' : 'background:transparent;color:var(--gw-text-muted,#64748b)'}">
+              💬 SMS
+            </button>
+          </div>
+          <span id="gwm-type-label" style="font-size:14px;font-weight:700;color:var(--gw-text,#1e293b)">
+            ${isEmail ? 'New Email' : 'New SMS'}
+          </span>
+        </div>
+        <button onclick="document.getElementById('gw-message-modal')?.remove()" style="background:none;border:none;font-size:20px;color:var(--gw-text-muted,#64748b);cursor:pointer;line-height:1;padding:4px 8px">×</button>
+      </div>
+
+      <!-- Body -->
+      <div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:10px">
+        ${emailStatusBanner}
+
+        <!-- To field -->
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--gw-text-muted,#64748b);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">
+            ${isEmail ? 'To' : 'Phone Number'}
+          </label>
+          <input id="gwm-to" class="rp-input" type="${isEmail ? 'email' : 'tel'}"
+            placeholder="${isEmail ? 'email@example.com' : '+1 (555) 000-0000'}"
+            value="${escapeHtml(toAddr)}" style="width:100%">
+        </div>
+
+        <!-- Name (display only) -->
+        ${toName ? `<div style="font-size:12px;color:var(--gw-text-muted,#64748b);margin-top:-6px">To: <strong>${escapeHtml(toName)}</strong></div>` : ''}
+
+        <!-- Subject (email only) -->
+        <div id="gwm-subject-row" style="${isEmail ? '' : 'display:none'}">
+          <label style="font-size:11px;font-weight:700;color:var(--gw-text-muted,#64748b);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Subject</label>
+          <input id="gwm-subject" class="rp-input" type="text" placeholder="Subject line…" value="${escapeHtml(subject)}" style="width:100%">
+        </div>
+
+        <!-- Message body -->
+        <div style="flex:1">
+          <label style="font-size:11px;font-weight:700;color:var(--gw-text-muted,#64748b);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Message</label>
+          <textarea id="gwm-body" class="rp-input" rows="7"
+            placeholder="${isEmail ? 'Write your email…' : 'Type your SMS message (max 160 chars per segment)…'}"
+            style="width:100%;resize:vertical;min-height:120px">${escapeHtml(bodyText)}</textarea>
+          <div id="gwm-sms-counter" style="${isSms ? 'text-align:right;font-size:11px;color:var(--gw-text-muted,#64748b);margin-top:3px' : 'display:none'}"></div>
+        </div>
+
+        <!-- SMS note -->
+        <div id="gwm-sms-note" style="${isSms ? 'font-size:12px;color:var(--gw-text-muted,#64748b);background:var(--gw-bg-app,#f4f6f8);border-radius:7px;padding:8px 12px' : 'display:none'}">
+          <strong>SMS will be logged</strong> in this customer's Communications tab. Sending via carrier requires a Twilio integration (Admin → Integrations).
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="padding:14px 20px;border-top:1px solid var(--gw-border,#e2e8f0);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:10px">
+        <div style="font-size:12px;color:var(--gw-text-muted,#64748b)" id="gwm-status"></div>
+        <div style="display:flex;gap:8px">
+          <button class="rp-btn" onclick="document.getElementById('gw-message-modal')?.remove()">Cancel</button>
+          <button class="rp-btn rp-btn--primary" id="gwm-send-btn" onclick="_gwMsgSend()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            ${isEmail ? (googleConnected ? 'Send Email' : 'Log Email') : 'Log SMS'}
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  // SMS character counter
+  const bodyEl = document.getElementById('gwm-body');
+  const counter = document.getElementById('gwm-sms-counter');
+  if (bodyEl && counter) {
+    const updateCounter = () => {
+      const len = bodyEl.value.length;
+      const segs = Math.ceil(len / 160) || 1;
+      counter.textContent = `${len} chars · ${segs} segment${segs>1?'s':''}`;
+    };
+    bodyEl.addEventListener('input', updateCounter);
+    updateCounter();
+  }
+
+  // Close on backdrop click
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  // Store current type
+  window._gwMsgCurrentType = type;
+};
+
+// Tab switcher
+window._gwMsgTab = function(newType) {
+  window._gwMsgCurrentType = newType;
+  const isEmail = newType === 'email';
+  const googleConnected = (typeof isGoogleConnected === 'function') && isGoogleConnected();
+
+  // Update tab buttons
+  const eTab = document.getElementById('gwm-tab-email');
+  const sTab = document.getElementById('gwm-tab-sms');
+  const activeStyle = 'background:#fff;color:var(--gw-pine-500,#2D7A55);box-shadow:0 1px 4px rgba(0,0,0,.1)';
+  const inactiveStyle = 'background:transparent;color:var(--gw-text-muted,#64748b)';
+  if (eTab) eTab.style.cssText = eTab.style.cssText.replace(/background:[^;]+;color:[^;]+;box-shadow:[^;]+|background:[^;]+;color:[^;]+/, isEmail ? activeStyle : inactiveStyle);
+  if (sTab) sTab.style.cssText = sTab.style.cssText.replace(/background:[^;]+;color:[^;]+;box-shadow:[^;]+|background:[^;]+;color:[^;]+/, !isEmail ? activeStyle : inactiveStyle);
+
+  // Toggle UI
+  const subjectRow = document.getElementById('gwm-subject-row');
+  const smsNote    = document.getElementById('gwm-sms-note');
+  const smsCounter = document.getElementById('gwm-sms-counter');
+  const toInput    = document.getElementById('gwm-to');
+  const bodyEl     = document.getElementById('gwm-body');
+  const sendBtn    = document.getElementById('gwm-send-btn');
+  const label      = document.getElementById('gwm-type-label');
+
+  if (subjectRow) subjectRow.style.display = isEmail ? '' : 'none';
+  if (smsNote)    smsNote.style.display    = isEmail ? 'none' : '';
+  if (smsCounter) smsCounter.style.display = isEmail ? 'none' : 'block';
+  if (toInput)    toInput.type             = isEmail ? 'email' : 'tel';
+  if (toInput)    toInput.placeholder      = isEmail ? 'email@example.com' : '+1 (555) 000-0000';
+  if (bodyEl)     bodyEl.placeholder       = isEmail ? 'Write your email…' : 'Type your SMS message…';
+  if (label)      label.textContent        = isEmail ? 'New Email' : 'New SMS';
+  if (sendBtn)    sendBtn.innerHTML        = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> ${isEmail ? (googleConnected ? 'Send Email' : 'Log Email') : 'Log SMS'}`;
+};
+
+// Send/log handler
+window._gwMsgSend = async function() {
+  const type    = window._gwMsgCurrentType || 'email';
+  const to      = document.getElementById('gwm-to')?.value?.trim() || '';
+  const subject = document.getElementById('gwm-subject')?.value?.trim() || '';
+  const body    = document.getElementById('gwm-body')?.value?.trim() || '';
+  const status  = document.getElementById('gwm-status');
+  const sendBtn = document.getElementById('gwm-send-btn');
+  const isEmail = type === 'email';
+
+  if (!to) { showToast(isEmail ? 'Enter an email address' : 'Enter a phone number', 'error'); return; }
+  if (!body) { showToast('Message body is required', 'error'); return; }
+
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '⏳ Sending…'; }
+  if (status)  status.textContent = '';
+
+  try {
+    if (isEmail) {
+      const googleConnected = (typeof isGoogleConnected === 'function') && isGoogleConnected();
+      if (googleConnected) {
+        if (!subject) { showToast('Add a subject line before sending', 'error'); if(sendBtn){sendBtn.disabled=false;sendBtn.innerHTML='Send Email';} return; }
+        const htmlBody = body.replace(/\n/g, '<br>');
+        if (typeof gmailSendEmail === 'function') {
+          await gmailSendEmail({ to, subject, body: htmlBody });
+        }
+        showToast('Email sent via Gmail', 'success');
+      } else {
+        showToast('Email logged (connect Gmail in Integrations to send live)', 'info');
+      }
+      // Log to comms state
+      if (!state.communications) state.communications = [];
+      state.communications.push({ id: uid('comm'), type:'email', direction:'out', to, subject, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep'), gmailSent: googleConnected });
+      saveState();
+    } else {
+      // SMS — log it (live send requires Twilio integration)
+      showToast('SMS logged in Communications', 'info');
+      if (!state.communications) state.communications = [];
+      state.communications.push({ id: uid('comm'), type:'sms', direction:'out', to, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep') });
+      saveState();
+    }
+    document.getElementById('gw-message-modal')?.remove();
+  } catch(e) {
+    showToast('Failed: ' + (e.message || 'Unknown error'), 'error');
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = isEmail ? 'Send Email' : 'Log SMS'; }
+  }
+};
 
 // ── Customer Detail handlers ──────────────────────────────────────────────────
 window._cdJobTab = function(btn, filter) {
@@ -3081,7 +3302,7 @@ window._cdNewJobForClient = function(clientId, clientName) {
 window._cdSharePortalViaSms = function(clientId, phone) {
   const link = `${location.origin}/portal?client=${clientId}`;
   const msg = `Hi! Here's a link to your customer portal where you can view your jobs, photos, and invoices: ${link}`;
-  window.open(`sms:${phone}?body=${encodeURIComponent(msg)}`, '_blank');
+  _gwOpenMessageModal({ type:'sms', to: phone, body: msg });
 };
 
 // Load more jobs (fetches from D1 with offset)
@@ -3159,19 +3380,16 @@ window._cdAddTag = function(clientId) {
   }
 };
 
-window._cdSendSms = function(phone) {
+window._cdSendSms = function(phone, prefillBody) {
   if (!phone) { showToast('No phone number on file','error'); return; }
-  window.open(`sms:${phone}`,'_blank');
+  _gwOpenMessageModal({ type:'sms', to: phone, body: prefillBody||'' });
 };
 
 window._cdSendPortalLink = function(clientId) {
   const link = `${location.origin}/portal?client=${clientId}`;
-  if (navigator.share) {
-    navigator.share({ title:'Your Customer Portal', url:link }).catch(()=>{});
-  } else {
-    navigator.clipboard?.writeText(link).then(()=>showToast('Portal link copied to clipboard','success'))
-      .catch(()=>showToast('Portal link: '+link,'info'));
-  }
+  navigator.clipboard?.writeText(link)
+    .then(()=>showToast('Portal link copied to clipboard','success'))
+    .catch(()=>showToast('Portal link: '+link,'info'));
 };
 
 // ── Add property modal ──────────────────────────────────────────────────────
@@ -4316,7 +4534,7 @@ function opportunityDetail(id){
           </div>` : ''}
           ${o.email ? `<div class="rp-left-field">
             <div class="rp-left-field-label">Email</div>
-            <div class="rp-left-field-value"><a href="mailto:${escapeHtml(o.email)}">${escapeHtml(o.email)}</a></div>
+            <div class="rp-left-field-value"><button class="cl-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(o.email)}',toName:'${escapeHtml(o.client||'')}'})">\${escapeHtml(o.email)}</button></div>
           </div>` : ''}
           ${o.address ? `<div class="rp-left-field">
             <div class="rp-left-field-label">Address</div>

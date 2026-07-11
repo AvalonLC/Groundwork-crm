@@ -10612,3 +10612,178 @@ h1.pl-title,
   .stmt-body { padding: 12px; }
   .stmt-range-bar { padding: 8px 12px; gap: 6px; }
 }
+
+/* ── In-app Message Compose Modal (email / SMS slide-up) ─────────────────── */
+@keyframes gwSlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* Overlay backdrop */
+#gw-message-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,.45);
+}
+
+/* Panel */
+#gw-message-modal .gwm-panel {
+  width: 100%;
+  max-width: 560px;
+  background: var(--gw-bg-surface, #fff);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 40px rgba(0,0,0,.18);
+  padding: 0 0 env(safe-area-inset-bottom, 0);
+  animation: gwSlideUp .22s cubic-bezier(.22,1,.36,1);
+}
+
+/* Header row */
+#gw-message-modal .gwm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--gw-border, #e2e8f0);
+  gap: 10px;
+}
+
+/* Tab pills */
+#gw-message-modal .gwm-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--gw-bg, #f1f5f9);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+#gw-message-modal .gwm-tab {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+#gw-message-modal .gwm-tab.active {
+  background: var(--gw-pine-500, #2D7A55);
+  color: #fff;
+}
+
+#gw-message-modal .gwm-tab:not(.active) {
+  background: transparent;
+  color: var(--gw-text-muted, #64748b);
+}
+
+/* Gmail status banner */
+#gw-message-modal .gwm-banner {
+  margin: 10px 18px 0;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#gw-message-modal .gwm-banner.connected {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+#gw-message-modal .gwm-banner.disconnected {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+/* Form body */
+#gw-message-modal .gwm-body {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#gw-message-modal .gwm-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gw-text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 3px;
+  display: block;
+}
+
+#gw-message-modal .gwm-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--gw-border, #e2e8f0);
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--gw-text, #1e293b);
+  background: var(--gw-bg-surface, #fff);
+  outline: none;
+  transition: border-color .15s;
+}
+
+#gw-message-modal .gwm-input:focus {
+  border-color: var(--gw-pine-400, #4DA876);
+}
+
+#gw-message-modal .gwm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 100px;
+  padding: 9px 10px;
+  border: 1px solid var(--gw-border, #e2e8f0);
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--gw-text, #1e293b);
+  background: var(--gw-bg-surface, #fff);
+  resize: vertical;
+  outline: none;
+  transition: border-color .15s;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+#gw-message-modal .gwm-textarea:focus {
+  border-color: var(--gw-pine-400, #4DA876);
+}
+
+/* SMS counter */
+#gw-message-modal .gwm-sms-counter {
+  font-size: 11px;
+  color: var(--gw-text-muted, #64748b);
+  text-align: right;
+  margin-top: -6px;
+}
+
+/* Footer buttons */
+#gw-message-modal .gwm-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 4px 18px 20px;
+}
+
+/* Mobile full-width */
+@media (max-width: 600px) {
+  #gw-message-modal .gwm-panel {
+    border-radius: 14px 14px 0 0;
+  }
+  #gw-message-modal .gwm-footer {
+    flex-direction: column-reverse;
+  }
+  #gw-message-modal .gwm-footer button {
+    width: 100%;
+    justify-content: center;
+  }
+}
