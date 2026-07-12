@@ -13415,65 +13415,100 @@ h1.pl-title,
   align-items: center;
 }
 
-/* ── Section 34c: Settings page — mobile-first style upgrade ─────────────────
-   Fixes the ~100px dead gap between DATA AND SETUP eyebrow and Settings h1,
-   upgrades card layout for mobile, improves visual hierarchy and spacing.
+/* ── Section 34c: Settings page — complete mobile overhaul (b010) ────────────
+   Goals:
+   1. Zero dead space — eyebrow/h1/lede collapse to a tight 3-line header
+   2. Cards are compact — no internal breathing room waste on phone screens
+   3. Admin panels hidden behind a tap-to-expand accordion row
+   4. All buttons full-width stacked
    ────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
 
-  /* ── Kill the gap: eyebrow sits flush above h1 ───────────────────────────── */
-  /* The .view .eyebrow rule in Section 34 gives margin-bottom:4px — good.
-     But the DESKTOP h1 has margin:12px 0 which creates the dead space.
-     Section 34 already sets .view h1 { margin: 6px 0 6px } — so the gap
-     must come from something else. Force it tighter here. */
+  /* ── 1. Page header: nuke ALL vertical gaps ───────────────────────────────── */
+  .view > .eyebrow,
+  .view .eyebrow {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
   .view .eyebrow + h1,
-  .view h1:first-of-type {
-    margin-top: 4px !important;
-  }
-
-  /* ── Settings-specific header block: collapse all vertical space ─────────── */
-  .settings-header-block,
-  .view > .eyebrow {
+  .view h1:first-of-type,
+  .view h1 {
+    margin-top: 2px !important;
     margin-bottom: 2px !important;
+    font-size: 24px !important;
+    line-height: 1.1 !important;
+  }
+  .view p.lede,
+  .view .lede {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+    margin-top: 2px !important;
+    margin-bottom: 10px !important;
+    max-width: 100% !important;
   }
 
-  /* ── grid-2 on Settings page: always 1-col on mobile ────────────────────── */
-  /* (global .grid-2 at ≤920px already goes to 1col, but be explicit here) */
+  /* ── 2. Cards: tighter, no wasted vertical space ─────────────────────────── */
+  .card {
+    padding: 12px 14px !important;
+    border-radius: 14px !important;
+    margin-bottom: 10px !important;
+  }
+  .card h2 {
+    font-size: 14px !important;
+    margin: 0 0 4px !important;
+  }
+  .card p {
+    font-size: 12px !important;
+    margin: 0 0 10px !important;
+    line-height: 1.4 !important;
+  }
 
-  /* ── Cards: upgrade visual style for mobile ──────────────────────────────── */
-  /* Tighter padding already from Section 34's .card { padding:14px } */
+  /* ── 3. grid-2: always single column on phones ────────────────────────────── */
+  .grid.grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    margin-top: 0 !important;
+  }
 
-  /* ── Export card buttons: full-width stacked ─────────────────────────────── */
+  /* ── 4. Export / Import buttons: full-width stacked ──────────────────────── */
   .footer-actions {
     flex-direction: column !important;
     gap: 8px !important;
+    margin-top: 8px !important;
   }
   .footer-actions .primary-btn,
   .footer-actions .secondary-btn {
     width: 100% !important;
     text-align: center !important;
-    padding: 12px 16px !important;
+    padding: 11px 16px !important;
     font-size: 14px !important;
     border-radius: 12px !important;
+    justify-content: center !important;
   }
 
-  /* ── Cloud sync card button row: stack on mobile ─────────────────────────── */
+  /* ── 5. Cloud sync card ───────────────────────────────────────────────────── */
   .gw-settings-sync-btns {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 8px !important;
+    margin-top: 8px !important;
   }
   .gw-settings-sync-btns .primary-btn,
   .gw-settings-sync-btns .secondary-btn {
     width: 100% !important;
     text-align: center !important;
+    justify-content: center !important;
   }
 
+  /* ── 6. Admin / commission tools section ─────────────────────────────────── */
   .gw-comm-tools {
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 12px !important;
-    padding: 14px !important;
+    gap: 10px !important;
+    padding: 12px !important;
   }
   .gw-comm-tools > button,
   .gw-comm-tools .secondary-btn {
@@ -13481,8 +13516,6 @@ h1.pl-title,
     text-align: center !important;
     justify-content: center !important;
   }
-
-  /* ── Admin tools button group: 2-col grid ────────────────────────────────── */
   .gw-comm-tools div[style*="flex-wrap"] {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -13494,11 +13527,70 @@ h1.pl-title,
     justify-content: center !important;
   }
 
-  /* ── File input row: full width ──────────────────────────────────────────── */
+  /* ── 7. Admin accordion panels: collapsed by default on mobile ───────────── */
+  .gw-mobile-accordion {
+    border: 1px solid var(--gw-line);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    background: var(--gw-surface);
+  }
+  .gw-mobile-accordion-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gw-ink);
+    background: var(--gw-surface-2);
+    gap: 8px;
+  }
+  .gw-mobile-accordion-header:active {
+    background: var(--gw-line);
+  }
+  .gw-mobile-accordion-chevron {
+    font-size: 10px;
+    color: var(--gw-muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .gw-mobile-accordion-chevron.open {
+    transform: rotate(180deg);
+  }
+  .gw-mobile-accordion-body {
+    display: none;
+    padding: 12px;
+    overflow-x: auto;
+  }
+  .gw-mobile-accordion-body.open {
+    display: block;
+  }
+
+  /* ── 8. Commission panel tables: scroll horizontally, don't overflow ──────── */
+  .gw-comm-panel {
+    padding: 0 !important;
+  }
+  .gw-comm-panel table {
+    font-size: 11px !important;
+    min-width: 280px;
+  }
+  .gw-comm-panel .gw-input-sm {
+    width: 44px !important;
+    font-size: 11px !important;
+    padding: 3px 4px !important;
+  }
+
+  /* ── 9. File input ───────────────────────────────────────────────────────── */
   input[type="file"] {
     width: 100% !important;
     font-size: 13px !important;
   }
+
+  /* ── 10. mt / mt8 utility classes: tighten on mobile ─────────────────────── */
+  .mt8 { margin-top: 6px !important; }
 
 }
 

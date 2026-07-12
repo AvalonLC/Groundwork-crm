@@ -9677,83 +9677,111 @@ function settings(){
     ? '<span style="font-size:13px;color:#8B6914;font-weight:400;margin-left:8px">· Office Manager View</span>'
     : '<span style="font-size:13px;color:#6F7E6A;font-weight:400;margin-left:8px">· Rep View</span>';
 
+  const isMobile = window.innerWidth <= 768;
+
+  // Mobile accordion helper — wraps a panel in a tap-to-expand row
+  function mobileAccordion(id, title, icon, contentHtml) {
+    if (!isMobile) return contentHtml; // desktop: render inline
+    return `
+    <div class="gw-mobile-accordion" id="acc-wrap-${id}">
+      <div class="gw-mobile-accordion-header" onclick="_gwAccToggle('${id}')">
+        <span style="display:flex;align-items:center;gap:8px">${icon} ${title}</span>
+        <span class="gw-mobile-accordion-chevron" id="acc-chev-${id}">▼</span>
+      </div>
+      <div class="gw-mobile-accordion-body" id="acc-body-${id}">
+        ${contentHtml}
+      </div>
+    </div>`;
+  }
+
   view.innerHTML = `
     <div class="eyebrow">Data and Setup</div>
     <h1>Settings ${_viewLabel}</h1>
-    <p class="lede">Export your pipeline data for backup or reporting. Data is saved locally in the browser.</p>
+    <p class="lede">Export data for backup or reporting.</p>
+
+    <!-- ── Export & Import cards ── -->
     <div class="grid grid-2 mt">
       <section class="card">
         <h2>Export</h2>
-        <p>Download your local pipeline, notes, and settings.</p>
+        <p>Download your pipeline, notes, and settings.</p>
         <div class="footer-actions">
           <button class="primary-btn" onclick="exportJson()">Download JSON Backup</button>
           <button class="secondary-btn" onclick="exportCsv()">Download Pipeline CSV</button>
         </div>
       </section>
       ${adminSections}
-      <section class="card">
-        <h2>App Notes</h2>
-        ${list(['Access via browser — bookmark for quick daily use.','Install via the Install button for app-style access on mobile.','Data is stored locally in this browser — export regularly.','Contact Tyler to transfer data between devices or reps.'])}
-      </section>
     </div>
 
-      <!-- ── Cloud Sync & Recovery ── always shown ── -->
-      <section class="card" style="border:1px solid rgba(77,138,134,.35)">
-        <h2>Cloud Sync & Data Recovery</h2>
-        <p style="font-size:13px;color:var(--gw-muted);line-height:1.6;margin-bottom:12px">
-          If leads you created aren't showing up for teammates, use <strong>Recover My Leads</strong> to push all your local data to the cloud. This is safe to run anytime — it won't create duplicates.
-        </p>
-        <div class="gw-settings-sync-btns">
-          <button class="primary-btn" onclick="window._recoverLocalLeads()" id="gw-recover-btn" style="background:#4D8A86">
-            ↑ Recover My Leads to Cloud
-          </button>
-          <button class="secondary-btn" onclick="window._manualSync && window._manualSync()">
-            Sync from Cloud Now
-          </button>
-        </div>
-        <div id="gw-recover-status" style="margin-top:10px;font-size:13px;display:none"></div>
-      </section>
+    <!-- ── Cloud Sync & Recovery ── always shown ── -->
+    <section class="card" style="border:1px solid rgba(77,138,134,.35);margin-top:${isMobile?'0':'16px'}">
+      <h2>Cloud Sync & Data Recovery</h2>
+      <p style="font-size:13px;color:var(--gw-muted);line-height:1.5;margin-bottom:10px">
+        If leads aren't showing up for teammates, use <strong>Recover My Leads</strong> to push your local data to the cloud. Safe to run anytime — no duplicates.
+      </p>
+      <div class="gw-settings-sync-btns">
+        <button class="primary-btn" onclick="window._recoverLocalLeads()" id="gw-recover-btn" style="background:#4D8A86">
+          ↑ Recover My Leads to Cloud
+        </button>
+        <button class="secondary-btn" onclick="window._manualSync && window._manualSync()">
+          Sync from Cloud Now
+        </button>
+      </div>
+      <div id="gw-recover-status" style="margin-top:10px;font-size:13px;display:none"></div>
+    </section>
 
     <!-- ── My Google Connection + Email Signature ── always shown to all reps ── -->
-    <div id="gw-settings-google-wrap" style="margin-top:20px"></div>
+    <div id="gw-settings-google-wrap" style="margin-top:${isMobile?'10px':'20px'}"></div>
     <div id="gw-settings-sig-wrap" style="margin-top:0"></div>
 
-    ${_ia ? `<div class="gw-comm-tools" style="margin-top:20px">
+    ${_ia ? `
+    <!-- ── Admin Controls ── -->
+    <div class="gw-comm-tools" style="margin-top:${isMobile?'10px':'20px'}">
       <div>
         <div class="gw-comm-tools-title" style="margin-bottom:2px">Admin Controls</div>
         <div style="font-size:12px;color:var(--gw-muted);margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
       </div>
       <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">${gwIcon('settings',16)} User &amp; Access Management →</button>
     </div>
+
     <!-- Commission Rules Manager (COMM-01) -->
-    <div style="margin-top:16px" id="comm-rules-panel">
-      ${renderCommissionRulesPanel()}
-    </div>
+    ${mobileAccordion('comm-rules', 'Commission Rules', gwIcon('revenue',16,'#2D7A55'), `<div id="comm-rules-panel">${renderCommissionRulesPanel()}</div>`)}
+
     <!-- Commission Simulator (COMM-05) -->
-    <div style="margin-top:16px" id="comm-sim-panel">
-      ${renderCommissionSimulator()}
-    </div>
+    ${mobileAccordion('comm-sim', 'Commission Simulator', gwIcon('chart',16,'#4D8A86'), `<div id="comm-sim-panel">${renderCommissionSimulator()}</div>`)}
+
     <!-- Commission Audit Trail (COMM-04) -->
-    <div style="margin-top:16px" id="comm-audit-panel">
-      ${renderCommissionAuditTrail()}
-    </div>
+    ${mobileAccordion('comm-audit', 'Commission Audit Trail', gwIcon('notes',16,'#8B6914'), `<div id="comm-audit-panel">${renderCommissionAuditTrail()}</div>`)}
+
     <!-- Commission Admin Tools (COMM-16 migration · COMM-18 QA · COMM-17 flags) -->
-    <div class="gw-comm-tools" style="margin-top:16px">
-      <div class="gw-comm-tools-title">${gwIcon('settings',16)} Commission Admin Tools</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        <button onclick="window._runMigrationFromUI()" class="gw-admin-btn">
-          ${gwIcon('package',16)} Run Data Migration
-        </button>
-        <button onclick="window._runQAFromUI()" class="gw-admin-btn">
-          ${gwIcon('search',16)} Run QA Self-Check
-        </button>
-        <button onclick="window._showFlagPanel()" class="gw-admin-btn">
-          ${gwIcon('flag',16)} Feature Flags
-        </button>
+    ${mobileAccordion('comm-admin', 'Commission Admin Tools', gwIcon('settings',16,'#6F7E6A'), `
+      <div class="gw-comm-tools" style="margin-top:0;padding:0;border:none">
+        <div class="gw-comm-tools-title" style="display:none"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <button onclick="window._runMigrationFromUI()" class="gw-admin-btn">
+            ${gwIcon('package',16)} Run Data Migration
+          </button>
+          <button onclick="window._runQAFromUI()" class="gw-admin-btn">
+            ${gwIcon('search',16)} Run QA Self-Check
+          </button>
+          <button onclick="window._showFlagPanel()" class="gw-admin-btn">
+            ${gwIcon('flag',16)} Feature Flags
+          </button>
+        </div>
+        <div id="comm-tool-result" class="gw-tool-result"></div>
       </div>
-      <div id="comm-tool-result" class="gw-tool-result"></div>
-    </div>` : ''}
+    `)}
+    ` : ''}
   `;
+
+  // Wire accordion toggle globally
+  window._gwAccToggle = function(id) {
+    const body = document.getElementById('acc-body-' + id);
+    const chev = document.getElementById('acc-chev-' + id);
+    if (!body) return;
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    if (chev) chev.classList.toggle('open', !isOpen);
+  };
 
   // Render Google connection + signature editor (works for all roles)
   const googleWrap = document.getElementById('gw-settings-google-wrap');
