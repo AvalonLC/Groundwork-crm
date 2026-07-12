@@ -13594,47 +13594,290 @@ h1.pl-title,
 
 }
 
-/* ── Section 34d: Multi-page mobile fixes (b008) ─────────────────────────────
-   Covers: User Mgmt tab nav, Dispatch Board, Academy banner, Invoice detail,
-   Clients & Properties toolbar, Add Lead form hero, Pipeline gap (residual).
+/* ── Section 34d: Multi-page mobile fixes (b008 → b011) ──────────────────────
+   Covers: User Mgmt (full card redesign), Dispatch Board, Academy banner,
+   Invoice detail, Clients toolbar, Add Lead form, Pipeline gap.
    All rules target ≤768px unless noted.
    ────────────────────────────────────────────────────────────────────────── */
 
+/* ════════════════════════════════════════════════════════════════════════════
+   BASE (all viewports) — new um-* semantic classes for user management cards
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Tab nav base */
+.um-tab-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  background: var(--gw-surface-2);
+  color: var(--gw-muted);
+  border: 1.5px solid var(--gw-line);
+  white-space: nowrap;
+}
+.um-tab-btn.um-tab-active {
+  background: #4D8A86;
+  color: #fff;
+  border-color: #4D8A86;
+}
+
+/* User card — base desktop layout */
+.gw-um-user-row {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-line);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.gw-um-user-row.um-row-pending {
+  opacity: 0.88;
+  border-color: #8B691430;
+}
+.um-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+}
+.um-row-info {
+  flex: 1;
+  min-width: 140px;
+}
+.um-row-name-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.um-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--gw-ink);
+}
+.um-invite-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #8B6914;
+  background: #8B691418;
+  border: 1px solid rgba(139,105,20,.35);
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.um-row-meta {
+  font-size: 12px;
+  color: var(--gw-muted);
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+.um-meta-dot { opacity: 0.5; margin: 0 2px; }
+.um-meta-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+.um-row-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.um-role-pill {
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 20px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.um-status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.um-status-pending {
+  color: #8B6914;
+  background: #8B691418;
+  border: 1px solid rgba(139,105,20,.25);
+}
+.um-status-reset {
+  color: #8B6914;
+  background: #8B691418;
+  border: 1px solid rgba(139,105,20,.25);
+}
+.um-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+.um-action-btn {
+  font-size: 12px !important;
+  padding: 6px 11px !important;
+  white-space: nowrap;
+}
+.um-action-invite { color: #8B6914 !important; border-color: #8B691440 !important; }
+.um-action-onboard { color: #4D8A86 !important; border-color: #4D8A8640 !important; }
+
+/* Bottom strip */
+.um-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-top: 1px solid var(--gw-line);
+  background: var(--gw-surface);
+  flex-wrap: wrap;
+}
+.um-strip-pending { background: #8B691408; border-top-color: #8B691420; }
+.um-strip-google-on { background: #2D7A5508; }
+.um-strip-label { font-size: 11px; font-weight: 600; color: var(--gw-muted); }
+.um-strip-pending .um-strip-label { color: #8B6914; }
+.um-strip-email {
+  font-size: 11px;
+  color: var(--gw-muted);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.um-strip-hint { font-size: 11px; color: var(--gw-muted); margin-left: auto; }
+.um-google-badges { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+.um-gbadge {
+  font-size: 10px;
+  color: #2D7A55;
+  background: #2D7A5515;
+  border: 1px solid #2D7A5530;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.um-disconnect-btn {
+  font-size: 10px;
+  font-weight: 700;
+  color: #C97B6A;
+  background: #C97B6A15;
+  border: 1px solid #C97B6A40;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-left: 2px;
+}
+
+/* Lede override for UM page */
+.um-lede { margin-bottom: 14px !important; }
+
 /* ────────────────────────────────────────────────────────────────────────────
-   1. USER MANAGEMENT (Employees & Teams) — tab nav pills 2×3 grid
-   Problem: 5 pill buttons overflow horizontally or wrap unevenly
-   Fix: 2-column grid so pills are always even and readable
+   1. USER MANAGEMENT — mobile overrides ≤768px
    ──────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
+
+  /* Header: zero dead space */
+  .um-lede {
+    font-size: 12px !important;
+    margin-bottom: 10px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Tab nav: 3-col top row, 2-col bottom row via auto-fit */
   .gw-um-tab-nav {
     display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     gap: 6px !important;
-    padding-bottom: 0 !important;
+    margin-bottom: 12px !important;
     border-bottom: none !important;
-    margin-bottom: 16px !important;
+    padding-bottom: 0 !important;
   }
-  .gw-um-tab-nav > button {
-    width: 100% !important;
+  /* 4th and 5th tabs span naturally into second row */
+  .um-tab-btn {
+    padding: 8px 6px !important;
+    font-size: 11.5px !important;
     text-align: center !important;
-    padding: 9px 8px !important;
-    font-size: 12px !important;
     border-radius: 8px !important;
     white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
   }
 
-  /* ── User list / team member card: don't clip action buttons ─────────────── */
-  .gw-um-user-row,
-  .gw-um-user-card {
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-    padding: 12px !important;
+  /* Card: compact padding */
+  .um-row-main {
+    padding: 11px 12px !important;
+    gap: 10px !important;
+    align-items: flex-start !important;
   }
-  .gw-um-user-actions {
+
+  /* Info block: allow full width below avatar */
+  .um-row-info {
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
+  }
+  .um-name { font-size: 14px !important; }
+
+  /* Email: shorter clip on small screens */
+  .um-meta-email {
+    max-width: 140px !important;
+  }
+
+  /* Badges: sit below name line, full row */
+  .um-row-badges {
+    order: 3;
+    width: 100% !important;
+    margin-top: 0 !important;
+    padding-left: 52px; /* align under name, past avatar width */
+  }
+
+  /* Actions: full-width row at bottom of card */
+  .um-row-actions {
+    order: 4;
+    width: 100% !important;
+    margin-left: 0 !important;
     flex-wrap: wrap !important;
     gap: 6px !important;
+    padding-left: 0;
+  }
+  .um-action-btn {
+    flex: 1 1 auto !important;
+    text-align: center !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+  }
+
+  /* Strip: clamp email so it doesn't overflow */
+  .um-strip {
+    padding: 6px 12px !important;
+    gap: 6px !important;
+  }
+  .um-strip-email {
+    max-width: 120px !important;
+    font-size: 10px !important;
+  }
+  .um-strip-hint { display: none !important; } /* hide long hint on mobile */
+  .um-google-badges { flex-wrap: wrap !important; gap: 4px !important; }
+
+  /* Team header row: stack count + buttons */
+  #um-tab-content > div:first-child {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+  #um-tab-content > div:first-child > div:last-child {
+    width: 100% !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+  #um-tab-content > div:first-child > div:last-child > button {
+    flex: 1 !important;
+    justify-content: center !important;
+    text-align: center !important;
   }
 }
 

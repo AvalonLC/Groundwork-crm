@@ -559,15 +559,13 @@ function userManagement(tab) {
   viewEl.innerHTML = `
 <div class="eyebrow">Admin</div>
 <h1>Employees &amp; Teams</h1>
-<p class="lede" style="margin-bottom:20px">Manage employees, crews, roles, and permissions. Changes take effect immediately.</p>
+<p class="lede um-lede">Manage employees, crews, roles, and permissions.</p>
 
 <div class="gw-um-tab-nav">
   ${tabs.map(t => `
-  <button onclick="window._umTab('${t.id}')"
-    style="padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;
-    ${activeTab===t.id ? 'background:#4D8A86;color:#fff;border:1.5px solid #4D8A86' : 'background:var(--gw-surface-2);color:var(--gw-muted);border:1.5px solid var(--gw-line)'}"
-    onmouseover="if('${activeTab}'!=='${t.id}')this.style.background='var(--gw-surface-3)'"
-    onmouseout="if('${activeTab}'!=='${t.id}')this.style.background='var(--gw-surface-2)'">
+  <button class="um-tab-btn${activeTab===t.id ? ' um-tab-active' : ''}" onclick="window._umTab('${t.id}')"
+    onmouseover="if(!this.classList.contains('um-tab-active'))this.style.background='var(--gw-surface-3)'"
+    onmouseout="if(!this.classList.contains('um-tab-active'))this.style.background='var(--gw-surface-2)'">
     ${t.label}
   </button>`).join('')}
 </div>
@@ -1119,56 +1117,66 @@ function umUserRow(u, gc) {
   const isPendingInvite = d1Info && d1Info.invite_accepted === 0;
   const inviteSentAt = d1Info?.invite_sent_at;
 
+  // Role pill
+  const rolePill = `<span class="um-role-pill" style="color:${role.color};background:${role.color}18;border-color:${role.color}40">${role.label}</span>`;
+  const statusPill = isPendingInvite
+    ? `<span class="um-status-pill um-status-pending">Not Active</span>`
+    : umStatusPill(u.status);
+  const resetPill = u.mustResetPin && !isPendingInvite
+    ? `<span class="um-status-pill um-status-reset">Pw Reset</span>` : '';
+
   return `
-<div class="gw-um-user-row" style="${isPendingInvite ? 'opacity:0.85;border:1px solid #8B691430' : ''}">
-  <!-- Main row -->
-  <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;flex-wrap:wrap;gap:12px">
+<div class="gw-um-user-row${isPendingInvite ? ' um-row-pending' : ''}">
+
+  <!-- ── Top row: avatar · name/meta · badges · actions ── -->
+  <div class="um-row-main">
+    <!-- Avatar -->
     ${umColorTile(u.displayName || u.name, u.color, 42)}
-    <div style="flex:1;min-width:160px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-weight:700;font-size:15px;color:#E8E4D9">${umEscape(u.displayName||u.name)}</span>
-        ${isPendingInvite
-          ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.35);border-radius:20px;padding:2px 8px">⏳ Invite Pending</span>`
-          : ''}
+
+    <!-- Name + meta -->
+    <div class="um-row-info">
+      <div class="um-row-name-line">
+        <span class="um-name">${umEscape(u.displayName||u.name)}</span>
+        ${isPendingInvite ? `<span class="um-invite-badge">⏳ Invite Pending</span>` : ''}
       </div>
-      <div style="font-size:12px;color:#6F7E6A;margin-top:2px">
-        ${umEscape(u.position)}${u.email ? ' · '+umEscape(u.email) : ''}
-        ${isPendingInvite && inviteSentAt ? ` · Sent ${umFormatDate(inviteSentAt)}` : ''}
+      <div class="um-row-meta">
+        ${umEscape(u.position)}${u.email ? `<span class="um-meta-dot">·</span><span class="um-meta-email">${umEscape(u.email)}</span>` : ''}
+        ${isPendingInvite && inviteSentAt ? `<span class="um-meta-dot">·</span>Sent ${umFormatDate(inviteSentAt)}` : ''}
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:11px;font-weight:700;color:${role.color};background:${role.color}18;border:1px solid ${role.color}40;border-radius:20px;padding:2px 10px">${role.label}</span>
-      ${isPendingInvite
-        ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">Not Active</span>`
-        : umStatusPill(u.status)}
-      ${u.mustResetPin && !isPendingInvite ? `<span style="font-size:10px;font-weight:700;color:#8B6914;background:#8B691418;border:1px solid rgba(139,105,20,.25);border-radius:20px;padding:2px 8px">Pw Reset</span>` : ''}
+
+    <!-- Badges (desktop: inline; mobile: moved below via CSS) -->
+    <div class="um-row-badges">
+      ${rolePill}${statusPill}${resetPill}
     </div>
-    <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+
+    <!-- Action buttons -->
+    <div class="um-row-actions">
       ${isPendingInvite
-        ? `<button class="secondary-btn" style="font-size:12px;padding:6px 12px;color:#8B6914;border-color:#8B691440" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
-        : `<button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umResetPin('${u.id}')">Reset Password</button>`}
-      <button class="secondary-btn" style="font-size:12px;padding:6px 12px;color:#4D8A86;border-color:#4D8A8640" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">✉ Onboarding</button>
-      <button class="secondary-btn" style="font-size:12px;padding:6px 12px" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
+        ? `<button class="secondary-btn um-action-btn um-action-invite" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
+        : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
+      <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">✉ Onboard</button>
+      <button class="secondary-btn um-action-btn" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
     </div>
   </div>
+
+  <!-- ── Bottom strip: invite notice or Google status ── -->
   ${isPendingInvite
-    ? `<!-- Invite pending strip -->
-       <div style="display:flex;align-items:center;gap:10px;padding:8px 18px;background:#8B691408;border-top:1px solid #8B691420;flex-wrap:wrap">
-         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8B6914" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-         <span style="font-size:11px;color:#8B6914;font-weight:600">Invite email sent — waiting for user to set up their account</span>
-         <span style="font-size:11px;color:var(--gw-muted);margin-left:auto">${u.email||''}</span>
+    ? `<div class="um-strip um-strip-pending">
+         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B6914" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+         <span class="um-strip-label">Invite sent — waiting for account setup</span>
+         <span class="um-strip-email">${umEscape(u.email||'')}</span>
        </div>`
-    : `<!-- Google status strip -->
-       <div style="display:flex;align-items:center;gap:10px;padding:8px 18px;background:${googleConnected?'#2D7A5508':'var(--gw-surface)'};border-top:1px solid var(--gw-line);flex-wrap:wrap">
-         <img src="https://www.google.com/favicon.ico" style="width:13px;height:13px;opacity:.7" alt="G">
+    : `<div class="um-strip um-strip-google${googleConnected ? ' um-strip-google-on' : ''}">
+         <img src="https://www.google.com/favicon.ico" style="width:12px;height:12px;opacity:.7;flex-shrink:0" alt="G">
          ${googleConnected
-           ? `<span style="font-size:11px;color:#2D7A55;font-weight:600">● Google connected as ${umEscape(googleEmail)}</span>
-              <div style="display:flex;gap:6px;margin-left:auto">
-                ${[['Gmail'],['Cal'],['Drive']].map(([lb])=>`<span style="font-size:10px;color:#2D7A55;background:#2D7A5515;border:1px solid #2D7A5530;border-radius:4px;padding:1px 6px">${lb}</span>`).join('')}
-                <button onclick="window._umAdminDisconnectUser('${u.id}')" style="font-size:10px;font-weight:700;color:#C97B6A;background:#C97B6A15;border:1px solid #C97B6A40;border-radius:6px;padding:2px 8px;cursor:pointer;margin-left:4px">Disconnect</button>
+           ? `<span class="um-strip-label" style="color:#2D7A55">● Connected as ${umEscape(googleEmail)}</span>
+              <div class="um-google-badges">
+                ${[['Gmail'],['Cal'],['Drive']].map(([lb])=>`<span class="um-gbadge">${lb}</span>`).join('')}
+                <button onclick="window._umAdminDisconnectUser('${u.id}')" class="um-disconnect-btn">Disconnect</button>
               </div>`
-           : `<span style="font-size:11px;color:#5C6B58">○ Google not connected</span>
-              <span style="font-size:11px;color:var(--gw-muted);margin-left:auto">User connects via Integrations → Google Workspace</span>`
+           : `<span class="um-strip-label">○ Google not connected</span>
+              <span class="um-strip-hint">User connects via Integrations</span>`
          }
        </div>`
   }
