@@ -13269,6 +13269,131 @@ h1.pl-title,
 }
 .tc-mc-actions button:active { background: #F9FAFB; }
 
+/* ── Section 34b: Pipeline + Financial Data Hub — mobile tightening ─────────
+   Targets ≤ 768px. Fixes:
+     1. Pipeline: header gap, Division filter row overflow, stat cards 2×2
+     2. Financial Data Hub: tab pills stretch, banner tighter, lede shorter
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* ── 1a. Pipeline page header: remove extra margin, tighter gap ─────────── */
+  .pl-page-header {
+    margin-bottom: 8px !important;
+    gap: 8px !important;
+  }
+  /* h1 inside pl-page-title: override the global 12px margin */
+  .pl-page-title .pl-title {
+    margin: 0 !important;
+  }
+  .pl-title {
+    font-size: 22px !important;
+  }
+
+  /* Action buttons: compact, equal-width row */
+  .pl-page-actions {
+    display: flex !important;
+    gap: 6px !important;
+  }
+  .pl-page-actions .primary-btn.small,
+  .pl-page-actions .secondary-btn.small {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    font-size: 11px !important;
+    padding: 7px 6px !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+  }
+
+  /* ── 1b. Toolbar: allow each filter-group row to overflow-scroll ─────────── */
+  .pl-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    padding: 4px 0 !important;
+    margin-bottom: 10px !important;
+  }
+  .pl-filter-group {
+    display: flex !important;
+    align-items: center !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;          /* Firefox */
+    gap: 3px !important;
+    padding: 4px 8px !important;
+    border-bottom: 1px solid var(--line) !important;
+  }
+  .pl-filter-group:last-child {
+    border-bottom: none !important;
+  }
+  .pl-filter-group::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+  .pl-filter-label {
+    flex-shrink: 0 !important;     /* label never shrinks */
+    margin-right: 4px !important;
+  }
+  .pl-filter-btn {
+    flex-shrink: 0 !important;     /* buttons never wrap, scroll instead */
+    font-size: 12px !important;
+    padding: 5px 9px !important;
+  }
+
+  /* ── 1c. Stat cards: 2×2 grid — never single-column stack ─────────────── */
+  .stat-grid.grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+  }
+  /* Stat card itself: compact */
+  .stat-grid .stat {
+    padding: 12px 14px !important;
+  }
+  .stat-grid .stat span {
+    font-size: 10px !important;
+  }
+  .stat-grid .stat strong {
+    font-size: 26px !important;
+    letter-spacing: -.04em !important;
+  }
+
+  /* ── 2a. Financial Data Hub: tighten h1 + lede on revenueAdmin page ─────── */
+  /* (The .view h1 / .view .lede rules in Section 34 already apply here too) */
+
+  /* ── 2b. KPI banner: tighter padding + smaller values ───────────────────── */
+  .gw-rev-banner {
+    padding: 12px 10px !important;
+    margin-bottom: 12px !important;
+  }
+  .gw-rev-banner-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  .gw-rev-banner-cell {
+    padding: 4px 2px !important;
+  }
+  /* The banner reuses .gw-kpi-banner-val — already handled in Section 34 */
+
+  /* ── 2c. Tab nav pills: stretch to fill full width evenly ───────────────── */
+  .gw-tab-nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+    margin-bottom: 14px !important;
+  }
+  .gw-tab-pill {
+    text-align: center !important;
+    padding: 9px 6px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ── 2d. Back button on revenueAdmin — full width, compact ─────────────── */
+  .view > .secondary-btn:first-child {
+    font-size: 12px !important;
+    padding: 7px 12px !important;
+  }
+
+}
+
 /* ── Section 34a: Financial Snapshot — responsive grid classes ─────────────
    These replace hardcoded inline grid-template-columns on the snapshot page.
    Desktop: 4-col KPI rows, 4-col budget row, 2-col panel row.
