@@ -1128,30 +1128,25 @@ function umUserRow(u, gc) {
   return `
 <div class="gw-um-user-row${isPendingInvite ? ' um-row-pending' : ''}">
 
-  <!-- ── Top row: avatar · name/meta · badges · actions ── -->
-  <div class="um-row-main">
+  <!-- ── Section 1: Identity row (avatar + info + badges inline on desktop) ── -->
+  <div class="um-card-top">
     <!-- Avatar -->
     ${umColorTile(u.displayName || u.name, u.color, 42)}
 
-    <!-- Name + meta -->
-    <div class="um-row-info">
-      <div class="um-row-name-line">
+    <!-- Name block -->
+    <div class="um-card-body">
+      <div class="um-name-line">
         <span class="um-name">${umEscape(u.displayName||u.name)}</span>
-        ${isPendingInvite ? `<span class="um-invite-badge">⏳ Invite Pending</span>` : ''}
+        ${isPendingInvite ? `<span class="um-invite-badge">⏳ Pending</span>` : ''}
+        <span class="um-pills-inline">${rolePill}${statusPill}${resetPill}</span>
       </div>
-      <div class="um-row-meta">
-        ${umEscape(u.position)}${u.email ? `<span class="um-meta-dot">·</span><span class="um-meta-email">${umEscape(u.email)}</span>` : ''}
-        ${isPendingInvite && inviteSentAt ? `<span class="um-meta-dot">·</span>Sent ${umFormatDate(inviteSentAt)}` : ''}
+      <div class="um-card-meta">
+        <span>${umEscape(u.position)}</span>${u.email && !isPendingInvite ? `<span class="um-meta-dot">·</span><span class="um-meta-email">${umEscape(u.email)}</span>` : ''}${isPendingInvite && inviteSentAt ? `<span class="um-meta-dot">·</span><span>Sent ${umFormatDate(inviteSentAt)}</span>` : ''}
       </div>
     </div>
 
-    <!-- Badges (desktop: inline; mobile: moved below via CSS) -->
-    <div class="um-row-badges">
-      ${rolePill}${statusPill}${resetPill}
-    </div>
-
-    <!-- Action buttons -->
-    <div class="um-row-actions">
+    <!-- Desktop-only action buttons (hidden on mobile) -->
+    <div class="um-card-actions-desktop">
       ${isPendingInvite
         ? `<button class="secondary-btn um-action-btn um-action-invite" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
         : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
@@ -1160,7 +1155,16 @@ function umUserRow(u, gc) {
     </div>
   </div>
 
-  <!-- ── Bottom strip: invite notice or Google status ── -->
+  <!-- ── Section 2: Action buttons — always full-width on mobile ── -->
+  <div class="um-card-actions-mobile">
+    ${isPendingInvite
+      ? `<button class="secondary-btn um-action-btn um-action-invite" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
+      : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
+    <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">✉ Onboard</button>
+    <button class="secondary-btn um-action-btn" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
+  </div>
+
+  <!-- ── Section 3: Bottom strip — invite notice or Google status ── -->
   ${isPendingInvite
     ? `<div class="um-strip um-strip-pending">
          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B6914" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>

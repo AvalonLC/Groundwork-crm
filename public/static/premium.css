@@ -13623,7 +13623,7 @@ h1.pl-title,
   border-color: #4D8A86;
 }
 
-/* User card — base desktop layout */
+/* ── User card — base (all viewports) ── */
 .gw-um-user-row {
   background: var(--gw-surface);
   border: 1px solid var(--gw-line);
@@ -13635,27 +13635,29 @@ h1.pl-title,
   opacity: 0.88;
   border-color: #8B691430;
 }
-.um-row-main {
+
+/* Section 1: identity row — avatar + name/meta/badges + desktop actions */
+.um-card-top {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
-  flex-wrap: wrap;
 }
-.um-row-info {
+.um-card-body {
   flex: 1;
-  min-width: 140px;
+  min-width: 0; /* allow text truncation */
 }
-.um-row-name-line {
+.um-name-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .um-name {
   font-weight: 700;
   font-size: 15px;
   color: var(--gw-ink);
+  white-space: nowrap;
 }
 .um-invite-badge {
   font-size: 10px;
@@ -13666,29 +13668,35 @@ h1.pl-title,
   border-radius: 20px;
   padding: 2px 8px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-.um-row-meta {
+/* Pill row sits on name-line, pushed right naturally via flex-wrap */
+.um-pills-inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.um-card-meta {
   font-size: 12px;
   color: var(--gw-muted);
-  margin-top: 2px;
+  margin-top: 3px;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 3px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
 }
-.um-meta-dot { opacity: 0.5; margin: 0 2px; }
+.um-meta-dot { opacity: 0.5; margin: 0 1px; flex-shrink: 0; }
 .um-meta-email {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
+  min-width: 0;
 }
-.um-row-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
+
+/* Pill styles */
 .um-role-pill {
   font-size: 11px;
   font-weight: 700;
@@ -13714,12 +13722,19 @@ h1.pl-title,
   background: #8B691418;
   border: 1px solid rgba(139,105,20,.25);
 }
-.um-row-actions {
+
+/* Desktop action buttons — shown on desktop, hidden on mobile */
+.um-card-actions-desktop {
   display: flex;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-shrink: 0;
   margin-left: auto;
 }
+/* Mobile action strip — hidden on desktop, shown on mobile */
+.um-card-actions-mobile {
+  display: none;
+}
+
 .um-action-btn {
   font-size: 12px !important;
   padding: 6px 11px !important;
@@ -13808,47 +13823,51 @@ h1.pl-title,
     text-overflow: ellipsis !important;
   }
 
-  /* Card: compact padding */
-  .um-row-main {
+  /* Card top: compact padding */
+  .um-card-top {
     padding: 11px 12px !important;
     gap: 10px !important;
     align-items: flex-start !important;
   }
-
-  /* Info block: allow full width below avatar */
-  .um-row-info {
-    min-width: 0 !important;
-    flex: 1 1 0 !important;
-  }
   .um-name { font-size: 14px !important; }
 
-  /* Email: shorter clip on small screens */
-  .um-meta-email {
-    max-width: 140px !important;
-  }
-
-  /* Badges: sit below name line, full row */
-  .um-row-badges {
-    order: 3;
-    width: 100% !important;
-    margin-top: 0 !important;
-    padding-left: 52px; /* align under name, past avatar width */
-  }
-
-  /* Actions: full-width row at bottom of card */
-  .um-row-actions {
-    order: 4;
-    width: 100% !important;
-    margin-left: 0 !important;
+  /* Name line: allow wrapping so invite badge stays readable */
+  .um-name-line {
     flex-wrap: wrap !important;
-    gap: 6px !important;
-    padding-left: 0;
+    gap: 5px !important;
   }
-  .um-action-btn {
-    flex: 1 1 auto !important;
+
+  /* Pills row: wrap onto next line if needed */
+  .um-pills-inline {
+    gap: 4px !important;
+  }
+
+  /* Meta: truncate nicely, no word-wrap */
+  .um-card-meta {
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
+  }
+
+  /* Desktop actions: hide on mobile */
+  .um-card-actions-desktop {
+    display: none !important;
+  }
+
+  /* Mobile action strip: show as full-width flex row */
+  .um-card-actions-mobile {
+    display: flex !important;
+    gap: 6px !important;
+    padding: 0 12px 11px !important;
+  }
+  .um-card-actions-mobile .um-action-btn {
+    flex: 1 1 0 !important;
     text-align: center !important;
     justify-content: center !important;
     min-width: 0 !important;
+    font-size: 12px !important;
+    padding: 7px 4px !important;
   }
 
   /* Strip: clamp email so it doesn't overflow */
