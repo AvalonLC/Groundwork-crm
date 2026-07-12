@@ -19419,16 +19419,28 @@ function systemConfig() {
                 : `${gwIcon('logo', 32, '#D1D5DB')}`}
             </div>
             <div style="flex:1">
+              <!-- File upload (primary) -->
+              <div class="sc-field" style="margin-bottom:8px">
+                <label class="sc-label">Upload from Computer</label>
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+                  <span style="display:inline-flex;align-items:center;gap:6px;background:var(--gw-surface-2);border:1.5px solid var(--gw-line);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--gw-ink);white-space:nowrap;flex-shrink:0">
+                    ${gwIcon('upload', 13, '#2D7A55')} Choose File
+                  </span>
+                  <span id="sc-logo-filename" style="font-size:12px;color:var(--gw-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No file chosen</span>
+                  <input type="file" id="sc-b-logo-file" accept="image/*" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px" onchange="_scLogoFileChange(this)">
+                </label>
+              </div>
+              <!-- URL fallback -->
               <div class="sc-field">
-                <label class="sc-label">Logo URL <span style="font-weight:400;text-transform:none;font-size:11px">(paste a hosted image link)</span></label>
+                <label class="sc-label">Or paste an image URL</label>
                 <input id="sc-b-logo" type="url" class="sc-input" placeholder="https://yoursite.com/logo.png"
                   value="${escapeHtml(_b.logo_url || cfg.company.logo || '')}">
               </div>
-              <p class="sc-inline-hint">Upload to any image host (Cloudinary, ImgBB) and paste the URL here. Applied to estimates, invoices, and client portal.</p>
               <div style="display:flex;gap:8px;margin-top:10px">
                 <button class="sc-save-btn secondary" onclick="_scPreviewLogo()">${gwIcon('eye', 13, '#2D7A55')} Preview</button>
                 <button class="sc-save-btn" onclick="_scSaveBranding()" id="sc-brand-btn">${gwIcon('floppy', 13, '#fff')} Save Branding</button>
               </div>
+              <p class="sc-inline-hint" style="margin-top:6px">Uploaded logo is converted to a data URL and saved. Applied to estimates, invoices, and client portal.</p>
             </div>
           </div>
         </div>
@@ -19583,7 +19595,7 @@ function systemConfig() {
     systemConfig();
     showToast('Settings reset to defaults');
   };
-  window._scSaveAll = function() {
+  window._scSaveAll = async function() {
     const cur = _scLoad() || _scDefault();
     const g = id => (document.getElementById(id) || {}).value;
     const gc = id => !!(document.getElementById(id) || {}).checked;
@@ -19611,7 +19623,64 @@ function systemConfig() {
     cur.brand.accentColor  = g('sc-b-accent')  || cur.brand.accentColor;
     cur.company.logo       = g('sc-b-logo')    || cur.company.logo || '';
     _scSave(cur);
-    showToast('System configuration saved', 'success');
+    // ── Also persist everything to D1 so it survives reload ─────────────────
+    const saveBtn = document.querySelector('.sc-page-header .sc-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = `${gwIcon('sync', 14, '#fff')} Saving…`; }
+    const termKeys = ['workOrder','estimate','crew','division','client','invoice'];
+    const terminology = {};
+    termKeys.forEach(k => { const v = g(`sc-term-${k}`); if (v) terminology[k] = v; });
+    const payload = {
+      name: cur.company.name,
+      phone: cur.company.phone,
+      owner_email: cur.company.email,
+      website: cur.company.website,
+      address_line1: cur.company.address,
+      address_city: cur.company.city,
+      address_state: cur.company.state,
+      address_zip: cur.company.zip,
+      timezone: cur.timezone,
+      logo_url: cur.company.logo,
+      brand_color: cur.brand.primaryColor || '#2D7A55',
+      brand_accent: cur.brand.accentColor || '#4D8A86',
+      tagline: g('sc-b-tagline'),
+      business_type: g('sc-b-biztype') || 'home_services',
+      crew_count: parseInt(g('sc-b-crews')) || 1,
+      division_count: parseInt(g('sc-b-divs')) || 1,
+      year_founded: parseInt(g('sc-b-founded')) || 0,
+      license_number: g('sc-b-license'),
+      terminology,
+    };
+    try {
+      const r = await fetch('/api/company/branding', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      if (r.ok) {
+        window._scBrand = { ...window._scBrand, ...payload };
+        window._scBrandLoaded = true;
+        showToast('All settings saved successfully', 'success');
+      } else {
+        showToast('Settings saved locally — cloud sync failed', 'warning');
+      }
+    } catch(e) {
+      showToast('Settings saved locally — no connection', 'warning');
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = `${gwIcon('floppy', 14, '#fff')} Save Changes`; }
+    }
+  };
+  window._scLogoFileChange = function(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const label = document.getElementById('sc-logo-filename');
+    if (label) label.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const dataUrl = e.target.result;
+      // Put the data URL into the URL field so _scSaveBranding picks it up
+      const urlInput = document.getElementById('sc-b-logo');
+      if (urlInput) urlInput.value = dataUrl;
+      // Auto-preview
+      const preview = document.getElementById('sc-logo-preview');
+      if (preview) preview.innerHTML = `<img src="${dataUrl}" alt="Logo" style="width:100%;height:100%;object-fit:contain;padding:8px;box-sizing:border-box">`;
+    };
+    reader.readAsDataURL(file);
   };
   window._scPreviewLogo = function() {
     const url = (document.getElementById('sc-b-logo') || {}).value || '';
@@ -19647,8 +19716,11 @@ function systemConfig() {
       const r = await fetch('/api/company/branding', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!r.ok) throw new Error('Save failed');
       window._scBrand = { ...window._scBrand, ...payload };
+      window._scBrandLoaded = true;
       const cur = _scLoad() || _scDefault();
       cur.company.logo = payload.logo_url;
+      cur.brand.primaryColor = payload.brand_color;
+      cur.brand.accentColor = payload.brand_accent;
       _scSave(cur);
       showToast('Branding saved — applied to all estimates & portal', 'success');
     } catch(e) {
