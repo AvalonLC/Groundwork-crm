@@ -13269,6 +13269,102 @@ h1.pl-title,
 }
 .tc-mc-actions button:active { background: #F9FAFB; }
 
+/* ── Section 34a: Financial Snapshot — responsive grid classes ─────────────
+   These replace hardcoded inline grid-template-columns on the snapshot page.
+   Desktop: 4-col KPI rows, 4-col budget row, 2-col panel row.
+   Mobile (≤768px): collapses to 2-col KPIs, 2-col budget, 1-col panels.
+   ────────────────────────────────────────────────────────────────────────── */
+.fr-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.fr-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.fr-panel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.fr-kpi-card {
+  background: var(--gw-card, #fff);
+  border: 1px solid var(--gw-line, #e5e7eb);
+  border-radius: 10px;
+  padding: 16px;
+}
+.fr-kpi-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gw-muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 5px;
+}
+.fr-kpi-card-val {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.fr-kpi-card-val--sm {
+  font-size: 20px; /* secondary row — slightly smaller */
+}
+.fr-kpi-card-sub {
+  font-size: 11px;
+  color: var(--gw-muted);
+  margin-top: 3px;
+}
+
+@media (max-width: 768px) {
+  /* KPI rows: 2-column on phone */
+  .fr-kpi-grid,
+  .fr-budget-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  /* Panel grid: single column */
+  .fr-panel-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  /* KPI card: tighter padding, smaller value font */
+  .fr-kpi-card {
+    padding: 10px 12px;
+  }
+  .fr-kpi-card-val {
+    font-size: 18px !important;
+  }
+  .fr-kpi-card-val--sm {
+    font-size: 16px !important;
+  }
+  /* rp-shell: remove extra inline padding override */
+  .rp-shell[style] {
+    padding: 14px 12px 32px !important;
+  }
+  /* Budget vs actual inner budget grid */
+  .fr-budget-inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  /* Budget table: allow horizontal scroll */
+  .fr-budget-table-wrap {
+    overflow-x: auto;
+  }
+  /* Invoices/Payments side panels: hide tables, show as stacked cards */
+  .fr-panel-table {
+    font-size: 11px;
+  }
+  .fr-panel-table th,
+  .fr-panel-table td {
+    padding: 6px 8px !important;
+  }
+}
+
 /* ── Section 34: Manager Tools — mobile-specific overrides ─────────────────
    Targets viewports ≤ 768 px (phones). Keeps desktop layout untouched.
    ────────────────────────────────────────────────────────────────────────── */

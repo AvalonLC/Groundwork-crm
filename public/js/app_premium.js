@@ -18720,7 +18720,7 @@ function financialReports() {
           <h3 style="margin:0;font-size:14px;font-weight:800">Budget vs Actual — ${fy.budgetVersion||'FY'}</h3>
           <button class="rp-btn" onclick="show('revenueAdmin')">Manage Budget</button>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+        <div class="fr-budget-grid fr-budget-inner">
           ${[
             {label:'YTD Actual',val:fmt(a.actualRevenue),color:'var(--gw-pine,#4D8A86)'},
             {label:'Annual Budget',val:fmt(a.budgetedRevenue),color:'var(--gw-ink)'},
@@ -18729,7 +18729,7 @@ function financialReports() {
           ].map(k=>`
           <div style="background:var(--gw-surface-2);border-radius:8px;padding:12px">
             <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${k.label}</div>
-            <div style="font-size:18px;font-weight:800;color:${k.color}">${k.val}</div>
+            <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
           </div>`).join('')}
         </div>
         <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden;margin-bottom:6px">
@@ -18737,7 +18737,7 @@ function financialReports() {
         </div>
         <div style="font-size:11px;color:var(--gw-muted);margin-bottom:16px">${pct}% of annual target · ${a.monthsLeft||0} months remaining</div>
         ${divCells ? `
-        <table style="width:100%;border-collapse:collapse">
+        <div class="fr-budget-table-wrap"><table class="fr-panel-table" style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
             <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Division</th>
             <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Actual</th>
@@ -18747,7 +18747,7 @@ function financialReports() {
             <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Remaining</th>
           </tr></thead>
           <tbody>${divCells}</tbody>
-        </table>` : ''}
+        </table></div>` : ''}
       </div>`;
     }
   } catch(_) {}
@@ -18776,7 +18776,7 @@ function financialReports() {
   }).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell" style="max-width:1100px;margin:0 auto">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Dashboard · Financial Snapshot</div>
@@ -18790,32 +18790,32 @@ function financialReports() {
     </header>
 
     <!-- Primary KPIs: invoices + payments -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+    <div class="fr-kpi-grid">
       ${[
         {label:'Outstanding Invoices', val:fmt(invOutstanding),   sub:`${invUnpaid.length} unpaid`,       color:'var(--gw-ink)'},
         {label:'Overdue',              val:fmt(invOverdueVal),    sub:`${invOverdue.length} invoices`,    color:invOverdueVal?'#C97B6A':'var(--gw-muted)'},
         {label:'Collected MTD',        val:fmt(paidMTDVal),       sub:`${paidMTD.length} payments`,       color:'#2D7A55'},
         {label:'Total Collected',      val:fmt(totalPaid),        sub:'all time',                          color:'#2D7A55'},
       ].map(k=>`
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
-        <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
+      <div class="fr-kpi-card">
+        <div class="fr-kpi-card-label">${k.label}</div>
+        <div class="fr-kpi-card-val" style="color:${k.color}">${k.val}</div>
+        <div class="fr-kpi-card-sub">${k.sub}</div>
       </div>`).join('')}
     </div>
 
     <!-- Secondary: estimates + deposits -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+    <div class="fr-kpi-grid" style="margin-bottom:20px">
       ${[
         {label:'Open Estimates',  val:fmt(estOpenVal),  sub:`${estOpen.length} pending`,     color:'var(--gw-pine,#4D8A86)'},
         {label:'Approved',        val:fmt(estApproved.reduce((s,e)=>s+Number(e.total||e.amount||0),0)),  sub:`${estApproved.length} estimates`, color:'#2D7A55'},
         {label:'Est. Total Sent', val:fmt(estTotal),    sub:`${ests.length} total`,           color:'var(--gw-ink)'},
         {label:'Deposits Held',   val:fmt(depHeldVal),  sub:`${depHeld.length} unapplied`,   color:'#8B6914'},
       ].map(k=>`
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
-        <div style="font-size:22px;font-weight:800;color:${k.color}">${k.val}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
+      <div class="fr-kpi-card">
+        <div class="fr-kpi-card-label">${k.label}</div>
+        <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
+        <div class="fr-kpi-card-sub">${k.sub}</div>
       </div>`).join('')}
     </div>
 
@@ -18823,13 +18823,13 @@ function financialReports() {
     ${fyBlock}
 
     <!-- Invoices + Payments side by side -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div class="fr-panel-grid">
       <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
         <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
           <h3 style="margin:0;font-size:14px;font-weight:800">Recent Invoices</h3>
           <button class="rp-btn" onclick="show('invoices')" style="font-size:11px;padding:4px 10px">All Invoices</button>
         </div>
-        <table style="width:100%;border-collapse:collapse">
+        <table class="fr-panel-table" style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
             <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
             <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Amount</th>
@@ -18844,7 +18844,7 @@ function financialReports() {
           <h3 style="margin:0;font-size:14px;font-weight:800">Recent Payments</h3>
           <button class="rp-btn" onclick="show('payments')" style="font-size:11px;padding:4px 10px">All Payments</button>
         </div>
-        <table style="width:100%;border-collapse:collapse">
+        <table class="fr-panel-table" style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
             <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
             <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Method</th>
