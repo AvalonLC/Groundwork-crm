@@ -13269,4 +13269,83 @@ h1.pl-title,
 }
 .tc-mc-actions button:active { background: #F9FAFB; }
 
+/* ── Section 34: Manager Tools — mobile-specific overrides ─────────────────
+   Targets viewports ≤ 768 px (phones). Keeps desktop layout untouched.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* ── Page header: tighten eyebrow + h1 + lede ─────────────────────────── */
+  .view .eyebrow {
+    margin-bottom: 4px;
+    font-size: 10px;
+  }
+  /* h1 inside .view: tighten the clamp so it doesn't eat half the screen */
+  .view h1 {
+    font-size: clamp(22px, 7vw, 32px);
+    margin: 6px 0 6px;
+    letter-spacing: -.04em;
+  }
+  /* Lede: shorter on mobile — drop to body-size text */
+  .view .lede {
+    font-size: 13px;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+
+  /* ── KPI Banner: compact 2-column grid with smaller figures ───────────── */
+  .gw-kpi-banner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 10px;
+    margin-bottom: 16px;
+  }
+  .gw-kpi-banner-cell {
+    padding: 4px 2px;
+  }
+  .gw-kpi-banner-label {
+    font-size: 9px;
+    letter-spacing: .05em;
+    margin-bottom: 1px;
+  }
+  .gw-kpi-banner-val {
+    font-size: 1.15rem !important; /* override any inline font-size too */
+    line-height: 1.15;
+  }
+  .gw-kpi-banner-sub {
+    font-size: 9px;
+    margin-top: 1px;
+  }
+
+  /* ── Division P&L section header row: stack button below heading ───────── */
+  .view div[style*="justify-content:space-between"] {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* ── Division tiles (grid-3): already collapses to 1-col at 920px,
+     but ensure gap is tight on phone ──────────────────────────────────────── */
+  .grid.grid-3.mt {
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .gw-div-tile {
+    padding: 14px;
+  }
+
+  /* ── General card padding: breathe less on phone ─────────────────────── */
+  .card {
+    padding: 14px;
+  }
+  .card h2 {
+    font-size: 15px;
+    margin-bottom: 8px;
+  }
+
+  /* ── mt spacing: halve the top margin on mobile ─────────────────────── */
+  .mt { margin-top: 12px; }
+
+}
+
 /* ── end mobile estimates / inventory / tools ── */
