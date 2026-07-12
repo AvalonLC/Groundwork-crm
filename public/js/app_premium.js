@@ -145,6 +145,12 @@ function saveState(){
   // Expose state for integrations module
   window._avalonState = state;
 }
+// Allow the inline bootstrap script (index.tsx) to trigger a state reload after
+// it writes D1 data into localStorage — without needing access to this closure.
+window._avalonSyncState = function() {
+  state = loadState();
+  window._avalonState = state;
+};
 
 // ── D1 Write Engine ───────────────────────────────────────────────────────────
 // Phase A: Structured logging with context (op type, entity id, error detail)
@@ -18293,7 +18299,7 @@ function toolsConsumables() {
   }).join('');
 
   const lowCount = tools.filter(t=>t.category==='consumable'&&t.onHand<=t.reorderAt&&t.reorderAt!=null).length;
-  const categoryColor = { tool:'#5B7FA6', consumable:'#8B6914', safety:'#2D7A55', chemical:'#6B5EA8', other:'#6F7E6A' };
+  // categoryColor already defined above (line ~18273) — reuse it, don't redeclare
 
   // ── Mobile card list (≤ 768px) ──────────────────────────────────────────
   const mobileBody = window.innerWidth <= 768
@@ -20151,19 +20157,10 @@ function gwCCLocalSummary(transcript, opp) {
   ].join('\n');
 }
 
-// ── PWA Service Worker registration ──────────────────────────────────────────
-(function _gwRegisterSW() {
-  if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('/sw.js')
-      .then(reg => {
-        console.log('[Groundwork] SW registered, scope:', reg.scope);
-        // Check for updates every hour
-        setInterval(() => reg.update().catch(() => {}), 3600000);
-      })
-      .catch(err => console.warn('[Groundwork] SW registration failed:', err.message));
-  });
-})();
+// ── PWA Service Worker: DISABLED ────────────────────────────────────────────
+// SW registration removed — the old gw-p49 SW caused a blank-screen reload
+// loop. The /sw.js route serves a self-destructing SW for browsers that still
+// have the old SW cached; we never register a new SW from the page.
 
 // ── Mobile bottom nav ─────────────────────────────────────────────────────────
 (function _gwMobileNav() {
