@@ -13502,6 +13502,310 @@ h1.pl-title,
 
 }
 
+/* ── Section 34d: Multi-page mobile fixes (b008) ─────────────────────────────
+   Covers: User Mgmt tab nav, Dispatch Board, Academy banner, Invoice detail,
+   Clients & Properties toolbar, Add Lead form hero, Pipeline gap (residual).
+   All rules target ≤768px unless noted.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ────────────────────────────────────────────────────────────────────────────
+   1. USER MANAGEMENT (Employees & Teams) — tab nav pills 2×3 grid
+   Problem: 5 pill buttons overflow horizontally or wrap unevenly
+   Fix: 2-column grid so pills are always even and readable
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .gw-um-tab-nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+    padding-bottom: 0 !important;
+    border-bottom: none !important;
+    margin-bottom: 16px !important;
+  }
+  .gw-um-tab-nav > button {
+    width: 100% !important;
+    text-align: center !important;
+    padding: 9px 8px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* ── User list / team member card: don't clip action buttons ─────────────── */
+  .gw-um-user-row,
+  .gw-um-user-card {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+  .gw-um-user-actions {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   2. DISPATCH BOARD — kill the ~180px empty-state dead space in Crews card
+   Problem: rp-empty-state inside disp-crew-panel has no min-height/padding,
+   the panel itself stretches due to flex/grid inherited sizing.
+   Fix: compact the crew panel, remove min-height, tighten empty state
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .disp-shell {
+    padding: 0 12px 24px !important;
+  }
+
+  /* Stack crew + feed panels vertically (already done in existing rule at 11843,
+     but enforce here for specificity) */
+  .disp-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+  }
+
+  /* Crew panel wrapper: no artificially tall min-height */
+  .disp-crew-panel {
+    min-height: 0 !important;
+  }
+
+  /* Empty-state inside dispatch: compact, no padding bloat */
+  .disp-crew-panel .rp-empty-state,
+  .disp-layout .rp-empty-state {
+    padding: 20px 16px !important;
+    text-align: center !important;
+  }
+  .disp-crew-panel .rp-empty-state p {
+    font-size: 13px !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Activity feed: compact header, no extra padding */
+  .disp-feed-panel {
+    padding-top: 0 !important;
+  }
+  .disp-panel-head {
+    font-size: 10px !important;
+    margin-bottom: 8px !important;
+    padding-bottom: 6px !important;
+  }
+
+  /* No-activity italic text: compact */
+  .disp-feed-panel > p {
+    font-size: 12px !important;
+    padding: 8px 0 !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   3. ACADEMY (Sales Training) — banner title wraps, stat-row cramped
+   Problem: acad-banner-title at 1.75rem wraps to 3 lines on mobile,
+   acad-banner-right (level badge + buttons) runs out of room.
+   Fix: tighten title, stack banner-row vertically, make stat pills flex-wrap
+   Note: ACAD_STYLES is injected as a <style> tag in the DOM — our media rules
+   in premium.css will override it since they're appended later in the cascade.
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Main banner card: tighter padding */
+  .acad-banner {
+    padding: 16px 16px 14px !important;
+    border-radius: 14px !important;
+    margin-bottom: 14px !important;
+  }
+
+  /* Banner row: stack left+right vertically */
+  .acad-banner-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  /* Left column: shrink title font */
+  .acad-banner-title {
+    font-size: 1.3rem !important;
+    margin-bottom: 4px !important;
+    line-height: 1.15 !important;
+  }
+  .acad-banner-sub {
+    font-size: 0.82rem !important;
+    line-height: 1.45 !important;
+  }
+
+  /* Right column (level badge + button): row on mobile */
+  .acad-banner-right {
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  .acad-level-badge {
+    font-size: 0.8rem !important;
+    padding: 6px 10px !important;
+  }
+
+  /* Stat row: pills wrap evenly, remove side padding compression */
+  .acad-stat-row {
+    flex-wrap: wrap !important;
+    gap: 0 !important;
+    margin-top: 14px !important;
+    padding-top: 12px !important;
+  }
+  .acad-stat-pill {
+    flex: 1 1 30% !important;     /* ~3 per row then 2 */
+    min-width: 60px !important;
+    padding: 8px 6px !important;
+    border-right: 1px solid var(--line) !important;
+    border-bottom: 1px solid var(--line) !important;
+  }
+  .acad-stat-pill:last-child {
+    border-right: none !important;
+  }
+  .acad-stat-pill-num {
+    font-size: 1.25rem !important;
+  }
+  .acad-stat-pill-label {
+    font-size: 0.6rem !important;
+  }
+
+  /* Level progress bar: tighter */
+  .acad-level-progress {
+    margin-top: 12px !important;
+    padding-top: 10px !important;
+  }
+
+  /* Continue card: compact */
+  .acad-continue-card {
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   4. INVOICE DETAIL — parties grid collapses, line-table scrollable
+   Problem: inv-parties-grid is 2-col (equal) — Bill To and From cards
+   have mismatched heights. Line-items table columns are cramped.
+   Fix: stack parties to 1-col, allow line-table horizontal scroll
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Bill To / From: single column */
+  .inv-parties-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Invoice body: tighter side padding */
+  .inv-body {
+    padding: 14px 12px !important;
+  }
+
+  /* Line items table: allow horizontal scroll on narrow phones */
+  .inv-line-table {
+    font-size: 12px !important;
+  }
+  .inv-line-table th,
+  .inv-line-table td {
+    padding: 7px 6px !important;
+  }
+  /* QTY column: narrower */
+  .inv-line-table th:nth-child(2),
+  .inv-line-table td:nth-child(2) {
+    width: 36px !important;
+  }
+  /* Price + Total columns: narrower */
+  .inv-line-table th:nth-child(3),
+  .inv-line-table td:nth-child(3),
+  .inv-line-table th:nth-child(4),
+  .inv-line-table td:nth-child(4) {
+    width: 80px !important;
+    font-size: 11px !important;
+  }
+
+  /* Totals block: full width on mobile */
+  .inv-totals-col {
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-top: 12px !important;
+    border-top: 1px solid var(--gw-border) !important;
+    padding-top: 10px !important;
+  }
+
+  /* Invoice header band */
+  .inv-header-band {
+    padding: 12px 12px 10px !important;
+  }
+  .inv-title {
+    font-size: 17px !important;
+    margin-bottom: 4px !important;
+  }
+  .inv-meta-row {
+    gap: 4px 10px !important;
+    font-size: 11px !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   5. CLIENTS & PROPERTIES — filter pills overflow, large dead gap
+   Problem: TYPE filter has HOA/Vendor cut off. Large blank space below filter
+   card. STATUS row also benefits from scroll.
+   The toolbar already uses .pl-toolbar structure — our Section 34b rules
+   (hide .pl-filter-divider, scroll each .pl-filter-group) apply here too,
+   but the search row inside the toolbar needs special treatment.
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Search wrap: full width inside toolbar column layout */
+  .cl-search-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 6px 10px !important;
+    box-sizing: border-box !important;
+  }
+  .cl-search-input {
+    font-size: 14px !important;
+    padding: 9px 10px 9px 32px !important;
+  }
+
+  /* Mobile client card list: tighter spacing */
+  .gw-cl-mobile {
+    gap: 8px !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   6. ADD LEAD FORM — hero eyebrow+title gap, input placeholder clipping
+   Problem: lf-hero uses display:flex align-items:baseline creating a large
+   gap between "NEW OPPORTUNITY" eyebrow and "Add Lead" h1.
+   The input has overflow:hidden clipping placeholder text.
+   Fix: tighten hero layout, fix placeholder visibility
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Lead form hero: stack eyebrow above title */
+  .lf-hero {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+    margin-bottom: 10px !important;
+    padding-top: 0 !important;
+  }
+  .lf-hero-title {
+    font-size: 26px !important;
+    font-weight: 900 !important;
+  }
+
+  /* Section cards: full-width, tighter padding */
+  .lf-section {
+    padding: 14px 14px !important;
+    border-radius: 12px !important;
+  }
+
+  /* Client name input: ensure placeholder shows fully */
+  .lf-client-search-wrap input,
+  .lf-field input[type="text"],
+  .lf-field input[type="tel"],
+  .lf-field input[type="email"] {
+    font-size: 14px !important;
+  }
+}
+
 /* ── Section 34a: Financial Snapshot — responsive grid classes ─────────────
    These replace hardcoded inline grid-template-columns on the snapshot page.
    Desktop: 4-col KPI rows, 4-col budget row, 2-col panel row.

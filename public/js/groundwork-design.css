@@ -4399,6 +4399,20 @@ h1.ld-name {
 .inv-btn--record    { background: var(--gw-pine-100); color: var(--gw-pine-700); }
 .inv-btn--send      { background: var(--gw-teal-100); color: var(--gw-teal-700); }
 
+/* ── Invoice mobile overrides ≤768px ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .inv-parties-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+  .inv-body { padding: 14px 12px !important; }
+  .inv-header-band { padding: 12px 12px 10px !important; }
+  .inv-title { font-size: 17px !important; margin-bottom: 4px !important; }
+  .inv-meta-row { gap: 4px 10px !important; font-size: 11px !important; }
+  .inv-line-table { font-size: 12px !important; }
+  .inv-line-table th, .inv-line-table td { padding: 7px 6px !important; }
+  .inv-totals-col { max-width: 100% !important; margin-left: 0 !important; margin-top: 12px !important; padding-top: 10px !important; border-top: 1px solid var(--gw-border) !important; }
+  .inv-action-bar { gap: 6px !important; margin-top: 14px !important; padding-top: 12px !important; }
+  .inv-btn { font-size: 12px !important; padding: 8px 12px !important; }
+}
+
 /* ── ACCOUNT STATEMENT (stmt-*) ──────────────────────────────────────────── */
 .stmt-shell {
   max-width: 960px;
