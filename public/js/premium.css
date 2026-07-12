@@ -13271,15 +13271,15 @@ h1.pl-title,
 
 /* ── Section 34b: Pipeline + Financial Data Hub — mobile tightening ─────────
    Targets ≤ 768px. Fixes:
-     1. Pipeline: header gap, Division filter row overflow, stat cards 2×2
+     1. Pipeline: header gap, filter dividers, Division overflow, stat cards 2×2
      2. Financial Data Hub: tab pills stretch, banner tighter, lede shorter
    ────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
 
-  /* ── 1a. Pipeline page header: remove extra margin, tighter gap ─────────── */
+  /* ── 1a. Pipeline page header: tight gap, close to filter card ───────────── */
   .pl-page-header {
-    margin-bottom: 8px !important;
-    gap: 8px !important;
+    margin-bottom: 6px !important;
+    gap: 6px !important;
   }
   /* h1 inside pl-page-title: override the global 12px margin */
   .pl-page-title .pl-title {
@@ -13293,6 +13293,7 @@ h1.pl-title,
   .pl-page-actions {
     display: flex !important;
     gap: 6px !important;
+    width: 100% !important;
   }
   .pl-page-actions .primary-btn.small,
   .pl-page-actions .secondary-btn.small {
@@ -13304,14 +13305,22 @@ h1.pl-title,
     text-align: center !important;
   }
 
-  /* ── 1b. Toolbar: allow each filter-group row to overflow-scroll ─────────── */
+  /* ── 1b. Toolbar: column layout, no internal padding waste ───────────────── */
   .pl-toolbar {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 0 !important;
-    padding: 4px 0 !important;
+    padding: 2px 0 !important;      /* strip top/bottom card padding */
+    margin-top: 0 !important;
     margin-bottom: 10px !important;
   }
+
+  /* Vertical dividers become invisible on mobile — rows are separated by
+     border-bottom on each filter-group instead */
+  .pl-filter-divider {
+    display: none !important;
+  }
+
   .pl-filter-group {
     display: flex !important;
     align-items: center !important;
@@ -13319,16 +13328,20 @@ h1.pl-title,
     -webkit-overflow-scrolling: touch !important;
     scrollbar-width: none !important;          /* Firefox */
     gap: 3px !important;
-    padding: 4px 8px !important;
+    padding: 5px 10px !important;
     border-bottom: 1px solid var(--line) !important;
+    margin: 0 !important;
   }
-  .pl-filter-group:last-child {
+  .pl-filter-group:last-of-type {
     border-bottom: none !important;
+    padding-bottom: 5px !important;
   }
   .pl-filter-group::-webkit-scrollbar { display: none; } /* Chrome/Safari */
   .pl-filter-label {
     flex-shrink: 0 !important;     /* label never shrinks */
+    font-size: 10px !important;
     margin-right: 4px !important;
+    min-width: 46px !important;    /* consistent label column */
   }
   .pl-filter-btn {
     flex-shrink: 0 !important;     /* buttons never wrap, scroll instead */
@@ -13390,6 +13403,101 @@ h1.pl-title,
   .view > .secondary-btn:first-child {
     font-size: 12px !important;
     padding: 7px 12px !important;
+  }
+
+}
+
+/* ── gw-settings-sync-btns: base rule (all viewports) ──────────────────────── */
+.gw-settings-sync-btns {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Section 34c: Settings page — mobile-first style upgrade ─────────────────
+   Fixes the ~100px dead gap between DATA AND SETUP eyebrow and Settings h1,
+   upgrades card layout for mobile, improves visual hierarchy and spacing.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* ── Kill the gap: eyebrow sits flush above h1 ───────────────────────────── */
+  /* The .view .eyebrow rule in Section 34 gives margin-bottom:4px — good.
+     But the DESKTOP h1 has margin:12px 0 which creates the dead space.
+     Section 34 already sets .view h1 { margin: 6px 0 6px } — so the gap
+     must come from something else. Force it tighter here. */
+  .view .eyebrow + h1,
+  .view h1:first-of-type {
+    margin-top: 4px !important;
+  }
+
+  /* ── Settings-specific header block: collapse all vertical space ─────────── */
+  .settings-header-block,
+  .view > .eyebrow {
+    margin-bottom: 2px !important;
+  }
+
+  /* ── grid-2 on Settings page: always 1-col on mobile ────────────────────── */
+  /* (global .grid-2 at ≤920px already goes to 1col, but be explicit here) */
+
+  /* ── Cards: upgrade visual style for mobile ──────────────────────────────── */
+  /* Tighter padding already from Section 34's .card { padding:14px } */
+
+  /* ── Export card buttons: full-width stacked ─────────────────────────────── */
+  .footer-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .footer-actions .primary-btn,
+  .footer-actions .secondary-btn {
+    width: 100% !important;
+    text-align: center !important;
+    padding: 12px 16px !important;
+    font-size: 14px !important;
+    border-radius: 12px !important;
+  }
+
+  /* ── Cloud sync card button row: stack on mobile ─────────────────────────── */
+  .gw-settings-sync-btns {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+  .gw-settings-sync-btns .primary-btn,
+  .gw-settings-sync-btns .secondary-btn {
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  .gw-comm-tools {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    padding: 14px !important;
+  }
+  .gw-comm-tools > button,
+  .gw-comm-tools .secondary-btn {
+    width: 100% !important;
+    text-align: center !important;
+    justify-content: center !important;
+  }
+
+  /* ── Admin tools button group: 2-col grid ────────────────────────────────── */
+  .gw-comm-tools div[style*="flex-wrap"] {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  .gw-admin-btn {
+    width: 100% !important;
+    text-align: center !important;
+    justify-content: center !important;
+  }
+
+  /* ── File input row: full width ──────────────────────────────────────────── */
+  input[type="file"] {
+    width: 100% !important;
+    font-size: 13px !important;
   }
 
 }

@@ -9703,7 +9703,7 @@ function settings(){
         <p style="font-size:13px;color:var(--gw-muted);line-height:1.6;margin-bottom:12px">
           If leads you created aren't showing up for teammates, use <strong>Recover My Leads</strong> to push all your local data to the cloud. This is safe to run anytime — it won't create duplicates.
         </p>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="gw-settings-sync-btns">
           <button class="primary-btn" onclick="window._recoverLocalLeads()" id="gw-recover-btn" style="background:#4D8A86">
             ↑ Recover My Leads to Cloud
           </button>

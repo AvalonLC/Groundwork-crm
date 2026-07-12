@@ -496,6 +496,7 @@
    * Called by dashboard.js or app_premium.js on the Dashboard view.
    */
   window.gwReviewsWidget = async function (containerId) {
+    _rvInjectCSS();                                              /* inject widget styles — must run before rendering */
     const el = document.getElementById(containerId);
     if (!el) return;
     el.innerHTML = `<div class="rv-widget-loading">${gwIcon('loader','16','#2D7A55')} Loading…</div>`;
