@@ -637,7 +637,7 @@ const _gwWsNameToId = {
 // the mobile nav. Keep lists small: only what you'd realistically use in the field.
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
-  Sales:       ['pipeline','lead','clients','estimates'],
+  Sales:       ['pipeline','lead','clients','estimates','communications'],
   Financial:   ['financialHub','invoices','gwReviews','gwStripe'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker',
                  'assetList','inventoryList','toolsConsumables','maintenanceQueue'],
@@ -700,6 +700,10 @@ function gwDashboard(tab) {
 window.gwDashboard = gwDashboard;
 
 // ── Sales workspace ───────────────────────────────────────────────────────────
+// Communications hub tabs — Templates / Sequences / Talk Tracks / Playbooks /
+// AI Assist are merged into the single Communications page as internal tabs.
+const _GW_COMMS_HUB_TABS = ['communications','templates','sequences','talkTracks','playbooks','aiAssist'];
+
 function gwSales(tab) {
   tab = tab || 'pipeline';
   _gwSetHeader('Sales', [
@@ -710,27 +714,84 @@ function gwSales(tab) {
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
-    {id:'templates',      label:'Templates'},
-    {id:'sequences',      label:'Sequences'},
-    {id:'talkTracks',     label:'Talk Tracks'},
-    {id:'playbooks',      label:'Playbooks'},
-    {id:'aiAssist',       label:'AI Assist'},
-  ], tab);
+  ], _GW_COMMS_HUB_TABS.includes(tab) ? 'communications' : tab);
   if (tab === 'pipeline')            pipeline();
   else if (tab === 'lead')           lead();
   else if (tab === 'clients')        clients();
   else if (tab === 'teamView')       (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
   else if (tab === 'estimates')      (typeof estimates==='function') ? estimates() : ((typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates'));
-  else if (tab === 'communications') (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
-  else if (tab === 'templates')      (typeof templates==='function') ? templates() : _gwTabStub('Templates');
-  else if (tab === 'sequences')      (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
-  else if (tab === 'talkTracks')     (typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
-  else if (tab === 'playbooks')      (typeof playbooks==='function') ? playbooks() : _gwTabStub('Playbooks');
-  else if (tab === 'aiAssist')       (typeof ai==='function') ? ai() : _gwTabStub('AI Assist');
+  else if (_GW_COMMS_HUB_TABS.includes(tab)) communicationsHub(tab);
   else if (tab === 'gwRecords')      lead();
   else pipeline();
 }
 window.gwSales = gwSales;
+
+// ── Communications Hub ─────────────────────────────────────────────────────────
+// One page for all client-facing messaging tools: the message inbox plus
+// Templates, Sequences, Talk Tracks, Playbooks, and the AI Assistant.
+// Each section keeps its original render function; the hub injects a persistent
+// tab bar above whatever the section renders (survives view.innerHTML wipes via
+// the _gwPendingSubHeader re-injection hook).
+function communicationsHub(section) {
+  section = _GW_COMMS_HUB_TABS.includes(section) ? section : (window._commsHubTab || 'communications');
+  window._commsHubTab = section;
+
+  const _gi = (n) => (typeof gwIcon === 'function') ? gwIcon(n, 14, 'currentColor') : '';
+  // Only show sections the current role can access (admin sees all).
+  // `alts` covers legacy permission keys still used in role configs.
+  const _canSee = (t) => (typeof canViewTab !== 'function') ||
+    canViewTab(t.id) || (t.alts || []).some(a => canViewTab(a));
+  const HUB_TABS = [
+    {id:'communications', label:'Inbox',       icon:_gi('comms')},
+    {id:'templates',      label:'Templates',   icon:_gi('note'),       alts:['emailTemplates']},
+    {id:'sequences',      label:'Sequences',   icon:_gi('automation'), alts:['automations','campaigns']},
+    {id:'talkTracks',     label:'Talk Tracks', icon:_gi('call'),       alts:['scripts','objections']},
+    {id:'playbooks',      label:'Playbooks',   icon:_gi('book'),       alts:['process','forms']},
+    {id:'aiAssist',       label:'AI Assist',   icon:_gi('robot'),      alts:['ai']},
+  ].filter(_canSee);
+
+  // Persistent hub tab bar — re-injected after each innerHTML write so the
+  // section functions (which own view.innerHTML) can't wipe it.
+  const barHtml = `<div class="gw-sub-tabs" id="gw-sub-header" role="tablist" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px;padding:6px;background:var(--gw-surface-2,#EDF2F0);border:1px solid var(--gw-line,var(--line,#DCE5E0));border-radius:12px">${
+    HUB_TABS.map(t => `<button class="gw-sub-tab${t.id===section?' gw-sub-tab--active':''}" role="tab" data-tab="${t.id}"
+      onclick="show('${t.id}')"
+      style="display:inline-flex;align-items:center;gap:6px;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:${t.id===section?'700':'500'};cursor:pointer;transition:background .12s,color .12s;${
+        t.id===section
+          ? 'background:var(--gw-card,#fff);color:var(--gw-ink,#0F1C14);box-shadow:0 1px 4px rgba(31,42,43,.10)'
+          : 'background:transparent;color:var(--gw-text-muted,var(--muted,#6F7E6A))'
+      }">${t.icon}${t.label}</button>`).join('')
+  }</div>`;
+  window._gwPendingSubHeader = barHtml;
+  window._gwActiveSubTabs = {fn:'communicationsHub', sub:section};
+
+  // Keep sidebar/workspace chrome in sync (all hub sections highlight Communications)
+  _gwSetHeader('Sales', [
+    {id:'pipeline',       label:'Pipeline'},
+    {id:'lead',           label:'Leads'},
+    {id:'clients',        label:'Clients'},
+    {id:'properties',     label:'Properties'},
+    {id:'teamView',       label:'Team'},
+    {id:'estimates',      label:'Estimates'},
+    {id:'communications', label:'Communications'},
+  ], 'communications');
+  activateNav('communications');
+
+  // Render the selected section — each fn writes view.innerHTML; the patched
+  // setter re-injects the hub bar at the top automatically.
+  if (section === 'communications')  (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
+  else if (section === 'templates')  (typeof templates==='function') ? templates() : _gwTabStub('Templates');
+  else if (section === 'sequences')  (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
+  else if (section === 'talkTracks') (typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
+  else if (section === 'playbooks')  (typeof playbooks==='function') ? playbooks() : _gwTabStub('Playbooks');
+  else if (section === 'aiAssist')   (typeof ai==='function') ? ai() : _gwTabStub('AI Assist');
+
+  // These functions set _currentView/activateNav to their own ids — override
+  // back to the hub so nav highlighting and hash restore stay consistent.
+  window._currentView = section === 'communications' ? 'communications' : section;
+  activateNav('communications');
+  try { history.replaceState(null, '', '#' + (section === 'communications' ? 'communications' : section)); } catch(e) {}
+}
+window.communicationsHub = communicationsHub;
 
 // gwRecords — backward-compat shim
 function gwRecords(sub) {
@@ -1000,7 +1061,8 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
     {id:'opsReports',       label:'Operations Snapshot'},
   ], null);
 
-  // Sales
+  // Sales — Templates/Sequences/Talk Tracks/Playbooks/AI Assist live inside
+  // the Communications hub now (internal tabs), so they're not sidebar items.
   _gwSetHeader('Sales', [
     {id:'pipeline',       label:'Pipeline'},
     {id:'lead',           label:'Leads'},
@@ -1009,11 +1071,6 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
-    {id:'templates',      label:'Templates'},
-    {id:'sequences',      label:'Sequences'},
-    {id:'talkTracks',     label:'Talk Tracks'},
-    {id:'playbooks',      label:'Playbooks'},
-    {id:'aiAssist',       label:'AI Assist'},
   ], null);
 
   // Financial
@@ -1148,6 +1205,11 @@ function show(viewName='today', param){
     if (el) el.style.display = 'none';
   });
 
+  // ── Clear any persistent hub tab bar from the previous view ───────────────
+  // communicationsHub() re-sets this when routing to a hub section; every
+  // other view must start clean or the bar would leak onto unrelated pages.
+  window._gwPendingSubHeader = null;
+
   // ── Permission gate (admin-configurable) ─────────────────
   // Platform super-admin bypasses all tenant permission gates
   const _d1 = window._d1SessionRep;
@@ -1259,7 +1321,7 @@ function show(viewName='today', param){
   };
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
-    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'},{id:'templates',label:'Templates'},{id:'sequences',label:'Sequences'},{id:'talkTracks',label:'Talk Tracks'},{id:'playbooks',label:'Playbooks'},{id:'aiAssist',label:'AI Assist'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [
@@ -1288,6 +1350,9 @@ function show(viewName='today', param){
       else if (viewName === 'crewView')   _tabHighlight = 'scheduleBoard';
       else if (viewName === 'teamReports')_tabHighlight = 'teamView';
       else if (viewName === 'assetDetail')_tabHighlight = 'assetList';
+      // Communications-hub sections + their legacy aliases highlight the Communications tab
+      else if (['templates','sequences','talkTracks','playbooks','aiAssist',
+                'automations','campaigns','scripts','objections','emailTemplates','ai'].includes(viewName)) _tabHighlight = 'communications';
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
       // Clear any stale sub-header
       window._gwPendingSubHeader = null;
@@ -1399,12 +1464,27 @@ function show(viewName='today', param){
     gwAARTemplate:    () => gwAdmin('gwAARTemplate'),
     gwAARReview:      () => gwAdmin('gwAARReview'),
   };
-  // Engagement consolidated routes
+  // Engagement consolidated routes — all live inside the Communications hub
   const engRoute = {
-    sequences:  ()   => sequences(),
-    talkTracks: ()   => talkTracks(),
-    playbooks:  ()   => playbooks(),
-    aiAssist:   ()   => ai(),
+    sequences:  ()   => communicationsHub('sequences'),
+    talkTracks: ()   => communicationsHub('talkTracks'),
+    playbooks:  ()   => communicationsHub('playbooks'),
+    aiAssist:   ()   => communicationsHub('aiAssist'),
+  };
+  // Communications-hub redirects — legacy standalone views now open inside the
+  // hub as tabs. Deep-link params (process stage, form id) still render the
+  // legacy detail pages directly so nothing breaks.
+  const commsHubRoute = {
+    communications: ()   => communicationsHub('communications'),
+    templates:      ()   => communicationsHub('templates'),
+    emailTemplates: ()   => communicationsHub('templates'),
+    automations:    ()   => communicationsHub('sequences'),
+    campaigns:      ()   => communicationsHub('sequences'),
+    scripts:        ()   => communicationsHub('talkTracks'),
+    objections:     ()   => communicationsHub('talkTracks'),
+    ai:             ()   => communicationsHub('aiAssist'),
+    process:        (p)  => p ? process(p) : communicationsHub('playbooks'),
+    forms:          (id) => id ? forms(id) : communicationsHub('playbooks'),
   };
   // ── Workspace hub routes ──────────────────────────────────────────────────
   const wsRoute = {
@@ -1443,7 +1523,7 @@ function show(viewName='today', param){
   const customerRoute = {
     customerDetail: (id) => customerDetail(id),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ai};
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ai, ...commsHubRoute};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -17057,7 +17137,7 @@ function properties() {
 
 function campaigns() {
   window._currentView = 'campaigns';
-  activateNav('campaigns');
+  activateNav('communications'); // lives inside the Communications hub
 
   const LS_KEY = 'avalonCampaigns';
   let campaigns_data = [];
@@ -17208,7 +17288,7 @@ function emailTemplates() {
 // ── Engagement: Sequences (merged: Automations + Campaigns / Drips) ───────────
 function sequences(tab) {
   window._currentView = 'sequences';
-  activateNav('sequences');
+  activateNav('communications'); // lives inside the Communications hub
   const activeTab = tab || window._seqTab || 'campaigns';
   window._seqTab = activeTab;
 
@@ -17356,7 +17436,7 @@ function sequences(tab) {
 // ── Engagement: Talk Tracks (merged: Scripts + Objection Handling) ─────────────
 function talkTracks(tab) {
   window._currentView = 'talkTracks';
-  activateNav('talkTracks');
+  activateNav('communications'); // lives inside the Communications hub
   const activeTab = tab || window._ttTab || 'scripts';
   window._ttTab = activeTab;
 
@@ -17521,7 +17601,7 @@ ${activeTab==='scripts' ? renderScripts() : renderObjections()}`;
 // ── Engagement: Playbooks (merged: Sales Process + Forms & Checklists + Pricing Tools + Academy) ──
 function playbooks(tab) {
   window._currentView = 'playbooks';
-  activateNav('playbooks');
+  activateNav('communications'); // lives inside the Communications hub
   const activeTab = tab || window._pbTab || 'process';
   window._pbTab = activeTab;
 

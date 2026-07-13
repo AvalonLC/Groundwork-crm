@@ -84,6 +84,7 @@ const _GW_ES = {
   'Properties':     'Propiedades',
   'Estimates':      'Presupuestos',
   'Communications': 'Comunicaciones',
+  'Inbox':          'Bandeja de Entrada',
   'Templates':      'Plantillas',
   'Sequences':      'Secuencias',
   'Talk Tracks':    'Guiones de Venta',
