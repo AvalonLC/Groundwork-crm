@@ -19138,13 +19138,47 @@ function systemConfig() {
   if (!el) return;
 
   let cfg = _scLoad() || _scDefault();
-  // Fetch branding once — re-render only on first visit
+  // Fetch branding once from D1 — D1 is canonical, localStorage is just a local mirror
   window._scBrand = window._scBrand || { brand_color:'#2D7A55', brand_accent:'#4D8A86', tagline:'', business_type:'home_services', crew_count:1, division_count:1, address_line1:'', address_city:'', address_state:'', address_zip:'', license_number:'', year_founded:'', terminology:{} };
   if (!window._scBrandLoaded) {
     fetch('/api/company/branding', { credentials:'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) { window._scBrand = data; window._scBrandLoaded = true; systemConfig(); } })
+      .then(data => {
+        if (data) {
+          window._scBrand = data;
+          window._scBrandLoaded = true;
+          // Merge D1 data into localStorage cfg so Company Info fields also show real data
+          const merged = _scLoad() || _scDefault();
+          merged.company.name    = data.name    || merged.company.name;
+          merged.company.phone   = data.phone   || merged.company.phone;
+          merged.company.email   = data.owner_email || merged.company.email;
+          merged.company.website = data.website  || merged.company.website;
+          merged.company.address = data.address_line1 || merged.company.address;
+          merged.company.city    = data.address_city  || merged.company.city;
+          merged.company.state   = data.address_state || merged.company.state;
+          merged.company.zip     = data.address_zip   || merged.company.zip;
+          merged.company.logo    = data.logo_url || merged.company.logo;
+          if (data.timezone) merged.timezone = data.timezone;
+          _scSave(merged);
+          systemConfig();
+        }
+      })
       .catch(() => { window._scBrandLoaded = true; });
+  }
+
+  // Merge any D1 data that's already loaded into cfg so Company Info stays in sync
+  if (window._scBrandLoaded && window._scBrand) {
+    const _m = window._scBrand;
+    if (_m.name)          cfg.company.name    = _m.name;
+    if (_m.phone)         cfg.company.phone   = _m.phone;
+    if (_m.owner_email)   cfg.company.email   = _m.owner_email;
+    if (_m.website)       cfg.company.website = _m.website;
+    if (_m.address_line1) cfg.company.address = _m.address_line1;
+    if (_m.address_city)  cfg.company.city    = _m.address_city;
+    if (_m.address_state) cfg.company.state   = _m.address_state;
+    if (_m.address_zip)   cfg.company.zip     = _m.address_zip;
+    if (_m.logo_url)      cfg.company.logo    = _m.logo_url;
+    if (_m.timezone)      cfg.timezone        = _m.timezone;
   }
 
   const _b = window._scBrand;
@@ -19401,6 +19435,7 @@ function systemConfig() {
         <div class="sc-topbar-sub">Company-wide settings, hours, service area, notifications &amp; branding</div>
       </div>
       <button class="sc-btn sc-btn-secondary" onclick="systemConfig()">${gwIcon('sync', 13, 'currentColor')} Refresh</button>
+      <span id="sc-autosave-indicator" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s;margin-right:4px">Saved ✓</span>
       <button class="sc-btn sc-btn-primary sc-save-btn" onclick="_scSaveAll()">${gwIcon('floppy', 13, '#fff')} Save Changes</button>
     </div>
 
@@ -19771,10 +19806,35 @@ function systemConfig() {
     <!-- ══ Bottom save bar ════════════════════════════════════════════════════ -->
     <div class="sc-save-bar">
       <button class="sc-btn sc-btn-secondary" onclick="systemConfig()">${gwIcon('sync', 13, 'currentColor')} Refresh</button>
+      <span id="sc-autosave-indicator-2" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s;margin-right:4px">Saved ✓</span>
       <button class="sc-btn sc-btn-primary" onclick="_scSaveAll()">${gwIcon('floppy', 13, '#fff')} Save All Changes</button>
     </div>
 
   </div>`;
+
+  // ── Auto-save: debounced save when any field changes ────────────────────────
+  (function _scBindAutoSave() {
+    let _debTimer = null;
+    const _debounceSave = () => {
+      clearTimeout(_debTimer);
+      _debTimer = setTimeout(async () => {
+        // Show subtle saving indicator
+        const indicator = document.getElementById('sc-autosave-indicator');
+        if (indicator) { indicator.textContent = 'Saving…'; indicator.style.opacity = '1'; }
+        await window._scSaveAll(true); // silent — no toast
+        if (indicator) {
+          indicator.textContent = 'Saved ✓';
+          setTimeout(() => { indicator.style.opacity = '0'; }, 2000);
+        }
+      }, 1500);
+    };
+    // Attach to every input, select, textarea inside the sc-page
+    const page = document.querySelector('.sc-page');
+    if (page) {
+      page.addEventListener('input',  _debounceSave, true);
+      page.addEventListener('change', _debounceSave, true);
+    }
+  })();
 
   // ── Wire helpers ─────────────────────────────────────────────────────────────
   window._scToggleDay = function(d) {
@@ -19813,59 +19873,67 @@ function systemConfig() {
     systemConfig();
     showToast('Settings reset to defaults');
   };
-  window._scSaveAll = async function() {
+  window._scSaveAll = async function(silent) {
     const cur = _scLoad() || _scDefault();
-    const g = id => (document.getElementById(id) || {}).value;
+    const g  = id => (document.getElementById(id) || {}).value;
     const gc = id => !!(document.getElementById(id) || {}).checked;
-    cur.company.name    = g('sc-co-name')    || cur.company.name;
-    cur.company.phone   = g('sc-co-phone')   || cur.company.phone;
-    cur.company.email   = g('sc-co-email')   || cur.company.email;
-    cur.company.website = g('sc-co-website') || '';
-    cur.company.address = g('sc-co-address') || cur.company.address;
-    cur.company.city    = g('sc-co-city')    || cur.company.city;
-    cur.company.state   = g('sc-co-state')   || cur.company.state;
-    cur.company.zip     = g('sc-co-zip')     || cur.company.zip;
+    // Read all DOM values — only override if field exists in DOM (page is rendered)
+    const _v = (id, fallback) => { const el = document.getElementById(id); return el ? el.value : fallback; };
+    cur.company.name    = _v('sc-co-name',    cur.company.name);
+    cur.company.phone   = _v('sc-co-phone',   cur.company.phone);
+    cur.company.email   = _v('sc-co-email',   cur.company.email);
+    cur.company.website = _v('sc-co-website', cur.company.website);
+    cur.company.address = _v('sc-co-address', cur.company.address);
+    cur.company.city    = _v('sc-co-city',    cur.company.city);
+    cur.company.state   = _v('sc-co-state',   cur.company.state);
+    cur.company.zip     = _v('sc-co-zip',     cur.company.zip);
+    // Logo: prefer DOM field; if empty keep existing value so reload doesn't wipe it
+    const logoVal = _v('sc-b-logo', '');
+    cur.company.logo = logoVal || cur.company.logo || '';
     DAYS.forEach(d => {
-      cur.hours[d].open  = gc(`sc-h-${d}`);
-      cur.hours[d].start = g(`sc-hs-${d}`) || cur.hours[d].start;
-      cur.hours[d].end   = g(`sc-he-${d}`) || cur.hours[d].end;
+      const cbEl = document.getElementById(`sc-h-${d}`);
+      if (cbEl) cur.hours[d].open = cbEl.checked;
+      cur.hours[d].start = _v(`sc-hs-${d}`, cur.hours[d].start);
+      cur.hours[d].end   = _v(`sc-he-${d}`, cur.hours[d].end);
     });
-    cur.timezone = g('sc-tz') || cur.timezone;
+    cur.timezone = _v('sc-tz', cur.timezone);
     const saType = (document.querySelector('input[name="sc-sa-type"]:checked') || {}).value || cur.serviceArea.type;
     cur.serviceArea.type = saType;
-    if (saType === 'zip') cur.serviceArea.zips = g('sc-sa-zips') || '';
-    else { cur.serviceArea.centerZip = g('sc-sa-center') || ''; cur.serviceArea.radiusMi = g('sc-sa-radius') || ''; }
-    ['newLead','woAssigned','woComplete','paymentReceived','lowInventory','dailyDigest'].forEach(k => { cur.notifications[k] = gc(`sc-n-${k}`); });
-    ['opps','comms','completedWOs'].forEach(k => { const v = parseInt(g(`sc-r-${k}`)); if (!isNaN(v) && v >= 30) cur.retention[k] = v; });
-    cur.brand.primaryColor = g('sc-b-primary') || cur.brand.primaryColor;
-    cur.brand.accentColor  = g('sc-b-accent')  || cur.brand.accentColor;
-    cur.company.logo       = g('sc-b-logo')    || cur.company.logo || '';
+    if (saType === 'zip') cur.serviceArea.zips = _v('sc-sa-zips', cur.serviceArea.zips);
+    else { cur.serviceArea.centerZip = _v('sc-sa-center', cur.serviceArea.centerZip); cur.serviceArea.radiusMi = _v('sc-sa-radius', cur.serviceArea.radiusMi); }
+    ['newLead','woAssigned','woComplete','paymentReceived','lowInventory','dailyDigest'].forEach(k => {
+      const el = document.getElementById(`sc-n-${k}`);
+      if (el) cur.notifications[k] = el.checked;
+    });
+    ['opps','comms','completedWOs'].forEach(k => { const v = parseInt(_v(`sc-r-${k}`, '')); if (!isNaN(v) && v >= 30) cur.retention[k] = v; });
+    cur.brand.primaryColor = _v('sc-b-primary', cur.brand.primaryColor) || cur.brand.primaryColor;
+    cur.brand.accentColor  = _v('sc-b-accent',  cur.brand.accentColor)  || cur.brand.accentColor;
     _scSave(cur);
-    // ── Also persist everything to D1 so it survives reload ─────────────────
+    // ── Persist to D1 so it survives reload ────────────────────────────────
     const saveBtn = document.querySelector('.sc-page-header .sc-save-btn');
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = `${gwIcon('sync', 14, '#fff')} Saving…`; }
+    if (!silent && saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = `${gwIcon('sync', 14, '#fff')} Saving…`; }
     const termKeys = ['workOrder','estimate','crew','division','client','invoice'];
     const terminology = {};
-    termKeys.forEach(k => { const v = g(`sc-term-${k}`); if (v) terminology[k] = v; });
+    termKeys.forEach(k => { const v = _v(`sc-term-${k}`, ''); if (v) terminology[k] = v; });
     const payload = {
-      name: cur.company.name,
-      phone: cur.company.phone,
-      owner_email: cur.company.email,
-      website: cur.company.website,
+      name:          cur.company.name,
+      phone:         cur.company.phone,
+      owner_email:   cur.company.email,
+      website:       cur.company.website,
       address_line1: cur.company.address,
-      address_city: cur.company.city,
+      address_city:  cur.company.city,
       address_state: cur.company.state,
-      address_zip: cur.company.zip,
-      timezone: cur.timezone,
-      logo_url: cur.company.logo,
-      brand_color: cur.brand.primaryColor || '#2D7A55',
-      brand_accent: cur.brand.accentColor || '#4D8A86',
-      tagline: g('sc-b-tagline'),
-      business_type: g('sc-b-biztype') || 'home_services',
-      crew_count: parseInt(g('sc-b-crews')) || 1,
-      division_count: parseInt(g('sc-b-divs')) || 1,
-      year_founded: parseInt(g('sc-b-founded')) || 0,
-      license_number: g('sc-b-license'),
+      address_zip:   cur.company.zip,
+      timezone:      cur.timezone,
+      logo_url:      cur.company.logo,
+      brand_color:   cur.brand.primaryColor || '#2D7A55',
+      brand_accent:  cur.brand.accentColor  || '#4D8A86',
+      tagline:       _v('sc-b-tagline', window._scBrand && window._scBrand.tagline || ''),
+      business_type: _v('sc-b-biztype', 'home_services') || 'home_services',
+      crew_count:    parseInt(_v('sc-b-crews',   '1')) || 1,
+      division_count:parseInt(_v('sc-b-divs',    '1')) || 1,
+      year_founded:  parseInt(_v('sc-b-founded', '0')) || 0,
+      license_number:_v('sc-b-license', ''),
       terminology,
     };
     try {
@@ -19873,14 +19941,19 @@ function systemConfig() {
       if (r.ok) {
         window._scBrand = { ...window._scBrand, ...payload };
         window._scBrandLoaded = true;
-        showToast('All settings saved successfully', 'success');
+        // Update both autosave indicators
+        ['sc-autosave-indicator','sc-autosave-indicator-2'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.textContent = 'Saved ✓'; el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; }, 2500); }
+        });
+        if (!silent) showToast('All settings saved successfully', 'success');
       } else {
-        showToast('Settings saved locally — cloud sync failed', 'warning');
+        if (!silent) showToast('Settings saved locally — cloud sync failed', 'warning');
       }
     } catch(e) {
-      showToast('Settings saved locally — no connection', 'warning');
+      if (!silent) showToast('Settings saved locally — no connection', 'warning');
     } finally {
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = `${gwIcon('floppy', 14, '#fff')} Save Changes`; }
+      if (!silent && saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = `${gwIcon('floppy', 14, '#fff')} Save Changes`; }
     }
   };
   window._scLogoFileChange = function(input) {
@@ -19916,20 +19989,30 @@ function systemConfig() {
     const termKeys = ['workOrder','estimate','crew','division','client','invoice'];
     const terminology = {};
     termKeys.forEach(k => { const v = g(`sc-term-${k}`); if (v) terminology[k] = v; });
+    // Logo: preserve existing if field left blank (don't wipe on save)
+    const logoFieldVal = g('sc-b-logo');
+    const existingLogo = (window._scBrand && window._scBrand.logo_url) || '';
     const payload = {
-      logo_url: g('sc-b-logo'), tagline: g('sc-b-tagline'),
-      brand_color: g('sc-b-primary') || '#2D7A55', brand_accent: g('sc-b-accent') || '#4D8A86',
+      logo_url:      logoFieldVal || existingLogo,
+      tagline:       g('sc-b-tagline'),
+      brand_color:   g('sc-b-primary') || '#2D7A55',
+      brand_accent:  g('sc-b-accent')  || '#4D8A86',
       business_type: g('sc-b-biztype') || 'home_services',
-      crew_count: parseInt(g('sc-b-crews')) || 1, division_count: parseInt(g('sc-b-divs')) || 1,
-      year_founded: parseInt(g('sc-b-founded')) || 0, license_number: g('sc-b-license'),
-      address_line1: g('sc-b-addr1'), address_city: g('sc-b-city'),
-      address_state: g('sc-b-state'), address_zip: g('sc-b-zip'),
+      crew_count:    parseInt(g('sc-b-crews'))   || 1,
+      division_count:parseInt(g('sc-b-divs'))    || 1,
+      year_founded:  parseInt(g('sc-b-founded')) || 0,
+      license_number:g('sc-b-license'),
+      address_line1: g('sc-b-addr1'), address_city:  g('sc-b-city'),
+      address_state: g('sc-b-state'), address_zip:   g('sc-b-zip'),
       terminology,
     };
-    const coName = g('sc-co-name'); const coPhone = g('sc-co-phone'); const coWebsite = g('sc-co-website');
-    if (coName) payload.name = coName;
-    if (coPhone) payload.phone = coPhone;
-    if (coWebsite) payload.website = coWebsite;
+    // Include company name/phone/website from Company Info section
+    const coName = g('sc-co-name'); const coPhone = g('sc-co-phone');
+    const coEmail = g('sc-co-email'); const coWebsite = g('sc-co-website');
+    if (coName)    payload.name        = coName;
+    if (coPhone)   payload.phone       = coPhone;
+    if (coEmail)   payload.owner_email = coEmail;
+    if (coWebsite) payload.website     = coWebsite;
     try {
       const r = await fetch('/api/company/branding', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!r.ok) throw new Error('Save failed');
@@ -19938,8 +20021,13 @@ function systemConfig() {
       const cur = _scLoad() || _scDefault();
       cur.company.logo = payload.logo_url;
       cur.brand.primaryColor = payload.brand_color;
-      cur.brand.accentColor = payload.brand_accent;
+      cur.brand.accentColor  = payload.brand_accent;
       _scSave(cur);
+      // Update autosave indicators
+      ['sc-autosave-indicator','sc-autosave-indicator-2'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = 'Saved ✓'; el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; }, 2500); }
+      });
       showToast('Branding saved — applied to all estimates & portal', 'success');
     } catch(e) {
       showToast('Could not save branding — check connection', 'error');
