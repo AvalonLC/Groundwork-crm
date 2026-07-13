@@ -19147,87 +19147,240 @@ function systemConfig() {
   const TIMEZONES = ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Anchorage','America/Honolulu','America/Phoenix','Pacific/Honolulu'];
 
   // ── Scoped CSS injected once ───────────────────────────────────────────────
-  if (!document.getElementById('sc-styles')) {
+  const _scStyleEl = document.getElementById('sc-styles');
+  if (_scStyleEl) _scStyleEl.remove(); // always refresh
+  {
     const s = document.createElement('style');
     s.id = 'sc-styles';
     s.textContent = `
-      .sc-page { max-width: 860px; margin: 0 auto; padding: 0 0 40px; }
-      .sc-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
-      .sc-page-title { font-size: 22px; font-weight: 800; color: var(--gw-ink); letter-spacing: -.03em; margin: 0 0 4px; }
-      .sc-page-sub   { font-size: 13px; color: var(--gw-muted); margin: 0; }
-      .sc-save-btn   { display: inline-flex; align-items: center; gap: 7px; background: #2D7A55; color: #fff;
-                       border: none; border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700;
-                       cursor: pointer; white-space: nowrap; transition: background .15s; flex-shrink: 0; }
-      .sc-save-btn:hover { background: #256647; }
-      .sc-save-btn.secondary { background: var(--gw-surface); color: #2D7A55; border: 1.5px solid #2D7A55; }
-      .sc-save-btn.secondary:hover { background: #E8F3ED; }
-      .sc-section { background: var(--gw-surface); border: 1px solid var(--gw-line); border-radius: 16px;
-                    overflow: hidden; margin-bottom: 16px; box-shadow: var(--gw-shadow-xs); }
-      .sc-section-head { display: flex; align-items: center; gap: 10px; padding: 14px 20px;
-                         border-bottom: 1px solid var(--gw-line); background: var(--gw-surface-2); }
-      .sc-section-icon { width: 32px; height: 32px; border-radius: 8px; background: #E8F3ED;
-                         display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-      .sc-section-title { font-size: 14px; font-weight: 700; color: var(--gw-ink); }
-      .sc-section-badge { margin-left: auto; font-size: 11px; font-weight: 700; padding: 3px 9px;
-                          border-radius: 999px; background: #E8F3ED; color: #2D7A55; }
-      .sc-section-hint  { margin-left: auto; font-size: 12px; color: var(--gw-muted); }
-      .sc-body { padding: 20px; }
-      .sc-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-      .sc-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
-      @media (max-width: 640px) { .sc-grid-2, .sc-grid-3 { grid-template-columns: 1fr; } }
+      /* ── Layout ── */
+      .sc-page { max-width: 820px; margin: 0 auto; padding: 0 0 60px; }
+
+      /* ── Sticky save bar ── */
+      .sc-topbar {
+        position: sticky; top: 0; z-index: 40;
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 0 10px;
+        background: var(--gw-bg, #0f1a0e);
+        border-bottom: 1px solid var(--gw-line);
+        margin-bottom: 24px;
+      }
+      .sc-topbar-title { font-size: 18px; font-weight: 800; color: var(--gw-ink); letter-spacing: -.02em; flex: 1; }
+      .sc-topbar-sub { font-size: 12px; color: var(--gw-muted); }
+
+      /* ── Primary + secondary buttons ── */
+      .sc-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        border: none; border-radius: 10px; padding: 9px 18px;
+        font-size: 13px; font-weight: 700; cursor: pointer;
+        white-space: nowrap; transition: background .15s, box-shadow .15s;
+        flex-shrink: 0;
+      }
+      .sc-btn-primary { background: #2D7A55; color: #fff; }
+      .sc-btn-primary:hover { background: #256647; box-shadow: 0 2px 8px rgba(45,122,85,.3); }
+      .sc-btn-secondary { background: transparent; color: var(--gw-ink); border: 1.5px solid var(--gw-line); }
+      .sc-btn-secondary:hover { background: var(--gw-surface-2); }
+      .sc-btn-ghost { background: none; color: var(--gw-muted); border: none; font-size: 12px; cursor: pointer;
+                      padding: 4px 8px; border-radius: 6px; transition: color .15s; }
+      .sc-btn-ghost:hover { color: #C97B6A; }
+
+      /* ── Section card ── */
+      .sc-card {
+        background: var(--gw-surface);
+        border: 1px solid var(--gw-line);
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      .sc-card-head {
+        display: flex; align-items: center; gap: 12px;
+        padding: 13px 20px;
+        border-bottom: 1px solid var(--gw-line);
+        background: var(--gw-surface-2);
+      }
+      .sc-card-icon {
+        width: 34px; height: 34px; border-radius: 10px;
+        background: rgba(45,122,85,.12);
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+      }
+      .sc-card-head-text { flex: 1; min-width: 0; }
+      .sc-card-title { font-size: 14px; font-weight: 700; color: var(--gw-ink); }
+      .sc-card-desc { font-size: 12px; color: var(--gw-muted); margin-top: 1px; }
+      .sc-card-badge {
+        font-size: 10px; font-weight: 700; padding: 3px 9px;
+        border-radius: 999px; background: rgba(45,122,85,.12); color: #2D7A55;
+        flex-shrink: 0;
+      }
+      .sc-card-body { padding: 18px 20px; }
+
+      /* ── Grid ── */
+      .sc-g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .sc-g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+      .sc-g-csz { display: grid; grid-template-columns: 1fr 64px 88px; gap: 8px; }
       .sc-full { grid-column: 1 / -1; }
+      @media (max-width: 640px) {
+        .sc-g2 { grid-template-columns: 1fr !important; }
+        .sc-g3 { grid-template-columns: 1fr 1fr !important; }
+        .sc-g-csz { grid-template-columns: 1fr 60px 80px !important; }
+        .sc-topbar { flex-wrap: wrap; }
+        .sc-topbar-sub { display: none; }
+        .sc-side-by-side { grid-template-columns: 1fr !important; }
+      }
+      .sc-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+      /* ── Field ── */
       .sc-field { display: flex; flex-direction: column; gap: 5px; }
-      .sc-label { font-size: 12px; font-weight: 600; color: var(--gw-muted); text-transform: uppercase; letter-spacing: .05em; }
-      .sc-input { width: 100%; border: 1.5px solid var(--gw-line); border-radius: 10px; padding: 9px 12px;
-                  font-size: 14px; color: var(--gw-ink); background: var(--gw-surface); outline: none;
-                  transition: border-color .15s, box-shadow .15s; box-sizing: border-box; }
-      .sc-input:focus { border-color: #2D7A55; box-shadow: 0 0 0 3px rgba(45,122,85,.12); }
-      .sc-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235A6B79' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-                   background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
-      .sc-textarea { resize: vertical; min-height: 80px; }
-      .sc-day-row { display: flex; align-items: center; gap: 14px; padding: 10px 0;
-                    border-bottom: 1px solid var(--gw-line); }
-      .sc-day-row:last-child { border-bottom: none; }
-      .sc-day-toggle { display: flex; align-items: center; gap: 8px; width: 120px; flex-shrink: 0; cursor: pointer; }
-      .sc-day-toggle input[type=checkbox] { width: 16px; height: 16px; accent-color: #2D7A55; cursor: pointer; }
-      .sc-day-name { font-size: 13px; font-weight: 600; color: var(--gw-ink); }
-      .sc-day-name.closed { color: var(--gw-muted); font-weight: 400; }
-      .sc-time-wrap { display: flex; align-items: center; gap: 8px; }
-      .sc-time-input { border: 1.5px solid var(--gw-line); border-radius: 8px; padding: 7px 10px;
-                       font-size: 13px; color: var(--gw-ink); background: var(--gw-surface); outline: none;
-                       transition: border-color .15s; }
+      .sc-label {
+        font-size: 11px; font-weight: 700; color: var(--gw-muted);
+        text-transform: uppercase; letter-spacing: .06em;
+      }
+      .sc-hint { font-size: 11px; color: var(--gw-muted); line-height: 1.5; }
+
+      /* ── Inputs ── */
+      .sc-input {
+        width: 100%;
+        border: 1.5px solid var(--gw-line);
+        border-radius: 9px;
+        padding: 8px 11px;
+        font-size: 14px;
+        color: var(--gw-ink);
+        background: var(--gw-surface);
+        outline: none;
+        transition: border-color .15s, box-shadow .15s;
+        box-sizing: border-box;
+      }
+      .sc-input:focus { border-color: #2D7A55; box-shadow: 0 0 0 3px rgba(45,122,85,.11); }
+      .sc-input::placeholder { color: var(--gw-muted); opacity: .7; }
+      .sc-select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%235A6B79' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px;
+      }
+      .sc-textarea { resize: vertical; min-height: 72px; }
+
+      /* ── Business hours table ── */
+      .sc-hours-table { width: 100%; border-collapse: collapse; }
+      .sc-hours-table tr { border-bottom: 1px solid var(--gw-line); }
+      .sc-hours-table tr:last-child { border-bottom: none; }
+      .sc-hours-table td { padding: 9px 0; vertical-align: middle; }
+      .sc-hours-table td:first-child { width: 130px; }
+      .sc-hours-table td:last-child { width: 60px; text-align: right; }
+      .sc-day-toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+      .sc-day-pill {
+        font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px;
+        border: 1.5px solid var(--gw-line); color: var(--gw-ink); background: var(--gw-surface-2);
+        transition: background .15s, color .15s, border-color .15s;
+        white-space: nowrap;
+      }
+      .sc-day-pill.active { background: rgba(45,122,85,.13); color: #2D7A55; border-color: rgba(45,122,85,.35); }
+      .sc-day-toggle input[type=checkbox] { display: none; }
+      .sc-time-wrap { display: flex; align-items: center; gap: 6px; }
+      .sc-time-input {
+        border: 1.5px solid var(--gw-line); border-radius: 8px; padding: 6px 9px;
+        font-size: 13px; color: var(--gw-ink); background: var(--gw-surface);
+        outline: none; transition: border-color .15s; width: 108px;
+      }
       .sc-time-input:focus { border-color: #2D7A55; }
-      .sc-time-sep { font-size: 12px; color: var(--gw-muted); }
-      .sc-time-wrap.disabled { opacity: .38; pointer-events: none; }
-      .sc-notif-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      @media (max-width: 560px) { .sc-notif-grid { grid-template-columns: 1fr; } }
-      .sc-notif-card { display: flex; align-items: flex-start; gap: 11px; border: 1.5px solid var(--gw-line);
-                       border-radius: 10px; padding: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
-      .sc-notif-card:hover { background: var(--gw-surface-2); border-color: #2D7A55; }
-      .sc-notif-card input { width: 16px; height: 16px; accent-color: #2D7A55; margin-top: 1px; flex-shrink: 0; cursor: pointer; }
+      .sc-time-sep { font-size: 11px; color: var(--gw-muted); font-weight: 600; }
+      .sc-time-wrap.disabled { opacity: .32; pointer-events: none; }
+      .sc-closed-tag { font-size: 11px; color: var(--gw-muted); font-style: italic; }
+
+      /* ── Notification toggles ── */
+      .sc-notif-list { display: flex; flex-direction: column; gap: 0; }
+      .sc-notif-row {
+        display: flex; align-items: center; gap: 14px;
+        padding: 11px 0; border-bottom: 1px solid var(--gw-line);
+      }
+      .sc-notif-row:last-child { border-bottom: none; }
+      .sc-notif-text { flex: 1; }
       .sc-notif-label { font-size: 13px; font-weight: 600; color: var(--gw-ink); }
-      .sc-notif-desc  { font-size: 12px; color: var(--gw-muted); margin-top: 2px; line-height: 1.4; }
-      .sc-radio-row { display: flex; gap: 12px; margin-bottom: 14px; }
-      .sc-radio-pill { display: flex; align-items: center; gap: 7px; border: 1.5px solid var(--gw-line);
-                       border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px;
-                       color: var(--gw-ink); font-weight: 600; transition: border-color .15s, background .15s; }
-      .sc-radio-pill input { accent-color: #2D7A55; }
-      .sc-color-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
-      .sc-color-swatch { display: flex; align-items: center; gap: 10px; }
-      .sc-color-swatch input[type=color] { width: 42px; height: 42px; border-radius: 10px; border: 2px solid var(--gw-line);
-                                            cursor: pointer; padding: 2px; background: none; }
-      .sc-color-info { }
-      .sc-color-name { font-size: 13px; font-weight: 600; color: var(--gw-ink); }
-      .sc-color-hint { font-size: 11px; color: var(--gw-muted); }
-      .sc-logo-row { display: flex; align-items: flex-start; gap: 20px; }
-      .sc-logo-preview { width: 80px; height: 80px; border-radius: 12px; border: 2px dashed var(--gw-line);
-                         display: flex; align-items: center; justify-content: center; background: var(--gw-surface-2);
-                         overflow: hidden; flex-shrink: 0; }
-      .sc-logo-preview img { width: 100%; height: 100%; object-fit: contain; padding: 8px; box-sizing: border-box; }
-      .sc-footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 16px; border-top: 1px solid var(--gw-line); margin-top: 4px; }
-      .sc-inline-hint { font-size: 12px; color: var(--gw-muted); margin-top: 5px; line-height: 1.5; }
-      .sc-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-      @media (max-width: 640px) { .sc-2col { grid-template-columns: 1fr; } .sc-page-header { flex-direction: column; } }
+      .sc-notif-desc  { font-size: 12px; color: var(--gw-muted); margin-top: 2px; }
+      /* Toggle switch */
+      .sc-toggle { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+      .sc-toggle input { opacity: 0; width: 0; height: 0; }
+      .sc-toggle-slider {
+        position: absolute; cursor: pointer; inset: 0;
+        background: var(--gw-line); border-radius: 22px;
+        transition: background .2s;
+      }
+      .sc-toggle-slider:before {
+        content: ''; position: absolute;
+        width: 16px; height: 16px; border-radius: 50%;
+        left: 3px; top: 3px;
+        background: #fff; transition: transform .2s;
+        box-shadow: 0 1px 3px rgba(0,0,0,.25);
+      }
+      .sc-toggle input:checked + .sc-toggle-slider { background: #2D7A55; }
+      .sc-toggle input:checked + .sc-toggle-slider:before { transform: translateX(18px); }
+
+      /* ── Service area radio pills ── */
+      .sc-radio-row { display: flex; gap: 8px; margin-bottom: 14px; }
+      .sc-radio-pill {
+        display: flex; align-items: center; gap: 7px;
+        border: 1.5px solid var(--gw-line); border-radius: 8px;
+        padding: 7px 14px; cursor: pointer; font-size: 13px;
+        color: var(--gw-ink); font-weight: 600;
+        transition: border-color .15s, background .15s;
+      }
+      .sc-radio-pill:has(input:checked) { border-color: #2D7A55; background: rgba(45,122,85,.08); color: #2D7A55; }
+      .sc-radio-pill input { accent-color: #2D7A55; width: 14px; height: 14px; }
+
+      /* ── Branding: color swatches ── */
+      .sc-color-block {
+        display: flex; align-items: center; gap: 10px;
+        border: 1.5px solid var(--gw-line); border-radius: 10px;
+        padding: 10px 14px; background: var(--gw-surface-2);
+      }
+      .sc-color-input {
+        width: 38px; height: 38px; border-radius: 8px; border: 2px solid var(--gw-line);
+        cursor: pointer; padding: 2px; background: none; flex-shrink: 0;
+      }
+      .sc-color-name { font-size: 13px; font-weight: 700; color: var(--gw-ink); }
+      .sc-color-hint { font-size: 11px; color: var(--gw-muted); margin-top: 1px; }
+
+      /* ── Logo upload ── */
+      .sc-logo-area { display: flex; align-items: flex-start; gap: 16px; }
+      .sc-logo-preview {
+        width: 76px; height: 76px; border-radius: 12px;
+        border: 2px dashed var(--gw-line);
+        display: flex; align-items: center; justify-content: center;
+        background: var(--gw-surface-2); overflow: hidden; flex-shrink: 0;
+      }
+      .sc-logo-preview img { width: 100%; height: 100%; object-fit: contain; padding: 6px; box-sizing: border-box; }
+      .sc-file-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--gw-surface-2); border: 1.5px solid var(--gw-line);
+        border-radius: 8px; padding: 7px 13px; font-size: 13px;
+        font-weight: 600; color: var(--gw-ink); cursor: pointer;
+        white-space: nowrap; transition: border-color .15s;
+      }
+      .sc-file-btn:hover { border-color: #2D7A55; color: #2D7A55; }
+
+      /* ── Section divider label ── */
+      .sc-divider {
+        font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em;
+        color: var(--gw-muted); margin: 20px 0 10px; display: flex; align-items: center; gap: 10px;
+      }
+      .sc-divider::after { content: ''; flex: 1; height: 1px; background: var(--gw-line); }
+
+      /* ── Bottom save bar ── */
+      .sc-save-bar {
+        display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+        padding: 14px 0 0; margin-top: 8px;
+      }
+
+      /* ── Inline hint ── */
+      .sc-inline-hint { font-size: 11px; color: var(--gw-muted); line-height: 1.5; margin-top: 4px; }
+
+      /* ── Legacy alias so _scSaveAll still finds .sc-page-header .sc-save-btn ── */
+      .sc-save-btn { display: inline-flex; align-items: center; gap: 6px; background: #2D7A55; color: #fff;
+                     border: none; border-radius: 10px; padding: 9px 18px; font-size: 13px; font-weight: 700;
+                     cursor: pointer; white-space: nowrap; transition: background .15s; flex-shrink: 0; }
+      .sc-save-btn:hover { background: #256647; }
+      .sc-save-btn.secondary { background: transparent; color: var(--gw-ink); border: 1.5px solid var(--gw-line); }
+      .sc-save-btn.secondary:hover { background: var(--gw-surface-2); }
+      .sc-page-header .sc-save-btn { /* alias for topbar btn */ }
     `;
     document.head.appendChild(s);
   }
@@ -19235,23 +19388,27 @@ function systemConfig() {
   el.innerHTML = `
   <div class="sc-page">
 
-    <!-- ── Page header ──────────────────────────────────────────────────────── -->
-    <div class="sc-page-header">
-      <div>
-        <p class="sc-page-title">${gwIcon('settings', 18, '#2D7A55')} System Configuration</p>
-        <p class="sc-page-sub">Company-wide settings, hours, service area, notifications, and preferences.</p>
+    <!-- ══ Sticky top bar ════════════════════════════════════════════════════ -->
+    <div class="sc-topbar sc-page-header">
+      <div style="flex:1;min-width:0">
+        <div class="sc-topbar-title">System Configuration</div>
+        <div class="sc-topbar-sub">Company-wide settings, hours, service area, notifications &amp; branding</div>
       </div>
-      <button class="sc-save-btn" onclick="_scSaveAll()">${gwIcon('floppy', 14, '#fff')} Save Changes</button>
+      <button class="sc-btn sc-btn-secondary" onclick="systemConfig()">${gwIcon('sync', 13, 'currentColor')} Refresh</button>
+      <button class="sc-btn sc-btn-primary sc-save-btn" onclick="_scSaveAll()">${gwIcon('floppy', 13, '#fff')} Save Changes</button>
     </div>
 
-    <!-- ── Company Information ──────────────────────────────────────────────── -->
-    <div class="sc-section">
-      <div class="sc-section-head">
-        <div class="sc-section-icon">${gwIcon('office', 16, '#2D7A55')}</div>
-        <span class="sc-section-title">Company Information</span>
+    <!-- ══ 1. Company Information ═════════════════════════════════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('office', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Company Information</div>
+          <div class="sc-card-desc">Basic contact info shown on documents and portal</div>
+        </div>
       </div>
-      <div class="sc-body">
-        <div class="sc-grid-2">
+      <div class="sc-card-body">
+        <div class="sc-g2" style="margin-bottom:12px">
           <div class="sc-field">
             <label class="sc-label">Company Name</label>
             <input id="sc-co-name" class="sc-input" value="${escapeHtml(cfg.company.name)}" placeholder="Your Company Name">
@@ -19268,79 +19425,93 @@ function systemConfig() {
             <label class="sc-label">Website</label>
             <input id="sc-co-website" class="sc-input" value="${escapeHtml(cfg.company.website)}" placeholder="https://yoursite.com">
           </div>
-          <div class="sc-field sc-full">
-            <label class="sc-label">Street Address</label>
-            <input id="sc-co-address" class="sc-input" value="${escapeHtml(cfg.company.address)}" placeholder="123 Main St">
-          </div>
+        </div>
+        <div class="sc-field" style="margin-bottom:12px">
+          <label class="sc-label">Street Address</label>
+          <input id="sc-co-address" class="sc-input" value="${escapeHtml(cfg.company.address)}" placeholder="123 Main St">
+        </div>
+        <div class="sc-g-csz">
           <div class="sc-field">
             <label class="sc-label">City</label>
             <input id="sc-co-city" class="sc-input" value="${escapeHtml(cfg.company.city)}" placeholder="Richmond">
           </div>
-          <div class="sc-grid-2" style="gap:10px">
-            <div class="sc-field">
-              <label class="sc-label">State</label>
-              <input id="sc-co-state" class="sc-input" value="${escapeHtml(cfg.company.state)}" maxlength="2" placeholder="VA">
-            </div>
-            <div class="sc-field">
-              <label class="sc-label">ZIP</label>
-              <input id="sc-co-zip" class="sc-input" value="${escapeHtml(cfg.company.zip)}" placeholder="23219">
-            </div>
+          <div class="sc-field">
+            <label class="sc-label">State</label>
+            <input id="sc-co-state" class="sc-input" value="${escapeHtml(cfg.company.state)}" maxlength="2" placeholder="VA">
+          </div>
+          <div class="sc-field">
+            <label class="sc-label">ZIP</label>
+            <input id="sc-co-zip" class="sc-input" value="${escapeHtml(cfg.company.zip)}" placeholder="23219">
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ── Business Hours ───────────────────────────────────────────────────── -->
-    <div class="sc-section">
-      <div class="sc-section-head">
-        <div class="sc-section-icon">${gwIcon('clock', 16, '#2D7A55')}</div>
-        <span class="sc-section-title">Business Hours</span>
-        <span class="sc-section-hint">Toggle days on/off, set open &amp; close times</span>
+    <!-- ══ 2. Business Hours ══════════════════════════════════════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('clock', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Business Hours</div>
+          <div class="sc-card-desc">Tap a day to toggle open/closed, then set times</div>
+        </div>
       </div>
-      <div class="sc-body" style="padding-top:8px;padding-bottom:8px">
-        ${DAYS.map(d => {
-          const h = cfg.hours[d];
-          return `
-          <div class="sc-day-row">
-            <label class="sc-day-toggle">
-              <input type="checkbox" id="sc-h-${d}" ${h.open ? 'checked' : ''} onchange="_scToggleDay('${d}')">
-              <span class="sc-day-name${h.open ? '' : ' closed'}" id="sc-hl-${d}">${DAY_LABELS[d]}</span>
-            </label>
-            <div id="sc-ht-${d}" class="sc-time-wrap${h.open ? '' : ' disabled'}">
-              <input type="time" id="sc-hs-${d}" value="${h.start}" class="sc-time-input">
-              <span class="sc-time-sep">to</span>
-              <input type="time" id="sc-he-${d}" value="${h.end}" class="sc-time-input">
-            </div>
-            ${!h.open ? '<span style="font-size:12px;color:var(--gw-muted);margin-left:6px">Closed</span>' : ''}
-          </div>`;
-        }).join('')}
+      <div class="sc-card-body" style="padding-top:12px;padding-bottom:12px">
+        <table class="sc-hours-table">
+          ${DAYS.map(d => {
+            const h = cfg.hours[d];
+            return `<tr>
+              <td>
+                <label class="sc-day-toggle">
+                  <input type="checkbox" id="sc-h-${d}" ${h.open ? 'checked' : ''} onchange="_scToggleDay('${d}')">
+                  <span class="sc-day-pill${h.open ? ' active' : ''}" id="sc-hl-${d}">${DAY_LABELS[d]}</span>
+                </label>
+              </td>
+              <td>
+                <div id="sc-ht-${d}" class="sc-time-wrap${h.open ? '' : ' disabled'}">
+                  <input type="time" id="sc-hs-${d}" value="${h.start}" class="sc-time-input">
+                  <span class="sc-time-sep">—</span>
+                  <input type="time" id="sc-he-${d}" value="${h.end}" class="sc-time-input">
+                </div>
+              </td>
+              <td>
+                ${!h.open ? '<span class="sc-closed-tag">Closed</span>' : ''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </table>
       </div>
     </div>
 
-    <!-- ── Timezone & Service Area (side-by-side) ──────────────────────────── -->
-    <div class="sc-2col">
-      <div class="sc-section" style="margin-bottom:0">
-        <div class="sc-section-head">
-          <div class="sc-section-icon">${gwIcon('globe', 16, '#2D7A55')}</div>
-          <span class="sc-section-title">Timezone</span>
+    <!-- ══ 3. Timezone + Service Area (side by side) ══════════════════════════ -->
+    <div class="sc-side-by-side">
+      <div class="sc-card" style="margin-bottom:0">
+        <div class="sc-card-head">
+          <div class="sc-card-icon">${gwIcon('globe', 16, '#2D7A55')}</div>
+          <div class="sc-card-head-text">
+            <div class="sc-card-title">Timezone</div>
+            <div class="sc-card-desc">Schedules, reports &amp; alerts</div>
+          </div>
         </div>
-        <div class="sc-body">
+        <div class="sc-card-body">
           <div class="sc-field">
             <label class="sc-label">Company Timezone</label>
             <select id="sc-tz" class="sc-input sc-select">
               ${TIMEZONES.map(tz => `<option value="${tz}" ${cfg.timezone === tz ? 'selected' : ''}>${tz.replace('America/', '').replace(/_/g, ' ')}</option>`).join('')}
             </select>
           </div>
-          <p class="sc-inline-hint">Used for scheduling, reports, and notifications.</p>
         </div>
       </div>
 
-      <div class="sc-section" style="margin-bottom:0">
-        <div class="sc-section-head">
-          <div class="sc-section-icon">${gwIcon('map-pin', 16, '#2D7A55')}</div>
-          <span class="sc-section-title">Service Area</span>
+      <div class="sc-card" style="margin-bottom:0">
+        <div class="sc-card-head">
+          <div class="sc-card-icon">${gwIcon('map-pin', 16, '#2D7A55')}</div>
+          <div class="sc-card-head-text">
+            <div class="sc-card-title">Service Area</div>
+            <div class="sc-card-desc">ZIP codes or radius from center</div>
+          </div>
         </div>
-        <div class="sc-body">
+        <div class="sc-card-body">
           <div class="sc-radio-row">
             <label class="sc-radio-pill">
               <input type="radio" name="sc-sa-type" value="zip" ${cfg.serviceArea.type === 'zip' ? 'checked' : ''} onchange="_scSAType('zip')">
@@ -19358,212 +19529,189 @@ function systemConfig() {
             </div>
           </div>
           <div id="sc-sa-rad" ${cfg.serviceArea.type !== 'radius' ? 'style="display:none"' : ''}>
-            <div class="sc-field" style="margin-bottom:10px">
-              <label class="sc-label">Center ZIP</label>
-              <input id="sc-sa-center" class="sc-input" value="${escapeHtml(cfg.serviceArea.centerZip)}" placeholder="23219">
-            </div>
-            <div class="sc-field">
-              <label class="sc-label">Radius (miles)</label>
-              <input id="sc-sa-radius" type="number" min="1" max="200" class="sc-input" value="${cfg.serviceArea.radiusMi}">
+            <div class="sc-g2" style="gap:10px">
+              <div class="sc-field">
+                <label class="sc-label">Center ZIP</label>
+                <input id="sc-sa-center" class="sc-input" value="${escapeHtml(cfg.serviceArea.centerZip)}" placeholder="23219">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label">Radius (miles)</label>
+                <input id="sc-sa-radius" type="number" min="1" max="200" class="sc-input" value="${cfg.serviceArea.radiusMi}">
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-    <div style="margin-bottom:16px"></div>
+    <div style="margin-bottom:12px"></div>
 
-    <!-- ── Notification Preferences ────────────────────────────────────────── -->
-    <div class="sc-section">
-      <div class="sc-section-head">
-        <div class="sc-section-icon">${gwIcon('bell', 16, '#2D7A55')}</div>
-        <span class="sc-section-title">Notification Preferences</span>
-        <span class="sc-section-hint">Email alerts sent to company address</span>
+    <!-- ══ 4. Notifications ═══════════════════════════════════════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('bell', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Notification Preferences</div>
+          <div class="sc-card-desc">Email alerts sent to company address</div>
+        </div>
       </div>
-      <div class="sc-body">
-        <div class="sc-notif-grid">
+      <div class="sc-card-body" style="padding-top:4px;padding-bottom:4px">
+        <div class="sc-notif-list">
           ${[
-            ['newLead',        'New Lead',          'Notify when a lead is created or assigned'],
-            ['woAssigned',     'WO Assigned',       'Notify when a work order is assigned'],
-            ['woComplete',     'WO Completed',      'Notify when a work order is marked complete'],
-            ['paymentReceived','Payment Received',  'Notify when a payment is recorded'],
-            ['lowInventory',   'Low Inventory',     'Notify when an item hits reorder threshold'],
-            ['dailyDigest',    'Daily Digest',      'Morning summary email of open items'],
+            ['newLead',        'New Lead',          'Alert when a lead is created or assigned'],
+            ['woAssigned',     'Work Order Assigned','Alert when a work order is assigned to a crew'],
+            ['woComplete',     'Work Order Completed','Alert when a work order is marked complete'],
+            ['paymentReceived','Payment Received',  'Alert when a payment is recorded in the system'],
+            ['lowInventory',   'Low Inventory',     'Alert when an item hits its reorder threshold'],
+            ['dailyDigest',    'Daily Digest',      'Morning summary email of all open items'],
           ].map(([key, label, desc]) => `
-            <label class="sc-notif-card">
-              <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key] ? 'checked' : ''}>
-              <div>
+            <div class="sc-notif-row">
+              <div class="sc-notif-text">
                 <div class="sc-notif-label">${label}</div>
                 <div class="sc-notif-desc">${desc}</div>
               </div>
-            </label>`).join('')}
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Data Retention ───────────────────────────────────────────────────── -->
-    <div class="sc-section">
-      <div class="sc-section-head">
-        <div class="sc-section-icon">${gwIcon('data-store', 16, '#2D7A55')}</div>
-        <span class="sc-section-title">Data Retention</span>
-        <span class="sc-section-hint">Days to keep historical records</span>
-      </div>
-      <div class="sc-body">
-        <div class="sc-grid-3">
-          ${[
-            ['opps',        'Opportunities / Leads',    'Closed & lost records'],
-            ['comms',       'Communications',            'Call logs & message history'],
-            ['completedWOs','Completed Work Orders',     'Completed WO records'],
-          ].map(([key, label, desc]) => `
-            <div class="sc-field">
-              <label class="sc-label">${label}</label>
-              <div style="display:flex;align-items:center;gap:8px">
-                <input id="sc-r-${key}" type="number" min="30" max="3650" step="30"
-                  class="sc-input" style="flex:1" value="${cfg.retention[key]}">
-                <span style="font-size:12px;color:var(--gw-muted);white-space:nowrap">days</span>
-              </div>
-              <p class="sc-inline-hint">${desc}</p>
+              <label class="sc-toggle">
+                <input type="checkbox" id="sc-n-${key}" ${cfg.notifications[key] ? 'checked' : ''}>
+                <span class="sc-toggle-slider"></span>
+              </label>
             </div>`).join('')}
         </div>
       </div>
     </div>
 
-    <!-- ── Company Branding ─────────────────────────────────────────────────── -->
-    <div class="sc-section">
-      <div class="sc-section-head">
-        <div class="sc-section-icon">${gwIcon('palette', 16, '#2D7A55')}</div>
-        <span class="sc-section-title">Company Branding</span>
-        <span class="sc-section-badge">Saved to Cloud</span>
+    <!-- ══ 5. Company Branding ════════════════════════════════════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('palette', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Company Branding</div>
+          <div class="sc-card-desc">Logo, colors, tagline — applied to all client-facing docs</div>
+        </div>
+        <span class="sc-card-badge">Cloud Synced</span>
       </div>
-      <div class="sc-body" style="display:flex;flex-direction:column;gap:22px">
+      <div class="sc-card-body" style="display:flex;flex-direction:column;gap:20px">
 
-        <!-- Logo -->
-        <div>
-          <p class="sc-label" style="margin-bottom:10px">Company Logo</p>
-          <div class="sc-logo-row">
-            <div class="sc-logo-preview" id="sc-logo-preview">
-              ${(_b.logo_url || cfg.company.logo)
-                ? `<img src="${escapeHtml(_b.logo_url || cfg.company.logo)}" alt="Logo"
-                     onerror="this.parentElement.innerHTML='<span style=\\'font-size:11px;color:#9CA3AF;text-align:center\\'>No preview</span>'">`
-                : `${gwIcon('logo', 32, '#D1D5DB')}`}
-            </div>
-            <div style="flex:1">
-              <!-- File upload (primary) -->
-              <div class="sc-field" style="margin-bottom:8px">
-                <label class="sc-label">Upload from Computer</label>
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
-                  <span style="display:inline-flex;align-items:center;gap:6px;background:var(--gw-surface-2);border:1.5px solid var(--gw-line);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--gw-ink);white-space:nowrap;flex-shrink:0">
-                    ${gwIcon('upload', 13, '#2D7A55')} Choose File
-                  </span>
-                  <span id="sc-logo-filename" style="font-size:12px;color:var(--gw-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No file chosen</span>
+        <!-- Logo + identity in 2 columns -->
+        <div class="sc-g2" style="align-items:start">
+          <!-- Left: Logo upload -->
+          <div class="sc-field">
+            <label class="sc-label">Company Logo</label>
+            <div class="sc-logo-area" style="margin-top:2px">
+              <div class="sc-logo-preview" id="sc-logo-preview">
+                ${(_b.logo_url || cfg.company.logo)
+                  ? `<img src="${escapeHtml(_b.logo_url || cfg.company.logo)}" alt="Logo"
+                       onerror="this.parentElement.innerHTML='<span style=\\'font-size:10px;color:#9CA3AF;text-align:center\\'>No preview</span>'">`
+                  : `${gwIcon('logo', 28, '#9CA3AF')}`}
+              </div>
+              <div style="flex:1;min-width:0">
+                <label style="cursor:pointer;display:block;margin-bottom:8px">
+                  <span class="sc-file-btn">${gwIcon('upload', 12, '#2D7A55')} Choose File</span>
+                  <span id="sc-logo-filename" style="display:block;font-size:11px;color:var(--gw-muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No file chosen</span>
                   <input type="file" id="sc-b-logo-file" accept="image/*" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px" onchange="_scLogoFileChange(this)">
                 </label>
+                <div class="sc-field">
+                  <label class="sc-label">Or paste URL</label>
+                  <input id="sc-b-logo" type="url" class="sc-input" placeholder="https://…/logo.png"
+                    value="${escapeHtml(_b.logo_url || cfg.company.logo || '')}">
+                </div>
+                <div style="display:flex;gap:6px;margin-top:8px">
+                  <button class="sc-btn sc-btn-secondary" style="font-size:12px;padding:6px 12px" onclick="_scPreviewLogo()">${gwIcon('eye', 12, 'currentColor')} Preview</button>
+                  <button class="sc-btn sc-btn-primary" style="font-size:12px;padding:6px 12px" onclick="_scSaveBranding()" id="sc-brand-btn">${gwIcon('floppy', 12, '#fff')} Save Logo</button>
+                </div>
               </div>
-              <!-- URL fallback -->
-              <div class="sc-field">
-                <label class="sc-label">Or paste an image URL</label>
-                <input id="sc-b-logo" type="url" class="sc-input" placeholder="https://yoursite.com/logo.png"
-                  value="${escapeHtml(_b.logo_url || cfg.company.logo || '')}">
-              </div>
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <button class="sc-save-btn secondary" onclick="_scPreviewLogo()">${gwIcon('eye', 13, '#2D7A55')} Preview</button>
-                <button class="sc-save-btn" onclick="_scSaveBranding()" id="sc-brand-btn">${gwIcon('floppy', 13, '#fff')} Save Branding</button>
-              </div>
-              <p class="sc-inline-hint" style="margin-top:6px">Uploaded logo is converted to a data URL and saved. Applied to estimates, invoices, and client portal.</p>
             </div>
           </div>
-        </div>
 
-        <!-- Tagline + Business Type -->
-        <div class="sc-grid-2">
-          <div class="sc-field">
-            <label class="sc-label">Tagline <span style="font-weight:400;text-transform:none;font-size:11px">(on estimates &amp; portal)</span></label>
-            <input id="sc-b-tagline" type="text" class="sc-input" placeholder="Professional Exterior Solutions"
-              value="${escapeHtml(_b.tagline || '')}">
-          </div>
-          <div class="sc-field">
-            <label class="sc-label">Business Type</label>
-            <select id="sc-b-biztype" class="sc-input sc-select">
-              ${[
-                ['landscaping','Landscaping / Lawn Care'],['excavation','Excavation / Earthwork'],
-                ['home_services','Home Services'],['hvac','HVAC'],['plumbing','Plumbing'],
-                ['electrical','Electrical'],['roofing','Roofing'],['concrete','Concrete / Masonry'],
-                ['painting','Painting'],['cleaning','Cleaning Services'],['pest_control','Pest Control'],
-                ['irrigation','Irrigation'],['tree_service','Tree Service / Arborist'],
-                ['general_contractor','General Contractor'],['other','Other'],
-              ].map(([v,l]) => `<option value="${v}" ${_b.business_type === v ? 'selected' : ''}>${l}</option>`).join('')}
-            </select>
+          <!-- Right: Tagline + biz type -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="sc-field">
+              <label class="sc-label">Tagline</label>
+              <input id="sc-b-tagline" type="text" class="sc-input" placeholder="Professional Exterior Solutions"
+                value="${escapeHtml(_b.tagline || '')}">
+              <span class="sc-hint">Shown on estimates &amp; client portal</span>
+            </div>
+            <div class="sc-field">
+              <label class="sc-label">Business Type</label>
+              <select id="sc-b-biztype" class="sc-input sc-select">
+                ${[
+                  ['landscaping','Landscaping / Lawn Care'],['excavation','Excavation / Earthwork'],
+                  ['home_services','Home Services'],['hvac','HVAC'],['plumbing','Plumbing'],
+                  ['electrical','Electrical'],['roofing','Roofing'],['concrete','Concrete / Masonry'],
+                  ['painting','Painting'],['cleaning','Cleaning Services'],['pest_control','Pest Control'],
+                  ['irrigation','Irrigation'],['tree_service','Tree Service / Arborist'],
+                  ['general_contractor','General Contractor'],['other','Other'],
+                ].map(([v,l]) => `<option value="${v}" ${_b.business_type === v ? 'selected' : ''}>${l}</option>`).join('')}
+              </select>
+            </div>
           </div>
         </div>
 
         <!-- Brand Colors -->
         <div>
-          <p class="sc-label" style="margin-bottom:12px">Brand Colors</p>
-          <div class="sc-color-row">
-            <div class="sc-color-swatch">
-              <input id="sc-b-primary" type="color" value="${_b.brand_color || '#2D7A55'}">
-              <div class="sc-color-info">
+          <div style="display:flex;align-items:center;margin-bottom:10px">
+            <span class="sc-label">Brand Colors</span>
+            <button class="sc-btn-ghost" onclick="_scResetDefaults()" style="margin-left:auto">↺ Reset defaults</button>
+          </div>
+          <div class="sc-g2" style="gap:10px">
+            <div class="sc-color-block">
+              <input id="sc-b-primary" type="color" class="sc-color-input" value="${_b.brand_color || '#2D7A55'}">
+              <div>
                 <div class="sc-color-name">Primary</div>
                 <div class="sc-color-hint">Buttons, links, estimates</div>
               </div>
             </div>
-            <div class="sc-color-swatch">
-              <input id="sc-b-accent" type="color" value="${_b.brand_accent || '#4D8A86'}">
-              <div class="sc-color-info">
+            <div class="sc-color-block">
+              <input id="sc-b-accent" type="color" class="sc-color-input" value="${_b.brand_accent || '#4D8A86'}">
+              <div>
                 <div class="sc-color-name">Accent</div>
-                <div class="sc-color-hint">Badges, KPI cards</div>
+                <div class="sc-color-hint">Badges, KPI highlights</div>
               </div>
             </div>
-            <button onclick="_scResetDefaults()"
-              style="margin-left:auto;background:none;border:none;font-size:12px;color:var(--gw-muted);cursor:pointer;padding:4px 8px;border-radius:6px"
-              onmouseover="this.style.color='#8B3A2A'" onmouseout="this.style.color='var(--gw-muted)'">↺ Reset defaults</button>
           </div>
         </div>
 
-        <!-- Company Scale -->
-        <div>
-          <p class="sc-label" style="margin-bottom:10px">Company Scale</p>
-          <div class="sc-grid-2" style="gap:10px">
-            <div class="sc-field">
-              <label class="sc-label">Active Crews</label>
-              <input id="sc-b-crews" type="number" min="1" max="500" class="sc-input" value="${_b.crew_count || 1}">
-            </div>
-            <div class="sc-field">
-              <label class="sc-label">Divisions</label>
-              <input id="sc-b-divs" type="number" min="1" max="100" class="sc-input" value="${_b.division_count || 1}">
-            </div>
-            <div class="sc-field">
-              <label class="sc-label">Year Founded</label>
-              <input id="sc-b-founded" type="number" min="1900" max="2030" class="sc-input" value="${_b.year_founded || ''}" placeholder="2015">
-            </div>
-            <div class="sc-field">
-              <label class="sc-label">License #</label>
-              <input id="sc-b-license" type="text" class="sc-input" value="${escapeHtml(_b.license_number || '')}" placeholder="Optional">
+        <!-- Company Scale + Address -->
+        <div class="sc-g2" style="align-items:start;gap:20px">
+          <div>
+            <div class="sc-label" style="margin-bottom:10px">Company Scale</div>
+            <div class="sc-g2" style="gap:8px">
+              <div class="sc-field">
+                <label class="sc-label">Active Crews</label>
+                <input id="sc-b-crews" type="number" min="1" max="500" class="sc-input" value="${_b.crew_count || 1}">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label">Divisions</label>
+                <input id="sc-b-divs" type="number" min="1" max="100" class="sc-input" value="${_b.division_count || 1}">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label">Year Founded</label>
+                <input id="sc-b-founded" type="number" min="1900" max="2030" class="sc-input" value="${_b.year_founded || ''}" placeholder="2015">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label">License #</label>
+                <input id="sc-b-license" type="text" class="sc-input" value="${escapeHtml(_b.license_number || '')}" placeholder="Optional">
+              </div>
             </div>
           </div>
-        </div>
-
-        <!-- Business Address -->
-        <div>
-          <p class="sc-label" style="margin-bottom:10px">Business Address <span style="font-weight:400;text-transform:none;font-size:11px">(shown on estimates &amp; invoices)</span></p>
-          <div class="sc-field" style="margin-bottom:10px">
-            <input id="sc-b-addr1" type="text" class="sc-input" placeholder="Street Address" value="${escapeHtml(_b.address_line1 || '')}">
-          </div>
-          <div class="sc-grid-2" style="gap:10px">
-            <div class="sc-field">
-              <input id="sc-b-city" type="text" class="sc-input" placeholder="City" value="${escapeHtml(_b.address_city || '')}">
-            </div>
-            <div class="sc-grid-2" style="gap:8px">
-              <input id="sc-b-state" type="text" class="sc-input" placeholder="State" maxlength="2" value="${escapeHtml(_b.address_state || '')}">
-              <input id="sc-b-zip"   type="text" class="sc-input" placeholder="ZIP" value="${escapeHtml(_b.address_zip || '')}">
+          <div>
+            <div class="sc-label" style="margin-bottom:10px">Billing Address <span style="text-transform:none;font-weight:400">(estimates &amp; invoices)</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="sc-field">
+                <input id="sc-b-addr1" type="text" class="sc-input" placeholder="Street Address" value="${escapeHtml(_b.address_line1 || '')}">
+              </div>
+              <div class="sc-g-csz">
+                <input id="sc-b-city" type="text" class="sc-input" placeholder="City" value="${escapeHtml(_b.address_city || '')}">
+                <input id="sc-b-state" type="text" class="sc-input" placeholder="ST" maxlength="2" value="${escapeHtml(_b.address_state || '')}">
+                <input id="sc-b-zip"   type="text" class="sc-input" placeholder="ZIP" value="${escapeHtml(_b.address_zip || '')}">
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Terminology -->
         <div>
-          <p class="sc-label" style="margin-bottom:4px">Terminology Customization</p>
-          <p class="sc-inline-hint" style="margin-bottom:12px">Rename terms to match how your team talks — "Dig Order" instead of "Work Order", "Quote" instead of "Estimate", etc.</p>
-          <div class="sc-grid-3" style="gap:10px">
+          <div class="sc-label" style="margin-bottom:4px">Terminology Customization</div>
+          <p class="sc-hint" style="margin-bottom:12px">Rename terms to match how your team talks — e.g. "Dig Order" instead of "Work Order"</p>
+          <div class="sc-g3" style="gap:8px">
             ${[
               ['workOrder','Work Order','Work Order'],['estimate','Estimate','Estimate'],
               ['crew','Crew','Crew'],['division','Division','Division'],
@@ -19577,18 +19725,47 @@ function systemConfig() {
           </div>
         </div>
 
-        <!-- Save footer -->
-        <div class="sc-footer">
-          <p style="font-size:12px;color:var(--gw-muted);align-self:center;margin:0;flex:1">${gwIcon('info', 12, '#9CA3AF')} Branding is applied to all estimates, invoices, and portal pages.</p>
-          <button class="sc-save-btn" onclick="_scSaveBranding()" id="sc-brand-btn2">${gwIcon('floppy', 14, '#fff')} Save Branding</button>
+        <!-- Branding save footer -->
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--gw-line);padding-top:16px">
+          <span style="font-size:11px;color:var(--gw-muted);flex:1">${gwIcon('info', 11, '#9CA3AF')} Applied to all estimates, invoices, and client portal</span>
+          <button class="sc-btn sc-btn-primary" onclick="_scSaveBranding()" id="sc-brand-btn2">${gwIcon('floppy', 13, '#fff')} Save Branding</button>
         </div>
       </div>
     </div>
 
-    <!-- ── Bottom save bar ─────────────────────────────────────────────────── -->
-    <div style="display:flex;justify-content:flex-end;gap:10px;padding-top:8px">
-      <button class="sc-save-btn secondary" onclick="systemConfig()">${gwIcon('sync', 13, '#2D7A55')} Refresh</button>
-      <button class="sc-save-btn" onclick="_scSaveAll()">${gwIcon('floppy', 14, '#fff')} Save All Changes</button>
+    <!-- ══ 6. Data Retention ═══════════════════════════════════════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('data-store', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Data Retention</div>
+          <div class="sc-card-desc">How long to keep historical records before archiving</div>
+        </div>
+      </div>
+      <div class="sc-card-body">
+        <div class="sc-g3">
+          ${[
+            ['opps',        'Leads / Opportunities','Closed &amp; lost records'],
+            ['comms',       'Communications',       'Call logs &amp; message history'],
+            ['completedWOs','Completed Work Orders','Archived WO records'],
+          ].map(([key, label, desc]) => `
+            <div class="sc-field">
+              <label class="sc-label">${label}</label>
+              <div style="display:flex;align-items:center;gap:7px">
+                <input id="sc-r-${key}" type="number" min="30" max="3650" step="30"
+                  class="sc-input" style="flex:1" value="${cfg.retention[key]}">
+                <span style="font-size:12px;color:var(--gw-muted);white-space:nowrap">days</span>
+              </div>
+              <span class="sc-hint">${desc}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ Bottom save bar ════════════════════════════════════════════════════ -->
+    <div class="sc-save-bar">
+      <button class="sc-btn sc-btn-secondary" onclick="systemConfig()">${gwIcon('sync', 13, 'currentColor')} Refresh</button>
+      <button class="sc-btn sc-btn-primary" onclick="_scSaveAll()">${gwIcon('floppy', 13, '#fff')} Save All Changes</button>
     </div>
 
   </div>`;
@@ -19599,15 +19776,22 @@ function systemConfig() {
     const lbl = document.getElementById(`sc-hl-${d}`);
     const tw  = document.getElementById(`sc-ht-${d}`);
     if (!cb) return;
-    if (lbl) { lbl.className = 'sc-day-name' + (cb.checked ? '' : ' closed'); }
-    if (tw)  { tw.className  = 'sc-time-wrap' + (cb.checked ? '' : ' disabled'); }
-    // Toggle the "Closed" label
-    const row = cb.closest('.sc-day-row');
+    const isOpen = cb.checked;
+    if (lbl) { lbl.className = 'sc-day-pill' + (isOpen ? ' active' : ''); }
+    if (tw)  { tw.className  = 'sc-time-wrap' + (isOpen ? '' : ' disabled'); }
+    // Toggle the "Closed" tag in the last cell
+    const row = cb.closest('tr');
     if (row) {
-      let tag = row.querySelector('.sc-closed-tag');
-      if (!cb.checked) {
-        if (!tag) { tag = document.createElement('span'); tag.className = 'sc-closed-tag'; tag.style.cssText = 'font-size:12px;color:var(--gw-muted);margin-left:6px'; tag.textContent = 'Closed'; row.appendChild(tag); }
-      } else { if (tag) tag.remove(); }
+      const lastCell = row.querySelector('td:last-child');
+      if (lastCell) {
+        if (!isOpen) {
+          if (!lastCell.querySelector('.sc-closed-tag')) {
+            lastCell.innerHTML = '<span class="sc-closed-tag">Closed</span>';
+          }
+        } else {
+          lastCell.innerHTML = '';
+        }
+      }
     }
   };
   window._scSAType = function(t) {
