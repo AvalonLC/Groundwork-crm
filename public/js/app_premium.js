@@ -20260,6 +20260,14 @@ function systemTemplates() {
   window._stAutos = autos;
   window._stTmpls = tmpls;
 
+  const GW_TEAL        = '#4D8A86';
+  const GW_TEAL_LIGHT  = '#EDF4F3';
+  const GW_TEAL_DARK   = '#3A6E6A';
+  const GW_INK         = '#1F2A2B';
+  const GW_MUTED       = '#5E6E6F';
+  const GW_LINE        = '#D0CCC3';
+  const GW_SURFACE     = '#FAFAF8';
+
   const TRIGGER_OPTS = [
     ['lead_created','Lead Created'], ['estimate_sent','Estimate Sent'], ['estimate_accepted','Estimate Accepted'],
     ['wo_assigned','WO Assigned'], ['wo_completed','WO Completed'], ['invoice_sent','Invoice Sent'],
@@ -20271,221 +20279,360 @@ function systemTemplates() {
   ];
   const TMPL_CATS = ['email','sms','pdf','contract'];
 
-  function renderAutoRow(a) {
-    const trigBg = { lead_created:'bg-sky-100 text-sky-700', estimate_sent:'bg-violet-100 text-violet-700',
-      estimate_accepted:'bg-emerald-100 text-emerald-700', wo_assigned:'bg-amber-100 text-amber-700',
-      wo_completed:'bg-green-100 text-green-700', invoice_sent:'bg-blue-100 text-blue-700',
-      invoice_overdue:'bg-red-100 text-red-700', payment_received:'bg-teal-100 text-teal-700',
-      recurring_due:'bg-orange-100 text-orange-700' };
-    const actIco = { send_email:gwIcon('email',13), send_sms:gwIcon('message',13), create_task:gwIcon('check',13), update_status:gwIcon('refresh',13), notify_rep:gwIcon('user',13), notify_admin:gwIcon('bell',13) };
-    return `<tr class="border-b border-gray-100 hover:bg-gray-50 transition" id="str-${a.id}">
-      <td class="px-4 py-3">
-        <div class="font-medium text-sm text-gray-800">${escapeHtml(a.name)}</div>
-        ${a.params.delayMinutes ? `<div class="text-xs text-gray-400">Delay: ${a.params.delayMinutes >= 1440 ? (a.params.delayMinutes/1440).toFixed(0)+'d' : (a.params.delayMinutes/60).toFixed(0)+'h'} after trigger</div>` : ''}
+  // ── colour maps ──────────────────────────────────────────────────────────────
+  const TRIG_STYLE = {
+    lead_created:    'background:#EDF4F3;color:#3A6E6A',
+    estimate_sent:   'background:#EDE9FE;color:#5B21B6',
+    estimate_accepted:'background:#D1FAE5;color:#065F46',
+    wo_assigned:     'background:#FEF3C7;color:#92400E',
+    wo_completed:    'background:#D1FAE5;color:#065F46',
+    invoice_sent:    'background:#DBEAFE;color:#1E40AF',
+    invoice_overdue: 'background:#FEE2E2;color:#991B1B',
+    payment_received:'background:#EDF4F3;color:#3A6E6A',
+    recurring_due:   'background:#FFF7ED;color:#9A3412',
+  };
+  const ACT_STYLE = {
+    send_email:'background:#DBEAFE;color:#1E40AF',
+    send_sms:  'background:#D1FAE5;color:#065F46',
+    create_task:'background:#FEF3C7;color:#92400E',
+    update_status:'background:#EDE9FE;color:#5B21B6',
+    notify_rep:'background:#EDF4F3;color:#3A6E6A',
+    notify_admin:'background:#FEE2E2;color:#991B1B',
+  };
+  const CAT_STYLE = {
+    email:    'background:#DBEAFE;color:#1E40AF',
+    sms:      'background:#D1FAE5;color:#065F46',
+    pdf:      'background:#FEF3C7;color:#92400E',
+    contract: 'background:#EDE9FE;color:#5B21B6',
+  };
+  const CAT_ICO = {
+    email:    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
+    sms:      `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    pdf:      `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="15" y2="11"/></svg>`,
+    contract: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="11" y2="17"/><polyline points="9 9 10 9 11 9"/></svg>`,
+  };
+
+  const inputCls = 'style="width:100%;border:1px solid #D0CCC3;border-radius:8px;padding:8px 12px;font-size:13px;color:#1F2A2B;background:#fff;outline:none;box-sizing:border-box" onfocus="this.style.borderColor=\'#4D8A86\';this.style.boxShadow=\'0 0 0 3px rgba(77,138,134,.15)\'" onblur="this.style.borderColor=\'#D0CCC3\';this.style.boxShadow=\'none\'"';
+  const selectCls = 'style="width:100%;border:1px solid #D0CCC3;border-radius:8px;padding:8px 12px;font-size:13px;color:#1F2A2B;background:#fff;outline:none;box-sizing:border-box" onfocus="this.style.borderColor=\'#4D8A86\'" onblur="this.style.borderColor=\'#D0CCC3\'"';
+
+  // ── Row renderers ────────────────────────────────────────────────────────────
+  function renderAutoRow(a, idx) {
+    const ts = TRIG_STYLE[a.trigger] || 'background:#f3f4f6;color:#374151';
+    const as = ACT_STYLE[a.action]   || 'background:#f3f4f6;color:#374151';
+    const delayStr = a.params.delayMinutes
+      ? (a.params.delayMinutes >= 1440
+          ? `${(a.params.delayMinutes/1440).toFixed(0)}d delay`
+          : `${(a.params.delayMinutes/60).toFixed(0)}h delay`)
+      : '';
+    const isEven = idx % 2 === 0;
+    return `<tr id="str-${a.id}" style="border-bottom:1px solid #EDF2F0;background:${isEven?'#fff':'#FAFAF8'};transition:background .15s"
+      onmouseenter="this.style.background='#EDF4F3'" onmouseleave="this.style.background='${isEven?'#fff':'#FAFAF8'}'">
+      <td style="padding:14px 16px;vertical-align:middle">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:6px;height:6px;border-radius:50%;background:${a.enabled?'#4D8A86':'#D0CCC3'};flex-shrink:0"></div>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#1F2A2B">${escapeHtml(a.name)}</div>
+            ${delayStr?`<div style="font-size:11px;color:#9CA3AF;margin-top:1px">⏱ ${delayStr}</div>`:''}
+          </div>
+        </div>
       </td>
-      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${trigBg[a.trigger]||'bg-gray-100 text-gray-600'}">${a.triggerLabel}</span></td>
-      <td class="px-4 py-3 text-sm text-gray-600">${actIco[a.action]||'⚡'} ${a.actionLabel}</td>
-      <td class="px-4 py-3 text-xs text-gray-400">${a.params.templateName||'—'}</td>
-      <td class="px-4 py-3">
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" ${a.enabled?'checked':''} class="sr-only peer" onchange="_stToggleAuto('${a.id}',this.checked)">
-          <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+      <td style="padding:14px 16px;vertical-align:middle">
+        <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;${ts}">${a.triggerLabel}</span>
+      </td>
+      <td style="padding:14px 16px;vertical-align:middle">
+        <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;${as}">${a.actionLabel}</span>
+      </td>
+      <td style="padding:14px 16px;vertical-align:middle">
+        ${a.params.templateName
+          ? `<span style="font-size:12px;color:#5E6E6F;background:#F3F4F6;padding:2px 8px;border-radius:6px;font-weight:500">${escapeHtml(a.params.templateName)}</span>`
+          : `<span style="font-size:12px;color:#D0CCC3">—</span>`}
+      </td>
+      <td style="padding:14px 16px;vertical-align:middle">
+        <label style="display:inline-flex;align-items:center;cursor:pointer;gap:0">
+          <input type="checkbox" ${a.enabled?'checked':''} style="display:none" onchange="_stToggleAuto('${a.id}',this.checked)" id="stog-${a.id}">
+          <span onclick="const cb=document.getElementById('stog-${a.id}');cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'))"
+            style="display:inline-flex;width:36px;height:20px;border-radius:10px;background:${a.enabled?'#4D8A86':'#D0CCC3'};position:relative;transition:background .2s;cursor:pointer;flex-shrink:0" id="stog-track-${a.id}">
+            <span style="position:absolute;top:2px;left:${a.enabled?'18px':'2px'};width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)" id="stog-thumb-${a.id}"></span>
+          </span>
         </label>
       </td>
-      <td class="px-4 py-3 text-right">
-        <button onclick="_stEditAuto('${a.id}')" class="text-xs text-sky-600 hover:text-sky-800 mr-2">Edit</button>
-        <button onclick="_stDeleteAuto('${a.id}')" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+      <td style="padding:14px 16px;vertical-align:middle;text-align:right;white-space:nowrap">
+        <button onclick="_stEditAuto('${a.id}')"
+          style="font-size:12px;font-weight:600;color:#4D8A86;background:#EDF4F3;border:1px solid rgba(77,138,134,.25);border-radius:6px;padding:4px 10px;cursor:pointer;margin-right:4px;transition:all .15s"
+          onmouseenter="this.style.background='#D0E8E6'" onmouseleave="this.style.background='#EDF4F3'">Edit</button>
+        <button onclick="_stDeleteAuto('${a.id}')"
+          style="font-size:12px;font-weight:600;color:#B91C1C;background:#FEF2F2;border:1px solid rgba(185,28,28,.2);border-radius:6px;padding:4px 10px;cursor:pointer;transition:all .15s"
+          onmouseenter="this.style.background='#FEE2E2'" onmouseleave="this.style.background='#FEF2F2'">Delete</button>
       </td>
     </tr>`;
   }
 
   function renderTmplCard(t) {
-    const catCol = { email:'bg-sky-100 text-sky-700', sms:'bg-green-100 text-green-700', pdf:'bg-amber-100 text-amber-700', contract:'bg-violet-100 text-violet-700' };
-    const varList = (t.variables||[]).map(v=>`<span class="inline-block bg-gray-100 text-gray-500 text-xs rounded px-1.5 py-0.5 mr-1 mb-1">{{${v}}}</span>`).join('');
-    return `<div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition" id="stc-${t.id}">
-      <div class="flex items-start justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <span class="text-lg" style="display:inline-flex;align-items:center">${t.category==='email'?gwIcon('email',18):t.category==='sms'?gwIcon('message',18):t.category==='pdf'?gwIcon('document',18):gwIcon('notes',18)}</span>
-          <div>
-            <div class="font-semibold text-gray-800 text-sm">${escapeHtml(t.name)}</div>
-            <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${catCol[t.category]||'bg-gray-100 text-gray-600'}">${t.category.toUpperCase()}</span>
+    const cs = CAT_STYLE[t.category] || 'background:#f3f4f6;color:#374151';
+    const ico = CAT_ICO[t.category] || CAT_ICO.pdf;
+    const preview = escapeHtml(t.body||'').replace(/\n/g,'<br>').substring(0,200);
+    const hasMore = (t.body||'').length > 200;
+    const varPills = (t.variables||[]).slice(0,5).map(v=>
+      `<span style="display:inline-block;font-size:10px;font-weight:600;background:#EDF4F3;color:#4D8A86;border:1px solid rgba(77,138,134,.3);border-radius:5px;padding:1px 6px;margin:1px">{{${v}}}</span>`
+    ).join('');
+    const moreVars = (t.variables||[]).length > 5 ? `<span style="font-size:10px;color:#9CA3AF">+${(t.variables||[]).length-5} more</span>` : '';
+    return `<div id="stc-${t.id}" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .2s,border-color .2s"
+      onmouseenter="this.style.boxShadow='0 4px 16px rgba(77,138,134,.12)';this.style.borderColor='rgba(77,138,134,.35)'"
+      onmouseleave="this.style.boxShadow='none';this.style.borderColor='#E5E7EB'">
+      <!-- Card header -->
+      <div style="padding:14px 16px 12px;border-bottom:1px solid #F3F4F6;display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <div style="width:36px;height:36px;border-radius:10px;${cs};display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.85">${ico}</div>
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:700;color:#1F2A2B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</div>
+            <span style="display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:20px;margin-top:3px;${cs}">${(t.category||'').toUpperCase()}</span>
           </div>
         </div>
-        <div class="flex gap-1">
-          <button onclick="_stEditTmpl('${t.id}')" class="text-xs text-sky-600 hover:text-sky-800 px-2 py-1 rounded border border-sky-200 hover:border-sky-400 transition">Edit</button>
-          <button onclick="_stDeleteTmpl('${t.id}')" class="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded border border-red-100 hover:border-red-300 transition">✕</button>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button onclick="_stEditTmpl('${t.id}')"
+            style="font-size:11px;font-weight:600;color:#4D8A86;background:#EDF4F3;border:1px solid rgba(77,138,134,.25);border-radius:6px;padding:4px 10px;cursor:pointer;transition:background .15s"
+            onmouseenter="this.style.background='#D0E8E6'" onmouseleave="this.style.background='#EDF4F3'">Edit</button>
+          <button onclick="_stDeleteTmpl('${t.id}')"
+            style="font-size:11px;font-weight:600;color:#B91C1C;background:#FEF2F2;border:1px solid rgba(185,28,28,.15);border-radius:6px;padding:4px 8px;cursor:pointer;transition:background .15s"
+            onmouseenter="this.style.background='#FEE2E2'" onmouseleave="this.style.background='#FEF2F2'">✕</button>
         </div>
       </div>
-      ${t.subject ? `<div class="text-xs text-gray-500 mb-2 truncate"><strong>Subject:</strong> ${escapeHtml(t.subject)}</div>` : ''}
-      <div class="text-xs text-gray-600 bg-gray-50 rounded p-2 mb-2 line-clamp-2 leading-relaxed">${escapeHtml(t.body).replace(/\n/g,'<br>').substring(0,160)}${t.body.length>160?'…':''}</div>
-      ${varList ? `<div class="mt-1">${varList}</div>` : ''}
+      <!-- Card body -->
+      <div style="padding:12px 16px;flex:1">
+        ${t.subject ? `<div style="font-size:11px;color:#5E6E6F;margin-bottom:8px;display:flex;align-items:baseline;gap:4px"><span style="font-weight:700;color:#9CA3AF;flex-shrink:0">Subject:</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t.subject)}</span></div>` : ''}
+        <div style="font-size:12px;color:#5E6E6F;background:#FAFAF8;border-radius:8px;padding:10px 12px;line-height:1.6;border:1px solid #F3F4F6;max-height:72px;overflow:hidden">${preview}${hasMore?'<span style="color:#9CA3AF">…</span>':''}</div>
+      </div>
+      <!-- Card footer -->
+      ${varPills ? `<div style="padding:8px 16px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:3px;border-top:1px solid #F3F4F6">${varPills}${moreVars}</div>` : ''}
     </div>`;
   }
 
+  const activeCount = autos.filter(a=>a.enabled).length;
+
   el.innerHTML = `
-  <div class="p-6 max-w-6xl mx-auto space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
+  <style>
+    #st-modal-overlay{transition:opacity .2s}
+    .st-modal-panel{animation:stSlideUp .22s ease}
+    @keyframes stSlideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  </style>
+  <div style="padding:28px 28px 48px;max-width:1100px;margin:0 auto">
+
+    <!-- ── Page header ────────────────────────────────────────────────────── -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">${gwIcon('robot',22,'#374151')} Templates &amp; System Automations</h1>
-        <p class="text-sm text-gray-500 mt-1">Manage automated workflows triggered by status changes, and document/message templates.</p>
-      </div>
-    </div>
-
-    <!-- Sub-tabs -->
-    <div class="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-      <button id="st-tab-auto" onclick="_stShowTab('auto')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition">${gwIcon('lightning',14)} Automations (${autos.length})</button>
-      <button id="st-tab-tmpl" onclick="_stShowTab('tmpl')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition">${gwIcon('document',14)} Templates (${tmpls.length})</button>
-    </div>
-
-    <!-- Automations Panel -->
-    <div id="st-panel-auto">
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-lg" style="display:inline-flex;align-items:center">${gwIcon('lightning',18,'#374151')}</span>
-            <h2 class="font-semibold text-gray-800">Automation Rules</h2>
-            <span class="ml-2 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">${autos.filter(a=>a.enabled).length} active</span>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <div style="width:36px;height:36px;border-radius:10px;background:#EDF4F3;display:flex;align-items:center;justify-content:center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/><path d="M9 13h6M9 17h4"/></svg>
           </div>
-          <button onclick="_stNewAuto()" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition">+ New Rule</button>
+          <h1 style="font-size:20px;font-weight:800;color:#1F2A2B;letter-spacing:-.02em;margin:0">Templates &amp; System Automations</h1>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead><tr class="text-xs text-gray-400 uppercase border-b border-gray-100">
-              <th class="px-4 py-3 text-left">Rule Name</th>
-              <th class="px-4 py-3 text-left">Trigger</th>
-              <th class="px-4 py-3 text-left">Action</th>
-              <th class="px-4 py-3 text-left">Template</th>
-              <th class="px-4 py-3 text-left">Enabled</th>
-              <th class="px-4 py-3 text-right"></th>
-            </tr></thead>
-            <tbody id="st-auto-tbody">${autos.map(renderAutoRow).join('')}</tbody>
+        <p style="font-size:13px;color:#5E6E6F;margin:0 0 0 46px">Manage automated workflows and document / message templates for your team.</p>
+      </div>
+      <!-- Active stats pills -->
+      <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;background:#EDF4F3;border:1px solid rgba(77,138,134,.25);border-radius:20px;padding:5px 12px">
+          <div style="width:7px;height:7px;border-radius:50%;background:#4D8A86"></div>
+          <span style="font-size:12px;font-weight:700;color:#3A6E6A">${activeCount} Active Rule${activeCount!==1?'s':''}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:#EDE9FE;border:1px solid rgba(91,33,182,.2);border-radius:20px;padding:5px 12px">
+          <span style="font-size:12px;font-weight:700;color:#5B21B6">${tmpls.length} Template${tmpls.length!==1?'s':''}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Tab switcher ───────────────────────────────────────────────────── -->
+    <div style="display:flex;gap:2px;background:#F3F4F6;border-radius:10px;padding:3px;width:fit-content;margin-bottom:20px">
+      <button id="st-tab-auto" onclick="_stShowTab('auto')"
+        style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:7px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:#fff;color:#1F2A2B;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:all .15s">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Automations <span style="background:#4D8A86;color:#fff;border-radius:20px;padding:1px 7px;font-size:10px;margin-left:2px">${autos.length}</span>
+      </button>
+      <button id="st-tab-tmpl" onclick="_stShowTab('tmpl')"
+        style="display:flex;align-items:center;gap:6px;padding:8px 18px;border-radius:7px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:transparent;color:#5E6E6F;transition:all .15s">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="11" y2="17"/></svg>
+        Templates <span style="background:#5B21B6;color:#fff;border-radius:20px;padding:1px 7px;font-size:10px;margin-left:2px">${tmpls.length}</span>
+      </button>
+    </div>
+
+    <!-- ══════════════ AUTOMATIONS PANEL ══════════════ -->
+    <div id="st-panel-auto">
+      <!-- Table card -->
+      <div style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+        <!-- Card header -->
+        <div style="padding:16px 20px;background:#FAFAF8;border-bottom:1px solid #EDF2F0;display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:10px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span style="font-size:14px;font-weight:700;color:#1F2A2B">Automation Rules</span>
+            <span style="background:#EDF4F3;color:#3A6E6A;border:1px solid rgba(77,138,134,.25);border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700">${activeCount} active</span>
+          </div>
+          <button onclick="_stNewAuto()"
+            style="display:flex;align-items:center;gap:5px;background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s"
+            onmouseenter="this.style.background='#3A6E6A'" onmouseleave="this.style.background='#4D8A86'">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Rule
+          </button>
+        </div>
+        <!-- Table -->
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr style="background:#FAFAF8;border-bottom:1px solid #EDF2F0">
+                <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF">Rule Name</th>
+                <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF">Trigger</th>
+                <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF">Action</th>
+                <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF">Template</th>
+                <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF">Enabled</th>
+                <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF"></th>
+              </tr>
+            </thead>
+            <tbody id="st-auto-tbody">${autos.map((a,i)=>renderAutoRow(a,i)).join('')}</tbody>
           </table>
-          ${autos.length===0?'<div class="p-8 text-center text-gray-400 text-sm">No automation rules yet. Click "+ New Rule" to get started.</div>':''}
+          ${autos.length===0?`<div style="padding:40px 24px;text-align:center;color:#9CA3AF;font-size:13px">No automation rules yet. Click <strong>+ New Rule</strong> to create one.</div>`:''}
         </div>
       </div>
 
-      <!-- How automations work info box -->
-      <div class="mt-4 bg-sky-50 border border-sky-200 rounded-xl p-4 flex gap-3">
-        <span class="text-xl">ℹ️</span>
-        <div class="text-sm text-sky-800">
+      <!-- Info banner -->
+      <div style="margin-top:14px;background:#EDF4F3;border:1px solid rgba(77,138,134,.25);border-radius:12px;padding:14px 16px;display:flex;gap:10px;align-items:flex-start">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div style="font-size:12.5px;color:#3A6E6A;line-height:1.6">
           <strong>How automations work:</strong> When a trigger event occurs in Groundwork CRM, the matching enabled rules fire in order. Email/SMS actions use the linked template with variable substitution. Rules fire in real-time (0 min delay) or after a configured delay.
         </div>
       </div>
     </div>
 
-    <!-- Templates Panel (hidden by default) -->
-    <div id="st-panel-tmpl" class="hidden">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-          <h2 class="font-semibold text-gray-800">Document &amp; Message Templates</h2>
-          <div class="flex gap-1">
-            ${TMPL_CATS.map(c=>`<button onclick="_stFilterTmpl('${c}')" id="stf-${c}" class="px-2.5 py-1 rounded-full text-xs border border-gray-200 hover:border-sky-400 hover:text-sky-700 transition">${c.toUpperCase()}</button>`).join('')}
-            <button onclick="_stFilterTmpl('')" id="stf-all" class="px-2.5 py-1 rounded-full text-xs border border-sky-400 text-sky-700 bg-sky-50 font-medium">ALL</button>
+    <!-- ══════════════ TEMPLATES PANEL ══════════════ -->
+    <div id="st-panel-tmpl" style="display:none">
+      <!-- Toolbar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:700;color:#1F2A2B">Document &amp; Message Templates</span>
+          <div style="display:flex;gap:4px">
+            ${TMPL_CATS.map(c=>`<button onclick="_stFilterTmpl('${c}')" id="stf-${c}"
+              style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid #D0CCC3;color:#5E6E6F;background:#fff;cursor:pointer;transition:all .15s"
+              onmouseenter="this.style.borderColor='#4D8A86';this.style.color='#3A6E6A'" onmouseleave="_stRestoreFilterBtn('${c}')">${CAT_ICO[c]} ${c.toUpperCase()}</button>`).join('')}
+            <button onclick="_stFilterTmpl('')" id="stf-all"
+              style="padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid #4D8A86;color:#4D8A86;background:#EDF4F3;cursor:pointer;transition:all .15s">ALL</button>
           </div>
         </div>
-        <button onclick="_stNewTmpl()" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition">+ New Template</button>
+        <button onclick="_stNewTmpl()"
+          style="display:flex;align-items:center;gap:5px;background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;flex-shrink:0"
+          onmouseenter="this.style.background='#3A6E6A'" onmouseleave="this.style.background='#4D8A86'">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Template
+        </button>
       </div>
-      <div id="st-tmpl-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- Grid -->
+      <div id="st-tmpl-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
         ${tmpls.map(renderTmplCard).join('')}
       </div>
-      ${tmpls.length===0?'<div class="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400 text-sm">No templates yet. Click "+ New Template" to create one.</div>':''}
+      ${tmpls.length===0?`<div style="background:#fff;border:2px dashed #D0CCC3;border-radius:14px;padding:48px 24px;text-align:center;color:#9CA3AF;font-size:13px">No templates yet. Click <strong>+ New Template</strong> to create one.</div>`:''}
     </div>
   </div>
 
-  <!-- Automation Modal -->
-  <div id="st-auto-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-        <h3 id="st-auto-modal-title" class="font-semibold text-gray-800">New Automation Rule</h3>
-        <button onclick="_stCloseModals()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-      </div>
-      <div class="p-6 space-y-4">
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Rule Name</label>
-          <input id="st-a-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" placeholder="e.g. New Lead Welcome Email">
+  <!-- ══════════════ AUTOMATION MODAL ══════════════ -->
+  <div id="st-auto-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:none;align-items:center;justify-content:center;padding:16px">
+    <div class="st-modal-panel" style="background:#fff;border-radius:16px;box-shadow:0 24px 48px rgba(0,0,0,.2);width:100%;max-width:480px;overflow:hidden">
+      <div style="padding:18px 22px;border-bottom:1px solid #EDF2F0;display:flex;align-items:center;justify-content:space-between;background:#FAFAF8">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span id="st-auto-modal-title" style="font-size:15px;font-weight:700;color:#1F2A2B">New Automation Rule</span>
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <button onclick="_stCloseModals()" style="width:28px;height:28px;border-radius:7px;border:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;color:#5E6E6F;line-height:1">×</button>
+      </div>
+      <div style="padding:22px;display:flex;flex-direction:column;gap:14px">
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Rule Name</label>
+          <input id="st-a-name" placeholder="e.g. New Lead Welcome Email" ${inputCls}>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Trigger Event</label>
-            <select id="st-a-trigger" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Trigger Event</label>
+            <select id="st-a-trigger" ${selectCls}>
               ${TRIGGER_OPTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}
             </select>
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Action</label>
-            <select id="st-a-action" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Action</label>
+            <select id="st-a-action" ${selectCls}>
               ${ACTION_OPTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}
             </select>
           </div>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Template Name (optional)</label>
-          <input id="st-a-tmplname" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" list="st-tmpl-list" placeholder="Select or type template name">
+          <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Template Name <span style="font-weight:400;text-transform:none;font-size:11px">(optional)</span></label>
+          <input id="st-a-tmplname" list="st-tmpl-list" placeholder="Select or type template name" ${inputCls}>
           <datalist id="st-tmpl-list">${(window._stTmpls||[]).map(t=>`<option value="${escapeHtml(t.name)}">`).join('')}</datalist>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Delay After Trigger</label>
-          <div class="flex gap-2 items-center">
-            <input id="st-a-delay" type="number" min="0" value="0" class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
-            <select id="st-a-delayunit" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+          <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Delay After Trigger</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="st-a-delay" type="number" min="0" value="0" style="width:80px;border:1px solid #D0CCC3;border-radius:8px;padding:8px 10px;font-size:13px;color:#1F2A2B;outline:none;box-sizing:border-box" onfocus="this.style.borderColor='#4D8A86'" onblur="this.style.borderColor='#D0CCC3'">
+            <select id="st-a-delayunit" style="flex:1;border:1px solid #D0CCC3;border-radius:8px;padding:8px 10px;font-size:13px;color:#1F2A2B;outline:none;background:#fff" onfocus="this.style.borderColor='#4D8A86'" onblur="this.style.borderColor='#D0CCC3'">
               <option value="min">minutes</option>
               <option value="hr">hours</option>
               <option value="day">days</option>
             </select>
           </div>
         </div>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input id="st-a-enabled" type="checkbox" checked class="w-4 h-4 accent-sky-500">
-          <span class="text-sm text-gray-700">Enable rule immediately</span>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;background:#EDF4F3;border-radius:8px;border:1px solid rgba(77,138,134,.2)">
+          <input id="st-a-enabled" type="checkbox" checked style="width:16px;height:16px;accent-color:#4D8A86;cursor:pointer">
+          <span style="font-size:13px;color:#1F2A2B;font-weight:500">Enable rule immediately</span>
         </label>
       </div>
-      <div class="px-6 py-4 border-t border-gray-200 flex gap-2 justify-end">
-        <button onclick="_stCloseModals()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">Cancel</button>
-        <button onclick="_stSaveAutoModal()" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-semibold transition">Save Rule</button>
+      <div style="padding:14px 22px;border-top:1px solid #EDF2F0;display:flex;gap:8px;justify-content:flex-end;background:#FAFAF8">
+        <button onclick="_stCloseModals()" style="padding:8px 16px;border-radius:8px;border:1px solid #D0CCC3;font-size:13px;font-weight:600;color:#5E6E6F;background:#fff;cursor:pointer">Cancel</button>
+        <button onclick="_stSaveAutoModal()" style="padding:8px 18px;border-radius:8px;border:none;font-size:13px;font-weight:700;color:#fff;background:#4D8A86;cursor:pointer;transition:background .15s" onmouseenter="this.style.background='#3A6E6A'" onmouseleave="this.style.background='#4D8A86'">Save Rule</button>
       </div>
     </div>
   </div>
 
-  <!-- Template Modal -->
-  <div id="st-tmpl-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-        <h3 id="st-tmpl-modal-title" class="font-semibold text-gray-800">New Template</h3>
-        <button onclick="_stCloseModals()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+  <!-- ══════════════ TEMPLATE MODAL ══════════════ -->
+  <div id="st-tmpl-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center;padding:16px">
+    <div class="st-modal-panel" style="background:#fff;border-radius:16px;box-shadow:0 24px 48px rgba(0,0,0,.2);width:100%;max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:18px 22px;border-bottom:1px solid #EDF2F0;display:flex;align-items:center;justify-content:space-between;background:#FAFAF8;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="11" y2="17"/></svg>
+          <span id="st-tmpl-modal-title" style="font-size:15px;font-weight:700;color:#1F2A2B">New Template</span>
+        </div>
+        <button onclick="_stCloseModals()" style="width:28px;height:28px;border-radius:7px;border:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;color:#5E6E6F;line-height:1">×</button>
       </div>
-      <div class="p-6 space-y-4 overflow-y-auto">
-        <div class="grid grid-cols-2 gap-3">
+      <div style="padding:22px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;flex:1">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Template Name</label>
-            <input id="st-t-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" placeholder="e.g. Welcome Email">
+            <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Template Name</label>
+            <input id="st-t-name" placeholder="e.g. Welcome Email" ${inputCls}>
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <select id="st-t-cat" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Category</label>
+            <select id="st-t-cat" ${selectCls}>
               ${TMPL_CATS.map(c=>`<option value="${c}">${c.toUpperCase()}</option>`).join('')}
             </select>
           </div>
         </div>
         <div id="st-t-subject-wrap">
-          <label class="block text-xs font-medium text-gray-500 mb-1">Subject Line <span class="text-gray-400">(email only)</span></label>
-          <input id="st-t-subject" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" placeholder="e.g. Welcome to {{company_name}}!">
+          <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Subject Line <span style="font-weight:400;text-transform:none;font-size:11px">(email only)</span></label>
+          <input id="st-t-subject" placeholder="e.g. Welcome to {{company_name}}!" ${inputCls}>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Body</label>
-          <textarea id="st-t-body" rows="8" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none font-mono" placeholder="Use {{variable_name}} for dynamic content. e.g. Hi {{client_name}}, ..."></textarea>
+          <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Body</label>
+          <textarea id="st-t-body" rows="9" placeholder="Use {{variable_name}} for dynamic content. e.g. Hi {{client_name}}, ..."
+            style="width:100%;border:1px solid #D0CCC3;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1F2A2B;background:#FAFAF8;outline:none;box-sizing:border-box;resize:none;font-family:ui-monospace,monospace;line-height:1.6"
+            onfocus="this.style.borderColor='#4D8A86';this.style.boxShadow='0 0 0 3px rgba(77,138,134,.12)'" onblur="this.style.borderColor='#D0CCC3';this.style.boxShadow='none'" oninput="window._stDetectVars()"></textarea>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Variables (auto-detected from body)</label>
-          <div id="st-t-vars-preview" class="min-h-[28px] flex flex-wrap gap-1"></div>
+          <label style="display:block;font-size:11px;font-weight:700;color:#5E6E6F;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Detected Variables</label>
+          <div id="st-t-vars-preview" style="min-height:24px;display:flex;flex-wrap:wrap;gap:4px;align-items:center"></div>
         </div>
-        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-          <strong>Available variables:</strong> {{client_name}}, {{rep_name}}, {{company_name}}, {{company_phone}}, {{company_email}}, {{property_address}}, {{service_type}}, {{scheduled_date}}, {{invoice_number}}, {{invoice_amount}}, {{crew_name}}, {{review_link}}
+        <div style="background:#FEF9ED;border:1px solid #F59E0B40;border-radius:9px;padding:12px 14px">
+          <div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em">Available Variables</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${['client_name','rep_name','company_name','company_phone','company_email','property_address','service_type','scheduled_date','invoice_number','invoice_amount','crew_name','review_link'].map(v=>`<span onclick="const b=document.getElementById('st-t-body');b.value+=(b.value&&!b.value.endsWith(' ')?'':'')+' {{${v}}}';window._stDetectVars()" style="font-size:10.5px;font-weight:600;background:#FEF3C7;color:#92400E;border:1px solid #F59E0B40;border-radius:5px;padding:2px 7px;cursor:pointer" title="Click to insert">{{${v}}}</span>`).join('')}
+          </div>
         </div>
       </div>
-      <div class="px-6 py-4 border-t border-gray-200 flex gap-2 justify-end flex-shrink-0">
-        <button onclick="_stCloseModals()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">Cancel</button>
-        <button onclick="_stSaveTmplModal()" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-semibold transition">Save Template</button>
+      <div style="padding:14px 22px;border-top:1px solid #EDF2F0;display:flex;gap:8px;justify-content:flex-end;background:#FAFAF8;flex-shrink:0">
+        <button onclick="_stCloseModals()" style="padding:8px 16px;border-radius:8px;border:1px solid #D0CCC3;font-size:13px;font-weight:600;color:#5E6E6F;background:#fff;cursor:pointer">Cancel</button>
+        <button onclick="_stSaveTmplModal()" style="padding:8px 18px;border-radius:8px;border:none;font-size:13px;font-weight:700;color:#fff;background:#4D8A86;cursor:pointer;transition:background .15s" onmouseenter="this.style.background='#3A6E6A'" onmouseleave="this.style.background='#4D8A86'">Save Template</button>
       </div>
     </div>
   </div>`;
@@ -20495,20 +20642,35 @@ function systemTemplates() {
   window._stTmplEditId = null;
 
   window._stShowTab = function(tab) {
-    document.getElementById('st-panel-auto').classList.toggle('hidden', tab!=='auto');
-    document.getElementById('st-panel-tmpl').classList.toggle('hidden', tab!=='tmpl');
-    document.getElementById('st-tab-auto').className = tab==='auto'
-      ? 'px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition'
-      : 'px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition';
-    document.getElementById('st-tab-tmpl').className = tab==='tmpl'
-      ? 'px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-800 shadow-sm transition'
-      : 'px-4 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-800 transition';
+    const pAuto = document.getElementById('st-panel-auto');
+    const pTmpl = document.getElementById('st-panel-tmpl');
+    if (pAuto) pAuto.style.display = tab==='auto' ? '' : 'none';
+    if (pTmpl) pTmpl.style.display = tab==='tmpl' ? '' : 'none';
+    const tAuto = document.getElementById('st-tab-auto');
+    const tTmpl = document.getElementById('st-tab-tmpl');
+    if (tAuto) Object.assign(tAuto.style, tab==='auto'
+      ? {background:'#fff',color:'#1F2A2B',boxShadow:'0 1px 3px rgba(0,0,0,.08)'}
+      : {background:'transparent',color:'#5E6E6F',boxShadow:'none'});
+    if (tTmpl) Object.assign(tTmpl.style, tab==='tmpl'
+      ? {background:'#fff',color:'#1F2A2B',boxShadow:'0 1px 3px rgba(0,0,0,.08)'}
+      : {background:'transparent',color:'#5E6E6F',boxShadow:'none'});
   };
 
   window._stToggleAuto = function(id, val) {
     const autos = _stLoadAuto() || _stDefaultAutos();
     const a = autos.find(x=>x.id===id);
-    if (a) { a.enabled = val; _stSaveAuto(autos); showToast(val ? 'Rule enabled' : 'Rule disabled', val ? 'success' : 'info'); }
+    if (a) {
+      a.enabled = val;
+      _stSaveAuto(autos);
+      // Update toggle visual
+      const track = document.getElementById(`stog-track-${id}`);
+      const thumb = document.getElementById(`stog-thumb-${id}`);
+      const dot   = document.querySelector(`#str-${id} [style*="border-radius:50%"]`);
+      if (track) track.style.background = val ? '#4D8A86' : '#D0CCC3';
+      if (thumb) thumb.style.left = val ? '18px' : '2px';
+      if (dot)   dot.style.background = val ? '#4D8A86' : '#D0CCC3';
+      showToast(val ? 'Rule enabled' : 'Rule disabled', val ? 'success' : 'info');
+    }
   };
 
   window._stDeleteAuto = function(id) {
@@ -20522,8 +20684,10 @@ function systemTemplates() {
   };
 
   window._stCloseModals = function() {
-    document.getElementById('st-auto-modal').classList.add('hidden');
-    document.getElementById('st-tmpl-modal').classList.add('hidden');
+    const am = document.getElementById('st-auto-modal');
+    const tm = document.getElementById('st-tmpl-modal');
+    if (am) am.style.display = 'none';
+    if (tm) tm.style.display = 'none';
     window._stEditId = null;
     window._stTmplEditId = null;
   };
@@ -20538,7 +20702,8 @@ function systemTemplates() {
     document.getElementById('st-a-delay').value = '0';
     document.getElementById('st-a-delayunit').value = 'min';
     document.getElementById('st-a-enabled').checked = true;
-    document.getElementById('st-auto-modal').classList.remove('hidden');
+    const m = document.getElementById('st-auto-modal');
+    if (m) m.style.display = 'flex';
   };
 
   window._stEditAuto = function(id) {
@@ -20558,7 +20723,8 @@ function systemTemplates() {
     document.getElementById('st-a-delay').value = delay;
     document.getElementById('st-a-delayunit').value = unit;
     document.getElementById('st-a-enabled').checked = a.enabled;
-    document.getElementById('st-auto-modal').classList.remove('hidden');
+    const m = document.getElementById('st-auto-modal');
+    if (m) m.style.display = 'flex';
   };
 
   window._stSaveAutoModal = function() {
@@ -20590,15 +20756,26 @@ function systemTemplates() {
   window._stFilterTmpl = function(cat) {
     const tmpls = _stLoadTmpl() || _stDefaultTemplates();
     const filtered = cat ? tmpls.filter(t=>t.category===cat) : tmpls;
-    document.getElementById('st-tmpl-grid').innerHTML = filtered.map(renderTmplCard).join('') ||
-      '<div class="col-span-3 text-center text-gray-400 text-sm py-8">No templates in this category.</div>';
+    const grid = document.getElementById('st-tmpl-grid');
+    if (grid) grid.innerHTML = filtered.map(renderTmplCard).join('') ||
+      '<div style="grid-column:1/-1;text-align:center;color:#9CA3AF;font-size:13px;padding:32px">No templates in this category.</div>';
     ['email','sms','pdf','contract','all'].forEach(c => {
       const btn = document.getElementById(c==='all'?'stf-all':`stf-${c}`);
       if (!btn) return;
-      btn.className = (c===cat || (c==='all'&&!cat))
-        ? 'px-2.5 py-1 rounded-full text-xs border border-sky-400 text-sky-700 bg-sky-50 font-medium'
-        : 'px-2.5 py-1 rounded-full text-xs border border-gray-200 hover:border-sky-400 hover:text-sky-700 transition';
+      const active = (c===cat || (c==='all'&&!cat));
+      Object.assign(btn.style, active
+        ? {borderColor:'#4D8A86',color:'#4D8A86',background:'#EDF4F3',fontWeight:'700'}
+        : {borderColor:'#D0CCC3',color:'#5E6E6F',background:'#fff',fontWeight:'600'});
     });
+  };
+  window._stRestoreFilterBtn = function(c) {
+    const btn = document.getElementById(`stf-${c}`);
+    if (!btn) return;
+    // Only restore if not currently active (active button keeps teal style)
+    if (btn.style.background !== '#EDF4F3') {
+      btn.style.borderColor = '#D0CCC3';
+      btn.style.color = '#5E6E6F';
+    }
   };
 
   window._stNewTmpl = function() {
@@ -20609,7 +20786,8 @@ function systemTemplates() {
     document.getElementById('st-t-subject').value = '';
     document.getElementById('st-t-body').value = '';
     document.getElementById('st-t-vars-preview').innerHTML = '';
-    document.getElementById('st-tmpl-modal').classList.remove('hidden');
+    const m = document.getElementById('st-tmpl-modal');
+    if (m) m.style.display = 'flex';
   };
 
   window._stEditTmpl = function(id) {
@@ -20623,20 +20801,19 @@ function systemTemplates() {
     document.getElementById('st-t-subject').value = t.subject||'';
     document.getElementById('st-t-body').value = t.body||'';
     _stDetectVars();
-    document.getElementById('st-tmpl-modal').classList.remove('hidden');
+    const m = document.getElementById('st-tmpl-modal');
+    if (m) m.style.display = 'flex';
   };
 
   window._stDetectVars = function() {
-    const body = document.getElementById('st-t-body').value||'';
-    const subj = document.getElementById('st-t-subject').value||'';
+    const body = document.getElementById('st-t-body')?.value||'';
+    const subj = document.getElementById('st-t-subject')?.value||'';
     const matches = [...new Set([...(body+subj).matchAll(/\{\{([^}]+)\}\}/g)].map(m=>m[1]))];
     const preview = document.getElementById('st-t-vars-preview');
-    if (preview) preview.innerHTML = matches.map(v=>`<span class="inline-block bg-gray-100 text-gray-600 text-xs rounded px-1.5 py-0.5">{{${escapeHtml(v)}}}</span>`).join('') || '<span class="text-gray-400 text-xs">No variables detected yet.</span>';
+    if (preview) preview.innerHTML = matches.length
+      ? matches.map(v=>`<span style="display:inline-block;font-size:11px;font-weight:600;background:#EDF4F3;color:#4D8A86;border:1px solid rgba(77,138,134,.3);border-radius:5px;padding:2px 7px">{{${escapeHtml(v)}}}</span>`).join('')
+      : '<span style="font-size:12px;color:#9CA3AF">No variables detected yet — type {{variable_name}} in the body.</span>';
   };
-  const bodyInput = document.getElementById('st-t-body');
-  const subjInput = document.getElementById('st-t-subject');
-  if (bodyInput) bodyInput.addEventListener('input', window._stDetectVars);
-  if (subjInput) subjInput.addEventListener('input', window._stDetectVars);
 
   window._stDeleteTmpl = function(id) {
     if (!confirm('Delete this template?')) return;
