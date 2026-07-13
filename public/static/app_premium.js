@@ -15399,8 +15399,14 @@ function dispatchBoard() {
 }
 window.dispatchBoard = dispatchBoard;
 
-// ── 4. Recurring Services ─────────────────────────────────────────────────────
+// ── 4. Recurring Services — delegates to full v2 implementation in recurring_plans.js ──
 function recurringServices() {
+  // Full-featured v2 UI lives in recurring_plans.js → window.gwRecurringPlans
+  if (typeof window.gwRecurringPlans === 'function') {
+    window.gwRecurringPlans();
+    return;
+  }
+  // Fallback stub if script hasn't loaded yet
   const plans = state.recurringPlans || [];
   const today = new Date().toISOString().slice(0,10);
 
