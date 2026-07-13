@@ -716,15 +716,18 @@ async function _fdLoadTasksWidget() {
 
 window._fdToggleTask = async function(taskId, el) {
   try {
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PATCH', credentials: 'include',
+    const _T5 = (typeof window._t === 'function') ? window._t : (s => s);
+    // Use the /complete endpoint which marks status='archived' so tasks stay
+    // gone after reload (PATCH is not supported — PUT /complete is the correct path)
+    await fetch(`/api/tasks/${taskId}/complete`, {
+      method: 'PUT', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'done' })
+      body: JSON.stringify({})
     });
     el.style.opacity = '0.4';
     el.style.textDecoration = 'line-through';
     setTimeout(() => { el.remove(); }, 800);
-    if (typeof showToast === 'function') showToast((typeof window._t==='function'?window._t(s=>s)('Task marked done ✓'):'Task marked done ✓'), 'success');
+    if (typeof showToast === 'function') showToast(_T5('Task marked done ✓'), 'success');
   } catch(e) {}
 };
 

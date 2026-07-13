@@ -937,12 +937,62 @@ function gwAccessModes(sub) {
 }
 window.gwAccessModes = gwAccessModes;
 
+// ── Apply field-role nav filters ───────────────────────────────────────────────
+// Called after bootstrap so the correct role is known. Trims Dashboard subtabs
+// to only fieldDashboard and hides non-permitted Operations subtabs for field roles.
+// Safe to call multiple times (idempotent).
+function _gwApplyFieldNavFilters() {
+  const rep = (window.getCurrentRep ? window.getCurrentRep() : null) || window._d1SessionRep;
+  if (!rep) return; // not yet authed — will be called again from _updateSidebarRep
+  const _fieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
+  const isField = _fieldRoles.includes(rep.role);
+
+  // Dashboard panel: field roles only see "Dashboard" (fieldDashboard), no sales sub-tabs
+  const dashPanel = document.getElementById('gw-subtabs-gwDashboard');
+  if (dashPanel) {
+    if (isField) {
+      dashPanel.innerHTML = `<button class="nav-subtab" data-tab="fieldDashboard" onclick="show('fieldDashboard')">Dashboard</button>`;
+    } else if (!dashPanel.innerHTML.trim() || dashPanel.innerHTML.includes('fieldDashboard')) {
+      // Restore full set for non-field roles in case it was trimmed
+      _gwSetHeader('Dashboard', [
+        {id:'today',            label:'My Day'},
+        {id:'salesReports',     label:'Business Pulse'},
+        {id:'financialReports', label:'Financial Snapshot'},
+        {id:'opsReports',       label:'Operations Snapshot'},
+      ], null);
+    }
+  }
+
+  // Operations panel: hide tabs the role can't access
+  // Foreman & laborer: no Timesheet Review (gwTimesheetAdmin), no Dispatch/Recurring/Assets/Maintenance/Inventory/Tools
+  const opsPanel = document.getElementById('gw-subtabs-gwOperations');
+  if (opsPanel && isField) {
+    const _opsAllowed = DEFAULT_NAV_PERMS[rep.role] || [];
+    opsPanel.querySelectorAll('button[data-tab]').forEach(btn => {
+      const tab = btn.dataset.tab;
+      btn.style.display = _opsAllowed.includes(tab) ? '' : 'none';
+    });
+  } else if (opsPanel && !isField) {
+    // Restore visibility for non-field roles
+    opsPanel.querySelectorAll('button[data-tab]').forEach(btn => { btn.style.display = ''; });
+  }
+
+  // Also hide the Field Mode topbar button for all field roles
+  // (field dashboard is their entry point; they don't need a separate Field Mode CTA)
+  const fieldModeBtn = document.getElementById('gw-field-mode-btn');
+  if (fieldModeBtn) fieldModeBtn.style.display = 'none';
+}
+window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
+
 // ── Pre-populate all 5 sidebar panels on first load ───────────────────────────
 // Called once after DOM ready so all workspace sub-lists are visible immediately.
 // Each panel renders with no active tab (activeTabId = null) — activateNav() will
 // highlight the correct item once the initial route fires.
 (function _gwInitAllPanels() {
-  // Dashboard
+  // Dashboard — field roles only get fieldDashboard tab; others get full set.
+  // At script-load time we may not have the rep yet (bootstrap pending),
+  // so default to the full set and let _gwApplyFieldNavFilters() (called from
+  // _updateSidebarRep after bootstrap) trim it down for field roles.
   _gwSetHeader('Dashboard', [
     {id:'today',            label:'My Day'},
     {id:'salesReports',     label:'Business Pulse'},
@@ -976,7 +1026,7 @@ window.gwAccessModes = gwAccessModes;
     {id:'financialActivity', label:'Activity'},
   ], null);
 
-  // Operations
+  // Operations — full list; field roles will have non-permitted tabs hidden by _gwApplyFieldNavFilters()
   _gwSetHeader('Operations', [
     {id:'scheduleBoard',      label:'Schedule'},
     {id:'dispatchBoard',      label:'Dispatch'},
@@ -1011,6 +1061,10 @@ window.gwAccessModes = gwAccessModes;
     {id:'systemConfig',      label:'System Config'},
     {id:'gwWorkdaySettings', label:'Workday Settings'},
   ], null);
+
+  // After DOM is ready, apply field-role nav filters if the user is already known
+  // (rare on first load, but handles the case where bootstrap has already run)
+  setTimeout(_gwApplyFieldNavFilters, 0);
 
   // Collapse everything except Dashboard — user opens sections manually
   ['gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].forEach(wsId => {
@@ -1518,10 +1572,6 @@ window._updateSidebarRep = function updateSidebarRep() {
           </div>
           <button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server"
             style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">Sync</button>`;
-        // Render language toggle above the footer
-        if (typeof window._gwRenderLangToggle === 'function') {
-          try { window._gwRenderLangToggle(); } catch(_) {}
-        }
       }
       // Hide entire nav workspace groups the user cannot access.
       // This removes Sales/Financial/Learning/Admin from the sidebar for field roles
@@ -1539,6 +1589,14 @@ window._updateSidebarRep = function updateSidebarRep() {
         const canSee = (rep && rep.role === 'admin') || canViewTab(btn.dataset.view);
         btn.style.display = canSee ? '' : 'none';
       });
+      // Apply field-role nav panel filters (Dashboard subtabs + Operations subtabs)
+      if (typeof _gwApplyFieldNavFilters === 'function') {
+        try { _gwApplyFieldNavFilters(); } catch(_) {}
+      }
+      // Render language toggle AFTER footer is set
+      if (typeof window._gwRenderLangToggle === 'function') {
+        try { window._gwRenderLangToggle(); } catch(_) {}
+      }
     }
   } catch(e) {}
 };
