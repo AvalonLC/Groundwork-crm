@@ -1,11 +1,22 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "avalon-sales-hub",
+
+  // ── Project identity ────────────────────────────────────────────────────────
+  // "name" is the Cloudflare Pages project name.
+  // The project at https://dash.cloudflare.com → Pages is named "groundwork-crm"
+  // and serves groundwork-crm.com + www.groundwork-crm.com.
+  "name": "groundwork-crm",
+
   "compatibility_date": "2026-05-03",
   "pages_build_output_dir": "./dist",
   "compatibility_flags": [
     "nodejs_compat"
   ],
+
+  // ── D1 Database ─────────────────────────────────────────────────────────────
+  // Production database UUID lives in Tyler@avalon-lc.com's Cloudflare account.
+  // Run `wrangler d1 list` to verify the UUID if you recreate the project.
+  // Local dev: `npm run dev:local` uses --local flag (SQLite on disk, no UUID needed).
   "d1_databases": [
     {
       "binding": "DB",
