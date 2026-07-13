@@ -608,6 +608,35 @@ window.fieldDashboard = function fieldDashboard() {
       </div>
     </div>`;
 
+  // ── Report/AAR action buttons ─────────────────────────────────────────────
+
+  const fieldActionsHTML = `
+    <div class="fd-section">
+      <div class="fd-section-hd">Field Actions</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="fd-card" style="display:flex;align-items:center;gap:12px;text-align:left;cursor:pointer;border:none;padding:14px 16px" onclick="fdOpenEquipReport()">
+          <div style="width:36px;height:36px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:var(--gw-ink,#1F2A2B)">Equipment / Supply Report</div>
+            <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Report a broken tool, truck issue, or supply request</div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gw-muted,#5E6E6F)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button class="fd-card" style="display:flex;align-items:center;gap:12px;text-align:left;cursor:pointer;border:none;padding:14px 16px" onclick="fdOpenAAR()">
+          <div style="width:36px;height:36px;border-radius:10px;background:#dcfce7;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:var(--gw-ink,#1F2A2B)">End-of-Day Report</div>
+            <div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">5-min after action report — required before clock-out</div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gw-muted,#5E6E6F)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </div>`;
+
   // ── Assemble view ─────────────────────────────────────────────────────────
 
   viewEl.innerHTML = `
@@ -627,9 +656,437 @@ window.fieldDashboard = function fieldDashboard() {
       ${activeJobHTML}
       ${scheduleHTML}
       ${contextHTML}
+      <div id="fd-tasks-widget"></div>
       ${linksHTML}
+      ${fieldActionsHTML}
     </div>`;
+
+  // Load tasks async after render
+  _fdLoadTasksWidget();
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9A-EXT — TASKS WIDGET (personal tasks for today)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _fdLoadTasksWidget() {
+  const el = document.getElementById('fd-tasks-widget');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/tasks?scope=mine&limit=10', { credentials: 'include' });
+    const d = await r.json();
+    const tasks = (d.ok && d.data) ? d.data : [];
+    const open = tasks.filter(t => t.status !== 'done' && t.status !== 'completed');
+    if (open.length === 0) {
+      el.innerHTML = `
+        <div class="fd-section">
+          <div class="fd-section-hd">My Tasks</div>
+          <div class="fd-card" style="text-align:center;padding:16px;color:var(--gw-muted,#5E6E6F);font-size:13px">
+            No open tasks today
+          </div>
+        </div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="fd-section">
+        <div class="fd-section-hd" style="display:flex;justify-content:space-between;align-items:center">
+          My Tasks
+          <span style="font-size:11px;font-weight:600;background:var(--gw-accent,#4D8A86);color:#fff;padding:2px 8px;border-radius:10px">${open.length}</span>
+        </div>
+        ${open.map(t => `
+          <div class="fd-card" style="cursor:pointer;margin-bottom:6px" onclick="_fdToggleTask('${_fwE(t.id)}',this)">
+            <div class="fd-card-row" style="gap:10px">
+              <div style="width:20px;height:20px;border-radius:50%;border:2px solid ${t.priority==='high'?'#dc2626':'var(--gw-accent,#4D8A86)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                ${t.status==='in_progress'?`<div style="width:8px;height:8px;border-radius:50%;background:var(--gw-accent,#4D8A86)"></div>`:''}
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:var(--gw-ink,#1F2A2B)">${_fwE(t.title||'Task')}</div>
+                ${t.due_date ? `<div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Due ${t.due_date}</div>` : ''}
+              </div>
+              ${t.priority==='high' ? `<span style="font-size:10px;font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 6px;border-radius:6px">HIGH</span>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+  } catch(e) {
+    // silently fail — tasks not critical
+    document.getElementById('fd-tasks-widget') && (document.getElementById('fd-tasks-widget').innerHTML = '');
+  }
+}
+
+window._fdToggleTask = async function(taskId, el) {
+  try {
+    await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'done' })
+    });
+    el.style.opacity = '0.4';
+    el.style.textDecoration = 'line-through';
+    setTimeout(() => { el.remove(); }, 800);
+    if (typeof showToast === 'function') showToast('Task marked done ✓', 'success');
+  } catch(e) {}
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9A-EXT — EQUIPMENT / SUPPLY REPORT (bottom-sheet)
+// ══════════════════════════════════════════════════════════════════════════════
+
+window.fdOpenEquipReport = function fdOpenEquipReport() {
+  document.getElementById('fd-equip-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'fd-equip-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.5)';
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'background:var(--gw-surface,#fff);border-radius:20px 20px 0 0;max-height:90vh;overflow:auto;padding:0 0 40px';
+
+  sheet.innerHTML = `
+    <div style="display:flex;justify-content:center;padding:12px 0 8px">
+      <div style="width:40px;height:4px;border-radius:2px;background:var(--gw-line,#D0CCC3)"></div>
+    </div>
+    <div style="padding:0 20px 16px;display:flex;align-items:center;gap:10px">
+      <div style="width:36px;height:36px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--gw-ink,#1F2A2B)">Equipment / Supply Report</div>
+        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">Notify management of an issue or request</div>
+      </div>
+    </div>
+    <form id="fd-equip-form" style="padding:0 20px">
+      <!-- Report type -->
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">Report Type *</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          ${[
+            {val:'tool',    label:'Broken Tool',  icon:'🔧'},
+            {val:'vehicle', label:'Truck/Vehicle', icon:'🚛'},
+            {val:'supply',  label:'Supply Request',icon:'📦'},
+          ].map(opt=>`
+            <label style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;color:var(--gw-ink,#1F2A2B);text-align:center" id="er-type-lbl-${opt.val}">
+              <input type="radio" name="report_type" value="${opt.val}" style="display:none" onchange="document.querySelectorAll('[id^=er-type-lbl-]').forEach(l=>l.style.borderColor='var(--gw-line,#E0DDD5)');document.getElementById('er-type-lbl-${opt.val}').style.borderColor='#d97706'">
+              <span style="font-size:20px">${opt.icon}</span>
+              ${opt.label}
+            </label>`).join('')}
+        </div>
+      </div>
+      <!-- Asset / item description -->
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">What item / asset? *</label>
+        <input type="text" name="asset_name" placeholder="e.g. Milwaukee Drill M18, F-250 Truck #3, Gloves" maxlength="120"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);box-sizing:border-box" required>
+      </div>
+      <!-- Priority -->
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">Urgency</label>
+        <select name="priority" style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);box-sizing:border-box">
+          <option value="normal">Normal — handle when possible</option>
+          <option value="high">High — need it soon</option>
+          <option value="urgent">Urgent — blocking work today</option>
+        </select>
+      </div>
+      <!-- Notes -->
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">Description / Notes</label>
+        <textarea name="notes" rows="3" placeholder="Describe the issue or what you need..." maxlength="500"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);resize:none;box-sizing:border-box"></textarea>
+      </div>
+      <button type="button" onclick="fdSubmitEquipReport()" style="width:100%;padding:14px;background:#d97706;border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer">
+        Submit Report
+      </button>
+      <button type="button" onclick="document.getElementById('fd-equip-modal').remove()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:0;color:var(--gw-muted,#5E6E6F);font-size:13px;cursor:pointer">Cancel</button>
+    </form>`;
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+};
+
+window.fdSubmitEquipReport = async function() {
+  const form = document.getElementById('fd-equip-form');
+  if (!form) return;
+  const typeEl = form.querySelector('[name=report_type]:checked');
+  const assetEl = form.querySelector('[name=asset_name]');
+  const priorityEl = form.querySelector('[name=priority]');
+  const notesEl = form.querySelector('[name=notes]');
+  if (!typeEl) { if (typeof showToast==='function') showToast('Please select a report type', 'error'); return; }
+  if (!assetEl.value.trim()) { if (typeof showToast==='function') showToast('Please describe the item or asset', 'error'); return; }
+  const btn = document.querySelector('#fd-equip-form + button, #fd-equip-form button[onclick="fdSubmitEquipReport()"]') ||
+              form.querySelector('button[onclick="fdSubmitEquipReport()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  try {
+    const r = await fetch('/api/field-reports', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        report_type: typeEl.value,
+        asset_name:  assetEl.value.trim(),
+        priority:    priorityEl.value,
+        notes:       notesEl.value.trim(),
+      })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      document.getElementById('fd-equip-modal')?.remove();
+      if (typeof showToast==='function') showToast('Report submitted — management has been notified ✓', 'success');
+    } else {
+      if (typeof showToast==='function') showToast(j.error || 'Submit failed', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Submit Report'; }
+    }
+  } catch(e) {
+    if (typeof showToast==='function') showToast('Network error — try again', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit Report'; }
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9A-EXT — AFTER ACTION REPORT (AAR)
+// Required before clock-out. Template fetched from /api/aar-template.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Public entry — opens AAR sheet directly
+window.fdOpenAAR = async function fdOpenAAR(onComplete) {
+  document.getElementById('fd-aar-modal')?.remove();
+
+  // Check if already submitted today
+  let alreadyDone = false;
+  try {
+    const chk = await fetch('/api/aar-check-today', { credentials: 'include' });
+    const chkJ = await chk.json();
+    if (chkJ.submitted) {
+      if (typeof showToast === 'function') showToast('End-of-day report already submitted for today ✓', 'success');
+      if (onComplete) onComplete();
+      return;
+    }
+  } catch(_) {}
+
+  // Fetch template
+  let questions = [];
+  try {
+    const tr = await fetch('/api/aar-template', { credentials: 'include' });
+    const tj = await tr.json();
+    if (tj.ok && tj.template && tj.template.questions) {
+      questions = tj.template.questions;
+    }
+  } catch(_) {}
+
+  if (!questions.length) {
+    // Default 5-question template as fallback
+    questions = [
+      { id: 'q1', type: 'yesno',   text: 'Did you complete all assigned work orders today?' },
+      { id: 'q2', type: 'yesno',   text: 'Were there any safety incidents or near-misses today?' },
+      { id: 'q3', type: 'text',    text: 'Any issues or concerns from today that need follow-up?' },
+      { id: 'q4', type: 'rating',  text: 'Overall how did today go? (1 = rough, 5 = great)' },
+      { id: 'q5', type: 'text',    text: 'Any materials, tools, or supplies needed for tomorrow?' },
+    ];
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'fd-aar-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10002;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.6)';
+
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'background:var(--gw-surface,#fff);border-radius:20px 20px 0 0;max-height:92vh;overflow:auto;padding:0 0 48px';
+
+  const qHTML = questions.map((q, i) => {
+    const qId = `aar-q-${i}`;
+    let inputHTML = '';
+    switch(q.type) {
+      case 'yesno':
+        inputHTML = `
+          <div style="display:flex;gap:8px">
+            <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600" id="${qId}-yes-lbl">
+              <input type="radio" name="${qId}" value="yes" style="display:none" onchange="document.getElementById('${qId}-yes-lbl').style.borderColor='#16a34a';document.getElementById('${qId}-no-lbl').style.borderColor='var(--gw-line,#E0DDD5)'">
+              ✅ Yes
+            </label>
+            <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600" id="${qId}-no-lbl">
+              <input type="radio" name="${qId}" value="no" style="display:none" onchange="document.getElementById('${qId}-no-lbl').style.borderColor='#dc2626';document.getElementById('${qId}-yes-lbl').style.borderColor='var(--gw-line,#E0DDD5)'">
+              ❌ No
+            </label>
+          </div>`;
+        break;
+      case 'rating':
+        inputHTML = `
+          <div style="display:flex;gap:6px;justify-content:center">
+            ${[1,2,3,4,5].map(n=>`
+              <button type="button" id="${qId}-r${n}" onclick="_aarRating('${qId}',${n})"
+                style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gw-line,#E0DDD5);background:transparent;font-size:16px;font-weight:700;cursor:pointer;color:var(--gw-ink,#1F2A2B)">${n}</button>`).join('')}
+          </div>
+          <input type="hidden" name="${qId}" id="${qId}-val">`;
+        break;
+      case 'checklist':
+        const items = Array.isArray(q.options) ? q.options : [];
+        inputHTML = items.map(opt=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gw-line,#F0EDE5);cursor:pointer">
+            <input type="checkbox" name="${qId}" value="${_fwE(opt)}" style="width:16px;height:16px;accent-color:var(--gw-accent,#4D8A86)">
+            <span style="font-size:13px;color:var(--gw-ink,#1F2A2B)">${_fwE(opt)}</span>
+          </label>`).join('');
+        break;
+      case 'select':
+        const opts = Array.isArray(q.options) ? q.options : [];
+        inputHTML = `
+          <select name="${qId}" style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);box-sizing:border-box">
+            <option value="">— Select —</option>
+            ${opts.map(o=>`<option value="${_fwE(o)}">${_fwE(o)}</option>`).join('')}
+          </select>`;
+        break;
+      default: // text
+        inputHTML = `<textarea name="${qId}" rows="2" placeholder="Your answer…" maxlength="500"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);resize:none;box-sizing:border-box"></textarea>`;
+    }
+    return `
+      <div style="margin-bottom:20px" data-qid="${_fwE(q.id||qId)}" data-qtype="${_fwE(q.type)}">
+        <div style="font-size:13px;font-weight:600;color:var(--gw-ink,#1F2A2B);margin-bottom:8px">
+          <span style="color:var(--gw-accent,#4D8A86);font-size:11px;font-weight:700;margin-right:4px">${i+1}</span>
+          ${_fwE(q.text)}
+          ${q.required ? '<span style="color:#dc2626;margin-left:2px">*</span>' : ''}
+        </div>
+        ${inputHTML}
+      </div>`;
+  }).join('');
+
+  sheet.innerHTML = `
+    <div style="display:flex;justify-content:center;padding:12px 0 8px">
+      <div style="width:40px;height:4px;border-radius:2px;background:var(--gw-line,#D0CCC3)"></div>
+    </div>
+    <div style="padding:0 20px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--gw-line,#F0EDE5)">
+      <div style="width:36px;height:36px;border-radius:10px;background:#dcfce7;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      </div>
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--gw-ink,#1F2A2B)">End-of-Day Report</div>
+        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">${questions.length} questions · ~5 min</div>
+      </div>
+    </div>
+    <form id="fd-aar-form" style="padding:20px" data-total="${questions.length}">
+      ${qHTML}
+      <button type="button" id="fd-aar-submit-btn" onclick="fdSubmitAAR()" style="width:100%;padding:14px;background:#16a34a;border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer">
+        Submit &amp; Clock Out
+      </button>
+      <button type="button" onclick="fdAARSkip()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:0;color:var(--gw-muted,#5E6E6F);font-size:12px;cursor:pointer">Save progress for later</button>
+    </form>`;
+
+  // Store onComplete callback on overlay
+  overlay._onComplete = onComplete;
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+};
+
+// Rating button helper
+window._aarRating = function(qId, n) {
+  document.getElementById(qId+'-val').value = n;
+  for (let i=1; i<=5; i++) {
+    const btn = document.getElementById(`${qId}-r${i}`);
+    if (!btn) continue;
+    btn.style.background = i <= n ? 'var(--gw-accent,#4D8A86)' : 'transparent';
+    btn.style.color = i <= n ? '#fff' : 'var(--gw-ink,#1F2A2B)';
+    btn.style.borderColor = i <= n ? 'var(--gw-accent,#4D8A86)' : 'var(--gw-line,#E0DDD5)';
+  }
+};
+
+window.fdSubmitAAR = async function() {
+  const form = document.getElementById('fd-aar-form');
+  if (!form) return;
+  const total = parseInt(form.dataset.total || '0');
+  const answers = [];
+  // Collect answers from each question block
+  form.querySelectorAll('[data-qid]').forEach((block, i) => {
+    const qId = block.dataset.qid;
+    const qType = block.dataset.qtype;
+    const fieldName = `aar-q-${i}`;
+    let value = '';
+    if (qType === 'yesno') {
+      const sel = block.querySelector(`input[name="${fieldName}"]:checked`);
+      value = sel ? sel.value : '';
+    } else if (qType === 'rating') {
+      const hidVal = block.querySelector(`#${fieldName}-val`);
+      value = hidVal ? hidVal.value : '';
+    } else if (qType === 'checklist') {
+      const checked = [...block.querySelectorAll(`input[name="${fieldName}"]:checked`)].map(c => c.value);
+      value = checked.join(', ');
+    } else if (qType === 'select') {
+      const sel = block.querySelector(`select[name="${fieldName}"]`);
+      value = sel ? sel.value : '';
+    } else {
+      const ta = block.querySelector(`textarea[name="${fieldName}"]`);
+      value = ta ? ta.value.trim() : '';
+    }
+    answers.push({ question_id: qId, value });
+  });
+
+  const submitBtn = document.getElementById('fd-aar-submit-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
+
+  try {
+    const r = await fetch('/api/aar-submissions', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      const overlay = document.getElementById('fd-aar-modal');
+      const cb = overlay?._onComplete;
+      overlay?.remove();
+      if (typeof showToast === 'function') showToast('End-of-day report submitted ✓', 'success');
+      if (cb) cb();
+    } else {
+      if (typeof showToast === 'function') showToast(j.error || 'Submit failed', 'error');
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit & Clock Out'; }
+    }
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('Network error — try again', 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit & Clock Out'; }
+  }
+};
+
+window.fdAARSkip = function() {
+  document.getElementById('fd-aar-modal')?.remove();
+};
+
+// ── Clock-out gate: require AAR before allowing clock-out ─────────────────────
+// Override the clock-out flow to check AAR requirement first.
+window._fdAARGateClockOut = async function(proceedFn) {
+  try {
+    const r = await fetch('/api/aar-check-today', { credentials: 'include' });
+    const j = await r.json();
+    if (!j.required || j.submitted) {
+      // Not required or already done — proceed normally
+      if (proceedFn) proceedFn();
+      return;
+    }
+    // Required and not submitted — show AAR first, then clock out on complete
+    if (typeof showToast === 'function') showToast('Please complete your end-of-day report before clocking out', 'info');
+    window.fdOpenAAR(function() {
+      // AAR submitted — now proceed with clock-out
+      if (proceedFn) proceedFn();
+    });
+  } catch(_) {
+    // On error, allow clock-out (don't block)
+    if (proceedFn) proceedFn();
+  }
+};
+
+// Wrap the existing gwClockPillMenu_clockOut to gate through AAR
+(function _installAARGate() {
+  function _installGate() {
+    const _origClockOut = window.gwClockPillMenu_clockOut;
+    if (typeof _origClockOut === 'function' && !_origClockOut._aarGated) {
+      window.gwClockPillMenu_clockOut = function() {
+        window._fdAARGateClockOut(function() {
+          _origClockOut.call(window);
+        });
+      };
+      window.gwClockPillMenu_clockOut._aarGated = true;
+    }
+  }
+  // Try immediately; also retry after bootstrap in case clock pill loads later
+  _installGate();
+  if (window._d1BootstrapReady && typeof window._d1BootstrapReady.then === 'function') {
+    window._d1BootstrapReady.then(() => { setTimeout(_installGate, 300); }).catch(()=>{});
+  }
+})();
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 9B — JOB SELECTION

@@ -4572,6 +4572,246 @@ app.post('/api/notifications/read-all', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// FIELD OPS — Equipment Reports, After Action Reports, Division Manager
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Field Reports ─────────────────────────────────────────────────────────────
+
+// GET /api/field-reports — list (division_manager/admin/OM sees all; field roles see own)
+app.get('/api/field-reports', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const managerRoles = ['admin','owner','office_manager','division_manager']
+  const isManager = managerRoles.includes(rep?.role)
+  const status = c.req.query('status') || null
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200)
+
+  let query = `SELECT fr.*, r.name as rep_name, r.role as rep_role
+    FROM field_reports fr
+    LEFT JOIN reps r ON r.id = fr.rep_id
+    WHERE fr.company_id = ?`
+  const params: any[] = [companyId]
+
+  if (!isManager) {
+    query += ` AND fr.rep_id = ?`
+    params.push(rep.id)
+  }
+  if (status) {
+    query += ` AND fr.status = ?`
+    params.push(status)
+  }
+  query += ` ORDER BY fr.created_at DESC LIMIT ?`
+  params.push(limit)
+
+  const rows = await db.prepare(query).bind(...params).all()
+  return c.json({ ok: true, field_reports: rows.results || [] })
+})
+
+// POST /api/field-reports — submit a new field report (any field role)
+app.post('/api/field-reports', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const body = await c.req.json() as any
+
+  const { report_type, title, description, priority, crew_id, asset_id, photo_url, work_order_id } = body
+  if (!title || !description) return c.json({ error: 'title and description are required' }, 400)
+
+  const id = `fr-${Date.now()}-${Math.random().toString(36).slice(2,7)}`
+  await db.prepare(`
+    INSERT INTO field_reports (id, company_id, rep_id, crew_id, report_type, title, description, priority, status, asset_id, photo_url, work_order_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, companyId, rep.id, crew_id||null, report_type||'equipment', title, description, priority||'normal', 'open', asset_id||null, photo_url||null, work_order_id||null).run()
+
+  // Notify managers
+  try {
+    const managers = await db.prepare(`SELECT id FROM reps WHERE company_id=? AND role IN ('admin','owner','office_manager','division_manager') AND active=1`).bind(companyId).all()
+    for (const mgr of (managers.results || []) as any[]) {
+      const nid = `notif-fr-${Date.now()}-${Math.random().toString(36).slice(2,6)}`
+      await db.prepare(`INSERT OR IGNORE INTO notifications (id, company_id, rep_id, type, title, body, link) VALUES (?,?,?,?,?,?,?)`)
+        .bind(nid, companyId, mgr.id, 'field_report', `Field Report: ${title}`, `${rep.name || 'A field employee'} submitted a ${report_type||'equipment'} report.`, '/field-reports').run()
+    }
+  } catch(_) {}
+
+  return c.json({ ok: true, id })
+})
+
+// PATCH /api/field-reports/:id — update status/resolution (manager only)
+app.patch('/api/field-reports/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const managerRoles = ['admin','owner','office_manager','division_manager']
+  if (!managerRoles.includes(rep?.role)) return c.json({ error: 'Insufficient permissions' }, 403)
+
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  const { status, resolved_note } = body
+
+  await db.prepare(`
+    UPDATE field_reports SET status=COALESCE(?,status), resolved_by=COALESCE(?,resolved_by),
+    resolved_note=COALESCE(?,resolved_note), updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(status||null, status==='resolved' ? rep.id : null, resolved_note||null, id, companyId).run()
+
+  return c.json({ ok: true })
+})
+
+// ── AAR Templates ─────────────────────────────────────────────────────────────
+
+// GET /api/aar-template — get active template for this company
+app.get('/api/aar-template', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const tmpl: any = await db.prepare(`SELECT * FROM aar_templates WHERE company_id=? LIMIT 1`).bind(companyId).first()
+  if (!tmpl) {
+    // Return default
+    return c.json({ ok: true, template: {
+      id: null, title: 'End-of-Day Field Report',
+      intro_text: 'Quick check before you clock out.',
+      require_before_clockout: 1,
+      questions: [
+        {id:'q1',type:'yesno',label:'Did you complete all assigned work orders for today?',required:true},
+        {id:'q2',type:'yesno',label:'Did any equipment break or require service today?',required:true},
+        {id:'q3',type:'yesno',label:'Were there any safety incidents or near-misses?',required:true},
+        {id:'q4',type:'yesno',label:'Do you need any supplies or materials restocked?',required:false},
+        {id:'q5',type:'text',label:'Any notes for the manager?',required:false},
+        {id:'q6',type:'rating',label:'How did the day go overall? (1=rough, 5=great)',required:false},
+      ]
+    }})
+  }
+  let questions = tmpl.questions
+  if (typeof questions === 'string') {
+    try { questions = JSON.parse(questions) } catch(_) { questions = [] }
+  }
+  return c.json({ ok: true, template: { ...tmpl, questions } })
+})
+
+// PUT /api/aar-template — save/update template (admin/OM/division_manager)
+app.put('/api/aar-template', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const allowed = ['admin','owner','office_manager','division_manager']
+  if (!allowed.includes(rep?.role)) return c.json({ error: 'Insufficient permissions' }, 403)
+
+  const body = await c.req.json() as any
+  const { title, intro_text, questions, require_before_clockout } = body
+  if (!questions || !Array.isArray(questions)) return c.json({ error: 'questions array required' }, 400)
+
+  const id = `aar-${companyId}`
+  await db.prepare(`
+    INSERT INTO aar_templates (id, company_id, title, intro_text, questions, require_before_clockout, created_by, updated_at)
+    VALUES (?,?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(company_id) DO UPDATE SET
+      title=excluded.title, intro_text=excluded.intro_text, questions=excluded.questions,
+      require_before_clockout=excluded.require_before_clockout, updated_at=datetime('now')
+  `).bind(id, companyId, title||'End-of-Day Field Report', intro_text||'', JSON.stringify(questions), require_before_clockout===false?0:1, rep.id).run()
+
+  return c.json({ ok: true })
+})
+
+// ── AAR Submissions ───────────────────────────────────────────────────────────
+
+// GET /api/aar-submissions — list (manager sees all, field sees own)
+app.get('/api/aar-submissions', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const managerRoles = ['admin','owner','office_manager','division_manager']
+  const isManager = managerRoles.includes(rep?.role)
+  const date = c.req.query('date') || null
+  const repFilter = c.req.query('rep_id') || null
+  const limit = Math.min(parseInt(c.req.query('limit')||'50'), 200)
+
+  let query = `SELECT s.*, r.name as rep_name FROM aar_submissions s
+    LEFT JOIN reps r ON r.id = s.rep_id
+    WHERE s.company_id = ?`
+  const params: any[] = [companyId]
+
+  if (!isManager) {
+    query += ` AND s.rep_id = ?`
+    params.push(rep.id)
+  } else if (repFilter) {
+    query += ` AND s.rep_id = ?`
+    params.push(repFilter)
+  }
+  if (date) { query += ` AND s.work_date = ?`; params.push(date) }
+  query += ` ORDER BY s.submitted_at DESC LIMIT ?`
+  params.push(limit)
+
+  const rows = await db.prepare(query).bind(...params).all()
+  const results = (rows.results || []).map((r: any) => ({
+    ...r,
+    answers: typeof r.answers === 'string' ? (() => { try { return JSON.parse(r.answers) } catch(_) { return {} } })() : r.answers
+  }))
+  return c.json({ ok: true, submissions: results })
+})
+
+// POST /api/aar-submissions — field worker submits their AAR
+app.post('/api/aar-submissions', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const body = await c.req.json() as any
+
+  const { answers, time_entry_id, work_date } = body
+  if (!answers || typeof answers !== 'object') return c.json({ error: 'answers object required' }, 400)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const dateKey = work_date || today
+
+  // Prevent duplicate submission for same rep+date
+  const existing: any = await db.prepare(`SELECT id FROM aar_submissions WHERE rep_id=? AND company_id=? AND work_date=?`).bind(rep.id, companyId, dateKey).first()
+  if (existing) {
+    // Update instead of duplicate
+    await db.prepare(`UPDATE aar_submissions SET answers=?, time_entry_id=COALESCE(?,time_entry_id), submitted_at=datetime('now') WHERE id=?`)
+      .bind(JSON.stringify(answers), time_entry_id||null, existing.id).run()
+    return c.json({ ok: true, id: existing.id, updated: true })
+  }
+
+  const id = `aar-${Date.now()}-${Math.random().toString(36).slice(2,7)}`
+  await db.prepare(`
+    INSERT INTO aar_submissions (id, company_id, rep_id, time_entry_id, work_date, answers)
+    VALUES (?,?,?,?,?,?)
+  `).bind(id, companyId, rep.id, time_entry_id||null, dateKey, JSON.stringify(answers)).run()
+
+  return c.json({ ok: true, id })
+})
+
+// PATCH /api/aar-submissions/:id/review — manager reviews/flags a submission
+app.patch('/api/aar-submissions/:id/review', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const allowed = ['admin','owner','office_manager','division_manager']
+  if (!allowed.includes(rep?.role)) return c.json({ error: 'Insufficient permissions' }, 403)
+
+  const id = c.req.param('id')
+  const body = await c.req.json() as any
+  const { flagged, review_note } = body
+
+  await db.prepare(`
+    UPDATE aar_submissions SET flagged=COALESCE(?,flagged), review_note=COALESCE(?,review_note),
+    reviewed_by=?, reviewed_at=datetime('now') WHERE id=? AND company_id=?
+  `).bind(flagged!==undefined?Number(flagged):null, review_note||null, rep.id, id, companyId).run()
+
+  return c.json({ ok: true })
+})
+
+// GET /api/aar-check-today — has this rep submitted an AAR for today already?
+app.get('/api/aar-check-today', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const rep: any = c.var.rep
+  const today = new Date().toISOString().slice(0, 10)
+  const row: any = await db.prepare(`SELECT id FROM aar_submissions WHERE rep_id=? AND company_id=? AND work_date=?`).bind(rep.id, companyId, today).first()
+  const tmpl: any = await db.prepare(`SELECT require_before_clockout FROM aar_templates WHERE company_id=? LIMIT 1`).bind(companyId).first()
+  return c.json({ submitted: !!row, required: tmpl ? Boolean(tmpl.require_before_clockout) : true })
+})
+
 // ── ESTIMATE PORTAL (public — no auth) ───────────────────────────────────────
 
 // GET /estimates/portal/:token — public estimate approval page
@@ -5008,15 +5248,19 @@ app.post('/api/stripe/webhook', async (c) => {
 
 // ── WORK ORDERS (D1) ──────────────────────────────────────────────────────────
 
-// GET /api/work-orders — list work orders (optional ?status=&crew_id=&date_from=&date_to=)
+// GET /api/work-orders — list work orders (optional ?status=&crew_id=&rep_id=&date_from=&date_to=)
+// rep_id filter: returns WOs where assigned_rep_id matches OR crew contains the rep (for field-role scoping)
 app.get('/api/work-orders', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const status    = c.req.query('status')
   const crewId    = c.req.query('crew_id')
+  const repId     = c.req.query('rep_id')
   const clientId  = c.req.query('client_id')
   const dateFrom  = c.req.query('date_from')
   const dateTo    = c.req.query('date_to')
+  const limitParam = c.req.query('limit')
+  const limitVal   = limitParam ? parseInt(limitParam) : 500
   let sql = `SELECT wo.*, cr.name as crew_name, cr.color as crew_color
              FROM work_orders wo
              LEFT JOIN crews cr ON cr.id = wo.crew_id
@@ -5027,7 +5271,14 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   if (clientId) { sql += ` AND wo.client_id = ?`;       params.push(clientId) }
   if (dateFrom) { sql += ` AND wo.scheduled_date >= ?`; params.push(dateFrom) }
   if (dateTo)   { sql += ` AND wo.scheduled_date <= ?`; params.push(dateTo) }
-  sql += ` ORDER BY wo.scheduled_date DESC, wo.created_at DESC LIMIT 500`
+  // rep_id filter: WOs assigned to this rep OR belonging to a crew the rep is in
+  if (repId) {
+    sql += ` AND (wo.assigned_rep_id = ? OR wo.crew_id IN (
+      SELECT cm.crew_id FROM crew_members cm WHERE cm.rep_id = ? AND cm.company_id = ?
+    ))`
+    params.push(repId, repId, companyId)
+  }
+  sql += ` ORDER BY wo.scheduled_date DESC, wo.created_at DESC LIMIT ${limitVal}`
   const rows = await db.prepare(sql).bind(...params).all()
   // Parse JSON fields
   const data = (rows.results || []).map((r: any) => ({
@@ -5380,7 +5631,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b009">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5404,8 +5655,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260713b008"></script>
-  <script src="/js/client_portal.js?v=20260713b008"></script>
+  <script src="/js/platform_core.js?v=20260713b009"></script>
+  <script src="/js/client_portal.js?v=20260713b009"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6016,9 +6267,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b008">
-  <link rel="stylesheet" href="/js/styles.css?v=20260713b008">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b009">
+  <link rel="stylesheet" href="/js/styles.css?v=20260713b009">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b009">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6559,33 +6810,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260713b008"></script>
-<script src="/js/db.js?v=20260713b008"></script>
-<script src="/js/data.js?v=20260713b008"></script>
-<script src="/js/reps.js?v=20260713b008"></script>
-<script src="/js/record-page.js?v=20260713b008"></script>
-<script src="/js/academy.js?v=20260713b008"></script>
-<script src="/js/task_engine.js?v=20260713b008"></script>
-<script src="/js/app_premium.js?v=20260713b008"></script>
-<script src="/js/estimates.js?v=20260713b008"></script>
-<script src="/js/invoices.js?v=20260713b008"></script>
-<script src="/js/csv_import.js?v=20260713b008"></script>
-<script src="/js/onboarding.js?v=20260713b008"></script>
-<script src="/js/recurring_plans.js?v=20260713b008"></script>
-<script src="/js/reviews.js?v=20260713b008"></script>
-<script src="/js/stripe.js?v=20260713b008"></script>
-<script src="/js/email.js?v=20260713b008"></script>
-<script src="/js/notifications.js?v=20260713b008"></script>
-<script src="/js/integrations.js?v=20260713b008"></script>
-<script src="/js/user_management.js?v=20260713b008"></script>
-<script src="/js/platform_admin.js?v=20260713b008"></script>
-<script src="/js/time_tracker.js?v=20260713b008"></script>
-<script src="/js/field_workday.js?v=20260713b008"></script>
-<script src="/js/platform_core.js?v=20260713b008"></script>
-<script src="/js/approval_engine.js?v=20260713b008"></script>
-<script src="/js/automation_engine.js?v=20260713b008"></script>
-<script src="/js/client_portal.js?v=20260713b008"></script>
-<script src="/js/field_mode.js?v=20260713b008"></script>
+<script src="/js/gw-icons.js?v=20260713b009"></script>
+<script src="/js/db.js?v=20260713b009"></script>
+<script src="/js/data.js?v=20260713b009"></script>
+<script src="/js/reps.js?v=20260713b009"></script>
+<script src="/js/record-page.js?v=20260713b009"></script>
+<script src="/js/academy.js?v=20260713b009"></script>
+<script src="/js/task_engine.js?v=20260713b009"></script>
+<script src="/js/app_premium.js?v=20260713b009"></script>
+<script src="/js/estimates.js?v=20260713b009"></script>
+<script src="/js/invoices.js?v=20260713b009"></script>
+<script src="/js/csv_import.js?v=20260713b009"></script>
+<script src="/js/onboarding.js?v=20260713b009"></script>
+<script src="/js/recurring_plans.js?v=20260713b009"></script>
+<script src="/js/reviews.js?v=20260713b009"></script>
+<script src="/js/stripe.js?v=20260713b009"></script>
+<script src="/js/email.js?v=20260713b009"></script>
+<script src="/js/notifications.js?v=20260713b009"></script>
+<script src="/js/integrations.js?v=20260713b009"></script>
+<script src="/js/user_management.js?v=20260713b009"></script>
+<script src="/js/platform_admin.js?v=20260713b009"></script>
+<script src="/js/time_tracker.js?v=20260713b009"></script>
+<script src="/js/field_workday.js?v=20260713b009"></script>
+<script src="/js/platform_core.js?v=20260713b009"></script>
+<script src="/js/approval_engine.js?v=20260713b009"></script>
+<script src="/js/automation_engine.js?v=20260713b009"></script>
+<script src="/js/client_portal.js?v=20260713b009"></script>
+<script src="/js/field_mode.js?v=20260713b009"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -6673,6 +6924,31 @@ function getHtml(): string {
         } catch(bsErr) {
           console.warn('[Bootstrap] /api/auth/bootstrap failed:', bsErr.message);
         }
+
+        // ── STEP 1b: Hide unauthorized nav groups immediately (fixes reload flash) ──
+        // Runs before _initialRoute() so field roles never see Sales/Financial nav.
+        try {
+          if (typeof window.canViewTab === 'function') {
+            var _bsRole = d1Rep && d1Rep.role;
+            document.querySelectorAll('.nav-ws-group').forEach(function(group) {
+              var btn = group.querySelector('.nav-item[data-view]');
+              if (!btn) return;
+              var wsView = btn.dataset.view;
+              if (!wsView) return;
+              var canSee = _bsRole === 'admin' || window.canViewTab(wsView);
+              group.style.display = canSee ? '' : 'none';
+            });
+            // Mobile bottom nav
+            document.querySelectorAll('.gw-mnav-btn[data-view]').forEach(function(btn) {
+              var canSee = _bsRole === 'admin' || window.canViewTab(btn.dataset.view);
+              btn.style.display = canSee ? '' : 'none';
+            });
+            // Also update sidebar rep appearance now that we have d1Rep
+            if (typeof window._updateSidebarRep === 'function') {
+              try { window._updateSidebarRep(); } catch(_) {}
+            }
+          }
+        } catch(_navErr) {}
 
         // ── STEP 2: Update sidebar footer ─────────────────────────────────────
         try {

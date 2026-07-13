@@ -58,6 +58,7 @@ const _VIEW_WORKSPACE_MAP = {
   manager:'gwAdmin', systemConfig:'gwAdmin', systemTemplates:'gwAdmin',
   approvalQueue:'gwAdmin', auditLog:'gwAdmin',
   portalAdmin:'gwAdmin', automationCenter:'gwAdmin', fieldMode:'gwAdmin',
+  gwFieldReports:'gwAdmin', gwAARTemplate:'gwAdmin', gwAARReview:'gwAdmin',
 };
 // Tracks which workspace panels the user has manually collapsed.
 // activateNav respects this so navigating within a workspace doesn't
@@ -259,7 +260,8 @@ const DEFAULT_NAV_PERMS = {
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
-    'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
+    'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
+    'gwFieldReports','gwAARTemplate','gwAARReview'],
   // Office Manager: everything except system-level admin settings
   office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
@@ -272,7 +274,8 @@ const DEFAULT_NAV_PERMS = {
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
-    'approvalQueue','auditLog','portalAdmin','automationCenter'],
+    'approvalQueue','auditLog','portalAdmin','automationCenter',
+    'gwFieldReports','gwAARTemplate','gwAARReview'],
   // Sales Rep: full sales workflow + learning
   rep: ['gwDashboard','gwSales','gwLearning',
     'today','myDashboard',
@@ -284,26 +287,32 @@ const DEFAULT_NAV_PERMS = {
   estimator: ['gwDashboard','gwSales','gwLearning',
     'today','pipeline','clients','properties','estimates','calculator','forms','playbooks',
     'academy','learnEstimating','learnCrmGuide'],
-  // Foreman: field lead — full operations hub, crew/dispatch oversight, time approval
-  foreman: ['gwDashboard','gwOperations','gwLearning','gwAdmin',
+  // Division Manager: all operations in their division, no sales/financial
+  division_manager: ['gwDashboard','gwOperations','gwAdmin',
     'today','fieldDashboard','myDashboard',
-    'scheduleBoard','dispatchBoard','recurringServices','crewView',
+    'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
     'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
-    'learnCrmGuide'],
+    'userManagement','gwFieldReports','gwAARTemplate','gwAARReview'],
+  // Foreman: field lead — full operations hub, crew/dispatch oversight, time approval
+  foreman: ['gwDashboard','gwOperations',
+    'fieldDashboard',
+    'scheduleBoard','dispatchBoard','recurringServices','crewView',
+    'workOrderList','workOrderDetail','assetList','assetDetail',
+    'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+    'approvalQueue','fieldMode','gwTimesheetAdmin'],
   // Laborer: self-service field only — own schedule, assigned work orders, own time
-  laborer: ['gwDashboard','gwOperations','today','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+  laborer: ['gwDashboard','gwOperations','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
   view_only: ['gwDashboard','today','pipeline'],
   // Legacy alias — field_supervisor rows in D1 resolve to foreman permissions
-  field_supervisor: ['gwDashboard','gwOperations','gwLearning','gwAdmin',
-    'today','fieldDashboard','myDashboard',
+  field_supervisor: ['gwDashboard','gwOperations',
+    'fieldDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
     'workOrderList','workOrderDetail','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
-    'learnCrmGuide']
+    'approvalQueue','fieldMode','gwTimesheetAdmin']
 };
 
 function loadNavPerms() {
@@ -661,32 +670,32 @@ function _gwClearHeader() { /* no-op — panels stay rendered */ }
 function gwDashboard(tab) {
   tab = tab || 'today';
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
-  const isField = rep && (rep.role === 'foreman' || rep.role === 'field_supervisor' || rep.role === 'laborer');
-  if (!tab || tab === 'gwDashboard') tab = isField ? 'fieldDashboard' : 'today';
-  const dashTabs = isField
-    ? [
-        {id:'fieldDashboard', label:'My Day'},
-        {id:'today',          label:'Overview'},
-        {id:'scheduleBoard',  label:'Schedule'},
-        {id:'workOrderList',  label:'Work Orders'},
-        {id:'timeTracker',    label:'Timesheet'},
-      ]
-    : [
-        {id:'today',           label:'My Day'},
-        {id:'salesReports',    label:'Business Pulse'},
-        {id:'financialReports',label:'Financial Snapshot'},
-        {id:'opsReports',      label:'Operations Snapshot'},
-      ];
+  const _gwFieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
+  const isField = rep && _gwFieldRoles.includes(rep.role);
+
+  // Field roles: fieldDashboard is their ONLY home — no My Day / Overview / Business Pulse / Financial tabs
+  if (isField) {
+    _gwSetHeader('Dashboard', [
+      {id:'fieldDashboard', label:'Dashboard'},
+    ], 'fieldDashboard');
+    (typeof window.fieldDashboard === 'function') ? window.fieldDashboard() : _gwTabStub('Field Dashboard');
+    return;
+  }
+
+  // Non-field roles: full dashboard tab set
+  if (!tab || tab === 'gwDashboard' || tab === 'fieldDashboard') tab = 'today';
+  const dashTabs = [
+    {id:'today',           label:'My Day'},
+    {id:'salesReports',    label:'Business Pulse'},
+    {id:'financialReports',label:'Financial Snapshot'},
+    {id:'opsReports',      label:'Operations Snapshot'},
+  ];
   _gwSetHeader('Dashboard', dashTabs, tab);
-  if (tab === 'fieldDashboard')       (typeof window.fieldDashboard==='function') ? window.fieldDashboard() : _gwTabStub('Field Dashboard');
-  else if (tab === 'today')            today();
+  if (tab === 'today')            today();
   else if (tab === 'salesReports')    (typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
   else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
   else if (tab === 'opsReports')      (typeof opsReports==='function') ? opsReports() : _gwTabStub('Operations Snapshot');
-  else if (tab === 'scheduleBoard')   (typeof scheduleBoard==='function') ? scheduleBoard() : _gwTabStub('Schedule');
-  else if (tab === 'workOrderList')   (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
-  else if (tab === 'timeTracker')     (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Timesheet');
-  else isField ? (typeof window.fieldDashboard==='function' ? window.fieldDashboard() : _gwTabStub('Field Dashboard')) : today();
+  else today();
 }
 window.gwDashboard = gwDashboard;
 
@@ -837,6 +846,12 @@ function _gwAdminNavConfig(canManageUsers, isAdmin) {
     {id:'gwAudit',         label:'Audit Log'},
     {id:'portalAdmin',     label:'Client Portal',  sub:true},
     {id:'fieldMode',       label:'Field Mode',     sub:true},
+    // Field Ops — visible to admin, office_manager, division_manager
+    ...(canManageUsers ? [
+      {id:'gwFieldReports',  label:'Field Reports',  sub:true},
+      {id:'gwAARTemplate',   label:'AAR Template',   sub:true},
+      {id:'gwAARReview',     label:'AAR Reviews',    sub:true},
+    ] : []),
     ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
     ...(isAdmin || canManageUsers ? [{id:'gwWorkdaySettings', label:'Workday Settings'}] : []),
   ];
@@ -860,6 +875,9 @@ function gwAdmin(tab) {
   else if (tab === 'fieldMode')        (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
   else if (tab === 'systemConfig')     (typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
   else if (tab === 'gwWorkdaySettings')(typeof window.gwWorkdaySettings==='function') ? window.gwWorkdaySettings() : _gwTabStub('Workday Settings');
+  else if (tab === 'gwFieldReports')  _gwRenderFieldReports();
+  else if (tab === 'gwAARTemplate')   _gwRenderAARTemplate();
+  else if (tab === 'gwAARReview')     _gwRenderAARReview();
   else settings();
 }
 window.gwAdmin = gwAdmin;
@@ -1323,6 +1341,9 @@ function show(viewName='today', param){
     fieldDashboard:   () => (typeof window.fieldDashboard   === 'function') ? window.fieldDashboard()   : _p8Stub('Field Dashboard'),
     gwTimesheetAdmin: () => (typeof window.gwTimesheetAdmin === 'function') ? window.gwTimesheetAdmin() : _p8Stub('Timesheet Review'),
     gwWorkdaySettings:() => (typeof window.gwWorkdaySettings=== 'function') ? window.gwWorkdaySettings(): _p8Stub('Workday Settings'),
+    gwFieldReports:   () => gwAdmin('gwFieldReports'),
+    gwAARTemplate:    () => gwAdmin('gwAARTemplate'),
+    gwAARReview:      () => gwAdmin('gwAARReview'),
   };
   // Engagement consolidated routes
   const engRoute = {
@@ -13597,11 +13618,29 @@ window._sbState = window._sbState || {
 
 async function _sbLoadData() {
   try {
+    // Field roles only see their assigned crew — pass rep_id to filter server-side
+    const _sbRep = window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
+    const _sbFieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
+    const _sbIsField = _sbRep && _sbFieldRoles.includes(_sbRep.role);
+    const _woUrl = _sbIsField
+      ? `/api/work-orders?limit=500&rep_id=${encodeURIComponent(_sbRep.id)}`
+      : '/api/work-orders?limit=500';
     const [cr, wo] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
-      fetch('/api/work-orders?limit=500', {credentials:'include'}).then(r=>r.json()),
+      fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
     ]);
-    if (cr.ok)  window._sbState.crews      = cr.data  || [];
+    if (cr.ok) {
+      // Field roles: only show their own crew(s) in the crew filter bar
+      if (_sbIsField && _sbRep) {
+        window._sbState.crews = (cr.data || []).filter(crew =>
+          crew.members && crew.members.some(m => m.id === _sbRep.id || m.rep_id === _sbRep.id)
+        );
+        // If no crew memberships found, show all crews anyway (graceful fallback)
+        if (window._sbState.crews.length === 0) window._sbState.crews = cr.data || [];
+      } else {
+        window._sbState.crews = cr.data || [];
+      }
+    }
     if (wo.ok)  window._sbState.workOrders = wo.data  || [];
     window._sbState.loaded = true;
   } catch(e) {
@@ -15517,7 +15556,14 @@ async function workOrderList() {
   // Load from D1 + localStorage fallback
   let wos = [];
   try {
-    const r = await fetch('/api/work-orders', {credentials:'include'});
+    // Field roles only see their own assigned work orders
+    const _wlRep = window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
+    const _wlFieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
+    const _wlIsField = _wlRep && _wlFieldRoles.includes(_wlRep.role);
+    const _wlUrl = _wlIsField
+      ? `/api/work-orders?rep_id=${encodeURIComponent(_wlRep.id)}`
+      : '/api/work-orders';
+    const r = await fetch(_wlUrl, {credentials:'include'});
     const d = await r.json();
     if (d.ok) wos = d.data||[];
   } catch(e) {
@@ -20672,3 +20718,342 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
     });
   };
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ADMIN — FIELD REPORTS INBOX
+// Visible to admin, office_manager, division_manager
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _gwRenderFieldReports() {
+  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)"><div class="sb-spinner"></div><p style="margin-top:12px">Loading field reports…</p></div>`;
+  let reports = [];
+  try {
+    const r = await fetch('/api/field-reports?limit=100', { credentials: 'include' });
+    const d = await r.json();
+    if (d.ok) reports = d.data || [];
+  } catch(e) {}
+
+  const typeIcon = { tool:'🔧', vehicle:'🚛', supply:'📦' };
+  const priorityColor = { urgent:'#dc2626', high:'#d97706', normal:'#16a34a' };
+
+  const openReports = reports.filter(r => r.status === 'open' || r.status === 'in_review');
+  const doneReports = reports.filter(r => r.status === 'resolved');
+
+  function reportRow(rpt) {
+    const icon = typeIcon[rpt.report_type] || '⚠️';
+    const pColor = priorityColor[rpt.priority] || '#64748b';
+    return `
+      <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);padding:14px 16px;margin-bottom:8px;background:var(--gw-bg-surface-2)">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="font-size:22px;flex-shrink:0">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+              <span style="font-size:14px;font-weight:700;color:var(--gw-text)">${escapeHtml(rpt.asset_name||'Item')}</span>
+              <span style="font-size:11px;font-weight:700;color:${pColor};background:${pColor}18;padding:2px 8px;border-radius:6px;text-transform:uppercase">${rpt.priority||'normal'}</span>
+              <span style="font-size:11px;font-weight:600;color:var(--gw-text-muted);background:var(--gw-bg-surface-3);padding:2px 8px;border-radius:6px">${rpt.status||'open'}</span>
+            </div>
+            <div style="font-size:12px;color:var(--gw-text-muted);margin-bottom:6px">
+              Reported by <strong>${escapeHtml(rpt.rep_name||'Field worker')}</strong> · ${rpt.created_at ? new Date(rpt.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Today'}
+            </div>
+            ${rpt.notes ? `<div style="font-size:12px;color:var(--gw-text);margin-bottom:8px">${escapeHtml(rpt.notes)}</div>` : ''}
+            ${rpt.status !== 'resolved' ? `
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="rp-btn rp-btn--primary" style="font-size:12px" onclick="_gwResolveFieldReport('${rpt.id}')">Mark Resolved</button>
+              <button class="rp-btn" style="font-size:12px" onclick="_gwFieldReportNote('${rpt.id}')">Add Note</button>
+            </div>` : `<div style="font-size:11px;color:#16a34a;font-weight:600">✅ Resolved${rpt.resolution ? ' — ' + escapeHtml(rpt.resolution) : ''}</div>`}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  view.innerHTML = `
+    <div class="rp-shell" style="max-width:860px;margin:0 auto;padding:24px">
+      <div class="rp-header" style="margin-bottom:20px">
+        <div class="rp-header-left">
+          <h1 class="rp-title">Field Reports</h1>
+          <p class="rp-subtitle">${openReports.length} open · ${doneReports.length} resolved</p>
+        </div>
+      </div>
+
+      ${openReports.length ? `
+        <div style="margin-bottom:24px">
+          <div style="font-size:12px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">OPEN (${openReports.length})</div>
+          ${openReports.map(reportRow).join('')}
+        </div>` : `
+        <div style="text-align:center;padding:40px;color:var(--gw-text-muted)">
+          <div style="font-size:32px;margin-bottom:8px">✅</div>
+          <div>No open field reports</div>
+        </div>`}
+
+      ${doneReports.length ? `
+        <details style="margin-top:8px">
+          <summary style="font-size:12px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;cursor:pointer;margin-bottom:10px">
+            RESOLVED (${doneReports.length})
+          </summary>
+          ${doneReports.map(reportRow).join('')}
+        </details>` : ''}
+    </div>`;
+}
+window._gwRenderFieldReports = _gwRenderFieldReports;
+
+window._gwResolveFieldReport = async function(id) {
+  const resolution = prompt('Resolution notes (optional):') ?? null;
+  if (resolution === null) return; // cancelled
+  try {
+    const r = await fetch(`/api/field-reports/${id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'resolved', resolution: resolution || '' })
+    });
+    const j = await r.json();
+    if (j.ok) { showToast('Marked resolved ✓', 'success'); _gwRenderFieldReports(); }
+    else showToast(j.error || 'Update failed', 'error');
+  } catch(e) { showToast('Network error', 'error'); }
+};
+
+window._gwFieldReportNote = async function(id) {
+  const note = prompt('Add a note / update:');
+  if (!note) return;
+  try {
+    const r = await fetch(`/api/field-reports/${id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'in_review', resolution: note })
+    });
+    const j = await r.json();
+    if (j.ok) { showToast('Note added ✓', 'success'); _gwRenderFieldReports(); }
+    else showToast(j.error || 'Update failed', 'error');
+  } catch(e) { showToast('Network error', 'error'); }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ADMIN — AAR TEMPLATE EDITOR
+// Owner/admin can add/remove/reorder questions + set types
+// ══════════════════════════════════════════════════════════════════════════════
+
+window._gwAARTemplateState = { questions: [] };
+
+async function _gwRenderAARTemplate() {
+  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)"><div class="sb-spinner"></div><p style="margin-top:12px">Loading AAR template…</p></div>`;
+  try {
+    const r = await fetch('/api/aar-template', { credentials: 'include' });
+    const d = await r.json();
+    const qs = (d.ok && d.template && d.template.questions) ? d.template.questions : [
+      { id: 'q1', type: 'yesno', text: 'Did you complete all assigned work orders today?' },
+      { id: 'q2', type: 'yesno', text: 'Were there any safety incidents or near-misses today?' },
+      { id: 'q3', type: 'text',  text: 'Any issues or concerns from today that need follow-up?' },
+      { id: 'q4', type: 'rating',text: 'Overall how did today go? (1 = rough, 5 = great)' },
+      { id: 'q5', type: 'text',  text: 'Any materials, tools, or supplies needed for tomorrow?' },
+    ];
+    window._gwAARTemplateState.questions = qs.map((q, i) => ({ ...q, id: q.id || ('q' + (i+1)) }));
+    _gwRenderAARTemplateUI();
+  } catch(e) {
+    view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)">Failed to load template</div>`;
+  }
+}
+window._gwRenderAARTemplate = _gwRenderAARTemplate;
+
+function _gwRenderAARTemplateUI() {
+  const qs = window._gwAARTemplateState.questions;
+  const qTypes = ['yesno', 'text', 'rating', 'checklist', 'select'];
+  const qTypeLabels = { yesno:'Yes/No', text:'Text Answer', rating:'1–5 Rating', checklist:'Checklist', select:'Dropdown' };
+
+  view.innerHTML = `
+    <div class="rp-shell" style="max-width:760px;margin:0 auto;padding:24px">
+      <div class="rp-header" style="margin-bottom:20px">
+        <div class="rp-header-left">
+          <h1 class="rp-title">After Action Report Template</h1>
+          <p class="rp-subtitle">Configure the end-of-day questions your field team must answer before clocking out</p>
+        </div>
+        <div class="rp-header-actions">
+          <button class="rp-btn rp-btn--primary" onclick="_gwSaveAARTemplate()">Save Template</button>
+        </div>
+      </div>
+
+      <div id="aar-tpl-questions">
+        ${qs.map((q, i) => _gwAARQuestionRow(q, i, qs.length)).join('')}
+      </div>
+
+      <button class="rp-btn" style="margin-top:12px;width:100%" onclick="_gwAARAddQuestion()">
+        + Add Question
+      </button>
+
+      <div style="margin-top:24px;padding:16px;background:var(--gw-bg-surface-2);border-radius:var(--gw-r-md);font-size:12px;color:var(--gw-text-muted)">
+        <strong>Question types:</strong> Yes/No (quick toggle), Text (free answer), Rating (1–5 stars), Checklist (multiple choice), Dropdown (single select). Add options for checklist/dropdown by clicking "Options" after selecting the type.
+      </div>
+    </div>`;
+}
+
+function _gwAARQuestionRow(q, i, total) {
+  const qTypes = ['yesno', 'text', 'rating', 'checklist', 'select'];
+  const qTypeLabels = { yesno:'Yes/No', text:'Text', rating:'1–5 Rating', checklist:'Checklist', select:'Dropdown' };
+  return `
+    <div id="aar-q-row-${i}" style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);padding:14px 16px;margin-bottom:8px;background:var(--gw-bg-surface-2)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:var(--gw-accent);background:var(--gw-accent)18;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div>
+        <input type="text" id="aar-q-text-${i}" value="${escapeHtml(q.text||'')}" placeholder="Question text…"
+          style="flex:1;padding:8px 10px;border:1px solid var(--gw-border);border-radius:8px;font-size:13px;color:var(--gw-text);background:var(--gw-bg-surface)">
+        <select id="aar-q-type-${i}" style="padding:8px 10px;border:1px solid var(--gw-border);border-radius:8px;font-size:12px;color:var(--gw-text);background:var(--gw-bg-surface)">
+          ${qTypes.map(t=>`<option value="${t}" ${q.type===t?'selected':''}>${qTypeLabels[t]}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          ${i > 0 ? `<button class="rp-btn-sm" onclick="_gwAARMoveQ(${i},-1)" title="Move up">↑</button>` : ''}
+          ${i < total-1 ? `<button class="rp-btn-sm" onclick="_gwAARMoveQ(${i},1)" title="Move down">↓</button>` : ''}
+          <button class="rp-btn-sm rp-btn-sm--danger" onclick="_gwAARRemoveQ(${i})" title="Remove">✕</button>
+        </div>
+      </div>
+      ${q.options ? `<div style="font-size:11px;color:var(--gw-text-muted)">Options: ${escapeHtml(q.options.join(', '))}</div>` : ''}
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gw-text-muted);margin-top:4px">
+        <input type="checkbox" id="aar-q-req-${i}" ${q.required?'checked':''} style="accent-color:var(--gw-accent)">
+        Required
+      </label>
+    </div>`;
+}
+
+window._gwAARAddQuestion = function() {
+  const qs = window._gwAARTemplateState.questions;
+  qs.push({ id: 'q' + Date.now(), type: 'text', text: '', required: false });
+  _gwRenderAARTemplateUI();
+  // Focus new question input
+  setTimeout(() => {
+    const last = document.getElementById(`aar-q-text-${qs.length-1}`);
+    if (last) last.focus();
+  }, 50);
+};
+
+window._gwAARRemoveQ = function(i) {
+  window._gwAARTemplateState.questions.splice(i, 1);
+  _gwRenderAARTemplateUI();
+};
+
+window._gwAARMoveQ = function(i, dir) {
+  const qs = window._gwAARTemplateState.questions;
+  const j = i + dir;
+  if (j < 0 || j >= qs.length) return;
+  [qs[i], qs[j]] = [qs[j], qs[i]];
+  _gwRenderAARTemplateUI();
+};
+
+window._gwSaveAARTemplate = async function() {
+  // Read current state from DOM inputs
+  const qs = window._gwAARTemplateState.questions;
+  const updated = qs.map((q, i) => ({
+    id:       q.id,
+    text:     (document.getElementById(`aar-q-text-${i}`)?.value || '').trim(),
+    type:     document.getElementById(`aar-q-type-${i}`)?.value || 'text',
+    required: document.getElementById(`aar-q-req-${i}`)?.checked || false,
+    options:  q.options || undefined,
+  })).filter(q => q.text);
+  if (!updated.length) { showToast('Add at least one question', 'error'); return; }
+
+  const btn = document.querySelector('[onclick="_gwSaveAARTemplate()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const r = await fetch('/api/aar-template', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions: updated })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      window._gwAARTemplateState.questions = updated;
+      showToast('AAR template saved ✓', 'success');
+    } else showToast(j.error || 'Save failed', 'error');
+  } catch(e) { showToast('Network error', 'error'); }
+  if (btn) { btn.disabled = false; btn.textContent = 'Save Template'; }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ADMIN — AAR SUBMISSIONS REVIEW
+// Managers see all submissions; can flag/note responses
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _gwRenderAARReview() {
+  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)"><div class="sb-spinner"></div><p style="margin-top:12px">Loading submissions…</p></div>`;
+  let subs = [];
+  try {
+    const r = await fetch('/api/aar-submissions?limit=50', { credentials: 'include' });
+    const d = await r.json();
+    if (d.ok) subs = d.data || [];
+  } catch(e) {}
+
+  if (!subs.length) {
+    view.innerHTML = `
+      <div class="rp-shell" style="max-width:860px;margin:0 auto;padding:24px">
+        <h1 class="rp-title" style="margin-bottom:20px">AAR Reviews</h1>
+        <div style="text-align:center;padding:60px;color:var(--gw-text-muted)">
+          <div style="font-size:32px;margin-bottom:8px">📋</div>
+          <div>No end-of-day reports submitted yet</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  function subCard(s) {
+    let answers = [];
+    try { answers = typeof s.answers === 'string' ? JSON.parse(s.answers) : (s.answers || []); } catch(_) {}
+    const hasFlaggedAnswers = answers.some(a => a.flagged);
+    return `
+      <div style="border:1px solid ${s.manager_flag?'#dc2626':hasFlaggedAnswers?'#d97706':'var(--gw-border)'};border-radius:var(--gw-r-md);padding:14px 16px;margin-bottom:10px;background:var(--gw-bg-surface-2)">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <div>
+            <div style="font-size:14px;font-weight:700;color:var(--gw-text)">${escapeHtml(s.rep_name||'Field worker')}</div>
+            <div style="font-size:12px;color:var(--gw-text-muted)">${s.submitted_at ? new Date(s.submitted_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Today'}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${s.manager_flag ? `<span style="font-size:11px;font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 8px;border-radius:6px">FLAGGED</span>` : ''}
+            <button class="rp-btn-sm ${s.manager_flag?'':'rp-btn-sm--danger'}" onclick="_gwAARToggleFlag('${s.id}',${!s.manager_flag})">
+              ${s.manager_flag ? 'Unflag' : '🚩 Flag'}
+            </button>
+          </div>
+        </div>
+        ${answers.length ? `
+          <div style="font-size:12px">
+            ${answers.map(a => `
+              <div style="padding:6px 0;border-top:1px solid var(--gw-border-light,#F0EDE5)">
+                <div style="color:var(--gw-text-muted);margin-bottom:2px">${escapeHtml(a.question||a.question_id||'Q')}</div>
+                <div style="color:var(--gw-text);font-weight:600">${escapeHtml(String(a.value||a.answer||'—'))}</div>
+              </div>`).join('')}
+          </div>` : ''}
+        ${s.manager_notes ? `<div style="font-size:12px;color:var(--gw-text-muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--gw-border-light,#F0EDE5)"><strong>Manager note:</strong> ${escapeHtml(s.manager_notes)}</div>` : ''}
+      </div>`;
+  }
+
+  const flagged = subs.filter(s => s.manager_flag);
+  const normal  = subs.filter(s => !s.manager_flag);
+
+  view.innerHTML = `
+    <div class="rp-shell" style="max-width:860px;margin:0 auto;padding:24px">
+      <div class="rp-header" style="margin-bottom:20px">
+        <div class="rp-header-left">
+          <h1 class="rp-title">AAR Reviews</h1>
+          <p class="rp-subtitle">${subs.length} submissions · ${flagged.length} flagged</p>
+        </div>
+      </div>
+
+      ${flagged.length ? `
+        <div style="margin-bottom:20px">
+          <div style="font-size:12px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">FLAGGED (${flagged.length})</div>
+          ${flagged.map(subCard).join('')}
+        </div>` : ''}
+
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">RECENT (${normal.length})</div>
+        ${normal.map(subCard).join('')}
+      </div>
+    </div>`;
+}
+window._gwRenderAARReview = _gwRenderAARReview;
+
+window._gwAARToggleFlag = async function(id, flag) {
+  try {
+    const r = await fetch(`/api/aar-submissions/${id}/review`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ manager_flag: flag ? 1 : 0 })
+    });
+    const j = await r.json();
+    if (j.ok) { _gwRenderAARReview(); showToast(flag ? 'Submission flagged' : 'Flag removed', flag?'error':'success'); }
+    else showToast(j.error||'Update failed', 'error');
+  } catch(e) { showToast('Network error', 'error'); }
+};
