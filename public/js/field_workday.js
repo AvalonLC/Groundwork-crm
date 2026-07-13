@@ -672,6 +672,7 @@ window.fieldDashboard = function fieldDashboard() {
 async function _fdLoadTasksWidget() {
   const el = document.getElementById('fd-tasks-widget');
   if (!el) return;
+  const _T = (typeof window._t === 'function') ? window._t : (s => s);
   try {
     const r = await fetch('/api/tasks?scope=mine&limit=10', { credentials: 'include' });
     const d = await r.json();
@@ -680,9 +681,9 @@ async function _fdLoadTasksWidget() {
     if (open.length === 0) {
       el.innerHTML = `
         <div class="fd-section">
-          <div class="fd-section-hd">My Tasks</div>
+          <div class="fd-section-hd">${_T('My Tasks')}</div>
           <div class="fd-card" style="text-align:center;padding:16px;color:var(--gw-muted,#5E6E6F);font-size:13px">
-            No open tasks today
+            ${_T('No open tasks today')}
           </div>
         </div>`;
       return;
@@ -690,7 +691,7 @@ async function _fdLoadTasksWidget() {
     el.innerHTML = `
       <div class="fd-section">
         <div class="fd-section-hd" style="display:flex;justify-content:space-between;align-items:center">
-          My Tasks
+          ${_T('My Tasks')}
           <span style="font-size:11px;font-weight:600;background:var(--gw-accent,#4D8A86);color:#fff;padding:2px 8px;border-radius:10px">${open.length}</span>
         </div>
         ${open.map(t => `
@@ -703,7 +704,7 @@ async function _fdLoadTasksWidget() {
                 <div style="font-size:13px;font-weight:600;color:var(--gw-ink,#1F2A2B)">${_fwE(t.title||'Task')}</div>
                 ${t.due_date ? `<div style="font-size:11px;color:var(--gw-muted,#5E6E6F)">Due ${t.due_date}</div>` : ''}
               </div>
-              ${t.priority==='high' ? `<span style="font-size:10px;font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 6px;border-radius:6px">HIGH</span>` : ''}
+              ${t.priority==='high' ? `<span style="font-size:10px;font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 6px;border-radius:6px">${_T('HIGH')}</span>` : ''}
             </div>
           </div>`).join('')}
       </div>`;
@@ -723,7 +724,7 @@ window._fdToggleTask = async function(taskId, el) {
     el.style.opacity = '0.4';
     el.style.textDecoration = 'line-through';
     setTimeout(() => { el.remove(); }, 800);
-    if (typeof showToast === 'function') showToast('Task marked done ✓', 'success');
+    if (typeof showToast === 'function') showToast((typeof window._t==='function'?window._t(s=>s)('Task marked done ✓'):'Task marked done ✓'), 'success');
   } catch(e) {}
 };
 
@@ -733,6 +734,7 @@ window._fdToggleTask = async function(taskId, el) {
 
 window.fdOpenEquipReport = function fdOpenEquipReport() {
   document.getElementById('fd-equip-modal')?.remove();
+  const _T = (typeof window._t === 'function') ? window._t : (s => s);
 
   const overlay = document.createElement('div');
   overlay.id = 'fd-equip-modal';
@@ -751,19 +753,19 @@ window.fdOpenEquipReport = function fdOpenEquipReport() {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       </div>
       <div>
-        <div style="font-size:17px;font-weight:700;color:var(--gw-ink,#1F2A2B)">Equipment / Supply Report</div>
-        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">Notify management of an issue or request</div>
+        <div style="font-size:17px;font-weight:700;color:var(--gw-ink,#1F2A2B)">${_T('Equipment / Supply Report')}</div>
+        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">${_T('Notify management of an issue or request')}</div>
       </div>
     </div>
     <form id="fd-equip-form" style="padding:0 20px">
       <!-- Report type -->
       <div style="margin-bottom:14px">
-        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">Report Type *</label>
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">${_T('Report Type')} *</label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
           ${[
-            {val:'tool',    label:'Broken Tool',  icon:'🔧'},
-            {val:'vehicle', label:'Truck/Vehicle', icon:'🚛'},
-            {val:'supply',  label:'Supply Request',icon:'📦'},
+            {val:'tool',    label:_T('Broken Tool'),   icon:'🔧'},
+            {val:'vehicle', label:_T('Truck/Vehicle'),  icon:'🚛'},
+            {val:'supply',  label:_T('Supply Request'), icon:'📦'},
           ].map(opt=>`
             <label style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;color:var(--gw-ink,#1F2A2B);text-align:center" id="er-type-lbl-${opt.val}">
               <input type="radio" name="report_type" value="${opt.val}" style="display:none" onchange="document.querySelectorAll('[id^=er-type-lbl-]').forEach(l=>l.style.borderColor='var(--gw-line,#E0DDD5)');document.getElementById('er-type-lbl-${opt.val}').style.borderColor='#d97706'">
@@ -774,29 +776,29 @@ window.fdOpenEquipReport = function fdOpenEquipReport() {
       </div>
       <!-- Asset / item description -->
       <div style="margin-bottom:14px">
-        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">What item / asset? *</label>
-        <input type="text" name="asset_name" placeholder="e.g. Milwaukee Drill M18, F-250 Truck #3, Gloves" maxlength="120"
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">${_T('What item / asset?')} *</label>
+        <input type="text" name="asset_name" placeholder="${_T('e.g. Milwaukee Drill M18, F-250 Truck #3, Gloves')}" maxlength="120"
           style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);box-sizing:border-box" required>
       </div>
       <!-- Priority -->
       <div style="margin-bottom:14px">
-        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">Urgency</label>
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">${_T('Urgency')}</label>
         <select name="priority" style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);box-sizing:border-box">
-          <option value="normal">Normal — handle when possible</option>
-          <option value="high">High — need it soon</option>
-          <option value="urgent">Urgent — blocking work today</option>
+          <option value="normal">${_T('Normal — handle when possible')}</option>
+          <option value="high">${_T('High — need it soon')}</option>
+          <option value="urgent">${_T('Urgent — blocking work today')}</option>
         </select>
       </div>
       <!-- Notes -->
       <div style="margin-bottom:20px">
-        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">Description / Notes</label>
-        <textarea name="notes" rows="3" placeholder="Describe the issue or what you need..." maxlength="500"
+        <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">${_T('Description / Notes')}</label>
+        <textarea name="notes" rows="3" placeholder="${_T('Describe the issue or what you need...')}" maxlength="500"
           style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);resize:none;box-sizing:border-box"></textarea>
       </div>
       <button type="button" onclick="fdSubmitEquipReport()" style="width:100%;padding:14px;background:#d97706;border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer">
-        Submit Report
+        ${_T('Submit Report')}
       </button>
-      <button type="button" onclick="document.getElementById('fd-equip-modal').remove()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:0;color:var(--gw-muted,#5E6E6F);font-size:13px;cursor:pointer">Cancel</button>
+      <button type="button" onclick="document.getElementById('fd-equip-modal').remove()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:0;color:var(--gw-muted,#5E6E6F);font-size:13px;cursor:pointer">${_T('Cancel')}</button>
     </form>`;
 
   overlay.appendChild(sheet);
@@ -810,11 +812,12 @@ window.fdSubmitEquipReport = async function() {
   const assetEl = form.querySelector('[name=asset_name]');
   const priorityEl = form.querySelector('[name=priority]');
   const notesEl = form.querySelector('[name=notes]');
-  if (!typeEl) { if (typeof showToast==='function') showToast('Please select a report type', 'error'); return; }
-  if (!assetEl.value.trim()) { if (typeof showToast==='function') showToast('Please describe the item or asset', 'error'); return; }
+  const _T2 = (typeof window._t === 'function') ? window._t : (s => s);
+  if (!typeEl) { if (typeof showToast==='function') showToast(_T2('Please select a report type'), 'error'); return; }
+  if (!assetEl.value.trim()) { if (typeof showToast==='function') showToast(_T2('Please describe the item or asset'), 'error'); return; }
   const btn = document.querySelector('#fd-equip-form + button, #fd-equip-form button[onclick="fdSubmitEquipReport()"]') ||
               form.querySelector('button[onclick="fdSubmitEquipReport()"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  if (btn) { btn.disabled = true; btn.textContent = _T2('Submitting…'); }
   try {
     const r = await fetch('/api/field-reports', {
       method: 'POST', credentials: 'include',
@@ -829,14 +832,14 @@ window.fdSubmitEquipReport = async function() {
     const j = await r.json();
     if (j.ok) {
       document.getElementById('fd-equip-modal')?.remove();
-      if (typeof showToast==='function') showToast('Report submitted — management has been notified ✓', 'success');
+      if (typeof showToast==='function') showToast(_T2('Report submitted — management has been notified ✓'), 'success');
     } else {
-      if (typeof showToast==='function') showToast(j.error || 'Submit failed', 'error');
-      if (btn) { btn.disabled = false; btn.textContent = 'Submit Report'; }
+      if (typeof showToast==='function') showToast(j.error || _T2('Submit failed'), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = _T2('Submit Report'); }
     }
   } catch(e) {
-    if (typeof showToast==='function') showToast('Network error — try again', 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit Report'; }
+    if (typeof showToast==='function') showToast(_T2('Network error — try again'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = _T2('Submit Report'); }
   }
 };
 
@@ -848,6 +851,7 @@ window.fdSubmitEquipReport = async function() {
 // Public entry — opens AAR sheet directly
 window.fdOpenAAR = async function fdOpenAAR(onComplete) {
   document.getElementById('fd-aar-modal')?.remove();
+  const _T = (typeof window._t === 'function') ? window._t : (s => s);
 
   // Check if already submitted today
   let alreadyDone = false;
@@ -855,7 +859,7 @@ window.fdOpenAAR = async function fdOpenAAR(onComplete) {
     const chk = await fetch('/api/aar-check-today', { credentials: 'include' });
     const chkJ = await chk.json();
     if (chkJ.submitted) {
-      if (typeof showToast === 'function') showToast('End-of-day report already submitted for today ✓', 'success');
+      if (typeof showToast === 'function') showToast(_T('End-of-day report already submitted for today ✓'), 'success');
       if (onComplete) onComplete();
       return;
     }
@@ -874,11 +878,11 @@ window.fdOpenAAR = async function fdOpenAAR(onComplete) {
   if (!questions.length) {
     // Default 5-question template as fallback
     questions = [
-      { id: 'q1', type: 'yesno',   text: 'Did you complete all assigned work orders today?' },
-      { id: 'q2', type: 'yesno',   text: 'Were there any safety incidents or near-misses today?' },
-      { id: 'q3', type: 'text',    text: 'Any issues or concerns from today that need follow-up?' },
-      { id: 'q4', type: 'rating',  text: 'Overall how did today go? (1 = rough, 5 = great)' },
-      { id: 'q5', type: 'text',    text: 'Any materials, tools, or supplies needed for tomorrow?' },
+      { id: 'q1', type: 'yesno',   text: _T('Did you complete all assigned work orders today?') },
+      { id: 'q2', type: 'yesno',   text: _T('Were there any safety incidents or near-misses today?') },
+      { id: 'q3', type: 'text',    text: _T('Any issues or concerns from today that need follow-up?') },
+      { id: 'q4', type: 'rating',  text: _T('Overall how did today go? (1 = rough, 5 = great)') },
+      { id: 'q5', type: 'text',    text: _T('Any materials, tools, or supplies needed for tomorrow?') },
     ];
   }
 
@@ -898,11 +902,11 @@ window.fdOpenAAR = async function fdOpenAAR(onComplete) {
           <div style="display:flex;gap:8px">
             <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600" id="${qId}-yes-lbl">
               <input type="radio" name="${qId}" value="yes" style="display:none" onchange="document.getElementById('${qId}-yes-lbl').style.borderColor='#16a34a';document.getElementById('${qId}-no-lbl').style.borderColor='var(--gw-line,#E0DDD5)'">
-              ✅ Yes
+              ✅ ${_T('Yes')}
             </label>
             <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600" id="${qId}-no-lbl">
               <input type="radio" name="${qId}" value="no" style="display:none" onchange="document.getElementById('${qId}-no-lbl').style.borderColor='#dc2626';document.getElementById('${qId}-yes-lbl').style.borderColor='var(--gw-line,#E0DDD5)'">
-              ❌ No
+              ❌ ${_T('No')}
             </label>
           </div>`;
         break;
@@ -927,12 +931,12 @@ window.fdOpenAAR = async function fdOpenAAR(onComplete) {
         const opts = Array.isArray(q.options) ? q.options : [];
         inputHTML = `
           <select name="${qId}" style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);box-sizing:border-box">
-            <option value="">— Select —</option>
+            <option value="">${_T('— Select —')}</option>
             ${opts.map(o=>`<option value="${_fwE(o)}">${_fwE(o)}</option>`).join('')}
           </select>`;
         break;
       default: // text
-        inputHTML = `<textarea name="${qId}" rows="2" placeholder="Your answer…" maxlength="500"
+        inputHTML = `<textarea name="${qId}" rows="2" placeholder="${_T('Your answer…')}" maxlength="500"
           style="width:100%;padding:10px 12px;border:1px solid var(--gw-line,#E0DDD5);border-radius:8px;font-size:13px;color:var(--gw-ink,#1F2A2B);background:var(--gw-surface,#fff);resize:none;box-sizing:border-box"></textarea>`;
     }
     return `
@@ -955,16 +959,16 @@ window.fdOpenAAR = async function fdOpenAAR(onComplete) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
       </div>
       <div>
-        <div style="font-size:17px;font-weight:700;color:var(--gw-ink,#1F2A2B)">End-of-Day Report</div>
-        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">${questions.length} questions · ~5 min</div>
+        <div style="font-size:17px;font-weight:700;color:var(--gw-ink,#1F2A2B)">${_T('End-of-Day Report')}</div>
+        <div style="font-size:12px;color:var(--gw-muted,#5E6E6F)">${questions.length} ${_T('questions')} · ~5 min</div>
       </div>
     </div>
     <form id="fd-aar-form" style="padding:20px" data-total="${questions.length}">
       ${qHTML}
       <button type="button" id="fd-aar-submit-btn" onclick="fdSubmitAAR()" style="width:100%;padding:14px;background:#16a34a;border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer">
-        Submit &amp; Clock Out
+        ${_T('Submit & Clock Out')}
       </button>
-      <button type="button" onclick="fdAARSkip()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:0;color:var(--gw-muted,#5E6E6F);font-size:12px;cursor:pointer">Save progress for later</button>
+      <button type="button" onclick="fdAARSkip()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:0;color:var(--gw-muted,#5E6E6F);font-size:12px;cursor:pointer">${_T('Save progress for later')}</button>
     </form>`;
 
   // Store onComplete callback on overlay
@@ -1015,8 +1019,9 @@ window.fdSubmitAAR = async function() {
     answers.push({ question_id: qId, value });
   });
 
+  const _T3 = (typeof window._t === 'function') ? window._t : (s => s);
   const submitBtn = document.getElementById('fd-aar-submit-btn');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _T3('Submitting…'); }
 
   try {
     const r = await fetch('/api/aar-submissions', {
@@ -1029,15 +1034,15 @@ window.fdSubmitAAR = async function() {
       const overlay = document.getElementById('fd-aar-modal');
       const cb = overlay?._onComplete;
       overlay?.remove();
-      if (typeof showToast === 'function') showToast('End-of-day report submitted ✓', 'success');
+      if (typeof showToast === 'function') showToast(_T3('End-of-day report submitted ✓'), 'success');
       if (cb) cb();
     } else {
-      if (typeof showToast === 'function') showToast(j.error || 'Submit failed', 'error');
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit & Clock Out'; }
+      if (typeof showToast === 'function') showToast(j.error || _T3('Submit failed'), 'error');
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = _T3('Submit & Clock Out'); }
     }
   } catch(e) {
-    if (typeof showToast === 'function') showToast('Network error — try again', 'error');
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit & Clock Out'; }
+    if (typeof showToast === 'function') showToast(_T3('Network error — try again'), 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = _T3('Submit & Clock Out'); }
   }
 };
 
@@ -1057,7 +1062,8 @@ window._fdAARGateClockOut = async function(proceedFn) {
       return;
     }
     // Required and not submitted — show AAR first, then clock out on complete
-    if (typeof showToast === 'function') showToast('Please complete your end-of-day report before clocking out', 'info');
+    const _T4 = (typeof window._t === 'function') ? window._t : (s => s);
+    if (typeof showToast === 'function') showToast(_T4('Please complete your end-of-day report before clocking out'), 'info');
     window.fdOpenAAR(function() {
       // AAR submitted — now proceed with clock-out
       if (proceedFn) proceedFn();

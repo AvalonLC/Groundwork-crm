@@ -1518,6 +1518,10 @@ window._updateSidebarRep = function updateSidebarRep() {
           </div>
           <button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server"
             style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">Sync</button>`;
+        // Render language toggle above the footer
+        if (typeof window._gwRenderLangToggle === 'function') {
+          try { window._gwRenderLangToggle(); } catch(_) {}
+        }
       }
       // Hide entire nav workspace groups the user cannot access.
       // This removes Sales/Financial/Learning/Admin from the sidebar for field roles
@@ -13444,8 +13448,9 @@ function _p6WOStatusClass(s) {
     'on-hold':'wo-status--onhold' }[s] || 'wo-status--scheduled';
 }
 function _p6WOStatusLabel(s) {
-  return { scheduled:'Scheduled','in-progress':'In Progress',completed:'Completed',
-    cancelled:'Cancelled','on-hold':'On Hold' }[s] || s || 'Scheduled';
+  const _T = (typeof window._t === 'function') ? window._t : (x => x);
+  return { scheduled:_T('Scheduled'),'in-progress':_T('In Progress'),completed:_T('Completed'),
+    cancelled:_T('Cancelled'),'on-hold':_T('On Hold') }[s] || s || _T('Scheduled');
 }
 function _p6AssetLabel(s) {
   return { active:'Active', idle:'Idle', maintenance:'In Maintenance',
@@ -13718,7 +13723,7 @@ async function scheduleBoard() {
 
   // Show loading skeleton
   view.innerHTML = `<div class="sched-shell"><div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
-    <div class="sb-spinner"></div><p style="margin-top:12px">Loading schedule…</p></div></div>`;
+    <div class="sb-spinner"></div><p style="margin-top:12px">${(typeof window._t==='function')?window._t('Loading schedule…'):'Loading schedule…'}</p></div></div>`;
 
   if (!sb.loaded) await _sbLoadData();
   _sbRender();
@@ -13765,9 +13770,10 @@ function _sbRender() {
   let gridHtml = '';
   let headerLabel = '';
 
+  const _sbT = (typeof window._t === 'function') ? window._t : (x => x);
   if (sb.viewMode === 'week') {
     const days = _sbGetWeekDays(sb.weekOffset);
-    const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const wdNames = [_sbT('Sun'),_sbT('Mon'),_sbT('Tue'),_sbT('Wed'),_sbT('Thu'),_sbT('Fri'),_sbT('Sat')];
     headerLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
 
     if (sb.crewLanes && allCrews.length) {
@@ -13881,7 +13887,8 @@ function _sbRender() {
           ${jobs.length>3 ? `<div class="sb-month-more-link">+${jobs.length-3} more</div>` : ''}
         </div>`;
     }
-    const dowHeaders = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(n=>`<div class="sb-month-dow">${n}</div>`).join('');
+    const _sbT2 = (typeof window._t === 'function') ? window._t : (x => x);
+    const dowHeaders = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(n=>`<div class="sb-month-dow">${_sbT2(n)}</div>`).join('');
     gridHtml = `<div class="sb-month-grid">${dowHeaders}${cells}</div>`;
   }
 
@@ -13968,7 +13975,8 @@ window._sbSelectDay = function(iso) {
 // ── Mobile schedule render ────────────────────────────────────────────────────
 function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, totalInProgress, totalCompleted, headerLabel, _gridHtml, _crewFilterBar) {
   const today = new Date().toISOString().slice(0,10);
-  const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const _mT = (typeof window._t === 'function') ? window._t : (x => x);
+  const wdNames = [_mT('Sun'),_mT('Mon'),_mT('Tue'),_mT('Wed'),_mT('Thu'),_mT('Fri'),_mT('Sat')];
   const wdShort = ['S','M','T','W','T','F','S'];
 
   // Month view on mobile — use a compact grid
@@ -15551,7 +15559,8 @@ window.recurringServices = recurringServices;
 // ── 5. Work Order List ────────────────────────────────────────────────────────
 async function workOrderList() {
   // Show skeleton
-  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)"><div class="sb-spinner"></div><p style="margin-top:12px">Loading work orders…</p></div>`;
+  const _wlT = (typeof window._t === 'function') ? window._t : (s => s);
+  view.innerHTML = `<div style="padding:40px;text-align:center;color:var(--gw-text-muted)"><div class="sb-spinner"></div><p style="margin-top:12px">${_wlT('Loading work orders…')}</p></div>`;
 
   // Load from D1 + localStorage fallback
   let wos = [];
@@ -15587,7 +15596,7 @@ async function workOrderList() {
       <span class="wo-date">${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : '—'}</span>
       <span style="display:flex;align-items:center;gap:6px">
         ${wo.crew_name?`<span style="width:8px;height:8px;border-radius:50%;background:${crewColor};display:inline-block"></span>`:''}
-        ${escapeHtml(wo.crew_name||'Unassigned')}
+        ${escapeHtml(wo.crew_name||_wlT('Unassigned'))}
       </span>
       <span><span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></span>
       <span class="wo-actions">
@@ -15596,18 +15605,18 @@ async function workOrderList() {
       </span>
     </div>`;
   }).join('')
-  : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:16px">No work orders yet.</p><button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">+ Create First Work Order</button></div>`;
+  : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:16px">${_wlT('No work orders yet.')}</p><button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">${_wlT('+ Create First Work Order')}</button></div>`;
 
   view.innerHTML = `
   <div class="wo-list-shell">
     <header class="rp-header">
       <div class="rp-header-left">
-        <h1 class="rp-title">Work Orders</h1>
-        <p class="rp-subtitle">${wos.length} total · ${counts['in-progress']} in progress · ${counts.scheduled} scheduled</p>
+        <h1 class="rp-title">${_wlT('Work Orders')}</h1>
+        <p class="rp-subtitle">${wos.length} ${_wlT('total')} · ${counts['in-progress']} ${_wlT('in progress')} · ${counts.scheduled} ${_wlT('scheduled')}</p>
       </div>
       <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule Board</button>
-        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">+ New Work Order</button>
+        <button class="rp-btn" onclick="show('scheduleBoard')">${_wlT('Schedule Board')}</button>
+        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">${_wlT('+ New Work Order')}</button>
       </div>
     </header>
 
@@ -15618,7 +15627,7 @@ async function workOrderList() {
 
     <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);overflow:hidden;background:var(--gw-bg-surface-2)">
       <div class="wo-row" style="background:var(--gw-bg-surface-3);cursor:default;font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.05em">
-        <span>WO #</span><span>Client</span><span>Type</span><span>Date</span><span>Crew</span><span>Status</span><span></span>
+        <span>${_wlT('WO #')}</span><span>${_wlT('Client')}</span><span>${_wlT('Type')}</span><span>${_wlT('Date')}</span><span>${_wlT('Crew')}</span><span>${_wlT('Status')}</span><span></span>
       </div>
       ${rows}
     </div>

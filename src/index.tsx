@@ -434,7 +434,8 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
 
   // Run all 4 queries in parallel
-  const [repsResult, rolesResult, stagesRow, navPermsRow] = await Promise.all([
+  const repId = c.var.repId as string
+  const [repsResult, rolesResult, stagesRow, navPermsRow, myRepRow] = await Promise.all([
     c.env.DB.prepare(
       'SELECT id, name, title, role, color, commission_plan, active, email, email_signature, invite_accepted FROM reps WHERE company_id = ? ORDER BY active DESC, name'
     ).bind(companyId).all(),
@@ -446,7 +447,11 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     ).bind(`${companyId}:pipeline_stages`).first<{ value: string }>(),
     c.env.DB.prepare(
       "SELECT value FROM settings WHERE key = ? LIMIT 1"
-    ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
+    ).bind(`${companyId}:nav_perms`).first<{ value: string }>(),
+    // fetch current rep's preferred_language
+    c.env.DB.prepare(
+      'SELECT preferred_language FROM reps WHERE id = ? AND company_id = ? LIMIT 1'
+    ).bind(repId, companyId).first<{ preferred_language: string }>()
   ])
 
   const defaultStages = [
@@ -483,7 +488,9 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     reps: repsResult.results || [],
     roles,
     pipelineStages: stages,
-    navPerms
+    navPerms,
+    // Include the logged-in rep's language preference so the i18n engine can hydrate on bootstrap
+    rep: { preferred_language: myRepRow?.preferred_language || 'en' }
   })
 })
 
@@ -4812,6 +4819,33 @@ app.get('/api/aar-check-today', requireAuth, async (c) => {
   return c.json({ submitted: !!row, required: tmpl ? Boolean(tmpl.require_before_clockout) : true })
 })
 
+// ── LANGUAGE PREFERENCE ──────────────────────────────────────────────────────
+
+// GET /api/me/language — return current rep's preferred language
+app.get('/api/me/language', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const row: any = await db.prepare(
+    'SELECT preferred_language FROM reps WHERE id=? AND company_id=? LIMIT 1'
+  ).bind(repId, companyId).first()
+  return c.json({ ok: true, language: row?.preferred_language || 'en' })
+})
+
+// PATCH /api/me/language — update rep's preferred language
+app.patch('/api/me/language', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const body: any = await c.req.json()
+  const lang = body.language
+  if (lang !== 'en' && lang !== 'es') return c.json({ ok: false, error: 'Invalid language. Supported: en, es' }, 400)
+  await db.prepare(
+    'UPDATE reps SET preferred_language=? WHERE id=? AND company_id=?'
+  ).bind(lang, repId, companyId).run()
+  return c.json({ ok: true, language: lang })
+})
+
 // ── ESTIMATE PORTAL (public — no auth) ───────────────────────────────────────
 
 // GET /estimates/portal/:token — public estimate approval page
@@ -5631,7 +5665,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b009">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b011">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5655,8 +5689,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260713b009"></script>
-  <script src="/js/client_portal.js?v=20260713b009"></script>
+  <script src="/js/platform_core.js?v=20260713b011"></script>
+  <script src="/js/client_portal.js?v=20260713b011"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6267,9 +6301,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b009">
-  <link rel="stylesheet" href="/js/styles.css?v=20260713b009">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b009">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b011">
+  <link rel="stylesheet" href="/js/styles.css?v=20260713b011">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b011">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6810,33 +6844,34 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260713b009"></script>
-<script src="/js/db.js?v=20260713b009"></script>
-<script src="/js/data.js?v=20260713b009"></script>
-<script src="/js/reps.js?v=20260713b009"></script>
-<script src="/js/record-page.js?v=20260713b009"></script>
-<script src="/js/academy.js?v=20260713b009"></script>
-<script src="/js/task_engine.js?v=20260713b009"></script>
-<script src="/js/app_premium.js?v=20260713b009"></script>
-<script src="/js/estimates.js?v=20260713b009"></script>
-<script src="/js/invoices.js?v=20260713b009"></script>
-<script src="/js/csv_import.js?v=20260713b009"></script>
-<script src="/js/onboarding.js?v=20260713b009"></script>
-<script src="/js/recurring_plans.js?v=20260713b009"></script>
-<script src="/js/reviews.js?v=20260713b009"></script>
-<script src="/js/stripe.js?v=20260713b009"></script>
-<script src="/js/email.js?v=20260713b009"></script>
-<script src="/js/notifications.js?v=20260713b009"></script>
-<script src="/js/integrations.js?v=20260713b009"></script>
-<script src="/js/user_management.js?v=20260713b009"></script>
-<script src="/js/platform_admin.js?v=20260713b009"></script>
-<script src="/js/time_tracker.js?v=20260713b009"></script>
-<script src="/js/field_workday.js?v=20260713b009"></script>
-<script src="/js/platform_core.js?v=20260713b009"></script>
-<script src="/js/approval_engine.js?v=20260713b009"></script>
-<script src="/js/automation_engine.js?v=20260713b009"></script>
-<script src="/js/client_portal.js?v=20260713b009"></script>
-<script src="/js/field_mode.js?v=20260713b009"></script>
+<script src="/js/gw-icons.js?v=20260713b011"></script>
+<script src="/js/db.js?v=20260713b011"></script>
+<script src="/js/data.js?v=20260713b011"></script>
+<script src="/js/reps.js?v=20260713b011"></script>
+<script src="/js/record-page.js?v=20260713b011"></script>
+<script src="/js/academy.js?v=20260713b011"></script>
+<script src="/js/task_engine.js?v=20260713b011"></script>
+<script src="/js/gw_i18n.js?v=20260713b011"></script>
+<script src="/js/app_premium.js?v=20260713b011"></script>
+<script src="/js/estimates.js?v=20260713b011"></script>
+<script src="/js/invoices.js?v=20260713b011"></script>
+<script src="/js/csv_import.js?v=20260713b011"></script>
+<script src="/js/onboarding.js?v=20260713b011"></script>
+<script src="/js/recurring_plans.js?v=20260713b011"></script>
+<script src="/js/reviews.js?v=20260713b011"></script>
+<script src="/js/stripe.js?v=20260713b011"></script>
+<script src="/js/email.js?v=20260713b011"></script>
+<script src="/js/notifications.js?v=20260713b011"></script>
+<script src="/js/integrations.js?v=20260713b011"></script>
+<script src="/js/user_management.js?v=20260713b011"></script>
+<script src="/js/platform_admin.js?v=20260713b011"></script>
+<script src="/js/time_tracker.js?v=20260713b011"></script>
+<script src="/js/field_workday.js?v=20260713b011"></script>
+<script src="/js/platform_core.js?v=20260713b011"></script>
+<script src="/js/approval_engine.js?v=20260713b011"></script>
+<script src="/js/automation_engine.js?v=20260713b011"></script>
+<script src="/js/client_portal.js?v=20260713b011"></script>
+<script src="/js/field_mode.js?v=20260713b011"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -6913,6 +6948,14 @@ function getHtml(): string {
               window._gwRoles           = bs.data.roles;
               window._gwPipelineStages  = bs.data.pipelineStages;
               window._gwNavPerms        = bs.data.navPerms;
+              // Hydrate language preference from D1 (overrides localStorage default)
+              if (bs.data.rep && bs.data.rep.preferred_language) {
+                const _bsLang = bs.data.rep.preferred_language;
+                if (_bsLang === 'en' || _bsLang === 'es') {
+                  window._gwLang = _bsLang;
+                  try { localStorage.setItem('gw_lang', _bsLang); } catch(_) {}
+                }
+              }
               if (typeof window._hydrateRepsFromBootstrap === 'function') {
                 window._hydrateRepsFromBootstrap(bs.data.reps);
               }
