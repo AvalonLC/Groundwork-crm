@@ -1083,6 +1083,19 @@ function show(viewName='today', param){
     (_d1.is_super_admin === 1 || _d1.is_super_admin === true) &&
     _d1.company_id === 'groundwork_platform';
   if (!_isPlatformSA && viewName !== 'settings' && !canViewTab(viewName)) {
+    // For workspace-level nav items (gwSales, gwFinancial etc.), hide the entire
+    // group from the sidebar so field roles never see a dead link.
+    const _wsGroup = document.querySelector(`.nav-item[data-view="${viewName}"]`)?.closest('.nav-ws-group');
+    if (_wsGroup) _wsGroup.style.display = 'none';
+    // Redirect to the appropriate landing page for this role instead of showing an error.
+    const _blockedRep = window.getCurrentRep ? window.getCurrentRep() : (window._d1SessionRep ? {role: window._d1SessionRep.role} : null);
+    const _isBlockedField = _blockedRep && (_GW_FIELD_ROLES||['foreman','laborer','field_supervisor']).includes(_blockedRep.role);
+    if (_isBlockedField) {
+      // Field users who hit a blocked view just go back to their field dashboard silently
+      if (typeof window.fieldDashboard === 'function') window.fieldDashboard();
+      else if (typeof gwDashboard === 'function') gwDashboard('fieldDashboard');
+      return;
+    }
     const _rep = window.getCurrentRep ? window.getCurrentRep() : null;
     const _viewLabels = {
       // Workspace top-level
@@ -1485,7 +1498,22 @@ window._updateSidebarRep = function updateSidebarRep() {
           <button id="gw-sync-btn" onclick="window._manualSync()" title="Sync latest data from server"
             style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.7);font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;flex-shrink:0" aria-label="Sync now">Sync</button>`;
       }
-      // Nav items: always fully visible — access controlled by Permission Matrix in Settings
+      // Hide entire nav workspace groups the user cannot access.
+      // This removes Sales/Financial/Learning/Admin from the sidebar for field roles
+      // rather than letting them navigate in and see "Access Restricted".
+      document.querySelectorAll('.nav-ws-group').forEach(group => {
+        const btn = group.querySelector('.nav-item[data-view]');
+        if (!btn) return;
+        const wsView = btn.dataset.view;
+        if (!wsView) return;
+        const canSee = (rep && rep.role === 'admin') || canViewTab(wsView);
+        group.style.display = canSee ? '' : 'none';
+      });
+      // Also hide the bottom mobile nav buttons by role
+      document.querySelectorAll('.gw-mnav-btn[data-view]').forEach(btn => {
+        const canSee = (rep && rep.role === 'admin') || canViewTab(btn.dataset.view);
+        btn.style.display = canSee ? '' : 'none';
+      });
     }
   } catch(e) {}
 };
@@ -1656,8 +1684,8 @@ function _gwTodayFinanceSnap() {
 
 // ── Mobile My Day render ────────────────────────────────────────────────────
 function _gwTodayRenderMobile(opts) {
-  // opts: { rep, isAdmin, isOM, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent }
-  const { rep, isAdmin, isOM, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent } = opts;
+  // opts: { rep, isAdmin, isOM, isField, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent }
+  const { rep, isAdmin, isOM, isField, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent } = opts;
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
   const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
   const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
@@ -1679,13 +1707,13 @@ function _gwTodayRenderMobile(opts) {
       </div>
       <div class="gwtd-actions">
         <button class="gwtd-btn gwtd-btn--primary" onclick="window._gwTodayNewTask()">+ Task</button>
-        <button class="gwtd-btn gwtd-btn--secondary" onclick="show('lead')">+ Lead</button>
-        <button class="gwtd-btn gwtd-btn--secondary" onclick="show('pipeline')">Pipeline</button>
+        ${isField ? '' : `<button class="gwtd-btn gwtd-btn--secondary" onclick="show('lead')">+ Lead</button>`}
+        ${isField ? '' : `<button class="gwtd-btn gwtd-btn--secondary" onclick="show('pipeline')">Pipeline</button>`}
       </div>
     </div>`;
 
-  // ── Stats grid ──────────────────────────────────────────────────────────
-  const statsHtml = `
+  // ── Stats grid (hidden for field roles) ─────────────────────────────────
+  const statsHtml = isField ? '' : `
     <div class="gwtd-stats">
       <div class="gwtd-stat-cell" onclick="show('pipeline')">
         <div class="gwtd-stat-label">Open Leads</div>
@@ -1738,8 +1766,8 @@ function _gwTodayRenderMobile(opts) {
   // ── Tasks section ───────────────────────────────────────────────────────
   const tasksHtml = taskWorkspace ? `<div class="gwtd-section">${taskWorkspace}</div>` : '';
 
-  // ── Daily Start-Up checklist (collapsible) ──────────────────────────────
-  const checklistHtml = checklist ? `
+  // ── Daily Start-Up checklist (collapsible, hidden for field roles) ───────
+  const checklistHtml = (!isField && checklist) ? `
     <div class="gwtd-section">
       <div class="gwtd-collapsible" id="gwtd-checklist-panel">
         <button class="gwtd-collapse-btn" onclick="(function(){var p=document.getElementById('gwtd-checklist-panel');p.classList.toggle('gwtd-collapsed');})()">
@@ -1750,8 +1778,8 @@ function _gwTodayRenderMobile(opts) {
       </div>
     </div>` : '';
 
-  // ── Recently Updated leads (compact 3 rows) ─────────────────────────────
-  const recentHtml = recent.length ? `
+  // ── Recently Updated leads (hidden for field roles) ─────────────────────
+  const recentHtml = (!isField && recent.length) ? `
     <div class="gwtd-section">
       <div class="gwtd-section-head">
         <span class="gwtd-section-title">Recently Updated</span>
@@ -1810,6 +1838,7 @@ function _gwTodayRender() {
   }
   const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
   const _isOM     = _todayRep && _todayRep.role === 'office_manager';
+  const _isField  = _todayRep && (_GW_FIELD_ROLES || ['foreman','laborer','field_supervisor']).includes(_todayRep.role);
   const _showFin  = _isAdmin || _isOM;
 
   // Unsynced banner
@@ -1831,7 +1860,7 @@ function _gwTodayRender() {
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
 
-  const _pipeStrip = `
+  const _pipeStrip = _isField ? '' : `
     <div class="gw-today-pipe-strip">
       <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Open pipeline">
         <span class="gw-today-pipe-label">Open Leads</span>
@@ -1868,6 +1897,7 @@ function _gwTodayRender() {
       rep: _todayRep,
       isAdmin: _isAdmin,
       isOM: _isOM,
+      isField: _isField,
       showFin: _showFin,
       opps,
       unsyncedBanner: _unsyncedBanner,
@@ -1888,8 +1918,8 @@ function _gwTodayRender() {
       </div>
       <div class="pl-page-actions">
         <button class="primary-btn small" onclick="window._gwTodayNewTask()">+ New Task</button>
-        <button class="secondary-btn small" onclick="show('lead')">+ New Lead</button>
-        <button class="secondary-btn small" onclick="show('pipeline')">Pipeline</button>
+        ${_isField ? '' : `<button class="secondary-btn small" onclick="show('lead')">+ New Lead</button>`}
+        ${_isField ? '' : `<button class="secondary-btn small" onclick="show('pipeline')">Pipeline</button>`}
       </div>
     </div>`;
 
@@ -1902,7 +1932,7 @@ function _gwTodayRender() {
       </div>
       ${_showFin ? `<div class="gw-today-side-col">${_finSnap}</div>` : ''}
     </div>
-    <div class="grid grid-2 mt">
+    ${_isField ? '' : `<div class="grid grid-2 mt">
       <section class="card app-card">
         <div class="section-head"><h2>Daily Sales Start-Up</h2></div>
         ${renderChecklist(data.checklists.find(c=>c.id==='daily'), true)}
@@ -1911,7 +1941,7 @@ function _gwTodayRender() {
         <div class="section-head"><h2>Recently Updated</h2></div>
         ${recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`)}
       </section>
-    </div>
+    </div>`}
     ${renderTodayActivityWidget()}
     ${_isAdmin || _isOM ? '<div id="gw-reviews-widget-mount" style="margin-top:16px"></div>' : ''}
   `;
