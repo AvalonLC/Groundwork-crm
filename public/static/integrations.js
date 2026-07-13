@@ -1511,7 +1511,7 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOp
   if (sigSection) sigSection.style.display = 'none';
   if (sigPreview) sigPreview.innerHTML = '';
   if (sigCta)     { sigCta.style.display = 'none'; sigCta.innerHTML = ''; }
-  if (sigStatus)  sigStatus.textContent = '⏳ Loading signature…';
+  if (sigStatus)  sigStatus.textContent = 'Loading signature…';
   if (sigSrcLbl)  sigSrcLbl.textContent = '';
   if (sigToggle)  { sigToggle.textContent = 'Remove'; sigToggle.style.display = ''; }
   window._intSigActive = false;
@@ -1590,7 +1590,7 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOp
         sigCta.style.display = 'block';
         sigCta.innerHTML = `
           <div style="display:flex;align-items:flex-start;gap:10px">
-            <span style="font-size:16px;flex-shrink:0">🔄</span>
+            <span style="flex-shrink:0;display:flex;align-items:center">${(typeof gwIcon==='function')?gwIcon('sync',16,'#4D8A86'):''}</span>
             <div>
               <div style="font-weight:700;color:var(--gds-ink,#1F2A2B);margin-bottom:4px">Reconnect Google to sync your Gmail signature</div>
               <div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Your Google connection was made before email signature access was added. A quick reconnect grants the new permission — takes 5 seconds.</div>
@@ -1610,7 +1610,7 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOp
         if (isGoogleConnected()) {
           sigCta.innerHTML = `
             <div style="display:flex;align-items:flex-start;gap:10px">
-              <span style="font-size:16px;flex-shrink:0">✍️</span>
+              <span style="flex-shrink:0;display:flex;align-items:center">${(typeof gwIcon==='function')?gwIcon('signoff',16,'#4D8A86'):''}</span>
               <div>
                 <div style="font-weight:700;color:var(--gds-ink,#1F2A2B);margin-bottom:4px">No signature found</div>
                 <div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Your Gmail account has no default signature set, or it's empty. Add one in Gmail settings, or set a manual signature in Groundwork Settings.</div>
@@ -1620,7 +1620,7 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOp
         } else {
           sigCta.innerHTML = `
             <div style="display:flex;align-items:flex-start;gap:10px">
-              <span style="font-size:16px;flex-shrink:0">✍️</span>
+              <span style="flex-shrink:0;display:flex;align-items:center">${(typeof gwIcon==='function')?gwIcon('signoff',16,'#4D8A86'):''}</span>
               <div>
                 <div style="font-weight:700;color:var(--gds-ink,#1F2A2B);margin-bottom:4px">Add your email signature</div>
                 <div style="font-size:11px;color:#6F7E6A;margin-bottom:8px">Set up a signature in <strong>Settings → Google &amp; Signature</strong> to have it auto-added to every email you send from Groundwork.</div>
@@ -1642,7 +1642,7 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOp
 // Reconnect Google — re-runs OAuth to pick up gmail.settings.basic scope
 window.gwSigReconnect = async function() {
   const cta = document.getElementById('int-sig-cta');
-  if (cta) cta.innerHTML = '<div style="color:#6F7E6A;font-size:12px">⏳ Opening Google sign-in…</div>';
+  if (cta) cta.innerHTML = '<div style="color:#6F7E6A;font-size:12px">Opening Google sign-in…</div>';
   const ok = await googleOAuthConnect();
   if (ok) {
     showIntToast('Google reconnected ✓', 'success');
@@ -1654,7 +1654,7 @@ window.gwSigReconnect = async function() {
     setTimeout(() => window.gwOpenCompose(to, subj), 300);
   } else {
     showIntToast('Could not reconnect Google', 'warn');
-    if (cta) cta.innerHTML = '<div style="color:#c0392b;font-size:12px">⚠️ Reconnect failed — please try again</div>';
+    if (cta) cta.innerHTML = '<div style="color:#c0392b;font-size:12px">Reconnect failed — please try again</div>';
   }
 };
 
@@ -1997,7 +1997,7 @@ window._gwHandleAttachments = function(event) {
       const pill = document.createElement('span');
       pill.className = 'gw-attach-pill';
       const sizeStr = file.size > 1024*1024 ? (file.size/1024/1024).toFixed(1)+'MB' : (file.size/1024).toFixed(0)+'KB';
-      pill.innerHTML = '📎 ' + escapeHtml(file.name) + ' <span style="color:var(--gw-muted);font-size:10px">(' + sizeStr + ')</span>' +
+      pill.innerHTML = ((typeof gwIcon==='function')?gwIcon('attachment',12):'') + ' ' + escapeHtml(file.name) + ' <span style="color:var(--gw-muted);font-size:10px">(' + sizeStr + ')</span>' +
         '<span class="gw-attach-pill-x" onclick="_gwRemoveAttachment(\'' + escapeHtml(file.name).replace(/'/g,"\\'") + '\',this.parentElement)">×</span>';
       listEl.appendChild(pill);
     };
@@ -2573,7 +2573,7 @@ async function intSendEmail() {
 
   const btn = document.getElementById('int-send-btn');
   try {
-    if (btn) { btn.innerHTML = '⏳ Sending…'; btn.disabled = true; }
+    if (btn) { btn.innerHTML = 'Sending…'; btn.disabled = true; }
 
     await gmailSendEmail({
       to:      toList.join(', '),

@@ -300,7 +300,7 @@
   }
 
   function _rvDefaultTemplate() {
-    return `Hi {{client_name}}, thank you for choosing {{company_name}}! We hope you're happy with the work. If you have a moment, we'd really appreciate a quick review — it helps us grow and helps other homeowners find us.\n\n{{review_link}}\n\nThank you! 🙏`;
+    return `Hi {{client_name}}, thank you for choosing {{company_name}}! We hope you're happy with the work. If you have a moment, we'd really appreciate a quick review — it helps us grow and helps other homeowners find us.\n\n{{review_link}}\n\nThank you!`;
   }
 
   window._rvToggleAutoSend = function (el) {

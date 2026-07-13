@@ -170,7 +170,7 @@ async function _d1Write(op, entityId, fn) {
   if (!window.DB || !window._d1Ready) {
     // Not ready yet — queue for when D1 becomes ready
     _d1PendingQueue.push({ op, entityId, fn, attempts: 0 });
-    console.info(`[D1 ⏳] ${op} ${entityId} — queued (D1 not ready)`);
+    console.info(`[D1 …] ${op} ${entityId} — queued (D1 not ready)`);
     return;
   }
   try {
@@ -2311,7 +2311,7 @@ function pipeline(selectedId){
                     <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
                     <div class="gw-pipe-card-bottom">
                       ${o.jobValue ? `<span class="gw-pipe-card-val">${money(Number(o.jobValue))}</span>` : ''}
-                      ${o.nextFollowUp ? `<span class="gw-pipe-card-date">📅 ${prettyDate(o.nextFollowUp)}</span>` : ''}
+                      ${o.nextFollowUp ? `<span class="gw-pipe-card-date" style="display:inline-flex;align-items:center;gap:4px">${(typeof gwIcon==='function')?gwIcon('calendar',12):''} ${prettyDate(o.nextFollowUp)}</span>` : ''}
                       ${repObj ? `<span class="gw-pipe-card-rep" style="color:${repObj.color||'#4D8A86'}">${escapeHtml(repObj.name.split(' ')[0])}</span>` : ''}
                     </div>
                   </div>`;
@@ -20238,7 +20238,7 @@ function _stDefaultTemplates() {
       body:'Hi {{client_name}},\n\nWe wanted to follow up on the estimate we sent a few days ago for {{service_type}} at {{property_address}}.\n\nPlease feel free to reply with any questions or let us know when you\'d like to schedule.\n\n{{rep_name}} | {{company_phone}}',
       variables:['client_name','service_type','property_address','rep_name','company_phone'], created: todayISO() },
     { id:'tmpl3', name:'Review Request', category:'email', subject:'How did we do? Share your experience!',
-      body:'Hi {{client_name}},\n\nThank you for choosing {{company_name}}! We hope you love your new {{service_type}}.\n\nWould you mind leaving us a quick review? It helps us grow and serve more clients like you.\n\n★ Leave a review: {{review_link}}\n\nThank you!\n{{company_name}}',
+      body:'Hi {{client_name}},\n\nThank you for choosing {{company_name}}! We hope you love your new {{service_type}}.\n\nWould you mind leaving us a quick review? It helps us grow and serve more clients like you.\n\nLeave a review: {{review_link}}\n\nThank you!\n{{company_name}}',
       variables:['client_name','service_type','review_link','company_name'], created: todayISO() },
     { id:'tmpl4', name:'WO Assigned SMS', category:'sms', subject:'',
       body:'Hi {{crew_name}}, you have a new job assigned for {{scheduled_date}} at {{property_address}}. Check your schedule in Groundwork.',
@@ -20332,7 +20332,7 @@ function systemTemplates() {
           <div style="width:6px;height:6px;border-radius:50%;background:${a.enabled?'#4D8A86':'#D0CCC3'};flex-shrink:0"></div>
           <div>
             <div style="font-size:13px;font-weight:600;color:#1F2A2B">${escapeHtml(a.name)}</div>
-            ${delayStr?`<div style="font-size:11px;color:#9CA3AF;margin-top:1px">⏱ ${delayStr}</div>`:''}
+            ${delayStr?`<div style="font-size:11px;color:#9CA3AF;margin-top:1px">${(typeof gwIcon==='function')?gwIcon('clock',11,'#9CA3AF'):''} ${delayStr}</div>`:''}
           </div>
         </div>
       </td>
@@ -20977,14 +20977,18 @@ async function _gwRenderFieldReports() {
     if (d.ok) reports = d.data || [];
   } catch(e) {}
 
-  const typeIcon = { tool:'🔧', vehicle:'🚛', supply:'📦' };
+  const typeIcon = {
+    tool:    (typeof gwIcon==='function') ? gwIcon('wrench',20,'#8B6914')  : '',
+    vehicle: (typeof gwIcon==='function') ? gwIcon('truck',20,'#4D8A86')   : '',
+    supply:  (typeof gwIcon==='function') ? gwIcon('package',20,'#6F7E6A') : ''
+  };
   const priorityColor = { urgent:'#dc2626', high:'#d97706', normal:'#16a34a' };
 
   const openReports = reports.filter(r => r.status === 'open' || r.status === 'in_review');
   const doneReports = reports.filter(r => r.status === 'resolved');
 
   function reportRow(rpt) {
-    const icon = typeIcon[rpt.report_type] || '⚠️';
+    const icon = typeIcon[rpt.report_type] || ((typeof gwIcon==='function') ? gwIcon('warning',20,'#C97B6A') : '');
     const pColor = priorityColor[rpt.priority] || '#64748b';
     return `
       <div style="border:1px solid var(--gw-border);border-radius:var(--gw-r-md);padding:14px 16px;margin-bottom:8px;background:var(--gw-bg-surface-2)">
@@ -21004,7 +21008,7 @@ async function _gwRenderFieldReports() {
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="rp-btn rp-btn--primary" style="font-size:12px" onclick="_gwResolveFieldReport('${rpt.id}')">Mark Resolved</button>
               <button class="rp-btn" style="font-size:12px" onclick="_gwFieldReportNote('${rpt.id}')">Add Note</button>
-            </div>` : `<div style="font-size:11px;color:#16a34a;font-weight:600">✅ Resolved${rpt.resolution ? ' — ' + escapeHtml(rpt.resolution) : ''}</div>`}
+            </div>` : `<div style="font-size:11px;color:#16a34a;font-weight:600;display:flex;align-items:center;gap:5px">${(typeof gwIcon==='function')?gwIcon('success',13,'#16a34a'):''} Resolved${rpt.resolution ? ' — ' + escapeHtml(rpt.resolution) : ''}</div>`}
           </div>
         </div>
       </div>`;
@@ -21025,7 +21029,7 @@ async function _gwRenderFieldReports() {
           ${openReports.map(reportRow).join('')}
         </div>` : `
         <div style="text-align:center;padding:40px;color:var(--gw-text-muted)">
-          <div style="font-size:32px;margin-bottom:8px">✅</div>
+          <div style="margin-bottom:8px;display:flex;justify-content:center">${(typeof gwIcon==='function')?gwIcon('success',36,'#2D7A55'):''}</div>
           <div>No open field reports</div>
         </div>`}
 
@@ -21226,7 +21230,7 @@ async function _gwRenderAARReview() {
       <div class="rp-shell" style="max-width:860px;margin:0 auto;padding:24px">
         <h1 class="rp-title" style="margin-bottom:20px">AAR Reviews</h1>
         <div style="text-align:center;padding:60px;color:var(--gw-text-muted)">
-          <div style="font-size:32px;margin-bottom:8px">📋</div>
+          <div style="margin-bottom:8px;display:flex;justify-content:center">${(typeof gwIcon==='function')?gwIcon('checklist',36,'#6F7E6A'):''}</div>
           <div>No end-of-day reports submitted yet</div>
         </div>
       </div>`;
@@ -21247,7 +21251,7 @@ async function _gwRenderAARReview() {
           <div style="display:flex;gap:6px;align-items:center">
             ${s.manager_flag ? `<span style="font-size:11px;font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 8px;border-radius:6px">FLAGGED</span>` : ''}
             <button class="rp-btn-sm ${s.manager_flag?'':'rp-btn-sm--danger'}" onclick="_gwAARToggleFlag('${s.id}',${!s.manager_flag})">
-              ${s.manager_flag ? 'Unflag' : '🚩 Flag'}
+              ${s.manager_flag ? 'Unflag' : `<span style="display:inline-flex;align-items:center;gap:4px">${(typeof gwIcon==='function')?gwIcon('flag',12):''} Flag</span>`}
             </button>
           </div>
         </div>

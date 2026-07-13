@@ -1953,7 +1953,7 @@
   }
 
   localStorage.setItem(CLIENTS_KEY, JSON.stringify(existing));
-  const msg = `✅ Import complete: ${added} added, ${skipped} already existed (skipped).`;
+  const msg = `Import complete: ${added} added, ${skipped} already existed (skipped).`;
   console.log(msg);
   if (typeof showToast === 'function') showToast(msg);
   else alert(msg);

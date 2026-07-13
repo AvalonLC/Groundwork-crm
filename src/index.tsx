@@ -100,8 +100,8 @@ const RESET_HTML = (extraHeaders: Record<string,string> = {}) => {
       const regs=await navigator.serviceWorker.getRegistrations();
       for(const r of regs) await r.unregister();
       log('✓ '+regs.length+' service worker(s) unregistered');
-    }catch(e){log('⚠ SW unregister: '+e.message);}
-  } else { log('ℹ SW not supported in this browser'); }
+    }catch(e){log('! SW unregister: '+e.message);}
+  } else { log('SW not supported in this browser'); }
 
   // ── 2. Wipe every cache entry ──────────────────────────────────────────────
   if('caches' in window){
@@ -109,12 +109,12 @@ const RESET_HTML = (extraHeaders: Record<string,string> = {}) => {
       const keys=await caches.keys();
       await Promise.all(keys.map(k=>caches.delete(k)));
       log('✓ '+keys.length+' cache bucket(s) deleted');
-    }catch(e){log('⚠ Cache wipe: '+e.message);}
+    }catch(e){log('! Cache wipe: '+e.message);}
   }
 
   // ── 3. Clear localStorage + sessionStorage ─────────────────────────────────
   try{ localStorage.clear(); sessionStorage.clear(); log('✓ Storage cleared'); }
-  catch(e){ log('⚠ Storage: '+e.message); }
+  catch(e){ log('! Storage: '+e.message); }
 
   // ── 4. Done — hard-navigate with cache-bust so browser fetches fresh HTML ──
   document.getElementById('ring').className='ring ok';
@@ -973,7 +973,7 @@ async function sendInviteEmail(
 <div style="max-width:520px;margin:40px auto;padding:0 16px">
   <div style="background:#131c11;border:1px solid #2a3a27;border-radius:16px;overflow:hidden">
     <div style="background:linear-gradient(135deg,#1a2a18 0%,#0f1e0d 100%);padding:32px 36px;border-bottom:1px solid #2a3a27">
-      <div style="font-size:22px;font-weight:800;color:#e8e4d9;letter-spacing:-0.5px">🌱 Groundwork CRM</div>
+      <div style="font-size:22px;font-weight:800;color:#e8e4d9;letter-spacing:-0.5px">Groundwork CRM</div>
       <div style="font-size:13px;color:#5c6b58;margin-top:4px">You've been invited to join the team</div>
     </div>
     <div style="padding:32px 36px">
@@ -1116,7 +1116,7 @@ app.get('/invite/:token', async (c) => {
 <style>*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1510;color:#e8e4d9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}</style>
 </head><body>
 <div style="text-align:center;max-width:420px">
-  <div style="font-size:48px;margin-bottom:16px">🔗</div>
+  <div style="margin-bottom:16px"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
   <h1 style="font-size:22px;margin:0 0 12px;color:#e8e4d9">Invite Link Expired or Invalid</h1>
   <p style="color:#6F7E6A;font-size:15px;line-height:1.6;margin:0 0 24px">This invite link has already been used or has expired. Ask your admin to send a new invite.</p>
   <a href="/" style="display:inline-block;background:#4D8A86;color:#fff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:700;font-size:14px">← Go to Login</a>
@@ -1146,7 +1146,7 @@ input:focus{border-color:#4D8A86}
 </head><body>
 <div class="card">
   <div class="card-header">
-    <div style="font-size:20px;font-weight:800;color:#e8e4d9;letter-spacing:-0.5px;margin-bottom:4px">🌱 Groundwork CRM</div>
+    <div style="font-size:20px;font-weight:800;color:#e8e4d9;letter-spacing:-0.5px;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:8px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4D8A86" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>Groundwork CRM</div>
     <div style="font-size:13px;color:#5c6b58">Account Setup</div>
   </div>
   <div class="card-body">
@@ -5665,7 +5665,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b017">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b018">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5689,8 +5689,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260713b017"></script>
-  <script src="/js/client_portal.js?v=20260713b017"></script>
+  <script src="/js/platform_core.js?v=20260713b018"></script>
+  <script src="/js/client_portal.js?v=20260713b018"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5832,7 +5832,7 @@ app.get('/platform-login', (c) => {
                placeholder="Enter your password" autocomplete="current-password"
                onkeydown="if(event.key==='Enter')doSignIn()">
         <button class="pw-toggle" type="button" onclick="togglePw()" tabindex="-1" title="Show/hide password">
-          <span id="pwEye">👁</span>
+          <span id="pwEye" style="display:inline-flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
         </button>
       </div>
     </div>
@@ -5849,8 +5849,10 @@ app.get('/platform-login', (c) => {
   function togglePw() {
     const inp = document.getElementById('pwInput');
     const eye = document.getElementById('pwEye');
-    if (inp.type === 'password') { inp.type = 'text'; eye.textContent = '🙈'; }
-    else                         { inp.type = 'password'; eye.textContent = '👁'; }
+    var eyeOpen = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    var eyeOff  = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    if (inp.type === 'password') { inp.type = 'text'; eye.innerHTML = eyeOff; }
+    else                         { inp.type = 'password'; eye.innerHTML = eyeOpen; }
   }
 
   async function doSignIn() {
@@ -6190,7 +6192,7 @@ app.get('/recover', (c) => {
     }
 
     btn.disabled = true;
-    btn.textContent = '⏳ Scanning local storage…';
+    btn.textContent = 'Scanning local storage…';
     setStatus('Reading leads from this device…', 'info');
 
     try {
@@ -6207,13 +6209,13 @@ app.get('/recover', (c) => {
       }
 
       if (localOnly.length === 0) {
-        setStatus('✅ All ' + allOpps.length + ' lead' + (allOpps.length !== 1 ? 's are' : ' is') + ' already synced to the cloud. Nothing to recover!', 'success');
+        setStatus('✓ All ' + allOpps.length + ' lead' + (allOpps.length !== 1 ? 's are' : ' is') + ' already synced to the cloud. Nothing to recover!', 'success');
         btn.textContent = '↑ Recover My Leads Now';
         btn.disabled = false;
         return;
       }
 
-      btn.textContent = '⏳ Syncing ' + localOnly.length + ' lead' + (localOnly.length !== 1 ? 's' : '') + '…';
+      btn.textContent = 'Syncing ' + localOnly.length + ' lead' + (localOnly.length !== 1 ? 's' : '') + '…';
       setStatus('Sending ' + localOnly.length + ' local lead' + (localOnly.length !== 1 ? 's' : '') + ' to the cloud…', 'info');
 
       // Call bulk-upsert endpoint
@@ -6227,9 +6229,9 @@ app.get('/recover', (c) => {
       if (!res.ok) {
         const errText = await res.text();
         if (res.status === 401) {
-          setStatus('❌ You are not signed in. Please sign in to Groundwork CRM first, then come back to this page.', 'error');
+          setStatus('✕ You are not signed in. Please sign in to Groundwork CRM first, then come back to this page.', 'error');
         } else {
-          setStatus('❌ Server error (' + res.status + '): ' + errText.slice(0, 200), 'error');
+          setStatus('✕ Server error (' + res.status + '): ' + errText.slice(0, 200), 'error');
         }
         btn.textContent = '↑ Try Again';
         btn.disabled = false;
@@ -6250,13 +6252,13 @@ app.get('/recover', (c) => {
       }
 
       if (inserted > 0) {
-        setStatus('✅ Success! ' + inserted + ' lead' + (inserted !== 1 ? 's' : '') + ' recovered to the cloud.' +
+        setStatus('✓ Success! ' + inserted + ' lead' + (inserted !== 1 ? 's' : '') + ' recovered to the cloud.' +
           (skipped > 0 ? ' (' + skipped + ' already existed, skipped)' : '') +
           ' Return to the app and hit ⟳ to see them.', 'success');
-        btn.textContent = '✅ Recovery Complete — Return to App';
+        btn.textContent = '✓ Recovery Complete — Return to App';
         btn.onclick = function(){ window.location.href = '/'; };
       } else if (skipped > 0) {
-        setStatus('✅ All ' + skipped + ' lead' + (skipped !== 1 ? 's were' : ' was') + ' already in the cloud. Nothing new to sync!', 'success');
+        setStatus('✓ All ' + skipped + ' lead' + (skipped !== 1 ? 's were' : ' was') + ' already in the cloud. Nothing new to sync!', 'success');
         btn.textContent = '↑ Recover My Leads Now';
         btn.disabled = false;
       } else {
@@ -6266,7 +6268,7 @@ app.get('/recover', (c) => {
       }
 
     } catch (err) {
-      setStatus('❌ Unexpected error: ' + err.message, 'error');
+      setStatus('✕ Unexpected error: ' + err.message, 'error');
       btn.textContent = '↑ Try Again';
       btn.disabled = false;
     }
@@ -6301,9 +6303,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b017">
-  <link rel="stylesheet" href="/js/styles.css?v=20260713b017">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b017">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b018">
+  <link rel="stylesheet" href="/js/styles.css?v=20260713b018">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b018">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6844,34 +6846,34 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260713b017"></script>
-<script src="/js/db.js?v=20260713b017"></script>
-<script src="/js/data.js?v=20260713b017"></script>
-<script src="/js/reps.js?v=20260713b017"></script>
-<script src="/js/record-page.js?v=20260713b017"></script>
-<script src="/js/academy.js?v=20260713b017"></script>
-<script src="/js/task_engine.js?v=20260713b017"></script>
-<script src="/js/gw_i18n.js?v=20260713b017"></script>
-<script src="/js/app_premium.js?v=20260713b017"></script>
-<script src="/js/estimates.js?v=20260713b017"></script>
-<script src="/js/invoices.js?v=20260713b017"></script>
-<script src="/js/csv_import.js?v=20260713b017"></script>
-<script src="/js/onboarding.js?v=20260713b017"></script>
-<script src="/js/recurring_plans.js?v=20260713b017"></script>
-<script src="/js/reviews.js?v=20260713b017"></script>
-<script src="/js/stripe.js?v=20260713b017"></script>
-<script src="/js/email.js?v=20260713b017"></script>
-<script src="/js/notifications.js?v=20260713b017"></script>
-<script src="/js/integrations.js?v=20260713b017"></script>
-<script src="/js/user_management.js?v=20260713b017"></script>
-<script src="/js/platform_admin.js?v=20260713b017"></script>
-<script src="/js/time_tracker.js?v=20260713b017"></script>
-<script src="/js/field_workday.js?v=20260713b017"></script>
-<script src="/js/platform_core.js?v=20260713b017"></script>
-<script src="/js/approval_engine.js?v=20260713b017"></script>
-<script src="/js/automation_engine.js?v=20260713b017"></script>
-<script src="/js/client_portal.js?v=20260713b017"></script>
-<script src="/js/field_mode.js?v=20260713b017"></script>
+<script src="/js/gw-icons.js?v=20260713b018"></script>
+<script src="/js/db.js?v=20260713b018"></script>
+<script src="/js/data.js?v=20260713b018"></script>
+<script src="/js/reps.js?v=20260713b018"></script>
+<script src="/js/record-page.js?v=20260713b018"></script>
+<script src="/js/academy.js?v=20260713b018"></script>
+<script src="/js/task_engine.js?v=20260713b018"></script>
+<script src="/js/gw_i18n.js?v=20260713b018"></script>
+<script src="/js/app_premium.js?v=20260713b018"></script>
+<script src="/js/estimates.js?v=20260713b018"></script>
+<script src="/js/invoices.js?v=20260713b018"></script>
+<script src="/js/csv_import.js?v=20260713b018"></script>
+<script src="/js/onboarding.js?v=20260713b018"></script>
+<script src="/js/recurring_plans.js?v=20260713b018"></script>
+<script src="/js/reviews.js?v=20260713b018"></script>
+<script src="/js/stripe.js?v=20260713b018"></script>
+<script src="/js/email.js?v=20260713b018"></script>
+<script src="/js/notifications.js?v=20260713b018"></script>
+<script src="/js/integrations.js?v=20260713b018"></script>
+<script src="/js/user_management.js?v=20260713b018"></script>
+<script src="/js/platform_admin.js?v=20260713b018"></script>
+<script src="/js/time_tracker.js?v=20260713b018"></script>
+<script src="/js/field_workday.js?v=20260713b018"></script>
+<script src="/js/platform_core.js?v=20260713b018"></script>
+<script src="/js/approval_engine.js?v=20260713b018"></script>
+<script src="/js/automation_engine.js?v=20260713b018"></script>
+<script src="/js/client_portal.js?v=20260713b018"></script>
+<script src="/js/field_mode.js?v=20260713b018"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

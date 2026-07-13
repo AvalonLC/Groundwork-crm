@@ -1137,7 +1137,7 @@ function umUserRow(u, gc) {
     <div class="um-card-body">
       <div class="um-name-line">
         <span class="um-name">${umEscape(u.displayName||u.name)}</span>
-        ${isPendingInvite ? `<span class="um-invite-badge">⏳ Pending</span>` : ''}
+        ${isPendingInvite ? `<span class="um-invite-badge">Pending</span>` : ''}
         <span class="um-pills-inline">${rolePill}${statusPill}${resetPill}</span>
       </div>
       <div class="um-card-meta">
@@ -1150,7 +1150,7 @@ function umUserRow(u, gc) {
       ${isPendingInvite
         ? `<button class="secondary-btn um-action-btn um-action-invite" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
         : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
-      <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">✉ Onboard</button>
+      <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">Onboard</button>
       <button class="secondary-btn um-action-btn" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
     </div>
   </div>
@@ -1160,7 +1160,7 @@ function umUserRow(u, gc) {
     ${isPendingInvite
       ? `<button class="secondary-btn um-action-btn um-action-invite" onclick="window._umResendInvite('${u.id}','${umEscape(u.name)}')">Resend Invite</button>`
       : `<button class="secondary-btn um-action-btn" onclick="window._umResetPin('${u.id}')">Reset PW</button>`}
-    <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">✉ Onboard</button>
+    <button class="secondary-btn um-action-btn um-action-onboard" onclick="window._umSendOnboardingTo('${umEscape(u.email||'')}','${umEscape(u.name)}')" title="Send onboarding packet">Onboard</button>
     <button class="secondary-btn um-action-btn" onclick="window._umOpenUserForm('${u.id}')">Edit</button>
   </div>
 
@@ -1225,8 +1225,8 @@ async function umRenderCrews(container) {
               ${cr.division ? `<span class="um-crew-division">${umEscape(cr.division)}</span>` : ''}
             </div>
             <div class="um-crew-member-count">${memberCount} member${memberCount!==1?'s':''}</div>
-            <button onclick="umEditCrew('${cr.id}')" style="padding:6px 14px;border-radius:7px;border:1px solid var(--gw-border,#2a3a27);background:var(--gw-surface,#1a2318);color:var(--gw-text,#E8E4D9);font-size:12px;font-weight:600;cursor:pointer">✏ Edit</button>
-            <button onclick="umDeleteCrew('${cr.id}')" style="padding:6px 14px;border-radius:7px;border:1px solid #ef444440;background:#ef444410;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer">🗑 Delete</button>
+            <button onclick="umEditCrew('${cr.id}')" style="padding:6px 14px;border-radius:7px;border:1px solid var(--gw-border,#2a3a27);background:var(--gw-surface,#1a2318);color:var(--gw-text,#E8E4D9);font-size:12px;font-weight:600;cursor:pointer">Edit</button>
+            <button onclick="umDeleteCrew('${cr.id}')" style="padding:6px 14px;border-radius:7px;border:1px solid #ef444440;background:#ef444410;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer">Delete</button>
           </div>
           <div class="um-crew-members-preview">
             ${memberNames
@@ -1577,13 +1577,14 @@ function umRenderOnboarding(container) {
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   // Step icons by index
-  const STEP_ICONS = ['📋','✍️','👕','📬','📎','📁','🔑','📞'];
+  const _gi = (n,s,c) => (typeof gwIcon==='function') ? gwIcon(n, s||16, c||'#2D7F7B') : '';
+  const STEP_ICONS = [_gi('checklist'),_gi('signoff'),_gi('vest'),_gi('email'),_gi('attachment'),_gi('folder'),_gi('key'),_gi('call')];
 
   function stepRowHtml(step, si) {
-    const icon = STEP_ICONS[si] || '📌';
+    const icon = STEP_ICONS[si] || _gi('pin');
     const linkInputs = step.links.map((lk, li) => `
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;background:#F8F9FB;border:1px solid #E5E9F0;border-radius:8px;padding:8px 10px">
-        <span style="font-size:14px;flex-shrink:0;opacity:.5">🔗</span>
+        <span style="flex-shrink:0;opacity:.5;display:flex;align-items:center">${_gi('link',14)}</span>
         <input type="text" placeholder="Link label" value="${esc(lk.text)}"
           oninput="window._obUpdateLink(${si},${li},'text',this.value)"
           style="flex:0 0 130px;font-size:12px;padding:5px 9px;border:1px solid #D8DEE8;border-radius:6px;background:#fff;color:var(--gds-ink);outline:none;transition:border .15s"
@@ -1627,12 +1628,12 @@ function umRenderOnboarding(container) {
   function previewHtml(p) {
     const initial = esc((p.companyName||'A')[0].toUpperCase());
     const stepBlocks = p.steps.map((s,i) => {
-      const icon = STEP_ICONS[i] || '📌';
+      const icon = STEP_ICONS[i] || _gi('pin');
       const links = s.links.filter(l=>l.text||l.url);
       const linkLine = links.map(l =>
         l.url
           ? `<a href="${esc(l.url)}" style="display:inline-flex;align-items:center;gap:5px;color:#2D7F7B;font-weight:600;text-decoration:none;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:5px;padding:3px 9px;font-size:12px;margin:2px 3px 2px 0">
-               <span style="font-size:11px">🔗</span>${esc(l.text||l.url)}
+               <span style="display:inline-flex;align-items:center">${_gi('link',11)}</span>${esc(l.text||l.url)}
              </a>`
           : `<span style="display:inline-flex;align-items:center;gap:4px;color:#2D7F7B;font-weight:600;background:#EAF6F5;border:1px solid #C0E0DE;border-radius:5px;padding:3px 9px;font-size:12px;margin:2px 3px 2px 0">${esc(l.text)}</span>`
       ).join('');
@@ -1675,7 +1676,7 @@ function umRenderOnboarding(container) {
         <!-- Welcome message -->
         ${p.welcomeMsg ? `
         <div style="background:linear-gradient(135deg,#F7FAF9,#F0F7F6);padding:14px 24px;border-bottom:1px solid #E0ECEB;display:flex;gap:10px;align-items:flex-start">
-          <span style="font-size:16px;flex-shrink:0;margin-top:1px">👋</span>
+          <span style="flex-shrink:0;margin-top:1px;display:flex;align-items:center">${_gi('wave',16)}</span>
           <p style="margin:0;font-size:13px;color:#2D4D4B;line-height:1.55;font-style:italic">${esc(p.welcomeMsg)}</p>
         </div>` : ''}
         <!-- Steps -->
@@ -1683,13 +1684,13 @@ function umRenderOnboarding(container) {
         <!-- Footer info bar -->
         ${p.contactEmail ? `
         <div style="background:#F7FAF9;border-top:1px solid #E0ECEB;padding:12px 24px;display:flex;align-items:center;gap:8px">
-          <span style="font-size:14px">📩</span>
+          <span style="display:inline-flex;align-items:center">${_gi('send',14,'#4A6360')}</span>
           <span style="font-size:12px;color:#4A6360">Submit completed forms to <strong style="color:#2D4D4B">${esc(p.contactEmail)}</strong> to begin employment.</span>
         </div>` : ''}
         <!-- Bottom brand bar -->
         ${p.websiteUrl ? `
         <div style="background:linear-gradient(135deg,#3AB8C5,#2D9AA8);padding:11px 24px;display:flex;align-items:center;justify-content:center;gap:12px">
-          <span style="color:rgba(255,255,255,.7);font-size:12px">🌐</span>
+          <span style="color:rgba(255,255,255,.7);display:inline-flex;align-items:center">${_gi('globe',12,'rgba(255,255,255,.7)')}</span>
           <a href="${esc(p.websiteUrl)}" style="color:#fff;font-size:13px;font-weight:700;text-decoration:none;letter-spacing:.02em">${esc(footerDomain)}</a>
           <span style="color:rgba(255,255,255,.4);font-size:11px">·</span>
           <span style="color:rgba(255,255,255,.7);font-size:12px">Powered by Groundwork CRM</span>
@@ -1729,7 +1730,7 @@ function umRenderOnboarding(container) {
     <div style="margin-bottom:20px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
         <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--gds-ink)">Onboarding Packet</h3>
-        <span class="ob-section-badge">✏️ Builder</span>
+        <span class="ob-section-badge" style="display:inline-flex;align-items:center;gap:4px">${_gi('pencil',12)} Builder</span>
       </div>
       <p style="margin:0;font-size:12px;color:#6B7280;line-height:1.5">Configure the packet sent to every new hire. All changes save to this browser automatically.</p>
     </div>
@@ -1737,7 +1738,7 @@ function umRenderOnboarding(container) {
     <!-- Company Info card -->
     <div class="ob-card">
       <div class="ob-card-header">
-        <span class="ob-card-header-icon">🏢</span>
+        <span class="ob-card-header-icon" style="display:inline-flex;align-items:center">${_gi('building',16)}</span>
         <span class="ob-card-header-label">Company Info</span>
       </div>
       <div class="ob-card-body" style="display:grid;gap:0">
@@ -1771,7 +1772,7 @@ function umRenderOnboarding(container) {
     <div class="ob-card">
       <div class="ob-card-header" style="justify-content:space-between">
         <div style="display:flex;align-items:center;gap:10px">
-          <span class="ob-card-header-icon">📋</span>
+          <span class="ob-card-header-icon" style="display:inline-flex;align-items:center">${_gi('checklist',16)}</span>
           <span class="ob-card-header-label">Onboarding Steps</span>
         </div>
         <span style="font-size:11px;color:#9CA3AF;font-weight:500">${packet.steps.length} step${packet.steps.length!==1?'s':''}</span>
@@ -1786,7 +1787,7 @@ function umRenderOnboarding(container) {
 
     <div class="ob-auto-save-note">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5.5" stroke="#9CA3AF"/><path d="M6 3.5v3l2 1.5" stroke="#9CA3AF" stroke-linecap="round"/></svg>
-      Changes save to this browser automatically · Use <strong style="color:#4D8A86;margin:0 3px">✉ Onboarding</strong> on any team member card to pre-fill the send form
+      Changes save to this browser automatically · Use <strong style="color:#4D8A86;margin:0 3px">Onboarding</strong> on any team member card to pre-fill the send form
     </div>
   </div>
 
@@ -1797,7 +1798,7 @@ function umRenderOnboarding(container) {
       <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
           <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--gds-ink)">Live Preview</h3>
-          <span class="ob-section-badge">👁 Real-time</span>
+          <span class="ob-section-badge" style="display:inline-flex;align-items:center;gap:4px">${_gi('eye',12)} Real-time</span>
         </div>
         <p style="margin:0;font-size:12px;color:#6B7280">Exactly what your new hire receives.</p>
       </div>
@@ -1813,7 +1814,7 @@ function umRenderOnboarding(container) {
     <!-- Send panel card -->
     <div class="ob-card" style="margin-top:20px">
       <div class="ob-card-header">
-        <span class="ob-card-header-icon">✉️</span>
+        <span class="ob-card-header-icon" style="display:inline-flex;align-items:center">${_gi('email',16)}</span>
         <span class="ob-card-header-label">Send Onboarding Packet</span>
       </div>
       <div class="ob-card-body">
@@ -1845,7 +1846,7 @@ function umRenderOnboarding(container) {
                 onfocus="this.style.borderColor='#4D8A86';this.style.boxShadow='0 0 0 3px rgba(77,138,134,.12)';this.style.background='#fff'"
                 onblur="this.style.borderColor='#D1D5DB';this.style.boxShadow='none';this.style.background='#FAFBFC'">
             </div>
-            <button class="ob-send-btn" onclick="window._obSendPacket()">Send ✉</button>
+            <button class="ob-send-btn" onclick="window._obSendPacket()">Send</button>
           </div>
         </div>
 
@@ -1908,7 +1909,7 @@ function umRenderOnboarding(container) {
     const statusEl = document.getElementById('ob-send-status');
     const email = (emailEl?.value || '').trim();
     if (!email) {
-      if (statusEl) statusEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:6px;padding:5px 10px;color:#92400E;font-weight:600">⚠️ Enter an email address first.</span>';
+      if (statusEl) statusEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:6px;padding:5px 10px;color:#92400E;font-weight:600">Enter an email address first.</span>';
       return;
     }
     if (statusEl) statusEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:#F0F9FF;border:1px solid #BAE6FD;border-radius:6px;padding:5px 10px;color:#0369A1;font-weight:600"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="animation:spin 1s linear infinite"><circle cx="7" cy="7" r="5" stroke="#0369A1" stroke-width="2" stroke-dasharray="22" stroke-dashoffset="10"/></svg>Sending packet…</span><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
@@ -1941,17 +1942,17 @@ function umRenderOnboarding(container) {
       const j = await res.json();
       if (statusEl) {
         if (j.emailSent || j.ok !== false) {
-          statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:6px;padding:5px 10px;color:#065F46;font-weight:600">✅ Packet sent to ${email}</span>`;
+          statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:6px;padding:5px 10px;color:#065F46;font-weight:600">Packet sent to ${email}</span>`;
           if (emailEl) emailEl.value = '';
           const sel = document.getElementById('ob-send-select');
           if (sel) sel.value = '';
           setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 5000);
         } else {
-          statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:5px 10px;color:#991B1B;font-weight:600">❌ ${j.error || 'Send failed — check Integrations.'}</span>`;
+          statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:5px 10px;color:#991B1B;font-weight:600">${j.error || 'Send failed — check Integrations.'}</span>`;
         }
       }
     } catch(e) {
-      if (statusEl) statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:5px 10px;color:#991B1B;font-weight:600">❌ Network error: ${e.message}</span>`;
+      if (statusEl) statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:5px 10px;color:#991B1B;font-weight:600">Network error: ${e.message}</span>`;
     }
   };
 }
@@ -2345,7 +2346,7 @@ function umRenderRoles(container) {
     _umSaveCompanyDefaults(cd);
     companyDefaults = cd;
     const role = umRoleDef(roleId);
-    umToast(`✅ "${role.label}" company default saved — ${current.length} views`);
+    umToast(`"${role.label}" company default saved — ${current.length} views`);
     // Show banner
     const banner = document.getElementById('rp-company-defaults-banner');
     if (banner) banner.style.display = '';

@@ -19,11 +19,11 @@
   const _TEMPLATES = {
     estimate: {
       subject: 'Your Estimate from {{company_name}} — #{{number}}',
-      body: `Hi {{client_name}},\n\nThank you for the opportunity to work with you! Please find your estimate (#{{number}}) for {{project}} attached below.\n\n💰 Total: {{amount}}\n\nYou can review and approve your estimate online:\n{{link}}\n\nThis estimate is valid for 30 days. If you have any questions or would like to make changes, just reply to this email.\n\nLooking forward to working with you!\n\n{{company_name}}`,
+      body: `Hi {{client_name}},\n\nThank you for the opportunity to work with you! Please find your estimate (#{{number}}) for {{project}} attached below.\n\nTotal: {{amount}}\n\nYou can review and approve your estimate online:\n{{link}}\n\nThis estimate is valid for 30 days. If you have any questions or would like to make changes, just reply to this email.\n\nLooking forward to working with you!\n\n{{company_name}}`,
     },
     invoice: {
       subject: 'Invoice #{{number}} from {{company_name}} — Due {{due_date}}',
-      body: `Hi {{client_name}},\n\nPlease find your invoice (#{{number}}) for {{project}} ready for payment.\n\n💰 Amount Due: {{amount}}\n📅 Due Date: {{due_date}}\n\nPay securely online:\n{{link}}\n\nIf you have any questions about this invoice, please don't hesitate to reach out.\n\nThank you for your business!\n\n{{company_name}}`,
+      body: `Hi {{client_name}},\n\nPlease find your invoice (#{{number}}) for {{project}} ready for payment.\n\nAmount Due: {{amount}}\nDue Date: {{due_date}}\n\nPay securely online:\n{{link}}\n\nIf you have any questions about this invoice, please don't hesitate to reach out.\n\nThank you for your business!\n\n{{company_name}}`,
     },
     custom: {
       subject: '',

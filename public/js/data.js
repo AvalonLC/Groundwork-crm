@@ -65,7 +65,7 @@ window.AVALON_DATA = {
     "divisions": {
       "landscape": {
         "name": "Landscape",
-        "icon": "🌿",
+        "icon": "leaf",
         "target": 525000,
         "actual": 153049,
         "remaining": 371951,
@@ -103,7 +103,7 @@ window.AVALON_DATA = {
       },
       "maintenance": {
         "name": "Maintenance",
-        "icon": "✂️",
+        "icon": "scissors",
         "target": 543000,
         "actual": 202000,
         "remaining": 341000,
@@ -144,7 +144,7 @@ window.AVALON_DATA = {
       },
       "snow": {
         "name": "Snow & Ice",
-        "icon": "❄️",
+        "icon": "snowflake",
         "target": 177000,
         "actual": 178100.64,
         "remaining": -1100.64,
@@ -330,25 +330,25 @@ window.AVALON_DATA = {
     "Other"
   ],
   "projectCategories": [
-    { "id": "landscape_hardscape",  "label": "Hardscape / Patio / Walls",  "division": "landscape",    "icon": "🪨" },
-    { "id": "landscape_softscape",  "label": "Softscape / Planting",        "division": "landscape",    "icon": "🌿" },
-    { "id": "landscape_drainage",   "label": "Drainage & Grading",          "division": "landscape",    "icon": "💧" },
-    { "id": "landscape_carpentry",  "label": "Carpentry / Decks",           "division": "landscape",    "icon": "🪵" },
-    { "id": "landscape_lighting",   "label": "Lighting Design & Install",   "division": "landscape",    "icon": "💡" },
-    { "id": "landscape_sod",        "label": "Sod Install",                 "division": "landscape",    "icon": "🟩" },
-    { "id": "landscape_designbuild","label": "Design / Build",              "division": "landscape",    "icon": "📐" },
-    { "id": "landscape_sitework",   "label": "Commercial Site Work",        "division": "landscape",    "icon": "🏗️" },
-    { "id": "maintenance_recurring","label": "Maintenance – Recurring",     "division": "maintenance",  "icon": "🔁" },
-    { "id": "maintenance_onetime",  "label": "Maintenance – One-Time",      "division": "maintenance",  "icon": "✂️" },
-    { "id": "maintenance_enhance",  "label": "Enhancement / Upsell",        "division": "maintenance",  "icon": "⬆️" },
-    { "id": "snow_residential",     "label": "Snow – Residential Push",     "division": "snow",         "icon": "❄️" },
-    { "id": "snow_commercial",      "label": "Snow – Commercial Lot/Walks", "division": "snow",         "icon": "🚜" },
-    { "id": "snow_salting",         "label": "Snow – Salting/Pre-Treat",    "division": "snow",         "icon": "🧂" },
-    { "id": "snow_standby",         "label": "Snow – Storm Standby",        "division": "snow",         "icon": "📟" }
+    { "id": "landscape_hardscape",  "label": "Hardscape / Patio / Walls",  "division": "landscape",    "icon": "construction" },
+    { "id": "landscape_softscape",  "label": "Softscape / Planting",        "division": "landscape",    "icon": "leaf" },
+    { "id": "landscape_drainage",   "label": "Drainage & Grading",          "division": "landscape",    "icon": "activity" },
+    { "id": "landscape_carpentry",  "label": "Carpentry / Decks",           "division": "landscape",    "icon": "construction" },
+    { "id": "landscape_lighting",   "label": "Lighting Design & Install",   "division": "landscape",    "icon": "idea" },
+    { "id": "landscape_sod",        "label": "Sod Install",                 "division": "landscape",    "icon": "division" },
+    { "id": "landscape_designbuild","label": "Design / Build",              "division": "landscape",    "icon": "pencil" },
+    { "id": "landscape_sitework",   "label": "Commercial Site Work",        "division": "landscape",    "icon": "construction" },
+    { "id": "maintenance_recurring","label": "Maintenance – Recurring",     "division": "maintenance",  "icon": "sync" },
+    { "id": "maintenance_onetime",  "label": "Maintenance – One-Time",      "division": "maintenance",  "icon": "scissors" },
+    { "id": "maintenance_enhance",  "label": "Enhancement / Upsell",        "division": "maintenance",  "icon": "upload" },
+    { "id": "snow_residential",     "label": "Snow – Residential Push",     "division": "snow",         "icon": "snowflake" },
+    { "id": "snow_commercial",      "label": "Snow – Commercial Lot/Walks", "division": "snow",         "icon": "truck" },
+    { "id": "snow_salting",         "label": "Snow – Salting/Pre-Treat",    "division": "snow",         "icon": "package" },
+    { "id": "snow_standby",         "label": "Snow – Storm Standby",        "division": "snow",         "icon": "bell" }
   ],
   "clientTypes": [
-    { "id": "residential", "label": "Residential", "icon": "🏡" },
-    { "id": "commercial", "label": "Commercial", "icon": "🏢" }
+    { "id": "residential", "label": "Residential", "icon": "home" },
+    { "id": "commercial", "label": "Commercial", "icon": "building" }
   ],
   "leadSources": [
     "Website",
@@ -980,19 +980,19 @@ window.AVALON_DATA = {
   ],
   "scripts": [
     {
-      "category": "⭐ VERBATIM — Driveway T.A.P.P.O.",
+      "category": "VERBATIM — Driveway T.A.P.P.O.",
       "title": "Driveway T.A.P.P.O. Script — Stage 2 Gate (VERBATIM — Do Not Deviate)",
       "crmAction": "Once client agrees → tick 'Driveway T.A.P.P.O. Confirmed' checkbox → advance to Stage 2.",
       "body": "\"Thanks for having me out. Just to review what we agreed to: we have about 45 minutes today (Time). We'll walk the property to review the drainage issues and outdoor kitchen goals (Agenda), with both you and your spouse (People). We'll take rough measurements and discuss your budget tolerance (Process). By the end, we'll decide if it makes sense to move forward with a full design agreement (Outcome). Does that still sound good?\""
     },
     {
-      "category": "⭐ VERBATIM — Budget Bracketing",
+      "category": "VERBATIM — Budget Bracketing",
       "title": "Budget Bracketing Script — Stage 4 Gate (VERBATIM — Use When Client Deflects Budget)",
       "crmAction": "Record client's comfort range in 'Target Investment Tolerance' currency field → populates Stage 4 gate.",
       "body": "\"Typically, a backyard layout of this scope with premium thermal flagstone and a complete French drain remediation runs between $100,000 and $130,000. Some go above $150,000 with extensive masonry work. Where on that spectrum do you feel most comfortable aligning your investment?\""
     },
     {
-      "category": "⭐ VERBATIM — Objection Handling",
+      "category": "VERBATIM — Objection Handling",
       "title": "Acknowledge → Reframe → Forward-Question (VERBATIM — Use at Any Stage for Any Objection)",
       "note": "Apply at any stage when an objection (price, timing, decision delay) surfaces.",
       "body": "STEP 1 — ACKNOWLEDGE (validate the feeling):\n\"I can appreciate that a $120,000 budget is a significant investment.\"\n\nSTEP 2 — REFRAME (redirect to emotional CBR):\n\"However, keeping this baseline budget guarantees that your basement remains dry and that we have the entire backyard paved and ready to host your daughter's graduation next June.\"\n\nSTEP 3 — FORWARD-QUESTION (regain control with a choice):\n\"When you look at the graduation date, is completing this before the family arrives the highest priority, or would you prefer we phase the softscaping across next fall?\""

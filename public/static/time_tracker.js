@@ -658,7 +658,7 @@ function ttBuildRingPanel() {
             ■ Clock Out
           </button>
           <button onclick="ttShowBreakModal()" style="width:100%;padding:9px 0;background:#1e40af22;border:1px solid #3b82f640;border-radius:10px;color:#93c5fd;font-size:12px;font-weight:700;cursor:pointer">
-            ⏸ Start Break
+            ${(typeof gwIcon==='function')?gwIcon('pause',13,'#93c5fd'):''} Start Break
           </button>
           <button onclick="ttShowSwitchModal()" style="width:100%;padding:9px 0;background:#5b21b622;border:1px solid #8b5cf640;border-radius:10px;color:#c4b5fd;font-size:12px;font-weight:700;cursor:pointer">
             ⇄ Switch Task
@@ -932,7 +932,7 @@ function ttBuildEntryCard(e) {
     ? `<span style="font-size:9px;font-weight:700;color:#4ade80;background:#4ade8015;border:1px solid #4ade8030;border-radius:20px;padding:2px 7px">Approved</span>`
     : e.approved === 2
     ? `<span style="font-size:9px;font-weight:700;color:#f87171;background:#f8717115;border:1px solid #f8717130;border-radius:20px;padding:2px 7px">Rejected</span>`
-    : `<span style="font-size:9px;font-weight:700;color:#fbbf24;background:#fbbf2415;border:1px solid #fbbf2430;border-radius:20px;padding:2px 7px">⏳ Pending</span>`;
+    : `<span style="font-size:9px;font-weight:700;color:#fbbf24;background:#fbbf2415;border:1px solid #fbbf2430;border-radius:20px;padding:2px 7px">Pending</span>`;
 
   return `
     <div style="background:var(--gw-surface-2,#FAFAF8);border:1px solid var(--gw-line,#E0DDD5);border-radius:12px;padding:12px 14px;transition:border-color .15s;position:relative;overflow:hidden"

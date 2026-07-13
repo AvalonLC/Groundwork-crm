@@ -766,13 +766,13 @@ window.fdOpenEquipReport = function fdOpenEquipReport() {
         <label style="font-size:12px;font-weight:600;color:var(--gw-ink,#1F2A2B);display:block;margin-bottom:6px">${_T('Report Type')} *</label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
           ${[
-            {val:'tool',    label:_T('Broken Tool'),   icon:'🔧'},
-            {val:'vehicle', label:_T('Truck/Vehicle'),  icon:'🚛'},
-            {val:'supply',  label:_T('Supply Request'), icon:'📦'},
+            {val:'tool',    label:_T('Broken Tool'),   icon:(typeof gwIcon==='function')?gwIcon('wrench',22,'#8B6914'):''},
+            {val:'vehicle', label:_T('Truck/Vehicle'),  icon:(typeof gwIcon==='function')?gwIcon('truck',22,'#4D8A86'):''},
+            {val:'supply',  label:_T('Supply Request'), icon:(typeof gwIcon==='function')?gwIcon('package',22,'#6F7E6A'):''},
           ].map(opt=>`
             <label style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:11px;font-weight:600;color:var(--gw-ink,#1F2A2B);text-align:center" id="er-type-lbl-${opt.val}">
               <input type="radio" name="report_type" value="${opt.val}" style="display:none" onchange="document.querySelectorAll('[id^=er-type-lbl-]').forEach(l=>l.style.borderColor='var(--gw-line,#E0DDD5)');document.getElementById('er-type-lbl-${opt.val}').style.borderColor='#d97706'">
-              <span style="font-size:20px">${opt.icon}</span>
+              <span style="display:flex;align-items:center;justify-content:center;height:22px">${opt.icon}</span>
               ${opt.label}
             </label>`).join('')}
         </div>
@@ -905,11 +905,11 @@ window.fdOpenAAR = async function fdOpenAAR(onComplete) {
           <div style="display:flex;gap:8px">
             <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600" id="${qId}-yes-lbl">
               <input type="radio" name="${qId}" value="yes" style="display:none" onchange="document.getElementById('${qId}-yes-lbl').style.borderColor='#16a34a';document.getElementById('${qId}-no-lbl').style.borderColor='var(--gw-line,#E0DDD5)'">
-              ✅ ${_T('Yes')}
+              <span style="display:inline-flex;align-items:center">${(typeof gwIcon==='function')?gwIcon('check',15,'#16a34a'):''}</span> ${_T('Yes')}
             </label>
             <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px solid var(--gw-line,#E0DDD5);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600" id="${qId}-no-lbl">
               <input type="radio" name="${qId}" value="no" style="display:none" onchange="document.getElementById('${qId}-no-lbl').style.borderColor='#dc2626';document.getElementById('${qId}-yes-lbl').style.borderColor='var(--gw-line,#E0DDD5)'">
-              ❌ ${_T('No')}
+              <span style="display:inline-flex;align-items:center">${(typeof gwIcon==='function')?gwIcon('close',15,'#dc2626'):''}</span> ${_T('No')}
             </label>
           </div>`;
         break;

@@ -315,8 +315,6 @@ const _GW_ES = {
   'Submit & Clock Out':            'Enviar y Registrar Salida',
   'Save progress for later':       'Guardar progreso para después',
   'End-of-day report submitted ✓': 'Reporte de fin de día enviado ✓',
-  '✅ Yes':   '✅ Sí',
-  '❌ No':    '❌ No',
   'questions':               'preguntas',
   'Yes':                      'Sí',
   'No':                       'No',
@@ -690,7 +688,7 @@ window._gwSetLang = async function _gwSetLang(lang) {
   window._gwTranslatePage();
 
   if (typeof window.showToast === 'function') {
-    window.showToast(_t('Language saved') + ' — ' + (lang === 'es' ? '🇲🇽 Español' : '🇺🇸 English'), 'success');
+    window.showToast(_t('Language saved') + ' — ' + (lang === 'es' ? 'Español' : 'English'), 'success');
   }
 };
 
@@ -709,21 +707,21 @@ window._gwRenderLangToggle = function _gwRenderLangToggle() {
 function _gwLangToggleHTML() {
   const isEs = window._gwLang === 'es';
   return `
-    <span style="font-size:11px;color:rgba(255,255,255,.45);font-weight:600;letter-spacing:.04em">
-      ${isEs ? '🌐 Idioma' : '🌐 Language'}
+    <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:rgba(255,255,255,.45);font-weight:600;letter-spacing:.04em">
+      ${(typeof gwIcon === 'function') ? gwIcon('globe', 13, 'rgba(255,255,255,.45)') : ''}${isEs ? 'Idioma' : 'Language'}
     </span>
     <div style="display:flex;gap:0;border:1px solid rgba(255,255,255,.20);border-radius:6px;overflow:hidden">
       <button id="gw-lang-en" onclick="window._gwSetLang('en')"
         style="padding:3px 8px;font-size:11px;font-weight:700;border:none;cursor:pointer;
           background:${!isEs ? 'rgba(255,255,255,.25)' : 'transparent'};
           color:${!isEs ? '#fff' : 'rgba(255,255,255,.45)'}">
-        🇺🇸 EN
+        EN
       </button>
       <button id="gw-lang-es" onclick="window._gwSetLang('es')"
         style="padding:3px 8px;font-size:11px;font-weight:700;border:none;cursor:pointer;
           background:${isEs ? 'rgba(255,255,255,.25)' : 'transparent'};
           color:${isEs ? '#fff' : 'rgba(255,255,255,.45)'}">
-        🇲🇽 ES
+        ES
       </button>
     </div>`;
 }

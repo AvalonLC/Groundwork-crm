@@ -174,12 +174,12 @@
       `
       <!-- Stat Grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:28px">
-        ${statCard('Total Tenants',   fmt(companies.length),  '🏢', '#1A4740', `${activeCompanies} active`)}
-        ${statCard('On Trial',        fmt(trialCompanies),    '⏱', '#8B6914', 'Convert to paid')}
-        ${statCard('Monthly Revenue', fmtMoney(mrr),          '💰', '#2D7A55', 'est. MRR')}
-        ${statCard('Total Reps',      fmt(stats.reps),        '👥', '#4D8A86', 'across all tenants')}
-        ${statCard('Open Tickets',    fmt(recentTickets.length),'🎫','#C97B6A', 'need attention')}
-        ${statCard('Active Opps',     fmt(stats.opportunities),'📈','#7B5EA7', 'in all pipelines')}
+        ${statCard('Total Tenants',   fmt(companies.length),  gwIcon('building',40,'#1A4740'), '#1A4740', `${activeCompanies} active`)}
+        ${statCard('On Trial',        fmt(trialCompanies),    gwIcon('clock',40,'#8B6914'), '#8B6914', 'Convert to paid')}
+        ${statCard('Monthly Revenue', fmtMoney(mrr),          gwIcon('revenue',40,'#2D7A55'), '#2D7A55', 'est. MRR')}
+        ${statCard('Total Reps',      fmt(stats.reps),        gwIcon('users',40,'#4D8A86'), '#4D8A86', 'across all tenants')}
+        ${statCard('Open Tickets',    fmt(recentTickets.length),gwIcon('tag',40,'#C97B6A'),'#C97B6A', 'need attention')}
+        ${statCard('Active Opps',     fmt(stats.opportunities),gwIcon('reports',40,'#7B5EA7'),'#7B5EA7', 'in all pipelines')}
       </div>
 
       <!-- 2-col layout -->
@@ -198,7 +198,7 @@
               </div>
               <div>${priorityBadge(t.priority)}</div>
             </div>`).join('')}
-          </div>` : '<div style="padding:40px;text-align:center;color:#5C6B58">No open tickets 🎉</div>'
+          </div>` : '<div style="padding:40px;text-align:center;color:#5C6B58">No open tickets</div>'
         )}
 
         <!-- Recent Sales Leads -->
@@ -462,10 +462,10 @@
       `
       <!-- Pipeline stats -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:24px">
-        ${statCard('Total Leads',      fmt(gwLeads.length),   '📋','#4D8A86')}
-        ${statCard('Pipeline Value',   fmtMoney(pipeValue),   '💼','#8B6914','open deals')}
-        ${statCard('Closed Won',       fmt(byStage.closed_won.length),'🏆','#2D7A55', fmtMoney(wonValue))}
-        ${statCard('Closed Lost',      fmt(byStage.closed_lost.length),'❌','#C97B6A')}
+        ${statCard('Total Leads',      fmt(gwLeads.length),   gwIcon('checklist',40,'#4D8A86'),'#4D8A86')}
+        ${statCard('Pipeline Value',   fmtMoney(pipeValue),   gwIcon('revenue',40,'#8B6914'),'#8B6914','open deals')}
+        ${statCard('Closed Won',       fmt(byStage.closed_won.length),gwIcon('trophy',40,'#2D7A55'),'#2D7A55', fmtMoney(wonValue))}
+        ${statCard('Closed Lost',      fmt(byStage.closed_lost.length),gwIcon('lost',40,'#C97B6A'),'#C97B6A')}
       </div>
 
       <!-- Kanban Board -->
@@ -651,17 +651,17 @@
 
       <!-- Stats row -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px">
-        ${statCard('Open', fmt(byStatus.open||0), '🔴', '#C97B6A')}
-        ${statCard('In Progress', fmt(byStatus.in_progress||0), '🟡', '#8B6914')}
-        ${statCard('Waiting', fmt(byStatus.waiting||0), '🔵', '#4D8A86')}
-        ${statCard('Resolved', fmt(byStatus.resolved||0), '🟢', '#2D7A55')}
+        ${statCard('Open', fmt(byStatus.open||0), gwIcon('dot',40,'#C97B6A'), '#C97B6A')}
+        ${statCard('In Progress', fmt(byStatus.in_progress||0), gwIcon('dot',40,'#8B6914'), '#8B6914')}
+        ${statCard('Waiting', fmt(byStatus.waiting||0), gwIcon('dot',40,'#4D8A86'), '#4D8A86')}
+        ${statCard('Resolved', fmt(byStatus.resolved||0), gwIcon('dot',40,'#2D7A55'), '#2D7A55')}
       </div>
 
       <!-- Tickets list -->
       ${panel('All Tickets',
         `<span style="font-size:12px;color:#5C6B58" id="gwTicketCount">${tickets.length} total</span>`,
         `<div id="gwTicketsList">
-          ${tickets.length ? tickets.map(_ticketRow).join('') : '<div style="padding:60px;text-align:center;color:#5C6B58">No tickets yet 🎉</div>'}
+          ${tickets.length ? tickets.map(_ticketRow).join('') : '<div style="padding:60px;text-align:center;color:#5C6B58">No tickets yet</div>'}
         </div>`
       )}
       <div id="gwTicketModalWrap"></div>
@@ -945,10 +945,10 @@
       `
       <!-- Revenue cards -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:28px">
-        ${statCard('Monthly Revenue', fmtMoney(mrr), '💰', '#2D7A55', 'est. MRR')}
-        ${statCard('Annual Revenue',  fmtMoney(arr), '📊', '#1A4740', 'est. ARR')}
-        ${statCard('Paid Accounts',   fmt(active.filter(c=>c.plan!=='trial').length), '✅', '#4D8A86')}
-        ${statCard('On Trial',        fmt(byPlan.trial?.length||0), '⏱', '#8B6914', 'need conversion')}
+        ${statCard('Monthly Revenue', fmtMoney(mrr), gwIcon('revenue',40,'#2D7A55'), '#2D7A55', 'est. MRR')}
+        ${statCard('Annual Revenue',  fmtMoney(arr), gwIcon('reports',40,'#1A4740'), '#1A4740', 'est. ARR')}
+        ${statCard('Paid Accounts',   fmt(active.filter(c=>c.plan!=='trial').length), gwIcon('success',40,'#4D8A86'), '#4D8A86')}
+        ${statCard('On Trial',        fmt(byPlan.trial?.length||0), gwIcon('clock',40,'#8B6914'), '#8B6914', 'need conversion')}
       </div>
 
       <!-- Plan breakdown -->

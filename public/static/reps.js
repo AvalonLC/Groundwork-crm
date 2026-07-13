@@ -1377,7 +1377,7 @@ function renderRepDashboard(viewEl, rep) {
       // COMM-15: collection gate badge on payout cards
       const gateInfo = window.getCollectionGateInfo ? window.getCollectionGateInfo(opp, result) : null;
       const gateEl   = gateInfo && gateInfo.held
-        ? `<div style="display:flex;align-items:center;gap:5px;margin-top:4px"><span style="font-size:10px;color:#8B6914">⏳ ${gateInfo.reason}</span>${gateInfo.preview > 0 ? `<span style="font-size:10px;color:#6F7E6A">Earns ${fmtCurrency(gateInfo.preview)} once collected.</span>` : ''}</div>` : '';
+        ? `<div style="display:flex;align-items:center;gap:5px;margin-top:4px"><span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#8B6914">${(typeof gwIcon==='function')?gwIcon('clock',11,'#8B6914'):''}${gateInfo.reason}</span>${gateInfo.preview > 0 ? `<span style="font-size:10px;color:#6F7E6A">Earns ${fmtCurrency(gateInfo.preview)} once collected.</span>` : ''}</div>` : '';
       return `
     <div onclick="show('pipeline','${opp.id}')" class="gw-payout-card${gateInfo && gateInfo.held ? ' gate-held' : ''}" 
       onmouseover="this.style.borderColor='${color}40'" onmouseout="this.style.borderColor='${gateInfo && gateInfo.held ? 'rgba(139,105,20,.19)' : 'var(--gw-line)'}'">
