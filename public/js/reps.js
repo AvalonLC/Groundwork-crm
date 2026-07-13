@@ -578,16 +578,35 @@ function timeAgo(iso) {
 
 // ── LOGIN SCREEN ──────────────────────────────────────────────────────────────
 function renderLoginScreen() {
+  // Fetch company branding first (public endpoint, no auth needed)
+  // Falls back to defaults instantly if unavailable
+  fetch('/api/branding/login').then(r => r.ok ? r.json() : null).then(brand => {
+    _renderLoginHTML(brand);
+  }).catch(() => _renderLoginHTML(null));
+}
+
+function _renderLoginHTML(brand) {
+  const companyName = (brand && brand.name) || 'Groundwork';
+  const logoUrl     = (brand && brand.logo_url) || '';
+  const brandColor  = (brand && brand.brand_color) || '#2D7A55';
+
+  // Logo block: use company logo if available, otherwise the default icon
+  const logoBlock = logoUrl
+    ? `<div style="display:inline-flex;align-items:center;justify-content:center;width:88px;height:88px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:22px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3);overflow:hidden;padding:8px;box-sizing:border-box">
+        <img src="${logoUrl}" alt="${companyName}" style="width:100%;height:100%;object-fit:contain;border-radius:12px;">
+       </div>`
+    : `<div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
+        <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:52px;height:52px;object-fit:cover;border-radius:10px;opacity:.95">
+       </div>`;
+
   document.body.innerHTML = `
   <div style="min-height:100vh;background:linear-gradient(160deg,#1A4740 0%,#113931 45%,#1A4740 100%);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif">
     <div style="width:min(420px,95vw);padding:0 20px">
 
       <!-- Logo / Brand -->
       <div style="text-align:center;margin-bottom:36px">
-        <div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
-          <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:52px;height:52px;object-fit:cover;border-radius:10px;opacity:.95">
-        </div>
-        <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0;letter-spacing:-.04em">Groundwork</h1>
+        ${logoBlock}
+        <h1 style="color:#FFFFFF;font-size:26px;font-weight:900;margin:0;letter-spacing:-.04em">${companyName}</h1>
         <p style="color:rgba(255,255,255,.5);font-size:13px;margin:5px 0 0;font-weight:600;letter-spacing:.06em;text-transform:uppercase">CRM</p>
         <p style="color:rgba(255,255,255,.38);font-size:13px;margin:12px 0 0">Sign in to your account</p>
       </div>
