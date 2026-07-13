@@ -179,5 +179,22 @@ CLOUDFLARE_API_TOKEN=your_token_here
 
 The app supports **English (EN)** and **Spanish (ES)**.  
 - Toggle is in the sidebar (🌐 Language pill above user avatar)  
-- Preference saves to D1 via `PATCH /api/me/language`  
-- Translation engine: `public/js/gw_i18n.js`
+- Preference saves to D1 via `PATCH /api/me/language` (per-user — each foreman/laborer keeps their own setting)  
+- Translation engine: `public/js/gw_i18n.js` (**v2 — DOM auto-translation**)
+
+### How the v2 engine works
+The engine watches the live DOM with a `MutationObserver` and translates every
+text node, `placeholder`, `title`, and `aria-label` on the fly — no `_t()`
+calls are required in view code. Toggling back to EN restores the exact
+original English text.
+
+- **Exact-match dictionary** — `_GW_ES` map in `gw_i18n.js` (nav, dashboards, tasks, pipeline stages, work orders, field mode, AAR, etc.)
+- **Pattern rules** — dynamic strings like `Overdue (3)`, `2 due today`, `3d ago`, `43% of annual target`, `Follow up with <name>`
+- **Date words** — weekday/month names localize (`MONDAY, JULY 13` → `LUNES, JULIO 13`)
+
+### Adding / fixing a translation
+Edit `public/js/gw_i18n.js`:
+1. Add the English string as a key to `_GW_ES` with its Spanish value (exact match, trimmed).
+2. For strings with numbers/names in them, add a regex row to `_GW_PATTERNS`.
+3. Copy the file to keep both copies in sync: `cp public/static/gw_i18n.js public/js/gw_i18n.js` (or vice versa — `/js/` is the one served).
+4. `npm run build` + deploy. Untranslated strings simply stay in English (safe fallback).
