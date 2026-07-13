@@ -3981,6 +3981,217 @@ app.post('/api/recurring-subscriptions/:id/log-visit', requireAuth, async (c) =>
   return c.json({ success: true, visit_id: visitId, next_visit_date: nextDateStr })
 })
 
+// ── PLAN VISITS (individual visit management) ─────────────────────────────────
+
+// GET /api/plan-visits — list visits (filter by subscription_id, status, date range)
+app.get('/api/plan-visits', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const subId   = c.req.query('subscription_id')
+  const status  = c.req.query('status')
+  const dateFrom = c.req.query('from')
+  const dateTo   = c.req.query('to')
+  const limit    = parseInt(c.req.query('limit') || '100')
+  let sql = `
+    SELECT pv.*,
+           cs.client_name, cs.service_address, cs.property_access,
+           rp.name as plan_name, rp.frequency, rp.tasks as plan_tasks
+    FROM plan_visits pv
+    LEFT JOIN client_plan_subscriptions cs ON cs.id = pv.subscription_id
+    LEFT JOIN recurring_plans rp ON rp.id = pv.plan_id
+    WHERE pv.company_id=?`
+  const binds: any[] = [companyId]
+  if (subId)    { sql += ` AND pv.subscription_id=?`; binds.push(subId) }
+  if (status)   { sql += ` AND pv.status=?`;           binds.push(status) }
+  if (dateFrom) { sql += ` AND pv.scheduled_date>=?`;  binds.push(dateFrom) }
+  if (dateTo)   { sql += ` AND pv.scheduled_date<=?`;  binds.push(dateTo) }
+  sql += ` ORDER BY pv.scheduled_date ASC LIMIT ?`
+  binds.push(limit)
+  const rows = await db.prepare(sql).bind(...binds).all()
+  return c.json(rows.results || [])
+})
+
+// GET /api/plan-visits/:id — single visit detail
+app.get('/api/plan-visits/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const visitId = c.req.param('id')
+  const visit = await db.prepare(`
+    SELECT pv.*,
+           cs.client_name, cs.client_id, cs.service_address, cs.property_access,
+           cs.default_crew_name, cs.default_employees,
+           rp.name as plan_name, rp.frequency, rp.tasks as plan_tasks, rp.estimated_hours as plan_hours
+    FROM plan_visits pv
+    LEFT JOIN client_plan_subscriptions cs ON cs.id = pv.subscription_id
+    LEFT JOIN recurring_plans rp ON rp.id = pv.plan_id
+    WHERE pv.id=? AND pv.company_id=?`).bind(visitId, companyId).first()
+  if (!visit) return c.json({ error: 'Not found' }, 404)
+  return c.json(visit)
+})
+
+// POST /api/plan-visits — create a scheduled visit occurrence
+app.post('/api/plan-visits', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const body = await c.req.json() as any
+  const { subscription_id, plan_id, client_id, scheduled_date, crew_id, crew_name,
+          employee_ids, employee_names, budgeted_hours, address, priority_note,
+          visit_notes, checklist_state } = body
+  if (!subscription_id || !scheduled_date) return c.json({ error: 'subscription_id and scheduled_date required' }, 400)
+  const id = `visit_${Date.now()}_${Math.random().toString(36).slice(2,7)}`
+  await db.prepare(`
+    INSERT INTO plan_visits (id, company_id, subscription_id, plan_id, client_id,
+      scheduled_date, status, crew_id, crew_name, employee_ids, employee_names,
+      budgeted_hours, address, priority_note, visit_notes, checklist_state,
+      photos, priority_ack, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,'scheduled',?,?,?,?,?,?,?,?,?,'[]',0,datetime('now'),datetime('now'))
+  `).bind(id, companyId, subscription_id, plan_id||'', client_id||'',
+    scheduled_date, crew_id||'', crew_name||'',
+    JSON.stringify(employee_ids||[]), JSON.stringify(employee_names||[]),
+    budgeted_hours||0, address||'', priority_note||'', visit_notes||'',
+    JSON.stringify(checklist_state||{})).run()
+  const created = await db.prepare(`SELECT * FROM plan_visits WHERE id=?`).bind(id).first()
+  return c.json(created, 201)
+})
+
+// PUT /api/plan-visits/:id — update visit (crew, employees, priority note, notes, address, checklist)
+app.put('/api/plan-visits/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const visitId = c.req.param('id')
+  const visit = await db.prepare(`SELECT id FROM plan_visits WHERE id=? AND company_id=?`).bind(visitId, companyId).first()
+  if (!visit) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json() as any
+  const allowed = ['crew_id','crew_name','employee_ids','employee_names','budgeted_hours',
+                   'actual_hours','address','priority_note','visit_notes','checklist_state',
+                   'photos','status','scheduled_date','priority_ack','priority_ack_by','priority_ack_at']
+  const setClauses: string[] = ['updated_at=datetime(\'now\')']
+  const vals: any[] = []
+  allowed.forEach(f => {
+    if (body[f] !== undefined) {
+      setClauses.push(`${f}=?`)
+      vals.push(typeof body[f] === 'object' ? JSON.stringify(body[f]) : body[f])
+    }
+  })
+  if (setClauses.length === 1) return c.json({ error: 'No fields to update' }, 400)
+  vals.push(visitId, companyId)
+  await db.prepare(`UPDATE plan_visits SET ${setClauses.join(',')} WHERE id=? AND company_id=?`).bind(...vals).run()
+  const updated = await db.prepare(`SELECT * FROM plan_visits WHERE id=?`).bind(visitId).first()
+  return c.json(updated)
+})
+
+// POST /api/plan-visits/:id/acknowledge — crew acknowledges priority note
+app.post('/api/plan-visits/:id/acknowledge', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const visitId = c.req.param('id')
+  const body = await c.req.json() as any
+  const { acknowledged_by } = body
+  const now = new Date().toISOString()
+  await db.prepare(`
+    UPDATE plan_visits SET priority_ack=1, priority_ack_by=?, priority_ack_at=?, updated_at=datetime('now')
+    WHERE id=? AND company_id=?`).bind(acknowledged_by||'Unknown', now, visitId, companyId).run()
+  return c.json({ success: true, acknowledged_at: now })
+})
+
+// POST /api/plan-visits/:id/complete — mark visit complete, auto-advance subscription next_visit_date
+app.post('/api/plan-visits/:id/complete', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const visitId = c.req.param('id')
+  const visit = await db.prepare(`
+    SELECT pv.*, rp.frequency, rp.frequency_days
+    FROM plan_visits pv
+    LEFT JOIN recurring_plans rp ON rp.id = pv.plan_id
+    WHERE pv.id=? AND pv.company_id=?`).bind(visitId, companyId).first() as any
+  if (!visit) return c.json({ error: 'Not found' }, 404)
+
+  // If priority note exists and not acknowledged, block completion
+  if (visit.priority_note && !visit.priority_ack) {
+    return c.json({ error: 'Priority note must be acknowledged before completing this visit', code: 'ACK_REQUIRED' }, 422)
+  }
+
+  const body = await c.req.json() as any
+  const { actual_hours, visit_notes, checklist_state, photos } = body
+  const now = new Date().toISOString()
+  const today = now.split('T')[0]
+
+  // Mark this visit complete
+  await db.prepare(`
+    UPDATE plan_visits SET status='completed', completed_date=?, actual_hours=?,
+      visit_notes=COALESCE(?,visit_notes), checklist_state=COALESCE(?,checklist_state),
+      photos=COALESCE(?,photos), updated_at=datetime('now')
+    WHERE id=? AND company_id=?`).bind(
+    today, actual_hours||0,
+    visit_notes||null,
+    checklist_state ? JSON.stringify(checklist_state) : null,
+    photos ? JSON.stringify(photos) : null,
+    visitId, companyId).run()
+
+  // Advance subscription: increment visit_count, update last_visit_date, compute next_visit_date
+  const sub = await db.prepare(`
+    SELECT cs.*, rp.frequency, rp.frequency_days
+    FROM client_plan_subscriptions cs
+    LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
+    WHERE cs.id=? AND cs.company_id=?`).bind(visit.subscription_id, companyId).first() as any
+
+  let nextDateStr = today
+  if (sub) {
+    const freqDaysMap: Record<string,number> = { weekly:7,biweekly:14,monthly:30,bimonthly:60,quarterly:91,semiannual:182,annual:365 }
+    const days = sub.frequency_days || freqDaysMap[sub.frequency] || 30
+    const base = new Date(today + 'T00:00:00')
+    base.setDate(base.getDate() + days)
+    nextDateStr = base.toISOString().split('T')[0]
+    await db.prepare(`
+      UPDATE client_plan_subscriptions
+      SET visit_count = visit_count + 1, last_visit_date=?, next_visit_date=?, updated_at=datetime('now')
+      WHERE id=?`).bind(today, nextDateStr, visit.subscription_id).run()
+  }
+
+  return c.json({ success: true, next_visit_date: nextDateStr, visit_id: visitId })
+})
+
+// POST /api/plan-visits/:id/photos — add photos to a visit
+app.post('/api/plan-visits/:id/photos', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const visitId = c.req.param('id')
+  const visit = await db.prepare(`SELECT id, photos FROM plan_visits WHERE id=? AND company_id=?`).bind(visitId, companyId).first() as any
+  if (!visit) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json() as any
+  const { photos } = body // [{url, caption}]
+  let existing: any[] = []
+  try { existing = JSON.parse(visit.photos || '[]') } catch(_) {}
+  const newPhotos = [...existing, ...(photos||[]).map((p: any) => ({
+    url: p.url, caption: p.caption||'', uploaded_at: new Date().toISOString()
+  }))]
+  await db.prepare(`UPDATE plan_visits SET photos=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(JSON.stringify(newPhotos), visitId, companyId).run()
+  return c.json({ success: true, photos: newPhotos })
+})
+
+// PUT /api/recurring-subscriptions/:id/assignment — update default crew/employees/address for a subscription
+app.put('/api/recurring-subscriptions/:id/assignment', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const subId = c.req.param('id')
+  const sub = await db.prepare(`SELECT id FROM client_plan_subscriptions WHERE id=? AND company_id=?`).bind(subId, companyId).first()
+  if (!sub) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json() as any
+  const { default_crew_id, default_crew_name, default_employees, service_address, property_access } = body
+  await db.prepare(`
+    UPDATE client_plan_subscriptions
+    SET default_crew_id=?, default_crew_name=?, default_employees=?,
+        service_address=?, property_access=?, updated_at=datetime('now')
+    WHERE id=? AND company_id=?`).bind(
+    default_crew_id||'', default_crew_name||'',
+    JSON.stringify(default_employees||[]),
+    service_address||'', property_access||'',
+    subId, companyId).run()
+  const updated = await db.prepare(`SELECT * FROM client_plan_subscriptions WHERE id=?`).bind(subId).first()
+  return c.json(updated)
+})
+
 // ── REVIEWS (D1) ──────────────────────────────────────────────────────────────
 
 // GET /api/reviews — list review requests
@@ -5020,7 +5231,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b002">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5044,8 +5255,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260713b001"></script>
-  <script src="/js/client_portal.js?v=20260713b001"></script>
+  <script src="/js/platform_core.js?v=20260713b002"></script>
+  <script src="/js/client_portal.js?v=20260713b002"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5656,9 +5867,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260713b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260713b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b002">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6199,33 +6410,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260713b001"></script>
-<script src="/js/db.js?v=20260713b001"></script>
-<script src="/js/data.js?v=20260713b001"></script>
-<script src="/js/reps.js?v=20260713b001"></script>
-<script src="/js/record-page.js?v=20260713b001"></script>
-<script src="/js/academy.js?v=20260713b001"></script>
-<script src="/js/task_engine.js?v=20260713b001"></script>
-<script src="/js/app_premium.js?v=20260713b001"></script>
-<script src="/js/estimates.js?v=20260713b001"></script>
-<script src="/js/invoices.js?v=20260713b001"></script>
-<script src="/js/csv_import.js?v=20260713b001"></script>
-<script src="/js/onboarding.js?v=20260713b001"></script>
-<script src="/js/recurring_plans.js?v=20260713b001"></script>
-<script src="/js/reviews.js?v=20260713b001"></script>
-<script src="/js/stripe.js?v=20260713b001"></script>
-<script src="/js/email.js?v=20260713b001"></script>
-<script src="/js/notifications.js?v=20260713b001"></script>
-<script src="/js/integrations.js?v=20260713b001"></script>
-<script src="/js/user_management.js?v=20260713b001"></script>
-<script src="/js/platform_admin.js?v=20260713b001"></script>
-<script src="/js/time_tracker.js?v=20260713b001"></script>
-<script src="/js/field_workday.js?v=20260713b001"></script>
-<script src="/js/platform_core.js?v=20260713b001"></script>
-<script src="/js/approval_engine.js?v=20260713b001"></script>
-<script src="/js/automation_engine.js?v=20260713b001"></script>
-<script src="/js/client_portal.js?v=20260713b001"></script>
-<script src="/js/field_mode.js?v=20260713b001"></script>
+<script src="/js/gw-icons.js?v=20260713b002"></script>
+<script src="/js/db.js?v=20260713b002"></script>
+<script src="/js/data.js?v=20260713b002"></script>
+<script src="/js/reps.js?v=20260713b002"></script>
+<script src="/js/record-page.js?v=20260713b002"></script>
+<script src="/js/academy.js?v=20260713b002"></script>
+<script src="/js/task_engine.js?v=20260713b002"></script>
+<script src="/js/app_premium.js?v=20260713b002"></script>
+<script src="/js/estimates.js?v=20260713b002"></script>
+<script src="/js/invoices.js?v=20260713b002"></script>
+<script src="/js/csv_import.js?v=20260713b002"></script>
+<script src="/js/onboarding.js?v=20260713b002"></script>
+<script src="/js/recurring_plans.js?v=20260713b002"></script>
+<script src="/js/reviews.js?v=20260713b002"></script>
+<script src="/js/stripe.js?v=20260713b002"></script>
+<script src="/js/email.js?v=20260713b002"></script>
+<script src="/js/notifications.js?v=20260713b002"></script>
+<script src="/js/integrations.js?v=20260713b002"></script>
+<script src="/js/user_management.js?v=20260713b002"></script>
+<script src="/js/platform_admin.js?v=20260713b002"></script>
+<script src="/js/time_tracker.js?v=20260713b002"></script>
+<script src="/js/field_workday.js?v=20260713b002"></script>
+<script src="/js/platform_core.js?v=20260713b002"></script>
+<script src="/js/approval_engine.js?v=20260713b002"></script>
+<script src="/js/automation_engine.js?v=20260713b002"></script>
+<script src="/js/client_portal.js?v=20260713b002"></script>
+<script src="/js/field_mode.js?v=20260713b002"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
