@@ -3652,6 +3652,140 @@ app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
   return c.json({ id, invoice_number: invoiceNumber, portal_token: portalToken })
 })
 
+// GET /api/clients/:id/payment-methods — list saved Stripe payment methods for a client
+// Returns saved cards/ACH that the client has on file (via Stripe Customer)
+app.get('/api/clients/:id/payment-methods', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const stripeKey = (c.env as any).STRIPE_SECRET_KEY as string | undefined
+  const clientId = c.req.param('id')
+
+  // Get client's stripe_customer_id
+  const client: any = await db.prepare(
+    `SELECT id, name, email, stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(clientId, companyId).first()
+  if (!client) return c.json({ error: 'Client not found' }, 404)
+
+  if (!stripeKey || !client.stripe_customer_id) {
+    return c.json({ payment_methods: [], stripe_customer_id: null })
+  }
+
+  try {
+    // Fetch cards
+    const [cardsRes, bankRes] = await Promise.all([
+      fetch(`https://api.stripe.com/v1/payment_methods?customer=${client.stripe_customer_id}&type=card&limit=20`, {
+        headers: { 'Authorization': `Bearer ${stripeKey}` }
+      }),
+      fetch(`https://api.stripe.com/v1/payment_methods?customer=${client.stripe_customer_id}&type=us_bank_account&limit=20`, {
+        headers: { 'Authorization': `Bearer ${stripeKey}` }
+      })
+    ])
+    const cards = cardsRes.ok ? (await cardsRes.json() as any).data || [] : []
+    const banks = bankRes.ok ? (await bankRes.json() as any).data || [] : []
+    const paymentMethods = [...cards, ...banks].map((pm: any) => ({
+      id: pm.id,
+      type: pm.type,
+      brand: pm.card?.brand || pm.us_bank_account?.bank_name || 'Unknown',
+      last4: pm.card?.last4 || pm.us_bank_account?.last4 || '????',
+      exp_month: pm.card?.exp_month,
+      exp_year: pm.card?.exp_year,
+      label: pm.type === 'card'
+        ? `${(pm.card?.brand||'Card').charAt(0).toUpperCase()+(pm.card?.brand||'').slice(1)} •••• ${pm.card?.last4} (${pm.card?.exp_month}/${pm.card?.exp_year})`
+        : `${pm.us_bank_account?.bank_name || 'Bank'} •••• ${pm.us_bank_account?.last4} (ACH)`
+    }))
+    return c.json({ payment_methods: paymentMethods, stripe_customer_id: client.stripe_customer_id })
+  } catch (e: any) {
+    return c.json({ error: e.message, payment_methods: [] }, 500)
+  }
+})
+
+// POST /api/invoices/:id/charge — charge a saved Stripe payment method on file
+app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const stripeKey = (c.env as any).STRIPE_SECRET_KEY as string | undefined
+  if (!stripeKey) return c.json({ error: 'Stripe not configured' }, 503)
+
+  const invoiceId = c.req.param('id')
+  const body = await c.req.json() as any
+  const { stripe_pm_id, amount } = body  // amount in cents
+
+  if (!stripe_pm_id) return c.json({ error: 'Payment method required' }, 400)
+  if (!amount || amount < 50) return c.json({ error: 'Minimum charge is $0.50' }, 400)
+
+  // Load invoice + company
+  const inv: any = await db.prepare(
+    `SELECT * FROM invoices WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(invoiceId, companyId).first()
+  if (!inv) return c.json({ error: 'Invoice not found' }, 404)
+
+  const company: any = await db.prepare(
+    `SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`
+  ).bind(companyId).first()
+
+  // Get client's Stripe customer ID
+  const client: any = inv.client_id
+    ? await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`)
+        .bind(inv.client_id, companyId).first()
+    : null
+  if (!client?.stripe_customer_id) return c.json({ error: 'Client has no Stripe customer on file' }, 400)
+
+  try {
+    const feePct = company?.stripe_platform_fee_pct || 2.9
+    const applicationFeeAmount = Math.round(amount * feePct / 100)
+
+    // Build PaymentIntent params
+    const form = new URLSearchParams({
+      amount: String(amount),
+      currency: 'usd',
+      customer: client.stripe_customer_id,
+      payment_method: stripe_pm_id,
+      confirm: 'true',
+      'metadata[invoice_id]': invoiceId,
+      'metadata[company_id]': companyId,
+      'off_session': 'true',
+    })
+
+    // If connected account, route through it
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${stripeKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    if (company?.stripe_account_id && company.stripe_onboarded) {
+      form.set('application_fee_amount', String(applicationFeeAmount))
+      form.set('transfer_data[destination]', company.stripe_account_id)
+    }
+
+    const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
+      method: 'POST', headers, body: form.toString()
+    })
+    const pi = await piRes.json() as any
+    if (!piRes.ok) throw new Error(pi.error?.message || 'Charge failed')
+    if (pi.status !== 'succeeded') throw new Error(`Payment status: ${pi.status} — may require additional authentication`)
+
+    // Record payment and update invoice
+    const amountDollars = amount / 100
+    const newPaid = (inv.amount_paid || 0) + amountDollars
+    const newBalance = Math.max(0, (inv.total || inv.balance_due || 0) - newPaid)
+    const newStatus = newBalance <= 0 ? 'paid' : 'partial'
+
+    await db.prepare(
+      `UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
+    ).bind(newPaid, newBalance, newStatus, invoiceId, companyId).run()
+
+    const pymtId = `py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`
+    await db.prepare(
+      `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, description, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+    ).bind(pymtId, companyId, invoiceId, inv.client_id||'', amountDollars, amountDollars,
+      'succeeded', 'card', `Stripe charge — ${pi.id}`).run()
+
+    return c.json({ ok: true, payment_intent_id: pi.id, status: newStatus, balance_due: newBalance, amount_paid: newPaid })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
 // GET /api/clients/import-preview — preview CSV rows before bulk insert
 app.post('/api/clients/import-preview', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -5231,7 +5365,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b005">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5255,8 +5389,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260713b004"></script>
-  <script src="/js/client_portal.js?v=20260713b004"></script>
+  <script src="/js/platform_core.js?v=20260713b005"></script>
+  <script src="/js/client_portal.js?v=20260713b005"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -5867,9 +6001,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260713b004">
-  <link rel="stylesheet" href="/js/styles.css?v=20260713b004">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260713b005">
+  <link rel="stylesheet" href="/js/styles.css?v=20260713b005">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260713b005">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6410,33 +6544,33 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260713b004"></script>
-<script src="/js/db.js?v=20260713b004"></script>
-<script src="/js/data.js?v=20260713b004"></script>
-<script src="/js/reps.js?v=20260713b004"></script>
-<script src="/js/record-page.js?v=20260713b004"></script>
-<script src="/js/academy.js?v=20260713b004"></script>
-<script src="/js/task_engine.js?v=20260713b004"></script>
-<script src="/js/app_premium.js?v=20260713b004"></script>
-<script src="/js/estimates.js?v=20260713b004"></script>
-<script src="/js/invoices.js?v=20260713b004"></script>
-<script src="/js/csv_import.js?v=20260713b004"></script>
-<script src="/js/onboarding.js?v=20260713b004"></script>
-<script src="/js/recurring_plans.js?v=20260713b004"></script>
-<script src="/js/reviews.js?v=20260713b004"></script>
-<script src="/js/stripe.js?v=20260713b004"></script>
-<script src="/js/email.js?v=20260713b004"></script>
-<script src="/js/notifications.js?v=20260713b004"></script>
-<script src="/js/integrations.js?v=20260713b004"></script>
-<script src="/js/user_management.js?v=20260713b004"></script>
-<script src="/js/platform_admin.js?v=20260713b004"></script>
-<script src="/js/time_tracker.js?v=20260713b004"></script>
-<script src="/js/field_workday.js?v=20260713b004"></script>
-<script src="/js/platform_core.js?v=20260713b004"></script>
-<script src="/js/approval_engine.js?v=20260713b004"></script>
-<script src="/js/automation_engine.js?v=20260713b004"></script>
-<script src="/js/client_portal.js?v=20260713b004"></script>
-<script src="/js/field_mode.js?v=20260713b004"></script>
+<script src="/js/gw-icons.js?v=20260713b005"></script>
+<script src="/js/db.js?v=20260713b005"></script>
+<script src="/js/data.js?v=20260713b005"></script>
+<script src="/js/reps.js?v=20260713b005"></script>
+<script src="/js/record-page.js?v=20260713b005"></script>
+<script src="/js/academy.js?v=20260713b005"></script>
+<script src="/js/task_engine.js?v=20260713b005"></script>
+<script src="/js/app_premium.js?v=20260713b005"></script>
+<script src="/js/estimates.js?v=20260713b005"></script>
+<script src="/js/invoices.js?v=20260713b005"></script>
+<script src="/js/csv_import.js?v=20260713b005"></script>
+<script src="/js/onboarding.js?v=20260713b005"></script>
+<script src="/js/recurring_plans.js?v=20260713b005"></script>
+<script src="/js/reviews.js?v=20260713b005"></script>
+<script src="/js/stripe.js?v=20260713b005"></script>
+<script src="/js/email.js?v=20260713b005"></script>
+<script src="/js/notifications.js?v=20260713b005"></script>
+<script src="/js/integrations.js?v=20260713b005"></script>
+<script src="/js/user_management.js?v=20260713b005"></script>
+<script src="/js/platform_admin.js?v=20260713b005"></script>
+<script src="/js/time_tracker.js?v=20260713b005"></script>
+<script src="/js/field_workday.js?v=20260713b005"></script>
+<script src="/js/platform_core.js?v=20260713b005"></script>
+<script src="/js/approval_engine.js?v=20260713b005"></script>
+<script src="/js/automation_engine.js?v=20260713b005"></script>
+<script src="/js/client_portal.js?v=20260713b005"></script>
+<script src="/js/field_mode.js?v=20260713b005"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

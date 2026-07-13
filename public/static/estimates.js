@@ -1806,22 +1806,57 @@ function _estDeclineModal(estId) {
 }
 
 async function _estConvertToInvoice(estId) {
+  // Confirm before converting
+  if (!confirm('Convert this estimate to an invoice? The estimate will be marked as invoiced and removed from the active list.')) return;
+
+  // Show progress toast
   showToast('Converting to invoice…', 'info');
-  // Wire to your invoicing system
-  if (typeof invoiceDetail === 'function') {
-    try {
-      const r = await fetch(`/api/estimates/${estId}`, { credentials: 'include' });
-      if (r.ok) {
-        const { data: est } = await r.json();
-        showToast('Opening invoice builder with estimate data', 'success');
-        // Hand off to invoice system
-        if (typeof window.gwAudit === 'function') {
-          window.gwAudit({ type: 'estimate_converted', entityType: 'estimate', entityId: estId, entityLabel: est.est_number });
-        }
+
+  try {
+    const r = await fetch(`/api/invoices/from-estimate/${estId}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast(err.error || 'Conversion failed — please try again', 'error');
+      return;
+    }
+
+    const data = await r.json();
+
+    // Audit log
+    if (typeof window.gwAudit === 'function') {
+      window.gwAudit({ type: 'estimate_converted', entityType: 'estimate', entityId: estId, entityLabel: data.invoice_number });
+    }
+
+    showToast(`Invoice ${data.invoice_number} created successfully!`, 'success');
+
+    // Close the detail drawer if open
+    if (typeof _estCloseDrawer === 'function') _estCloseDrawer();
+
+    // Refresh estimates list (estimate now shows as invoiced / hidden)
+    setTimeout(() => {
+      if (typeof estimates === 'function') {
+        estimates();
       }
-    } catch (e) { /* ignore */ }
+    }, 600);
+
+    // Navigate to invoices tab after a brief delay so user sees success toast
+    setTimeout(() => {
+      if (typeof window.show === 'function') {
+        window.show('invoices');
+      } else if (typeof window.gwInvoices === 'function') {
+        window.gwInvoices();
+      }
+    }, 1200);
+
+  } catch (e) {
+    console.error('Convert to invoice error:', e);
+    showToast('Network error — could not convert estimate', 'error');
   }
-  showToast('Invoice conversion coming soon', 'info');
 }
 
 function _estCopyPortalLink(token) {
