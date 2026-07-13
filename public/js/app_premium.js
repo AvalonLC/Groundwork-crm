@@ -1245,7 +1245,7 @@ function show(viewName='today', param){
   const p5Route = {
     financialHub,
     estimates:      (id) => id ? estimateDetail(id) : estimates(),
-    invoices:       (id) => invoiceDetail(id),
+    invoices:       (id) => (typeof window.gwInvoices === 'function') ? window.gwInvoices(id) : invoiceDetail(id),
     statement:      (id) => accountStatement(id),
     communications: ()   => communicationsBoard(),
     automations:    ()   => automationManager()
