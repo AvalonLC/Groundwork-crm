@@ -14487,14 +14487,9 @@ und: rgba(45,122,85,.05);
 .gw-myday-widget-body > section.card { margin-top: 0 !important; height: 100%; }
 .gw-myday-widget-body > .gw-today-pipe-strip { margin-bottom: 0; }
 
-@media (max-width: 1100px) {
-  .gw-myday-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .gw-myday-widget { grid-column: span 2 !important; }
-  /* user-chosen half-or-less widths stay half on narrow windows */
-  .gw-myday-widget[style*="span 1"],
-  .gw-myday-widget[style*="span 2"],
-  .gw-myday-widget[style*="span 3"] { grid-column: span 1 !important; }
-}
+/* NOTE: no desktop breakpoint overrides here — the user controls widget
+   sizes; forcing spans with !important at <=1100px silently broke resizing.
+   Below 768px the JS mobile renderer takes over, this is just a fallback. */
 @media (max-width: 768px) {
   .gw-myday-grid { grid-template-columns: minmax(0, 1fr); }
   .gw-myday-widget { grid-column: span 1 !important; }
