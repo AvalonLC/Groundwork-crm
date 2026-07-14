@@ -1996,18 +1996,23 @@ function _gwTodayRenderMobile(opts) {
 }
 
 /* ── My Day customizable widgets (Apple-widget style) ────────────────────────
-   Each dashboard section is a "widget": show/hide, reorder (drag or arrows)
-   and resize (⅓/½/⅔/full width). Layout persists per-user in localStorage. */
-const _GW_MYDAY_SPANS = [2, 3, 4, 6];
-const _GW_MYDAY_SPAN_LABEL = { 2:'\u2153 width', 3:'\u00BD width', 4:'\u2154 width', 6:'Full width' };
+   Each dashboard section is a "widget": add/remove from a widget library,
+   reorder (drag or arrows), resize width (drag right edge, snaps to grid
+   columns) and height (drag bottom edge, free). Layout persists per-user. */
+const _GW_MYDAY_SPANS = [1, 2, 3, 4, 5, 6];
+const _GW_MYDAY_SPAN_LABEL = { 1:'\u2159', 2:'\u2153', 3:'\u00BD', 4:'\u2154', 5:'\u215A', 6:'Full' };
 const _GW_MYDAY_WIDGETS = [
-  { id:'pipeStrip', label:'Pipeline Snapshot',       span:6, allowed:c=>!c.isField,        render:c=>c.pipeStrip },
-  { id:'tasks',     label:'My Tasks',                span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
-  { id:'finance',   label:'Financial Pulse',         span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
-  { id:'checklist', label:'Daily Sales Start-Up',    span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>` },
-  { id:'recent',    label:'Recently Updated',        span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>` },
-  { id:'activity',  label:'Weekly Activity Targets', span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml },
-  { id:'reviews',   label:'Reviews',                 span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>' },
+  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField,        render:c=>c.pipeStrip },
+  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
+  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
+  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>` },
+  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>` },
+  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml },
+  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>' },
+  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml },
+  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml },
+  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads with no activity in 7+ days',             span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.staleLeadsHtml },
+  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml },
 ];
 function _gwMyDayLayoutKey(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
@@ -2020,12 +2025,26 @@ function _gwMyDayResolveLayout(ctx){
   const order = [];
   if (saved && Array.isArray(saved.order)) saved.order.forEach(id => { if (avail.includes(id)) order.push(id); });
   avail.forEach(id => { if (!order.includes(id)) order.push(id); });
-  const hidden = (saved && Array.isArray(saved.hidden)) ? saved.hidden.filter(id => avail.includes(id)) : [];
-  const spans  = (saved && saved.spans && typeof saved.spans === 'object') ? saved.spans : {};
-  return { order, hidden, spans };
+  // hidden: default = library widgets marked defaultOff (until the user makes a choice)
+  let hidden;
+  if (saved && Array.isArray(saved.hidden)) {
+    hidden = saved.hidden.filter(id => avail.includes(id));
+    // widgets added to the library after the user saved: respect their defaultOff
+    _GW_MYDAY_WIDGETS.forEach(w => {
+      if (w.defaultOff && avail.includes(w.id) && !(saved.seen||[]).includes(w.id) && !hidden.includes(w.id) && !(saved.order||[]).includes(w.id)) hidden.push(w.id);
+    });
+  } else {
+    hidden = _GW_MYDAY_WIDGETS.filter(w => w.defaultOff && avail.includes(w.id)).map(w => w.id);
+  }
+  const spans   = (saved && saved.spans   && typeof saved.spans   === 'object') ? saved.spans   : {};
+  const heights = (saved && saved.heights && typeof saved.heights === 'object') ? saved.heights : {};
+  return { order, hidden, spans, heights };
 }
 function _gwMyDaySaveLayout(l){
-  try { localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans })); } catch(e) {}
+  try {
+    const seen = _GW_MYDAY_WIDGETS.map(w => w.id); // mark all current widgets as seen
+    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans, heights: l.heights || {}, seen }));
+  } catch(e) {}
 }
 function _gwMyDayCurLayout(){
   // Lightweight role ctx just for layout mutations (allowed() predicates)
@@ -2037,37 +2056,71 @@ function _gwMyDayCurLayout(){
   const activityHtml = (typeof renderTodayActivityWidget === 'function') ? renderTodayActivityWidget() : '';
   return _gwMyDayResolveLayout({ rep, isAdmin, isOM, isField, showFin: isAdmin || isOM, activityHtml });
 }
+function _gwMyDaySpanOf(id, layout){
+  const w = _GW_MYDAY_WIDGETS.find(x => x.id === id);
+  const s = Number(layout.spans[id]);
+  return (_GW_MYDAY_SPANS.includes(s)) ? s : (w ? w.span : 6);
+}
 function _gwMyDayRenderWidget(id, ctx, layout, editing){
   const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return '';
-  const hidden = layout.hidden.includes(id);
-  if (hidden && !editing) return '';
+  if (layout.hidden.includes(id)) return ''; // removed widgets live in the library panel
   const html = w.render(ctx) || '';
   if (!html && !editing) return '';
-  const span = _GW_MYDAY_SPANS.includes(Number(layout.spans[id])) ? Number(layout.spans[id]) : w.span;
+  const span = _gwMyDaySpanOf(id, layout);
+  const h = Number(layout.heights && layout.heights[id]);
+  const hStyle = (h && h >= 120) ? `height:${h}px;overflow-y:auto;` : '';
   const bar = editing ? `
     <div class="gw-myday-widget-bar">
       <span class="gw-myday-widget-name"><span class="gw-myday-drag-dots">\u28FF</span>${w.label}</span>
       <span class="gw-myday-widget-btns">
         <button onclick="gwMyDayMove('${id}',-1)" title="Move earlier">\u2190</button>
         <button onclick="gwMyDayMove('${id}',1)" title="Move later">\u2192</button>
-        <button onclick="gwMyDaySpanCycle('${id}')" title="Change width">${_GW_MYDAY_SPAN_LABEL[span] || 'Width'}</button>
-        <button class="${hidden ? 'gw-myday-show-btn' : ''}" onclick="gwMyDayToggleHide('${id}')" title="${hidden ? 'Show this widget' : 'Hide this widget'}">${hidden ? 'Show' : 'Hide'}</button>
+        <button onclick="gwMyDaySpanCycle('${id}')" title="Cycle width (or drag the right edge)">${_GW_MYDAY_SPAN_LABEL[span] || ''} width</button>
+        ${h ? `<button onclick="gwMyDayResetHeight('${id}')" title="Reset to automatic height">Auto height</button>` : ''}
+        <button class="gw-myday-remove-btn" onclick="gwMyDayToggleHide('${id}')" title="Remove from My Day (find it again in the widget library)">\u00D7 Remove</button>
       </span>
     </div>` : '';
-  return `<div class="gw-myday-widget${editing ? ' gw-myday-widget--edit' : ''}${hidden ? ' gw-myday-widget--hidden' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true"' : ''}>
+  const grips = editing ? `
+    <div class="gw-myday-grip gw-myday-grip--e"  data-grip="e"  data-widget-id="${id}" title="Drag to resize width"></div>
+    <div class="gw-myday-grip gw-myday-grip--s"  data-grip="s"  data-widget-id="${id}" title="Drag to resize height"></div>
+    <div class="gw-myday-grip gw-myday-grip--se" data-grip="se" data-widget-id="${id}" title="Drag to resize"></div>` : '';
+  return `<div class="gw-myday-widget${editing ? ' gw-myday-widget--edit' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true"' : ''}>
     ${bar}
-    <div class="gw-myday-widget-body">${html || `<div class="gw-myday-placeholder">${w.label} \u2014 nothing to show right now</div>`}</div>
+    <div class="gw-myday-widget-body" style="${hStyle}">${html || `<div class="gw-myday-placeholder">${w.label} \u2014 nothing to show right now</div>`}</div>
+    ${grips}
+  </div>`;
+}
+function _gwMyDayLibraryPanel(ctx, layout){
+  const items = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => {
+    const onScreen = !layout.hidden.includes(w.id);
+    return `<div class="gw-myday-lib-item${onScreen ? ' gw-myday-lib-item--on' : ''}">
+      <div class="gw-myday-lib-info">
+        <strong>${w.label}</strong>
+        <span>${w.desc || ''}</span>
+      </div>
+      <button class="${onScreen ? 'gw-myday-lib-remove' : 'gw-myday-lib-add'}" onclick="gwMyDayToggleHide('${w.id}')">${onScreen ? 'Remove' : '+ Add'}</button>
+    </div>`;
+  }).join('');
+  return `<div class="gw-myday-library" id="gw-myday-library">
+    <div class="gw-myday-lib-head">
+      <strong>Widget Library</strong>
+      <span class="muted" style="font-size:12px">Add or remove widgets from your My Day screen</span>
+    </div>
+    <div class="gw-myday-lib-grid">${items}</div>
   </div>`;
 }
 window.gwMyDayCustomize = function(){ window._gwMyDayEditing = true; _gwTodayRender(); };
 window.gwMyDayDone = function(){
-  window._gwMyDayEditing = false; _gwTodayRender();
+  window._gwMyDayEditing = false; window._gwMyDayLibOpen = false; _gwTodayRender();
   if (typeof showToast === 'function') showToast('My Day layout saved');
 };
 window.gwMyDayReset = function(){
   try { localStorage.removeItem(_gwMyDayLayoutKey()); } catch(e) {}
   _gwTodayRender();
   if (typeof showToast === 'function') showToast('My Day layout reset to default');
+};
+window.gwMyDayToggleLib = function(){
+  window._gwMyDayLibOpen = !window._gwMyDayLibOpen; _gwTodayRender();
 };
 window.gwMyDayMove = function(id, dir){
   const l = _gwMyDayCurLayout();
@@ -2079,9 +2132,13 @@ window.gwMyDayMove = function(id, dir){
 };
 window.gwMyDaySpanCycle = function(id){
   const l = _gwMyDayCurLayout();
-  const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return;
-  const cur = _GW_MYDAY_SPANS.includes(Number(l.spans[id])) ? Number(l.spans[id]) : w.span;
+  const cur = _gwMyDaySpanOf(id, l);
   l.spans[id] = _GW_MYDAY_SPANS[(_GW_MYDAY_SPANS.indexOf(cur) + 1) % _GW_MYDAY_SPANS.length];
+  _gwMyDaySaveLayout(l); _gwTodayRender();
+};
+window.gwMyDayResetHeight = function(id){
+  const l = _gwMyDayCurLayout();
+  if (l.heights) delete l.heights[id];
   _gwMyDaySaveLayout(l); _gwTodayRender();
 };
 window.gwMyDayToggleHide = function(id){
@@ -2090,11 +2147,21 @@ window.gwMyDayToggleHide = function(id){
   if (i >= 0) l.hidden.splice(i, 1); else l.hidden.push(id);
   _gwMyDaySaveLayout(l); _gwTodayRender();
 };
+// Scratchpad persistence (per user)
+window.gwMyDayScratchSave = function(el){
+  let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
+  try { localStorage.setItem('gw-myday-scratch-' + ((r && r.id) || 'anon'), el.value); } catch(e) {}
+};
+function _gwMyDayScratchLoad(){
+  let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
+  try { return localStorage.getItem('gw-myday-scratch-' + ((r && r.id) || 'anon')) || ''; } catch(e) { return ''; }
+}
 function _gwMyDayBindDnD(){
   const grid = document.getElementById('gw-myday-grid'); if (!grid) return;
   let dragId = null;
   grid.querySelectorAll('.gw-myday-widget').forEach(el => {
     el.addEventListener('dragstart', e => {
+      if (window._gwMyDayResizing) { e.preventDefault(); return; }
       dragId = el.dataset.widgetId;
       e.dataTransfer.effectAllowed = 'move';
       try { e.dataTransfer.setData('text/plain', dragId); } catch(err) {}
@@ -2118,6 +2185,54 @@ function _gwMyDayBindDnD(){
       if (from < 0 || to < 0) return;
       l.order.splice(to, 0, l.order.splice(from, 1)[0]);
       _gwMyDaySaveLayout(l); _gwTodayRender();
+    });
+  });
+  _gwMyDayBindResize(grid);
+}
+function _gwMyDayBindResize(grid){
+  // Drag grips: east = width (snaps to grid columns), south = height (free px)
+  const GAP = 22; // must match .gw-myday-grid gap
+  grid.querySelectorAll('.gw-myday-grip').forEach(grip => {
+    grip.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const mode = grip.dataset.grip;                       // 'e' | 's' | 'se'
+      const id   = grip.dataset.widgetId;
+      const el   = grid.querySelector(`.gw-myday-widget[data-widget-id="${id}"]`);
+      if (!el) return;
+      const body = el.querySelector('.gw-myday-widget-body');
+      window._gwMyDayResizing = true;
+      el.draggable = false;
+      el.classList.add('gw-myday-resizing');
+      const colW    = (grid.clientWidth - GAP * 5) / 6;     // width of one grid column
+      const startX  = e.clientX, startY = e.clientY;
+      const startW  = el.getBoundingClientRect().width;
+      const startH  = body.getBoundingClientRect().height;
+      let   newSpan = null, newH = null;
+      const onMove = ev => {
+        if (mode === 'e' || mode === 'se') {
+          const w = startW + (ev.clientX - startX);
+          newSpan = Math.max(1, Math.min(6, Math.round((w + GAP) / (colW + GAP))));
+          el.style.gridColumn = 'span ' + newSpan;
+        }
+        if (mode === 's' || mode === 'se') {
+          newH = Math.max(120, Math.round(startH + (ev.clientY - startY)));
+          body.style.height = newH + 'px';
+          body.style.overflowY = 'auto';
+        }
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        el.classList.remove('gw-myday-resizing');
+        el.draggable = true;
+        setTimeout(() => { window._gwMyDayResizing = false; }, 50);
+        const l = _gwMyDayCurLayout();
+        if (newSpan) l.spans[id] = newSpan;
+        if (newH)    { l.heights = l.heights || {}; l.heights[id] = newH; }
+        if (newSpan || newH) { _gwMyDaySaveLayout(l); _gwTodayRender(); }
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
     });
   });
 }
@@ -2218,8 +2333,31 @@ function _gwTodayRender() {
       </div>
     </div>`;
 
-  // ── Widget grid (customizable: order / visibility / width per user) ──────
+  // ── Widget grid (customizable: order / visibility / size per user) ───────
   const _editing = !!window._gwMyDayEditing;
+
+  // Extra library widgets content
+  const _quickActionsHtml = `<section class="card"><div class="section-head"><h2>Quick Actions</h2></div>
+    <div class="gw-myday-qa-grid">
+      <button onclick="show('lead')">${(typeof gwIcon==='function')?gwIcon('leads',15):''} New Lead</button>
+      <button onclick="show('pipeline')">${(typeof gwIcon==='function')?gwIcon('pipeline',15):''} Pipeline</button>
+      <button onclick="show('clients')">${(typeof gwIcon==='function')?gwIcon('users',15):''} Clients</button>
+      <button onclick="show('communications')">${(typeof gwIcon==='function')?gwIcon('comms',15):''} Comms</button>
+      <button onclick="show('scheduleBoard')">${(typeof gwIcon==='function')?gwIcon('calendar',15):''} Schedule</button>
+      <button onclick="window._gwTodayNewTask()">${(typeof gwIcon==='function')?gwIcon('task',15):''} New Task</button>
+    </div></section>`;
+  const _scratchpadHtml = `<section class="card"><div class="section-head"><h2>Scratchpad</h2></div>
+    <textarea class="gw-myday-scratch" placeholder="Jot quick notes here — saved automatically, just for you…"
+      oninput="gwMyDayScratchSave(this)">${escapeHtml(_gwMyDayScratchLoad())}</textarea></section>`;
+  const _staleCutoff = new Date(Date.now() - 7*86400000).toISOString();
+  const _staleLeads = _open.filter(o => (o.updatedAt || o.createdAt || '') < _staleCutoff)
+    .sort((a,b) => (a.updatedAt||'').localeCompare(b.updatedAt||'')).slice(0,6);
+  const _staleLeadsHtml = `<section class="card"><div class="section-head"><h2>Needs Follow-Up</h2>${_staleLeads.length ? `<span class="badge warn-badge">${_staleLeads.length}</span>` : ''}</div>
+    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No stale leads — everything has recent activity. 🎉</div>`}</section>`;
+  const _recentWins = _won.slice().sort((a,b)=>(b.closedDate||b.updatedAt||'').localeCompare(a.closedDate||a.updatedAt||'')).slice(0,5);
+  const _recentWinsHtml = `<section class="card"><div class="section-head"><h2>Recent Wins</h2></div>
+    ${_recentWins.length ? _recentWins.map(oppMini).join('') : `<div class="gw-myday-placeholder">No wins yet — go close one!</div>`}</section>`;
+
   const _wCtx = {
     rep: _todayRep, isAdmin: _isAdmin, isOM: _isOM, isField: _isField, showFin: _showFin,
     pipeStrip: _pipeStrip,
@@ -2228,17 +2366,24 @@ function _gwTodayRender() {
     checklistHtml: renderChecklist(data.checklists.find(c=>c.id==='daily'), true),
     recentHtml: recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`),
     activityHtml: renderTodayActivityWidget(),
+    quickActionsHtml: _quickActionsHtml,
+    scratchpadHtml: _scratchpadHtml,
+    staleLeadsHtml: _staleLeadsHtml,
+    recentWinsHtml: _recentWinsHtml,
   };
   const _layout = _gwMyDayResolveLayout(_wCtx);
   const _widgetsHtml = _layout.order.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, _editing)).join('');
+  const _libOpen = _editing && !!window._gwMyDayLibOpen;
   const _editBar = _editing ? `
     <div class="gw-myday-edit-banner">
-      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag widgets to reorder, change width, or hide the ones you don't need. Layout is saved just for you.</span>
+      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag to reorder, drag the right/bottom edges to resize, remove what you don't need. Saved just for you.</span>
       <span class="gw-myday-edit-banner-btns">
+        <button class="secondary-btn small${_libOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayToggleLib()">${_libOpen ? 'Close Library' : '+ Widget Library'}</button>
         <button class="secondary-btn small" onclick="gwMyDayReset()">Reset to Default</button>
         <button class="primary-btn small" onclick="gwMyDayDone()">Done</button>
       </span>
-    </div>` : '';
+    </div>
+    ${_libOpen ? _gwMyDayLibraryPanel(_wCtx, _layout) : ''}` : '';
 
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}

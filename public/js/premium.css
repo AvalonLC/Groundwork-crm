@@ -14571,3 +14571,122 @@ und: rgba(45,122,85,.05);
 .gw-myday-customize-btn svg { vertical-align: -2px; }
 
 /* Very wide screens: keep content readable but fluid — cards inside stretch */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 40 — MY DAY WIDGETS v2
+   1) Bigger breathing room between widgets (never touching)
+   2) Drag-resize grips: right edge = width, bottom edge = height, corner = both
+   3) Widget Library panel (add / remove widgets)
+   4) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Spacing: comfortable gap in both directions ── */
+.gw-myday-grid { gap: 22px !important; row-gap: 24px !important; }
+.gw-myday-widget { position: relative; }
+/* cards inside widgets: kill stray top margins so gap is the only spacing */
+.gw-myday-widget-body > .card,
+.gw-myday-widget-body > section.card { margin: 0 !important; }
+/* fixed-height widgets: let inner card fill and scroll cleanly */
+.gw-myday-widget-body[style*="height"] > .card,
+.gw-myday-widget-body[style*="height"] > section.card { min-height: 100%; }
+
+/* ── 2. Resize grips (visible only in customize mode) ── */
+.gw-myday-grip { position: absolute; z-index: 5; }
+.gw-myday-grip--e {
+  top: 10px; bottom: 22px; right: -4px; width: 10px;
+  cursor: ew-resize;
+}
+.gw-myday-grip--s {
+  left: 10px; right: 22px; bottom: -4px; height: 10px;
+  cursor: ns-resize;
+}
+.gw-myday-grip--se {
+  right: -4px; bottom: -4px; width: 20px; height: 20px;
+  cursor: nwse-resize;
+}
+.gw-myday-grip--e::after {
+  content: ''; position: absolute; top: 50%; right: 3px; transform: translateY(-50%);
+  width: 4px; height: 34px; border-radius: 4px;
+  background: rgba(77,138,134,.45); opacity: 0; transition: opacity .15s;
+}
+.gw-myday-grip--s::after {
+  content: ''; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
+  width: 34px; height: 4px; border-radius: 4px;
+  background: rgba(77,138,134,.45); opacity: 0; transition: opacity .15s;
+}
+.gw-myday-grip--se::after {
+  content: ''; position: absolute; right: 4px; bottom: 4px; width: 10px; height: 10px;
+  border-right: 3px solid rgba(77,138,134,.65); border-bottom: 3px solid rgba(77,138,134,.65);
+  border-radius: 0 0 4px 0; opacity: 0; transition: opacity .15s;
+}
+.gw-myday-widget--edit:hover .gw-myday-grip::after,
+.gw-myday-widget--edit.gw-myday-resizing .gw-myday-grip::after { opacity: 1; }
+.gw-myday-resizing { animation: none !important; }
+.gw-myday-resizing,
+.gw-myday-resizing * { user-select: none !important; }
+.gw-myday-resizing { outline: 2px solid var(--gw-pine, #4D8A86); outline-offset: 2px; border-radius: 14px; }
+
+/* remove button styling */
+.gw-myday-widget-btns .gw-myday-remove-btn { color: #8B3A2A; border-color: #EBD3CC; }
+.gw-myday-widget-btns .gw-myday-remove-btn:hover { background: #FAE8E4; border-color: #C97B6A; }
+
+/* ── 3. Widget Library panel ── */
+.gw-myday-library {
+  background: var(--gw-surface, #fff);
+  border: 1.5px dashed rgba(77,138,134,.5);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+.gw-myday-lib-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.gw-myday-lib-head strong { font-size: 14.5px; color: var(--gw-ink, #1F2A2B); }
+.gw-myday-lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 10px;
+}
+.gw-myday-lib-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--gw-bg2, #F5F8F7);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.gw-myday-lib-item--on { background: #EDF5F4; border-color: rgba(77,138,134,.35); }
+.gw-myday-lib-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gw-myday-lib-info strong { font-size: 13px; color: var(--gw-ink, #1F2A2B); }
+.gw-myday-lib-info span { font-size: 11.5px; color: var(--gw-muted, #6F7E6A); }
+.gw-myday-lib-add, .gw-myday-lib-remove {
+  border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; transition: background .12s;
+}
+.gw-myday-lib-add { background: var(--gw-pine, #4D8A86); color: #fff; border: 1px solid var(--gw-pine, #4D8A86); }
+.gw-myday-lib-add:hover { background: #3E736F; }
+.gw-myday-lib-remove { background: #fff; color: #8B3A2A; border: 1px solid #EBD3CC; }
+.gw-myday-lib-remove:hover { background: #FAE8E4; }
+.gw-myday-lib-btn--open { background: #EDF5F4 !important; border-color: var(--gw-pine, #4D8A86) !important; }
+
+/* ── 4. New widget internals ── */
+.gw-myday-qa-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 10px;
+}
+.gw-myday-qa-grid button {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  background: var(--gw-bg2, #F5F8F7);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 10px; padding: 12px 8px;
+  font-size: 12.5px; font-weight: 650; color: var(--gw-ink, #1F2A2B);
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.gw-myday-qa-grid button:hover { background: #EDF5F4; border-color: var(--gw-pine, #4D8A86); }
+.gw-myday-qa-grid button svg { flex-shrink: 0; color: var(--gw-pine, #4D8A86); }
+.gw-myday-scratch {
+  width: 100%; min-height: 140px; resize: vertical;
+  border: 1px solid var(--gw-line, #E2EAE9); border-radius: 10px;
+  padding: 12px; margin-top: 10px;
+  font: inherit; font-size: 13.5px; line-height: 1.55; color: var(--gw-ink, #1F2A2B);
+  background: #FFFEF8;
+}
+.gw-myday-scratch:focus { outline: none; border-color: var(--gw-pine, #4D8A86); box-shadow: 0 0 0 3px rgba(77,138,134,.14); }
+
+/* customize-mode body stays interactive for scratchpad in edit mode? no — keep uniform */
