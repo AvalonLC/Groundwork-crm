@@ -2412,14 +2412,48 @@ function pipeline(selectedId){
               </div>`).join('')}
         </div>`
       : /* ── Desktop: kanban ── */ `
-        <div class="kanban mt">
-          ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
-            ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"
-          ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+        <div class="gw-kanban-wrap mt">
+          <div class="kanban" id="gw-kanban-board">
+            ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
+              ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"
+            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+          </div>
+          <div class="gw-scroll-more gw-scroll-more--hidden" id="gw-scroll-more">
+            <button type="button" class="gw-scroll-more-btn" onclick="gwPipeScrollRight()">
+              More stages
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
         </div>`
     }
   `;
+
+  // ── "More stages" indicator: visible while the board overflows right ───────
+  if (!_isMobilePipe) setTimeout(gwPipeUpdateScrollHint, 0);
 }
+
+// Show/hide the right-edge scroll hint based on remaining horizontal scroll
+window.gwPipeUpdateScrollHint = function() {
+  const board = document.getElementById('gw-kanban-board');
+  const hint  = document.getElementById('gw-scroll-more');
+  if (!board || !hint) return;
+  const update = () => {
+    const remaining = board.scrollWidth - board.clientWidth - board.scrollLeft;
+    hint.classList.toggle('gw-scroll-more--hidden', remaining <= 24);
+  };
+  update();
+  if (!board._gwScrollWired) {
+    board._gwScrollWired = true;
+    board.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+  }
+};
+
+// Scroll the board right by roughly two columns
+window.gwPipeScrollRight = function() {
+  const board = document.getElementById('gw-kanban-board');
+  if (board) board.scrollBy({ left: 480, behavior: 'smooth' });
+};
 
 window.filterPipelineByRep = function(repId) {
   window._pipelineRepFilter = repId;
