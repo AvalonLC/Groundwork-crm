@@ -124,6 +124,30 @@ npx wrangler d1 execute avalon-sales-hub-production --local --command "SELECT CO
 
 ---
 
+## Multi-tenant lifecycle (added 2026-07-14)
+
+- **Public signup**: `/signup` (`/onboard` 301-redirects there). Protected by an invisible honeypot
+  field and an IP rate limit (3 signups/hour, settings key `_signup_rl_<ip>`). New companies get a
+  14-day trial (`subscription_status='trial'`, `trial_expires_at`).
+- **Email verification**: soft gate. If `SENDGRID_API_KEY` is set, signup sends a verify link
+  (`/api/auth/verify-email?token=`); the app shows a bottom banner with "Resend link" until verified.
+  Status is stored as settings key `<companyId>:email_verified_<repId>`.
+- **Trial enforcement**: `requireAuth` returns **402 trial_expired** on data routes once
+  `trial_expires_at` passes (auth/branding/companies/poll remain reachable so the app can render the
+  upgrade overlay). Frontend shows a full-screen "trial ended" overlay + a countdown pill in the topbar.
+  To extend/upgrade: Platform Admin → edit company plan, or set `trial_expires_at` / `subscription_status`.
+- **Suspension**: setting a company `active=0` blocks login (403) and all API calls (`company_suspended`).
+- **Password reset**: `/api/auth/reset-request` (emails 6-digit OTP) → `/api/auth/reset-pin`. Wired to
+  the "Forgot?" panel on the login screen. Requires `SENDGRID_API_KEY` for email delivery.
+- **Company delete**: Platform Admin → Companies → **Delete** (type-to-confirm) or
+  `DELETE /api/admin/companies/:id?confirm=<id>` — purges all tenant rows, settings, and sessions.
+  `avalon` and `groundwork_platform` are protected.
+- **Company export**: Settings → Export → "Full Company Export (Cloud)" or `GET /api/company/export`
+  (admin/office manager) — JSON of every tenant table, credentials stripped.
+- **Schema self-heal**: first signup on any deployment runs embedded migrations 0022–0030
+  idempotently (`ensureFullSchema`, flag `_schema_full_v1`) so production D1 never lags the code.
+- **E2E tests**: `node tests/e2e_full.js` (see tests/README.md).
+
 ## Environment variables / secrets
 
 | Variable | Where to set | Purpose |
