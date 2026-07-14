@@ -2326,9 +2326,6 @@ function _gwTodayRender() {
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
-        <button class="primary-btn small" onclick="window._gwTodayNewTask()">+ New Task</button>
-        ${_isField ? '' : `<button class="secondary-btn small" onclick="show('lead')">+ New Lead</button>`}
-        ${_isField ? '' : `<button class="secondary-btn small" onclick="show('pipeline')">Pipeline</button>`}
         ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize My Day widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
       </div>
     </div>`;
