@@ -12330,46 +12330,84 @@ window.openCallCompanion = function(oppId) {
   // Remove any existing companion
   document.getElementById('gw-call-companion')?.remove();
 
-  const stageNum     = Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
+  const currentStageNum = Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
   const stagesData   = (window.AVALON_DATA && window.AVALON_DATA.stages) || [];
-  const stageData    = stagesData.find(s => s.id === stageNum) || stagesData[0] || {};
   const checklists   = (window.AVALON_DATA && window.AVALON_DATA.checklists) || [];
-  const stageCl      = checklists.find(c => c.stage === stageNum);
   const sp           = (window.AVALON_DATA && window.AVALON_DATA.salesProcess) || {};
   const steps        = sp.steps || [];
   const stepColors   = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#4D8A86'];
+  const maxStage     = stagesData.length ? Math.max(...stagesData.map(s=>s.id)) : 1;
 
-  // ── Build questions HTML
-  const qHtml = (stageData.questions || []).length
-    ? stageData.questions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
-    : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
+  // ── Size presets (S / M / L) + custom drag-resize ──────────────────────────
+  const CC_SIZES = { S:{w:340,h:320}, M:{w:440,h:460}, L:{w:580,h:600} };
+  let ccSize   = localStorage.getItem('gw-cc-size') || 'M';
+  if (!CC_SIZES[ccSize]) ccSize = 'M';
+  let ccCustom = null; // {w,h} once user drag-resizes
+  try { const c = JSON.parse(localStorage.getItem('gw-cc-custom-size')||'null'); if (c && c.w) ccCustom = c; } catch(e){}
 
-  // ── Build checklist HTML (inline, no wireChecks needed — handled below)
-  const clPrefix = `cc-cl-${stageNum}-${oppId}`;
-  const clHtml = stageCl
-    ? `<div style="margin-top:10px">
-        <div class="gw-cc-section-label">${escapeHtml(stageCl.title)}</div>
-        ${stageCl.items.map((item, i) => {
+  // ── Which stage is currently displayed in the Stage Guide tab ─────────────
+  let ccStageView = currentStageNum;
+
+  // ── Build stage guide content for any stage number ─────────────────────────
+  function ccStageBody(n) {
+    const sd = stagesData.find(s => s.id === n) || {};
+    const cl = checklists.find(c => c.stage === n);
+
+    const qHtml = (sd.questions || []).length
+      ? sd.questions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
+      : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
+
+    const clPrefix = `cc-cl-${n}-${oppId}`;
+    let clHtml = '<div class="gw-cc-empty">No checklist for this stage.</div>';
+    if (cl) {
+      const done = cl.items.filter((_, i) => localStorage.getItem(`${clPrefix}-${i}`) === '1').length;
+      const pct  = cl.items.length ? Math.round(done / cl.items.length * 100) : 0;
+      clHtml = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="gw-cc-section-label" style="margin:0">${escapeHtml(cl.title)}</div>
+          <span id="gw-cc-cl-count" style="font-size:10.5px;font-weight:800;color:#2D7A55">${done}/${cl.items.length}</span>
+        </div>
+        <div style="height:4px;background:#E8E4DC;border-radius:99px;margin-bottom:10px;overflow:hidden">
+          <div id="gw-cc-cl-bar" style="height:100%;width:${pct}%;background:#2D7A55;border-radius:99px;transition:width .25s"></div>
+        </div>
+        ${cl.items.map((item, i) => {
           const key = `${clPrefix}-${i}`;
           const checked = localStorage.getItem(key) === '1';
           return `<label class="gw-cc-check-row${checked?' gw-cc-check-done':''}">
-            <input type="checkbox" data-key="${key}" ${checked?'checked':''} onchange="(function(el){
-              const k=el.dataset.key; localStorage.setItem(k,el.checked?'1':'0');
-              el.closest('label').classList.toggle('gw-cc-check-done',el.checked);
+            <input type="checkbox" data-key="${key}" data-total="${cl.items.length}" data-prefix="${clPrefix}" ${checked?'checked':''} onchange="(function(el){
+              localStorage.setItem(el.dataset.key, el.checked?'1':'0');
+              el.closest('label').classList.toggle('gw-cc-check-done', el.checked);
+              var total = Number(el.dataset.total)||0, done = 0;
+              for (var i=0;i<total;i++) if (localStorage.getItem(el.dataset.prefix+'-'+i)==='1') done++;
+              var cnt=document.getElementById('gw-cc-cl-count'); if(cnt) cnt.textContent = done+'/'+total;
+              var bar=document.getElementById('gw-cc-cl-bar'); if(bar) bar.style.width = (total?Math.round(done/total*100):0)+'%';
             })(this)">
             <span>${escapeHtml(item)}</span>
           </label>`;
-        }).join('')}
-       </div>`
-    : '<div class="gw-cc-empty">No checklist for this stage.</div>';
+        }).join('')}`;
+    }
 
-  // ── Red flags
-  const rfHtml = (stageData.redFlags || []).length
-    ? `<div style="margin-top:12px"><div class="gw-cc-section-label" style="color:#C97B6A">Red Flags to Watch</div>
-        ${stageData.redFlags.map(f => `<div class="gw-cc-rf">${escapeHtml(f)}</div>`).join('')}</div>`
-    : '';
+    const rfHtml = (sd.redFlags || []).length
+      ? `<div style="margin-top:14px"><div class="gw-cc-section-label" style="color:#C97B6A">Red Flags to Watch</div>
+          ${sd.redFlags.map(f => `<div class="gw-cc-rf">${escapeHtml(f)}</div>`).join('')}</div>`
+      : '';
 
-  // ── Steps tab
+    const isCurrent = n === currentStageNum;
+    return `
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Stage ${n}: ${escapeHtml(sd.title || '')}</span>
+        ${isCurrent
+          ? '<span style="font-size:9px;font-weight:800;color:#fff;background:#2D7A55;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.05em">Current</span>'
+          : `<button type="button" onclick="gwCCStageGo(${currentStageNum})" style="font-size:9px;font-weight:800;color:#8B6914;background:#8B691415;border:1px solid #8B691430;border-radius:99px;padding:2px 8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em">Viewing other stage — back to current</button>`}
+      </div>
+      <div style="font-size:11px;color:#5E6E6F;margin-bottom:12px;line-height:1.55">${escapeHtml(sd.purpose || '')}</div>
+      <div class="gw-cc-section-label">Discovery Questions</div>
+      ${qHtml}
+      ${rfHtml}
+      <div style="margin-top:14px">${clHtml}</div>`;
+  }
+
+  // ── Steps tab ───────────────────────────────────────────────────────────────
   const stepsHtml = steps.map((s, i) => `
     <div class="gw-cc-step" style="border-left:3px solid ${stepColors[i]||'#4D8A86'}">
       <div style="font-size:10px;font-weight:800;color:${stepColors[i]||'#4D8A86'};text-transform:uppercase;letter-spacing:.05em">Step ${s.num}</div>
@@ -12378,110 +12416,203 @@ window.openCallCompanion = function(oppId) {
       ${(s.cbrQuestions||[]).slice(0,3).map(q=>`<div class="gw-cc-q" style="margin-top:4px;font-size:11px">${escapeHtml(q)}</div>`).join('')}
     </div>`).join('');
 
+  // ── Post-call output generators ─────────────────────────────────────────────
+  const CC_GENS = [
+    { id:'summary_email', label:'Summary + Next Steps Email',            desc:'Client-ready recap email with clear next steps' },
+    { id:'full_package',  label:'Summary + SOW + Budget + Next Steps',   desc:'Full follow-up: recap, scope of work, X–Y budget range, next steps' },
+    { id:'sow_budget',    label:'SOW + X–Y Budget Only',                 desc:'Scope of work with a working budget range — no email wrapper' },
+    { id:'client_recap',  label:'Client Thank-You Recap',                desc:'Short, warm thank-you email confirming what you heard' },
+    { id:'handoff_note',  label:'Internal Handoff Note',                 desc:'Structured note for your team / production handoff' },
+  ];
+  const genBtnsHtml = CC_GENS.map(g => `
+    <button type="button" class="gw-cc-gen-btn" onclick="gwCCGenerate('${oppId}','${g.id}')" title="${escapeHtml(g.desc)}">
+      <span style="font-weight:700">${escapeHtml(g.label)}</span>
+      <span style="font-size:10px;color:#7C8A85;font-weight:500;display:block;margin-top:1px">${escapeHtml(g.desc)}</span>
+    </button>`).join('');
+
   const panel = document.createElement('div');
   panel.id = 'gw-call-companion';
   panel.innerHTML = `
     <div id="gw-cc-drag-handle" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:linear-gradient(135deg,#0f2d1f,#1a3a2a);border-radius:14px 14px 0 0;cursor:grab;user-select:none">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:gw-cc-pulse 1.5s infinite"></div>
-        <span style="font-size:12px;font-weight:800;color:#fff;letter-spacing:.02em">Call Companion</span>
-        <span style="font-size:10px;color:#4ade8090;font-weight:600">${escapeHtml(o.client||'Lead')}</span>
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <div style="width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:gw-cc-pulse 1.5s infinite;flex-shrink:0"></div>
+        <span style="font-size:12px;font-weight:800;color:#fff;letter-spacing:.02em;white-space:nowrap">Call Companion</span>
+        <span style="font-size:10px;color:#4ade8090;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.client||'Lead')}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <button type="button" onclick="document.getElementById('gw-call-companion').style.display='none'" title="Minimise"
-          style="background:#ffffff18;border:none;color:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center">—</button>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+        <div style="display:flex;gap:2px;background:#ffffff12;border-radius:7px;padding:2px" title="Panel size">
+          ${['S','M','L'].map(sz => `<button type="button" id="gw-cc-size-${sz}" onclick="gwCCSetSize('${sz}')"
+            style="background:${sz===ccSize?'#ffffff28':'transparent'};border:none;color:#fff;border-radius:5px;width:20px;height:18px;cursor:pointer;font-size:9px;font-weight:800;line-height:1">${sz}</button>`).join('')}
+        </div>
+        <button type="button" id="gw-cc-min-btn" onclick="gwCCMinToggle()" title="Minimise / restore"
+          style="background:#ffffff18;border:none;color:#fff;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center">&#8212;</button>
         <button type="button" onclick="document.getElementById('gw-call-companion').remove()" title="Close"
           style="background:#f8717130;border:none;color:#f87171;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center">&times;</button>
       </div>
     </div>
 
-    <!-- Tab bar -->
-    <div style="display:flex;border-bottom:1px solid #E0DDD5;background:#fff">
-      ${['stage','steps','transcript'].map((t,i)=>`
-        <button type="button" id="gw-cc-tab-${t}" onclick="gwCCTab('${t}')"
-          style="flex:1;padding:9px 4px;font-size:11px;font-weight:700;border:none;cursor:pointer;border-bottom:2px solid ${i===0?'#2D7A55':'transparent'};color:${i===0?'#2D7A55':'#5E6E6F'};background:transparent;transition:all .15s">
-          ${t==='stage'?'Stage Guide':t==='steps'?'All Steps':'Transcript'}
-        </button>`).join('')}
-    </div>
-
-    <!-- Tab: Stage Guide -->
-    <div id="gw-cc-panel-stage" style="padding:12px;overflow-y:auto;max-height:380px">
-      <div style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Stage ${stageNum}: ${escapeHtml(stageData.title||o.status)}</div>
-      <div style="font-size:11px;color:#5E6E6F;margin-bottom:10px;line-height:1.5">${escapeHtml(stageData.purpose||'')}</div>
-      <div class="gw-cc-section-label">Discovery Questions</div>
-      ${qHtml}
-      ${rfHtml}
-      <div style="margin-top:14px"><div class="gw-cc-section-label">Stage Checklist</div>${clHtml}</div>
-    </div>
-
-    <!-- Tab: All Steps -->
-    <div id="gw-cc-panel-steps" style="display:none;padding:12px;overflow-y:auto;max-height:380px">
-      ${stepsHtml || '<div class="gw-cc-empty">No process steps found.</div>'}
-    </div>
-
-    <!-- Tab: Transcript -->
-    <div id="gw-cc-panel-transcript" style="display:none;padding:12px;overflow-y:auto;max-height:380px">
-      <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <button type="button" id="gw-cc-rec-btn" onclick="gwCCRecToggle('${oppId}')"
-          style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">
-          <span id="gw-cc-rec-dot" style="width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block"></span>
-          <span id="gw-cc-rec-label">Start Recording</span>
-        </button>
-        <span id="gw-cc-rec-timer" style="font-size:11px;color:#5E6E6F;font-weight:600"></span>
+    <div id="gw-cc-body">
+      <!-- Tab bar -->
+      <div style="display:flex;border-bottom:1px solid #E0DDD5;background:#fff">
+        ${['stage','steps','transcript'].map((t,i)=>`
+          <button type="button" id="gw-cc-tab-${t}" onclick="gwCCTab('${t}')"
+            style="flex:1;padding:9px 4px;font-size:11px;font-weight:700;border:none;cursor:pointer;border-bottom:2px solid ${i===0?'#2D7A55':'transparent'};color:${i===0?'#2D7A55':'#5E6E6F'};background:transparent;transition:all .15s">
+            ${t==='stage'?'Stage Guide':t==='steps'?'All Steps':'Transcript'}
+          </button>`).join('')}
       </div>
-      <div style="font-size:10px;color:#9CA3A3;margin-bottom:8px">Transcription happens in your browser — nothing is sent externally during recording.</div>
-      <textarea id="gw-cc-transcript-ta" rows="8" placeholder="Transcript will appear here as you speak. You can also type notes manually…"
-        style="width:100%;border:1px solid #E0DDD5;border-radius:9px;padding:9px 11px;font-size:12px;resize:vertical;box-sizing:border-box;color:#1F2A2B;background:#FAFAF8;line-height:1.6"></textarea>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-        <button type="button" onclick="gwCCSaveTranscript('${oppId}')"
-          style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
-          Save to Call Log
-        </button>
-        <button type="button" onclick="gwCCSummarise('${oppId}')"
-          style="padding:7px 14px;background:#4D8A86;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
-          AI Next Steps
-        </button>
-        <button type="button" onclick="document.getElementById('gw-cc-transcript-ta').value=''"
-          style="padding:7px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:8px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
-          Clear
-        </button>
+
+      <!-- Tab: Stage Guide -->
+      <div id="gw-cc-panel-stage" class="gw-cc-scroll" style="padding:12px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <button type="button" class="gw-cc-nav-btn" id="gw-cc-stage-prev">&#9664;</button>
+          <select id="gw-cc-stage-select" onchange="gwCCStageGo(Number(this.value))"
+            style="flex:1;padding:6px 8px;border:1px solid #E0DDD5;border-radius:8px;font-size:11.5px;font-weight:700;color:#1F2A2B;background:#FAFAF8;cursor:pointer">
+            ${stagesData.map(s => `<option value="${s.id}">Stage ${s.id} — ${escapeHtml(s.title||'')}${s.id===currentStageNum?' (current)':''}</option>`).join('')}
+          </select>
+          <button type="button" class="gw-cc-nav-btn" id="gw-cc-stage-next">&#9654;</button>
+        </div>
+        <div id="gw-cc-stage-body"></div>
       </div>
-      <div id="gw-cc-summary-out" style="display:none;margin-top:12px;padding:12px;background:#EAF1EE;border:1px solid #2D7A5530;border-radius:10px">
-        <div style="font-size:11px;font-weight:800;color:#1A4740;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">AI Summary &amp; Next Steps</div>
-        <div id="gw-cc-summary-text" style="font-size:12px;color:#1F2A2B;line-height:1.7;white-space:pre-wrap"></div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button type="button" onclick="gwCCSaveNote('${oppId}')"
-            style="padding:6px 12px;background:#2D7A55;border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
-            Save as Note
+
+      <!-- Tab: All Steps -->
+      <div id="gw-cc-panel-steps" class="gw-cc-scroll" style="display:none;padding:12px">
+        ${stepsHtml || '<div class="gw-cc-empty">No process steps found.</div>'}
+      </div>
+
+      <!-- Tab: Transcript -->
+      <div id="gw-cc-panel-transcript" class="gw-cc-scroll" style="display:none;padding:12px">
+        <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" id="gw-cc-rec-btn" onclick="gwCCRecToggle('${oppId}')"
+            style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">
+            <span id="gw-cc-rec-dot" style="width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block"></span>
+            <span id="gw-cc-rec-label">Start Recording</span>
           </button>
-          <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('gw-cc-summary-text').textContent).then(()=>window.showToast('Copied!'))"
-            style="padding:6px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:7px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
-            Copy
+          <span id="gw-cc-rec-timer" style="font-size:11px;color:#5E6E6F;font-weight:600"></span>
+        </div>
+        <div style="font-size:10px;color:#9CA3A3;margin-bottom:8px">Transcription happens in your browser — nothing is sent externally during recording.</div>
+        <textarea id="gw-cc-transcript-ta" rows="7" placeholder="Transcript will appear here as you speak. You can also type notes manually…"
+          style="width:100%;border:1px solid #E0DDD5;border-radius:9px;padding:9px 11px;font-size:12px;resize:vertical;box-sizing:border-box;color:#1F2A2B;background:#FAFAF8;line-height:1.6"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button type="button" onclick="gwCCSaveTranscript('${oppId}')"
+            style="padding:7px 14px;background:#2D7A55;border:none;border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
+            Save to Call Log
           </button>
+          <button type="button" onclick="document.getElementById('gw-cc-transcript-ta').value=''"
+            style="padding:7px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:8px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
+            Clear
+          </button>
+        </div>
+
+        <!-- Post-call generators -->
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #E0DDD5">
+          <div class="gw-cc-section-label">Generate From This Call</div>
+          <div style="display:flex;flex-direction:column;gap:6px">${genBtnsHtml}</div>
+        </div>
+
+        <div id="gw-cc-summary-out" style="display:none;margin-top:12px;padding:12px;background:#EAF1EE;border:1px solid #2D7A5530;border-radius:10px">
+          <div id="gw-cc-summary-title" style="font-size:11px;font-weight:800;color:#1A4740;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Generated Output</div>
+          <div id="gw-cc-summary-text" style="font-size:12px;color:#1F2A2B;line-height:1.7;white-space:pre-wrap"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('gw-cc-summary-text').textContent).then(()=>window.showToast&&window.showToast('Copied!'))"
+              style="padding:6px 12px;background:#2D7A55;border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">
+              Copy
+            </button>
+            <button type="button" onclick="gwCCSaveNote('${oppId}')"
+              style="padding:6px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:7px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
+              Save as Note
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
+    <div id="gw-cc-resize-grip" title="Drag to resize"
+      style="position:absolute;left:0;bottom:0;width:18px;height:18px;cursor:nesw-resize;display:flex;align-items:flex-end;justify-content:flex-start;padding:3px;opacity:.45">
+      <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 9L9 1M1 5L5 1" stroke="#5E6E6F" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </div>
+
     <style>
-      #gw-call-companion { position:fixed;bottom:24px;right:24px;width:360px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25),0 4px 16px rgba(0,0,0,.15);z-index:9800;background:#fff;border:1px solid #E0DDD5;font-family:inherit }
+      #gw-call-companion { position:fixed;bottom:24px;right:24px;width:440px;max-width:95vw;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25),0 4px 16px rgba(0,0,0,.15);z-index:9800;background:#fff;border:1px solid #E0DDD5;font-family:inherit }
+      #gw-call-companion .gw-cc-scroll { overflow-y:auto;max-height:460px }
       .gw-cc-section-label { font-size:10px;font-weight:800;color:#5E6E6F;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;display:block }
       .gw-cc-q { font-size:11.5px;color:#1F2A2B;padding:6px 9px;background:#F5F2EC;border-radius:7px;margin-bottom:5px;line-height:1.5 }
       .gw-cc-rf { font-size:11.5px;color:#7A2E20;padding:6px 9px;background:#FAE8E430;border-radius:7px;margin-bottom:5px;line-height:1.5 }
       .gw-cc-empty { font-size:12px;color:#9CA3A3;font-style:italic;padding:8px 0 }
       .gw-cc-step { padding:10px;background:#FAFAF8;border-radius:8px;margin-bottom:8px }
-      .gw-cc-check-row { display:flex;align-items:flex-start;gap:8px;padding:5px 0;cursor:pointer;font-size:12px;color:#1F2A2B;line-height:1.45 }
-      .gw-cc-check-row input { margin-top:2px;accent-color:#2D7A55;flex-shrink:0 }
-      .gw-cc-check-done { opacity:.55;text-decoration:line-through }
+      .gw-cc-check-row { display:flex;align-items:flex-start;gap:10px;padding:8px 10px;background:#FAFAF8;border:1px solid #EEEAE2;border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:12px;color:#1F2A2B;line-height:1.5;transition:background .12s }
+      .gw-cc-check-row:hover { background:#F3F0E9 }
+      .gw-cc-check-row input { margin-top:2px;accent-color:#2D7A55;flex-shrink:0;width:14px;height:14px }
+      .gw-cc-check-done { opacity:.55 }
+      .gw-cc-check-done span { text-decoration:line-through }
+      .gw-cc-nav-btn { background:#F5F2EC;border:1px solid #E0DDD5;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:9px;color:#5E6E6F;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s }
+      .gw-cc-nav-btn:hover { background:#2D7A55;border-color:#2D7A55;color:#fff }
+      .gw-cc-gen-btn { text-align:left;padding:8px 11px;background:#FAFAF8;border:1px solid #E0DDD5;border-radius:9px;cursor:pointer;font-size:11.5px;color:#1F2A2B;line-height:1.35;transition:all .12s }
+      .gw-cc-gen-btn:hover { border-color:#2D7A55;background:#EAF1EE }
       @keyframes gw-cc-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     </style>`;
 
   document.body.appendChild(panel);
 
-  // Make draggable
+  // ── Apply size (preset or custom) ───────────────────────────────────────────
+  function applySize() {
+    const dim = ccCustom || CC_SIZES[ccSize];
+    panel.style.width = Math.min(dim.w, window.innerWidth - 20) + 'px';
+    panel.querySelectorAll('.gw-cc-scroll').forEach(el => el.style.maxHeight = dim.h + 'px');
+    ['S','M','L'].forEach(sz => {
+      const b = document.getElementById('gw-cc-size-' + sz);
+      if (b) b.style.background = (!ccCustom && sz === ccSize) ? '#ffffff28' : 'transparent';
+    });
+  }
+  applySize();
+
+  window.gwCCSetSize = function(sz) {
+    if (!CC_SIZES[sz]) return;
+    ccSize = sz; ccCustom = null;
+    localStorage.setItem('gw-cc-size', sz);
+    localStorage.removeItem('gw-cc-custom-size');
+    applySize();
+  };
+
+  // ── Minimise toggle (collapse to header bar) ────────────────────────────────
+  let ccMinimised = false;
+  window.gwCCMinToggle = function() {
+    ccMinimised = !ccMinimised;
+    const body = document.getElementById('gw-cc-body');
+    const grip = document.getElementById('gw-cc-resize-grip');
+    const btn  = document.getElementById('gw-cc-min-btn');
+    if (body) body.style.display = ccMinimised ? 'none' : '';
+    if (grip) grip.style.display = ccMinimised ? 'none' : '';
+    if (btn)  btn.innerHTML = ccMinimised ? '&#9633;' : '&#8212;';
+    const handle = document.getElementById('gw-cc-drag-handle');
+    if (handle) handle.style.borderRadius = ccMinimised ? '14px' : '14px 14px 0 0';
+  };
+
+  // ── Stage navigation ────────────────────────────────────────────────────────
+  window._ccStageView = ccStageView;
+  window.gwCCStageGo = function(n) {
+    n = Math.max(1, Math.min(maxStage, Number(n) || 1));
+    ccStageView = n;
+    window._ccStageView = n;
+    const body = document.getElementById('gw-cc-stage-body');
+    if (body) body.innerHTML = ccStageBody(n);
+    const sel = document.getElementById('gw-cc-stage-select');
+    if (sel) sel.value = String(n);
+    const prev = document.getElementById('gw-cc-stage-prev');
+    const next = document.getElementById('gw-cc-stage-next');
+    if (prev) prev.style.opacity = n <= 1 ? '.35' : '1';
+    if (next) next.style.opacity = n >= maxStage ? '.35' : '1';
+  };
+  // Wire prev/next (avoid template-literal escaping issues by binding here)
+  document.getElementById('gw-cc-stage-prev').onclick = () => gwCCStageGo(ccStageView - 1);
+  document.getElementById('gw-cc-stage-next').onclick = () => gwCCStageGo(ccStageView + 1);
+  gwCCStageGo(currentStageNum);
+
+  // ── Make draggable ──────────────────────────────────────────────────────────
   (function(){
     const handle = document.getElementById('gw-cc-drag-handle');
     let dragging = false, startX, startY, origRight, origBottom;
     handle.addEventListener('mousedown', e => {
+      if (e.target.closest('button')) return; // don't drag from buttons
       dragging = true;
       startX = e.clientX; startY = e.clientY;
       const rect = panel.getBoundingClientRect();
@@ -12499,7 +12630,34 @@ window.openCallCompanion = function(oppId) {
     document.addEventListener('mouseup', () => { dragging = false; handle.style.cursor = 'grab'; });
   })();
 
-  // Tab switching
+  // ── Custom drag-resize (bottom-left grip; panel anchored bottom-right) ─────
+  (function(){
+    const grip = document.getElementById('gw-cc-resize-grip');
+    let resizing = false, startX, startY, origW, origH;
+    grip.addEventListener('mousedown', e => {
+      resizing = true;
+      startX = e.clientX; startY = e.clientY;
+      origW = panel.getBoundingClientRect().width;
+      const firstScroll = panel.querySelector('.gw-cc-scroll');
+      origH = firstScroll ? parseInt(firstScroll.style.maxHeight || '460', 10) : 460;
+      e.preventDefault(); e.stopPropagation();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!resizing) return;
+      const w = Math.max(300, Math.min(window.innerWidth - 20, origW + (startX - e.clientX)));
+      const h = Math.max(220, Math.min(window.innerHeight - 140, origH + (e.clientY - startY)));
+      ccCustom = { w: Math.round(w), h: Math.round(h) };
+      panel.style.width = ccCustom.w + 'px';
+      panel.querySelectorAll('.gw-cc-scroll').forEach(el => el.style.maxHeight = ccCustom.h + 'px');
+      ['S','M','L'].forEach(sz => { const b = document.getElementById('gw-cc-size-'+sz); if (b) b.style.background = 'transparent'; });
+    });
+    document.addEventListener('mouseup', () => {
+      if (resizing && ccCustom) { try { localStorage.setItem('gw-cc-custom-size', JSON.stringify(ccCustom)); } catch(e){} }
+      resizing = false;
+    });
+  })();
+
+  // ── Tab switching ───────────────────────────────────────────────────────────
   window.gwCCTab = function(tab) {
     ['stage','steps','transcript'].forEach(t => {
       const p = document.getElementById('gw-cc-panel-'+t);
@@ -12512,7 +12670,7 @@ window.openCallCompanion = function(oppId) {
     });
   };
 
-  // Transcript recorder (Web Speech API)
+  // ── Transcript recorder (Web Speech API) ────────────────────────────────────
   let _ccRecognition = null, _ccRecording = false, _ccTimerInterval = null, _ccSeconds = 0;
 
   window.gwCCRecToggle = function(oid) {
@@ -12535,19 +12693,12 @@ window.openCallCompanion = function(oppId) {
       _ccRecognition.interimResults = true;
       _ccRecognition.lang           = 'en-US';
 
-      let _interim = '';
       _ccRecognition.onresult = (e) => {
-        let interim = '', final = '';
+        let final = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
-          else interim += e.results[i][0].transcript;
         }
-        if (final) {
-          ta.value += final;
-          _interim = '';
-        } else {
-          _interim = interim;
-        }
+        if (final) ta.value += final;
       };
       _ccRecognition.onerror = (e) => {
         if (e.error !== 'no-speech') window.showToast && window.showToast('Mic error: ' + e.error);
@@ -12576,11 +12727,11 @@ window.openCallCompanion = function(oppId) {
       if (btn)   btn.style.background = '#2D7A55';
       if (dot)   dot.style.background = '#4ade80';
       if (label) label.textContent = 'Start Recording';
-      window.showToast && window.showToast('Recording stopped');
+      window.showToast && window.showToast('Recording stopped — pick a generator below to turn the call into an email, SOW, or note');
     }
   };
 
-  // Save transcript as a communication log entry
+  // ── Save transcript as a communication log entry ────────────────────────────
   window.gwCCSaveTranscript = function(oid) {
     const ta = document.getElementById('gw-cc-transcript-ta');
     if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Nothing to save yet'); return; }
@@ -12600,7 +12751,6 @@ window.openCallCompanion = function(oppId) {
     if (!state.communications) state.communications = [];
     state.communications.unshift(entry);
     saveState();
-    // D1 write-through
     fetch('/api/opportunities/' + oid + '/comms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -12610,36 +12760,25 @@ window.openCallCompanion = function(oppId) {
     window.showToast && window.showToast('Transcript saved to call log');
   };
 
-  // AI next-steps summary from transcript using AI Sales Assistant
-  window.gwCCSummarise = function(oid) {
+  // ── Generate output from transcript (AI with local fallback) ────────────────
+  window.gwCCGenerate = function(oid, kind) {
     const ta  = document.getElementById('gw-cc-transcript-ta');
     const out = document.getElementById('gw-cc-summary-out');
     const txt = document.getElementById('gw-cc-summary-text');
-    if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Add a transcript first'); return; }
+    const ttl = document.getElementById('gw-cc-summary-title');
+    if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Record or type a transcript first'); return; }
     if (!out || !txt) return;
 
-    const opp = (state && state.opportunities || []).find(x => x.id === oid);
+    const opp        = (state && state.opportunities || []).find(x => x.id === oid);
     const transcript = ta.value.trim();
+    const gen        = CC_GENS.find(g => g.id === kind);
 
     out.style.display = 'block';
-    txt.textContent = 'Analysing transcript…';
+    if (ttl) ttl.textContent = gen ? gen.label : 'Generated Output';
+    txt.textContent = 'Generating…';
+    out.scrollIntoView({ behavior:'smooth', block:'nearest' });
 
-    // Use the OpenAI integration if available, otherwise build a structured local summary
-    const prompt = `You are a sales call analyst for a premium landscaping company. Analyse this call transcript and provide:
-1. SUMMARY (2-3 sentences of what was discussed)
-2. KEY PAIN POINTS (bullet list)
-3. DECISION DRIVERS (what they need to move forward)
-4. NEXT STEPS (clear action items with suggested timing)
-5. EMAIL SUBJECT LINE (ready to use for follow-up email)
-
-Client: ${opp ? (opp.client||'Unknown') : 'Unknown'}
-Project: ${opp ? (opp.project||opp.status||'') : ''}
-Stage: ${opp ? (opp.status||'') : ''}
-
-TRANSCRIPT:
-${transcript.slice(0, 3000)}`;
-
-    // Try to call the AI endpoint
+    const prompt = gwCCBuildPrompt(kind, transcript, opp);
     fetch('/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -12647,24 +12786,16 @@ ${transcript.slice(0, 3000)}`;
       body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], model: 'gpt-4o-mini' })
     })
     .then(r => r.json())
-    .then(j => {
-      if (j.ok && j.data) {
-        txt.textContent = j.data;
-      } else {
-        // Graceful offline fallback — structured local parse
-        txt.textContent = gwCCLocalSummary(transcript, opp);
-      }
-    })
-    .catch(() => {
-      txt.textContent = gwCCLocalSummary(transcript, opp);
-    });
+    .then(j => { txt.textContent = (j.ok && j.data) ? j.data : gwCCLocalGen(kind, transcript, opp); })
+    .catch(() => { txt.textContent = gwCCLocalGen(kind, transcript, opp); });
   };
 
-  // Save AI summary as a note on the opportunity
+  // ── Save generated output as a note on the opportunity ──────────────────────
   window.gwCCSaveNote = function(oid) {
     const txt = document.getElementById('gw-cc-summary-text');
-    if (!txt || !txt.textContent.trim()) return;
-    const noteBody = 'Call Summary\n\n' + txt.textContent.trim();
+    const ttl = document.getElementById('gw-cc-summary-title');
+    if (!txt || !txt.textContent.trim() || txt.textContent === 'Generating…') return;
+    const noteBody = (ttl ? ttl.textContent : 'Call Output') + '\n\n' + txt.textContent.trim();
     const ts       = new Date().toISOString();
     const note     = { id: 'note_' + Date.now(), oppId: oid, body: noteBody, createdAt: ts };
     if (!state.notes) state.notes = [];
@@ -12678,9 +12809,71 @@ ${transcript.slice(0, 3000)}`;
       credentials: 'include',
       body: JSON.stringify({ body: noteBody })
     }).catch(() => {});
-    window.showToast && window.showToast('Summary saved as note');
+    window.showToast && window.showToast('Saved as note');
   };
 };
+
+// ── Call Companion: shared prompt + local generation helpers ─────────────────
+function gwCCBudgetRange(opp) {
+  const raw = opp && opp.budget;
+  if (raw == null || raw === '') return '$[X] – $[Y]';
+  const num = Number(String(raw).replace(/[^0-9.]/g, ''));
+  if (isNaN(num) || num <= 0) return String(raw); // already a text range like "10k-15k"
+  const lo = Math.round(num * 0.9  / 100) * 100;
+  const hi = Math.round(num * 1.15 / 100) * 100;
+  return '$' + lo.toLocaleString() + ' – $' + hi.toLocaleString();
+}
+
+function gwCCBuildPrompt(kind, transcript, opp) {
+  const ctx = [
+    'Client: '  + (opp && opp.client  || 'Unknown'),
+    'Project: ' + (opp && (opp.project || opp.serviceLine) || 'Landscaping project'),
+    'Stage: '   + (opp && opp.status  || 'Unknown'),
+    'Budget: '  + gwCCBudgetRange(opp),
+  ].join('\n');
+  const base = `You are a sales assistant for a premium landscaping company. Use ONLY details from the transcript — never invent specifics.\n\n${ctx}\n\nTRANSCRIPT:\n${transcript.slice(0, 4000)}\n\n`;
+  switch (kind) {
+    case 'summary_email':
+      return base + 'Write a client-ready follow-up email: 1) SUBJECT line, 2) warm greeting, 3) 2-3 sentence summary of the call, 4) clear NEXT STEPS as a short bullet list with suggested timing, 5) friendly sign-off.';
+    case 'full_package':
+      return base + 'Write a complete follow-up email containing: 1) SUBJECT line, 2) short call summary, 3) SCOPE OF WORK section as a bullet list drawn from what was discussed, 4) WORKING BUDGET RANGE section presenting the range ' + gwCCBudgetRange(opp) + ' with a one-line disclaimer that final pricing follows the site assessment, 5) NEXT STEPS bullets with timing, 6) sign-off.';
+    case 'sow_budget':
+      return base + 'Produce (NOT an email): 1) SCOPE OF WORK — organised bullet list of all work discussed, grouped by area if possible, 2) WORKING BUDGET RANGE — present ' + gwCCBudgetRange(opp) + ' with brief assumptions, 3) EXCLUSIONS / OPEN QUESTIONS — anything unclear from the call.';
+    case 'client_recap':
+      return base + 'Write a short, warm thank-you email (under 120 words): thank them for their time, reflect back the 2-3 most important things you heard (their goals and concerns), and confirm the single next step.';
+    case 'handoff_note':
+      return base + 'Write an INTERNAL handoff note for the team (not client-facing): CLIENT SNAPSHOT, KEY PAIN POINTS, SCOPE DISCUSSED, BUDGET SIGNALS, RED FLAGS / RISKS, NEXT ACTIONS with owner suggestions.';
+    default:
+      return base + 'Summarise the call and list clear next steps.';
+  }
+}
+
+function gwCCLocalGen(kind, transcript, opp) {
+  const client   = opp && opp.client || '[Client Name]';
+  const project  = opp && (opp.project || opp.serviceLine) || 'your landscaping project';
+  const budget   = gwCCBudgetRange(opp);
+  const sents    = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 15);
+  const summary  = sents.slice(0, 3).join('. ') + (sents.length ? '.' : '');
+  const points   = sents.slice(0, 6).map(s => '• ' + (s.length > 110 ? s.slice(0, 110) + '…' : s));
+  const rep      = (window.getCurrentRep && window.getCurrentRep()) || {};
+  const repName  = rep.name || '[Your Name]';
+  const NEXT     = ['• Site assessment / follow-up visit — propose 2 time options', '• Send this recap within 24 hours', '• Update lead stage and next follow-up date in the CRM'];
+
+  switch (kind) {
+    case 'summary_email':
+      return `SUBJECT: Great speaking with you — recap & next steps\n\nHi ${client},\n\nThank you for taking the time to talk today about ${project}. Here's a quick recap of what we covered:\n\n${summary || '(Add call summary)'}\n\nNEXT STEPS\n${NEXT.join('\n')}\n\nIf I missed anything or you'd like to adjust the plan, just reply here.\n\nBest,\n${repName}`;
+    case 'full_package':
+      return `SUBJECT: ${project} — recap, scope & working budget\n\nHi ${client},\n\nThanks again for the conversation today. Here's where we stand:\n\nCALL SUMMARY\n${summary || '(Add call summary)'}\n\nSCOPE OF WORK (as discussed)\n${points.join('\n') || '• (Pull scope items from the transcript)'}\n\nWORKING BUDGET RANGE\nBased on what we discussed, projects like this typically land in the ${budget} range. Final pricing follows our on-site assessment.\n\nNEXT STEPS\n${NEXT.join('\n')}\n\nBest,\n${repName}`;
+    case 'sow_budget':
+      return `SCOPE OF WORK — ${client} / ${project}\n${points.join('\n') || '• (Pull scope items from the transcript)'}\n\nWORKING BUDGET RANGE\n${budget}\nAssumes standard site access and conditions; final pricing follows the on-site assessment.\n\nEXCLUSIONS / OPEN QUESTIONS\n• Confirm property access and utility markouts\n• Confirm material selections and finish level\n• (Add anything left unresolved on the call)`;
+    case 'client_recap':
+      return `SUBJECT: Thank you, ${client}!\n\nHi ${client},\n\nThank you for your time today — I really enjoyed learning about your plans for ${project}. What stood out to me most:\n\n${points.slice(0, 3).join('\n') || '• (Key things you heard)'}\n\nOur next step: I'll follow up with scheduling for the site visit. Talk soon!\n\nWarm regards,\n${repName}`;
+    case 'handoff_note':
+      return `INTERNAL HANDOFF NOTE — ${client}\n\nCLIENT SNAPSHOT\n${client} · ${project} · Stage: ${opp && opp.status || '—'}\n\nKEY POINTS FROM CALL\n${points.join('\n') || '• (Key points)'}\n\nBUDGET SIGNALS\n${budget}\n\nRED FLAGS / RISKS\n• (Review transcript for objections, timing pressure, decision-maker gaps)\n\nNEXT ACTIONS\n${NEXT.join('\n')}\n\n— Logged by ${repName}`;
+    default:
+      return `SUMMARY\n${summary || '(No summary available — add more transcript content)'}\n\nNEXT STEPS\n${NEXT.join('\n')}`;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PHASE 5 — CUSTOMER + MONEY LOOP
@@ -20930,22 +21123,6 @@ function systemTemplates() {
 // ─── END PHASE 7 SCREENS ─────────────────────────────────────────────────────
 
 // Local summary fallback when AI endpoint is unavailable
-function gwCCLocalSummary(transcript, opp) {
-  const sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
-  const summary   = sentences.slice(0, 3).join('. ') + '.';
-  return [
-    'SUMMARY',
-    summary || '(No summary available — add more transcript content)',
-    '',
-    'NEXT STEPS',
-    '• Review transcript and identify action items',
-    '• Send follow-up email within 24 hours',
-    '• Update lead stage and next follow-up date',
-    '',
-    'TIP: Connect the AI Sales Assistant for full AI-powered analysis.',
-  ].join('\n');
-}
-
 // ── PWA Service Worker: DISABLED ────────────────────────────────────────────
 // SW registration removed — the old gw-p49 SW caused a blank-screen reload
 // loop. The /sw.js route serves a self-destructing SW for browsers that still
