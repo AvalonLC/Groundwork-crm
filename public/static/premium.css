@@ -14336,3 +14336,64 @@ h1.pl-title,
 }
 
 /* ── end mobile estimates / inventory / tools ── */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 38 — Pipeline Full-Width Layout + Drag & Drop (July 2026)
+   1) Pipeline view uses the entire screen width (no 1320px cap / side gutters)
+   2) Kanban columns are FLUID: they grow to fill wide monitors, with a sane
+      minimum so cards never squish; horizontal scroll only when truly needed
+   3) Drag & drop visual states for moving leads between stages
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Full-width view when the pipeline board is on screen ── */
+.view:has(> .kanban),
+.view.gw-view--full {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+/* ── 2. Fluid columns: grow on big monitors, min 280px, scroll when cramped ── */
+.kanban {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 14px !important;
+  align-items: flex-start !important;
+  overflow-x: auto !important;
+  padding-bottom: 10px !important;
+}
+.kanban-col {
+  /* Override the fixed 300px: fluid share of the row, floor at 280px */
+  flex: 1 1 280px !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 280px !important;
+}
+
+/* ── 3. Drag & drop states ── */
+.opp-card[draggable="true"] { cursor: grab; }
+.opp-card.gw-dragging {
+  opacity: .45;
+  transform: rotate(1.5deg) scale(.98);
+  cursor: grabbing;
+  box-shadow: 0 12px 30px rgba(31,42,43,.18) !important;
+}
+.kanban-col.gw-drop-target {
+  outline: 2px dashed var(--gw-action, #2D7A55);
+  outline-offset: -2px;
+  background: rgba(45,122,85,.06) !important;
+  transition: background .12s;
+}
+.kanban-col.gw-drop-target > h3 { color: var(--gw-action, #2D7A55) !important; }
+/* Drop hint shown inside the hovered column */
+.gw-drop-hint {
+  border: 2px dashed rgba(45,122,85,.45);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gw-action, #2D7A55);
+  text-align: center;
+  background: rgba(45,122,85,.05);
+  pointer-events: none;
+}

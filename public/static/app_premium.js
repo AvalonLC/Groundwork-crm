@@ -1210,6 +1210,10 @@ function show(viewName='today', param){
   // other view must start clean or the bar would leak onto unrelated pages.
   window._gwPendingSubHeader = null;
 
+  // ── Reset full-width mode; pipeline() re-adds it for the kanban board ──────
+  const _viewEl = document.getElementById('view');
+  if (_viewEl) _viewEl.classList.remove('gw-view--full');
+
   // ── Permission gate (admin-configurable) ─────────────────
   // Platform super-admin bypasses all tenant permission gates
   const _d1 = window._d1SessionRep;
@@ -2218,7 +2222,9 @@ function oppCard(o){
     : isStale
     ? `<span class="urgency-badge stale">STALE ${daysSinceUpdate}d</span>`
     : '';
-  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
+  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}" onclick="show('pipeline','${o.id}')" style="cursor:pointer"
+    draggable="true" data-opp-id="${o.id}"
+    ondragstart="gwPipeDragStart(event,'${o.id}')" ondragend="gwPipeDragEnd(event)">
     <div class="opp-card-top">
       <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
       ${urgencyBadge}
@@ -2287,8 +2293,12 @@ function pipeline(selectedId){
   }
 
   const filters = getPipelineStages();
-  // Build kanban columns for all known statuses
-  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))})).filter(g=>g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
+  // Build kanban columns for all known statuses.
+  // Desktop: keep ALL stage columns visible (drop targets for drag & drop, and
+  // they fill wide monitors). Mobile: only columns with items (list view).
+  const _isMobilePipe = window.innerWidth <= 768;
+  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))}))
+    .filter(g => !_isMobilePipe || g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
   // Catch-all: leads with legacy/unknown status get bucketed into the first stage
   const knownStatuses = new Set(filters);
   const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)));
@@ -2319,6 +2329,9 @@ function pipeline(selectedId){
       </div>
       <button onclick="window._recoverLocalLeads&&window._recoverLocalLeads()" style="background:#4D8A86;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">↑ Sync Now</button>
     </div>` : '';
+
+  // Full-width board: remove the 1320px view cap so wide monitors show more columns
+  view.classList.add('gw-view--full');
 
   view.innerHTML = `
     ${_plUnsyncedBanner}
@@ -2400,7 +2413,9 @@ function pipeline(selectedId){
         </div>`
       : /* ── Desktop: kanban ── */ `
         <div class="kanban mt">
-          ${grouped.map(g=>`<section class="kanban-col"><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+          ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
+            ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"
+          ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
         </div>`
     }
   `;
@@ -2409,6 +2424,79 @@ function pipeline(selectedId){
 window.filterPipelineByRep = function(repId) {
   window._pipelineRepFilter = repId;
   show('pipeline');
+};
+
+// ── Pipeline drag & drop: move a lead between stage columns ──────────────────
+window._gwDraggedOppId = null;
+
+window.gwPipeDragStart = function(ev, oppId) {
+  window._gwDraggedOppId = oppId;
+  try { ev.dataTransfer.setData('text/plain', oppId); ev.dataTransfer.effectAllowed = 'move'; } catch(e) {}
+  const card = ev.target.closest('.opp-card');
+  if (card) setTimeout(() => card.classList.add('gw-dragging'), 0);
+};
+
+window.gwPipeDragEnd = function(ev) {
+  window._gwDraggedOppId = null;
+  document.querySelectorAll('.opp-card.gw-dragging').forEach(c => c.classList.remove('gw-dragging'));
+  document.querySelectorAll('.kanban-col.gw-drop-target').forEach(c => c.classList.remove('gw-drop-target'));
+  document.querySelectorAll('.gw-drop-hint').forEach(h => h.remove());
+};
+
+window.gwPipeDragOver = function(ev) {
+  if (!window._gwDraggedOppId) return;
+  ev.preventDefault(); // required to allow drop
+  try { ev.dataTransfer.dropEffect = 'move'; } catch(e) {}
+};
+
+window.gwPipeDragEnter = function(ev) {
+  if (!window._gwDraggedOppId) return;
+  const col = ev.currentTarget;
+  ev.preventDefault();
+  if (col.classList.contains('gw-drop-target')) return;
+  // Don't highlight the column the card is already in
+  const opp = (state.opportunities||[]).find(o => o.id === window._gwDraggedOppId);
+  if (opp && col.dataset.stage === opp.status) return;
+  col.classList.add('gw-drop-target');
+  if (!col.querySelector('.gw-drop-hint')) {
+    const hint = document.createElement('div');
+    hint.className = 'gw-drop-hint';
+    hint.textContent = 'Move here';
+    const h3 = col.querySelector('h3');
+    if (h3 && h3.nextSibling) col.insertBefore(hint, h3.nextSibling);
+    else col.appendChild(hint);
+  }
+};
+
+window.gwPipeDragLeave = function(ev) {
+  const col = ev.currentTarget;
+  // Only clear when actually leaving the column (not entering a child)
+  if (ev.relatedTarget && col.contains(ev.relatedTarget)) return;
+  col.classList.remove('gw-drop-target');
+  col.querySelectorAll('.gw-drop-hint').forEach(h => h.remove());
+};
+
+window.gwPipeDrop = function(ev) {
+  ev.preventDefault();
+  const col = ev.currentTarget;
+  col.classList.remove('gw-drop-target');
+  col.querySelectorAll('.gw-drop-hint').forEach(h => h.remove());
+
+  const oppId = window._gwDraggedOppId || (function(){ try { return ev.dataTransfer.getData('text/plain'); } catch(e){ return null; } })();
+  window._gwDraggedOppId = null;
+  if (!oppId) return;
+
+  const newStage = col.dataset.stage;
+  const o = (state.opportunities||[]).find(x => x.id === oppId);
+  if (!o || !newStage || o.status === newStage) return;
+
+  const oldStage = o.status;
+  o.status    = newStage;
+  o.updatedAt = new Date().toISOString();
+  saveState();
+  if (typeof _d1SaveOpp === 'function') _d1SaveOpp(o); // D1 write-through
+  if (typeof showToast === 'function') showToast(`${o.client||'Lead'}: ${oldStage} → ${newStage}`);
+  show('pipeline'); // re-render board with updated counts/columns
 };
 
 
