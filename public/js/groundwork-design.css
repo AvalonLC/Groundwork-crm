@@ -663,7 +663,7 @@ p  { line-height: 1.6; margin: 0 0 10px; }
 /* ─── 7. VIEW / PAGE CONTAINER ───────────────────────────────────────────── */
 .view {
   padding: 28px 32px !important;
-  max-width: 1360px !important;
+  max-width: none !important; /* fluid: pages stretch to window width; side padding = content border */
   width: 100%;
   flex: 1;
 }

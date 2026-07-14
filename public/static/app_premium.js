@@ -1995,6 +1995,133 @@ function _gwTodayRenderMobile(opts) {
   }
 }
 
+/* ── My Day customizable widgets (Apple-widget style) ────────────────────────
+   Each dashboard section is a "widget": show/hide, reorder (drag or arrows)
+   and resize (⅓/½/⅔/full width). Layout persists per-user in localStorage. */
+const _GW_MYDAY_SPANS = [2, 3, 4, 6];
+const _GW_MYDAY_SPAN_LABEL = { 2:'\u2153 width', 3:'\u00BD width', 4:'\u2154 width', 6:'Full width' };
+const _GW_MYDAY_WIDGETS = [
+  { id:'pipeStrip', label:'Pipeline Snapshot',       span:6, allowed:c=>!c.isField,        render:c=>c.pipeStrip },
+  { id:'tasks',     label:'My Tasks',                span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
+  { id:'finance',   label:'Financial Pulse',         span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
+  { id:'checklist', label:'Daily Sales Start-Up',    span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>` },
+  { id:'recent',    label:'Recently Updated',        span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>` },
+  { id:'activity',  label:'Weekly Activity Targets', span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml },
+  { id:'reviews',   label:'Reviews',                 span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>' },
+];
+function _gwMyDayLayoutKey(){
+  let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
+  return 'gw-myday-layout-' + ((r && r.id) || 'anon');
+}
+function _gwMyDayResolveLayout(ctx){
+  const avail = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => w.id);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || 'null'); } catch(e) {}
+  const order = [];
+  if (saved && Array.isArray(saved.order)) saved.order.forEach(id => { if (avail.includes(id)) order.push(id); });
+  avail.forEach(id => { if (!order.includes(id)) order.push(id); });
+  const hidden = (saved && Array.isArray(saved.hidden)) ? saved.hidden.filter(id => avail.includes(id)) : [];
+  const spans  = (saved && saved.spans && typeof saved.spans === 'object') ? saved.spans : {};
+  return { order, hidden, spans };
+}
+function _gwMyDaySaveLayout(l){
+  try { localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans })); } catch(e) {}
+}
+function _gwMyDayCurLayout(){
+  // Lightweight role ctx just for layout mutations (allowed() predicates)
+  let rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  if (!rep && window._d1SessionRep) rep = window._d1SessionRep;
+  const isAdmin = rep && (rep.role === 'admin' || rep.role === 'owner');
+  const isOM    = rep && rep.role === 'office_manager';
+  const isField = rep && (_GW_FIELD_ROLES || ['foreman','laborer','field_supervisor']).includes(rep.role);
+  const activityHtml = (typeof renderTodayActivityWidget === 'function') ? renderTodayActivityWidget() : '';
+  return _gwMyDayResolveLayout({ rep, isAdmin, isOM, isField, showFin: isAdmin || isOM, activityHtml });
+}
+function _gwMyDayRenderWidget(id, ctx, layout, editing){
+  const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return '';
+  const hidden = layout.hidden.includes(id);
+  if (hidden && !editing) return '';
+  const html = w.render(ctx) || '';
+  if (!html && !editing) return '';
+  const span = _GW_MYDAY_SPANS.includes(Number(layout.spans[id])) ? Number(layout.spans[id]) : w.span;
+  const bar = editing ? `
+    <div class="gw-myday-widget-bar">
+      <span class="gw-myday-widget-name"><span class="gw-myday-drag-dots">\u28FF</span>${w.label}</span>
+      <span class="gw-myday-widget-btns">
+        <button onclick="gwMyDayMove('${id}',-1)" title="Move earlier">\u2190</button>
+        <button onclick="gwMyDayMove('${id}',1)" title="Move later">\u2192</button>
+        <button onclick="gwMyDaySpanCycle('${id}')" title="Change width">${_GW_MYDAY_SPAN_LABEL[span] || 'Width'}</button>
+        <button class="${hidden ? 'gw-myday-show-btn' : ''}" onclick="gwMyDayToggleHide('${id}')" title="${hidden ? 'Show this widget' : 'Hide this widget'}">${hidden ? 'Show' : 'Hide'}</button>
+      </span>
+    </div>` : '';
+  return `<div class="gw-myday-widget${editing ? ' gw-myday-widget--edit' : ''}${hidden ? ' gw-myday-widget--hidden' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true"' : ''}>
+    ${bar}
+    <div class="gw-myday-widget-body">${html || `<div class="gw-myday-placeholder">${w.label} \u2014 nothing to show right now</div>`}</div>
+  </div>`;
+}
+window.gwMyDayCustomize = function(){ window._gwMyDayEditing = true; _gwTodayRender(); };
+window.gwMyDayDone = function(){
+  window._gwMyDayEditing = false; _gwTodayRender();
+  if (typeof showToast === 'function') showToast('My Day layout saved');
+};
+window.gwMyDayReset = function(){
+  try { localStorage.removeItem(_gwMyDayLayoutKey()); } catch(e) {}
+  _gwTodayRender();
+  if (typeof showToast === 'function') showToast('My Day layout reset to default');
+};
+window.gwMyDayMove = function(id, dir){
+  const l = _gwMyDayCurLayout();
+  const i = l.order.indexOf(id); if (i < 0) return;
+  const j = i + (dir < 0 ? -1 : 1);
+  if (j < 0 || j >= l.order.length) return;
+  l.order.splice(j, 0, l.order.splice(i, 1)[0]);
+  _gwMyDaySaveLayout(l); _gwTodayRender();
+};
+window.gwMyDaySpanCycle = function(id){
+  const l = _gwMyDayCurLayout();
+  const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return;
+  const cur = _GW_MYDAY_SPANS.includes(Number(l.spans[id])) ? Number(l.spans[id]) : w.span;
+  l.spans[id] = _GW_MYDAY_SPANS[(_GW_MYDAY_SPANS.indexOf(cur) + 1) % _GW_MYDAY_SPANS.length];
+  _gwMyDaySaveLayout(l); _gwTodayRender();
+};
+window.gwMyDayToggleHide = function(id){
+  const l = _gwMyDayCurLayout();
+  const i = l.hidden.indexOf(id);
+  if (i >= 0) l.hidden.splice(i, 1); else l.hidden.push(id);
+  _gwMyDaySaveLayout(l); _gwTodayRender();
+};
+function _gwMyDayBindDnD(){
+  const grid = document.getElementById('gw-myday-grid'); if (!grid) return;
+  let dragId = null;
+  grid.querySelectorAll('.gw-myday-widget').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      dragId = el.dataset.widgetId;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', dragId); } catch(err) {}
+      setTimeout(() => el.classList.add('gw-myday-dragging'), 0);
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('gw-myday-dragging');
+      grid.querySelectorAll('.gw-myday-drop-target').forEach(x => x.classList.remove('gw-myday-drop-target'));
+    });
+    el.addEventListener('dragover', e => {
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      if (el.dataset.widgetId !== dragId) el.classList.add('gw-myday-drop-target');
+    });
+    el.addEventListener('dragleave', () => el.classList.remove('gw-myday-drop-target'));
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      const targetId = el.dataset.widgetId;
+      if (!dragId || dragId === targetId) return;
+      const l = _gwMyDayCurLayout();
+      const from = l.order.indexOf(dragId), to = l.order.indexOf(targetId);
+      if (from < 0 || to < 0) return;
+      l.order.splice(to, 0, l.order.splice(from, 1)[0]);
+      _gwMyDaySaveLayout(l); _gwTodayRender();
+    });
+  });
+}
+
 function _gwTodayRender() {
   // Fall back to _d1SessionRep if getCurrentRep() returns null (e.g. page
   // reload before localStorage key was written by bootstrapD1Auth).
@@ -2087,32 +2214,41 @@ function _gwTodayRender() {
         <button class="primary-btn small" onclick="window._gwTodayNewTask()">+ New Task</button>
         ${_isField ? '' : `<button class="secondary-btn small" onclick="show('lead')">+ New Lead</button>`}
         ${_isField ? '' : `<button class="secondary-btn small" onclick="show('pipeline')">Pipeline</button>`}
+        ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize My Day widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
       </div>
     </div>`;
 
+  // ── Widget grid (customizable: order / visibility / width per user) ──────
+  const _editing = !!window._gwMyDayEditing;
+  const _wCtx = {
+    rep: _todayRep, isAdmin: _isAdmin, isOM: _isOM, isField: _isField, showFin: _showFin,
+    pipeStrip: _pipeStrip,
+    taskWorkspace: _taskWorkspace,
+    finSnap: _finSnap,
+    checklistHtml: renderChecklist(data.checklists.find(c=>c.id==='daily'), true),
+    recentHtml: recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`),
+    activityHtml: renderTodayActivityWidget(),
+  };
+  const _layout = _gwMyDayResolveLayout(_wCtx);
+  const _widgetsHtml = _layout.order.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, _editing)).join('');
+  const _editBar = _editing ? `
+    <div class="gw-myday-edit-banner">
+      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag widgets to reorder, change width, or hide the ones you don't need. Layout is saved just for you.</span>
+      <span class="gw-myday-edit-banner-btns">
+        <button class="secondary-btn small" onclick="gwMyDayReset()">Reset to Default</button>
+        <button class="primary-btn small" onclick="gwMyDayDone()">Done</button>
+      </span>
+    </div>` : '';
+
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}
-    ${_pipeStrip}
-    <div class="gw-today-main-grid">
-      <div class="gw-today-tasks-col">
-        ${_taskWorkspace}
-      </div>
-      ${_showFin ? `<div class="gw-today-side-col">${_finSnap}</div>` : ''}
+    ${_editBar}
+    <div id="gw-myday-grid" class="gw-myday-grid${_editing ? ' gw-myday-grid--edit' : ''}">
+      ${_widgetsHtml}
     </div>
-    ${_isField ? '' : `<div class="grid grid-2 mt">
-      <section class="card app-card">
-        <div class="section-head"><h2>Daily Sales Start-Up</h2></div>
-        ${renderChecklist(data.checklists.find(c=>c.id==='daily'), true)}
-      </section>
-      <section class="card">
-        <div class="section-head"><h2>Recently Updated</h2></div>
-        ${recent.length ? recent.map(oppMini).join('') : empty('No leads yet.', '', `<button class="primary-btn small" onclick="show('lead')">+ Add First Lead</button>`)}
-      </section>
-    </div>`}
-    ${renderTodayActivityWidget()}
-    ${_isAdmin || _isOM ? '<div id="gw-reviews-widget-mount" style="margin-top:16px"></div>' : ''}
   `;
   wireChecks();
+  if (_editing) _gwMyDayBindDnD();
   // Async: load reviews widget for admin/OM
   if ((_isAdmin || _isOM) && typeof window.gwReviewsWidget === 'function') {
     setTimeout(() => window.gwReviewsWidget('gw-reviews-widget-mount'), 400);
