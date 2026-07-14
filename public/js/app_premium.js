@@ -11560,9 +11560,46 @@ function savePnlFiles(files) {
  * avalonDivisionActuals → per-division monthly revenue/COGS (the source of truth)
  * avalonAnnualOverrides → non-revenue fields only (expenses, loans, etc.)
  */
-function getResolvedFY() {
+// ── Company-aware FY base ────────────────────────────────────────────────────
+// Avalon (the original tenant) keeps its seeded data.js budget. EVERY OTHER
+// company gets a blank template with zero budgets — they enter their own
+// numbers via Revenue Admin (persisted in localStorage + D1 settings).
+function gwIsAvalonCompany() {
+  let co = window._companyId;
+  if (!co) { try { co = localStorage.getItem('gwLastCompany') || ''; } catch (_) { co = ''; } }
+  return !co || co === 'avalon';
+}
+function gwBlankFY() {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const raw = window.AVALON_DATA.fy2026;
-  const fy  = JSON.parse(JSON.stringify(raw)); // deep clone
+  const divisions = {};
+  Object.keys(raw.divisions || {}).forEach(dk => {
+    const d = raw.divisions[dk];
+    divisions[dk] = { name: d.name, icon: d.icon, target: 0, actual: null, remaining: 0,
+      pctOfCompany: 0, operatingIncome: null, cogs: null, grossProfit: null,
+      grossMarginPct: null, grossMarginFloor: d.grossMarginFloor || 0.4 };
+  });
+  return {
+    asOfDate: new Date().toLocaleDateString('en-US'),
+    budgetVersion: 'Company budget — set your targets in Annual Financials',
+    annual: { budgetedRevenue: 0, actualRevenue: 0, remaining: 0, monthsLeft: 12,
+      avgNeededPerMonth: 0, totalIncome: 0, cogs: null, grossProfit: null,
+      grossMarginPct: null, totalExpenses: null, netOperatingIncome: null,
+      netIncome: null, loans: null, loanMonthly: null, trueNetIncome: null },
+    monthlyBudget: MONTHS.map(m => ({ month: m, budgeted: 0, actual: null, variance: null })),
+    divisions,
+    divisionMonthlyActuals: {}
+  };
+}
+function gwFYBase() {
+  return gwIsAvalonCompany()
+    ? JSON.parse(JSON.stringify(window.AVALON_DATA.fy2026))
+    : gwBlankFY();
+}
+window.gwFYBase = gwFYBase;
+
+function getResolvedFY() {
+  const fy = gwFYBase();
 
   const savedDivisions = loadDivisionActuals();
   const savedNotes     = loadRevenueActuals();   // ONLY note_* keys are used
@@ -11628,6 +11665,23 @@ function getResolvedFY() {
   fy.annual.monthsLeft        = pendingMonths.length;
   fy.annual.avgNeededPerMonth = pendingMonths.length > 0
     ? Math.round(fy.annual.remaining / pendingMonths.length) : 0;
+
+  // STEP 3.5: Budget overrides — every company can set its own annual budget
+  // and per-month budget targets (saved in avalonAnnualOverrides).
+  if (savedAnnual.budgetedRevenue != null) {
+    fy.annual.budgetedRevenue = savedAnnual.budgetedRevenue;
+    fy.annual.remaining = fy.annual.budgetedRevenue - ytdActual;
+    fy.annual.avgNeededPerMonth = pendingMonths.length > 0
+      ? Math.round(fy.annual.remaining / pendingMonths.length) : 0;
+  }
+  if (savedAnnual._monthlyBudgets) {
+    fy.monthlyBudget = fy.monthlyBudget.map(m => {
+      const b = savedAnnual._monthlyBudgets[m.month];
+      if (b == null) return m;
+      const variance = m.actual != null ? m.actual - b : null;
+      return { ...m, budgeted: b, variance };
+    });
+  }
 
   // STEP 4: Non-revenue annual overrides only (expenses, loans, margins)
   const NON_REV_KEYS = ['cogs','grossProfit','grossMarginPct','totalExpenses',
@@ -11780,7 +11834,12 @@ function revenueAdmin(tab) {
       const hasDivData = divBreakdown.some(v => v != null);
       return `<tr style="cursor:pointer" onclick="showMonthDrilldown('${m.month}')" title="Click for ${m.month} division breakdown">
         <td><span class="rev-month-tag">${escapeHtml(m.month)}</span>${hasActual ? '<span class="rev-locked-badge">auto</span>' : ''}</td>
-        <td class="right" style="color:#6F7E6A">${fmtM(m.budgeted)}</td>
+        <td class="right" onclick="event.stopPropagation()">
+          <input class="rev-editor-input" type="number" step="1000" id="rev_budget_${escapeHtml(m.month)}"
+            value="${m.budgeted || ''}" placeholder="0"
+            style="width:96px;text-align:right;color:#6F7E6A"
+            onchange="gwSaveMonthBudget('${escapeHtml(m.month)}', this.value)">
+        </td>
         <td class="right">
           <div style="font-weight:700;color:${hasActual ? '#4D8A86' : '#5C6B58'};font-size:14px;padding:6px 4px">
             ${hasActual ? fmtM(m.actual) : '<span style="color:#4A5947">—</span>'}
@@ -11922,6 +11981,7 @@ function revenueAdmin(tab) {
   function renderAnnualsTab() {
     const a = fy.annual;
     const fields = [
+      { key:'budgetedRevenue',     label:'Annual Budgeted Revenue', val: a.budgetedRevenue || '', unit:'$', step:'10000', placeholder:'e.g. 1245000', note:'Your total revenue target for the year' },
       { key:'grossMarginPct',      label:'Gross Margin %',       val: a.grossMarginPct != null ? Math.round(a.grossMarginPct*100) : '', unit:'%',  step:'1', placeholder:'e.g. 39',  note:'Overall company GM' },
       { key:'cogs',                label:'Total COGS',            val: a.cogs || '',             unit:'$',  step:'1000', placeholder:'e.g. 776854', note:'Total cost of goods sold' },
       { key:'grossProfit',         label:'Gross Profit',          val: a.grossProfit || '',       unit:'$',  step:'1000', placeholder:'e.g. 504287', note:'Revenue minus COGS' },
@@ -12254,6 +12314,16 @@ window.divSaveDivision = function(divKey) {
   showToast(`${label} saved — monthly totals updated`);
 };
 
+window.gwSaveMonthBudget = function(month, val) {
+  const overrides = loadAnnualOverrides();
+  if (!overrides._monthlyBudgets) overrides._monthlyBudgets = {};
+  const n = val !== '' ? parseFloat(val) : null;
+  if (n != null && !isNaN(n)) overrides._monthlyBudgets[month] = n;
+  else delete overrides._monthlyBudgets[month];
+  saveAnnualOverrides(overrides);
+  showToast(month + ' budget saved');
+};
+
 window.divSaveAllDivisions = function() {
   ['landscape','maintenance','snow'].forEach(dk => window.divSaveDivision(dk));
   showToast('All division data saved — dashboards updated');
@@ -12266,7 +12336,7 @@ window.divExportCsv = function() {
 // ── Annual Financials Tab helpers ─────────────────────────────────────────────
 window.annSaveAll = function() {
   const overrides = loadAnnualOverrides();
-  const FIELDS = ['grossMarginPct','cogs','grossProfit','totalExpenses','netOperatingIncome','netIncome','loans','loanMonthly','trueNetIncome'];
+  const FIELDS = ['budgetedRevenue','grossMarginPct','cogs','grossProfit','totalExpenses','netOperatingIncome','netIncome','loans','loanMonthly','trueNetIncome'];
   FIELDS.forEach(k => {
     const el = document.getElementById('ann_' + k);
     if (!el) return;
@@ -12391,6 +12461,14 @@ window.revenueAdmin = revenueAdmin;
 (function seedBaselineActuals() {
   // Runs once on first load: pre-populates avalonDivisionActuals from data.js if empty.
   // avalonRevenueActuals is NOT seeded with revenue — only division data is the source of truth.
+  // MULTI-TENANT: only the Avalon tenant is seeded with Avalon's real numbers.
+  // This runs at parse time (before async bootstrap sets window._companyId),
+  // so use the persisted gwLastCompany marker from the previous session.
+  try {
+    const lastCo = localStorage.getItem('gwLastCompany');
+    if (lastCo && lastCo !== 'avalon') return;
+    if (window._companyId && window._companyId !== 'avalon') return;
+  } catch (_) {}
   const raw = window.AVALON_DATA && window.AVALON_DATA.fy2026;
   if (!raw) return;
 
@@ -12592,7 +12670,7 @@ async function superAdmin() {
     const msg     = document.getElementById('saImpersonateMsg');
     const btn     = document.getElementById('saImpersonateConfirmBtn');
     if (!overlay) return;
-    msg.textContent = `You will be switched to view "${companyName}" as a member of that company. Your own session remains unchanged — refresh to return.`;
+    msg.textContent = `You will be switched into "${companyName}" as that company's admin for up to 2 hours. This REPLACES your current session — to return to your own account, log out and sign back in.`;
     overlay.style.display = 'flex';
     btn.onclick = async () => {
       btn.textContent = 'Switching…'; btn.disabled = true;
@@ -12605,7 +12683,10 @@ async function superAdmin() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed');
-        // Server already set the httpOnly session cookie — just reload
+        // Server already set the httpOnly session cookie — wipe this
+        // browser's cached tenant data BEFORE reload so nothing bleeds over.
+        if (typeof window.gwClearTenantState === 'function') window.gwClearTenantState();
+        try { localStorage.setItem('gwLastCompany', companyId); } catch (_) {}
         window._d1Ready       = false;
         window._d1SessionRep  = null;
         window._companyId     = companyId;

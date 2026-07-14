@@ -316,6 +316,29 @@ function loginRep(repId) {
   localStorage.setItem(AUTH_KEY, JSON.stringify({ repId, loginAt: new Date().toISOString() }));
 }
 
+// ── Multi-tenant client-state guard ──────────────────────────────────────────
+// All app data caches live in localStorage under fixed key names. When this
+// browser switches to a DIFFERENT company we must wipe them so Company A's
+// pipeline/clients/finance never render inside Company B's session.
+function gwClearTenantState() {
+  try {
+    var keep = { 'gwLastCompany': 1 };
+    var kill = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || keep[k]) continue;
+      if (k.indexOf('avalon') === 0 || k.indexOf('acad_') === 0 ||
+          k.indexOf('gw-myday-layout') === 0 || k.indexOf('gw_') === 0 ||
+          k.indexOf('est_') === 0 || k.indexOf('inv_') === 0) {
+        kill.push(k);
+      }
+    }
+    kill.forEach(function(k){ localStorage.removeItem(k); });
+    console.log('[tenant-guard] cleared ' + kill.length + ' cached keys for company switch');
+  } catch (e) { console.warn('gwClearTenantState failed', e); }
+}
+window.gwClearTenantState = gwClearTenantState;
+
 function logoutRep() {
   localStorage.removeItem(AUTH_KEY);
   window._d1SessionRep = null;
@@ -578,9 +601,15 @@ function timeAgo(iso) {
 
 // ── LOGIN SCREEN ──────────────────────────────────────────────────────────────
 function renderLoginScreen() {
-  // Fetch company branding first (public endpoint, no auth needed)
-  // Falls back to defaults instantly if unavailable
-  fetch('/api/branding/login').then(r => r.ok ? r.json() : null).then(brand => {
+  // Fetch company branding first (public endpoint, no auth needed).
+  // Multi-tenant: the server only returns a company brand when told which
+  // company — we remember the last company this browser logged into.
+  let q = '';
+  try {
+    const last = localStorage.getItem('gwLastCompany');
+    if (last) q = '?company=' + encodeURIComponent(last);
+  } catch (_) {}
+  fetch('/api/branding/login' + q).then(r => r.ok ? r.json() : null).then(brand => {
     _renderLoginHTML(brand);
   }).catch(() => _renderLoginHTML(null));
 }
@@ -738,6 +767,17 @@ function _renderLoginHTML(brand) {
       // Session cookie is now set — store identity in memory
       window._d1SessionRep = d1Rep;
       window._companyId    = d1Rep.company_id || 'avalon';
+      // ── Tenant guard: wipe cached app state if this browser last held a
+      //    DIFFERENT company's data (shared computers, impersonation, multi-co staff)
+      try {
+        var lastCo = localStorage.getItem('gwLastCompany');
+        // Clear when switching companies, AND on first-ever login of a
+        // non-Avalon company (parse-time seeding may have left Avalon data).
+        if (lastCo !== window._companyId && !(lastCo === null && window._companyId === 'avalon')) {
+          gwClearTenantState();
+        }
+        localStorage.setItem('gwLastCompany', window._companyId);
+      } catch (_) {}
       loginRep(d1Rep.id); // write to localStorage so getCurrentRep() works
 
       // ── BOOTSTRAP: load all company config in one shot ──────────────────

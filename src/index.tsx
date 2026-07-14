@@ -264,14 +264,28 @@ async function requireAuth(c: any, next: any) {
   const token = getCookie(c, 'avalon_session')
   if (!token) return err(c, 'Unauthorized', 401)
   const row = await c.env.DB.prepare(`
-    SELECT r.id as rep_id, r.company_id, r.role, r.is_super_admin
+    SELECT r.id as rep_id, r.company_id, r.role, r.is_super_admin, s.updated_at as session_at
     FROM settings s
     JOIN reps r ON r.id = s.value
-    WHERE s.key = ? LIMIT 1
-  `).bind(`session_${token}`).first<{ rep_id: string; company_id: string; role: string; is_super_admin: number }>()
+    WHERE s.key = ? AND r.active = 1 LIMIT 1
+  `).bind(`session_${token}`).first<{ rep_id: string; company_id: string; role: string; is_super_admin: number; session_at: string }>()
   if (!row) return err(c, 'Session expired', 401)
+  // 30-day server-side session expiry (matches cookie Max-Age)
+  if (row.session_at) {
+    const ageMs = Date.now() - new Date(row.session_at.replace(' ', 'T') + 'Z').getTime()
+    if (isFinite(ageMs) && ageMs > 30 * 24 * 60 * 60 * 1000) {
+      await c.env.DB.batch([
+        c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(`session_${token}`),
+        c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(`session_company_${token}`)
+      ])
+      return err(c, 'Session expired', 401)
+    }
+  }
+  // Company scope: prefer the explicit session_company row (impersonation-aware)
+  const coRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
+    .bind(`session_company_${token}`).first<{ value: string }>()
   c.set('repId',        row.rep_id)
-  c.set('companyId',    row.company_id)
+  c.set('companyId',    coRow?.value || row.company_id)
   c.set('role',         row.role)
   c.set('isSuperAdmin', !!row.is_super_admin)
   await next()
@@ -499,17 +513,22 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/companies/:id  — read own company info
-app.get('/api/companies/:id', async (c) => {
+app.get('/api/companies/:id', requireAuth, async (c) => {
+  const id = c.req.param('id')
+  if (id !== (c.var.companyId as string) && !c.var.isSuperAdmin) return err(c, 'Forbidden', 403)
   const row = await c.env.DB.prepare(
     'SELECT id, name, slug, plan, phone, website, logo_url, timezone, trial_ends_at, active, created_at FROM companies WHERE id = ? LIMIT 1'
-  ).bind(c.req.param('id')).first()
+  ).bind(id).first()
   if (!row) return err(c, 'Company not found', 404)
   return json(c, row)
 })
 
-// PUT /api/companies/:id  — update own company (admin only, enforced in middleware later)
-app.put('/api/companies/:id', async (c) => {
+// PUT /api/companies/:id  — update own company (admin/office_manager only)
+app.put('/api/companies/:id', requireAuth, async (c) => {
   const id = c.req.param('id')
+  if (id !== (c.var.companyId as string) && !c.var.isSuperAdmin) return err(c, 'Forbidden', 403)
+  const role = c.var.role as string
+  if (!c.var.isSuperAdmin && role !== 'admin' && role !== 'office_manager') return err(c, 'Forbidden', 403)
   const b  = await c.req.json()
   const fields = ['name','phone','website','logo_url','timezone','owner_email']
   const updates = fields.filter(f => b[f] !== undefined)
@@ -527,20 +546,27 @@ app.put('/api/companies/:id', async (c) => {
 // Returns only name, logo_url, brand_color — safe to expose publicly
 app.get('/api/branding/login', async (c) => {
   const db = c.env.DB as D1Database
-  // Always returns the first/main non-platform company
-  const row: any = await db.prepare(
-    `SELECT name, logo_url, brand_color FROM companies WHERE id != 'groundwork_platform' ORDER BY created_at ASC LIMIT 1`
-  ).first()
-  return c.json({
-    name:        row?.name        || 'Groundwork',
-    logo_url:    row?.logo_url    || '',
-    brand_color: row?.brand_color || '#2D7A55',
-  })
+  // Optional per-company branding via ?slug= or ?company= — otherwise neutral
+  // platform branding. (Multi-tenant: never leak one arbitrary tenant's brand.)
+  const slug = c.req.query('slug') || c.req.query('company') || ''
+  if (slug) {
+    const row: any = await db.prepare(
+      `SELECT name, logo_url, brand_color FROM companies WHERE (slug = ? OR id = ?) AND active = 1 LIMIT 1`
+    ).bind(slug, slug).first()
+    if (row) {
+      return c.json({
+        name:        row.name        || 'Groundwork',
+        logo_url:    row.logo_url    || '',
+        brand_color: row.brand_color || '#2D7A55',
+      })
+    }
+  }
+  return c.json({ name: 'Groundwork', logo_url: '', brand_color: '#2D7A55' })
 })
 
 // GET /api/company/branding  — full branding/identity for authenticated company
 app.get('/api/company/branding', requireAuth, async (c) => {
-  const companyId = (c.var.companyId as string) || 'avalon'
+  const companyId = c.var.companyId as string
   const row: any = await c.env.DB.prepare(`
     SELECT id, name, slug, phone, website, logo_url, timezone, owner_email,
            tagline, brand_color, brand_accent, business_type,
@@ -558,7 +584,7 @@ app.get('/api/company/branding', requireAuth, async (c) => {
 
 // PUT /api/company/branding  — update branding/identity fields
 app.put('/api/company/branding', requireAuth, async (c) => {
-  const companyId = (c.var.companyId as string) || 'avalon'
+  const companyId = c.var.companyId as string
   const b = await c.req.json()
   const allowed = [
     'name','phone','website','logo_url','timezone','owner_email',
@@ -587,7 +613,7 @@ app.put('/api/company/branding', requireAuth, async (c) => {
 //   {companyId}:created_at   — ISO timestamp when company was onboarded
 //   {companyId}:last_write   — used by poll-sync to detect peer changes
 // This is the canonical entry point — ALL company data lives under {companyId}:*
-app.post('/api/companies', async (c) => {
+app.post('/api/companies', requireSuperAdmin, async (c) => {
   const b = await c.req.json()
   if (!b.name || !b.slug) return err(c, 'name and slug required')
   // Check slug uniqueness
@@ -622,7 +648,7 @@ app.post('/api/companies', async (c) => {
 
 // GET /api/reps  — scoped to session's company
 app.get('/api/reps', requireAuth, async (c) => {
-  const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
+  const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(
     'SELECT id, name, title, role, color, commission_plan, active, company_id, email, email_signature, invite_accepted, invite_sent_at FROM reps WHERE company_id = ? ORDER BY active DESC, name'
   ).bind(companyId).all()
@@ -631,7 +657,7 @@ app.get('/api/reps', requireAuth, async (c) => {
 
 // GET /api/reps/:id
 app.get('/api/reps/:id', requireAuth, async (c) => {
-  const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
+  const companyId = c.var.companyId as string
   const row = await c.env.DB.prepare(
     'SELECT id, name, title, role, color, commission_plan, active, company_id, email_signature FROM reps WHERE id = ? AND company_id = ? LIMIT 1'
   ).bind(c.req.param('id'), companyId).first()
@@ -662,7 +688,7 @@ app.post('/api/reps', requireAuth, async (c) => {
 app.put('/api/reps/:id', requireAuth, async (c) => {
   const id = c.req.param('id')
   const b  = await c.req.json()
-  const companyId = (c.var.companyId as string) || b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   const fields = ['name','title','role','color','email','commission_plan','active','email_signature']
   const updates: string[] = []
   const vals: any[] = []
@@ -1271,7 +1297,7 @@ app.post('/api/auth/accept-invite', async (c) => {
 // Falls back to ?companyId= query param for unauthenticated/legacy callers.
 app.get('/api/opportunities', requireAuth, async (c) => {
   // Session-authenticated company takes precedence over query param
-  const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
+  const companyId = c.var.companyId as string
   const repId     = c.req.query('repId')
   const status    = c.req.query('status')
   let q = 'SELECT * FROM opportunities WHERE company_id = ?'
@@ -1289,8 +1315,8 @@ app.get('/api/opportunities', requireAuth, async (c) => {
 })
 
 // GET /api/opportunities/:id?companyId=
-app.get('/api/opportunities/:id', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/opportunities/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const row = await c.env.DB.prepare(
     'SELECT * FROM opportunities WHERE id = ? AND company_id = ? LIMIT 1'
   ).bind(c.req.param('id'), companyId).first()
@@ -1304,7 +1330,7 @@ app.post('/api/opportunities', requireAuth, async (c) => {
   const b = await c.req.json()
   const id        = b.id || ('opp_' + uid())
   // Session company_id is authoritative — body companyId is a hint only
-  const companyId = (c.var.companyId as string) || b.companyId || b.company_id || 'avalon'
+  const companyId = c.var.companyId as string
   const effRepId = b.repId||b.rep_id||null
   // assigned_to_rep_id: if Jen creates and assigns to Tyler, set to Tyler's id
   // defaults to same as rep_id (owner = assignee for reps creating their own leads)
@@ -1356,7 +1382,7 @@ app.post('/api/opportunities', requireAuth, async (c) => {
 app.put('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const b         = await c.req.json()
-  const companyId = (c.var.companyId as string) || b.companyId || b.company_id || 'avalon'
+  const companyId = c.var.companyId as string
   const fieldMap: Record<string,string> = {
     repId:'rep_id', assignedToRepId:'assigned_to_rep_id',
     client:'client', phone:'phone', email:'email',
@@ -1408,7 +1434,7 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
 // DELETE /api/opportunities/:id
 app.delete('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
-  const companyId = (c.var.companyId as string) || c.req.query('companyId') || 'avalon'
+  const companyId = c.var.companyId as string
   const role      = c.var.role as string
 
   // Admins always allowed. For other roles, check can_delete_leads permission.
@@ -1440,7 +1466,7 @@ app.delete('/api/opportunities/:id', requireAuth, async (c) => {
 // Used on login to push localStorage-only leads to D1 (one-time migration / recovery).
 // Accepts array of opp objects. Uses session company_id. Skips opps already in D1.
 app.post('/api/opportunities/bulk-upsert', requireAuth, async (c) => {
-  const companyId = c.var.companyId as string || 'avalon'
+  const companyId = c.var.companyId as string
   const repId     = c.var.repId as string
   const b = await c.req.json()
   const opps: any[] = Array.isArray(b.opps) ? b.opps : []
@@ -1625,18 +1651,18 @@ app.put('/api/checklist', requireAuth, async (c) => {
 // ACADEMY PROGRESS  — scoped by company_id
 // ══════════════════════════════════════════════════════════════════════════════
 
-app.get('/api/academy/progress/:repId', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/academy/progress/:repId', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(
     'SELECT * FROM academy_progress WHERE rep_id = ? AND company_id = ?'
   ).bind(c.req.param('repId'), companyId).all()
   return json(c, rows.results)
 })
 
-app.put('/api/academy/progress', async (c) => {
+app.put('/api/academy/progress', requireAuth, async (c) => {
   const b = await c.req.json()
   const { repId, moduleId, sectionId, completed, score } = b
-  const companyId = b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   const id = `acad-${companyId}-${repId}-${moduleId}-${sectionId||'_'}`
   await c.env.DB.prepare(`
     INSERT INTO academy_progress (id, rep_id, module_id, section_id, completed, score, company_id, updated_at)
@@ -1647,17 +1673,17 @@ app.put('/api/academy/progress', async (c) => {
   return json(c, { id })
 })
 
-app.get('/api/academy/quiz/:repId', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/academy/quiz/:repId', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(
     'SELECT * FROM quiz_attempts WHERE rep_id = ? AND company_id = ? ORDER BY attempted_at DESC'
   ).bind(c.req.param('repId'), companyId).all()
   return json(c, rows.results)
 })
 
-app.post('/api/academy/quiz', async (c) => {
+app.post('/api/academy/quiz', requireAuth, async (c) => {
   const b = await c.req.json()
-  const companyId = b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   const id = 'quiz_' + uid()
   await c.env.DB.prepare(
     'INSERT INTO quiz_attempts (id, rep_id, module_id, score, total, passed, answers, company_id) VALUES (?,?,?,?,?,?,?,?)'
@@ -1665,18 +1691,18 @@ app.post('/api/academy/quiz', async (c) => {
   return json(c, { id }, 201)
 })
 
-app.get('/api/academy/badges/:repId', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/academy/badges/:repId', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(
     'SELECT * FROM badges WHERE rep_id = ? AND company_id = ?'
   ).bind(c.req.param('repId'), companyId).all()
   return json(c, rows.results)
 })
 
-app.post('/api/academy/badges', async (c) => {
+app.post('/api/academy/badges', requireAuth, async (c) => {
   const b = await c.req.json()
   const { repId, badgeId } = b
-  const companyId = b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   const id = `badge-${companyId}-${repId}-${badgeId}`
   await c.env.DB.prepare(
     'INSERT OR IGNORE INTO badges (id, rep_id, badge_id, company_id) VALUES (?,?,?,?)'
@@ -1684,18 +1710,18 @@ app.post('/api/academy/badges', async (c) => {
   return json(c, { id }, 201)
 })
 
-app.get('/api/academy/certs/:repId', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/academy/certs/:repId', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(
     'SELECT * FROM certifications WHERE rep_id = ? AND company_id = ?'
   ).bind(c.req.param('repId'), companyId).all()
   return json(c, rows.results)
 })
 
-app.put('/api/academy/certs', async (c) => {
+app.put('/api/academy/certs', requireAuth, async (c) => {
   const b = await c.req.json()
   const { repId, phaseId, status } = b
-  const companyId = b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   const id = `cert-${companyId}-${repId}-${phaseId}`
   await c.env.DB.prepare(`
     INSERT INTO certifications (id, rep_id, phase_id, status, company_id, updated_at)
@@ -1816,8 +1842,8 @@ app.post('/api/customers/:id/notes', requireAuth, async (c) => {
 // SETTINGS  — namespaced per company: key stored as "{companyId}:{key}"
 // ══════════════════════════════════════════════════════════════════════════════
 
-app.get('/api/settings', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const prefix    = `${companyId}:`
   const rows = await c.env.DB.prepare(
     "SELECT key, value FROM settings WHERE key LIKE ? AND key NOT LIKE 'session_%'"
@@ -1827,19 +1853,29 @@ app.get('/api/settings', async (c) => {
     // Strip the company prefix before returning to client
     obj[r.key.slice(prefix.length)] = r.value
   }
-  // Also include legacy keys (no prefix) for backward compat
-  const legacy = await c.env.DB.prepare(
-    "SELECT key, value FROM settings WHERE key NOT LIKE '%:%' AND key NOT LIKE 'session_%' AND key NOT LIKE 'db_%'"
-  ).all()
-  for (const r of (legacy.results as any[])) obj[r.key] = r.value
+  // Legacy unprefixed keys are Avalon-era only — expose them solely to Avalon
+  if (companyId === 'avalon') {
+    const legacy = await c.env.DB.prepare(
+      "SELECT key, value FROM settings WHERE key NOT LIKE '%:%' AND key NOT LIKE 'session_%' AND key NOT LIKE 'db_%' AND key NOT LIKE '#_%' ESCAPE '#'"
+    ).all()
+    for (const r of (legacy.results as any[])) obj[r.key] = r.value
+  }
   return json(c, obj)
 })
 
-app.put('/api/settings', async (c) => {
+app.put('/api/settings', requireAuth, async (c) => {
   const b = await c.req.json()
   if (!b.key) return err(c, 'key required')
-  const companyId = b.companyId || 'avalon'
-  const scopedKey = b.key.includes(':') ? b.key : `${companyId}:${b.key}`
+  const companyId = c.var.companyId as string
+  // Keys are always written under the caller's own company prefix.
+  // A pre-prefixed key is only honored if it matches the session's company.
+  let scopedKey: string
+  if (b.key.includes(':')) {
+    if (!String(b.key).startsWith(`${companyId}:`)) return err(c, 'Key prefix does not match your company', 403)
+    scopedKey = b.key
+  } else {
+    scopedKey = `${companyId}:${b.key}`
+  }
   await c.env.DB.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
   ).bind(scopedKey, String(b.value)).run()
@@ -1850,17 +1886,17 @@ app.put('/api/settings', async (c) => {
 // REVENUE ACTUALS  — scoped by company_id
 // ══════════════════════════════════════════════════════════════════════════════
 
-app.get('/api/revenue', async (c) => {
-  const companyId = c.req.query('companyId') || 'avalon'
+app.get('/api/revenue', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(
     'SELECT * FROM revenue_actuals WHERE company_id = ? ORDER BY year, month'
   ).bind(companyId).all()
   return json(c, rows.results)
 })
 
-app.put('/api/revenue', async (c) => {
+app.put('/api/revenue', requireAuth, async (c) => {
   const b         = await c.req.json()
-  const companyId = b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   await c.env.DB.prepare(`
     INSERT INTO revenue_actuals (id, company_id, month, year, revenue, note, division, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -1877,10 +1913,10 @@ app.put('/api/revenue', async (c) => {
 // BULK SYNC  — localStorage → D1 one-time migration, company-scoped
 // ══════════════════════════════════════════════════════════════════════════════
 
-app.post('/api/sync', async (c) => {
+app.post('/api/sync', requireAuth, async (c) => {
   const b = await c.req.json()
   const { opportunities = [], notes = [], communications = [], clients = [] } = b
-  const companyId = b.companyId || 'avalon'
+  const companyId = c.var.companyId as string
   const stmts: D1PreparedStatement[] = []
 
   for (const o of opportunities) {
@@ -3098,10 +3134,27 @@ app.delete('/api/platform/announcements/:id', requireSuperAdmin, async (c) => {
   return json(c, { deleted: c.req.param('id') })
 })
 
-// POST /api/admin/clear-sessions — wipe all session tokens from settings table
+// POST /api/admin/clear-sessions — revoke sessions for ONE company (default: caller's own).
+// Pass { companyId, all: true } to wipe platform-wide (explicit opt-in).
 app.post('/api/admin/clear-sessions', requireSuperAdmin, async (c) => {
-  await c.env.DB.prepare(`DELETE FROM settings WHERE key LIKE 'session_%'`).run()
-  return json(c, { cleared: true })
+  const b: any = await c.req.json().catch(() => ({}))
+  if (b.all === true) {
+    await c.env.DB.prepare(`DELETE FROM settings WHERE key LIKE 'session_%'`).run()
+    return json(c, { cleared: 'all' })
+  }
+  const target = String(b.companyId || c.var.companyId)
+  // Delete session_<token> rows whose companion session_company_<token> matches target
+  const rows = await c.env.DB.prepare(
+    `SELECT key FROM settings WHERE key LIKE 'session_company_%' AND value = ?`
+  ).bind(target).all()
+  const stmts: D1PreparedStatement[] = []
+  for (const r of (rows.results as any[])) {
+    const token = String(r.key).slice('session_company_'.length)
+    stmts.push(c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(`session_${token}`))
+    stmts.push(c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(r.key))
+  }
+  if (stmts.length) await c.env.DB.batch(stmts)
+  return json(c, { cleared: target, sessions: (rows.results as any[]).length })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3373,28 +3426,31 @@ app.post('/api/estimates/:id/send', requireAuth, async (c) => {
 })
 
 // POST /api/estimates/:id/accept — portal or internal accept
-app.post('/api/estimates/:id/accept', async (c) => {
+app.post('/api/estimates/:id/accept', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
-  await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=?`)
-    .bind(c.req.param('id')).run()
+  const r = await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), c.var.companyId as string).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
   return c.json({ ok: true })
 })
 
 // POST /api/estimates/:id/decline
-app.post('/api/estimates/:id/decline', async (c) => {
+app.post('/api/estimates/:id/decline', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   const b: any = await c.req.json().catch(()=>({}))
-  await db.prepare(`UPDATE estimates SET status='declined', declined_at=datetime('now'), decline_reason=?, updated_at=datetime('now') WHERE id=?`)
-    .bind(b.reason||'', c.req.param('id')).run()
+  const r = await db.prepare(`UPDATE estimates SET status='declined', declined_at=datetime('now'), decline_reason=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(b.reason||'', c.req.param('id'), c.var.companyId as string).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
   return c.json({ ok: true })
 })
 
 // POST /api/estimates/:id/changes — request changes
-app.post('/api/estimates/:id/changes', async (c) => {
+app.post('/api/estimates/:id/changes', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   const b: any = await c.req.json().catch(()=>({}))
-  await db.prepare(`UPDATE estimates SET status='changes_requested', changes_at=datetime('now'), change_request=?, updated_at=datetime('now') WHERE id=?`)
-    .bind(b.message||'', c.req.param('id')).run()
+  const r = await db.prepare(`UPDATE estimates SET status='changes_requested', changes_at=datetime('now'), change_request=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(b.message||'', c.req.param('id'), c.var.companyId as string).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
   return c.json({ ok: true })
 })
 
@@ -3885,78 +3941,114 @@ app.post('/api/clients/import-bulk', requireAuth, async (c) => {
 // ── PUBLIC SIGNUP ─────────────────────────────────────────────────────────────
 
 // POST /api/auth/signup — create new company + admin user (public, no auth)
+// Self-healing: ensures required companies columns exist (older prod DBs may
+// not have run migrations 0021/0025). Uses the same pin_hash format and
+// settings-table session pattern as /api/auth/login so signup→login just works.
+async function ensureSignupSchema(db: D1Database) {
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_signup_v1' LIMIT 1").first()
+  if (flag) return
+  const alters = [
+    "ALTER TABLE companies ADD COLUMN business_type TEXT DEFAULT 'home_services'",
+    "ALTER TABLE companies ADD COLUMN brand_color TEXT DEFAULT '#2D7A55'",
+    "ALTER TABLE companies ADD COLUMN brand_accent TEXT DEFAULT '#4D8A86'",
+    "ALTER TABLE companies ADD COLUMN onboarding_completed INTEGER DEFAULT 0",
+    "ALTER TABLE companies ADD COLUMN onboarding_step INTEGER DEFAULT 0",
+    "ALTER TABLE companies ADD COLUMN onboarding_data TEXT DEFAULT '{}'",
+    "ALTER TABLE companies ADD COLUMN trial_started_at TEXT DEFAULT ''",
+    "ALTER TABLE companies ADD COLUMN trial_expires_at TEXT DEFAULT ''",
+    "ALTER TABLE companies ADD COLUMN trial_plan TEXT DEFAULT 'growth'",
+    "ALTER TABLE companies ADD COLUMN subscription_status TEXT DEFAULT 'trial'",
+    "ALTER TABLE companies ADD COLUMN subscription_plan TEXT DEFAULT ''",
+    "ALTER TABLE companies ADD COLUMN stripe_customer_id TEXT DEFAULT ''",
+  ]
+  for (const sql of alters) {
+    try { await db.prepare(sql).run() } catch (_) { /* column already exists */ }
+  }
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_signup_v1','1',datetime('now'))").run()
+}
+
 app.post('/api/auth/signup', async (c) => {
   const db = c.env.DB as D1Database
-  const b: any = await c.req.json()
-  const { company_name, email, password, business_type, owner_name } = b
+  let b: any
+  try { b = await c.req.json() } catch (_) { return c.json({ error: 'Invalid request body' }, 400) }
+  const companyName = String(b.company_name || b.companyName || '').trim()
+  const email       = String(b.email || '').toLowerCase().trim()
+  const password    = String(b.password || '')
+  const ownerName   = String(b.owner_name || b.ownerName || '').trim()
+  const businessType = String(b.business_type || b.businessType || 'home_services')
 
-  if (!company_name || !email || !password) {
+  if (!companyName || !email || !password) {
     return c.json({ error: 'Company name, email, and password are required' }, 400)
   }
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400)
   }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return c.json({ error: 'Please enter a valid email address' }, 400)
+  }
 
-  // Check email uniqueness
-  const existing = await db.prepare(`SELECT id FROM reps WHERE email=? LIMIT 1`)
-    .bind(email.toLowerCase().trim()).first()
+  // Email must be unique across all tenants (login is email-based)
+  const existing = await db.prepare('SELECT id FROM reps WHERE email = ? LIMIT 1').bind(email).first()
   if (existing) return c.json({ error: 'An account with this email already exists' }, 409)
 
-  // Create company slug
-  const slug = company_name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 30)
-  const companyId = `co_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+  await ensureSignupSchema(db)
 
-  // Trial: 14 days
-  const trialStart = new Date().toISOString()
+  // Company id + unique slug
+  const baseSlug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'company'
+  let slug = baseSlug
+  for (let i = 2; i < 50; i++) {
+    const taken = await db.prepare('SELECT id FROM companies WHERE slug = ? LIMIT 1').bind(slug).first()
+    if (!taken) break
+    slug = `${baseSlug}-${i}`
+  }
+  const companyId = `co_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+  const now = new Date().toISOString()
   const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
 
   await db.prepare(`
-    INSERT INTO companies (id, name, slug, owner_email, business_type, brand_color, brand_accent,
-      subscription_status, trial_plan, trial_started_at, trial_expires_at, onboarding_step,
-      created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
-  `).bind(companyId, company_name, slug, email.toLowerCase().trim(),
-    business_type||'home_services', '#2D7A55', '#4D8A86',
-    'trial', 'growth', trialStart, trialEnd, 0
-  ).run()
+    INSERT INTO companies (id, name, slug, plan, owner_email, business_type, brand_color, brand_accent,
+      subscription_status, trial_plan, trial_started_at, trial_expires_at,
+      onboarding_completed, onboarding_step, active, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,0,1,datetime('now'),datetime('now'))
+  `).bind(companyId, companyName, slug, 'trial', email, businessType,
+    '#2D7A55', '#4D8A86', 'trial', 'growth', now, trialEnd).run()
 
-  // Hash password
-  const enc = new TextEncoder()
-  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits'])
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256
-  )
-  const hashHex = [...new Uint8Array(bits)].map(b2 => b2.toString(16).padStart(2,'0')).join('')
-  const saltHex = [...salt].map(b2 => b2.toString(16).padStart(2,'0')).join('')
-  const passwordHash = `pbkdf2:${saltHex}:${hashHex}`
+  // Seed the company settings "folder" (same as admin-created tenants)
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`${companyId}:created_at`, now),
+    db.prepare("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`${companyId}:last_write`, `${now}|signup`),
+    db.prepare("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`${companyId}:plan`, 'trial'),
+  ])
 
-  const repId = `rep_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
-  const displayName = owner_name || email.split('@')[0]
+  // Owner account — same hash format the login verifier expects
+  const pinHash = await hashPin(password)
+  const repId = `rep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const displayName = ownerName || email.split('@')[0]
 
   await db.prepare(`
-    INSERT INTO reps (id, company_id, name, email, password_hash, role, is_active, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,datetime('now'),datetime('now'))
-  `).bind(repId, companyId, displayName, email.toLowerCase().trim(), passwordHash, 'admin', 1).run()
+    INSERT INTO reps (id, company_id, name, email, pin, pin_hash, role, active, created_at, updated_at)
+    VALUES (?,?,?,?,'',?,'admin',1,datetime('now'),datetime('now'))
+  `).bind(repId, companyId, displayName, email, pinHash).run()
 
-  // Create a session
-  const sessionToken = crypto.randomUUID()
-  const sessionExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-  await db.prepare(`INSERT INTO sessions (id, rep_id, company_id, expires_at, created_at) VALUES (?,?,?,?,datetime('now'))`)
-    .bind(sessionToken, repId, companyId, sessionExpiry).run()
+  // Session — same settings-table pattern as /api/auth/login
+  const token = secureToken()
+  await db.batch([
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`session_${token}`, repId),
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`session_company_${token}`, companyId),
+  ])
+  setCookie(c, 'avalon_session', token, {
+    httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 30
+  })
 
-  const res = c.json({
+  return c.json({
     ok: true,
     company_id: companyId,
     rep_id: repId,
+    slug,
     trial_expires_at: trialEnd,
     onboarding_step: 0
   })
-
-  // Set session cookie
-  const headers = new Headers(res.headers)
-  headers.set('Set-Cookie', `avalon_session=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*24*3600}`)
-  return new Response(res.body, { status: 200, headers })
 })
 
 // ── RECURRING PLANS (D1) ──────────────────────────────────────────────────────
@@ -5665,7 +5757,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260714b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260714b011">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5689,8 +5781,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260714b010"></script>
-  <script src="/js/client_portal.js?v=20260714b010"></script>
+  <script src="/js/platform_core.js?v=20260714b011"></script>
+  <script src="/js/client_portal.js?v=20260714b011"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6303,9 +6395,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260714b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260714b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260714b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260714b011">
+  <link rel="stylesheet" href="/js/styles.css?v=20260714b011">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260714b011">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6802,6 +6894,12 @@ function getHtml(): string {
       </div>
       <button class="install-btn" id="installBtn" hidden>Install App</button>
 
+      <!-- ── Company context badge — always shows WHICH company you're in ── -->
+      <div id="gw-company-badge" style="display:none;align-items:center;gap:7px;padding:4px 12px;background:var(--gw-surface-2,rgba(255,255,255,.07));border:1px solid var(--gw-line,rgba(255,255,255,.12));border-radius:20px;font-size:12px;font-weight:700;max-width:220px;white-space:nowrap;overflow:hidden" title="Current company workspace">
+        <span id="gw-company-badge-dot" style="width:8px;height:8px;border-radius:50%;background:#2D7A55;flex-shrink:0"></span>
+        <span id="gw-company-badge-name" style="overflow:hidden;text-overflow:ellipsis"></span>
+      </div>
+
       <!-- + New quick-create dropdown -->
       <div class="topbar-new-wrap" id="topbarNewWrap">
         <button class="topbar-new-btn" id="topbarNewBtn" aria-haspopup="true" aria-expanded="false" aria-label="Create new">
@@ -6846,34 +6944,34 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260714b010"></script>
-<script src="/js/db.js?v=20260714b010"></script>
-<script src="/js/data.js?v=20260714b010"></script>
-<script src="/js/reps.js?v=20260714b010"></script>
-<script src="/js/record-page.js?v=20260714b010"></script>
-<script src="/js/academy.js?v=20260714b010"></script>
-<script src="/js/task_engine.js?v=20260714b010"></script>
-<script src="/js/gw_i18n.js?v=20260714b010"></script>
-<script src="/js/app_premium.js?v=20260714b010"></script>
-<script src="/js/estimates.js?v=20260714b010"></script>
-<script src="/js/invoices.js?v=20260714b010"></script>
-<script src="/js/csv_import.js?v=20260714b010"></script>
-<script src="/js/onboarding.js?v=20260714b010"></script>
-<script src="/js/recurring_plans.js?v=20260714b010"></script>
-<script src="/js/reviews.js?v=20260714b010"></script>
-<script src="/js/stripe.js?v=20260714b010"></script>
-<script src="/js/email.js?v=20260714b010"></script>
-<script src="/js/notifications.js?v=20260714b010"></script>
-<script src="/js/integrations.js?v=20260714b010"></script>
-<script src="/js/user_management.js?v=20260714b010"></script>
-<script src="/js/platform_admin.js?v=20260714b010"></script>
-<script src="/js/time_tracker.js?v=20260714b010"></script>
-<script src="/js/field_workday.js?v=20260714b010"></script>
-<script src="/js/platform_core.js?v=20260714b010"></script>
-<script src="/js/approval_engine.js?v=20260714b010"></script>
-<script src="/js/automation_engine.js?v=20260714b010"></script>
-<script src="/js/client_portal.js?v=20260714b010"></script>
-<script src="/js/field_mode.js?v=20260714b010"></script>
+<script src="/js/gw-icons.js?v=20260714b011"></script>
+<script src="/js/db.js?v=20260714b011"></script>
+<script src="/js/data.js?v=20260714b011"></script>
+<script src="/js/reps.js?v=20260714b011"></script>
+<script src="/js/record-page.js?v=20260714b011"></script>
+<script src="/js/academy.js?v=20260714b011"></script>
+<script src="/js/task_engine.js?v=20260714b011"></script>
+<script src="/js/gw_i18n.js?v=20260714b011"></script>
+<script src="/js/app_premium.js?v=20260714b011"></script>
+<script src="/js/estimates.js?v=20260714b011"></script>
+<script src="/js/invoices.js?v=20260714b011"></script>
+<script src="/js/csv_import.js?v=20260714b011"></script>
+<script src="/js/onboarding.js?v=20260714b011"></script>
+<script src="/js/recurring_plans.js?v=20260714b011"></script>
+<script src="/js/reviews.js?v=20260714b011"></script>
+<script src="/js/stripe.js?v=20260714b011"></script>
+<script src="/js/email.js?v=20260714b011"></script>
+<script src="/js/notifications.js?v=20260714b011"></script>
+<script src="/js/integrations.js?v=20260714b011"></script>
+<script src="/js/user_management.js?v=20260714b011"></script>
+<script src="/js/platform_admin.js?v=20260714b011"></script>
+<script src="/js/time_tracker.js?v=20260714b011"></script>
+<script src="/js/field_workday.js?v=20260714b011"></script>
+<script src="/js/platform_core.js?v=20260714b011"></script>
+<script src="/js/approval_engine.js?v=20260714b011"></script>
+<script src="/js/automation_engine.js?v=20260714b011"></script>
+<script src="/js/client_portal.js?v=20260714b011"></script>
+<script src="/js/field_mode.js?v=20260714b011"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -6924,6 +7022,43 @@ function getHtml(): string {
         window._d1SessionRep = d1Rep;
         // ── Multi-tenant: set company context for all subsequent DB calls ──
         window._companyId = d1Rep.company_id || 'avalon';
+        // ── Company context badge: always show which workspace you're in ──
+        try {
+          const badge = document.getElementById('gw-company-badge');
+          const nameEl = document.getElementById('gw-company-badge-name');
+          if (badge && nameEl) {
+            // Fetch company display name (branding endpoint is session-scoped)
+            fetch('/api/company/branding', { credentials: 'include' })
+              .then(r => r.ok ? r.json() : null)
+              .then(j => {
+                const co = j && (j.data || j);
+                const label = (co && co.name) || d1Rep.company_id || '';
+                if (label) {
+                  nameEl.textContent = label;
+                  badge.style.display = 'inline-flex';
+                  const dot = document.getElementById('gw-company-badge-dot');
+                  if (dot && co && co.brand_color) dot.style.background = co.brand_color;
+                  // Impersonation warning: super-admin inside another tenant
+                  if (d1Rep.is_super_admin && d1Rep.company_id !== 'groundwork_platform') {
+                    badge.style.border = '1.5px solid #C9A961';
+                    badge.title = 'You are working inside ' + label + ' — impersonation/tenant session';
+                  }
+                }
+              }).catch(() => {});
+          }
+        } catch (_) {}
+        // ── Tenant guard: if this browser last cached a DIFFERENT company's
+        //    data, wipe it before any view renders (impersonation / shared PCs)
+        try {
+          const lastCo = localStorage.getItem('gwLastCompany');
+          const switched = lastCo !== window._companyId && !(lastCo === null && window._companyId === 'avalon');
+          if (switched && typeof window.gwClearTenantState === 'function') {
+            window.gwClearTenantState();
+            // Restore the auth marker for the CURRENT session (cleared above)
+            try { localStorage.setItem('avalonRepAuth', JSON.stringify({ repId: d1Rep.id, loginAt: new Date().toISOString() })); } catch (_) {}
+          }
+          localStorage.setItem('gwLastCompany', window._companyId);
+        } catch (_) {}
         // Map D1 rep to reps.js format for full compatibility
         const localRep = (window.REPS || []).find(r => r.id === d1Rep.id);
         if (localRep) {
