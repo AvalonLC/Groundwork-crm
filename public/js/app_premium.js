@@ -2191,7 +2191,7 @@ function _gwMyDayBindDnD(){
 }
 function _gwMyDayBindResize(grid){
   // Drag grips: east = width (snaps to grid columns), south = height (free px)
-  const GAP = 22; // must match .gw-myday-grid gap
+  const GAP = 28; // must match .gw-myday-grid column gap
   grid.querySelectorAll('.gw-myday-grip').forEach(grip => {
     grip.addEventListener('mousedown', e => {
       e.preventDefault(); e.stopPropagation();

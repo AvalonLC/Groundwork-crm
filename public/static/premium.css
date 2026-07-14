@@ -14462,9 +14462,6 @@ h1.pl-title,
   background: rgba(45,122,85,.05);
   pointer-events: none;
 }
-und: rgba(45,122,85,.05);
-  pointer-events: none;
-}
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SECTION 39 — MY DAY CUSTOMIZABLE WIDGETS + GLOBAL FLUID LAYOUT
@@ -14583,7 +14580,7 @@ und: rgba(45,122,85,.05);
 ══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── 1. Spacing: comfortable gap in both directions ── */
-.gw-myday-grid { gap: 22px !important; row-gap: 24px !important; }
+.gw-myday-grid { gap: 28px !important; row-gap: 32px !important; }
 .gw-myday-widget { position: relative; }
 /* cards inside widgets: kill stray top margins so gap is the only spacing */
 .gw-myday-widget-body > .card,
@@ -14692,3 +14689,78 @@ und: rgba(45,122,85,.05);
 .gw-myday-scratch:focus { outline: none; border-color: var(--gw-pine, #4D8A86); box-shadow: 0 0 0 3px rgba(77,138,134,.14); }
 
 /* customize-mode body stays interactive for scratchpad in edit mode? no — keep uniform */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 41 — RESPONSIVE WIDGET CONTENT
+   Inner layouts adapt to the WIDGET's width (not the window's), so content
+   stays visible when a widget is resized narrower. Uses auto-fit tracks +
+   flex wrapping instead of window media queries.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* Pipeline Snapshot: cells reflow into as many columns as fit (min 130px each) */
+.gw-myday-widget-body .gw-today-pipe-strip {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+/* borders that work at any wrap count: each cell draws bottom+right, the
+   strip's overflow:hidden clips the outermost ones via -1px margins */
+.gw-myday-widget-body .gw-today-pipe-cell {
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+  margin-bottom: -1px;
+}
+
+/* Generic inner grids (stats, forms, 2/3/4-col cards) reflow inside widgets */
+.gw-myday-widget-body .grid-2,
+.gw-myday-widget-body .grid-3,
+.gw-myday-widget-body .grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.gw-myday-widget-body .dashboard-strip,
+.gw-myday-widget-body .stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+/* Section headers: wrap instead of clipping when the widget is narrow */
+.gw-myday-widget-body .section-head { flex-wrap: wrap; row-gap: 6px; }
+.gw-myday-widget-body .section-head h2 { font-size: clamp(16px, 4cqw, 28px); min-width: 0; }
+
+/* Cards + text: never force horizontal scroll for ordinary content */
+.gw-myday-widget-body .card { min-width: 0; }
+.gw-myday-widget-body h2, .gw-myday-widget-body h3 { overflow-wrap: anywhere; }
+.gw-myday-widget-body .mini-row,
+.gw-myday-widget-body .opp-card { min-width: 0; }
+.gw-myday-widget-body .mini-row > *,
+.gw-myday-widget-body .opp-card > * { min-width: 0; overflow-wrap: anywhere; }
+
+/* Task workspace rows: let long titles wrap inside narrow widgets */
+.gw-myday-widget-body .gw-task-workspace { min-width: 0; }
+.gw-myday-widget-body .gw-task-workspace * { min-width: 0; }
+
+/* Quick Actions buttons shrink gracefully */
+.gw-myday-widget-body .gw-myday-qa-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+
+/* Financial Pulse: KPI tiles reflow to 1 column in narrow widgets */
+.gw-myday-widget-body .gw-today-fin-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+.gw-myday-widget-body .gw-today-fin-kpi { min-width: 0; }
+.gw-myday-widget-body .gw-today-fin-kpi-val { overflow-wrap: anywhere; }
+.gw-myday-widget-body .gw-today-fin-card { min-width: 0; }
+
+/* Checklist rows and misc flex rows: allow wrapping */
+.gw-myday-widget-body .check-item { flex-wrap: wrap; }
+.gw-myday-widget-body .footer-actions,
+.gw-myday-widget-body .quick-actions { flex-wrap: wrap; }
+
+/* Enable container-query units for widget bodies (safe no-op on old browsers) */
+.gw-myday-widget-body { container-type: inline-size; }
+
+/* Container-width-based tightening for really narrow widgets */
+@container (max-width: 260px) {
+  .gw-myday-widget-body .card,
+  .gw-myday-widget-body .gw-today-fin-card { padding: 12px; }
+  .gw-myday-widget-body .gw-today-pipe-cell { padding: 10px 8px; }
+  .gw-myday-widget-body .gw-today-pipe-val { font-size: 17px; }
+  .gw-myday-widget-body .gw-today-pipe-val--money { font-size: 14px; }
+  .gw-myday-widget-body h2 { font-size: 15px; }
+}
+
