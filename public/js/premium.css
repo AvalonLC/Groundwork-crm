@@ -8488,7 +8488,7 @@ h1.pl-title,
 /* ── Pipeline stat strip ──────────────────────────────────────────────────── */
 .gw-today-pipe-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   background: var(--gw-surface, #ffffff);
   border: 1px solid var(--gw-line, #E2EAE9);
@@ -14475,21 +14475,28 @@ und: rgba(45,122,85,.05);
 /* ── My Day widget grid ── */
 .gw-myday-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* minmax(0,1fr): allow tracks to shrink below content's natural width —
+     plain 1fr has an implicit auto minimum that blocks widget shrinking */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 18px;
   align-items: start;
 }
 .gw-myday-widget { min-width: 0; }
+.gw-myday-widget-body { min-width: 0; overflow-x: auto; }
 .gw-myday-widget-body > .card,
 .gw-myday-widget-body > section.card { margin-top: 0 !important; height: 100%; }
 .gw-myday-widget-body > .gw-today-pipe-strip { margin-bottom: 0; }
 
 @media (max-width: 1100px) {
-  .gw-myday-grid { grid-template-columns: repeat(2, 1fr); }
+  .gw-myday-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gw-myday-widget { grid-column: span 2 !important; }
+  /* user-chosen half-or-less widths stay half on narrow windows */
+  .gw-myday-widget[style*="span 1"],
+  .gw-myday-widget[style*="span 2"],
+  .gw-myday-widget[style*="span 3"] { grid-column: span 1 !important; }
 }
 @media (max-width: 768px) {
-  .gw-myday-grid { grid-template-columns: 1fr; }
+  .gw-myday-grid { grid-template-columns: minmax(0, 1fr); }
   .gw-myday-widget { grid-column: span 1 !important; }
 }
 
