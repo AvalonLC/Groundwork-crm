@@ -10311,6 +10311,7 @@ function settings(){
         <div class="footer-actions">
           <button class="primary-btn" onclick="exportJson()">Download JSON Backup</button>
           <button class="secondary-btn" onclick="exportCsv()">Download Pipeline CSV</button>
+          ${(_ia || _iom) ? '<button class="secondary-btn" onclick="window._gwFullExport(this)" style="border-color:rgba(77,138,134,.5);color:#4D8A86">☁ Full Company Export (Cloud)</button>' : ''}
         </div>
       </section>
       ${adminSections}
@@ -12314,6 +12315,30 @@ window.divSaveDivision = function(divKey) {
   showToast(`${label} saved — monthly totals updated`);
 };
 
+// ── Full company export: streams /api/company/export as a JSON download ──────
+window._gwFullExport = async function(btn) {
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
+  try {
+    const res = await fetch('/api/company/export', { credentials: 'include' });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'groundwork-export-' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    if (window.showToast) window.showToast('✓ Full company export downloaded');
+  } catch(e) {
+    if (window.showToast) window.showToast('Export failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+};
 window.gwSaveMonthBudget = function(month, val) {
   const overrides = loadAnnualOverrides();
   if (!overrides._monthlyBudgets) overrides._monthlyBudgets = {};

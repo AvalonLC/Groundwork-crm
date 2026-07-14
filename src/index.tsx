@@ -2,6 +2,18 @@ import { Hono } from 'hono'
 import { serveStatic } from 'hono/cloudflare-workers'
 import { cors } from 'hono/cors'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
+// ── Embedded migrations (0022-0030) for production schema self-heal ─────────
+// Vite inlines these at build time; applied idempotently via ensureFullSchema()
+import mig0022 from '../migrations/0022_stripe_connect.sql?raw'
+import mig0023 from '../migrations/0023_invoices.sql?raw'
+import mig0024 from '../migrations/0024_recurring_plans.sql?raw'
+import mig0025 from '../migrations/0025_onboarding.sql?raw'
+import mig0026 from '../migrations/0026_reviews.sql?raw'
+import mig0027 from '../migrations/0027_notifications.sql?raw'
+import mig0028 from '../migrations/0028_field_ops.sql?raw'
+import mig0029 from '../migrations/0029_language_preference.sql?raw'
+import mig0030 from '../migrations/0030_plan_visits_v2.sql?raw'
+
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string }
 type Variables = { repId: string; companyId: string; role: string; isSuperAdmin: boolean }
@@ -253,6 +265,40 @@ async function sendEmail(apiKey: string, to: string, subject: string, html: stri
 }
 
 // ── Secure random hex token ───────────────────────────────────────────────────
+// ── Full schema self-heal ─────────────────────────────────────────────────────
+// Applies embedded migrations 0022-0030 statement-by-statement, idempotently.
+// Guarded by a settings flag so it runs at most once per database.
+const EMBEDDED_MIGRATIONS: Array<[string, string]> = [
+  ['0022_stripe_connect.sql', mig0022], ['0023_invoices.sql', mig0023],
+  ['0024_recurring_plans.sql', mig0024], ['0025_onboarding.sql', mig0025],
+  ['0026_reviews.sql', mig0026], ['0027_notifications.sql', mig0027],
+  ['0028_field_ops.sql', mig0028], ['0029_language_preference.sql', mig0029],
+  ['0030_plan_visits_v2.sql', mig0030],
+]
+async function ensureFullSchema(db: D1Database): Promise<void> {
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_full_v1' LIMIT 1").first<any>()
+  if (flag) return
+  for (const [name, sql] of EMBEDDED_MIGRATIONS) {
+    // Strip line comments, split on ';' (no triggers/semicolons-in-literals in these files)
+    const stmts = sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+      .split(';').map(s => s.trim()).filter(s => s.length > 0)
+    for (const stmt of stmts) {
+      try { await db.prepare(stmt).run() } catch (e: any) {
+        const msg = String(e?.message || e)
+        // Idempotent: ignore already-applied DDL
+        if (!/duplicate column|already exists|UNIQUE constraint/i.test(msg)) {
+          console.log('ensureFullSchema skip-error', name, msg.slice(0, 120))
+        }
+      }
+    }
+    // Record in d1_migrations so wrangler-driven applies stay consistent
+    try {
+      await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind(name, name).run()
+    } catch {}
+  }
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_full_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+}
+
 function secureToken(bytes = 32): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)))
     .map(b => b.toString(16).padStart(2,'0')).join('')
@@ -284,8 +330,26 @@ async function requireAuth(c: any, next: any) {
   // Company scope: prefer the explicit session_company row (impersonation-aware)
   const coRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
     .bind(`session_company_${token}`).first<{ value: string }>()
+  const resolvedCompanyId = coRow?.value || row.company_id
+  // Company gate: suspension (403) + trial expiry (402). Super-admins exempt.
+  // try/catch: if trial columns don't exist yet (pre-migration DB), skip the gate.
+  if (!row.is_super_admin) {
+    try {
+      const co = await c.env.DB.prepare(
+        'SELECT active, subscription_status, trial_expires_at FROM companies WHERE id = ? LIMIT 1'
+      ).bind(resolvedCompanyId).first<any>()
+      if (co && co.active === 0) return err(c, 'company_suspended', 403)
+      if (co && co.subscription_status === 'trial' && co.trial_expires_at &&
+          new Date(co.trial_expires_at).getTime() < Date.now()) {
+        const p = new URL(c.req.url).pathname
+        const allowed = p.startsWith('/api/auth/') || p === '/api/company/branding' ||
+                        p.startsWith('/api/companies/') || p === '/api/events/poll'
+        if (!allowed) return err(c, 'trial_expired', 402)
+      }
+    } catch (_) { /* trial columns missing — skip gate */ }
+  }
   c.set('repId',        row.rep_id)
-  c.set('companyId',    coRow?.value || row.company_id)
+  c.set('companyId',    resolvedCompanyId)
   c.set('role',         row.role)
   c.set('isSuperAdmin', !!row.is_super_admin)
   await next()
@@ -369,6 +433,14 @@ app.post('/api/auth/login', async (c) => {
     return err(c, 'email required')
   }
   if (!rep) return err(c, 'Invalid credentials', 401)
+
+  // Company suspension check — clearer than letting every later call 403
+  try {
+    const co = await c.env.DB.prepare('SELECT active FROM companies WHERE id = ? LIMIT 1').bind(rep.company_id).first<any>()
+    if (co && co.active === 0 && !rep.is_super_admin) {
+      return err(c, 'This account has been suspended. Please contact support.', 403)
+    }
+  } catch (_) {}
 
   // Dual-mode password check: prefer hashed, fall back to plain-text legacy PIN
   let ok = false
@@ -498,13 +570,28 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     return { ...r, permissions: perms }
   })
 
+  // Company + trial + email-verification status (columns may not exist pre-migration)
+  let company: any = null
+  try {
+    company = await c.env.DB.prepare(
+      'SELECT id, name, plan, subscription_status, trial_expires_at, active, onboarding_completed FROM companies WHERE id = ? LIMIT 1'
+    ).bind(companyId).first()
+  } catch (_) {
+    try {
+      company = await c.env.DB.prepare('SELECT id, name, plan, active FROM companies WHERE id = ? LIMIT 1').bind(companyId).first()
+    } catch (_) {}
+  }
+  const verifiedRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
+    .bind(`${companyId}:email_verified_${repId}`).first<{ value: string }>()
+
   return json(c, {
     reps: repsResult.results || [],
     roles,
     pipelineStages: stages,
     navPerms,
+    company,
     // Include the logged-in rep's language preference so the i18n engine can hydrate on bootstrap
-    rep: { preferred_language: myRepRow?.preferred_language || 'en' }
+    rep: { preferred_language: myRepRow?.preferred_language || 'en', email_verified: !!verifiedRow }
   })
 })
 
@@ -2075,279 +2162,9 @@ app.post('/api/auth/reset-pin', async (c) => {
 // COMPANY ONBOARDING  (public signup — no auth required)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// GET /onboard  — serve the public signup page  (GW-015 rebranded)
-app.get('/onboard', (c) => {
-  return c.html(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Get Started — Groundwork CRM</title>
-  <meta name="theme-color" content="#113931" />
-  <meta name="description" content="Set up your team on Groundwork CRM in 2 minutes." />
-  <link rel="icon" type="image/png" sizes="32x32" href="/js/favicon-32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/js/favicon-16.png" />
-  <link rel="icon" type="image/x-icon" href="/js/favicon.ico" />
-  <link rel="apple-touch-icon" href="/js/apple-touch-icon.png" />
-  <link rel="manifest" href="/site.webmanifest" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Groundwork" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{
-      font-family:Inter,sans-serif;
-      background:linear-gradient(160deg,#0E372F 0%,#113931 45%,#0E372F 100%);
-      min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
-    }
-    /* Decorative ring behind card */
-    body::before{
-      content:'';position:fixed;top:-120px;right:-120px;
-      width:440px;height:440px;
-      background:radial-gradient(circle,rgba(16,185,129,.08) 0%,transparent 70%);
-      pointer-events:none;
-    }
-    .card{
-      background:#ffffff;
-      border-radius:24px;
-      padding:0;
-      width:100%;max-width:500px;
-      box-shadow:0 32px 80px rgba(0,0,0,.25);
-      overflow:hidden;
-      position:relative;
-    }
-    /* Pine header strip */
-    .card-header{
-      background:linear-gradient(135deg,#0E372F 0%,#113931 60%,#1A4740 100%);
-      padding:30px 36px 28px;
-      text-align:center;
-    }
-    .logo-pill{
-      display:inline-flex;align-items:center;gap:10px;
-      background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);
-      border-radius:14px;padding:8px 16px 8px 12px;margin-bottom:16px;
-    }
-    .logo-pill img{width:28px;height:28px;object-fit:contain;filter:brightness(0) invert(1);opacity:.9;border-radius:6px}
-    .logo-pill-text{font-size:17px;font-weight:900;color:#fff;letter-spacing:-.03em;line-height:1}
-    .logo-pill-sub{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.13em;text-transform:uppercase;margin-top:1px}
-    .card-header h1{margin:0;font-size:20px;font-weight:800;color:#fff;letter-spacing:-.03em}
-    .card-header p{margin:6px 0 0;color:rgba(255,255,255,.52);font-size:13px}
-    .card-body{padding:32px 36px 36px}
-    h1.step-title{font-size:24px;font-weight:800;margin-bottom:6px;color:#0F1C14;letter-spacing:-.03em}
-    p.sub{color:#5A6B79;font-size:14px;margin-bottom:24px;line-height:1.55}
-    label{display:block;font-size:12px;font-weight:700;color:#5A6B79;margin-bottom:5px;letter-spacing:.02em;text-transform:uppercase}
-    input,select{
-      width:100%;padding:11px 14px;
-      background:#F5F9F7;border:1.5px solid #E2EBE8;
-      border-radius:10px;color:#0F1C14;font-size:14px;
-      font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s;
-    }
-    input:focus,select:focus{border-color:#113931;box-shadow:0 0 0 3px rgba(30,70,56,.12)}
-    input::placeholder{color:#94A3B8}
-    .field{margin-bottom:16px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    .hint{font-size:11px;color:#94A3B8;margin-top:4px}
-    .slug-preview{font-size:12px;color:#113931;margin-top:4px;font-weight:700}
-    button[type=submit]{
-      width:100%;padding:13px;
-      background:#113931;color:#fff;
-      font-size:15px;font-weight:700;
-      border:none;border-radius:12px;cursor:pointer;
-      margin-top:6px;transition:background .15s,box-shadow .15s;
-      font-family:inherit;
-      box-shadow:0 4px 16px rgba(30,70,56,.3);
-    }
-    button[type=submit]:hover{background:#1A4740;box-shadow:0 6px 22px rgba(30,70,56,.38)}
-    button[type=submit]:disabled{background:#C8D8D3;box-shadow:none;cursor:not-allowed}
-    .step{display:none}.step.active{display:block}
-    /* Success state */
-    .success-ring{
-      width:68px;height:68px;border-radius:50%;
-      background:linear-gradient(135deg,#113931,#10B981);
-      display:flex;align-items:center;justify-content:center;
-      font-size:28px;margin:0 auto 18px;
-      box-shadow:0 8px 24px rgba(16,185,129,.3);
-    }
-    .creds{
-      background:#F5F9F7;border:1px solid #E2EBE8;
-      border-radius:12px;padding:18px;margin:18px 0 24px;
-      font-size:14px;
-    }
-    .creds .row-item{
-      display:flex;justify-content:space-between;align-items:center;
-      padding:7px 0;border-bottom:1px solid #E2EBE8;
-    }
-    .creds .row-item:last-child{border-bottom:none}
-    .creds .cred-label{font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.07em}
-    .creds .cred-val{font-size:14px;font-weight:700;color:#0F1C14;font-family:monospace}
-    .open-btn{
-      display:block;width:100%;padding:13px;
-      background:#113931;color:#fff;
-      font-size:15px;font-weight:700;border-radius:12px;
-      text-align:center;text-decoration:none;
-      box-shadow:0 4px 16px rgba(30,70,56,.3);
-      transition:background .15s;
-    }
-    .open-btn:hover{background:#1A4740}
-    .error{
-      background:#FEF2F2;border:1px solid #FECACA;
-      color:#991B1B;padding:11px 14px;border-radius:10px;
-      font-size:13px;margin-bottom:14px;display:none;
-    }
-    .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:7px}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    @media(max-width:520px){
-      .card-header{padding:24px 24px 22px}.card-body{padding:24px 24px 28px}
-      .row{grid-template-columns:1fr}
-    }
-  </style>
-</head>
-<body>
-<div class="card">
-  <!-- Pine header -->
-  <div class="card-header">
-    <div class="logo-pill">
-      <img src="/js/avalon-logo.png" alt="Groundwork CRM">
-      <div>
-        <div class="logo-pill-text">Groundwork</div>
-        <div class="logo-pill-sub">CRM</div>
-      </div>
-    </div>
-    <h1>Set up your workspace</h1>
-    <p>Get your crew live in 2 minutes. No credit card required.</p>
-  </div>
-
-  <div class="card-body">
-
-    <!-- Step 1: Company info -->
-    <div class="step active" id="step1">
-      <div id="errorBox" class="error"></div>
-      <form id="onboardForm">
-        <div class="field">
-          <label>Company name</label>
-          <input type="text" id="companyName" placeholder="Apex Landscaping" required autocomplete="organization">
-          <div class="slug-preview" id="slugPreview"></div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Your name</label>
-            <input type="text" id="ownerName" placeholder="Tyler" required autocomplete="given-name">
-          </div>
-          <div class="field">
-            <label>Your role</label>
-            <select id="ownerRole">
-              <option value="admin">Owner / Admin</option>
-              <option value="office_manager">Office Manager</option>
-            </select>
-          </div>
-        </div>
-        <div class="field">
-          <label>Work email <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94A3B8">(for PIN reset)</span></label>
-          <input type="email" id="ownerEmail" placeholder="tyler@yourbusiness.com" autocomplete="email">
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Login ID</label>
-            <input type="text" id="ownerId" placeholder="tyler" required autocomplete="username" pattern="[a-z0-9_-]+" title="lowercase letters, numbers, - _">
-            <div class="hint">Lowercase, no spaces</div>
-          </div>
-          <div class="field">
-            <label>Choose a PIN</label>
-            <input type="password" id="ownerPin" placeholder="4–8 digits" required minlength="4" maxlength="8" inputmode="numeric">
-          </div>
-        </div>
-        <button type="submit" id="submitBtn">Create my account →</button>
-      </form>
-    </div>
-
-    <!-- Step 2: Success -->
-    <div class="step" id="step2">
-      <div class="success-ring">✓</div>
-      <h1 class="step-title" style="text-align:center">You're all set!</h1>
-      <p class="sub" style="text-align:center">Your Groundwork CRM workspace is ready. Save these credentials.</p>
-      <div class="creds">
-        <div class="row-item">
-          <span class="cred-label">Company ID</span>
-          <span class="cred-val" id="s2company"></span>
-        </div>
-        <div class="row-item">
-          <span class="cred-label">Login ID</span>
-          <span class="cred-val" id="s2repId"></span>
-        </div>
-        <div class="row-item">
-          <span class="cred-label">PIN</span>
-          <span class="cred-val" id="s2pin"></span>
-        </div>
-      </div>
-      <a href="/" class="open-btn">Open Groundwork CRM →</a>
-    </div>
-
-  </div>
-</div>
-
-<script>
-  // Auto-generate slug from company name
-  const nameEl = document.getElementById('companyName')
-  const slugEl = document.getElementById('slugPreview')
-  function toSlug(s) {
-    return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,30)
-  }
-  nameEl.addEventListener('input', () => {
-    const slug = toSlug(nameEl.value)
-    slugEl.textContent = slug ? 'Your company ID: ' + slug : ''
-  })
-
-  document.getElementById('onboardForm').addEventListener('submit', async (e) => {
-    e.preventDefault()
-    const btn = document.getElementById('submitBtn')
-    const errBox = document.getElementById('errorBox')
-    errBox.style.display = 'none'
-    btn.disabled = true
-    btn.innerHTML = '<span class="spinner"></span>Creating account…'
-
-    const companyName = nameEl.value.trim()
-    const slug        = toSlug(companyName)
-    const ownerName   = document.getElementById('ownerName').value.trim()
-    const ownerRole   = document.getElementById('ownerRole').value
-    const ownerEmail  = document.getElementById('ownerEmail').value.trim()
-    const ownerId     = document.getElementById('ownerId').value.trim().toLowerCase()
-    const ownerPin    = document.getElementById('ownerPin').value
-
-    try {
-      // 1. Create company
-      const cRes = await fetch('/api/companies', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name: companyName, slug, ownerEmail, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
-      })
-      const cData = await cRes.json()
-      if (!cData.ok) throw new Error(cData.error || 'Company creation failed')
-
-      // 2. Create owner rep
-      const rRes = await fetch('/api/reps', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ id: ownerId, name: ownerName, role: ownerRole, pin: ownerPin, email: ownerEmail, companyId: slug, color: '#00A7E1' })
-      })
-      const rData = await rRes.json()
-      if (!rData.ok) throw new Error(rData.error || 'Rep creation failed')
-
-      // 3. Show success
-      document.getElementById('s2company').textContent = slug
-      document.getElementById('s2repId').textContent   = ownerId
-      document.getElementById('s2pin').textContent     = ownerPin
-      document.getElementById('step1').classList.remove('active')
-      document.getElementById('step2').classList.add('active')
-    } catch(err) {
-      errBox.textContent = err.message
-      errBox.style.display = 'block'
-      btn.disabled = false
-      btn.textContent = 'Create my account →'
-    }
-  })
-</script>
-</body>
-</html>`)
-})
+// GET /onboard — legacy admin-style onboarding page (used POST /api/companies,
+// which is now super-admin only). Public signups go through /signup instead.
+app.get('/onboard', (c) => c.redirect('/signup', 301))
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TIME TRACKING  — clock-in/out, weekly timesheets, payroll approval
@@ -2957,6 +2774,71 @@ app.get('/api/admin/companies', requireSuperAdmin, async (c) => {
     ORDER BY c.created_at DESC
   `).all()
   return json(c, companies.results)
+})
+
+// DELETE /api/admin/companies/:id — hard-delete a company and ALL its data
+// Requires confirm=<company_id> query param as a safety interlock.
+const TENANT_TABLES = [
+  'reps','opportunities','notes','communications','files','checklist_progress','academy_progress',
+  'quiz_attempts','badges','certifications','clients','revenue_actuals','time_entries','roles',
+  'activity_log','break_entries','workday_settings','tasks','crews','crew_members','work_orders',
+  'work_order_employees','customer_notes','recurring_plans','client_plan_subscriptions','plan_visits',
+  'field_reports','aar_templates','aar_submissions','estimates','payments','invoices','invoice_counters',
+  'onboarding_responses','review_requests','review_settings','referrals','notifications','estimate_portal_tokens'
+]
+app.delete('/api/admin/companies/:id', requireSuperAdmin, async (c) => {
+  const id = c.req.param('id')
+  if (!id || id === 'avalon' || id === 'groundwork_platform') return err(c, 'This company cannot be deleted', 400)
+  if (c.req.query('confirm') !== id) return err(c, 'Confirmation mismatch: pass ?confirm=<company_id>', 400)
+  const co = await c.env.DB.prepare('SELECT id, name FROM companies WHERE id = ? LIMIT 1').bind(id).first<any>()
+  if (!co) return err(c, 'Company not found', 404)
+
+  // Delete tenant rows table-by-table (some tables may not exist on older DBs)
+  let purged: Record<string, number> = {}
+  for (const t of TENANT_TABLES) {
+    try {
+      const r = await c.env.DB.prepare(`DELETE FROM ${t} WHERE company_id = ?`).bind(id).run()
+      if (r.meta.changes) purged[t] = r.meta.changes
+    } catch (_) {}
+  }
+  // Settings: company-prefixed keys + any sessions scoped to this company
+  await c.env.DB.prepare("DELETE FROM settings WHERE key LIKE ?").bind(`${id}:%`).run()
+  const coSessions = await c.env.DB.prepare(
+    "SELECT key FROM settings WHERE key LIKE 'session_company_%' AND value = ?"
+  ).bind(id).all()
+  for (const s of (coSessions.results || []) as any[]) {
+    const tok = String(s.key).replace('session_company_', '')
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(`session_${tok}`),
+      c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(`session_company_${tok}`)
+    ])
+  }
+  await c.env.DB.prepare('DELETE FROM companies WHERE id = ?').bind(id).run()
+  return json(c, { deleted: id, name: co.name, purged })
+})
+
+// GET /api/company/export — full JSON export of the caller's own company data
+// Admin/office_manager only. Returns { company, exported_at, tables: {name: rows[]} }
+app.get('/api/company/export', requireAuth, async (c) => {
+  const role = c.var.role as string
+  if (!(role === 'admin' || role === 'office_manager' || c.var.isSuperAdmin)) return err(c, 'Forbidden', 403)
+  const companyId = c.var.companyId as string
+  const co = await c.env.DB.prepare('SELECT * FROM companies WHERE id = ? LIMIT 1').bind(companyId).first()
+  const tables: Record<string, any[]> = {}
+  for (const t of TENANT_TABLES) {
+    try {
+      const r = await c.env.DB.prepare(`SELECT * FROM ${t} WHERE company_id = ?`).bind(companyId).all()
+      tables[t] = (r.results || []).map((row: any) => {
+        // Strip credential material from the export
+        if (t === 'reps') { delete row.pin; delete row.pin_hash; delete row.reset_token; delete row.reset_token_exp; delete row.invite_token }
+        return row
+      })
+    } catch (_) { tables[t] = [] }
+  }
+  const settings = await c.env.DB.prepare('SELECT key, value, updated_at FROM settings WHERE key LIKE ?').bind(`${companyId}:%`).all()
+  tables['settings'] = (settings.results || []) as any[]
+  c.header('Content-Disposition', `attachment; filename="groundwork-export-${companyId}-${new Date().toISOString().slice(0,10)}.json"`)
+  return c.json({ company: co, exported_at: new Date().toISOString(), tables })
 })
 
 // GET /api/admin/stats  — platform-wide totals (excludes platform owner anchor records)
@@ -3977,6 +3859,11 @@ app.post('/api/auth/signup', async (c) => {
   const ownerName   = String(b.owner_name || b.ownerName || '').trim()
   const businessType = String(b.business_type || b.businessType || 'home_services')
 
+  // Honeypot: hidden field bots fill out. Pretend success, create nothing.
+  if (String(b.website_url || b.hp_field || '').trim() !== '') {
+    return c.json({ ok: true, company_id: 'co_' + Date.now(), rep_id: 'rep_' + Date.now(), slug: 'ok' })
+  }
+
   if (!companyName || !email || !password) {
     return c.json({ error: 'Company name, email, and password are required' }, 400)
   }
@@ -3987,11 +3874,28 @@ app.post('/api/auth/signup', async (c) => {
     return c.json({ error: 'Please enter a valid email address' }, 400)
   }
 
+  // IP rate limit: max 3 signups per IP per hour (settings-based sliding window)
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() || 'unknown'
+  if (ip !== 'unknown') {
+    const rlKey = `_signup_rl_${ip}`
+    const rl = await db.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1').bind(rlKey).first<any>()
+    const now = Date.now()
+    let hits: number[] = []
+    try { hits = JSON.parse(rl?.value || '[]').filter((t: number) => now - t < 60 * 60 * 1000) } catch {}
+    if (hits.length >= 3) {
+      return c.json({ error: 'Too many signups from this location. Please try again in an hour.' }, 429)
+    }
+    hits.push(now)
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .bind(rlKey, JSON.stringify(hits)).run()
+  }
+
   // Email must be unique across all tenants (login is email-based)
   const existing = await db.prepare('SELECT id FROM reps WHERE email = ? LIMIT 1').bind(email).first()
   if (existing) return c.json({ error: 'An account with this email already exists' }, 409)
 
   await ensureSignupSchema(db)
+  await ensureFullSchema(db)
 
   // Company id + unique slug
   const baseSlug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'company'
@@ -4041,14 +3945,82 @@ app.post('/api/auth/signup', async (c) => {
     httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 24 * 30
   })
 
+  // Email verification (soft gate): send a verify link; app shows a banner until verified.
+  let verifySent = false
+  if (c.env.SENDGRID_API_KEY) {
+    const vToken = secureToken(24)
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .bind(`_verify_${vToken}`, JSON.stringify({ repId, companyId, email, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 })).run()
+    const origin = new URL(c.req.url).origin
+    const verifyUrl = `${origin}/api/auth/verify-email?token=${vToken}`
+    verifySent = await sendEmail(c.env.SENDGRID_API_KEY, email,
+      'Verify your email — Groundwork CRM',
+      `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#F5F9F7;font-family:Inter,Arial,sans-serif">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F9F7;padding:48px 20px"><tr><td align="center">
+        <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(30,70,56,.10)">
+          <tr><td style="background:linear-gradient(135deg,#0E372F,#1A4740);padding:32px 40px;text-align:center">
+            <div style="color:#fff;font-size:20px;font-weight:800">Groundwork CRM</div></td></tr>
+          <tr><td style="padding:36px 40px">
+            <h2 style="margin:0 0 12px;color:#0E372F;font-size:19px">Welcome, ${displayName}!</h2>
+            <p style="margin:0 0 24px;color:#4a5f58;font-size:14px;line-height:1.6">Your 14-day free trial of <strong>${companyName}</strong> has started. Please confirm your email address to secure your account.</p>
+            <div style="text-align:center;margin:0 0 24px"><a href="${verifyUrl}" style="display:inline-block;background:#2D7A55;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:12px">Verify My Email</a></div>
+            <p style="margin:0;color:#8aa39a;font-size:12px;line-height:1.5">This link expires in 7 days. If you didn't create this account, you can ignore this email.</p>
+          </td></tr>
+        </table></td></tr></table></body></html>`)
+  }
+
   return c.json({
     ok: true,
     company_id: companyId,
     rep_id: repId,
     slug,
     trial_expires_at: trialEnd,
-    onboarding_step: 0
+    onboarding_step: 0,
+    verify_email_sent: verifySent
   })
+})
+
+// GET /api/auth/verify-email?token=xxx — marks the rep's email verified, redirects to app
+app.get('/api/auth/verify-email', async (c) => {
+  const vToken = c.req.query('token') || ''
+  if (!vToken || !/^[a-f0-9]{16,64}$/.test(vToken)) return c.redirect('/?verify=invalid')
+  const db = c.env.DB as D1Database
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1').bind(`_verify_${vToken}`).first<any>()
+  if (!row) return c.redirect('/?verify=invalid')
+  let data: any = null
+  try { data = JSON.parse(row.value) } catch {}
+  if (!data || (data.exp && Date.now() > data.exp)) {
+    await db.prepare('DELETE FROM settings WHERE key = ?').bind(`_verify_${vToken}`).run()
+    return c.redirect('/?verify=expired')
+  }
+  await db.batch([
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, 'true', datetime('now'))")
+      .bind(`${data.companyId}:email_verified_${data.repId}`),
+    db.prepare('DELETE FROM settings WHERE key = ?').bind(`_verify_${vToken}`)
+  ])
+  return c.redirect('/?verify=ok')
+})
+
+// POST /api/auth/resend-verification — authed; resends the verify link
+app.post('/api/auth/resend-verification', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  const repId = c.var.repId as string
+  const companyId = c.var.companyId as string
+  const already = await db.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
+    .bind(`${companyId}:email_verified_${repId}`).first()
+  if (already) return json(c, { verified: true })
+  if (!c.env.SENDGRID_API_KEY) return json(c, { sent: false, reason: 'email_not_configured' })
+  const rep = await db.prepare('SELECT email, name FROM reps WHERE id = ? AND company_id = ? LIMIT 1').bind(repId, companyId).first<any>()
+  if (!rep?.email) return json(c, { sent: false, reason: 'no_email' })
+  const vToken = secureToken(24)
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+    .bind(`_verify_${vToken}`, JSON.stringify({ repId, companyId, email: rep.email, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 })).run()
+  const origin = new URL(c.req.url).origin
+  const verifyUrl = `${origin}/api/auth/verify-email?token=${vToken}`
+  const sent = await sendEmail(c.env.SENDGRID_API_KEY, rep.email,
+    'Verify your email — Groundwork CRM',
+    `<p style="font-family:Arial,sans-serif;font-size:14px;color:#333">Hi ${rep.name || ''}, please verify your Groundwork CRM email:</p><p><a href="${verifyUrl}" style="display:inline-block;background:#2D7A55;color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:10px;font-family:Arial,sans-serif">Verify My Email</a></p>`)
+  return json(c, { sent })
 })
 
 // ── RECURRING PLANS (D1) ──────────────────────────────────────────────────────
@@ -5757,7 +5729,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260714b011">
+  <link rel="stylesheet" href="/js/premium.css?v=20260714b014">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5781,8 +5753,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260714b011"></script>
-  <script src="/js/client_portal.js?v=20260714b011"></script>
+  <script src="/js/platform_core.js?v=20260714b014"></script>
+  <script src="/js/client_portal.js?v=20260714b014"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6167,6 +6139,11 @@ app.get('/signup', (c) => {
         <label>Password</label>
         <input type="password" id="password" placeholder="8+ characters" required minlength="8" autocomplete="new-password">
       </div>
+      <!-- Honeypot: invisible to humans; bots that fill it get a fake success -->
+      <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+        <label for="website_url">Website</label>
+        <input type="text" id="website_url" name="website_url" tabindex="-1" autocomplete="off">
+      </div>
       <button type="submit" class="btn" id="submitBtn">Create Free Account</button>
     </form>
 
@@ -6194,7 +6171,8 @@ app.get('/signup', (c) => {
             email: document.getElementById('email').value.trim(),
             password: document.getElementById('password').value,
             owner_name: document.getElementById('ownerName').value.trim(),
-            business_type: document.getElementById('businessType').value
+            business_type: document.getElementById('businessType').value,
+            website_url: (document.getElementById('website_url')||{}).value || ''
           })
         });
         const data = await res.json();
@@ -6395,9 +6373,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260714b011">
-  <link rel="stylesheet" href="/js/styles.css?v=20260714b011">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260714b011">
+  <link rel="stylesheet" href="/js/premium.css?v=20260714b014">
+  <link rel="stylesheet" href="/js/styles.css?v=20260714b014">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260714b014">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6944,34 +6922,34 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260714b011"></script>
-<script src="/js/db.js?v=20260714b011"></script>
-<script src="/js/data.js?v=20260714b011"></script>
-<script src="/js/reps.js?v=20260714b011"></script>
-<script src="/js/record-page.js?v=20260714b011"></script>
-<script src="/js/academy.js?v=20260714b011"></script>
-<script src="/js/task_engine.js?v=20260714b011"></script>
-<script src="/js/gw_i18n.js?v=20260714b011"></script>
-<script src="/js/app_premium.js?v=20260714b011"></script>
-<script src="/js/estimates.js?v=20260714b011"></script>
-<script src="/js/invoices.js?v=20260714b011"></script>
-<script src="/js/csv_import.js?v=20260714b011"></script>
-<script src="/js/onboarding.js?v=20260714b011"></script>
-<script src="/js/recurring_plans.js?v=20260714b011"></script>
-<script src="/js/reviews.js?v=20260714b011"></script>
-<script src="/js/stripe.js?v=20260714b011"></script>
-<script src="/js/email.js?v=20260714b011"></script>
-<script src="/js/notifications.js?v=20260714b011"></script>
-<script src="/js/integrations.js?v=20260714b011"></script>
-<script src="/js/user_management.js?v=20260714b011"></script>
-<script src="/js/platform_admin.js?v=20260714b011"></script>
-<script src="/js/time_tracker.js?v=20260714b011"></script>
-<script src="/js/field_workday.js?v=20260714b011"></script>
-<script src="/js/platform_core.js?v=20260714b011"></script>
-<script src="/js/approval_engine.js?v=20260714b011"></script>
-<script src="/js/automation_engine.js?v=20260714b011"></script>
-<script src="/js/client_portal.js?v=20260714b011"></script>
-<script src="/js/field_mode.js?v=20260714b011"></script>
+<script src="/js/gw-icons.js?v=20260714b014"></script>
+<script src="/js/db.js?v=20260714b014"></script>
+<script src="/js/data.js?v=20260714b014"></script>
+<script src="/js/reps.js?v=20260714b014"></script>
+<script src="/js/record-page.js?v=20260714b014"></script>
+<script src="/js/academy.js?v=20260714b014"></script>
+<script src="/js/task_engine.js?v=20260714b014"></script>
+<script src="/js/gw_i18n.js?v=20260714b014"></script>
+<script src="/js/app_premium.js?v=20260714b014"></script>
+<script src="/js/estimates.js?v=20260714b014"></script>
+<script src="/js/invoices.js?v=20260714b014"></script>
+<script src="/js/csv_import.js?v=20260714b014"></script>
+<script src="/js/onboarding.js?v=20260714b014"></script>
+<script src="/js/recurring_plans.js?v=20260714b014"></script>
+<script src="/js/reviews.js?v=20260714b014"></script>
+<script src="/js/stripe.js?v=20260714b014"></script>
+<script src="/js/email.js?v=20260714b014"></script>
+<script src="/js/notifications.js?v=20260714b014"></script>
+<script src="/js/integrations.js?v=20260714b014"></script>
+<script src="/js/user_management.js?v=20260714b014"></script>
+<script src="/js/platform_admin.js?v=20260714b014"></script>
+<script src="/js/time_tracker.js?v=20260714b014"></script>
+<script src="/js/field_workday.js?v=20260714b014"></script>
+<script src="/js/platform_core.js?v=20260714b014"></script>
+<script src="/js/approval_engine.js?v=20260714b014"></script>
+<script src="/js/automation_engine.js?v=20260714b014"></script>
+<script src="/js/client_portal.js?v=20260714b014"></script>
+<script src="/js/field_mode.js?v=20260714b014"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -7099,6 +7077,59 @@ function getHtml(): string {
               if (window.AVALON_DATA && bs.data.pipelineStages) {
                 window.AVALON_DATA.statuses = bs.data.pipelineStages;
               }
+              // ── Trial status + email-verification UI ─────────────────────
+              try {
+                const co = bs.data.company;
+                if (co && co.subscription_status === 'trial' && co.trial_expires_at) {
+                  const msLeft = new Date(co.trial_expires_at).getTime() - Date.now();
+                  const daysLeft = Math.ceil(msLeft / 86400000);
+                  if (msLeft <= 0) {
+                    // Trial expired — full-screen overlay (API is already gated server-side with 402)
+                    const ov = document.createElement('div');
+                    ov.id = 'gw-trial-expired';
+                    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,26,22,.96);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)';
+                    ov.innerHTML = '<div style="max-width:440px;background:#fff;border-radius:20px;padding:40px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">' +
+                      '<div style="font-size:40px;margin-bottom:14px">⏰</div>' +
+                      '<h2 style="margin:0 0 10px;color:#0E372F;font-size:21px;font-weight:800">Your free trial has ended</h2>' +
+                      '<p style="margin:0 0 24px;color:#4a5f58;font-size:14px;line-height:1.6">Your 14-day trial of Groundwork CRM is over. Your data is safe — upgrade to keep using your account.</p>' +
+                      '<a href="mailto:support@groundwork-crm.com?subject=Upgrade%20my%20Groundwork%20account" style="display:inline-block;background:#2D7A55;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:12px;margin-bottom:12px">Contact us to upgrade</a>' +
+                      '<div><button onclick="window.logoutRep&&window.logoutRep()" style="background:none;border:none;color:#8aa39a;font-size:13px;cursor:pointer;text-decoration:underline;margin-top:8px">Sign out</button></div></div>';
+                    document.body.appendChild(ov);
+                  } else if (daysLeft <= 14) {
+                    // Trial countdown pill in the topbar (next to company badge)
+                    const badge = document.getElementById('gw-company-badge');
+                    if (badge) {
+                      const pill = document.createElement('span');
+                      pill.id = 'gw-trial-pill';
+                      const urgent = daysLeft <= 3;
+                      pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;' +
+                        (urgent ? 'background:rgba(201,123,106,.15);color:#C97B6A;border:1px solid rgba(201,123,106,.35)' : 'background:rgba(139,105,20,.12);color:#8B6914;border:1px solid rgba(139,105,20,.3)');
+                      pill.textContent = 'Trial · ' + daysLeft + (daysLeft === 1 ? ' day left' : ' days left');
+                      badge.after(pill);
+                    }
+                  }
+                }
+                // Email-verification banner (soft gate; only when SendGrid sent something)
+                const params = new URLSearchParams(location.search);
+                if (params.get('verify') === 'ok' && window.showToast) { window.showToast('✓ Email verified — thank you!'); history.replaceState(null,'',location.pathname); }
+                if (bs.data.rep && bs.data.rep.email_verified === false && co && co.subscription_status === 'trial' && !document.getElementById('gw-verify-banner')) {
+                  const vb = document.createElement('div');
+                  vb.id = 'gw-verify-banner';
+                  vb.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9000;background:#0E372F;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,.3)';
+                  vb.innerHTML = '<span>📧 Please verify your email address to secure your account.</span>' +
+                    '<button id="gw-verify-resend" style="background:#2D7A55;border:none;color:#fff;font-weight:700;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer">Resend link</button>' +
+                    '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:16px;cursor:pointer;padding:0 2px">×</button>';
+                  document.body.appendChild(vb);
+                  document.getElementById('gw-verify-resend').addEventListener('click', async function() {
+                    this.disabled = true; this.textContent = 'Sending…';
+                    try {
+                      const r = await fetch('/api/auth/resend-verification', { method:'POST', credentials:'include' });
+                      const j = await r.json();
+                      this.textContent = (j.data && (j.data.sent || j.data.verified)) ? '✓ Sent' : 'Email not configured';
+                    } catch(_) { this.textContent = 'Failed'; this.disabled = false; }
+                  });
+                }
+              } catch(trialErr) { console.warn('[Trial UI]', trialErr.message); }
             }
           }
         } catch(bsErr) {

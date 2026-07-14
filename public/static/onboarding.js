@@ -113,7 +113,8 @@ window.gwCheckOnboarding = async function() {
   try {
     const res = await fetch('/api/company/branding', { credentials: 'include' });
     if (!res.ok) return;
-    const co = await res.json();
+    const _raw = await res.json();
+    const co = (_raw && _raw.data) ? _raw.data : _raw;  // API wraps payload in {ok, data}
     // Only trigger for admin role and uncompleted onboarding
     const rep = window._d1SessionRep;
     if (!rep || rep.role !== 'admin') return;

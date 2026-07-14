@@ -335,6 +335,18 @@
         show('gwTenants');
       } catch(e) { toast('Error: ' + e.message); }
     };
+    window._gwDeleteTenant = async function(id, name) {
+      const typed = prompt(`⚠️ PERMANENTLY DELETE "${name}" and ALL its data?\n\nThis cannot be undone. Reps, leads, estimates, invoices, settings — everything will be erased.\n\nType the company ID to confirm:\n${id}`);
+      if (typed === null) return;
+      if (typed.trim() !== id) { toast('Company ID did not match — deletion cancelled'); return; }
+      try {
+        const r = await fetch(`/api/admin/companies/${encodeURIComponent(id)}?confirm=${encodeURIComponent(id)}`, { method:'DELETE', credentials:'include' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        toast(`Deleted "${name}" and all its data`);
+        show('gwTenants');
+      } catch(e) { toast('Delete failed: ' + e.message); }
+    };
   }
 
   function _tenantRow(co) {
@@ -359,6 +371,8 @@
             style="padding:5px 10px;background:${co.active?'#C97B6A22':'#2D7A5522'};border:1px solid ${co.active?'#C97B6A44':'#2D7A5544'};border-radius:7px;color:${co.active?'#C97B6A':'#2D7A55'};font-size:11px;font-weight:700;cursor:pointer">
             ${co.active?'Deactivate':'Reactivate'}
           </button>
+          ${co.id !== 'avalon' ? `<button onclick="window._gwDeleteTenant('${esc(co.id)}','${esc(co.name)}')"
+            style="padding:5px 10px;background:rgba(201,60,60,.12);border:1px solid rgba(201,60,60,.35);border-radius:7px;color:#D96C6C;font-size:11px;font-weight:700;cursor:pointer">Delete</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -1129,6 +1143,11 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed');
         window._d1Ready = false; window._d1SessionRep = null; window._companyId = companyId;
+        // Tenant guard: wipe cached client state so the new company's data doesn't mix
+        try {
+          if (typeof window.gwClearTenantState === 'function') window.gwClearTenantState();
+          localStorage.setItem('gwLastCompany', companyId);
+        } catch(_) {}
         if (typeof showToast === 'function') showToast(`Switched to ${companyName} — reloading…`, 3000);
         overlay.style.display = 'none';
         setTimeout(() => location.reload(), 1000);
