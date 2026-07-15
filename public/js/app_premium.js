@@ -5456,7 +5456,7 @@ function opportunityDetail(id){
           </div>` : ''}
           ${o.email ? `<div class="rp-left-field">
             <div class="rp-left-field-label">Email</div>
-            <div class="rp-left-field-value"><button class="cl-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(o.email)}',toName:'${escapeHtml(o.client||'')}'})">\${escapeHtml(o.email)}</button></div>
+            <div class="rp-left-field-value"><button class="cl-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(o.email)}',toName:'${escapeHtml(o.client||'')}'})">${escapeHtml(o.email)}</button></div>
           </div>` : ''}
           ${o.address ? `<div class="rp-left-field">
             <div class="rp-left-field-label">Address</div>

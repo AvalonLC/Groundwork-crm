@@ -6375,3 +6375,71 @@ h1.ld-name {
 /* ─── END SCHEDULE BOARD v2 ─────────────────────────────────────────────── */
 
 /* ─── END GROUNDWORK DESIGN SYSTEM v2.0 ─────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FLUID PAGE WIDTH — pages expand with the window (no more crunched center
+   column on wide monitors). Overrides the fixed max-width caps set earlier
+   in premium.css / this file. Document-style views (invoices, statements,
+   learning articles) intentionally keep a readable cap.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Record pages (lead/opportunity detail), work orders, generic rp pages */
+.rp-shell,
+.wo-list-shell {
+  max-width: none !important;
+  margin: 0 !important;
+  width: 100% !important;
+}
+
+/* Customer detail */
+.cd-shell {
+  max-width: none !important;
+  margin: 0 auto !important;
+}
+
+/* Assets Hub */
+.ah-shell {
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+/* Estimates: list, detail, builder */
+.est-list-shell    { max-width: none !important; margin: 0 !important; }
+.est-detail-shell  { max-width: none !important; margin: 0 !important; }
+.est-builder-shell { max-width: none !important; margin: 0 !important; }
+
+/* Schedule board (sb-*) header / tabs / toolbar / grid */
+.sb-header,
+.sb-tabs,
+.sb-toolbar,
+.sb-grid-wrap {
+  max-width: none !important;
+}
+
+/* Communications board */
+.comms-shell { max-width: none !important; margin: 0 !important; }
+
+/* ── Record page rails: scale up on big screens instead of fixed-narrow ── */
+@media (min-width: 1440px) {
+  .rp-body {
+    grid-template-columns: 280px 1fr 320px !important;
+  }
+}
+@media (min-width: 1800px) {
+  .rp-body {
+    grid-template-columns: 320px 1fr 360px !important;
+  }
+  /* Estimate detail/builder side panels get a touch wider too */
+  .est-detail-shell  { grid-template-columns: 1fr 340px !important; }
+  .est-builder-shell { grid-template-columns: 1fr 320px !important; }
+}
+
+/* Mid-size screens (1200–1379px): the app sidebar eats ~300px, so a 3-col
+   record page leaves the center column crunched (<450px). Drop the left
+   panel here — its contact fields are duplicated in the Overview tab. */
+@media (min-width: 1200px) and (max-width: 1379px) {
+  .rp-body {
+    grid-template-columns: 1fr 280px !important;
+  }
+  .rp-left { display: none !important; }
+}
