@@ -574,11 +574,11 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
   let company: any = null
   try {
     company = await c.env.DB.prepare(
-      'SELECT id, name, plan, subscription_status, trial_expires_at, active, onboarding_completed FROM companies WHERE id = ? LIMIT 1'
+      'SELECT id, name, plan, subscription_status, trial_expires_at, active, onboarding_completed, logo_url, brand_color, brand_accent FROM companies WHERE id = ? LIMIT 1'
     ).bind(companyId).first()
   } catch (_) {
     try {
-      company = await c.env.DB.prepare('SELECT id, name, plan, active FROM companies WHERE id = ? LIMIT 1').bind(companyId).first()
+      company = await c.env.DB.prepare('SELECT id, name, plan, active, logo_url, brand_color FROM companies WHERE id = ? LIMIT 1').bind(companyId).first()
     } catch (_) {}
   }
   const verifiedRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
@@ -3200,10 +3200,17 @@ app.get('/api/estimates/portal/:token', async (c) => {
     await db.prepare(`UPDATE estimates SET viewed_at=datetime('now'), status=CASE WHEN status='sent' THEN 'viewed' ELSE status END, updated_at=datetime('now') WHERE portal_token=?`)
       .bind(c.req.param('token')).run()
   }
+  let _brand: any = null
+  try {
+    _brand = await db.prepare(
+      'SELECT name, logo_url, tagline, brand_color, brand_accent, phone, website, address_line1, address_city, address_state, address_zip FROM companies WHERE id = ? LIMIT 1'
+    ).bind(row.company_id).first()
+  } catch (_) {}
   return c.json({ ok: true, data: {
     ...row,
     line_items:  JSON.parse(row.line_items  || '[]'),
     attachments: JSON.parse(row.attachments || '[]'),
+    _brand,
   }})
 })
 
@@ -3441,6 +3448,14 @@ app.get('/api/invoices/portal/:token', async (c) => {
     row.viewed_at = new Date().toISOString()
   }
   try { row.line_items = JSON.parse(row.line_items || '[]') } catch(_) { row.line_items = [] }
+  // Attach the tenant's branding so the public portal shows THEIR logo/colors
+  // (client has no session — /api/company/branding requires auth and would 401)
+  try {
+    const co: any = await db.prepare(
+      'SELECT name, logo_url, tagline, brand_color, brand_accent, phone, website, address_line1, address_city, address_state, address_zip FROM companies WHERE id = ? LIMIT 1'
+    ).bind(row.company_id).first()
+    if (co) row._brand = co
+  } catch (_) {}
   return c.json(row)
 })
 
@@ -4942,7 +4957,7 @@ app.get('/estimates/portal/:token', async (c) => {
     .portal-logo span{color:#2D7A55}
     .portal-wrap{max-width:680px;margin:32px auto;padding:0 16px 60px}
     .portal-card{background:#fff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;margin-bottom:20px}
-    .portal-card-header{background:#2D7A55;padding:20px 24px}
+    .portal-card-header{background:${company?.brand_color || '#2D7A55'};padding:20px 24px}
     .portal-card-title{font-size:20px;font-weight:700;color:#fff}
     .portal-card-sub{font-size:13px;color:rgba(255,255,255,.75);margin-top:4px}
     .portal-section{padding:20px 24px;border-bottom:1px solid #F3F4F6}
@@ -4976,7 +4991,7 @@ app.get('/estimates/portal/:token', async (c) => {
 </head>
 <body>
 <div class="portal-header">
-  <div class="portal-logo">${company?.name || 'Groundwork'}</div>
+  <div class="portal-logo">${company?.logo_url ? `<img src="${company.logo_url}" alt="" style="height:40px;object-fit:contain;border-radius:8px;margin-right:4px">` : ''}${company?.name || 'Groundwork'}</div>
 </div>
 <div class="portal-wrap">
   <div class="portal-card">
@@ -5729,7 +5744,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260714b014">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b001">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5753,8 +5768,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260714b014"></script>
-  <script src="/js/client_portal.js?v=20260714b014"></script>
+  <script src="/js/platform_core.js?v=20260715b001"></script>
+  <script src="/js/client_portal.js?v=20260715b001"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6373,9 +6388,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260714b014">
-  <link rel="stylesheet" href="/js/styles.css?v=20260714b014">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260714b014">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260715b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b001">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6922,34 +6937,34 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260714b014"></script>
-<script src="/js/db.js?v=20260714b014"></script>
-<script src="/js/data.js?v=20260714b014"></script>
-<script src="/js/reps.js?v=20260714b014"></script>
-<script src="/js/record-page.js?v=20260714b014"></script>
-<script src="/js/academy.js?v=20260714b014"></script>
-<script src="/js/task_engine.js?v=20260714b014"></script>
-<script src="/js/gw_i18n.js?v=20260714b014"></script>
-<script src="/js/app_premium.js?v=20260714b014"></script>
-<script src="/js/estimates.js?v=20260714b014"></script>
-<script src="/js/invoices.js?v=20260714b014"></script>
-<script src="/js/csv_import.js?v=20260714b014"></script>
-<script src="/js/onboarding.js?v=20260714b014"></script>
-<script src="/js/recurring_plans.js?v=20260714b014"></script>
-<script src="/js/reviews.js?v=20260714b014"></script>
-<script src="/js/stripe.js?v=20260714b014"></script>
-<script src="/js/email.js?v=20260714b014"></script>
-<script src="/js/notifications.js?v=20260714b014"></script>
-<script src="/js/integrations.js?v=20260714b014"></script>
-<script src="/js/user_management.js?v=20260714b014"></script>
-<script src="/js/platform_admin.js?v=20260714b014"></script>
-<script src="/js/time_tracker.js?v=20260714b014"></script>
-<script src="/js/field_workday.js?v=20260714b014"></script>
-<script src="/js/platform_core.js?v=20260714b014"></script>
-<script src="/js/approval_engine.js?v=20260714b014"></script>
-<script src="/js/automation_engine.js?v=20260714b014"></script>
-<script src="/js/client_portal.js?v=20260714b014"></script>
-<script src="/js/field_mode.js?v=20260714b014"></script>
+<script src="/js/gw-icons.js?v=20260715b001"></script>
+<script src="/js/db.js?v=20260715b001"></script>
+<script src="/js/data.js?v=20260715b001"></script>
+<script src="/js/reps.js?v=20260715b001"></script>
+<script src="/js/record-page.js?v=20260715b001"></script>
+<script src="/js/academy.js?v=20260715b001"></script>
+<script src="/js/task_engine.js?v=20260715b001"></script>
+<script src="/js/gw_i18n.js?v=20260715b001"></script>
+<script src="/js/app_premium.js?v=20260715b001"></script>
+<script src="/js/estimates.js?v=20260715b001"></script>
+<script src="/js/invoices.js?v=20260715b001"></script>
+<script src="/js/csv_import.js?v=20260715b001"></script>
+<script src="/js/onboarding.js?v=20260715b001"></script>
+<script src="/js/recurring_plans.js?v=20260715b001"></script>
+<script src="/js/reviews.js?v=20260715b001"></script>
+<script src="/js/stripe.js?v=20260715b001"></script>
+<script src="/js/email.js?v=20260715b001"></script>
+<script src="/js/notifications.js?v=20260715b001"></script>
+<script src="/js/integrations.js?v=20260715b001"></script>
+<script src="/js/user_management.js?v=20260715b001"></script>
+<script src="/js/platform_admin.js?v=20260715b001"></script>
+<script src="/js/time_tracker.js?v=20260715b001"></script>
+<script src="/js/field_workday.js?v=20260715b001"></script>
+<script src="/js/platform_core.js?v=20260715b001"></script>
+<script src="/js/approval_engine.js?v=20260715b001"></script>
+<script src="/js/automation_engine.js?v=20260715b001"></script>
+<script src="/js/client_portal.js?v=20260715b001"></script>
+<script src="/js/field_mode.js?v=20260715b001"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

@@ -7518,14 +7518,15 @@ function ai(){
       custom:         'Write a custom sales communication based on the context below.'
     };
 
-    const prompt = `You are an expert sales coach for Avalon Landscape Construction — a consultative, process-driven landscape company. You write in a warm, professional, human tone. Never sound salesy or pushy. Always protect scope and margin. Never discount without changing scope.
+    const _coName = (window._scBrand && window._scBrand.name) || (window._gwBootstrap && window._gwBootstrap.company && window._gwBootstrap.company.name) || 'our company';
+    const prompt = `You are an expert sales coach for ${_coName} — a consultative, process-driven home-services company. You write in a warm, professional, human tone. Never sound salesy or pushy. Always protect scope and margin. Never discount without changing scope.
 
 TASK: ${situationGuides[selectedSit]||'Write a professional sales communication.'}
 
 TONE: ${selectedTone}
 
 REP NAME: ${repName}
-COMPANY: Avalon Landscape Construction
+COMPANY: ${_coName}
 ${leadBlock}
 ${context ? 'ADDITIONAL CONTEXT:\n'+context+'\n' : ''}
 INSTRUCTIONS:
@@ -7534,7 +7535,7 @@ INSTRUCTIONS:
 - Open with the client's name
 - Keep it conversational, not corporate
 - End with a clear, single next step
-- Sign off as ${repName}, Avalon Landscape Construction`;
+- Sign off as ${repName}, ${_coName}`;
 
     document.getElementById('aiPromptPreview').textContent = prompt;
     window._currentAiPrompt = prompt;
@@ -7548,7 +7549,7 @@ INSTRUCTIONS:
     const clientName = opp && opp.client ? opp.client.split(' ')[0] : '[Client Name]';
     const project = (opp && opp.project) ? opp.project : '[Project]';
     const context = (document.getElementById('aiContext') ? document.getElementById('aiContext').value.trim() : '') || '';
-    const sig = '\n\n' + repName + '\nAvalon Landscape Construction';
+    const sig = '\n\n' + repName + '\n' + ((window._scBrand && window._scBrand.name) || (window._gwBootstrap && window._gwBootstrap.company && window._gwBootstrap.company.name) || '');
     const hi = 'Hi ' + clientName + ',\n\n';
 
     var out = '';
@@ -20036,15 +20037,25 @@ function teamReports() {
 // ── Settings ──────────────────────────────────────────────────────────────────
 const LS_SYS_CONFIG_KEY = 'avalonSystemConfig';
 function _scLoad() {
-  try { return JSON.parse(localStorage.getItem(LS_SYS_CONFIG_KEY) || 'null'); } catch(_){ return null; }
+  try {
+    const cfg = JSON.parse(localStorage.getItem(LS_SYS_CONFIG_KEY) || 'null');
+    // One-time scrub: older builds seeded fake demo data ("Avalon Exterior
+    // Solutions") that then leaked into the D1 companies row on save.
+    if (cfg && cfg.company && cfg.company.name === 'Avalon Exterior Solutions') {
+      cfg.company.name = ''; cfg.company.phone = ''; cfg.company.email = '';
+      cfg.company.address = ''; cfg.company.city = ''; cfg.company.state = ''; cfg.company.zip = '';
+      _scSave(cfg);
+    }
+    return cfg;
+  } catch(_){ return null; }
 }
 function _scSave(cfg) {
   localStorage.setItem(LS_SYS_CONFIG_KEY, JSON.stringify(cfg));
 }
 function _scDefault() {
   return {
-    company: { name:'Avalon Exterior Solutions', phone:'(804) 555-0100', email:'info@avalonexterior.com',
-                address:'123 Main St', city:'Richmond', state:'VA', zip:'23219', website:'', logo:'' },
+    company: { name:'', phone:'', email:'',
+                address:'', city:'', state:'', zip:'', website:'', logo:'' },
     hours: {
       mon:{ open:true, start:'08:00', end:'17:00' }, tue:{ open:true, start:'08:00', end:'17:00' },
       wed:{ open:true, start:'08:00', end:'17:00' }, thu:{ open:true, start:'08:00', end:'17:00' },
@@ -20076,7 +20087,8 @@ function systemConfig() {
   if (!window._scBrandLoaded) {
     fetch('/api/company/branding', { credentials:'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
+      .then(_raw => {
+        const data = (_raw && _raw.data) ? _raw.data : _raw;
         if (data) {
           window._scBrand = data;
           window._scBrandLoaded = true;
@@ -21010,9 +21022,9 @@ function _stDefaultAutos() {
 }
 function _stDefaultTemplates() {
   return [
-    { id:'tmpl1', name:'Welcome Email', category:'email', subject:'Welcome to Avalon Exterior Solutions!',
-      body:'Hi {{client_name}},\n\nThank you for reaching out to Avalon Exterior Solutions. We are excited to work with you!\n\nYour rep {{rep_name}} will be in touch shortly to schedule a free estimate.\n\nBest,\nThe Avalon Team',
-      variables:['client_name','rep_name'], created: todayISO() },
+    { id:'tmpl1', name:'Welcome Email', category:'email', subject:'Welcome to {{company_name}}!',
+      body:'Hi {{client_name}},\n\nThank you for reaching out to {{company_name}}. We are excited to work with you!\n\nYour rep {{rep_name}} will be in touch shortly to schedule a free estimate.\n\nBest,\nThe {{company_name}} Team',
+      variables:['client_name','rep_name','company_name'], created: todayISO() },
     { id:'tmpl2', name:'Estimate Follow-up', category:'email', subject:'Following up on your estimate — {{company_name}}',
       body:'Hi {{client_name}},\n\nWe wanted to follow up on the estimate we sent a few days ago for {{service_type}} at {{property_address}}.\n\nPlease feel free to reply with any questions or let us know when you\'d like to schedule.\n\n{{rep_name}} | {{company_phone}}',
       variables:['client_name','service_type','property_address','rep_name','company_phone'], created: todayISO() },

@@ -601,17 +601,10 @@ function timeAgo(iso) {
 
 // ── LOGIN SCREEN ──────────────────────────────────────────────────────────────
 function renderLoginScreen() {
-  // Fetch company branding first (public endpoint, no auth needed).
-  // Multi-tenant: the server only returns a company brand when told which
-  // company — we remember the last company this browser logged into.
-  let q = '';
-  try {
-    const last = localStorage.getItem('gwLastCompany');
-    if (last) q = '?company=' + encodeURIComponent(last);
-  } catch (_) {}
-  fetch('/api/branding/login' + q).then(r => r.ok ? r.json() : null).then(brand => {
-    _renderLoginHTML(brand);
-  }).catch(() => _renderLoginHTML(null));
+  // The login screen is ALWAYS neutral Groundwork branding — company
+  // logo/colors only apply INSIDE the app after sign-in (and in each
+  // company's own client portal / estimates / invoices).
+  _renderLoginHTML(null);
 }
 
 function _renderLoginHTML(brand) {

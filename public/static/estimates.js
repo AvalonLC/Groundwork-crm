@@ -1540,11 +1540,14 @@ async function _estPortalPreview(estId) {
     // Load branding
     let brand = { name: 'Groundwork', logo_url: '', tagline: '', brand_color: '#2D7A55', brand_accent: '#4D8A86', address_line1: '', address_city: '', address_state: '', phone: '', website: '' };
     if (brandRes && brandRes.ok) {
-      const bd = await brandRes.json();
-      if (bd) brand = { ...brand, ...bd };
+      const _raw = await brandRes.json();
+      const bd = (_raw && _raw.data) ? _raw.data : _raw;
+      if (bd && bd.name !== undefined) brand = { ...brand, ...bd };
     }
-    // Fall back to window._scBrand if already loaded
-    if (window._scBrand) brand = { ...brand, ...window._scBrand };
+    // Public portal viewers have no session — use the branding embedded in the estimate payload
+    if (est && est._brand) brand = { ...brand, ...est._brand };
+    // Fall back to window._scBrand if already loaded (authenticated app context)
+    else if (window._scBrand && window._scBrand.name) brand = { ...brand, ...window._scBrand };
 
     // Update topbar brand name/logo
     const brandEl = document.getElementById('est-portal-brand-name');

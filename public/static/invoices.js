@@ -1038,7 +1038,12 @@ window.gwInvoicePortal = async function(token) {
   ]);
   if (!invRes.ok) { document.body.innerHTML = `<div style="text-align:center;padding:60px;font-family:'Inter',sans-serif;color:#6B7280">Invoice not found or link has expired.</div>`; return; }
   const inv = await invRes.json();
-  const brand = brandRes?.ok ? await brandRes.json() : {};
+  let brand = {};
+  if (brandRes?.ok) {
+    try { const _raw = await brandRes.json(); brand = (_raw && _raw.data) ? _raw.data : _raw; } catch (_) {}
+  }
+  // Public portal viewers have no session — use branding embedded in the invoice payload
+  if (inv && inv._brand) brand = { ...brand, ...inv._brand };
   if (typeof inv.line_items === 'string') try { inv.line_items = JSON.parse(inv.line_items); } catch(_) { inv.line_items = []; }
   _invRenderPortal(inv, brand);
 };
