@@ -2539,7 +2539,11 @@ function oppCard(o){
     <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')}${o.address ? ` · ${escapeHtml(o.address)}` : ''}</p>
     <div class="opp-meta">
       ${badge(o.status||'New Lead')}
-      ${o.nextFollowUp ? `<span class="opp-next">Next: ${prettyDate(o.nextFollowUp)}</span>` : ''}
+      ${(function(){
+        const nu = (typeof gwNextUpForOpp === 'function') ? gwNextUpForOpp(o) : null;
+        if (nu) return `<span class="opp-next" title="${escapeHtml(nu.title)}">Next Up: ${escapeHtml(nu.label)}${nu.date ? ' · ' + prettyDate(nu.date) : ''}</span>`;
+        return o.nextFollowUp ? `<span class="opp-next">Next Up: Follow up · ${prettyDate(o.nextFollowUp)}</span>` : '';
+      })()}
       ${o.jobValue ? `<span class="opp-value">${money(Number(o.jobValue))}</span>` : ''}
       ${repObj
         ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40;margin-left:auto">${escapeHtml(repObj.name)}</span>`
@@ -2547,6 +2551,45 @@ function oppCard(o){
     </div>
   </article>`;
 }
+
+// ── Next Up: derive the concrete next action for a lead (pipeline cards) ──
+// Priority: 1) earliest open task on the record  2) estimate-status action  3) stage default
+function gwNextUpForOpp(o){
+  try {
+    // 1. Open tasks linked to this lead
+    if (window.gwTask && typeof window.gwTask.forRecord === 'function') {
+      const open = (window.gwTask.forRecord('lead', o.id) || [])
+        .filter(t => t.status !== 'completed' && t.status !== 'archived')
+        .sort((a,b) => (a.due_date||'9999').localeCompare(b.due_date||'9999'));
+      if (open.length) {
+        const t = open[0];
+        return { label: t.title || (window.gwTask.typeLabel ? window.gwTask.typeLabel(t.task_type) : 'Task'), date: t.due_date || null, title: 'Open task: ' + (t.title||'') };
+      }
+    }
+    // 2. Estimate status drives the sales motion
+    const es = (o.estimateStatus || '').toLowerCase();
+    const won = ['Sold / Activation','Closed Lost'].includes(o.status);
+    if (!won) {
+      if (es === 'sent' || es === 'revised') return { label: 'Follow up on estimate', date: o.nextFollowUp || null, title: 'Estimate sent — awaiting client response' };
+      if (es === 'draft') return { label: 'Finish & send estimate', date: o.nextFollowUp || null, title: 'Estimate drafted but not sent' };
+      if (es === 'accepted' || es === 'approved') return { label: 'Schedule the job', date: o.nextFollowUp || null, title: 'Estimate accepted — book the work' };
+      if (es === 'declined' || es === 'rejected') return { label: 'Revisit or close out', date: o.nextFollowUp || null, title: 'Estimate declined' };
+    }
+    // 3. Stage-based defaults
+    const stage = (o.status || '').toLowerCase();
+    let label = null;
+    if (stage.includes('new') || stage.includes('intake')) label = 'Make first contact';
+    else if (stage.includes('discovery') || stage.includes('qualif')) label = 'Book discovery call';
+    else if (stage.includes('site') || stage.includes('visit') || stage.includes('walk')) label = 'Complete site visit';
+    else if (stage.includes('estimate') || stage.includes('proposal') || stage.includes('pitch') || stage.includes('sow') || stage.includes('presentation')) label = 'Send estimate';
+    else if (stage.includes('negotiat') || stage.includes('decision')) label = 'Get a decision';
+    else if (stage.includes('sold') || stage.includes('activation')) label = 'Kick off the job';
+    if (label) return { label, date: o.nextFollowUp || null, title: 'Suggested next step for ' + (o.status||'this stage') };
+    if (o.nextFollowUp) return { label: 'Follow up', date: o.nextFollowUp, title: 'Scheduled follow-up' };
+    return null;
+  } catch(e){ return null; }
+}
+window.gwNextUpForOpp = gwNextUpForOpp;
 
 function pipeline(selectedId){
   if(selectedId){ return opportunityDetail(selectedId); }
@@ -5091,13 +5134,13 @@ function opportunityDetail(id){
 
   // ── QUICK ACTION BAR ───────────────────────────────────────────────────────
   const _qaBarHtml = R ? R.QuickActionBar([
-    { id:`qa_homeworks_${o.id}`, icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1L1 5v8h4V9h4v4h4V5L7 1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', label:'Push to Homeworks', onclick:`qaAction('homeworks','${o.id}',this)` },
     { id:`qa_calendar_${o.id}`,  icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Schedule', onclick:`qaAction('calendar','${o.id}',this)` },
     { id:`qa_gmail_${o.id}`,     icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Email', onclick:`qaAction('gmail','${o.id}',this)` },
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 7h4M5 9h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', label:'New Estimate', onclick:`window.estimateBuilderForLead ? estimateBuilderForLead('${o.id}') : show('estimates')` },
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".6"/></svg>', label:'New Proposal', onclick:`window.proposalBuilderForLead ? proposalBuilderForLead('${o.id}') : showToast('Proposals loading…')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', label:'Log Call', onclick:`window._leadTab='comms';show('pipeline','${o.id}')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Add Note', onclick:`window._leadTab='notes';show('pipeline','${o.id}')` },
-    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="var(--gw-success)" stroke="none"/></svg>', label:'Call Companion', onclick:`openCallCompanion('${o.id}')` },
-    ...(!_isSold && !_isClosed ? [{icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4l-3.2 2.4 1.2 4L7 9l-3.5 2.4 1.2-4L1.5 5h4z" fill="currentColor" opacity=".8"/></svg>', label:'Mark Sold', variant:'primary', onclick:`openMarkSoldModal('${o.id}')`}] : [])
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="var(--gw-success)" stroke="none"/></svg>', label:'Call Companion', onclick:`openCallCompanion('${o.id}')` }
   ]) : '';
 
   // ── OVERVIEW TAB: Contact & Opportunity form ────────────────────────────────
@@ -6255,24 +6298,16 @@ window.qaAction = function(type, oppId, btn) {
     }
   };
 
-  if (type === 'homeworks') {
-    // Call existing integration function; wrap with done()
+  if (type === 'calendar') {
     try {
-      if (typeof intPushOppToHomeworks === 'function') {
-        intPushOppToHomeworks(oppId);
-        setTimeout(() => done(true, 'Pushed to Homeworks CRM'), 600);
+      if (typeof window.intScheduleForLead === 'function') {
+        window.intScheduleForLead(oppId);
+        done(true, 'Scheduler opened');
       } else {
-        done(false, 'Homeworks not connected — visit Integrations to set up');
-      }
-    } catch(e) { done(false); }
-
-  } else if (type === 'calendar') {
-    try {
-      if (typeof intScheduleForLead === 'function') {
-        intScheduleForLead(o.client || 'Lead', o.email || '', o.nextFollowUp || '');
-        setTimeout(() => done(true, 'Calendar event created'), 600);
-      } else {
-        done(false, 'Google Calendar not connected — visit Integrations');
+        // Lead scheduler modal not loaded yet — send them to the Calendar tab as a working fallback
+        window._intActiveTab = 'calendar';
+        show('integrations');
+        done(true, 'Opening Calendar — lead scheduler coming in the next update');
       }
     } catch(e) { done(false); }
 

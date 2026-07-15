@@ -14,6 +14,7 @@ import mig0028 from '../migrations/0028_field_ops.sql?raw'
 import mig0029 from '../migrations/0029_language_preference.sql?raw'
 import mig0030 from '../migrations/0030_plan_visits_v2.sql?raw'
 import mig0031 from '../migrations/0031_assets_hub.sql?raw'
+import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string }
@@ -319,6 +320,27 @@ async function ensureAssetsSchema(db: D1Database): Promise<void> {
   } catch {}
   await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_assets_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
   _assetsSchemaOk = true
+}
+
+// ── Proposals / payment schedules / google tokens schema (migration 0032) ──
+let _prop32SchemaOk = false
+async function ensureProposalsSchema(db: D1Database): Promise<void> {
+  if (_prop32SchemaOk) return
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_prop_v1' LIMIT 1").first<any>()
+  if (flag) { _prop32SchemaOk = true; return }
+  const stmts = mig0032.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensureProposalsSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0032_proposals_payments_google.sql', '0032_proposals_payments_google.sql').run()
+  } catch {}
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_prop_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  _prop32SchemaOk = true
 }
 
 function secureToken(bytes = 32): string {
@@ -3533,10 +3555,12 @@ app.get('/api/estimates', requireAuth, async (c) => {
   const limit   = Math.min(Number(c.req.query('limit') || 200), 500)
   const offset  = Number(c.req.query('offset') || 0)
 
+  const oppId   = c.req.query('opp_id')
   let q = `SELECT * FROM estimates WHERE company_id = ?`
   const params: any[] = [companyId]
   if (status) { q += ` AND status = ?`; params.push(status) }
   if (repId)  { q += ` AND rep_id = ?`; params.push(repId) }
+  if (oppId)  { q += ` AND opp_id = ?`; params.push(oppId) }
   if (search) { q += ` AND (client_name LIKE ? OR est_number LIKE ? OR title LIKE ?)`; const s = `%${search}%`; params.push(s,s,s) }
   q += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
   params.push(limit, offset)
@@ -3571,7 +3595,25 @@ app.get('/api/estimates/:id', requireAuth, async (c) => {
     ...row,
     line_items:  JSON.parse(row.line_items  || '[]'),
     attachments: JSON.parse(row.attachments || '[]'),
+    payment_schedule: JSON.parse(row.payment_schedule || '[]'),
   }})
+})
+
+// PUT /api/estimates/:id/payment-schedule — save custom payment splits
+app.put('/api/estimates/:id/payment-schedule', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const b: any = await c.req.json()
+  const sched: any[] = Array.isArray(b.payment_schedule) ? b.payment_schedule : []
+  const totalPct = sched.reduce((s, p) => s + Number(p.pct || 0), 0)
+  if (sched.length && Math.abs(totalPct - 100) > 0.01) {
+    return c.json({ ok: false, error: `Payment schedule must total 100% (currently ${totalPct.toFixed(1)}%)` }, 400)
+  }
+  const r = await db.prepare(`UPDATE estimates SET payment_schedule=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(JSON.stringify(sched), c.req.param('id'), companyId).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Estimate not found' }, 404)
+  return c.json({ ok: true })
 })
 
 // GET /api/estimates/portal/:token — public (no auth) portal view
@@ -3775,6 +3817,491 @@ app.delete('/api/estimates/:id', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   await db.prepare(`DELETE FROM estimates WHERE id=? AND company_id=?`)
     .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROPOSALS (D1) — high-level, estimate-like documents with template support
+// ══════════════════════════════════════════════════════════════════════════════
+
+function _parseProposal(row: any) {
+  return {
+    ...row,
+    sections: JSON.parse(row.sections || '[]'),
+    payment_schedule: JSON.parse(row.payment_schedule || '[]'),
+  }
+}
+
+// GET /api/proposals — list (optional ?opp_id= / ?status= / ?q=)
+app.get('/api/proposals', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const oppId  = c.req.query('opp_id')
+  const status = c.req.query('status')
+  const search = c.req.query('q')
+  let q = `SELECT * FROM proposals WHERE company_id = ?`
+  const params: any[] = [companyId]
+  if (oppId)  { q += ` AND opp_id = ?`; params.push(oppId) }
+  if (status) { q += ` AND status = ?`; params.push(status) }
+  if (search) { q += ` AND (client_name LIKE ? OR prop_number LIKE ? OR title LIKE ?)`; const s = `%${search}%`; params.push(s,s,s) }
+  q += ` ORDER BY updated_at DESC LIMIT 300`
+  const rows = await db.prepare(q).bind(...params).all()
+  return c.json({ ok: true, data: (rows.results || []).map(_parseProposal) })
+})
+
+// GET /api/proposals/:id
+app.get('/api/proposals/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const row: any = await db.prepare(`SELECT * FROM proposals WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  return c.json({ ok: true, data: _parseProposal(row) })
+})
+
+// POST /api/proposals — create
+app.post('/api/proposals', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const b: any = await c.req.json()
+  const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM proposals WHERE company_id=?`).bind(companyId).first()
+  const num = ((countRow?.n || 0) + 1).toString().padStart(4,'0')
+  const propNumber = b.prop_number || `PROP-${num}`
+  const id = b.id || ('prop_' + uid())
+  const portalToken = uid() + uid()
+  // Validate payment schedule sums to 100 when present
+  const sched: any[] = Array.isArray(b.payment_schedule) ? b.payment_schedule : []
+  const totalPct = sched.reduce((s, p) => s + Number(p.pct || 0), 0)
+  if (sched.length && Math.abs(totalPct - 100) > 0.01) {
+    return c.json({ ok: false, error: `Payment schedule must total 100% (currently ${totalPct.toFixed(1)}%)` }, 400)
+  }
+  await db.prepare(`
+    INSERT INTO proposals (id,company_id,prop_number,title,subtitle,overview,
+      client_id,client_name,client_email,client_phone,property_addr,
+      opp_id,estimate_id,rep_id,status,sections,payment_schedule,total,
+      terms,internal_notes,portal_token,proposal_date,valid_through,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+  `).bind(
+    id, companyId, propNumber,
+    b.title||'', b.subtitle||'', b.overview||'',
+    b.client_id||'', b.client_name||'', b.client_email||'', b.client_phone||'', b.property_addr||'',
+    b.opp_id||'', b.estimate_id||'', repId,
+    b.status||'draft',
+    JSON.stringify(b.sections||[]), JSON.stringify(sched),
+    Number(b.total||0),
+    b.terms||'', b.internal_notes||'', portalToken,
+    b.proposal_date || new Date().toISOString().slice(0,10),
+    b.valid_through || ''
+  ).run()
+  return c.json({ ok: true, data: { id, prop_number: propNumber, portal_token: portalToken } }, 201)
+})
+
+// PUT /api/proposals/:id — update
+app.put('/api/proposals/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const b: any = await c.req.json()
+  const sched: any[] = Array.isArray(b.payment_schedule) ? b.payment_schedule : []
+  const totalPct = sched.reduce((s, p) => s + Number(p.pct || 0), 0)
+  if (sched.length && Math.abs(totalPct - 100) > 0.01) {
+    return c.json({ ok: false, error: `Payment schedule must total 100% (currently ${totalPct.toFixed(1)}%)` }, 400)
+  }
+  const r = await db.prepare(`
+    UPDATE proposals SET
+      title=?, subtitle=?, overview=?,
+      client_id=?, client_name=?, client_email=?, client_phone=?, property_addr=?,
+      opp_id=?, estimate_id=?, status=?, sections=?, payment_schedule=?, total=?,
+      terms=?, internal_notes=?, proposal_date=?, valid_through=?,
+      sent_at=CASE WHEN ?='sent' AND (sent_at IS NULL OR sent_at='') THEN datetime('now') ELSE sent_at END,
+      updated_at=datetime('now')
+    WHERE id=? AND company_id=?
+  `).bind(
+    b.title||'', b.subtitle||'', b.overview||'',
+    b.client_id||'', b.client_name||'', b.client_email||'', b.client_phone||'', b.property_addr||'',
+    b.opp_id||'', b.estimate_id||'', b.status||'draft',
+    JSON.stringify(b.sections||[]), JSON.stringify(sched), Number(b.total||0),
+    b.terms||'', b.internal_notes||'',
+    b.proposal_date||'', b.valid_through||'',
+    b.status||'draft',
+    c.req.param('id'), companyId
+  ).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/proposals/:id
+app.delete('/api/proposals/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  await db.prepare(`DELETE FROM proposals WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// GET /api/proposals/portal/:token — public (no auth) portal JSON
+app.get('/api/proposals/portal/:token', async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const row: any = await db.prepare(`SELECT * FROM proposals WHERE portal_token=? LIMIT 1`)
+    .bind(c.req.param('token')).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  if (!row.viewed_at) {
+    await db.prepare(`UPDATE proposals SET viewed_at=datetime('now'), status=CASE WHEN status='sent' THEN 'viewed' ELSE status END, updated_at=datetime('now') WHERE portal_token=?`)
+      .bind(c.req.param('token')).run()
+  }
+  let _brand: any = null
+  try {
+    _brand = await db.prepare(
+      'SELECT name, logo_url, tagline, brand_color, brand_accent, phone, website, address_line1, address_city, address_state, address_zip FROM companies WHERE id = ? LIMIT 1'
+    ).bind(row.company_id).first()
+  } catch (_) {}
+  return c.json({ ok: true, data: { ..._parseProposal(row), _brand } })
+})
+
+// POST /api/proposals/portal/:token/respond — client accepts/declines (public)
+app.post('/api/proposals/portal/:token/respond', async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const b: any = await c.req.json()
+  const action = b.action === 'accept' ? 'accept' : b.action === 'decline' ? 'decline' : ''
+  if (!action) return c.json({ ok: false, error: 'Invalid action' }, 400)
+  const row: any = await db.prepare(`SELECT id, status FROM proposals WHERE portal_token=? LIMIT 1`)
+    .bind(c.req.param('token')).first()
+  if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
+  if (['accepted','declined'].includes(row.status)) return c.json({ ok: false, error: 'Already responded' }, 409)
+  if (action === 'accept') {
+    await db.prepare(`UPDATE proposals SET status='accepted', accepted_at=datetime('now'), accepted_option=?, updated_at=datetime('now') WHERE id=?`)
+      .bind(String(b.option || ''), row.id).run()
+    // Proposal acts like an estimate: accepting it also accepts the linked estimate
+    const full: any = await db.prepare(`SELECT estimate_id, company_id FROM proposals WHERE id=?`).bind(row.id).first()
+    if (full?.estimate_id) {
+      await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
+        .bind(full.estimate_id, full.company_id).run().catch(() => {})
+    }
+  } else {
+    await db.prepare(`UPDATE proposals SET status='declined', declined_at=datetime('now'), updated_at=datetime('now') WHERE id=?`)
+      .bind(row.id).run()
+  }
+  return c.json({ ok: true })
+})
+
+// GET /portal/proposal/:token — public client-facing proposal page
+app.get('/portal/proposal/:token', async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const row: any = await db.prepare(`SELECT * FROM proposals WHERE portal_token=? LIMIT 1`)
+    .bind(c.req.param('token')).first()
+  if (!row) return c.html(`<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Link not found</h2><p>This proposal link is invalid or has expired.</p></body></html>`, 404)
+  if (!row.viewed_at) {
+    await db.prepare(`UPDATE proposals SET viewed_at=datetime('now'), status=CASE WHEN status='sent' THEN 'viewed' ELSE status END, updated_at=datetime('now') WHERE id=?`)
+      .bind(row.id).run()
+  }
+  let brand: any = null
+  try {
+    brand = await db.prepare('SELECT name, logo_url, tagline, brand_color, phone, website FROM companies WHERE id = ? LIMIT 1').bind(row.company_id).first()
+  } catch {}
+  const esc = (s: any) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const money = (n: number) => '$' + Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+  const fmtDate = (d: string) => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) } catch { return d } }
+  let sections: any[] = []
+  let sched: any[] = []
+  try { sections = JSON.parse(row.sections || '[]') } catch {}
+  try { sched = JSON.parse(row.payment_schedule || '[]') } catch {}
+  const brandColor = brand?.brand_color || '#113931'
+  const companyName = brand?.name || 'Groundwork'
+  const isDone = ['accepted','declined'].includes(row.status)
+  const optionSections = sections.filter((s:any) => s.type === 'option')
+
+  const sectionHtml = sections.map((s: any, si: number) => {
+    if (s.type === 'text') {
+      return `<div class="pp-section"><h2>${esc(s.title||'')}</h2><p class="pp-body-text">${esc(s.body||'').replace(/\n/g,'<br>')}</p></div>`
+    }
+    if (s.type === 'option') {
+      const rows = Array.isArray(s.rows) ? s.rows : []
+      const subtotal = rows.reduce((t: number, r: any) => t + Number(r.price||0), 0)
+      return `<div class="pp-section pp-option">
+        <h2>${esc(s.title || `Option ${si+1}`)}</h2>
+        ${s.goal ? `<p class="pp-goal"><strong>Program goal:</strong> ${esc(s.goal)}</p>` : ''}
+        <table class="pp-table">
+          <thead><tr><th>${esc(s.col1 || 'Application')}</th><th>${esc(s.col2 || 'Included Service')}</th><th class="pp-price-col">${esc(s.col3 || 'Price')}</th></tr></thead>
+          <tbody>
+            ${rows.map((r: any) => `<tr><td>${esc(r.app||'')}</td><td>${esc(r.service||'')}</td><td class="pp-price-col">${r.price !== '' && r.price != null ? money(Number(r.price)) : ''}</td></tr>`).join('')}
+          </tbody>
+          ${subtotal > 0 ? `<tfoot><tr><td colspan="2"><strong>Option Total</strong></td><td class="pp-price-col"><strong>${money(subtotal)}</strong></td></tr></tfoot>` : ''}
+        </table>
+        ${s.footnote ? `<p class="pp-footnote">${esc(s.footnote)}</p>` : ''}
+        ${!isDone && optionSections.length > 1 ? `<button class="pp-accept-btn" onclick="ppRespond('accept','${esc(s.title || `Option ${si+1}`)}')">Accept ${esc(s.title || `Option ${si+1}`)}</button>` : ''}
+      </div>`
+    }
+    return ''
+  }).join('')
+
+  return c.html(`<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(row.title || 'Proposal')} — ${esc(companyName)}</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F5F3EE;color:#1F2A2B;line-height:1.6}
+  .pp-hero{background:${brandColor};color:#fff;padding:44px 24px 36px;text-align:center}
+  ${brand?.logo_url ? '.pp-logo{height:52px;margin-bottom:14px}' : ''}
+  .pp-hero .pp-co{font-size:13px;letter-spacing:.24em;text-transform:uppercase;opacity:.85;font-weight:600}
+  .pp-hero h1{font-size:26px;font-weight:800;margin-top:10px;letter-spacing:.02em}
+  .pp-hero .pp-sub{font-size:14px;opacity:.8;margin-top:6px}
+  .pp-wrap{max-width:760px;margin:0 auto;padding:0 20px 80px}
+  .pp-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:#DDD8CE;border:1px solid #DDD8CE;margin:-26px auto 34px;max-width:720px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(17,57,49,.12)}
+  .pp-meta-cell{background:#fff;padding:16px 18px}
+  .pp-meta-cell .k{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6F7E6A;margin-bottom:4px}
+  .pp-meta-cell .v{font-size:14px;font-weight:600;color:#1F2A2B}
+  .pp-section{background:#fff;border:1px solid #E4E0D6;border-radius:12px;padding:26px 28px;margin-bottom:20px}
+  .pp-section h2{font-size:15px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${brandColor};border-bottom:2px solid ${brandColor}22;padding-bottom:9px;margin-bottom:14px}
+  .pp-body-text{font-size:14px;color:#3D4A46}
+  .pp-goal{font-size:13px;color:#5A675F;margin-bottom:14px}
+  .pp-table{width:100%;border-collapse:collapse;font-size:13.5px}
+  .pp-table th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:${brandColor};padding:9px 12px}
+  .pp-table td{padding:10px 12px;border-bottom:1px solid #EDEAE2;color:#37423E;vertical-align:top}
+  .pp-table tfoot td{border-top:2px solid ${brandColor}33;border-bottom:none;padding-top:12px}
+  .pp-price-col{text-align:right;white-space:nowrap;width:110px}
+  .pp-footnote{font-size:12px;color:#77826F;margin-top:10px;font-style:italic}
+  .pp-accept-btn{margin-top:16px;background:${brandColor};color:#fff;border:none;border-radius:8px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  .pp-accept-btn:hover{opacity:.9}
+  .pp-actions{background:#fff;border:1px solid #E4E0D6;border-radius:12px;padding:26px 28px;text-align:center}
+  .pp-actions .pp-accept-btn{margin:6px 8px}
+  .pp-decline-btn{background:transparent;color:#8B5A4A;border:1.5px solid #D8BBB0;border-radius:8px;padding:10px 22px;font-size:13px;font-weight:600;cursor:pointer;margin:6px 8px;font-family:inherit}
+  .pp-status-banner{border-radius:12px;padding:20px 24px;text-align:center;font-weight:700;font-size:15px;margin-bottom:20px}
+  .pp-status-accepted{background:#E5F2E9;color:#1E5E3E;border:1px solid #BFDCC8}
+  .pp-status-declined{background:#F7E8E3;color:#8B4432;border:1px solid #E4C4B8}
+  .pp-sched-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EDEAE2;font-size:13.5px}
+  .pp-sched-row:last-child{border-bottom:none}
+  .pp-footer{text-align:center;font-size:12px;color:#8A948C;margin-top:34px}
+</style></head>
+<body>
+  <div class="pp-hero">
+    ${brand?.logo_url ? `<img class="pp-logo" src="${esc(brand.logo_url)}" alt="${esc(companyName)}">` : ''}
+    <div class="pp-co">${esc(companyName)}${brand?.tagline ? ' — ' + esc(brand.tagline) : ''}</div>
+    <h1>${esc(row.title || 'Service Proposal')}</h1>
+    ${row.subtitle ? `<div class="pp-sub">${esc(row.subtitle)}</div>` : ''}
+  </div>
+  <div class="pp-wrap">
+    <div class="pp-meta">
+      <div class="pp-meta-cell"><div class="k">Prepared For</div><div class="v">${esc(row.client_name)}</div></div>
+      <div class="pp-meta-cell"><div class="k">Proposal Date</div><div class="v">${esc(fmtDate(row.proposal_date))}</div></div>
+      ${row.property_addr ? `<div class="pp-meta-cell"><div class="k">Property</div><div class="v">${esc(row.property_addr)}</div></div>` : ''}
+      ${row.valid_through ? `<div class="pp-meta-cell"><div class="k">Valid Through</div><div class="v">${esc(fmtDate(row.valid_through))}</div></div>` : ''}
+    </div>
+    <div id="pp-status-slot">
+      ${row.status === 'accepted' ? `<div class="pp-status-banner pp-status-accepted">✓ Proposal accepted${row.accepted_option ? ' — ' + esc(row.accepted_option) : ''}. We'll be in touch shortly to schedule.</div>` : ''}
+      ${row.status === 'declined' ? `<div class="pp-status-banner pp-status-declined">This proposal was declined.</div>` : ''}
+    </div>
+    ${row.overview ? `<div class="pp-section"><h2>Overview</h2><p class="pp-body-text">${esc(row.overview).replace(/\n/g,'<br>')}</p></div>` : ''}
+    ${sectionHtml}
+    ${sched.length ? `<div class="pp-section"><h2>Payment Schedule</h2>${sched.map((p:any) =>
+      `<div class="pp-sched-row"><span>${esc(p.label||'Payment')}</span><strong>${Number(p.pct||0)}%${row.total ? ' — ' + money(Number(row.total) * Number(p.pct||0) / 100) : ''}</strong></div>`).join('')}</div>` : ''}
+    ${row.terms ? `<div class="pp-section"><h2>Terms</h2><p class="pp-body-text" style="font-size:12.5px">${esc(row.terms).replace(/\n/g,'<br>')}</p></div>` : ''}
+    ${!isDone ? `<div class="pp-actions">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">Ready to move forward?</div>
+      ${optionSections.length <= 1 ? `<button class="pp-accept-btn" onclick="ppRespond('accept','')">Accept Proposal</button>` : `<div style="font-size:12.5px;color:#6F7E6A;margin-bottom:4px">Choose an option above, or accept as-is:</div><button class="pp-accept-btn" onclick="ppRespond('accept','')">Accept Proposal</button>`}
+      <button class="pp-decline-btn" onclick="ppRespond('decline','')">Decline</button>
+    </div>` : ''}
+    <div class="pp-footer">${esc(companyName)}${brand?.phone ? ' · ' + esc(brand.phone) : ''}${brand?.website ? ' · ' + esc(brand.website) : ''}</div>
+  </div>
+  <script>
+    async function ppRespond(action, option) {
+      if (action === 'decline' && !confirm('Decline this proposal?')) return;
+      if (action === 'accept' && !confirm('Accept this proposal' + (option ? ' (' + option + ')' : '') + '?')) return;
+      try {
+        const r = await fetch('/api/proposals/portal/${esc(row.portal_token)}/respond', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, option })
+        });
+        const j = await r.json();
+        if (!j.ok) { alert(j.error || 'Something went wrong'); return; }
+        location.reload();
+      } catch (e) { alert('Network error — please try again'); }
+    }
+  </script>
+</body></html>`)
+})
+
+// ── Proposal templates ────────────────────────────────────────────────────────
+
+app.get('/api/proposal-templates', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const rows = await db.prepare(`SELECT * FROM proposal_templates WHERE company_id=? ORDER BY updated_at DESC`)
+    .bind(companyId).all()
+  return c.json({ ok: true, data: (rows.results||[]).map((r:any)=>({ ...r, content: JSON.parse(r.content||'{}') })) })
+})
+
+app.post('/api/proposal-templates', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const b: any = await c.req.json()
+  const name = (b.name||'').trim()
+  if (!name) return c.json({ ok: false, error: 'Template name required' }, 400)
+  const id = b.id || ('ptpl_' + uid())
+  await db.prepare(`
+    INSERT INTO proposal_templates (id, company_id, name, description, content, created_by, updated_at)
+    VALUES (?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description,
+      content=excluded.content, updated_at=datetime('now')
+  `).bind(id, companyId, name, b.description||'', JSON.stringify(b.content||{}), repId).run()
+  return c.json({ ok: true, data: { id } })
+})
+
+app.delete('/api/proposal-templates/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  await db.prepare(`DELETE FROM proposal_templates WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GOOGLE AUTH — persistent per-rep connection via authorization-code + refresh
+// The client secret lives in company settings (admin pastes it once alongside
+// the Client ID). Refresh tokens are stored server-side in google_tokens so the
+// connection survives logins and browser changes — until manual disconnect.
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _googleClientCreds(db: D1Database, companyId: string): Promise<{ clientId: string; clientSecret: string }> {
+  const rows = await db.prepare(
+    `SELECT key, value FROM settings WHERE key IN (?,?,?,?)`
+  ).bind(
+    `${companyId}:google_client_id`, `${companyId}:google_client_secret`,
+    'google_client_id', 'google_client_secret'
+  ).all()
+  let clientId = '', clientSecret = ''
+  for (const r of (rows.results as any[])) {
+    const k = r.key.includes(':') ? r.key.split(':').pop() : r.key
+    if (k === 'google_client_id' && (!clientId || r.key.includes(':'))) clientId = r.value
+    if (k === 'google_client_secret' && (!clientSecret || r.key.includes(':'))) clientSecret = r.value
+  }
+  return { clientId, clientSecret }
+}
+
+// POST /api/google/exchange — swap authorization code for tokens; store refresh token
+app.post('/api/google/exchange', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const b: any = await c.req.json()
+  const code = String(b.code || '')
+  const redirectUri = String(b.redirect_uri || '')
+  if (!code) return c.json({ ok: false, error: 'code required' }, 400)
+  const { clientId, clientSecret } = await _googleClientCreds(db, companyId)
+  if (!clientId || !clientSecret) {
+    return c.json({ ok: false, error: 'Google Client ID/Secret not configured — set both in Integrations → Admin Setup' }, 400)
+  }
+  const tr = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code, client_id: clientId, client_secret: clientSecret,
+      redirect_uri: redirectUri, grant_type: 'authorization_code'
+    })
+  })
+  const tj: any = await tr.json()
+  if (!tr.ok || !tj.access_token) {
+    return c.json({ ok: false, error: tj.error_description || tj.error || 'Token exchange failed' }, 400)
+  }
+  // Fetch the user email
+  let email = ''
+  try {
+    const ur = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tj.access_token}` }
+    })
+    const uj: any = await ur.json()
+    email = uj.email || ''
+  } catch {}
+  // Persist refresh token (only returned on first consent — keep existing if absent)
+  if (tj.refresh_token) {
+    await db.prepare(`
+      INSERT INTO google_tokens (rep_id, company_id, refresh_token, email, connected_at, updated_at)
+      VALUES (?,?,?,?,datetime('now'),datetime('now'))
+      ON CONFLICT(rep_id) DO UPDATE SET refresh_token=excluded.refresh_token, email=excluded.email, updated_at=datetime('now')
+    `).bind(repId, companyId, tj.refresh_token, email).run()
+  } else {
+    await db.prepare(`UPDATE google_tokens SET email=?, updated_at=datetime('now') WHERE rep_id=?`)
+      .bind(email, repId).run()
+  }
+  return c.json({ ok: true, data: {
+    access_token: tj.access_token,
+    expires_in: tj.expires_in || 3600,
+    email,
+    has_refresh: !!tj.refresh_token
+  }})
+})
+
+// POST /api/google/refresh — mint a fresh access token from the stored refresh token
+app.post('/api/google/refresh', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const rec: any = await db.prepare(`SELECT refresh_token, email FROM google_tokens WHERE rep_id=? LIMIT 1`)
+    .bind(repId).first()
+  if (!rec) return c.json({ ok: false, error: 'not_connected' }, 404)
+  const { clientId, clientSecret } = await _googleClientCreds(db, companyId)
+  if (!clientId || !clientSecret) return c.json({ ok: false, error: 'Google Client ID/Secret not configured' }, 400)
+  const tr = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: rec.refresh_token, client_id: clientId,
+      client_secret: clientSecret, grant_type: 'refresh_token'
+    })
+  })
+  const tj: any = await tr.json()
+  if (!tr.ok || !tj.access_token) {
+    // Refresh token revoked/expired — clear it so the client can prompt reconnect
+    if (tj.error === 'invalid_grant') {
+      await db.prepare(`DELETE FROM google_tokens WHERE rep_id=?`).bind(repId).run()
+    }
+    return c.json({ ok: false, error: tj.error_description || tj.error || 'refresh_failed' }, 400)
+  }
+  return c.json({ ok: true, data: {
+    access_token: tj.access_token,
+    expires_in: tj.expires_in || 3600,
+    email: rec.email || ''
+  }})
+})
+
+// GET /api/google/status — is this rep persistently connected?
+app.get('/api/google/status', requireAuth, async (c) => {
+  const repId = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  const rec: any = await db.prepare(`SELECT email, connected_at FROM google_tokens WHERE rep_id=? LIMIT 1`)
+    .bind(repId).first()
+  return c.json({ ok: true, data: { connected: !!rec, email: rec?.email || '', connected_at: rec?.connected_at || '' } })
+})
+
+// DELETE /api/google/disconnect — manual disconnect (the ONLY way to disconnect)
+app.delete('/api/google/disconnect', requireAuth, async (c) => {
+  const repId = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  // Best-effort revoke at Google
+  const rec: any = await db.prepare(`SELECT refresh_token FROM google_tokens WHERE rep_id=? LIMIT 1`).bind(repId).first()
+  if (rec?.refresh_token) {
+    try { await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rec.refresh_token)}`, { method: 'POST' }) } catch {}
+  }
+  await db.prepare(`DELETE FROM google_tokens WHERE rep_id=?`).bind(repId).run()
   return c.json({ ok: true })
 })
 
@@ -6129,7 +6656,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b013">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b015">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6153,8 +6680,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260715b013"></script>
-  <script src="/js/client_portal.js?v=20260715b013"></script>
+  <script src="/js/platform_core.js?v=20260715b015"></script>
+  <script src="/js/client_portal.js?v=20260715b015"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6773,9 +7300,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260715b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b013">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b015">
+  <link rel="stylesheet" href="/js/styles.css?v=20260715b015">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b015">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -7323,35 +7850,35 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260715b013"></script>
-<script src="/js/db.js?v=20260715b013"></script>
-<script src="/js/data.js?v=20260715b013"></script>
-<script src="/js/reps.js?v=20260715b013"></script>
-<script src="/js/record-page.js?v=20260715b013"></script>
-<script src="/js/academy.js?v=20260715b013"></script>
-<script src="/js/task_engine.js?v=20260715b013"></script>
-<script src="/js/gw_i18n.js?v=20260715b013"></script>
-<script src="/js/app_premium.js?v=20260715b013"></script>
-<script src="/js/estimates.js?v=20260715b013"></script>
-<script src="/js/invoices.js?v=20260715b013"></script>
-<script src="/js/csv_import.js?v=20260715b013"></script>
-<script src="/js/onboarding.js?v=20260715b013"></script>
-<script src="/js/recurring_plans.js?v=20260715b013"></script>
-<script src="/js/reviews.js?v=20260715b013"></script>
-<script src="/js/stripe.js?v=20260715b013"></script>
-<script src="/js/email.js?v=20260715b013"></script>
-<script src="/js/notifications.js?v=20260715b013"></script>
-<script src="/js/integrations.js?v=20260715b013"></script>
-<script src="/js/user_management.js?v=20260715b013"></script>
-<script src="/js/platform_admin.js?v=20260715b013"></script>
-<script src="/js/time_tracker.js?v=20260715b013"></script>
-<script src="/js/field_workday.js?v=20260715b013"></script>
-<script src="/js/platform_core.js?v=20260715b013"></script>
-<script src="/js/approval_engine.js?v=20260715b013"></script>
-<script src="/js/automation_engine.js?v=20260715b013"></script>
-<script src="/js/client_portal.js?v=20260715b013"></script>
-<script src="/js/field_mode.js?v=20260715b013"></script>
-<script src="/js/assets_hub.js?v=20260715b013"></script>
+<script src="/js/gw-icons.js?v=20260715b015"></script>
+<script src="/js/db.js?v=20260715b015"></script>
+<script src="/js/data.js?v=20260715b015"></script>
+<script src="/js/reps.js?v=20260715b015"></script>
+<script src="/js/record-page.js?v=20260715b015"></script>
+<script src="/js/academy.js?v=20260715b015"></script>
+<script src="/js/task_engine.js?v=20260715b015"></script>
+<script src="/js/gw_i18n.js?v=20260715b015"></script>
+<script src="/js/app_premium.js?v=20260715b015"></script>
+<script src="/js/estimates.js?v=20260715b015"></script>
+<script src="/js/invoices.js?v=20260715b015"></script>
+<script src="/js/csv_import.js?v=20260715b015"></script>
+<script src="/js/onboarding.js?v=20260715b015"></script>
+<script src="/js/recurring_plans.js?v=20260715b015"></script>
+<script src="/js/reviews.js?v=20260715b015"></script>
+<script src="/js/stripe.js?v=20260715b015"></script>
+<script src="/js/email.js?v=20260715b015"></script>
+<script src="/js/notifications.js?v=20260715b015"></script>
+<script src="/js/integrations.js?v=20260715b015"></script>
+<script src="/js/user_management.js?v=20260715b015"></script>
+<script src="/js/platform_admin.js?v=20260715b015"></script>
+<script src="/js/time_tracker.js?v=20260715b015"></script>
+<script src="/js/field_workday.js?v=20260715b015"></script>
+<script src="/js/platform_core.js?v=20260715b015"></script>
+<script src="/js/approval_engine.js?v=20260715b015"></script>
+<script src="/js/automation_engine.js?v=20260715b015"></script>
+<script src="/js/client_portal.js?v=20260715b015"></script>
+<script src="/js/field_mode.js?v=20260715b015"></script>
+<script src="/js/assets_hub.js?v=20260715b015"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
