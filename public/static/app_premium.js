@@ -5589,6 +5589,27 @@ function opportunityDetail(id){
                 })()}
             </div>
           </div>
+
+          <!-- Client meetings — created here or on Google Calendar, tied to this lead -->
+          <div style="border-top:1px solid var(--gw-line);margin:10px 0 8px"></div>
+          <div class="rp-left-field">
+            <div class="rp-left-field-label" style="display:flex;align-items:center;justify-content:space-between">Meetings
+              <button title="Schedule a meeting or send a booking link" onclick="window.intScheduleForLead?intScheduleForLead('${o.id}'):showToast('Loading…')" style="background:var(--gw-teal,#4D8A86);border:none;border-radius:6px;color:#fff;font-size:10px;font-weight:800;padding:2px 8px;cursor:pointer">+ Schedule</button>
+            </div>
+            ${(function(){
+                const mtgs = (o.meetings||[]).slice().sort((a,b)=>((a.date||'')+(a.time||'')).localeCompare((b.date||'')+(b.time||'')));
+                const today = todayISO();
+                const upcoming = mtgs.filter(m=>m.date>=today);
+                const shown = upcoming.length ? upcoming.slice(0,3) : mtgs.slice(-2);
+                if (!shown.length) return '<div class="rp-left-field-value" style="font-size:12px;color:var(--gw-ink-3,#6F7E6A)">None scheduled</div>';
+                return shown.map(m=>'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px">'
+                  + '<span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:'+(m.date>=today?'#2D7A55':'#6F7E6A')+'"></span>'
+                  + '<span style="font-weight:600;color:var(--gw-ink)">'+escapeHtml(m.type||'Meeting')+'</span>'
+                  + '<span style="margin-left:auto;color:var(--gw-ink-3,#6F7E6A);flex-shrink:0">'+prettyDate(m.date)+(m.time?' '+m.time:'')+'</span>'
+                  + (m.calSynced?'<svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="#4D8A86" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round"/></svg>':'')
+                  + '</div>').join('');
+              })()}
+          </div>
         </div>
       </aside>
 
@@ -5860,79 +5881,233 @@ function opportunityDetail(id){
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMMUNICATIONS BOARD — per-lead conversation, messages, calls, emails, files
+// Each genre (SMS / Email / Call / Note / Proposal) shows ONLY its own thread.
+// Email genre additionally shows LIVE Gmail conversations with the lead.
 // ═══════════════════════════════════════════════════════════════════════════
 
-function commsBoardHtml(oppId, opp){
-  const msgs = (state.communications||[]).filter(c=>c.oppId===oppId).sort((a,b)=>new Date(a.ts)-new Date(b.ts));
-  const clientName = escapeHtml(opp.client||'Lead');
-  const clientEmail = escapeHtml(opp.email||'');
-  const clientPhone = escapeHtml(opp.phone||'');
+const COMMS_TYPE_META = {
+  sms:   { label:'SMS',      color:'#2D7A55', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
+  email: { label:'Email',    color:'#1A4740', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' },
+  call:  { label:'Call',     color:'#8B6914', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
+  note:  { label:'Note',     color:'#6F7E6A', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
+  proposal:{ label:'Proposal', color:'#B8744F', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".6"/></svg>' },
+};
 
-  const TYPE_META = {
-    sms:   { label:'SMS',      color:'#2D7A55', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
-    email: { label:'Email',    color:'#1A4740', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' },
-    call:  { label:'Call',     color:'#8B6914', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
-    note:  { label:'Note',     color:'#6F7E6A', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>' },
-    proposal:{ label:'Proposal', color:'#B8744F', icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".6"/></svg>' },
-  };
-
-  // Group messages by date
-  function groupByDate(msgs){
-    const groups = {};
-    msgs.forEach(m => {
-      const d = m.ts ? new Date(m.ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}) : 'Unknown';
-      if(!groups[d]) groups[d] = [];
-      groups[d].push(m);
+// Sanitize email HTML for safe inline display (strips scripts, event handlers, js: URLs)
+function gwSanitizeEmailHtml(html){
+  try {
+    const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
+    doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form').forEach(n=>n.remove());
+    doc.querySelectorAll('*').forEach(el=>{
+      Array.from(el.attributes).forEach(a=>{
+        const n = a.name.toLowerCase();
+        if (n.indexOf('on') === 0) el.removeAttribute(a.name);
+        else if ((n==='href'||n==='src'||n==='action') && /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+      });
+      if (el.tagName === 'A') { el.setAttribute('target','_blank'); el.setAttribute('rel','noopener'); }
     });
-    return groups;
-  }
+    return doc.body.innerHTML;
+  } catch(e){ return escapeHtml(String(html||'')); }
+}
 
-  function fileChips(files){
-    if(!files||!files.length) return '';
-    return '<div class="comm-file-chips">' + files.map(f=>{
-      const ext = (f.name||'').split('.').pop().toLowerCase();
-      const isImg = ['jpg','jpeg','png','gif','webp'].includes(ext);
-      const isPdf = ext==='pdf';
-      const icon = isImg ? gwIcon('image',14,'#4D8A86') : isPdf ? gwIcon('document',14,'#8B3A2A') : ext==='docx'||ext==='doc' ? gwIcon('note',14,'#113931') : gwIcon('attachment',14,'#6F7E6A');
-      return '<span class="comm-file-chip" title="'+escapeHtml(f.name)+'">' + icon + ' <span>'+escapeHtml(f.name)+'</span></span>';
-    }).join('') + '</div>';
-  }
+function _commsLooksHtml(s){ return /<([a-z][\w-]*)(\s[^>]*)?>/i.test(String(s||'')); }
 
-  function renderMsg(m){
-    const meta = TYPE_META[m.type] || TYPE_META.note;
-    const isOut = m.direction === 'out';
-    const fmt = dt => { try{ return new Date(dt).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} };
-    return '<div class="comm-msg comm-msg-'+(isOut?'out':'in')+'">' +
-      '<div class="comm-bubble">' +
-        '<div class="comm-meta-row">' +
-          '<span class="comm-type-badge" style="background:'+meta.color+'22;color:'+meta.color+';border-color:'+meta.color+'44">'+meta.icon+' '+meta.label+'</span>' +
-          (m.gmailSent ? `<span class="comm-gmail-badge">${gwIcon('success',16)} Sent via Gmail</span>` : (m.type==='email'&&m.direction==='out' ? `<span class="comm-gmail-badge comm-gmail-local">${gwIcon('checklist',16)} Logged locally</span>` : '')) +
-          (m.subject ? '<span class="comm-subject">'+escapeHtml(m.subject)+'</span>' : '') +
-          '<span class="comm-time">'+fmt(m.ts)+'</span>' +
-          '<button class="comm-delete-btn" title="Delete" onclick="deleteComm(\''+m.id+'\',\''+oppId+'\')">×</button>' +
-        '</div>' +
-        '<div class="comm-body">'+nl2br(m.body||'')+'</div>' +
-        fileChips(m.files) +
-        (m.callDuration ? '<div class="comm-call-dur">'+gwIcon('clock',12)+' '+escapeHtml(m.callDuration)+'</div>' : '') +
+function _commsFileChips(files){
+  if(!files||!files.length) return '';
+  return '<div class="comm-file-chips">' + files.map(f=>{
+    const ext = (f.name||'').split('.').pop().toLowerCase();
+    const isImg = ['jpg','jpeg','png','gif','webp'].includes(ext);
+    const isPdf = ext==='pdf';
+    const icon = isImg ? gwIcon('image',14,'#4D8A86') : isPdf ? gwIcon('document',14,'#8B3A2A') : ext==='docx'||ext==='doc' ? gwIcon('note',14,'#113931') : gwIcon('attachment',14,'#6F7E6A');
+    return '<span class="comm-file-chip" title="'+escapeHtml(f.name)+'">' + icon + ' <span>'+escapeHtml(f.name)+'</span></span>';
+  }).join('') + '</div>';
+}
+
+function _commsRenderMsg(m, oppId){
+  const meta = COMMS_TYPE_META[m.type] || COMMS_TYPE_META.note;
+  const isOut = m.direction === 'out';
+  const fmt = dt => { try{ return new Date(dt).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} };
+  // HTML-aware body: emails composed with rich formatting store HTML — render it
+  // sanitized instead of showing raw markup as text (fixes escaped-markup bug)
+  const rawBody = m.body||'';
+  const bodyHtml = _commsLooksHtml(rawBody)
+    ? '<div class="comm-body comm-body-rich" style="max-height:300px;overflow:auto">'+gwSanitizeEmailHtml(rawBody)+'</div>'
+    : '<div class="comm-body">'+nl2br(rawBody)+'</div>';
+  return '<div class="comm-msg comm-msg-'+(isOut?'out':'in')+'">' +
+    '<div class="comm-bubble">' +
+      '<div class="comm-meta-row">' +
+        '<span class="comm-type-badge" style="background:'+meta.color+'22;color:'+meta.color+';border-color:'+meta.color+'44">'+meta.icon+' '+meta.label+'</span>' +
+        (m.gmailSent ? `<span class="comm-gmail-badge">${gwIcon('success',16)} Sent via Gmail</span>` : (m.type==='email'&&m.direction==='out' ? `<span class="comm-gmail-badge comm-gmail-local">${gwIcon('checklist',16)} Logged locally</span>` : '')) +
+        (m.subject ? '<span class="comm-subject">'+escapeHtml(m.subject)+'</span>' : '') +
+        '<span class="comm-time">'+fmt(m.ts)+'</span>' +
+        '<button class="comm-delete-btn" title="Delete" onclick="deleteComm(\''+m.id+'\',\''+oppId+'\')">×</button>' +
       '</div>' +
-    '</div>';
-  }
+      bodyHtml +
+      _commsFileChips(m.files) +
+      (m.callDuration ? '<div class="comm-call-dur">'+gwIcon('clock',12)+' '+escapeHtml(m.callDuration)+'</div>' : '') +
+    '</div>' +
+  '</div>';
+}
 
-  // Generate initials for avatar
-  const initials = (clientName||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-  const msgCount = msgs.length;
-
-  const groups = groupByDate(msgs);
-  const threadHtml = Object.keys(groups).length === 0
-    ? '<div class="comm-empty">' +
-        `<div class="comm-empty-icon">${gwIcon('message',16)}</div>` +
-        '<p>No communications yet for '+clientName+'.</p>' +
-        '<p style="color:#4A5947;font-size:12.5px;max-width:320px;line-height:1.6">Use the compose bar below to log a call, send an SMS, draft an email, or attach a proposal.</p>' +
+// Build the thread HTML for ONE genre only
+function _commsThreadHtml(oppId, opp, genre){
+  const clientName = escapeHtml(opp.client||'Lead');
+  const msgs = (state.communications||[])
+    .filter(c=>c.oppId===oppId && (c.type||'note')===genre)
+    .sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  // Group messages by date
+  const groups = {};
+  msgs.forEach(m => {
+    const d = m.ts ? new Date(m.ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}) : 'Unknown';
+    (groups[d] = groups[d]||[]).push(m);
+  });
+  const meta = COMMS_TYPE_META[genre] || COMMS_TYPE_META.note;
+  const emptyCopy = {
+    sms: 'No SMS messages yet. Texts logged for '+clientName+' will appear here — running as one thread on their number.',
+    email: 'No emails logged yet for '+clientName+'.',
+    call: 'No calls logged yet. Log a call below with notes and duration.',
+    note: 'No internal notes on this conversation yet.',
+    proposal: 'No proposals logged in the conversation yet.'
+  }[genre] || 'Nothing here yet.';
+  let html = Object.keys(groups).length === 0
+    ? '<div class="comm-empty" style="padding:24px 12px">' +
+        '<div class="comm-empty-icon" style="color:'+meta.color+'">'+meta.icon+'</div>' +
+        '<p style="font-weight:700">'+meta.label+' — '+clientName+'</p>' +
+        '<p style="color:#4A5947;font-size:12.5px;max-width:340px;line-height:1.6">'+emptyCopy+'</p>' +
       '</div>'
     : Object.keys(groups).map(date =>
         '<div class="comm-date-divider"><span>'+date+'</span></div>' +
-        groups[date].map(renderMsg).join('')
+        groups[date].map(m=>_commsRenderMsg(m, oppId)).join('')
       ).join('');
+  // Email genre → live Gmail conversations container (filled async)
+  if (genre === 'email') html = '<div id="leadGmailLive"></div>' + html;
+  return html;
+}
+
+// Re-render just the thread for the active genre (called on tab switch)
+window.gwRerenderCommsThread = function(oppId){
+  const opp = (state.opportunities||[]).find(x=>x.id===oppId); if(!opp) return;
+  const el = document.getElementById('commsThread'); if(!el) return;
+  const genre = window._commsGenre || 'sms';
+  el.innerHTML = _commsThreadHtml(oppId, opp, genre);
+  el.scrollTop = el.scrollHeight;
+  if (genre === 'email' && typeof window.gwLeadGmailLoad === 'function') window.gwLeadGmailLoad(oppId, opp.email||'');
+};
+
+// ── LIVE GMAIL: real conversations with this lead, straight from the rep's Gmail ──
+window._leadGmailThreadMeta = {};
+
+window.gwLeadGmailLoad = async function(oppId, email){
+  const el = document.getElementById('leadGmailLive'); if(!el) return;
+  const connected = (typeof isGoogleConnected === 'function') && isGoogleConnected();
+  if (!connected){
+    el.innerHTML = '<div style="padding:10px 14px;background:#8B691414;border:1px solid #8B691440;border-radius:10px;font-size:12.5px;color:#8B6914;margin-bottom:10px">Connect Google in Integrations to see the real Gmail conversations with this lead here.</div>';
+    return;
+  }
+  if (!email){
+    el.innerHTML = '<div style="padding:10px 14px;background:#6F7E6A14;border:1px solid #6F7E6A33;border-radius:10px;font-size:12.5px;color:#6F7E6A;margin-bottom:10px">No email address on this lead — add one to pull in their Gmail conversations.</div>';
+    return;
+  }
+  el.innerHTML = '<div style="padding:12px 14px;font-size:12.5px;color:#6F7E6A;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="animation:spin .8s linear infinite"><path d="M8 1.5A6.5 6.5 0 111.5 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> Loading Gmail conversations with '+escapeHtml(email)+'…</div>';
+  try {
+    const q = encodeURIComponent('from:'+email+' OR to:'+email);
+    const listR = await gFetch('https://gmail.googleapis.com/gmail/v1/users/me/threads?q='+q+'&maxResults=8');
+    const listJ = await listR.json();
+    const threads = listJ.threads || [];
+    if (!threads.length){
+      el.innerHTML = '<div style="padding:10px 14px;background:#4D8A8612;border:1px solid #4D8A8633;border-radius:10px;font-size:12.5px;color:#4D8A86;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span>No Gmail conversations with '+escapeHtml(email)+' yet. Send one below — replies will appear here.</span><button onclick="gwLeadGmailLoad(\''+oppId+'\',\''+email.replace(/'/g,"\\'")+'\')" style="background:none;border:1px solid #4D8A8655;border-radius:6px;color:#4D8A86;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">Refresh</button></div>';
+      return;
+    }
+    const full = await Promise.all(threads.map(t =>
+      gFetch('https://gmail.googleapis.com/gmail/v1/users/me/threads/'+t.id+'?format=full').then(r=>r.json()).catch(()=>null)
+    ));
+    const cards = full.filter(Boolean).map(t => gwRenderLeadGmailThread(t, oppId, email)).join('');
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 2px 10px">' +
+        '<span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#4D8A86;display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:#2D7A55;display:inline-block;box-shadow:0 0 0 3px #2D7A5522"></span>Live from Gmail — '+full.filter(Boolean).length+' conversation'+(full.filter(Boolean).length!==1?'s':'')+'</span>' +
+        '<button onclick="gwLeadGmailLoad(\''+oppId+'\',\''+email.replace(/'/g,"\\'")+'\')" style="background:none;border:1px solid #4D8A8655;border-radius:6px;color:#4D8A86;padding:3px 12px;font-size:11px;font-weight:700;cursor:pointer">↻ Refresh</button>' +
+      '</div>' + cards +
+      '<div class="comm-date-divider" style="margin-top:14px"><span>Logged in Groundwork</span></div>';
+  } catch(e){
+    el.innerHTML = '<div style="padding:10px 14px;background:#C97B6A14;border:1px solid #C97B6A40;border-radius:10px;font-size:12.5px;color:#C97B6A;margin-bottom:10px">Couldn\'t load Gmail: '+escapeHtml(e.message||'error')+'</div>';
+  }
+};
+
+function gwRenderLeadGmailThread(thread, oppId, leadEmail){
+  const msgs = thread.messages || [];
+  if (!msgs.length) return '';
+  const hdr = (m, name) => ((m.payload&&m.payload.headers)||[]).find(h=>h.name.toLowerCase()===name.toLowerCase())?.value || '';
+  const subject = hdr(msgs[0],'Subject') || '(no subject)';
+  const myEmail = (typeof getGoogleUserEmail==='function') ? (getGoogleUserEmail()||'').toLowerCase() : '';
+  window._leadGmailThreadMeta[thread.id] = { subject, to: leadEmail, oppId };
+  const rows = msgs.map((m,i) => {
+    const from = hdr(m,'From');
+    const isMine = myEmail && from.toLowerCase().includes(myEmail);
+    const when = m.internalDate ? new Date(Number(m.internalDate)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    const body = (typeof gwDecodeBody==='function') ? gwDecodeBody(m.payload||{}) : '';
+    const isLast = i === msgs.length-1;
+    const mid = 'gmm-'+thread.id+'-'+i;
+    const fromName = escapeHtml(from.replace(/<.*>/,'').trim() || from);
+    return '<div style="border-top:'+(i?'1px solid rgba(111,126,106,.15)':'none')+';padding:'+(i?'8px':'0')+' 0 0">' +
+      '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\'})(document.getElementById(\''+mid+'\'))" style="display:flex;width:100%;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:4px 0;text-align:left">' +
+        '<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:'+(isMine?'#4D8A86':'#B8744F')+'"></span>' +
+        '<span style="font-size:12px;font-weight:700;color:#E8EDE6">'+fromName+(isMine?' <span style="opacity:.55;font-weight:500">(you)</span>':'')+'</span>' +
+        '<span style="font-size:11px;color:#6F7E6A;margin-left:auto;flex-shrink:0">'+when+'</span>' +
+      '</button>' +
+      '<div id="'+mid+'" style="display:'+(isLast?'block':'none')+';max-height:280px;overflow:auto;font-size:13px;line-height:1.55;padding:6px 2px 8px 16px;color:#C9D3C6" class="comm-body-rich">' +
+        (body ? gwSanitizeEmailHtml(body) : '<em style="opacity:.5">(empty body)</em>') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  return '<div style="background:rgba(20,36,32,.55);border:1px solid rgba(77,138,134,.28);border-radius:12px;padding:12px 14px;margin-bottom:10px">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+      '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="#4D8A86" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round"/></svg>' +
+      '<strong style="font-size:13px;color:#E8EDE6">'+escapeHtml(subject)+'</strong>' +
+      '<span style="font-size:11px;color:#6F7E6A;margin-left:auto">'+msgs.length+' message'+(msgs.length!==1?'s':'')+'</span>' +
+    '</div>' + rows +
+    '<div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">' +
+      '<textarea id="gmr-'+thread.id+'" rows="1" placeholder="Reply in this thread…" style="flex:1;background:rgba(10,22,19,.6);border:1px solid rgba(111,126,106,.3);border-radius:8px;color:#E8EDE6;font-size:12.5px;padding:8px 10px;resize:vertical;font-family:inherit"></textarea>' +
+      '<button onclick="gwLeadGmailReply(\''+thread.id+'\')" style="background:#4D8A86;border:none;border-radius:8px;color:#fff;font-weight:700;font-size:12px;padding:8px 14px;cursor:pointer;flex-shrink:0">Reply</button>' +
+    '</div>' +
+  '</div>';
+}
+
+window.gwLeadGmailReply = async function(threadId){
+  const meta = window._leadGmailThreadMeta[threadId];
+  const ta = document.getElementById('gmr-'+threadId);
+  if (!meta || !ta) return;
+  const txt = ta.value.trim();
+  if (!txt){ showToast('Type a reply first'); return; }
+  const btn = ta.nextElementSibling;
+  const orig = btn ? btn.textContent : '';
+  if (btn){ btn.textContent = 'Sending…'; btn.disabled = true; }
+  try {
+    const subj = /^re:/i.test(meta.subject) ? meta.subject : 'Re: ' + meta.subject;
+    await gmailSendEmail({ to: meta.to, subject: subj, body: txt.replace(/\n/g,'<br>'), replyToMessageId: threadId });
+    showToast('Reply sent in thread');
+    // Log it in Groundwork too
+    if(!state.communications) state.communications = [];
+    state.communications.push({ id:uid('comm'), oppId:meta.oppId, type:'email', direction:'out', body:txt, subject:subj, ts:new Date().toISOString(), sentBy:(window.getCurrentRep?window.getCurrentRep():null)?.name||'Rep', gmailSent:true, files:[] });
+    saveState();
+    window.gwLeadGmailLoad(meta.oppId, meta.to);
+  } catch(e){
+    showToast('Gmail error: ' + (e.message||'send failed'));
+    if (btn){ btn.textContent = orig; btn.disabled = false; }
+  }
+};
+
+function commsBoardHtml(oppId, opp){
+  const allMsgs = (state.communications||[]).filter(c=>c.oppId===oppId);
+  const clientName = escapeHtml(opp.client||'Lead');
+  const clientEmail = escapeHtml(opp.email||'');
+  const clientPhone = escapeHtml(opp.phone||'');
+  const genre = window._commsGenre || 'sms';
+
+  // Generate initials for avatar
+  const initials = (clientName||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const msgCount = allMsgs.length;
+
+  const threadHtml = _commsThreadHtml(oppId, opp, genre);
 
   return '<div class="comms-board">' +
     /* ── Header ── */
@@ -5967,26 +6142,12 @@ function commsBoardHtml(oppId, opp){
     '<div class="comms-compose" id="commsCompose">' +
       /* Type switcher */
       '<div class="compose-type-tabs" id="composeTypeTabs">' +
-        '<button class="ctype-btn ctype-active" data-ctype="sms">' +
-          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 2.5A.5.5 0 012.5 2h9a.5.5 0 01.5.5v6a.5.5 0 01-.5.5H8L5.5 12V9H2.5A.5.5 0 012 8.5v-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>' +
-          'SMS' +
-        '</button>' +
-        '<button class="ctype-btn" data-ctype="email">' +
-          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>' +
-          'Email' +
-        '</button>' +
-        '<button class="ctype-btn" data-ctype="call">' +
-          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M4.5 2C4.5 2 5 4 4 5S2 5.5 2 5.5C2 8 6 12 8.5 12c0 0 .5-2 1.5-2s3 .5 3 .5-.5 2-2 2C7 13 1 7 1 3.5c0 0 2 .5 3-1S4.5 2 4.5 2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>' +
-          'Log Call' +
-        '</button>' +
-        '<button class="ctype-btn" data-ctype="note">' +
-          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>' +
-          'Note' +
-        '</button>' +
-        '<button class="ctype-btn" data-ctype="proposal">' +
-          '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" opacity=".6"/></svg>' +
-          'Proposal' +
-        '</button>' +
+        [['sms','SMS'],['email','Email'],['call','Log Call'],['note','Note'],['proposal','Proposal']].map(function(t){
+          const g = t[0], lbl = t[1];
+          const meta = COMMS_TYPE_META[g];
+          const n = allMsgs.filter(function(c){ return (c.type||'note')===g; }).length;
+          return '<button class="ctype-btn'+(genre===g?' ctype-active':'')+'" data-ctype="'+g+'">' + meta.icon.replace('width="14" height="14"','width="13" height="13"') + lbl + (n?' <span style="font-size:10px;opacity:.65;font-weight:800">'+n+'</span>':'') + '</button>';
+        }).join('') +
       '</div>' +
       /* Subject (email only) */
       '<div id="composeSubjectRow" style="display:none">' +
@@ -6077,7 +6238,7 @@ function filesTabHtml(oppId, opp){
 
 function wireCommsCompose(oppId){
   const typeTabs = document.querySelectorAll('.ctype-btn');
-  let currentType = 'sms';
+  let currentType = window._commsGenre || 'sms';
   const subjectRow = document.getElementById('composeSubjectRow');
   const callDurRow = document.getElementById('composeCallDurRow');
   const fileInput  = document.getElementById('composeFileInput');
@@ -6108,14 +6269,21 @@ function wireCommsCompose(oppId){
     }
   }
 
+  function applyGenre(){
+    if(subjectRow) subjectRow.style.display = currentType==='email'?'block':'none';
+    if(callDurRow) callDurRow.style.display = currentType==='call'?'block':'none';
+    updateGmailBanner(currentType);
+  }
+
   typeTabs.forEach(btn=>{
     btn.addEventListener('click',()=>{
       typeTabs.forEach(b=>b.classList.remove('ctype-active'));
       btn.classList.add('ctype-active');
       currentType = btn.dataset.ctype;
-      if(subjectRow) subjectRow.style.display = currentType==='email'?'block':'none';
-      if(callDurRow) callDurRow.style.display = currentType==='call'?'block':'none';
-      updateGmailBanner(currentType);
+      // Genre switch: thread above shows ONLY this genre's messages
+      window._commsGenre = currentType;
+      if (typeof window.gwRerenderCommsThread === 'function') window.gwRerenderCommsThread(oppId);
+      applyGenre();
       const body = document.getElementById('composeBody');
       if(body){
         const placeholders = {
@@ -6160,6 +6328,13 @@ function wireCommsCompose(oppId){
 
   window._commsPendingFiles = pendingFiles;
   window._commsCurrentType  = function(){ return currentType; };
+
+  // Initial genre state: show correct compose fields + live Gmail if email genre active
+  applyGenre();
+  if (currentType === 'email'){
+    const opp0 = (state.opportunities||[]).find(x=>x.id===oppId);
+    if (opp0 && typeof window.gwLeadGmailLoad === 'function') window.gwLeadGmailLoad(oppId, opp0.email||'');
+  }
 
   // Direction toggle wiring
   window.setCommDir = function(dir){

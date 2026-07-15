@@ -6656,7 +6656,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b015">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b017">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6680,8 +6680,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260715b015"></script>
-  <script src="/js/client_portal.js?v=20260715b015"></script>
+  <script src="/js/platform_core.js?v=20260715b017"></script>
+  <script src="/js/client_portal.js?v=20260715b017"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6956,14 +6956,25 @@ app.get('/auth/google/callback', (c) => {
   <div class="spinner"></div>
   <p>Connecting to Google — you can close this window if it doesn't close automatically.</p>
   <script>
-    // The access token arrives in the URL hash via Google's implicit flow.
-    // The opener (user_management.js) polls this page's location.hash to read it.
-    // Nothing needs to happen here — just stay open so the polling can read the hash.
-
-    // Auto-close after 10 seconds as a fallback (gives the opener enough poll cycles)
-    if (window.opener) {
-      setTimeout(() => window.close(), 10000);
-    }
+    // AUTH-CODE FLOW (persistent connection): Google redirects here with ?code=…
+    // We hand the code to the opener via postMessage AND stash it in the URL hash
+    // so legacy polling openers can read it cross-origin-safely (same origin here).
+    (function(){
+      var params = new URLSearchParams(location.search);
+      var code = params.get('code');
+      var state = params.get('state') || '';
+      var error = params.get('error') || '';
+      if (code) {
+        // Make the code readable by the opener's polling loop via the hash
+        try { location.hash = 'gcode=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state); } catch(e){}
+        try { if (window.opener) window.opener.postMessage({ type:'gw_google_code', code: code, state: state }, location.origin); } catch(e){}
+      } else if (error) {
+        try { location.hash = 'gerror=' + encodeURIComponent(error); } catch(e){}
+        try { if (window.opener) window.opener.postMessage({ type:'gw_google_error', error: error }, location.origin); } catch(e){}
+      }
+      // LEGACY IMPLICIT FLOW: token arrives in the URL hash — opener polls it. Keep page open briefly.
+      if (window.opener) setTimeout(function(){ window.close(); }, 10000);
+    })();
   </script>
 </body>
 </html>`)
@@ -7300,9 +7311,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b015">
-  <link rel="stylesheet" href="/js/styles.css?v=20260715b015">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b015">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b017">
+  <link rel="stylesheet" href="/js/styles.css?v=20260715b017">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b017">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -7850,35 +7861,35 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260715b015"></script>
-<script src="/js/db.js?v=20260715b015"></script>
-<script src="/js/data.js?v=20260715b015"></script>
-<script src="/js/reps.js?v=20260715b015"></script>
-<script src="/js/record-page.js?v=20260715b015"></script>
-<script src="/js/academy.js?v=20260715b015"></script>
-<script src="/js/task_engine.js?v=20260715b015"></script>
-<script src="/js/gw_i18n.js?v=20260715b015"></script>
-<script src="/js/app_premium.js?v=20260715b015"></script>
-<script src="/js/estimates.js?v=20260715b015"></script>
-<script src="/js/invoices.js?v=20260715b015"></script>
-<script src="/js/csv_import.js?v=20260715b015"></script>
-<script src="/js/onboarding.js?v=20260715b015"></script>
-<script src="/js/recurring_plans.js?v=20260715b015"></script>
-<script src="/js/reviews.js?v=20260715b015"></script>
-<script src="/js/stripe.js?v=20260715b015"></script>
-<script src="/js/email.js?v=20260715b015"></script>
-<script src="/js/notifications.js?v=20260715b015"></script>
-<script src="/js/integrations.js?v=20260715b015"></script>
-<script src="/js/user_management.js?v=20260715b015"></script>
-<script src="/js/platform_admin.js?v=20260715b015"></script>
-<script src="/js/time_tracker.js?v=20260715b015"></script>
-<script src="/js/field_workday.js?v=20260715b015"></script>
-<script src="/js/platform_core.js?v=20260715b015"></script>
-<script src="/js/approval_engine.js?v=20260715b015"></script>
-<script src="/js/automation_engine.js?v=20260715b015"></script>
-<script src="/js/client_portal.js?v=20260715b015"></script>
-<script src="/js/field_mode.js?v=20260715b015"></script>
-<script src="/js/assets_hub.js?v=20260715b015"></script>
+<script src="/js/gw-icons.js?v=20260715b017"></script>
+<script src="/js/db.js?v=20260715b017"></script>
+<script src="/js/data.js?v=20260715b017"></script>
+<script src="/js/reps.js?v=20260715b017"></script>
+<script src="/js/record-page.js?v=20260715b017"></script>
+<script src="/js/academy.js?v=20260715b017"></script>
+<script src="/js/task_engine.js?v=20260715b017"></script>
+<script src="/js/gw_i18n.js?v=20260715b017"></script>
+<script src="/js/app_premium.js?v=20260715b017"></script>
+<script src="/js/estimates.js?v=20260715b017"></script>
+<script src="/js/invoices.js?v=20260715b017"></script>
+<script src="/js/csv_import.js?v=20260715b017"></script>
+<script src="/js/onboarding.js?v=20260715b017"></script>
+<script src="/js/recurring_plans.js?v=20260715b017"></script>
+<script src="/js/reviews.js?v=20260715b017"></script>
+<script src="/js/stripe.js?v=20260715b017"></script>
+<script src="/js/email.js?v=20260715b017"></script>
+<script src="/js/notifications.js?v=20260715b017"></script>
+<script src="/js/integrations.js?v=20260715b017"></script>
+<script src="/js/user_management.js?v=20260715b017"></script>
+<script src="/js/platform_admin.js?v=20260715b017"></script>
+<script src="/js/time_tracker.js?v=20260715b017"></script>
+<script src="/js/field_workday.js?v=20260715b017"></script>
+<script src="/js/platform_core.js?v=20260715b017"></script>
+<script src="/js/approval_engine.js?v=20260715b017"></script>
+<script src="/js/automation_engine.js?v=20260715b017"></script>
+<script src="/js/client_portal.js?v=20260715b017"></script>
+<script src="/js/field_mode.js?v=20260715b017"></script>
+<script src="/js/assets_hub.js?v=20260715b017"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

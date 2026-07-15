@@ -2639,6 +2639,13 @@ function umRenderMyGoogleConnection(container) {
   const connected = gc && gc.token && Date.now() < (gc.expiry || 0);
   const email = gc?.email || '';
 
+  // Local token missing/expired → check the server: a stored refresh token means
+  // the connection is PERSISTENT — silently restore it and re-render as connected.
+  if (!connected && typeof window.googleRestoreConnection === 'function' && !container._gwRestoreTried) {
+    container._gwRestoreTried = true;
+    window.googleRestoreConnection().then(ok => { if (ok) umRenderMyGoogleConnection(container); });
+  }
+
   container.innerHTML = `
 <section class="card" style="border:1px solid var(--gw-line)">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
@@ -2651,7 +2658,7 @@ function umRenderMyGoogleConnection(container) {
   </div>
 
   ${connected
-    ? `<div style="font-size:13px;color:#2D7A55;margin-bottom:12px">Connected as <strong>${umEscape(email)}</strong></div>
+    ? `<div style="font-size:13px;color:#2D7A55;margin-bottom:12px">Connected as <strong>${umEscape(email)}</strong> <span style="font-size:11px;color:#6F7E6A">— stays connected until you disconnect</span></div>
        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
          ${[{l:'Gmail'},{l:'Calendar'},{l:'Drive'}].map(s=>`
          <span style="font-size:12px;background:#2D7A5515;border:1px solid #2D7A5540;border-radius:6px;padding:3px 10px;color:#2D7A55">${s.icon} ${s.l}</span>`).join('')}
@@ -2932,6 +2939,21 @@ async function umMyConnect() {
     return;
   }
 
+  // PREFERRED: persistent authorization-code flow (integrations.js).
+  // Stores a refresh token server-side — connection survives logins/expiry
+  // and only ends when the user manually disconnects.
+  if (typeof window.googleOAuthConnect === 'function') {
+    const ok = await window.googleOAuthConnect();
+    if (ok) {
+      const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+      if (rep) umAddAuditEntry({ type: 'google_connected', userId: rep.id, userName: rep.name, by: rep.name });
+      if (typeof window.integrations === 'function') window.integrations();
+      else if (typeof window.show === 'function') window.show('settings');
+    }
+    return;
+  }
+
+  // LEGACY FALLBACK: implicit flow (1-hour token) — only if integrations.js didn't load
   const scopes = [
     'https://www.googleapis.com/auth/gmail.compose',
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -3034,7 +3056,9 @@ async function umMyConnect() {
 function umMyDisconnect() {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   if (!rep) return;
-  if (!confirm('Disconnect your Google account? You will need to reconnect to use Gmail, Calendar, and Drive.')) return;
+  if (!confirm('Disconnect your Google account? This fully removes the saved connection — you will need to reconnect to use Gmail, Calendar, and Drive.')) return;
+  // Revoke + delete the server-side refresh token (manual disconnect is the ONLY way out)
+  try { fetch('/api/google/disconnect', { method: 'DELETE' }); } catch(e) {}
   const map = umLoadUserGoogle();
   delete map[rep.id];
   umSaveUserGoogle(map);

@@ -1,15 +1,17 @@
 /**
  * Groundwork CRM — Integrations Module
- * Google Workspace (Gmail, Calendar, Drive) + Homeworks/CopilotCRM (Zapier webhook)
+ * Google Workspace (Gmail, Calendar, Drive)
  *
  * ARCHITECTURE:
- *  - Google OAuth2: popup flow → access token stored in localStorage (BYOK — user supplies Client ID)
- *  - Homeworks CRM: Zapier Webhook URL (user pastes their Zapier webhook URL)
- *  - All secrets stay client-side in localStorage (no server storage needed for this pattern)
+ *  - Google OAuth2 authorization-code flow: popup → ?code → server exchange →
+ *    refresh token stored server-side (D1 google_tokens) → PERSISTENT connection.
+ *    Access tokens auto-refresh via POST /api/google/refresh — the user stays
+ *    connected forever until they manually disconnect.
+ *  - Falls back to legacy implicit-flow token in localStorage during migration.
  *
- * USER SETUP REQUIRED:
- *  1. Google: Create OAuth2 Client ID at console.cloud.google.com
- *  2. Homeworks: Create Zapier Zap with "Webhook" trigger, paste the webhook URL here
+ * USER SETUP REQUIRED (admin, once):
+ *  1. Create OAuth2 Client ID + Client Secret at console.cloud.google.com
+ *  2. Save both in the Admin Setup panel (stored in company settings server-side)
  */
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -17,7 +19,7 @@ const INT_KEY = 'avalonIntegrationsV1';
 
 // Pre-configured defaults (baked in at build time)
 const INT_DEFAULTS = {
-  zapierWebhookUrl: 'https://hooks.zapier.com/hooks/catch/26716050/422r11e/',
+
   googleClientId: '523041652927-q3aq6i98knrr10kf956rposcvacvmdlf.apps.googleusercontent.com'
 };
 
@@ -90,6 +92,44 @@ function getGoogleUserEmail() {
   return getIntState('googleEmail') || '';
 }
 
+// ── Store a fresh access token + email + signature in the per-user record ────
+async function _gwStoreAccessToken(token, expiresIn, emailHint) {
+  const curRep = window.getCurrentRep ? window.getCurrentRep() : null;
+  let email = emailHint || '';
+  if (!email) {
+    try {
+      const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: `Bearer ${token}` } });
+      const u = await r.json(); email = u.email || '';
+    } catch(_) {}
+  }
+  let sig = '';
+  try {
+    const sigR = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs', { headers: { Authorization: `Bearer ${token}` } });
+    if (sigR.ok) {
+      const sigJ = await sigR.json();
+      const primary = (sigJ.sendAs||[]).find(s=>s.isDefault) || (sigJ.sendAs||[])[0];
+      sig = primary?.signature || '';
+    }
+  } catch(_) {}
+  if (curRep) {
+    try {
+      const m2 = JSON.parse(localStorage.getItem('avalonUserGoogleV1') || '{}');
+      if (!m2[curRep.id]) m2[curRep.id] = {};
+      m2[curRep.id].token  = token;
+      m2[curRep.id].expiry = Date.now() + (expiresIn||3600) * 1000;
+      m2[curRep.id].email  = email;
+      if (sig) m2[curRep.id].signature = sig;
+      localStorage.setItem('avalonUserGoogleV1', JSON.stringify(m2));
+    } catch(e2) {}
+  }
+  // Legacy mirror so old call sites keep working
+  saveIntState({ googleToken: token, googleExpiry: Date.now() + (expiresIn||3600) * 1000, googleEmail: email });
+  return email;
+}
+
+// ── PERSISTENT CONNECT: authorization-code flow ───────────────────────────────
+// Popup → Google consent (access_type=offline) → ?code → server exchange →
+// refresh token stored in D1 → user stays connected until manual disconnect.
 async function googleOAuthConnect() {
   const clientId = getGoogleClientId();
   if (!clientId) {
@@ -98,17 +138,17 @@ async function googleOAuthConnect() {
   }
   const redirectUri = `${location.origin}/auth/google/callback`;
   const state = Math.random().toString(36).slice(2);
-  const nonce = Math.random().toString(36).slice(2);
   saveIntState({ googleOAuthState: state });
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    response_type: 'token',
+    response_type: 'code',
+    access_type: 'offline',
+    prompt: 'consent select_account',
     scope: GOOGLE_SCOPES,
     state,
-    include_granted_scopes: 'true',
-    prompt: 'select_account'
+    include_granted_scopes: 'true'
   });
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   const popup = window.open(authUrl, 'googleAuth', 'width=520,height=620,left=200,top=100');
@@ -118,68 +158,85 @@ async function googleOAuthConnect() {
   }
 
   return new Promise((resolve) => {
-    const timer = setInterval(async () => {
+    let settled = false;
+    async function handleCode(code) {
+      if (settled) return; settled = true;
+      clearInterval(timer);
+      try { popup.close(); } catch(_){}
       try {
-        if (popup.closed) {
-          clearInterval(timer);
-          resolve(isGoogleConnected());
+        const r = await fetch('/api/google/exchange', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, redirect_uri: redirectUri })
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) {
+          // Server exchange unavailable (no client secret configured) — cannot persist.
+          showIntToast(j.error || 'Google connect failed — check Admin Setup', 'warn');
+          resolve(false);
           return;
         }
+        await _gwStoreAccessToken(j.data.access_token, j.data.expires_in, j.data.email);
+        showIntToast('Google connected — you\'ll stay signed in' + (j.data.has_refresh ? '' : ' (this session)'), 'success');
+        window.removeEventListener('message', onMsg);
+        resolve(true);
+      } catch(e){
+        showIntToast('Google connect failed: ' + (e.message||'error'), 'warn');
+        resolve(false);
+      }
+    }
+    function onMsg(ev){
+      if (ev.origin !== location.origin || !ev.data) return;
+      if (ev.data.type === 'gw_google_code' && ev.data.code) handleCode(ev.data.code);
+      if (ev.data.type === 'gw_google_error') { if(!settled){settled=true;clearInterval(timer);showIntToast('Google: '+ev.data.error,'warn');resolve(false);} }
+    }
+    window.addEventListener('message', onMsg);
+    const timer = setInterval(() => {
+      try {
+        if (popup.closed) { clearInterval(timer); window.removeEventListener('message', onMsg); if(!settled) resolve(isGoogleConnected()); return; }
+        // Same-origin once redirected back — poll the hash for the code (fallback to postMessage)
         const hash = popup.location.hash;
-        if (hash && hash.includes('access_token')) {
+        if (hash && hash.includes('gcode=')) {
           const hp = new URLSearchParams(hash.slice(1));
-          const token = hp.get('access_token');
-          const expiresIn = parseInt(hp.get('expires_in') || '3600', 10);
-          if (token) {
-            popup.close();
-            clearInterval(timer);
-            saveIntState({
-              googleToken: token,
-              googleExpiry: Date.now() + expiresIn * 1000
-            });
-            // Fetch user email
-            try {
-              const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              const u = await r.json();
-              saveIntState({ googleEmail: u.email || '' });
-            } catch(_) {}
-            // Fetch Gmail sendAs signature and cache it immediately
-            try {
-              const sigR = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs', {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              if (sigR.ok) {
-                const sigJ = await sigR.json();
-                const primary = (sigJ.sendAs||[]).find(s=>s.isDefault) || (sigJ.sendAs||[])[0];
-                const sig = primary?.signature || '';
-                // Store in per-user record (avalonUserGoogleV1)
-                const curRep = window.getCurrentRep ? window.getCurrentRep() : null;
-                if (curRep) {
-                  try {
-                    const m2 = JSON.parse(localStorage.getItem('avalonUserGoogleV1') || '{}');
-                    if (!m2[curRep.id]) m2[curRep.id] = {};
-                    m2[curRep.id].token     = token;
-                    m2[curRep.id].expiry    = Date.now() + expiresIn * 1000;
-                    m2[curRep.id].signature = sig;
-                    localStorage.setItem('avalonUserGoogleV1', JSON.stringify(m2));
-                  } catch(e2) {}
-                }
-              }
-            } catch(_sig) {}
-            showIntToast('Google connected', 'success');
-            resolve(true);
-          }
+          const code = hp.get('gcode');
+          if (code) handleCode(code);
         }
       } catch(_) { /* cross-origin until redirect */ }
     }, 300);
-    // Timeout after 3 minutes
-    setTimeout(() => { clearInterval(timer); popup.closed || popup.close(); resolve(false); }, 180000);
+    setTimeout(() => { clearInterval(timer); window.removeEventListener('message', onMsg); try{ popup.closed || popup.close(); }catch(_){} if(!settled) resolve(false); }, 180000);
   });
 }
 
-function googleDisconnect() {
+// ── Silent refresh: mint a new access token from the server-stored refresh token ──
+let _gwRefreshInflight = null;
+async function googleTryRefresh() {
+  if (_gwRefreshInflight) return _gwRefreshInflight;
+  _gwRefreshInflight = (async () => {
+    try {
+      const r = await fetch('/api/google/refresh', { method: 'POST' });
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (!j.ok || !j.data || !j.data.access_token) return null;
+      await _gwStoreAccessToken(j.data.access_token, j.data.expires_in, j.data.email);
+      return j.data.access_token;
+    } catch(e){ return null; }
+    finally { setTimeout(()=>{ _gwRefreshInflight = null; }, 500); }
+  })();
+  return _gwRefreshInflight;
+}
+
+// ── Auto-restore on login/page load: if a refresh token exists server-side,
+//    silently reconnect so the user NEVER has to press Connect again. ─────────
+async function googleRestoreConnection() {
+  if (isGoogleConnected()) return true;          // still have a valid access token
+  const t = await googleTryRefresh();            // server has refresh token? → reconnect
+  if (t) console.log('[Integrations] Google connection restored from server refresh token');
+  return !!t;
+}
+window.googleRestoreConnection = googleRestoreConnection;
+// Kick off restore shortly after load (getCurrentRep must be ready)
+setTimeout(() => { try { googleRestoreConnection(); } catch(e){} }, 2500);
+
+async function googleDisconnect(alsoServer) {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   if (rep) {
     try {
@@ -190,23 +247,38 @@ function googleDisconnect() {
   }
   // Also clear legacy shared token so old data doesn't leak
   saveIntState({ googleToken: null, googleExpiry: 0, googleEmail: '' });
+  // MANUAL disconnect → revoke + delete the server-side refresh token too
+  if (alsoServer !== false) {
+    try { await fetch('/api/google/disconnect', { method: 'DELETE' }); } catch(e){}
+  }
   showIntToast('Google disconnected');
 }
 
 // ── Google API helpers ────────────────────────────────────────────────────────
 async function gFetch(url, options = {}) {
-  const token = getGoogleToken();
-  if (!token) throw new Error('Not connected to Google');
-  const res = await fetch(url, {
+  let token = getGoogleToken();
+  // Expired/missing local token → try silent server refresh BEFORE failing
+  if (!token) {
+    token = await googleTryRefresh();
+    if (!token) throw new Error('Not connected to Google');
+  }
+  const doFetch = (tok) => fetch(url, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${tok}`,
       'Content-Type': 'application/json',
       ...(options.headers || {})
     }
   });
+  let res = await doFetch(token);
   if (res.status === 401) {
-    googleDisconnect();
+    // Token revoked/expired mid-session → one silent refresh retry, then give up
+    const fresh = await googleTryRefresh();
+    if (fresh) {
+      res = await doFetch(fresh);
+      if (res.status !== 401) return res;
+    }
+    await googleDisconnect(false); // local only — keep server refresh token for next attempt
     throw new Error('Google session expired — please reconnect');
   }
   return res;
@@ -498,180 +570,6 @@ async function driveListFiles(query = '', maxResults = 10) {
   return r.json();
 }
 
-// ── Homeworks / CopilotCRM (Zapier Webhook Bridge) ────────────────────────────
-function getZapierWebhookUrl() { return getIntState('zapierWebhookUrl') || ''; }
-function isHomeworksConnected() { return !!getZapierWebhookUrl(); }
-
-// Split "First Last" or "Business Name" into Homeworks-compatible fields
-function splitName(fullName = '') {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return { firstName: '', lastName: '', businessName: parts[0] };
-  return { firstName: parts[0], lastName: parts.slice(1).join(' '), businessName: fullName };
-}
-
-// Parse "123 Main St, Vienna, VA 22180" into address components
-function parseAddress(address = '') {
-  const parts = address.split(',').map(s => s.trim());
-  const street = parts[0] || '';
-  const city = parts[1] || '';
-  const stateZip = (parts[2] || '').trim().split(/\s+/);
-  const state = stateZip[0] || 'VA';
-  const zip = stateZip[1] || '';
-  return { street, city, state, zip };
-}
-
-// Map Avalon service line → Homeworks service type tag
-function mapServiceLine(serviceLine = '') {
-  const map = {
-    'Landscape Design': 'landscape_design',
-    'Hardscape': 'hardscape',
-    'Lawn Maintenance': 'lawn_maintenance',
-    'Tree & Shrub': 'tree_shrub',
-    'Irrigation': 'irrigation',
-    'Outdoor Lighting': 'outdoor_lighting',
-    'Drainage': 'drainage',
-    'Seasonal Cleanup': 'seasonal_cleanup',
-    'Snow Removal': 'snow_removal',
-    'Other': 'other'
-  };
-  return map[serviceLine] || serviceLine.toLowerCase().replace(/\s+/g, '_');
-}
-
-async function sendToHomeworks(eventType, payload) {
-  const url = getZapierWebhookUrl();
-  if (!url) throw new Error('Homeworks webhook URL not configured');
-  const body = {
-    event: eventType,
-    source: 'groundwork-crm',
-    timestamp: new Date().toISOString(),
-    data: payload
-  };
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    mode: 'no-cors'
-  });
-  return { success: true };
-}
-
-// Push new customer/lead — maps to Homeworks "Add New Customer" form fields
-async function pushLeadToHomeworks(opportunity) {
-  const { firstName, lastName, businessName } = splitName(opportunity.client);
-  const { street, city, state, zip } = parseAddress(opportunity.address);
-  return sendToHomeworks('new_customer', {
-    // Homeworks "Add New Customer" fields
-    title: '',
-    type: 'Customer',
-    contact_first_name: firstName,
-    contact_last_name: lastName,
-    business_name: businessName,
-    email: opportunity.email || '',
-    mobile_phone: opportunity.phone || '',
-    tags: mapServiceLine(opportunity.serviceLine),
-    // Address fields
-    address1: street,
-    city: city || 'Vienna',
-    state: state || 'VA',
-    zip: zip || '',
-    country: 'United States',
-    // Internal notes
-    notes: [
-      opportunity.project ? `Project: ${opportunity.project}` : '',
-      opportunity.source ? `Source: ${opportunity.source}` : '',
-      opportunity.budget ? `Budget: ${opportunity.budget}` : '',
-      opportunity.urgency ? `Urgency: ${opportunity.urgency}` : '',
-      opportunity.decisionMaker ? `Decision maker: ${opportunity.decisionMaker}` : '',
-      opportunity.prompt ? `Inquiry: ${opportunity.prompt}` : '',
-    ].filter(Boolean).join('\n'),
-    // Avalon meta
-    avalon_id: opportunity.id,
-    avalon_status: opportunity.status,
-    lead_source: opportunity.source || '',
-    created_at: opportunity.createdAt
-  });
-}
-
-// Push estimate — maps to Homeworks "New Estimate" form fields
-async function pushEstimateToHomeworks(opportunity) {
-  const { firstName, lastName, businessName } = splitName(opportunity.client);
-  const { street, city, state, zip } = parseAddress(opportunity.address);
-  return sendToHomeworks('new_estimate', {
-    // Customer identification
-    customer_name: businessName,
-    customer_first_name: firstName,
-    customer_last_name: lastName,
-    customer_email: opportunity.email || '',
-    customer_phone: opportunity.phone || '',
-    // Estimate fields
-    estimate_title: opportunity.project || `${opportunity.serviceLine || 'Landscape'} — ${opportunity.client}`,
-    estimate_date: new Date().toISOString().slice(0, 10),
-    service_type: opportunity.serviceLine || '',
-    service_tag: mapServiceLine(opportunity.serviceLine),
-    // Property
-    property_address: street,
-    property_city: city || 'Vienna',
-    property_state: state || 'VA',
-    property_zip: zip || '',
-    // Notes visible to customer
-    customer_notes: opportunity.desiredOutcome || '',
-    // Internal terms / notes
-    internal_notes: [
-      opportunity.budget ? `Budget discussed: ${opportunity.budget}` : '',
-      opportunity.fitConcerns ? `Fit concerns: ${opportunity.fitConcerns}` : '',
-      opportunity.urgency ? `Urgency: ${opportunity.urgency}` : '',
-    ].filter(Boolean).join('\n'),
-    // Avalon meta
-    avalon_id: opportunity.id,
-    avalon_status: opportunity.status,
-    next_follow_up: opportunity.nextFollowUp || ''
-  });
-}
-
-// Push site visit — maps to Homeworks "Create New Visit" form fields
-async function pushVisitToHomeworks(opportunity, visitDate, visitTime = '09:00', notes = '') {
-  const { firstName, lastName, businessName } = splitName(opportunity.client);
-  const { street, city, state } = parseAddress(opportunity.address);
-  return sendToHomeworks('new_visit', {
-    // Visit fields
-    visit_title: `Site Walk — ${opportunity.client}`,
-    visit_type: 'Site Walk',
-    visit_date: visitDate,
-    visit_time: visitTime,
-    budgeted_hours: '1',
-    billing_option: 'Invoice services',
-    // Customer
-    customer_name: businessName,
-    customer_first_name: firstName,
-    customer_last_name: lastName,
-    customer_email: opportunity.email || '',
-    customer_phone: opportunity.phone || '',
-    // Property
-    property_address: street,
-    property_city: city || 'Vienna',
-    property_state: state || 'VA',
-    location: opportunity.address || '',
-    // Notes
-    description: notes || `Site walk for ${opportunity.project || opportunity.serviceLine || 'landscape project'}. ${opportunity.desiredOutcome || ''}`.trim(),
-    // Line item
-    service_item: opportunity.serviceLine || 'Site Walk / Consultation',
-    // Avalon meta
-    avalon_id: opportunity.id,
-    avalon_status: opportunity.status
-  });
-}
-
-async function pushStatusUpdateToHomeworks(opportunity) {
-  return sendToHomeworks('status_update', {
-    customer_name: opportunity.client,
-    email: opportunity.email,
-    avalonId: opportunity.id,
-    newStatus: opportunity.status,
-    nextFollowUp: opportunity.nextFollowUp,
-    updated: opportunity.updatedAt
-  });
-}
-
 // ── Toast helper (local to integrations) ─────────────────────────────────────
 function showIntToast(msg, type = 'info') {
   if (window.showToast) { window.showToast(msg); return; }
@@ -703,7 +601,6 @@ let _driveFiles = [];
 async function integrations() {
   const intView = document.getElementById('view');
   const googleOk = isGoogleConnected();
-  const hwOk = isHomeworksConnected();
   const googleEmail = getGoogleUserEmail();
   const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repName = currentRep ? (currentRep.name || 'You') : 'You';
@@ -773,31 +670,17 @@ async function integrations() {
         Save
       </button>
     </div>
-    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);margin-bottom:20px">Get your Client ID at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gds-teal,#4D8A86)">Google Cloud Console → Credentials</a>.</div>
+    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);margin-bottom:16px">Get your Client ID at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gds-teal,#4D8A86)">Google Cloud Console → Credentials</a>.</div>
 
-    <div style="border-top:1px solid var(--gds-line,#E0DDD5);padding-top:16px;margin-top:4px">
-      <div style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Homeworks CRM (Zapier)</div>
-  <!-- Homeworks always accessible -->
-  <div style="min-width:0;overflow:hidden">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;min-width:0">
-      <div style="width:32px;height:32px;flex-shrink:0;background:var(--gw-surface-3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">${gwIcon('construction',16)}</div>
-      <div style="min-width:0;overflow:hidden">
-        <div style="font-weight:800;font-size:16px;color:var(--gds-ink,#1F2A2B);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Homeworks CRM</div>
-        ${hwOk?`<div style="font-size:11px;font-weight:700;color:#2D7A55;margin-top:2px"> Connected via Zapier</div>`:`<div style="font-size:11px;color:#6F7E6A;margin-top:2px">Not connected</div>`}
-      </div>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Google OAuth Client Secret <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables stay-signed-in)</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="int-admin-client-secret" type="password"
+        placeholder="GOCSPX-…"
+        style="flex:1;padding:9px 12px;background:var(--gds-surface,#FFFFFF);border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;color:var(--gds-ink,#1F2A2B);font-size:12px;font-family:monospace;box-sizing:border-box">
     </div>
-    <p style="color:#6F7E6A;font-size:13px;line-height:1.7;margin:0 0 14px">Push leads, estimates, and site visits to Homeworks CRM via Zapier webhook.</p>
-    <label style="font-size:11px;font-weight:600;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">ZAPIER WEBHOOK URL</label>
-    <input id="zapierWebhookInput" type="url"
-      placeholder="https://hooks.zapier.com/hooks/catch/…"
-      value="${escapeHtml(getZapierWebhookUrl())}"
-      style="width:100%;margin-top:6px;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="primary-btn" onclick="intSaveZapierUrl()">Save URL</button>
-      ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Send Test Ping</button>`:''}
-    </div>
-  </div>
-    </div><!-- /Homeworks section inside Admin panel -->
+    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);line-height:1.6;margin-bottom:12px">With the Client Secret saved, everyone's Google connection becomes <strong>permanent</strong> — no re-connecting every login. It's stored server-side in your company settings, never in the browser. From the same Google Cloud credential page, copy the Client Secret.</div>
+    <button class="primary-btn" style="font-size:12px;padding:8px 14px" onclick="intAdminSaveGoogleCreds()">Save Google Credentials</button>
+    <span id="int-admin-creds-status" style="font-size:11px;color:#2D7A55;margin-left:10px"></span>
   </div><!-- /Admin Setup gw-int-panel -->
 </div>`;
     return;
@@ -820,7 +703,7 @@ async function integrations() {
 
 <!-- Tab bar -->
 <div style="display:flex;gap:0;border-bottom:2px solid var(--gw-line);margin-bottom:0">
-  ${[['gmail','Gmail'],['calendar','Calendar'],['drive','Drive'],['homeworks','Homeworks']].map(([id,label])=>`
+  ${[['gmail','Gmail'],['calendar','Calendar'],['drive','Drive']].map(([id,label])=>`
   <button id="gw-tab-${id}" onclick="gwSwitchTab('${id}')"
     style="padding:10px 20px;font-size:13px;font-weight:600;background:none;border:none;cursor:pointer;border-bottom:2px solid ${_gwTab===id?'#4D8A86':'transparent'};color:${_gwTab===id?'#4D8A86':'#6F7E6A'};margin-bottom:-2px;transition:all .15s">
     ${label}
@@ -831,7 +714,6 @@ async function integrations() {
 <div id="gw-panel-gmail"  style="display:${_gwTab==='gmail'   ?'block':'none'};padding-top:20px"></div>
 <div id="gw-panel-calendar" style="display:${_gwTab==='calendar'?'block':'none'};padding-top:20px"></div>
 <div id="gw-panel-drive"  style="display:${_gwTab==='drive'   ?'block':'none'};padding-top:20px"></div>
-<div id="gw-panel-homeworks" style="display:${_gwTab==='homeworks'?'block':'none'};padding-top:20px"></div>
 
 <!-- ── Compose Email Modal ────────────────────────────────────────────── -->
 ${_buildComposeModalHTML()}
@@ -892,7 +774,7 @@ ${_buildComposeModalHTML()}
 // ── Tab switching ─────────────────────────────────────────────────────────────
 window.gwSwitchTab = function(tab) {
   _gwTab = tab;
-  ['gmail','calendar','drive','homeworks'].forEach(id => {
+  ['gmail','calendar','drive'].forEach(id => {
     const panel = document.getElementById(`gw-panel-${id}`);
     const btn   = document.getElementById(`gw-tab-${id}`);
     if (panel) panel.style.display = id === tab ? 'block' : 'none';
@@ -902,10 +784,10 @@ window.gwSwitchTab = function(tab) {
 };
 
 function gwRenderActiveTab() {
+  if (_gwTab === 'homeworks') _gwTab = 'gmail'; // legacy tab removed
   if (_gwTab === 'gmail')      gwRenderGmail();
   if (_gwTab === 'calendar')   gwRenderCalendar();
   if (_gwTab === 'drive')      gwRenderDrive();
-  if (_gwTab === 'homeworks')  gwRenderHomeworks();
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -2495,50 +2377,6 @@ function gwRenderDriveList(el, files) {
 
 // Expose for legacy call sites
 window.intSearchDrive = window.gwSearchDrive;
-
-// ════════════════════════════════════════════════════════════════════════════════
-// HOMEWORKS PANEL (unchanged from before, just moved into a panel)
-// ════════════════════════════════════════════════════════════════════════════════
-function gwRenderHomeworks() {
-  const el = document.getElementById('gw-panel-homeworks');
-  if (!el) return;
-  const hwOk = isHomeworksConnected();
-  el.innerHTML = `
-<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:24px">
-  <div class="gw-int-panel" style="border-radius:12px;padding:20px">
-    <h3 style="margin:0 0 12px;font-size:15px">Webhook Settings</h3>
-    <label style="font-size:11px;font-weight:600;color:#6F7E6A;text-transform:uppercase;letter-spacing:.05em">ZAPIER WEBHOOK URL</label>
-    <input id="zapierWebhookInput" type="url"
-      placeholder="https://hooks.zapier.com/hooks/catch/…"
-      value="${escapeHtml(getZapierWebhookUrl())}"
-      style="width:100%;margin-top:6px;padding:10px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:13px;box-sizing:border-box">
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="primary-btn" onclick="intSaveZapierUrl()">Save URL</button>
-      ${hwOk?`<button class="secondary-btn" onclick="intTestZapier()">Test Ping</button>`:''}
-    </div>
-  </div>
-  ${hwOk?`
-  <div class="gw-int-panel" style="border-radius:12px;padding:20px">
-    <h3 style="margin:0 0 12px;font-size:15px">Quick Links</h3>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
-      ${[['Add Customer','https://secure.copilotcrm.com/customers/add-new-customer'],
-         ['Add Property','https://secure.copilotcrm.com/assets/add-new-asset'],
-         ['New Estimate','https://secure.copilotcrm.com/finances/estimates/add'],
-         ['Schedule Visit','https://secure.copilotcrm.com/scheduler/addvisit'],
-         ['Estimates','https://secure.copilotcrm.com/finances/estimates'],
-         ['Calendar','https://secure.copilotcrm.com/scheduler/month']
-        ].map(([l,u])=>`<a href="${u}" target="_blank" rel="noopener"
-          style="padding:7px 12px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:8px;color:var(--gw-ink);font-size:12px;text-decoration:none;font-weight:500">${l}</a>`).join('')}
-    </div>
-  </div>`:''}
-</div>
-${hwOk?`
-<h3 style="font-size:15px;margin:0 0 12px">Sync Opportunities → Homeworks</h3>
-<div style="max-height:500px;overflow-y:auto">${renderHwOpps()}</div>`
-:'<div style="color:#6F7E6A;font-size:13px;padding:20px 0">Add your Zapier webhook URL above to enable Homeworks sync.</div>'}
-`;
-}
-
 // ── Google interactions (legacy compat) ───────────────────────────────────────
 function intGoogleDisconnect() { googleDisconnect(); integrations(); }
 
@@ -2721,152 +2559,6 @@ async function intSubmitCalEvent() {
   } catch(e) { showIntToast(e.message, 'error'); }
 }
 
-// ── Homeworks visit / estimate handlers (unchanged) ───────────────────────────
-function intOpenVisitModal(oppId) {
-  const opps = window._avalonState?.opportunities || [];
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-  const modal = document.getElementById('int-visit-modal');
-  if (!modal) return;
-  const titleEl    = document.getElementById('int-visit-title');
-  const dateEl     = document.getElementById('int-visit-date');
-  const notesEl    = document.getElementById('int-visit-notes');
-  const clientLabel= document.getElementById('int-visit-client-label');
-  const oppIdEl    = document.getElementById('int-visit-opp-id');
-  const typeEl     = document.getElementById('int-visit-type');
-  if (oppIdEl) oppIdEl.value = oppId;
-  if (clientLabel) clientLabel.textContent = `${opp.client} · ${opp.serviceLine||opp.status}`;
-  if (titleEl) titleEl.value = `Site Walk — ${opp.client}`;
-  if (dateEl)  dateEl.value  = opp.nextFollowUp ? opp.nextFollowUp.slice(0,10) : (typeof todayISO === 'function' ? todayISO() : new Date().toISOString().slice(0,10));
-  if (notesEl) notesEl.value = [
-    opp.project ? `Project: ${opp.project}` : '',
-    opp.desiredOutcome ? `Desired outcome: ${opp.desiredOutcome}` : '',
-    opp.urgency ? `Urgency: ${opp.urgency}` : '',
-    opp.source ? `Source: ${opp.source}` : '',
-  ].filter(Boolean).join('\n');
-  if (typeEl) typeEl.value = 'Site Walk';
-  modal.style.display = 'flex';
-}
-
-
-
-// ── Zapier / Homeworks UI handlers ────────────────────────────────────────────
-function intSaveZapierUrl() {
-  const url = document.getElementById('zapierWebhookInput')?.value?.trim();
-  if (!url) { showIntToast('Paste a Zapier webhook URL first', 'warn'); return; }
-  saveIntState({ zapierWebhookUrl: url });
-  showIntToast('Webhook URL saved');
-  // Re-render to show connected state
-  if (typeof gwRenderHomeworks === 'function') gwRenderHomeworks();
-}
-
-async function intTestZapier() {
-  try {
-    await sendToHomeworks('test_ping', { message: 'Test ping from Groundwork CRM', timestamp: new Date().toISOString() });
-    showIntToast('Test ping sent');
-  } catch(e) { showIntToast(e.message, 'error'); }
-}
-
-async function intPushLead(oppId) {
-  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found', 'warn'); return; }
-  try {
-    await pushLeadToHomeworks(opp);
-    showIntToast(`${opp.client} pushed to Homeworks`);
-  } catch(e) { showIntToast(e.message, 'error'); }
-}
-
-// ── renderHwOpps — renders the opportunities list inside the Homeworks panel ──
-function renderHwOpps() {
-  // Pull from multiple possible storage keys for compatibility
-  let opps = [];
-  try {
-    opps = window._avalonState?.opportunities
-        || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]')
-        || JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
-  } catch(e) { opps = []; }
-
-  if (!opps.length) {
-    return '<div style="color:#6F7E6A;font-size:13px;padding:20px 0;text-align:center">No opportunities found. Add leads in Pipeline first.</div>';
-  }
-
-  return `<div style="display:flex;flex-direction:column;gap:6px">` +
-    opps.slice(0, 50).map(opp => {
-      const statusColors = {
-        'New Lead':'#4D8A86','Contacted':'#8B6914','Proposal':'#4D8A86',
-        'Negotiation':'#8B6914','Closed Won':'#2D7A55','Closed Lost':'#C97B6A'
-      };
-      const color = statusColors[opp.status] || '#6F7E6A';
-      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--gw-surface-2);border:1px solid var(--gw-line);border-radius:8px;flex-wrap:wrap">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:#E8E4D9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(opp.client||opp.name||'(unnamed)')}</div>
-          <div style="font-size:11px;color:#5C6B58;margin-top:2px">${escapeHtml(opp.serviceLine||opp.type||'')}${opp.budget?' · $'+escapeHtml(String(opp.budget)):''}</div>
-        </div>
-        <span style="font-size:11px;font-weight:700;color:${color};background:${color}22;border-radius:10px;padding:2px 8px;flex-shrink:0">${escapeHtml(opp.status||'Unknown')}</span>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          <button onclick="intPushLead('${escapeHtml(opp.id||'')}');this.textContent='Pushed';this.disabled=true"
-            style="padding:5px 10px;background:var(--gw-surface-3);border:1px solid var(--gw-line);border-radius:6px;color:var(--gw-muted);font-size:11px;cursor:pointer;font-weight:600">
-            Push Lead
-          </button>
-        </div>
-      </div>`;
-    }).join('') +
-  (opps.length > 50 ? `<div style="text-align:center;font-size:12px;color:#5C6B58;padding:8px">Showing first 50 of ${opps.length}</div>` : '') +
-  '</div>';
-}
-
-// ── Visit modal submit ────────────────────────────────────────────────────────
-async function intSubmitVisit() {
-  const oppId   = document.getElementById('int-visit-opp-id')?.value;
-  const title   = document.getElementById('int-visit-title')?.value?.trim();
-  const date    = document.getElementById('int-visit-date')?.value;
-  const time    = document.getElementById('int-visit-time')?.value || '09:00';
-  const notes   = document.getElementById('int-visit-notes')?.value?.trim();
-  const type    = document.getElementById('int-visit-type')?.value || 'Site Walk';
-  if (!title || !date) { showIntToast('Title and date required', 'warn'); return; }
-  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
-  const opp = opps.find(o => o.id === oppId);
-  try {
-    if (isGoogleConnected()) {
-      await calCreateEvent({ summary: title, description: notes, startDate: date, startTime: time, durationHours: 1, attendees: [] });
-    }
-    if (opp && isHomeworksConnected()) {
-      await pushVisitToHomeworks(opp, date, time, notes);
-    }
-    showIntToast('Visit scheduled');
-    const modal = document.getElementById('int-visit-modal');
-    if (modal) modal.style.display = 'none';
-  } catch(e) { showIntToast(e.message, 'error'); }
-}
-
-// ── Estimate modal ────────────────────────────────────────────────────────────
-function intOpenEstimateModal(oppId) {
-  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-  // Simple prompt-based estimate push (no separate modal needed)
-  const confirmed = window.confirm(`Push estimate for "${opp.client}" to Homeworks?`);
-  if (!confirmed) return;
-  pushEstimateToHomeworks(opp)
-    .then(() => showIntToast(`Estimate for ${opp.client} pushed`))
-    .catch(e => showIntToast(e.message, 'error'));
-}
-
-async function intSubmitEstimate() {
-  // Called if a full estimate modal exists
-  const oppId = document.getElementById('int-estimate-opp-id')?.value;
-  const opps = window._avalonState?.opportunities || JSON.parse(localStorage.getItem('avalonOpportunitiesV1') || '[]');
-  const opp = opps.find(o => o.id === oppId);
-  if (!opp) { showIntToast('Opportunity not found'); return; }
-  try {
-    await pushEstimateToHomeworks(opp);
-    showIntToast('Estimate pushed');
-    const modal = document.getElementById('int-estimate-modal');
-    if (modal) modal.style.display = 'none';
-  } catch(e) { showIntToast(e.message, 'error'); }
-}
-
 // Connect handler for the "Sign in with Google" button on the connect screen.
 // Delegates to _umMyConnect (the module-level OAuth launcher set by user_management.js)
 // with a fallback to the local googleOAuthConnect helper.
@@ -2890,11 +2582,58 @@ function intAdminSaveClientId() {
   try { st = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
   st.googleClientId = val;
   localStorage.setItem('avalonIntegrationsV1', JSON.stringify(st));
+  // Mirror to server settings so all devices/users share it
+  try { fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:'google_client_id', value: val }) }); } catch(e){}
   showIntToast('Google Client ID saved ✓', 'success');
   // Re-render so the connect button becomes active
   setTimeout(() => integrations(), 400);
 }
 window.intAdminSaveClientId = intAdminSaveClientId;
+
+// ── intAdminSaveGoogleCreds — save Client ID + Secret to server settings ──────
+// The secret enables the authorization-code flow → PERSISTENT connections.
+async function intAdminSaveGoogleCreds() {
+  const id = document.getElementById('int-admin-client-id')?.value?.trim();
+  const secret = document.getElementById('int-admin-client-secret')?.value?.trim();
+  if (!id) { showIntToast('Paste your Google Client ID first', 'warn'); return; }
+  // Local mirror of client ID (public value)
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
+  st.googleClientId = id;
+  localStorage.setItem('avalonIntegrationsV1', JSON.stringify(st));
+  try {
+    const r = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:'google_client_id', value: id }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (secret) {
+      const r2 = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:'google_client_secret', value: secret }) });
+      if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    }
+    const statusEl = document.getElementById('int-admin-creds-status');
+    if (statusEl) statusEl.textContent = secret ? '✓ Saved — stay-signed-in enabled' : '✓ Client ID saved (add the Secret to enable stay-signed-in)';
+    showIntToast(secret ? 'Google credentials saved — connections are now permanent' : 'Client ID saved', 'success');
+  } catch(e){
+    showIntToast('Save failed: ' + (e.message||'error'), 'warn');
+  }
+}
+window.intAdminSaveGoogleCreds = intAdminSaveGoogleCreds;
+
+// ── Pull the shared Client ID from server settings if this browser lacks it ──
+setTimeout(async () => {
+  try {
+    if (getGoogleClientId()) return;
+    const r = await fetch('/api/settings');
+    if (!r.ok) return;
+    const j = await r.json();
+    const cid = (j.data && (j.data.google_client_id || j.data['google_client_id'])) || '';
+    if (cid) {
+      let st = {};
+      try { st = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
+      st.googleClientId = cid;
+      localStorage.setItem('avalonIntegrationsV1', JSON.stringify(st));
+      console.log('[Integrations] Google Client ID synced from server settings');
+    }
+  } catch(e){}
+}, 2000);
 
 // ── intComposeToLead — called from Quick Actions "Compose Email" on a lead ─────
 // Pre-fills the Gmail compose modal with the lead's email address AND links the
@@ -2914,6 +2653,237 @@ function intComposeToLead(toEmail, clientName, oppId, oppLabel) {
 }
 window.intComposeToLead = intComposeToLead;
 
+// ══════════════════════════════════════════════════════════════════════════════
+// LEAD SCHEDULER — schedule client meetings + send booking-page links, tied to a lead
+// Opened by the Schedule quick-action on the lead page and the Meetings rail.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function _gwGetMyBookingPages() {
+  // Rep's Google Calendar booking-page links — stored per user in localStorage
+  // and mirrored to server settings (key bookings_<repId>) for cross-device use.
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  if (!rep) return [];
+  try {
+    const map = JSON.parse(localStorage.getItem('gwBookingPagesV1') || '{}');
+    return map[rep.id] || [];
+  } catch(e){ return []; }
+}
+
+function _gwSaveMyBookingPages(list) {
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  if (!rep) return;
+  try {
+    const map = JSON.parse(localStorage.getItem('gwBookingPagesV1') || '{}');
+    map[rep.id] = list;
+    localStorage.setItem('gwBookingPagesV1', JSON.stringify(map));
+  } catch(e){}
+  try { fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:'bookings_'+rep.id, value: JSON.stringify(list) }) }); } catch(e){}
+}
+
+// Sync booking pages from server on load (cross-device)
+setTimeout(async () => {
+  try {
+    const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+    if (!rep || _gwGetMyBookingPages().length) return;
+    const r = await fetch('/api/settings'); if (!r.ok) return;
+    const j = await r.json();
+    const raw = j.data ? j.data['bookings_'+rep.id] : null;
+    if (raw) { try { _gwSaveMyBookingPages(JSON.parse(raw)); } catch(e){} }
+  } catch(e){}
+}, 3000);
+
+function intScheduleForLead(oppId) {
+  const opps = (window._avalonState?.opportunities) || (typeof state!=="undefined" && state.opportunities) || [];
+  const opp = opps.find(o => o.id === oppId);
+  if (!opp) { showIntToast('Lead not found', 'warn'); return; }
+  // Remove any prior instance
+  document.getElementById('gw-lead-sched-modal')?.remove();
+  const googleOk = isGoogleConnected();
+  const pages = _gwGetMyBookingPages();
+  const esc = s => (window.escapeHtml ? escapeHtml(String(s||'')) : String(s||''));
+  const today = new Date().toISOString().slice(0,10);
+
+  const wrap = document.createElement('div');
+  wrap.id = 'gw-lead-sched-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:#000000A0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  wrap.innerHTML = `
+  <div class="gw-modal-card" style="border-radius:16px;padding:26px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px #000a">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">Schedule with ${esc(opp.client||'Lead')}</h3>
+      <button onclick="document.getElementById('gw-lead-sched-modal').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gds-muted,#5E6E6F);line-height:1">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--gds-muted,#5E6E6F);margin-bottom:16px">${esc(opp.email||'no email')} ${opp.phone?'· '+esc(opp.phone):''}</div>
+
+    ${!googleOk ? `<div style="padding:10px 14px;background:rgba(139,105,20,.08);border:1px solid rgba(139,105,20,.3);border-radius:8px;font-size:12.5px;color:#8B6914;margin-bottom:14px">Google not connected — meetings will save to this lead but won't appear on your Google Calendar. <button onclick="document.getElementById('gw-lead-sched-modal').remove();show('integrations')" style="background:none;border:none;color:#8B6914;font-weight:800;cursor:pointer;text-decoration:underline;padding:0">Connect →</button></div>` : ''}
+
+    <!-- Create a meeting -->
+    <div style="font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--gds-teal,#4D8A86);margin-bottom:10px">Create Client Meeting</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);display:block">TYPE
+        <select id="gw-ls-type" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:13px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B)">
+          <option value="In-Person Meeting">In-person meeting</option>
+          <option value="Phone Call">Phone call</option>
+          <option value="Site Walk">Site walk</option>
+          <option value="Video Call">Video call</option>
+        </select>
+      </label>
+      <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);display:block">DURATION
+        <select id="gw-ls-dur" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:13px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B)">
+          <option value="0.5">30 minutes</option>
+          <option value="1" selected>1 hour</option>
+          <option value="1.5">1.5 hours</option>
+          <option value="2">2 hours</option>
+        </select>
+      </label>
+      <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);display:block">DATE
+        <input id="gw-ls-date" type="date" value="${today}" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:13px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B);box-sizing:border-box">
+      </label>
+      <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);display:block">TIME
+        <input id="gw-ls-time" type="time" value="09:00" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:13px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B);box-sizing:border-box">
+      </label>
+    </div>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);display:block;margin-bottom:10px">NOTES (added to the calendar event)
+      <textarea id="gw-ls-notes" rows="2" placeholder="Agenda, address, what to bring…" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:13px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B);box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--gds-ink,#1F2A2B);margin-bottom:12px;cursor:pointer">
+      <input id="gw-ls-invite" type="checkbox" ${opp.email?'checked':'disabled'}>
+      Invite ${esc(opp.client||'client')} (${opp.email?esc(opp.email):'no email on lead'}) — Google sends them the invitation
+    </label>
+    <button class="primary-btn" style="width:100%;justify-content:center;padding:11px" onclick="intSubmitLeadMeeting('${oppId}')">
+      ${googleOk ? 'Create Meeting on Google Calendar' : 'Save Meeting to Lead'}
+    </button>
+
+    <!-- Booking pages -->
+    <div style="border-top:1px solid var(--gds-line,#E0DDD5);margin:20px 0 14px"></div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--gds-teal,#4D8A86);margin-bottom:8px">Send a Booking Page Link</div>
+    <p style="font-size:12px;color:var(--gds-muted,#5E6E6F);line-height:1.6;margin:0 0 10px">Let ${esc(opp.client||'the client')} pick their own time from your Google Calendar booking page. Sending logs it to this lead's communications.</p>
+    <div id="gw-ls-pages">
+      ${pages.length ? pages.map((p,i)=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--gds-line,#E0DDD5);border-radius:8px;margin-bottom:6px">
+        <span style="font-size:12.5px;font-weight:700;color:var(--gds-ink,#1F2A2B);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span>
+        <button class="secondary-btn" style="font-size:11px;padding:5px 10px;flex-shrink:0" onclick="intCopyBookingLink('${oppId}',${i})">Copy</button>
+        ${opp.email?`<button class="primary-btn" style="font-size:11px;padding:5px 10px;flex-shrink:0" onclick="intEmailBookingLink('${oppId}',${i})">Email to client</button>`:''}
+        <button title="Remove" style="background:none;border:none;color:#C97B6A;cursor:pointer;font-size:15px;padding:0 2px;flex-shrink:0" onclick="intRemoveBookingPage('${oppId}',${i})">×</button>
+      </div>`).join('') : '<div style="font-size:12px;color:var(--gds-muted,#5E6E6F);padding:6px 0 2px">No booking pages saved yet — add the one you send clients regularly:</div>'}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="gw-ls-page-name" type="text" placeholder="Name (e.g. 30-min consult)" style="flex:0 0 38%;padding:8px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:12px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B);box-sizing:border-box">
+      <input id="gw-ls-page-url" type="url" placeholder="https://calendar.app.google/…" style="flex:1;padding:8px 10px;border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;font-size:12px;background:var(--gds-surface,#fff);color:var(--gds-ink,#1F2A2B);box-sizing:border-box">
+      <button class="secondary-btn" style="font-size:12px;padding:8px 12px;flex-shrink:0" onclick="intAddBookingPage('${oppId}')">Add</button>
+    </div>
+    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);margin-top:6px">Create booking pages at <a href="https://calendar.google.com/calendar/u/0/r/appointment" target="_blank" style="color:var(--gds-teal,#4D8A86)">Google Calendar → Appointment schedules</a>, then paste the share link here.</div>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+}
+
+async function intSubmitLeadMeeting(oppId) {
+  const opps = (window._avalonState?.opportunities) || (typeof state!=="undefined" && state.opportunities) || [];
+  const opp = opps.find(o => o.id === oppId);
+  if (!opp) return;
+  const type  = document.getElementById('gw-ls-type')?.value || 'In-Person Meeting';
+  const date  = document.getElementById('gw-ls-date')?.value;
+  const time  = document.getElementById('gw-ls-time')?.value || '09:00';
+  const dur   = parseFloat(document.getElementById('gw-ls-dur')?.value || '1');
+  const notes = document.getElementById('gw-ls-notes')?.value?.trim() || '';
+  const invite = document.getElementById('gw-ls-invite')?.checked && opp.email;
+  if (!date) { showIntToast('Pick a date', 'warn'); return; }
+  const summary = `${type} — ${opp.client||'Lead'}`;
+  const description = [notes, opp.address ? 'Property: '+opp.address : '', 'Groundwork lead: '+(opp.client||'')+' ['+oppId+']'].filter(Boolean).join('\n');
+  let calOk = false;
+  try {
+    if (isGoogleConnected()) {
+      await calCreateEvent({ summary, description, startDate: date, startTime: time, durationHours: dur, attendees: invite ? [opp.email] : [] });
+      calOk = true;
+    }
+  } catch(e){ showIntToast('Calendar error: ' + (e.message||''), 'warn'); }
+  // Track the meeting on the lead itself (renders in the Dates rail)
+  try {
+    opp.meetings = opp.meetings || [];
+    opp.meetings.push({ id: 'mtg_'+Date.now(), type, date, time, durationHours: dur, notes, invited: !!invite, calSynced: calOk, createdAt: new Date().toISOString() });
+    opp.updatedAt = new Date().toISOString();
+    if (typeof window.saveState === 'function') window.saveState();
+  } catch(e){}
+  showIntToast(calOk ? 'Meeting created on Google Calendar' + (invite ? ' — invitation sent' : '') : 'Meeting saved to lead');
+  document.getElementById('gw-lead-sched-modal')?.remove();
+  // Refresh the lead page so the Meetings list updates
+  if (typeof window.show === 'function') { window.show('pipeline', oppId); }
+}
+
+function intAddBookingPage(oppId) {
+  const name = document.getElementById('gw-ls-page-name')?.value?.trim();
+  const url  = document.getElementById('gw-ls-page-url')?.value?.trim();
+  if (!name || !url) { showIntToast('Enter a name and the booking link', 'warn'); return; }
+  if (!/^https?:\/\//i.test(url)) { showIntToast('Booking link must start with https://', 'warn'); return; }
+  const pages = _gwGetMyBookingPages();
+  pages.push({ name, url });
+  _gwSaveMyBookingPages(pages);
+  intScheduleForLead(oppId); // re-render modal
+}
+
+function intRemoveBookingPage(oppId, idx) {
+  const pages = _gwGetMyBookingPages();
+  pages.splice(idx, 1);
+  _gwSaveMyBookingPages(pages);
+  intScheduleForLead(oppId);
+}
+
+function intCopyBookingLink(oppId, idx) {
+  const p = _gwGetMyBookingPages()[idx];
+  if (!p) return;
+  navigator.clipboard.writeText(p.url).then(()=>showIntToast('Booking link copied'), ()=>showIntToast('Copy failed','warn'));
+  _gwLogBookingSend(oppId, p, 'copied');
+}
+
+async function intEmailBookingLink(oppId, idx) {
+  const p = _gwGetMyBookingPages()[idx];
+  const opps = (window._avalonState?.opportunities) || (typeof state!=="undefined" && state.opportunities) || [];
+  const opp = opps.find(o => o.id === oppId);
+  if (!p || !opp || !opp.email) return;
+  const rep = window.getCurrentRep ? window.getCurrentRep() : null;
+  const subject = 'Pick a time that works for you — ' + (rep?.name || 'Groundwork');
+  const body = 'Hi ' + ((opp.client||'').split(' ')[0] || 'there') + ',<br><br>' +
+    'You can grab a time on my calendar that works best for you here:<br>' +
+    '<a href="' + p.url + '">' + p.url + '</a><br><br>' +
+    'Looking forward to it!<br>' + (rep?.name || '');
+  if (isGoogleConnected()) {
+    try {
+      await gmailSendEmail({ to: opp.email, subject, body });
+      showIntToast('Booking link emailed to ' + opp.email);
+      _gwLogBookingSend(oppId, p, 'emailed');
+      return;
+    } catch(e){ showIntToast('Gmail error: '+(e.message||'')+' — opening mail client instead','warn'); }
+  }
+  window.open('mailto:' + opp.email + '?subject=' + encodeURIComponent(subject.replace(/<[^>]*>/g,'')) + '&body=' + encodeURIComponent('Pick a time here: ' + p.url));
+  _gwLogBookingSend(oppId, p, 'emailed');
+}
+
+function _gwLogBookingSend(oppId, page, how) {
+  // Tie every booking-page send to the lead's communications
+  try {
+    const st = window._avalonState || (typeof state!=="undefined" ? state : null); if (!st) return;
+    if (!st.communications) st.communications = [];
+    st.communications.push({
+      id: 'comm_'+Date.now()+'_'+Math.random().toString(16).slice(2,6),
+      oppId, type: 'email', direction: 'out',
+      subject: 'Booking page link ' + how,
+      body: 'Booking page "' + page.name + '" ' + how + ': ' + page.url,
+      ts: new Date().toISOString(),
+      sentBy: (window.getCurrentRep ? window.getCurrentRep() : null)?.name || 'Rep',
+      gmailSent: how === 'emailed' && typeof isGoogleConnected==='function' && isGoogleConnected(),
+      files: []
+    });
+    if (typeof window.saveState === 'function') window.saveState();
+  } catch(e){}
+}
+
+window.intScheduleForLead   = intScheduleForLead;
+window.intSubmitLeadMeeting = intSubmitLeadMeeting;
+window.intAddBookingPage    = intAddBookingPage;
+window.intRemoveBookingPage = intRemoveBookingPage;
+window.intCopyBookingLink   = intCopyBookingLink;
+window.intEmailBookingLink  = intEmailBookingLink;
+
 // Expose integrations as a view route
 window.integrations = integrations;
 window.intSaveClientIdAndConnect = intSaveClientIdAndConnect;
@@ -2927,15 +2897,7 @@ window.intOpenInGmail = intOpenInGmail;
 window.intSendEmail = intSendEmail;
 window.intCreateCalendarEvent = intCreateCalendarEvent;
 window.intSubmitCalEvent = intSubmitCalEvent;
-window.intSaveZapierUrl = intSaveZapierUrl;
-window.intTestZapier = intTestZapier;
-window.intPushLead = intPushLead;
 window.intSearchDrive = intSearchDrive;
 window.intLoadGmail = intLoadGmail;
 window.intLoadCalendar = intLoadCalendar;
 window.intLoadDrive = intLoadDrive;
-// Homeworks enhanced actions
-window.intOpenVisitModal = intOpenVisitModal;
-window.intSubmitVisit = intSubmitVisit;
-window.intOpenEstimateModal = intOpenEstimateModal;
-window.intSubmitEstimate = intSubmitEstimate;

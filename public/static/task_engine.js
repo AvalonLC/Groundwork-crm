@@ -496,8 +496,12 @@ function gwRenderTaskRow(task, opts) {
     : isDueToday ? 'gw-task-due-chip--today'
     : 'gw-task-due-chip--upcoming';
 
+  const hasRecordNav = task.linked_record_type && task.linked_record_id && ['lead','client','work_order','estimate','invoice'].includes(task.linked_record_type);
   const recordChip = (opts.showRecord !== false) && task.linked_record_label
-    ? `<span class="gw-task-record-chip">${_esc(task.linked_record_label)}</span>`
+    ? (hasRecordNav
+        ? `<span class="gw-task-record-chip" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" title="Open ${_esc(task.linked_record_label)}"
+             onclick="window._gwTaskOpenRecord(event,'${task.linked_record_type}','${task.linked_record_id}')">${_esc(task.linked_record_label)} →</span>`
+        : `<span class="gw-task-record-chip">${_esc(task.linked_record_label)}</span>`)
     : '';
 
   const dueChip = dateLabel
@@ -539,7 +543,7 @@ function gwRenderTaskRow(task, opts) {
   return `<div class="gw-task-row ${isDone ? 'gw-task-row--done' : ''} ${isOvd ? 'gw-task-row--overdue' : ''} ${isDueToday ? 'gw-task-row--today' : ''} ${prioClass}" data-task-id="${task.id}">
     <div class="gw-task-row-left">
       ${completeBtn}
-      <div class="gw-task-row-body">
+      <div class="gw-task-row-body" ${hasRecordNav ? `style="cursor:pointer" onclick="window._gwTaskOpenRecord(event,'${task.linked_record_type}','${task.linked_record_id}')" title="Open ${_esc(task.linked_record_label||'record')}"` : ''}>
         <div class="gw-task-row-title">${_esc(task.title)}${calIcon}</div>
         <div class="gw-task-row-meta">
           ${typeChip}${dueChip}${recordChip}
@@ -730,6 +734,21 @@ window._gwTaskEditClick = function(event, taskId) {
     _refreshRecordPanel(saved.linked_record_type, saved.linked_record_id, saved.linked_record_label);
     if (typeof window._gwTodayRefreshIfActive === 'function') window._gwTodayRefreshIfActive();
   });
+};
+
+// ── Click-through: open the linked record from any task row ───────────────────
+window._gwTaskOpenRecord = function(event, recordType, recordId) {
+  if (event) event.stopPropagation();
+  try {
+    switch (recordType) {
+      case 'lead':       window._leadTab = 'overview'; window.show('pipeline', recordId); break;
+      case 'client':     window.show('clients', recordId); break;
+      case 'work_order': window.show('workOrderDetail', recordId); break;
+      case 'estimate':   window.show('estimates', recordId); break;
+      case 'invoice':    window.show('invoices', recordId); break;
+      default: return;
+    }
+  } catch(e) { console.warn('[TaskEngine] open record failed', e); }
 };
 
 function _refreshRecordPanel(recordType, recordId, recordLabel) {
