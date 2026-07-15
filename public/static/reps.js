@@ -618,7 +618,7 @@ function _renderLoginHTML(brand) {
         <img src="${logoUrl}" alt="${companyName}" style="width:100%;height:100%;object-fit:contain;border-radius:12px;">
        </div>`
     : `<div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.3)">
-        <img src="/static/avalon-logo.png" alt="Groundwork CRM" style="width:52px;height:52px;object-fit:cover;border-radius:10px;opacity:.95">
+        <img src="/js/avalon-logo.png" alt="Groundwork CRM" style="width:52px;height:52px;object-fit:cover;border-radius:10px;opacity:.95">
        </div>`;
 
   document.body.innerHTML = `
