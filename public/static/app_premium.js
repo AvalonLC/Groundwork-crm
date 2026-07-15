@@ -10310,43 +10310,21 @@ function _settingsGeneral(){
   const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
   const _ia = _cr && _cr.role === 'admin';
   const _iom = _cr && _cr.role === 'office_manager';
-  const adminSections = _ia ? `
-    <section class="card" style="border:1px solid #4A5947">
-      <h2>Import</h2>
-      <p>Restore a JSON backup from this same app. <strong style="color:#C97B6A">Admin only.</strong></p>
-      <input id="importFile" type="file" accept="application/json">
-      <button class="secondary-btn mt8" onclick="importJson()">Import Backup</button>
-    </section>
-    <section class="card" style="border:1px solid #5C2318">
-      <h2>Reset All Data</h2>
-      <p>Clears all opportunities, notes, and checklist progress on this browser. <strong style="color:#C97B6A">Admin only — cannot be undone.</strong></p>
-      <button class="danger-btn" onclick="confirmReset()">Reset All Local Data</button>
-    </section>` : _iom ? `
-    <section class="card" style="border:1px solid rgba(139,105,20,.19);opacity:.75">
-      <h2>Import / Reset</h2>
-      <p class="muted">Import and data reset are restricted to the Owner. Contact your Owner if a data restore is needed.</p>
-    </section>` : `
-    <section class="card" style="opacity:.6">
-      <h2>Import / Reset</h2>
-      <p class="muted">Import and data reset are restricted to Tyler (Admin).</p>
-    </section>`;
 
   const _viewLabel = _ia
-    ? '<span style="font-size:13px;color:#4D8A86;font-weight:400;margin-left:8px">· Owner View</span>'
+    ? '<span style="font-size:13px;color:#4D8A86;font-weight:400;margin-left:8px">\u00b7 Owner View</span>'
     : _iom
-    ? '<span style="font-size:13px;color:#8B6914;font-weight:400;margin-left:8px">· Office Manager View</span>'
-    : '<span style="font-size:13px;color:#6F7E6A;font-weight:400;margin-left:8px">· Rep View</span>';
+    ? '<span style="font-size:13px;color:#8B6914;font-weight:400;margin-left:8px">\u00b7 Office Manager View</span>'
+    : '<span style="font-size:13px;color:#6F7E6A;font-weight:400;margin-left:8px">\u00b7 Rep View</span>';
 
-  const isMobile = window.innerWidth <= 768;
-
-  // Mobile accordion helper — wraps a panel in a tap-to-expand row
-  function mobileAccordion(id, title, icon, contentHtml) {
-    if (!isMobile) return contentHtml; // desktop: render inline
+  // Collapsible panel — works on desktop AND mobile now (was mobile-only).
+  // Keeps the gw-mobile-accordion class names so existing CSS still applies.
+  function accordion(id, title, icon, contentHtml, hint) {
     return `
     <div class="gw-mobile-accordion" id="acc-wrap-${id}">
       <div class="gw-mobile-accordion-header" onclick="_gwAccToggle('${id}')">
-        <span style="display:flex;align-items:center;gap:8px">${icon} ${title}</span>
-        <span class="gw-mobile-accordion-chevron" id="acc-chev-${id}">▼</span>
+        <span style="display:flex;align-items:center;gap:8px">${icon} ${title}${hint ? ` <span class="gw-settings-acc-hint">\u00b7 ${hint}</span>` : ''}</span>
+        <span class="gw-mobile-accordion-chevron" id="acc-chev-${id}">\u25bc</span>
       </div>
       <div class="gw-mobile-accordion-body" id="acc-body-${id}">
         ${contentHtml}
@@ -10354,67 +10332,96 @@ function _settingsGeneral(){
     </div>`;
   }
 
-  view.innerHTML = `
-    <div class="eyebrow">Data and Setup</div>
-    <h1>Settings ${_viewLabel}</h1>
-    <p class="lede">Export data for backup or reporting.</p>
-
-    <!-- ── Export & Import cards ── -->
-    <div class="grid grid-2 mt">
+  // ── Data & Backup section pieces ──
+  const exportCard = `
       <section class="card">
         <h2>Export</h2>
-        <p>Download your pipeline, notes, and settings.</p>
+        <p style="font-size:13px;color:var(--gw-muted)">Download your pipeline, notes, and settings for backup or reporting.</p>
         <div class="footer-actions">
           <button class="primary-btn" onclick="exportJson()">Download JSON Backup</button>
           <button class="secondary-btn" onclick="exportCsv()">Download Pipeline CSV</button>
-          ${(_ia || _iom) ? '<button class="secondary-btn" onclick="window._gwFullExport(this)" style="border-color:rgba(77,138,134,.5);color:#4D8A86">☁ Full Company Export (Cloud)</button>' : ''}
+          ${(_ia || _iom) ? '<button class="secondary-btn" onclick="window._gwFullExport(this)" style="border-color:rgba(77,138,134,.5);color:#4D8A86">\u2601 Full Company Export (Cloud)</button>' : ''}
         </div>
-      </section>
-      ${adminSections}
-    </div>
+      </section>`;
 
-    <!-- ── Cloud Sync & Recovery ── always shown ── -->
-    <section class="card" style="border:1px solid rgba(77,138,134,.35);margin-top:${isMobile?'0':'16px'}">
-      <h2>Cloud Sync & Data Recovery</h2>
-      <p style="font-size:13px;color:var(--gw-muted);line-height:1.5;margin-bottom:10px">
-        If leads aren't showing up for teammates, use <strong>Recover My Leads</strong> to push your local data to the cloud. Safe to run anytime — no duplicates.
-      </p>
-      <div class="gw-settings-sync-btns">
-        <button class="primary-btn" onclick="window._recoverLocalLeads()" id="gw-recover-btn" style="background:#4D8A86">
-          ↑ Recover My Leads to Cloud
-        </button>
-        <button class="secondary-btn" onclick="window._manualSync && window._manualSync()">
-          Sync from Cloud Now
-        </button>
-      </div>
-      <div id="gw-recover-status" style="margin-top:10px;font-size:13px;display:none"></div>
-    </section>
+  const cloudSyncCard = `
+      <section class="card" style="border:1px solid rgba(77,138,134,.35)">
+        <h2>Cloud Sync &amp; Recovery</h2>
+        <p style="font-size:13px;color:var(--gw-muted);line-height:1.5;margin-bottom:10px">
+          If leads aren't showing up for teammates, use <strong>Recover My Leads</strong> to push your local data to the cloud. Safe to run anytime \u2014 no duplicates.
+        </p>
+        <div class="gw-settings-sync-btns">
+          <button class="primary-btn" onclick="window._recoverLocalLeads()" id="gw-recover-btn" style="background:#4D8A86">
+            \u2191 Recover My Leads to Cloud
+          </button>
+          <button class="secondary-btn" onclick="window._manualSync && window._manualSync()">
+            Sync from Cloud Now
+          </button>
+        </div>
+        <div id="gw-recover-status" style="margin-top:10px;font-size:13px;display:none"></div>
+      </section>`;
 
-    <!-- ── My Google Connection + Email Signature ── always shown to all reps ── -->
-    <div id="gw-settings-google-wrap" style="margin-top:${isMobile?'10px':'20px'}"></div>
+  const importCard = _ia ? `
+      <section class="card" style="border:1px solid #4A5947">
+        <h2>Import</h2>
+        <p style="font-size:13px;color:var(--gw-muted)">Restore a JSON backup from this same app. <strong style="color:#C97B6A">Admin only.</strong></p>
+        <input id="importFile" type="file" accept="application/json">
+        <button class="secondary-btn mt8" onclick="importJson()">Import Backup</button>
+      </section>` : `
+      <section class="card" style="opacity:.65">
+        <h2>Import</h2>
+        <p class="muted" style="font-size:13px">${_iom ? 'Import and data reset are restricted to the Owner. Contact your Owner if a data restore is needed.' : 'Import and data reset are restricted to Tyler (Admin).'}</p>
+      </section>`;
+
+  const resetCard = _ia ? `
+      <section class="card" style="border:1px solid #5C2318;margin-top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+          <div>
+            <h2 style="margin-bottom:4px">Reset All Data</h2>
+            <p style="font-size:13px;color:var(--gw-muted);margin:0">Clears all opportunities, notes, and checklist progress on this browser. <strong style="color:#C97B6A">Cannot be undone.</strong></p>
+          </div>
+          <button class="danger-btn" onclick="confirmReset()">Reset All Local Data</button>
+        </div>
+      </section>` : '';
+
+  view.innerHTML = `
+    <div class="eyebrow">Settings</div>
+    <h1>General ${_viewLabel}</h1>
+    <p class="lede">Your account, data tools, and admin controls.</p>
+
+    <!-- ── YOUR ACCOUNT ── -->
+    <div class="gw-settings-sect">Your Account</div>
+    <div id="gw-settings-google-wrap"></div>
     <div id="gw-settings-sig-wrap" style="margin-top:0"></div>
 
-    ${_ia ? `
-    <!-- ── Admin Controls ── -->
-    <div class="gw-comm-tools" style="margin-top:${isMobile?'10px':'20px'}">
-      <div>
-        <div class="gw-comm-tools-title" style="margin-bottom:2px">Admin Controls</div>
-        <div style="font-size:12px;color:var(--gw-muted);margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
-      </div>
-      <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">${gwIcon('settings',16)} User &amp; Access Management →</button>
+    <!-- ── DATA & BACKUP ── -->
+    <div class="gw-settings-sect">Data &amp; Backup</div>
+    <div class="grid grid-2">
+      ${exportCard}
+      ${cloudSyncCard}
+    </div>
+    <div class="grid grid-2" style="margin-top:12px">
+      ${importCard}
+      <div></div>
     </div>
 
-    <!-- Commission Rules Manager (COMM-01) -->
-    ${mobileAccordion('comm-rules', 'Commission Rules', gwIcon('revenue',16,'#2D7A55'), `<div id="comm-rules-panel">${renderCommissionRulesPanel()}</div>`)}
+    ${_ia ? `
+    <!-- ── ADMINISTRATION ── -->
+    <div class="gw-settings-sect">Administration</div>
+    <div class="gw-comm-tools" style="margin-top:0;margin-bottom:12px">
+      <div>
+        <div class="gw-comm-tools-title" style="margin-bottom:2px">User &amp; Access Management</div>
+        <div style="font-size:12px;color:var(--gw-muted);margin-top:2px">Manage users, roles, permissions, and Google Workspace connections.</div>
+      </div>
+      <button class="secondary-btn" onclick="show('userManagement')" style="font-size:13px">${gwIcon('settings',16)} Open User Management \u2192</button>
+    </div>
 
-    <!-- Commission Simulator (COMM-05) -->
-    ${mobileAccordion('comm-sim', 'Commission Simulator', gwIcon('chart',16,'#4D8A86'), `<div id="comm-sim-panel">${renderCommissionSimulator()}</div>`)}
-
-    <!-- Commission Audit Trail (COMM-04) -->
-    ${mobileAccordion('comm-audit', 'Commission Audit Trail', gwIcon('notes',16,'#8B6914'), `<div id="comm-audit-panel">${renderCommissionAuditTrail()}</div>`)}
-
-    <!-- Commission Admin Tools (COMM-16 migration · COMM-18 QA · COMM-17 flags) -->
-    ${mobileAccordion('comm-admin', 'Commission Admin Tools', gwIcon('settings',16,'#6F7E6A'), `
+    <!-- ── COMMISSIONS ── collapsed panels, expand on demand ── -->
+    <div class="gw-settings-sect">Commissions</div>
+    ${accordion('comm-rules', 'Commission Rules', gwIcon('revenue',16,'#2D7A55'), `<div id="comm-rules-panel">${renderCommissionRulesPanel()}</div>`, 'rates, caps &amp; thresholds')}
+    ${accordion('comm-sim', 'Commission Simulator', gwIcon('chart',16,'#4D8A86'), `<div id="comm-sim-panel">${renderCommissionSimulator()}</div>`, 'test payout scenarios')}
+    ${accordion('comm-audit', 'Commission Audit Trail', gwIcon('notes',16,'#8B6914'), `<div id="comm-audit-panel">${renderCommissionAuditTrail()}</div>`, 'change history')}
+    ${accordion('comm-admin', 'Commission Admin Tools', gwIcon('settings',16,'#6F7E6A'), `
       <div class="gw-comm-tools" style="margin-top:0;padding:0;border:none">
         <div class="gw-comm-tools-title" style="display:none"></div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">
@@ -10430,7 +10437,11 @@ function _settingsGeneral(){
         </div>
         <div id="comm-tool-result" class="gw-tool-result"></div>
       </div>
-    `)}
+    `, 'migration, QA &amp; flags')}
+
+    <!-- ── DANGER ZONE ── -->
+    <div class="gw-settings-sect" style="color:#C97B6A">Danger Zone</div>
+    ${resetCard}
     ` : ''}
   `;
 

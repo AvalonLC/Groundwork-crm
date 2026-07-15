@@ -14764,3 +14764,60 @@ h1.pl-title,
   .gw-myday-widget-body h2 { font-size: 15px; }
 }
 
+/* ── General Settings tab: organized layout (all viewports) ──────────────── */
+.gw-settings-sect {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--gw-muted);
+}
+.gw-settings-sect::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--gw-line);
+}
+.gw-settings-sect:first-of-type { margin-top: 18px; }
+
+/* Accordion panels now work on desktop too (mobile-only rules kept in the
+   media query above for back-compat; these unscoped rules extend them). */
+.gw-mobile-accordion {
+  border: 1px solid var(--gw-line);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  background: var(--gw-surface);
+}
+.gw-mobile-accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gw-ink);
+  background: var(--gw-surface-2);
+  gap: 8px;
+}
+.gw-mobile-accordion-header:hover { background: var(--gw-line); }
+.gw-mobile-accordion-chevron {
+  font-size: 10px;
+  color: var(--gw-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.gw-mobile-accordion-chevron.open { transform: rotate(180deg); }
+.gw-mobile-accordion-body { display: none; padding: 14px; overflow-x: auto; }
+.gw-mobile-accordion-body.open { display: block; }
+.gw-settings-acc-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--gw-muted);
+}
