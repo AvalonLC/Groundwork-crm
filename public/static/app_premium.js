@@ -57,7 +57,7 @@ const _VIEW_WORKSPACE_MAP = {
   settings:'gwAdmin', userManagement:'gwAdmin', integrations:'gwAdmin',
   manager:'gwAdmin', systemConfig:'gwAdmin', systemTemplates:'gwAdmin',
   approvalQueue:'gwAdmin', auditLog:'gwAdmin',
-  portalAdmin:'gwAdmin', automationCenter:'gwAdmin', fieldMode:'gwAdmin',
+  portalAdmin:'gwAdmin', automationCenter:'gwAdmin', fieldMode:'gwOperations',
   gwFieldReports:'gwAdmin', gwAARTemplate:'gwAdmin', gwAARReview:'gwAdmin',
 };
 // Tracks which workspace panels the user has manually collapsed.
@@ -274,7 +274,7 @@ const DEFAULT_NAV_PERMS = {
     'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
-    'approvalQueue','auditLog','portalAdmin','automationCenter',
+    'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
   // Sales Rep: full sales workflow + learning
   rep: ['gwDashboard','gwSales','gwLearning',
@@ -556,11 +556,11 @@ function fallbackCopy(text){
       inventoryList:'Resources', materialAllocation:'Resources',
       toolsConsumables:'Resources', timeTracker:'Time', opsHub:'Operations',
       // Admin workspace tabs
-      settings:'General', userManagement:'Employees', integrations:'Integrations',
-      manager:'Workflow', systemConfig:'System Config',
+      settings:'Settings', userManagement:'Employees', integrations:'Settings',
+      manager:'Workflow', systemConfig:'Settings',
       systemTemplates:'Workflow', approvalQueue:'Workflow',
-      auditLog:'Audit', portalAdmin:'Access Modes',
-      automationCenter:'Workflow', fieldMode:'Access Modes',
+      auditLog:'Audit', portalAdmin:'Client Portal',
+      automationCenter:'Workflow', fieldMode:'Field Preview',
       // Platform Admin
       gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support',
       gwAnnounce:'Announcements', gwBilling:'Billing',
@@ -859,6 +859,7 @@ function _gwOpsNavConfig() {
     {id:'toolsConsumables',   label:'Tools',       sub:true},
     {id:'timeTracker',        label:'Time Tracker'},
     {id:'gwTimesheetAdmin',   label:'Timesheet Review', sub:true},
+    {id:'fieldMode',          label:'Field Preview',    sub:true},
   ];
 }
 
@@ -877,9 +878,67 @@ function gwOperations(tab) {
   else if (tab === 'toolsConsumables') (typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
   else if (tab === 'timeTracker')      (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time Tracker');
   else if (tab === 'gwTimesheetAdmin') (typeof window.gwTimesheetAdmin==='function') ? window.gwTimesheetAdmin() : _gwTabStub('Timesheet Review');
+  else if (tab === 'fieldMode')        (typeof window.gwFieldPreview==='function') ? window.gwFieldPreview() : _gwTabStub('Field Preview');
   else scheduleBoard();
 }
 window.gwOperations = gwOperations;
+
+// ── FIELD PREVIEW ────────────────────────────────────────────────────────────
+// Office roles (admin / office_manager / division_manager) see a READ-ONLY
+// preview of any field employee's dashboard — verify what a laborer/foreman
+// sees without logging into their account. Field roles get real Field Mode.
+function gwFieldPreview(previewRepId) {
+  const rep = (window.getCurrentRep ? window.getCurrentRep() : null) || window._d1SessionRep;
+  const fieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
+  window._currentView = 'fieldMode';
+  // Field roles: this IS their view — render the real interactive Field Mode
+  if (rep && fieldRoles.includes(rep.role)) {
+    if (typeof window.fieldMode === 'function') window.fieldMode();
+    return;
+  }
+  const view = document.getElementById('view');
+  if (!view) return;
+  const fieldReps = (window.REPS || []).filter(r => fieldRoles.includes(r.role) && r.active !== false);
+  if (!fieldReps.length) {
+    window._fieldPreviewRep = null;
+    view.classList.remove('gw-preview-mode');
+    view.innerHTML = `<div style="padding:48px 24px;text-align:center;max-width:480px;margin:40px auto">
+      <h2 style="font-size:18px;color:var(--gw-ink,#1F2A2B);margin:0 0 8px">Field Preview</h2>
+      <p style="font-size:13px;color:var(--gw-muted,#5E6E6F);line-height:1.6;margin:0 0 16px">No field employees (laborer / foreman) found. Add field-role employees under Admin → Employees, then preview their dashboard here.</p>
+      <button class="secondary-btn" onclick="show('userManagement')">Go to Employees →</button>
+    </div>`;
+    return;
+  }
+  const target = fieldReps.find(r => r.id === previewRepId) || (window._fieldPreviewRep && fieldReps.find(r => r.id === window._fieldPreviewRep.id)) || fieldReps[0];
+  window._fieldPreviewRep = { id: target.id, name: target.name, role: target.role, color: target.color };
+  // Render the field dashboard AS that rep (read-only — CSS blocks interaction)
+  if (typeof window.fieldDashboard === 'function') window.fieldDashboard();
+  else { view.innerHTML = ''; }
+  // Inject preview toolbar + read-only styling
+  if (!document.getElementById('gw-preview-styles')) {
+    const st = document.createElement('style');
+    st.id = 'gw-preview-styles';
+    st.textContent = `#view.gw-preview-mode > *:not(.gw-preview-bar){pointer-events:none;user-select:none}
+      #view.gw-preview-mode > *:not(.gw-preview-bar){opacity:.96}
+      .gw-preview-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;margin-bottom:16px;border-radius:12px;background:rgba(139,105,20,.10);border:1.5px solid rgba(139,105,20,.35)}
+      .gw-preview-bar select{padding:6px 10px;border-radius:8px;border:1px solid var(--gw-line,#E0DDD5);font-size:13px;font-weight:600;background:var(--gw-surface,#fff);color:var(--gw-ink,#1F2A2B)}`;
+    document.head.appendChild(st);
+  }
+  view.classList.add('gw-preview-mode');
+  const roleLabel = r => ({foreman:'Foreman', laborer:'Laborer', field_supervisor:'Field Supervisor'})[r] || r;
+  view.insertAdjacentHTML('afterbegin', `
+    <div class="gw-preview-bar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B6914" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span style="font-size:13px;font-weight:800;color:#8B6914">Field Preview</span>
+      <span style="font-size:12px;color:var(--gw-muted,#5E6E6F)">Read-only — exactly what this employee sees on their dashboard</span>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--gw-muted,#5E6E6F)">Viewing as
+        <select onchange="gwFieldPreview(this.value)" style="pointer-events:auto">
+          ${fieldReps.map(r => `<option value="${r.id}"${r.id===target.id?' selected':''}>${escapeHtml(r.name)} — ${roleLabel(r.role)}</option>`).join('')}
+        </select>
+      </label>
+    </div>`);
+}
+window.gwFieldPreview = gwFieldPreview;
 
 // gwResources — legacy shim routes to direct Ops items (no longer a sub-workspace toggle)
 function gwResources(sub) {
@@ -899,22 +958,16 @@ window.gwResources = gwResources;
 // ── Admin workspace ───────────────────────────────────────────────────────────
 function _gwAdminNavConfig(canManageUsers, isAdmin) {
   return [
-    {id:'settings',        label:'General'},
+    {id:'settings',        label:'Settings'},
     ...(canManageUsers ? [{id:'userManagement', label:'Employees'}] : []),
-    {id:'integrations',    label:'Integrations'},
     {id:'systemTemplates', label:'Templates',      sub:true},
-    {id:'approvalQueue',   label:'Approval Queue', sub:true},
-    {id:'gwAudit',         label:'Audit Log'},
     {id:'portalAdmin',     label:'Client Portal',  sub:true},
-    {id:'fieldMode',       label:'Field Mode',     sub:true},
     // Field Ops — visible to admin, office_manager, division_manager
     ...(canManageUsers ? [
       {id:'gwFieldReports',  label:'Field Reports',  sub:true},
       {id:'gwAARTemplate',   label:'AAR Template',   sub:true},
       {id:'gwAARReview',     label:'AAR Reviews',    sub:true},
     ] : []),
-    ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
-    ...(isAdmin || canManageUsers ? [{id:'gwWorkdaySettings', label:'Workday Settings'}] : []),
   ];
 }
 
@@ -924,9 +977,9 @@ function gwAdmin(tab) {
   const isAdmin = !rep || rep.role === 'admin';
   const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
   _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), tab);
-  if (tab === 'settings')              (typeof settings==='function') ? settings() : _gwTabStub('General');
+  if (tab === 'settings')              (typeof settings==='function') ? settings() : _gwTabStub('Settings');
   else if (tab === 'userManagement')   (typeof userManagement==='function') ? userManagement() : _gwTabStub('Employees');
-  else if (tab === 'integrations')     (typeof integrations==='function') ? integrations() : _gwTabStub('Integrations');
+  else if (tab === 'integrations')     settings('integrations');
   else if (tab === 'gwAdminWorkflow')   gwAdminWorkflow('systemTemplates');
   else if (tab === 'systemTemplates')  (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
   else if (tab === 'approvalQueue')    (typeof window.approvalQueue==='function') ? window.approvalQueue() : _gwTabStub('Approval Queue');
@@ -934,8 +987,8 @@ function gwAdmin(tab) {
   else if (tab === 'gwAccessModes')     gwAccessModes('portalAdmin');
   else if (tab === 'portalAdmin')      (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
   else if (tab === 'fieldMode')        (typeof window.fieldMode==='function') ? window.fieldMode() : _gwTabStub('Field Mode');
-  else if (tab === 'systemConfig')     (typeof systemConfig==='function') ? systemConfig() : _gwTabStub('System Config');
-  else if (tab === 'gwWorkdaySettings')(typeof window.gwWorkdaySettings==='function') ? window.gwWorkdaySettings() : _gwTabStub('Workday Settings');
+  else if (tab === 'systemConfig')     settings('company');
+  else if (tab === 'gwWorkdaySettings')settings('workday');
   else if (tab === 'gwFieldReports')  _gwRenderFieldReports();
   else if (tab === 'gwAARTemplate')   _gwRenderAARTemplate();
   else if (tab === 'gwAARReview')     _gwRenderAARReview();
@@ -976,21 +1029,7 @@ function gwAccessModes(sub) {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const isAdmin = !rep || rep.role === 'admin';
   const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
-  _gwSetHeader('Admin', [
-    {id:'settings',      label:'General'},
-    ...(canManageUsers ? [{id:'userManagement', label:'Employees'}] : []),
-    {id:'integrations',  label:'Integrations'},
-    {id:'gwAdminWorkflow', label:'Workflow', children:[
-      {id:'systemTemplates', label:'Templates & Automations'},
-      {id:'approvalQueue',   label:'Approval Queue'},
-    ]},
-    {id:'gwAudit',       label:'Audit'},
-    {id:'gwAccessModes', label:'Access Modes', children:[
-      {id:'portalAdmin', label:'Client Portal'},
-      {id:'fieldMode',   label:'Field Mode'},
-    ]},
-    ...(isAdmin ? [{id:'systemConfig', label:'System Config'}] : []),
-  ], sub);
+  _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), sub);
   activateNav(sub);
   window._currentView = sub;
   if (sub === 'portalAdmin') (typeof window.portalAdmin==='function') ? window.portalAdmin() : _gwTabStub('Client Portal');
@@ -1107,16 +1146,10 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
 
   // Admin — use defaults (no rep context yet at parse time)
   _gwSetHeader('Admin', [
-    {id:'settings',          label:'General'},
+    {id:'settings',          label:'Settings'},
     {id:'userManagement',    label:'Employees'},
-    {id:'integrations',      label:'Integrations'},
     {id:'systemTemplates',   label:'Templates'},
-    {id:'approvalQueue',     label:'Approval Queue'},
-    {id:'gwAudit',           label:'Audit Log'},
     {id:'portalAdmin',       label:'Client Portal'},
-    {id:'fieldMode',         label:'Field Mode'},
-    {id:'systemConfig',      label:'System Config'},
-    {id:'gwWorkdaySettings', label:'Workday Settings'},
   ], null);
 
   // After DOM is ready, apply field-role nav filters if the user is already known
@@ -1197,6 +1230,12 @@ function _gwTabStubHTML(label) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function show(viewName='today', param){
+  // ── Field Preview cleanup: leaving the preview clears impersonated context ──
+  if (viewName !== 'fieldMode' && window._fieldPreviewRep) {
+    window._fieldPreviewRep = null;
+    document.getElementById('view')?.classList.remove('gw-preview-mode');
+  }
+  if (viewName !== 'fieldMode') document.getElementById('view')?.classList.remove('gw-preview-mode');
   // ── Dismiss any stray full-screen overlays left by previous view ──────────
   // Prevents phantom overlays (e.g. #gw-auto-overlay from automationManager)
   // from blocking sidebar clicks after navigating away.
@@ -1263,10 +1302,10 @@ function show(viewName='today', param){
       inventoryList:'Resources', materialAllocation:'Resources',
       toolsConsumables:'Resources', timeTracker:'Time',
       // Admin
-      settings:'General', userManagement:'Employees', integrations:'Integrations',
-      manager:'Workflow', systemConfig:'System Config', systemTemplates:'Workflow',
+      settings:'Settings', userManagement:'Employees', integrations:'Settings',
+      manager:'Workflow', systemConfig:'Settings', systemTemplates:'Workflow',
       approvalQueue:'Workflow', auditLog:'Audit',
-      portalAdmin:'Access Modes', automationCenter:'Workflow', fieldMode:'Access Modes',
+      portalAdmin:'Client Portal', automationCenter:'Workflow', fieldMode:'Field Preview',
       // Platform Admin
       gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support & Tickets',
       gwAnnounce:'Announcements', gwBilling:'Billing & Plans',
@@ -1321,7 +1360,7 @@ function show(viewName='today', param){
     settings:'Admin', userManagement:'Admin', integrations:'Admin',
     manager:'Admin', systemConfig:'Admin', systemTemplates:'Admin',
     approvalQueue:'Admin', auditLog:'Admin',
-    portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Admin',
+    portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Operations',
   };
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
@@ -1334,13 +1373,11 @@ function show(viewName='today', param){
       {id:'assetList',label:'Assets'},{id:'maintenanceQueue',label:'Maintenance'},
       {id:'inventoryList',label:'Inventory'},{id:'toolsConsumables',label:'Tools'},
       {id:'timeTracker',label:'Time Tracker'},{id:'gwTimesheetAdmin',label:'Timesheet Review'},
+      {id:'fieldMode',label:'Field Preview'},
     ],
     Admin: [
-      {id:'settings',label:'General'},{id:'userManagement',label:'Employees'},
-      {id:'integrations',label:'Integrations'},{id:'systemTemplates',label:'Templates'},
-      {id:'approvalQueue',label:'Approval Queue'},{id:'gwAudit',label:'Audit Log'},
-      {id:'portalAdmin',label:'Client Portal'},{id:'fieldMode',label:'Field Mode'},
-      {id:'systemConfig',label:'System Config'},{id:'gwWorkdaySettings',label:'Workday Settings'},
+      {id:'settings',label:'Settings'},{id:'userManagement',label:'Employees'},
+      {id:'systemTemplates',label:'Templates'},{id:'portalAdmin',label:'Client Portal'},
     ],
   };
   const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].includes(viewName);
@@ -1350,7 +1387,8 @@ function show(viewName='today', param){
     if (_wsName && _wsTabDefs[_wsName]) {
       // Highlight aliases for views that don't have their own nav entry
       let _tabHighlight = viewName;
-      if (viewName === 'auditLog')        _tabHighlight = 'gwAudit';
+      if (viewName === 'auditLog')        _tabHighlight = 'settings';
+      else if (['integrations','systemConfig','gwWorkdaySettings','approvalQueue'].includes(viewName)) _tabHighlight = 'settings';
       else if (viewName === 'crewView')   _tabHighlight = 'scheduleBoard';
       else if (viewName === 'teamReports')_tabHighlight = 'teamView';
       else if (viewName === 'assetDetail')_tabHighlight = 'assetList';
@@ -1379,7 +1417,7 @@ function show(viewName='today', param){
     document.getElementById('sidebarScrim')?.classList.remove('visible');
   }
   // integrations is loaded from integrations.js
-  const intRoute = (typeof integrations === 'function') ? {integrations} : {};
+  const intRoute = (typeof integrations === 'function') ? {integrations: () => settings('integrations')} : {};
   // repDashboard is loaded from reps.js
   const repRoute = (typeof repDashboard === 'function') ? {myDashboard: repDashboard} : {};
   const revenueRoute = (typeof revenueAdmin === 'function') ? {revenueAdmin} : {};
@@ -1440,7 +1478,7 @@ function show(viewName='today', param){
     opsReports:         ()   => opsReports(),
     teamReports:        ()   => teamReports(),
     // Settings
-    systemConfig:       ()   => systemConfig(),
+    systemConfig:       ()   => settings('company'),
     systemTemplates:    ()   => systemTemplates(),
   };
   // Phase 8 stub for when engine files haven't loaded yet (rare, safe fallback)
@@ -1460,10 +1498,10 @@ function show(viewName='today', param){
     auditLog:         () => (typeof window.auditLog         === 'function') ? window.auditLog()         : _p8Stub('Audit Log'),
     portalAdmin:      () => (typeof window.portalAdmin      === 'function') ? window.portalAdmin()      : _p8Stub('Client Portal'),
     automationCenter: () => (typeof window.automationCenter === 'function') ? window.automationCenter() : _p8Stub('Automation Center'),
-    fieldMode:        () => (typeof window.fieldMode        === 'function') ? window.fieldMode()        : _p8Stub('Field Mode'),
+    fieldMode:        () => (typeof window.gwFieldPreview   === 'function') ? window.gwFieldPreview()   : _p8Stub('Field Preview'),
     fieldDashboard:   () => (typeof window.fieldDashboard   === 'function') ? window.fieldDashboard()   : _p8Stub('Field Dashboard'),
     gwTimesheetAdmin: () => (typeof window.gwTimesheetAdmin === 'function') ? window.gwTimesheetAdmin() : _p8Stub('Timesheet Review'),
-    gwWorkdaySettings:() => (typeof window.gwWorkdaySettings=== 'function') ? window.gwWorkdaySettings(): _p8Stub('Workday Settings'),
+    gwWorkdaySettings:() => settings('workday'),
     gwFieldReports:   () => gwAdmin('gwFieldReports'),
     gwAARTemplate:    () => gwAdmin('gwAARTemplate'),
     gwAARReview:      () => gwAdmin('gwAARReview'),
@@ -10242,7 +10280,33 @@ window._renderDpTable = function() {
     }
   }
 
-function settings(){
+// ── MASTER SETTINGS HUB ──────────────────────────────────────────────────────
+// One page, four tabs: General (data/export/google/commissions), Company
+// (branding+hours, ex-System Config), Workday (shift rules, ex-Workday
+// Settings), Integrations (ex-standalone tab).
+function settings(tab){
+  tab = tab || 'general';
+  const _rep  = window.getCurrentRep ? window.getCurrentRep() : null;
+  const _isAd = !_rep || _rep.role === 'admin';
+  const _canMU = _isAd || (_rep && _rep.role === 'office_manager');
+  _gwSetHeader('Admin', _gwAdminNavConfig(_canMU, _isAd), 'settings');
+  window._currentView = 'settings';
+  const tabs = [
+    {id:'general',      label:'General'},
+    ...(_isAd            ? [{id:'company', label:'Company'}] : []),
+    ...(_isAd || _canMU  ? [{id:'workday', label:'Workday'}] : []),
+    {id:'integrations', label:'Integrations'},
+  ];
+  _gwSetSubHeader(tabs, tab, 'gwSettingsTab');
+  if (tab === 'company'      && typeof systemConfig === 'function')             return systemConfig();
+  if (tab === 'workday'      && typeof window.gwWorkdaySettings === 'function') return window.gwWorkdaySettings();
+  if (tab === 'integrations' && typeof window.integrations === 'function')      return window.integrations();
+  _settingsGeneral();
+}
+window.settings = settings;
+window.gwSettingsTab = function(t){ settings(t); };
+
+function _settingsGeneral(){
   const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
   const _ia = _cr && _cr.role === 'admin';
   const _iom = _cr && _cr.role === 'office_manager';
@@ -20066,7 +20130,7 @@ function systemConfig() {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const isAdmin = !rep || rep.role === 'admin';
   const canManageUsers = isAdmin || (rep && rep.role === 'office_manager');
-  _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), 'systemConfig');
+  _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), 'settings');
   window._currentView = 'systemConfig';
 
   const el = document.getElementById('view');
@@ -20367,8 +20431,8 @@ function systemConfig() {
     <!-- ══ Sticky top bar ════════════════════════════════════════════════════ -->
     <div class="sc-topbar sc-page-header">
       <div style="flex:1;min-width:0">
-        <div class="sc-topbar-title">System Configuration</div>
-        <div class="sc-topbar-sub">Company-wide settings, hours, service area, notifications &amp; branding</div>
+        <div class="sc-topbar-title">Company Settings</div>
+        <div class="sc-topbar-sub">Company info, hours, service area, notifications &amp; branding</div>
       </div>
       <button class="sc-btn sc-btn-secondary" onclick="systemConfig()">${gwIcon('sync', 13, 'currentColor')} Refresh</button>
       <span id="sc-autosave-indicator" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s;margin-right:4px">Saved ✓</span>

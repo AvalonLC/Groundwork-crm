@@ -41,6 +41,8 @@ function _fwIsFieldRole() {
 }
 
 function _fwRep() {
+  // Field Preview: office roles viewing a worker's dashboard render AS that worker
+  if (window._fieldPreviewRep) return window._fieldPreviewRep;
   if (typeof _currentRep === 'function') return _currentRep();
   return window._d1SessionRep || null;
 }

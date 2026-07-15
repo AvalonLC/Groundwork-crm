@@ -137,6 +137,9 @@ const _GW_ES = {
   'System Config':            'Configuración del Sistema',
   'Workday Settings':         'Ajustes de Jornada',
   'Settings':                 'Ajustes',
+  'Company':                  'Empresa',
+  'Workday':                  'Jornada',
+  'Field Preview':            'Vista de Campo',
 
   // ── Roles ──────────────────────────────────────────────────────────────────
   'Owner / Admin':   'Dueño / Admin',

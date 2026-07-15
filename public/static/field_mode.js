@@ -42,6 +42,8 @@ function _fieldRoleLabel() {
 }
 
 function _currentRep() {
+  // Field Preview: office roles viewing a worker's dashboard render AS that worker
+  if (window._fieldPreviewRep) return window._fieldPreviewRep;
   return window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
 }
 
@@ -321,13 +323,8 @@ window._gwShouldStartFieldMode = function() {
   return _isFieldRole();
 };
 
-// Listen for resize — if a field user switches to mobile, offer field mode
-window.addEventListener('resize', () => {
-  if (_isFieldRole() && _isMobile() && window._currentView && window._currentView !== 'fieldMode') {
-    // Subtle: add field mode button to topbar if not already there
-    _gwInjectFieldModeButton();
-  }
-});
+// Resize listener intentionally removed — field roles use fieldDashboard on all
+// screen sizes; we do not inject a Field Mode topbar button for them.
 
 function _gwInjectFieldModeButton() {
   if (document.getElementById('gw-field-mode-btn')) return;
@@ -342,11 +339,14 @@ function _gwInjectFieldModeButton() {
   topbar.insertBefore(btn, topbar.querySelector('.topbar-settings'));
 }
 
-// On field roles, inject the field mode button
+// Field Mode button is intentionally NOT injected into the topbar for field roles.
+// Field users land on fieldDashboard which is their full experience — the standalone
+// Field Mode button is redundant and confusing. Admin/office users still see it via
+// Admin nav → Field Mode. The resize listener below is also disabled for field roles
+// since they always use fieldDashboard.
 document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    if (_isFieldRole()) _gwInjectFieldModeButton();
-  }, 1500);
+  // Intentionally empty — field roles should NOT see the topbar Field Mode button.
+  // (Kept as placeholder so future desktop-mode logic can be added here if needed.)
 });
 
 window.fieldMode = fieldMode;
