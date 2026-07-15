@@ -2667,11 +2667,18 @@ function umRenderMyGoogleConnection(container) {
   }
 </section>`;
 
-  // Append signature editor panel below the Google connection card
-  const sigWrap = document.createElement('div');
-  sigWrap.style.marginTop = '14px';
-  container.appendChild(sigWrap);
-  umRenderSignatureEditor(sigWrap);
+  // Render the signature editor into the dedicated Settings slot when present
+  // (Settings > General places it side-by-side with the Google card);
+  // otherwise fall back to appending it below the Google connection card.
+  const dedicatedSigWrap = document.getElementById('gw-settings-sig-wrap');
+  if (dedicatedSigWrap && dedicatedSigWrap !== container) {
+    umRenderSignatureEditor(dedicatedSigWrap);
+  } else {
+    const sigWrap = document.createElement('div');
+    sigWrap.style.marginTop = '14px';
+    container.appendChild(sigWrap);
+    umRenderSignatureEditor(sigWrap);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

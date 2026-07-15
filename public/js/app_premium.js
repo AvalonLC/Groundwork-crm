@@ -10389,20 +10389,19 @@ function _settingsGeneral(){
     <h1>General ${_viewLabel}</h1>
     <p class="lede">Your account, data tools, and admin controls.</p>
 
-    <!-- ── YOUR ACCOUNT ── -->
+    <!-- ── YOUR ACCOUNT ── side-by-side: Google | Signature -->
     <div class="gw-settings-sect">Your Account</div>
-    <div id="gw-settings-google-wrap"></div>
-    <div id="gw-settings-sig-wrap" style="margin-top:0"></div>
+    <div class="grid grid-2" style="align-items:start">
+      <div id="gw-settings-google-wrap"></div>
+      <div id="gw-settings-sig-wrap" style="margin-top:0"></div>
+    </div>
 
-    <!-- ── DATA & BACKUP ── -->
+    <!-- ── DATA & BACKUP ── single compact row -->
     <div class="gw-settings-sect">Data &amp; Backup</div>
-    <div class="grid grid-2">
+    <div class="grid grid-3" style="align-items:start">
       ${exportCard}
       ${cloudSyncCard}
-    </div>
-    <div class="grid grid-2" style="margin-top:12px">
       ${importCard}
-      <div></div>
     </div>
 
     ${_ia ? `
