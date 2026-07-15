@@ -1611,17 +1611,8 @@ window._manualSync = async function() {
 // REPS are not populated yet — the sidebar is updated by bootstrapD1Auth() instead.
 window._updateSidebarRep = function updateSidebarRep() {
   try {
-    // Update sidebar brand mark with company logo from D1 (if available)
-    const brandMark = document.querySelector('.brand-mark img');
-    const brandNameEl = document.querySelector('.brand-name');
-    const brandBrand = window._scBrand || window._gwBootstrap?.company;
-    if (brandMark && brandBrand?.logo_url) {
-      brandMark.src = brandBrand.logo_url;
-      brandMark.style.cssText = 'width:100%;height:100%;object-fit:contain;border-radius:6px;padding:3px';
-    }
-    if (brandNameEl && brandBrand?.name && brandBrand.name !== 'Groundwork CRM (Platform)') {
-      brandNameEl.textContent = brandBrand.name;
-    }
+    // Sidebar brand mark stays GROUNDWORK (platform identity) — company
+    // name/logo are shown in the topbar (#gw-company-badge) instead.
     const rep = window.getCurrentRep ? window.getCurrentRep() : null;
     const d1Rep = window._d1SessionRep;
     // Platform-admin detection: is_super_admin=1 AND groundwork_platform company

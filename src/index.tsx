@@ -2218,6 +2218,33 @@ app.post('/api/time/clock-out', requireAuth, async (c) => {
   return json(c, { id: entry.id, duration_min: durMin })
 })
 
+// POST /api/time/clock-out/:entryId   { notes? }
+// Closes the SPECIFIED entry. Frontend callers (time_tracker.js, field_workday.js)
+// all use this path-param form. Permission: own entry, or admin/office_manager
+// for other reps' entries (admin force-close of missed clock-outs).
+app.post('/api/time/clock-out/:entryId', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const role      = c.var.role as string
+  const entryId   = c.req.param('entryId')
+  const b = await c.req.json().catch(() => ({})) as any
+  const entry = await c.env.DB.prepare(
+    `SELECT * FROM time_entries WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(entryId, companyId).first<any>()
+  if (!entry) return err(c, 'Entry not found', 404)
+  if (entry.rep_id !== repId && role !== 'admin' && role !== 'office_manager')
+    return err(c, 'Forbidden', 403)
+  if (entry.clock_out) return err(c, 'Already clocked out', 409)
+  const now     = new Date()
+  const clockIn = new Date(entry.clock_in)
+  const durMin  = Math.max(0, Math.round((now.getTime() - clockIn.getTime()) / 60000))
+  await c.env.DB.prepare(
+    `UPDATE time_entries SET clock_out=?, duration_min=?, notes=?, updated_at=datetime('now')
+     WHERE id=? AND company_id=?`
+  ).bind(now.toISOString(), durMin, b.notes ?? entry.notes, entry.id, companyId).run()
+  return json(c, { id: entry.id, duration_min: durMin })
+})
+
 // GET /api/time/entries?companyId=&repId=&from=&to=&approved=
 app.get('/api/time/entries', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -5744,7 +5771,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b003">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5768,8 +5795,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260715b002"></script>
-  <script src="/js/client_portal.js?v=20260715b002"></script>
+  <script src="/js/platform_core.js?v=20260715b003"></script>
+  <script src="/js/client_portal.js?v=20260715b003"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6388,9 +6415,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260715b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260715b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b003">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6887,11 +6914,12 @@ function getHtml(): string {
       </div>
       <button class="install-btn" id="installBtn" hidden>Install App</button>
 
-      <!-- ── Company context badge — always shows WHICH company you're in ── -->
-      <div id="gw-company-badge" style="display:none;align-items:center;gap:7px;padding:4px 12px;background:var(--gw-surface-2,rgba(255,255,255,.07));border:1px solid var(--gw-line,rgba(255,255,255,.12));border-radius:20px;font-size:12px;font-weight:700;max-width:220px;white-space:nowrap;overflow:hidden" title="Current company workspace">
-        <span id="gw-company-badge-dot" style="width:8px;height:8px;border-radius:50%;background:#2D7A55;flex-shrink:0"></span>
-        <span id="gw-company-badge-name" style="overflow:hidden;text-overflow:ellipsis"></span>
+      <!-- ── Company identity — full company name + logo (desktop only) ── -->
+      <div id="gw-company-badge" style="display:none;align-items:center;gap:9px;white-space:nowrap;overflow:hidden;max-width:340px" title="Current company workspace">
+        <img id="gw-company-badge-logo" alt="" style="display:none;width:28px;height:28px;object-fit:contain;border-radius:6px;flex-shrink:0">
+        <span id="gw-company-badge-name" style="overflow:hidden;text-overflow:ellipsis;font-size:13.5px;font-weight:800;letter-spacing:.01em"></span>
       </div>
+      <style>@media (max-width: 900px){ #gw-company-badge{ display:none !important } }</style>
 
       <!-- + New quick-create dropdown -->
       <div class="topbar-new-wrap" id="topbarNewWrap">
@@ -6937,34 +6965,34 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260715b002"></script>
-<script src="/js/db.js?v=20260715b002"></script>
-<script src="/js/data.js?v=20260715b002"></script>
-<script src="/js/reps.js?v=20260715b002"></script>
-<script src="/js/record-page.js?v=20260715b002"></script>
-<script src="/js/academy.js?v=20260715b002"></script>
-<script src="/js/task_engine.js?v=20260715b002"></script>
-<script src="/js/gw_i18n.js?v=20260715b002"></script>
-<script src="/js/app_premium.js?v=20260715b002"></script>
-<script src="/js/estimates.js?v=20260715b002"></script>
-<script src="/js/invoices.js?v=20260715b002"></script>
-<script src="/js/csv_import.js?v=20260715b002"></script>
-<script src="/js/onboarding.js?v=20260715b002"></script>
-<script src="/js/recurring_plans.js?v=20260715b002"></script>
-<script src="/js/reviews.js?v=20260715b002"></script>
-<script src="/js/stripe.js?v=20260715b002"></script>
-<script src="/js/email.js?v=20260715b002"></script>
-<script src="/js/notifications.js?v=20260715b002"></script>
-<script src="/js/integrations.js?v=20260715b002"></script>
-<script src="/js/user_management.js?v=20260715b002"></script>
-<script src="/js/platform_admin.js?v=20260715b002"></script>
-<script src="/js/time_tracker.js?v=20260715b002"></script>
-<script src="/js/field_workday.js?v=20260715b002"></script>
-<script src="/js/platform_core.js?v=20260715b002"></script>
-<script src="/js/approval_engine.js?v=20260715b002"></script>
-<script src="/js/automation_engine.js?v=20260715b002"></script>
-<script src="/js/client_portal.js?v=20260715b002"></script>
-<script src="/js/field_mode.js?v=20260715b002"></script>
+<script src="/js/gw-icons.js?v=20260715b003"></script>
+<script src="/js/db.js?v=20260715b003"></script>
+<script src="/js/data.js?v=20260715b003"></script>
+<script src="/js/reps.js?v=20260715b003"></script>
+<script src="/js/record-page.js?v=20260715b003"></script>
+<script src="/js/academy.js?v=20260715b003"></script>
+<script src="/js/task_engine.js?v=20260715b003"></script>
+<script src="/js/gw_i18n.js?v=20260715b003"></script>
+<script src="/js/app_premium.js?v=20260715b003"></script>
+<script src="/js/estimates.js?v=20260715b003"></script>
+<script src="/js/invoices.js?v=20260715b003"></script>
+<script src="/js/csv_import.js?v=20260715b003"></script>
+<script src="/js/onboarding.js?v=20260715b003"></script>
+<script src="/js/recurring_plans.js?v=20260715b003"></script>
+<script src="/js/reviews.js?v=20260715b003"></script>
+<script src="/js/stripe.js?v=20260715b003"></script>
+<script src="/js/email.js?v=20260715b003"></script>
+<script src="/js/notifications.js?v=20260715b003"></script>
+<script src="/js/integrations.js?v=20260715b003"></script>
+<script src="/js/user_management.js?v=20260715b003"></script>
+<script src="/js/platform_admin.js?v=20260715b003"></script>
+<script src="/js/time_tracker.js?v=20260715b003"></script>
+<script src="/js/field_workday.js?v=20260715b003"></script>
+<script src="/js/platform_core.js?v=20260715b003"></script>
+<script src="/js/approval_engine.js?v=20260715b003"></script>
+<script src="/js/automation_engine.js?v=20260715b003"></script>
+<script src="/js/client_portal.js?v=20260715b003"></script>
+<script src="/js/field_mode.js?v=20260715b003"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -7020,7 +7048,7 @@ function getHtml(): string {
           const badge = document.getElementById('gw-company-badge');
           const nameEl = document.getElementById('gw-company-badge-name');
           if (badge && nameEl) {
-            // Fetch company display name (branding endpoint is session-scoped)
+            // Fetch company display name + logo (branding endpoint is session-scoped)
             fetch('/api/company/branding', { credentials: 'include' })
               .then(r => r.ok ? r.json() : null)
               .then(j => {
@@ -7029,11 +7057,16 @@ function getHtml(): string {
                 if (label) {
                   nameEl.textContent = label;
                   badge.style.display = 'inline-flex';
-                  const dot = document.getElementById('gw-company-badge-dot');
-                  if (dot && co && co.brand_color) dot.style.background = co.brand_color;
+                  const logoEl = document.getElementById('gw-company-badge-logo');
+                  if (logoEl && co && co.logo_url) {
+                    logoEl.src = co.logo_url;
+                    logoEl.style.display = 'block';
+                    logoEl.onerror = function(){ this.style.display = 'none'; };
+                  }
                   // Impersonation warning: super-admin inside another tenant
                   if (d1Rep.is_super_admin && d1Rep.company_id !== 'groundwork_platform') {
-                    badge.style.border = '1.5px solid #C9A961';
+                    nameEl.style.textDecoration = 'underline dotted #C9A961';
+                    nameEl.style.textUnderlineOffset = '3px';
                     badge.title = 'You are working inside ' + label + ' — impersonation/tenant session';
                   }
                 }
