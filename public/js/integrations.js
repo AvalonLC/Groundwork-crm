@@ -2039,7 +2039,7 @@ function gwRenderCalendar() {
   </div>
   <div style="display:flex;gap:6px;align-items:center">
     <button onclick="gwCalPrev()" class="gw-cal-nav-btn" style="border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">‹</button>
-    <span id="gw-cal-label" style="font-size:13px;font-weight:700;color:#E8E4D9;min-width:140px;text-align:center"></span>
+    <span id="gw-cal-label" style="font-size:13px;font-weight:700;color:var(--gw-ink,#1F2A2B);min-width:140px;text-align:center"></span>
     <button onclick="gwCalNext()" class="gw-cal-nav-btn" style="border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px">›</button>
     <button onclick="gwCalGoToday()" class="gw-cal-today-btn" style="border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:700">Today</button>
   </div>
@@ -2113,10 +2113,33 @@ function gwRenderCalBody() {
 }
 
 function gwEventColor(ev) {
-  // Use Google's colorId if present
-  const colors = {1:'#4D8A86',2:'#2D7A55',3:'#B8744F',4:'#C97B6A',5:'#8B6914',6:'#8B3A2A',7:'#4D8A86',8:'#6F7E6A',9:'#1A4740',10:'#2D7A55',11:'#8B3A2A'};
+  // Google Calendar's real event palette — vivid, high-contrast colors that
+  // stand out against the app's green theme (old palette was all theme-greens
+  // and events blended into the background).
+  const colors = {
+    1:'#7986CB',  // Lavender
+    2:'#33B679',  // Sage
+    3:'#8E24AA',  // Grape
+    4:'#E67C73',  // Flamingo
+    5:'#F6BF26',  // Banana
+    6:'#F4511E',  // Tangerine
+    7:'#039BE5',  // Peacock
+    8:'#616161',  // Graphite
+    9:'#3F51B5',  // Blueberry
+    10:'#0B8043', // Basil
+    11:'#D50000'  // Tomato
+  };
   if (ev.colorId && colors[ev.colorId]) return colors[ev.colorId];
-  return '#4D8A86';
+  return '#1967D2'; // Default: Google Calendar blue — distinct from the app's green UI
+}
+
+// Pick readable text color (dark ink on light fills like Banana, white on dark fills)
+function gwEventTextColor(bg) {
+  const hex = (bg||'').replace('#','');
+  if (hex.length < 6) return '#fff';
+  const r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
+  const yiq = (r*299 + g*587 + b*114) / 1000;
+  return yiq >= 160 ? '#1F2A2B' : '#fff';
 }
 
 function gwRenderAgendaDay() {
@@ -2168,11 +2191,11 @@ function gwRenderAgendaDay() {
         background:var(--gw-surface-3);border:1px solid var(--gw-line);border-left:4px solid ${color};transition:background .15s"
         onmouseover="this.style.background='var(--gw-surface-3)'" onmouseout="this.style.background='var(--gw-surface-3)'">
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700;color:#EDEAE0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--gw-ink,#1F2A2B);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.summary||'(No title)')}</div>
           <div style="font-size:12px;color:#6F7E6A;margin-top:4px">${timeStr}${ev.location?' · '+gwIcon('pin',16)+escapeHtml(ev.location.slice(0,50)):''}</div>
           ${ev.description?`<div style="font-size:12px;color:#6F7E6A;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ev.description.slice(0,100))}</div>`:''}
         </div>
-        <span style="font-size:10px;font-weight:700;color:#fff;background:${color};border-radius:10px;padding:3px 10px;flex-shrink:0;align-self:center">TODAY</span>
+        <span style="font-size:10px;font-weight:700;color:${gwEventTextColor(color)};background:${color};border-radius:10px;padding:3px 10px;flex-shrink:0;align-self:center">TODAY</span>
       </div>`;
     }).join('') + '</div>';
 }
@@ -2193,7 +2216,7 @@ function gwRenderWeek() {
       const isPast  = d < today && !isToday;
       return `<div style="padding:8px 4px;text-align:center;border-bottom:1px solid var(--gw-line);border-left:1px solid var(--gw-line);background:var(--gw-surface-3)">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${isToday?'#4D8A86':isPast?'#4A5947':'#6F7E6A'}">${dowLabels[d.getDay()]}</div>
-        <div style="font-size:18px;font-weight:800;color:${isToday?'#fff':isPast?'#4A5947':'#E8E4D9'};width:32px;height:32px;border-radius:50%;background:${isToday?'#4D8A86':'transparent'};display:flex;align-items:center;justify-content:center;margin:2px auto 0">${d.getDate()}</div>
+        <div style="font-size:18px;font-weight:800;color:${isToday?'#fff':isPast?'#9AA6A0':'var(--gw-ink,#1F2A2B)'};width:32px;height:32px;border-radius:50%;background:${isToday?'#4D8A86':'transparent'};display:flex;align-items:center;justify-content:center;margin:2px auto 0">${d.getDate()}</div>
       </div>`;
     }).join('')}
     ${hours.map(h => {
@@ -2220,8 +2243,9 @@ function gwRenderWeek() {
           return `<div style="border-top:1px solid var(--gw-line);border-left:1px solid var(--gw-line);height:40px;position:relative;background:${cellBg}">
             ${cellEvs.map(ev=>{
               const color=gwEventColor(ev);
+              const txt=gwEventTextColor(color);
               const t=ev.start?.dateTime?new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):'All day';
-              return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}" style="position:absolute;inset:1px 2px auto;background:${color};border-radius:3px;padding:2px 5px;font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;z-index:1;text-shadow:0 1px 2px #0006;box-shadow:0 1px 3px #0004">${t} ${escapeHtml((ev.summary||'Event').slice(0,20))}</div>`;
+              return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}" style="position:absolute;inset:1px 2px auto;background:${color};border-radius:4px;padding:2px 5px;font-size:10px;font-weight:700;color:${txt};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;z-index:1;${txt==='#fff'?'text-shadow:0 1px 2px #0006;':''}box-shadow:0 1px 3px rgba(0,0,0,.25)">${t} ${escapeHtml((ev.summary||'Event').slice(0,20))}</div>`;
             }).join('')}
           </div>`;
         }).join('')}`;
@@ -2265,10 +2289,11 @@ function gwRenderMonth() {
         <div style="font-size:13px;font-weight:700;color:${numTextColor};width:26px;height:26px;border-radius:50%;background:${numBg};display:flex;align-items:center;justify-content:center;margin-bottom:4px">${day}</div>
         ${dayEvs.slice(0,3).map(ev=>{
           const color=gwEventColor(ev);
+          const txt=gwEventTextColor(color);
           const isAllDay=!ev.start?.dateTime;
           const t=isAllDay?'All day':new Date(ev.start.dateTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
           return `<div onclick="gwCalEventClick('${escapeHtml(ev.id)}')" title="${escapeHtml(ev.summary||'')}"
-            style="background:${color};border-radius:3px;padding:2px 5px;font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;margin-bottom:2px;text-shadow:0 1px 2px #0004">
+            style="background:${color};border-radius:4px;padding:2px 5px;font-size:10px;font-weight:700;color:${txt};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;margin-bottom:2px;${txt==='#fff'?'text-shadow:0 1px 2px #0004;':''}box-shadow:0 1px 2px rgba(0,0,0,.18)">
             ${t} ${escapeHtml((ev.summary||'Event').slice(0,18))}
           </div>`;
         }).join('')}
@@ -2299,7 +2324,7 @@ window.gwCalEventClick = function(eventId) {
     <div style="display:flex;gap:10px;align-items:flex-start">
       <div style="width:4px;background:${color};border-radius:2px;align-self:stretch;min-height:20px"></div>
       <div>
-        <div style="font-weight:800;font-size:17px;color:#E8E4D9">${escapeHtml(ev.summary||'(No title)')}</div>
+        <div style="font-weight:800;font-size:17px;color:var(--gw-ink,#1F2A2B)">${escapeHtml(ev.summary||'(No title)')}</div>
         <div style="font-size:12px;color:#6F7E6A;margin-top:4px">${timeStr}</div>
         ${ev.location?`<div style="font-size:12px;color:#6F7E6A;margin-top:2px">${gwIcon('pin',16)} ${escapeHtml(ev.location)}</div>`:''}
       </div>
