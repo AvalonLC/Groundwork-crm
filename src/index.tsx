@@ -13,6 +13,7 @@ import mig0027 from '../migrations/0027_notifications.sql?raw'
 import mig0028 from '../migrations/0028_field_ops.sql?raw'
 import mig0029 from '../migrations/0029_language_preference.sql?raw'
 import mig0030 from '../migrations/0030_plan_visits_v2.sql?raw'
+import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string }
@@ -273,7 +274,7 @@ const EMBEDDED_MIGRATIONS: Array<[string, string]> = [
   ['0024_recurring_plans.sql', mig0024], ['0025_onboarding.sql', mig0025],
   ['0026_reviews.sql', mig0026], ['0027_notifications.sql', mig0027],
   ['0028_field_ops.sql', mig0028], ['0029_language_preference.sql', mig0029],
-  ['0030_plan_visits_v2.sql', mig0030],
+  ['0030_plan_visits_v2.sql', mig0030], ['0031_assets_hub.sql', mig0031],
 ]
 async function ensureFullSchema(db: D1Database): Promise<void> {
   const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_full_v1' LIMIT 1").first<any>()
@@ -297,6 +298,27 @@ async function ensureFullSchema(db: D1Database): Promise<void> {
     } catch {}
   }
   await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_full_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+}
+
+// ── Assets Hub schema (migration 0031) — lazy-applied on first assets API hit ──
+let _assetsSchemaOk = false
+async function ensureAssetsSchema(db: D1Database): Promise<void> {
+  if (_assetsSchemaOk) return
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_assets_v1' LIMIT 1").first<any>()
+  if (flag) { _assetsSchemaOk = true; return }
+  const stmts = mig0031.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensureAssetsSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0031_assets_hub.sql', '0031_assets_hub.sql').run()
+  } catch {}
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_assets_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  _assetsSchemaOk = true
 }
 
 function secureToken(bytes = 32): string {
@@ -546,15 +568,16 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
     rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
-    foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
-    laborer: ['today','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+    foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
+    laborer: ['today','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
+    mechanic: ['today','fieldDashboard','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker'],
     view_only: ['today','pipeline'],
     // Legacy alias — D1 rows where role='field_supervisor' still resolve correctly
-    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode']
+    field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode']
   }
 
   let stages = defaultStages
@@ -1003,7 +1026,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
-      'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
       'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
       'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
@@ -1013,7 +1036,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
-      'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+      'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
       'settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     rep: ['gwDashboard','gwSales',
@@ -1023,15 +1046,16 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     estimator: ['gwDashboard','gwSales','today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
     foreman: ['gwDashboard','gwOperations','gwAdmin',
       'today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
-      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
       'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
       'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin'],
-    laborer: ['gwDashboard','gwOperations','today','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+    laborer: ['gwDashboard','gwOperations','today','fieldDashboard','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
+    mechanic: ['gwDashboard','gwOperations','today','fieldDashboard','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker'],
     view_only: ['gwDashboard','today','pipeline'],
     // Legacy alias — field_supervisor rows in D1 still get correct permissions
     field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
       'today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
-      'workOrderList','workOrderDetail','assetList','assetDetail',
+      'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
       'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
       'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin']
   }
@@ -1076,6 +1100,7 @@ async function sendInviteEmail(
     : role === 'foreman' ? 'Foreman'
     : role === 'field_supervisor' ? 'Foreman'
     : role === 'laborer' ? 'Laborer'
+    : role === 'mechanic' ? 'Mechanic'
     : role === 'view_only' ? 'View Only' : 'Sales Rep'
   const personalNote = message
     ? `<p style="font-size:15px;color:#b8bfb0;margin:0 0 24px;padding:16px;background:#1a2318;border-left:3px solid #4D8A86;border-radius:0 8px 8px 0;font-style:italic">"${message}"</p>`
@@ -1220,6 +1245,7 @@ app.get('/invite/:token', async (c) => {
     : rep.role === 'foreman' ? 'Foreman'
     : rep.role === 'field_supervisor' ? 'Foreman'
     : rep.role === 'laborer' ? 'Laborer'
+    : rep.role === 'mechanic' ? 'Mechanic'
     : rep.role === 'view_only' ? 'View Only' : 'Sales Rep'
 
   if (!rep) {
@@ -3161,6 +3187,338 @@ app.delete('/api/crews/:id', requireAuth, async (c) => {
   const crewId = c.req.param('id')
   await db.prepare(`UPDATE crews SET active=0, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(crewId, companyId).run()
   return c.json({ ok: true })
+})
+
+// ── ASSETS HUB (D1) ───────────────────────────────────────────────────────────
+// Unified equipment / maintenance / stock tracking. All roles with nav access
+// can read; writes allowed for admin, office_manager, division_manager,
+// mechanic, foreman (field logging: meter updates + service log entries).
+
+const ASSET_WRITE_ROLES = ['admin', 'office_manager', 'division_manager', 'mechanic']
+const ASSET_LOG_ROLES   = [...ASSET_WRITE_ROLES, 'foreman', 'field_supervisor', 'laborer']
+
+// GET /api/assets — all assets + service plans (joined client-side by asset_id)
+app.get('/api/assets', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const [assets, plans] = await Promise.all([
+    db.prepare(`SELECT * FROM assets WHERE company_id = ? AND active = 1 ORDER BY category, name`).bind(companyId).all(),
+    db.prepare(`SELECT * FROM asset_service_plans WHERE company_id = ? ORDER BY asset_id, sort_order`).bind(companyId).all(),
+  ])
+  return c.json({ ok: true, data: { assets: assets.results || [], plans: plans.results || [] } })
+})
+
+// POST /api/assets — create or update an asset (upsert by id)
+app.post('/api/assets', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const b: any = await c.req.json()
+  const id = b.id || ('ast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7))
+  const name = (b.name || '').trim()
+  if (!name) return c.json({ ok: false, error: 'Asset name required' }, 400)
+  await db.prepare(`
+    INSERT INTO assets (id, company_id, asset_tag, name, category, year, make, model, vin,
+      engine_notes, meter_type, current_meter, meter_updated_at, status, assigned_to, location, notes, active, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      asset_tag=excluded.asset_tag, name=excluded.name, category=excluded.category,
+      year=excluded.year, make=excluded.make, model=excluded.model, vin=excluded.vin,
+      engine_notes=excluded.engine_notes, meter_type=excluded.meter_type,
+      current_meter=excluded.current_meter, meter_updated_at=excluded.meter_updated_at,
+      status=excluded.status, assigned_to=excluded.assigned_to, location=excluded.location,
+      notes=excluded.notes, active=1, updated_at=datetime('now')
+  `).bind(
+    id, companyId, b.assetTag || b.asset_tag || '', name, b.category || 'equipment',
+    b.year ? Number(b.year) : null, b.make || '', b.model || '', b.vin || '',
+    b.engineNotes || b.engine_notes || '', b.meterType || b.meter_type || 'hours',
+    (b.currentMeter ?? b.current_meter) != null ? Number(b.currentMeter ?? b.current_meter) : null,
+    b.meterUpdatedAt || b.meter_updated_at || null,
+    b.status || 'active', b.assignedTo || b.assigned_to || '', b.location || '', b.notes || ''
+  ).run()
+  return c.json({ ok: true, data: { id } })
+})
+
+// PUT /api/assets/:id/meter — quick meter update (field roles allowed)
+app.put('/api/assets/:id/meter', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_LOG_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const id = c.req.param('id')
+  const b: any = await c.req.json()
+  const meter = Number(b.currentMeter ?? b.meter)
+  if (!isFinite(meter)) return c.json({ ok: false, error: 'Invalid meter value' }, 400)
+  const r = await db.prepare(`UPDATE assets SET current_meter=?, meter_updated_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(meter, id, companyId).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Asset not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/assets/:id — soft delete
+app.delete('/api/assets/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const assetId = c.req.param('id')
+  await db.prepare(`UPDATE assets SET active=0, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(assetId, companyId).run()
+  // Remove its service plans so they don't linger as orphans in list payloads
+  await db.prepare(`DELETE FROM asset_service_plans WHERE asset_id=? AND company_id=?`)
+    .bind(assetId, companyId).run()
+  return c.json({ ok: true })
+})
+
+// PUT /api/assets/:id/plans — replace all service plans for an asset
+app.put('/api/assets/:id/plans', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const assetId = c.req.param('id')
+  const b: any = await c.req.json()
+  const plans: any[] = Array.isArray(b.plans) ? b.plans : []
+  const stmts: D1PreparedStatement[] = [
+    db.prepare(`DELETE FROM asset_service_plans WHERE asset_id = ? AND company_id = ?`).bind(assetId, companyId)
+  ]
+  plans.forEach((p, i) => {
+    const pid = p.id || ('plan_' + Date.now() + '_' + i + '_' + Math.random().toString(36).slice(2, 5))
+    stmts.push(db.prepare(`
+      INSERT INTO asset_service_plans (id, company_id, asset_id, service_type, label, material_spec,
+        interval_meter, interval_months, last_date, last_meter, next_date, next_meter, sort_order, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+    `).bind(
+      pid, companyId, assetId, p.serviceType || p.service_type || 'custom',
+      p.label || '', p.materialSpec || p.material_spec || '',
+      p.intervalMeter != null ? Number(p.intervalMeter) : (p.interval_meter != null ? Number(p.interval_meter) : null),
+      p.intervalMonths != null ? Number(p.intervalMonths) : (p.interval_months != null ? Number(p.interval_months) : null),
+      p.lastDate || p.last_date || null,
+      (p.lastMeter ?? p.last_meter) != null ? Number(p.lastMeter ?? p.last_meter) : null,
+      p.nextDate || p.next_date || null,
+      (p.nextMeter ?? p.next_meter) != null ? Number(p.nextMeter ?? p.next_meter) : null,
+      i
+    ))
+  })
+  await db.batch(stmts)
+  return c.json({ ok: true })
+})
+
+// GET /api/assets/:id/log — service history for one asset
+app.get('/api/assets/:id/log', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const log = await db.prepare(`SELECT * FROM asset_service_log WHERE asset_id = ? AND company_id = ? ORDER BY performed_date DESC, created_at DESC LIMIT 200`)
+    .bind(c.req.param('id'), companyId).all()
+  return c.json({ ok: true, data: log.results || [] })
+})
+
+// GET /api/service-log — recent service activity across all assets
+app.get('/api/service-log', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const log = await db.prepare(`SELECT * FROM asset_service_log WHERE company_id = ? ORDER BY performed_date DESC, created_at DESC LIMIT 100`)
+    .bind(companyId).all()
+  return c.json({ ok: true, data: log.results || [] })
+})
+
+// POST /api/assets/:id/log — record a completed service (field roles allowed).
+// Also rolls the matching service plan forward (last/next date + meter).
+app.post('/api/assets/:id/log', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_LOG_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const assetId = c.req.param('id')
+  const b: any = await c.req.json()
+  const id = 'svc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+  const performedDate = b.performedDate || b.performed_date || new Date().toISOString().slice(0, 10)
+  const performedMeter = (b.performedMeter ?? b.performed_meter) != null ? Number(b.performedMeter ?? b.performed_meter) : null
+  await db.prepare(`
+    INSERT INTO asset_service_log (id, company_id, asset_id, plan_id, service_type, performed_date, performed_meter, performed_by, cost, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    id, companyId, assetId, b.planId || b.plan_id || null, b.serviceType || b.service_type || '',
+    performedDate, performedMeter, b.performedBy || b.performed_by || '',
+    b.cost != null ? Number(b.cost) : null, b.notes || ''
+  ).run()
+  // Roll the plan forward
+  const planId = b.planId || b.plan_id
+  if (planId) {
+    const plan = await db.prepare(`SELECT * FROM asset_service_plans WHERE id = ? AND company_id = ?`).bind(planId, companyId).first<any>()
+    if (plan) {
+      let nextDate: string | null = null
+      if (plan.interval_months) {
+        const d = new Date(performedDate + 'T12:00:00')
+        d.setMonth(d.getMonth() + Math.round(plan.interval_months))
+        nextDate = d.toISOString().slice(0, 10)
+      }
+      const nextMeter = (performedMeter != null && plan.interval_meter) ? performedMeter + plan.interval_meter : null
+      await db.prepare(`UPDATE asset_service_plans SET last_date=?, last_meter=?, next_date=?, next_meter=?, updated_at=datetime('now') WHERE id=?`)
+        .bind(performedDate, performedMeter, nextDate, nextMeter, planId).run()
+    }
+  }
+  // Update asset meter if provided and higher than current
+  if (performedMeter != null) {
+    await db.prepare(`UPDATE assets SET current_meter = CASE WHEN current_meter IS NULL OR current_meter < ? THEN ? ELSE current_meter END, meter_updated_at=datetime('now') WHERE id=? AND company_id=?`)
+      .bind(performedMeter, performedMeter, assetId, companyId).run()
+  }
+  return c.json({ ok: true, data: { id } })
+})
+
+// POST /api/assets/import-bulk — bulk import assets w/ service plans (spreadsheet import)
+app.post('/api/assets/import-bulk', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const b: any = await c.req.json()
+  const rows: any[] = Array.isArray(b.assets) ? b.assets : []
+  if (!rows.length) return c.json({ ok: false, error: 'No assets to import' }, 400)
+  if (rows.length > 500) return c.json({ ok: false, error: 'Max 500 assets per import' }, 400)
+  let imported = 0
+  for (const a of rows) {
+    const name = (a.name || '').trim()
+    if (!name) continue
+    const id = a.id || ('ast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7))
+    await db.prepare(`
+      INSERT INTO assets (id, company_id, asset_tag, name, category, year, make, model, vin,
+        engine_notes, meter_type, current_meter, status, assigned_to, location, notes, active, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=datetime('now')
+    `).bind(
+      id, companyId, a.assetTag || '', name, a.category || 'equipment',
+      a.year ? Number(a.year) : null, a.make || '', a.model || '', String(a.vin || ''),
+      a.engineNotes || '', a.meterType || 'hours',
+      a.currentMeter != null ? Number(a.currentMeter) : null,
+      a.status || 'active', a.assignedTo || '', a.location || '', a.notes || ''
+    ).run()
+    const plans: any[] = Array.isArray(a.plans) ? a.plans : []
+    for (let i = 0; i < plans.length; i++) {
+      const p = plans[i]
+      const pid = 'plan_' + Date.now() + '_' + imported + '_' + i + '_' + Math.random().toString(36).slice(2, 5)
+      await db.prepare(`
+        INSERT INTO asset_service_plans (id, company_id, asset_id, service_type, label, material_spec,
+          interval_meter, interval_months, last_date, last_meter, next_date, next_meter, sort_order)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).bind(
+        pid, companyId, id, p.serviceType || 'custom', p.label || '', p.materialSpec || '',
+        p.intervalMeter != null ? Number(p.intervalMeter) : null,
+        p.intervalMonths != null ? Number(p.intervalMonths) : null,
+        p.lastDate || null, p.lastMeter != null ? Number(p.lastMeter) : null,
+        p.nextDate || null, p.nextMeter != null ? Number(p.nextMeter) : null, i
+      ).run()
+    }
+    imported++
+  }
+  return c.json({ ok: true, data: { imported } })
+})
+
+// ── STOCK ITEMS (unified inventory + tools + consumables) ─────────────────────
+
+// GET /api/stock — all stock items
+app.get('/api/stock', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const items = await db.prepare(`SELECT * FROM stock_items WHERE company_id = ? AND active = 1 ORDER BY item_type, name`).bind(companyId).all()
+  return c.json({ ok: true, data: items.results || [] })
+})
+
+// POST /api/stock — create/update stock item (upsert by id)
+app.post('/api/stock', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const b: any = await c.req.json()
+  const id = b.id || ('stk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7))
+  const name = (b.name || '').trim()
+  if (!name) return c.json({ ok: false, error: 'Item name required' }, 400)
+  await db.prepare(`
+    INSERT INTO stock_items (id, company_id, name, item_type, on_hand, unit, reorder_at, vendor, location, unit_cost, notes, active, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, item_type=excluded.item_type, on_hand=excluded.on_hand,
+      unit=excluded.unit, reorder_at=excluded.reorder_at, vendor=excluded.vendor,
+      location=excluded.location, unit_cost=excluded.unit_cost, notes=excluded.notes,
+      active=1, updated_at=datetime('now')
+  `).bind(
+    id, companyId, name, b.itemType || b.item_type || 'material',
+    Number(b.onHand ?? b.on_hand ?? 0), b.unit || 'ea', Number(b.reorderAt ?? b.reorder_at ?? 0),
+    b.vendor || '', b.location || '', (b.unitCost ?? b.unit_cost) != null ? Number(b.unitCost ?? b.unit_cost) : null, b.notes || ''
+  ).run()
+  return c.json({ ok: true, data: { id } })
+})
+
+// PUT /api/stock/:id/qty — quick quantity adjust (field roles allowed)
+app.put('/api/stock/:id/qty', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_LOG_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const b: any = await c.req.json()
+  const qty = Number(b.onHand ?? b.qty)
+  if (!isFinite(qty) || qty < 0) return c.json({ ok: false, error: 'Invalid quantity' }, 400)
+  const r = await db.prepare(`UPDATE stock_items SET on_hand=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(qty, c.req.param('id'), companyId).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Item not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/stock/:id — soft delete
+app.delete('/api/stock/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  await db.prepare(`UPDATE stock_items SET active=0, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/stock/import-bulk — bulk import stock items
+app.post('/api/stock/import-bulk', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!ASSET_WRITE_ROLES.includes(role)) return c.json({ ok: false, error: 'Not permitted' }, 403)
+  const db = c.env.DB as D1Database
+  await ensureAssetsSchema(db)
+  const b: any = await c.req.json()
+  const rows: any[] = Array.isArray(b.items) ? b.items : []
+  if (!rows.length) return c.json({ ok: false, error: 'No items to import' }, 400)
+  if (rows.length > 1000) return c.json({ ok: false, error: 'Max 1000 items per import' }, 400)
+  const stmts: D1PreparedStatement[] = []
+  let n = 0
+  for (const it of rows) {
+    const name = (it.name || '').trim()
+    if (!name) continue
+    const id = it.id || ('stk_' + Date.now() + '_' + (n++) + '_' + Math.random().toString(36).slice(2, 5))
+    stmts.push(db.prepare(`
+      INSERT INTO stock_items (id, company_id, name, item_type, on_hand, unit, reorder_at, vendor, location, unit_cost, notes, active)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=datetime('now')
+    `).bind(
+      id, companyId, name, it.itemType || 'material', Number(it.onHand || 0), it.unit || 'ea',
+      Number(it.reorderAt || 0), it.vendor || '', it.location || '',
+      it.unitCost != null ? Number(it.unitCost) : null, it.notes || ''
+    ))
+  }
+  if (stmts.length) await db.batch(stmts)
+  return c.json({ ok: true, data: { imported: stmts.length } })
 })
 
 // ── ESTIMATES (D1) ────────────────────────────────────────────────────────────
@@ -5771,7 +6129,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b008">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -5795,8 +6153,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260715b004"></script>
-  <script src="/js/client_portal.js?v=20260715b004"></script>
+  <script src="/js/platform_core.js?v=20260715b008"></script>
+  <script src="/js/client_portal.js?v=20260715b008"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -6415,9 +6773,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260715b004">
-  <link rel="stylesheet" href="/js/styles.css?v=20260715b004">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260715b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260715b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260715b008">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -6965,34 +7323,35 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260715b004"></script>
-<script src="/js/db.js?v=20260715b004"></script>
-<script src="/js/data.js?v=20260715b004"></script>
-<script src="/js/reps.js?v=20260715b004"></script>
-<script src="/js/record-page.js?v=20260715b004"></script>
-<script src="/js/academy.js?v=20260715b004"></script>
-<script src="/js/task_engine.js?v=20260715b004"></script>
-<script src="/js/gw_i18n.js?v=20260715b004"></script>
-<script src="/js/app_premium.js?v=20260715b004"></script>
-<script src="/js/estimates.js?v=20260715b004"></script>
-<script src="/js/invoices.js?v=20260715b004"></script>
-<script src="/js/csv_import.js?v=20260715b004"></script>
-<script src="/js/onboarding.js?v=20260715b004"></script>
-<script src="/js/recurring_plans.js?v=20260715b004"></script>
-<script src="/js/reviews.js?v=20260715b004"></script>
-<script src="/js/stripe.js?v=20260715b004"></script>
-<script src="/js/email.js?v=20260715b004"></script>
-<script src="/js/notifications.js?v=20260715b004"></script>
-<script src="/js/integrations.js?v=20260715b004"></script>
-<script src="/js/user_management.js?v=20260715b004"></script>
-<script src="/js/platform_admin.js?v=20260715b004"></script>
-<script src="/js/time_tracker.js?v=20260715b004"></script>
-<script src="/js/field_workday.js?v=20260715b004"></script>
-<script src="/js/platform_core.js?v=20260715b004"></script>
-<script src="/js/approval_engine.js?v=20260715b004"></script>
-<script src="/js/automation_engine.js?v=20260715b004"></script>
-<script src="/js/client_portal.js?v=20260715b004"></script>
-<script src="/js/field_mode.js?v=20260715b004"></script>
+<script src="/js/gw-icons.js?v=20260715b008"></script>
+<script src="/js/db.js?v=20260715b008"></script>
+<script src="/js/data.js?v=20260715b008"></script>
+<script src="/js/reps.js?v=20260715b008"></script>
+<script src="/js/record-page.js?v=20260715b008"></script>
+<script src="/js/academy.js?v=20260715b008"></script>
+<script src="/js/task_engine.js?v=20260715b008"></script>
+<script src="/js/gw_i18n.js?v=20260715b008"></script>
+<script src="/js/app_premium.js?v=20260715b008"></script>
+<script src="/js/estimates.js?v=20260715b008"></script>
+<script src="/js/invoices.js?v=20260715b008"></script>
+<script src="/js/csv_import.js?v=20260715b008"></script>
+<script src="/js/onboarding.js?v=20260715b008"></script>
+<script src="/js/recurring_plans.js?v=20260715b008"></script>
+<script src="/js/reviews.js?v=20260715b008"></script>
+<script src="/js/stripe.js?v=20260715b008"></script>
+<script src="/js/email.js?v=20260715b008"></script>
+<script src="/js/notifications.js?v=20260715b008"></script>
+<script src="/js/integrations.js?v=20260715b008"></script>
+<script src="/js/user_management.js?v=20260715b008"></script>
+<script src="/js/platform_admin.js?v=20260715b008"></script>
+<script src="/js/time_tracker.js?v=20260715b008"></script>
+<script src="/js/field_workday.js?v=20260715b008"></script>
+<script src="/js/platform_core.js?v=20260715b008"></script>
+<script src="/js/approval_engine.js?v=20260715b008"></script>
+<script src="/js/automation_engine.js?v=20260715b008"></script>
+<script src="/js/client_portal.js?v=20260715b008"></script>
+<script src="/js/field_mode.js?v=20260715b008"></script>
+<script src="/js/assets_hub.js?v=20260715b008"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

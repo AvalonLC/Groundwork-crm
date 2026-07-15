@@ -111,6 +111,13 @@ const _GW_ES = {
   'Maintenance':        'Mantenimiento',
   'Inventory':          'Inventario',
   'Tools':              'Herramientas',
+  'Equipment':          'Equipos',
+  'Inventory & Tools':  'Inventario y Herramientas',
+  'Mechanic':           'Mecánico',
+  'Log Service':        'Registrar Servicio',
+  'Service Plan':       'Plan de Servicio',
+  'Service History':    'Historial de Servicio',
+  'Import / Export':    'Importar / Exportar',
   'Time Tracker':       'Control de Tiempo',
   'Timesheet Review':   'Revisión de Horas',
 

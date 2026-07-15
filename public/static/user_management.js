@@ -219,7 +219,34 @@ const _UM_ROLE_DEFS_DEFAULT = [
     scope: { sales: 'none', ops: 'self', financial: 'none', people: 'self' }
   },
 
-  // ── 7. VIEW ONLY ──────────────────────────────────────────────────────────
+  // ── 7. MECHANIC (equipment & maintenance specialist) ─────────────────────
+  {
+    id: 'mechanic',
+    label: 'Mechanic',
+    color: '#B8860B',
+    description: 'Equipment & maintenance specialist. Full access to the Assets hub — equipment records, service plans, maintenance logging, and inventory/parts management. No sales, financial, or admin access.',
+    defaultViews: ['today','fieldDashboard',
+      'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
+      'workOrderList','timeTracker','fieldMode'],
+    capabilities: {
+      can_create_lead: false, can_edit_lead: false,
+      can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: false, can_dispatch_crews: false,
+      can_edit_work_order: false, can_mark_work_order_complete: true,
+      can_edit_time: true, can_approve_time: false,
+      can_manage_assets: true, can_manage_inventory: true,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+      can_approve_requests: false, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
+    },
+    // Mechanic scope: shop-level ops — all equipment/inventory, own time only
+    scope: { sales: 'none', ops: 'crew', financial: 'none', people: 'self' }
+  },
+
+  // ── 8. VIEW ONLY ──────────────────────────────────────────────────────────
   {
     id: 'view_only',
     label: 'View Only',
@@ -333,6 +360,7 @@ function umBootstrapUsersFromReps() {
     r.role === 'foreman'          ? 'Foreman' :
     r.role === 'field_supervisor' ? 'Foreman' :
     r.role === 'laborer'          ? 'Laborer' :
+    r.role === 'mechanic'         ? 'Mechanic' :
     r.role === 'view_only'        ? 'View Only' : 'Sales Rep';
 
   const users = reps.map(r => ({
@@ -1273,6 +1301,7 @@ async function umRenderCrews(container) {
             <select class="rp-input" id="um-new-crew-emp-role" style="width:120px">
               <option value="laborer">Laborer</option>
               <option value="foreman">Foreman</option>
+              <option value="mechanic">Mechanic</option>
             </select>
             <button class="rp-btn-sm" onclick="umAddNewCrewMember()">Add</button>
           </div>
@@ -1449,6 +1478,7 @@ async function umRenderCrews(container) {
             <select class="rp-input" id="ec-emp-role" style="width:110px;font-size:13px">
               <option value="laborer">Laborer</option>
               <option value="foreman">Foreman</option>
+              <option value="mechanic">Mechanic</option>
             </select>
             <button class="rp-btn-sm" onclick="umEditCrewAddMember()">Add</button>
           </div>

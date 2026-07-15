@@ -48,6 +48,7 @@ const _VIEW_WORKSPACE_MAP = {
   recurringServices:'gwOperations', crewView:'gwOperations',
   gwRecurringPlans:'gwOperations',
   workOrderList:'gwOperations', workOrderDetail:'gwOperations',
+  assetsHub:'gwOperations',
   assetList:'gwOperations', assetDetail:'gwOperations',
   maintenanceQueue:'gwOperations', inventoryList:'gwOperations',
   materialAllocation:'gwOperations', toolsConsumables:'gwOperations',
@@ -257,7 +258,7 @@ const DEFAULT_NAV_PERMS = {
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
-    'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+    'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
@@ -271,7 +272,7 @@ const DEFAULT_NAV_PERMS = {
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
-    'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
+    'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
     'settings','userManagement','integrations','manager',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
@@ -291,7 +292,7 @@ const DEFAULT_NAV_PERMS = {
   division_manager: ['gwDashboard','gwOperations','gwAdmin',
     'today','fieldDashboard','myDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView',
-    'workOrderList','workOrderDetail','assetList','assetDetail',
+    'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
     'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
     'userManagement','gwFieldReports','gwAARTemplate','gwAARReview'],
@@ -299,18 +300,22 @@ const DEFAULT_NAV_PERMS = {
   foreman: ['gwDashboard','gwOperations',
     'fieldDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
-    'workOrderList','workOrderDetail','assetList','assetDetail',
+    'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
     'approvalQueue','fieldMode','gwTimesheetAdmin'],
   // Laborer: self-service field only — own schedule, assigned work orders, own time
-  laborer: ['gwDashboard','gwOperations','fieldDashboard','scheduleBoard','workOrderList','timeTracker','fieldMode'],
+  laborer: ['gwDashboard','gwOperations','fieldDashboard','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
+  // Mechanic: equipment & maintenance specialist — Assets hub is their home base
+  mechanic: ['gwDashboard','gwOperations','today','fieldDashboard',
+    'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
+    'workOrderList','timeTracker','fieldMode'],
   // View Only: conservative read-only dashboard + pipeline
   view_only: ['gwDashboard','today','pipeline'],
   // Legacy alias — field_supervisor rows in D1 resolve to foreman permissions
   field_supervisor: ['gwDashboard','gwOperations',
     'fieldDashboard',
     'scheduleBoard','dispatchBoard','recurringServices','crewView',
-    'workOrderList','workOrderDetail','assetList','assetDetail',
+    'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
     'approvalQueue','fieldMode','gwTimesheetAdmin']
 };
@@ -552,9 +557,10 @@ function fallbackCopy(text){
       scheduleBoard:'Schedule', dispatchBoard:'Dispatch',
       recurringServices:'Recurring Services', crewView:'Crew View',
       workOrderList:'Work Orders', workOrderDetail:'Work Order',
-      assetList:'Resources', assetDetail:'Asset', maintenanceQueue:'Resources',
-      inventoryList:'Resources', materialAllocation:'Resources',
-      toolsConsumables:'Resources', timeTracker:'Time', opsHub:'Operations',
+      assetsHub:'Assets',
+      assetList:'Assets', assetDetail:'Asset', maintenanceQueue:'Assets',
+      inventoryList:'Assets', materialAllocation:'Assets',
+      toolsConsumables:'Assets', timeTracker:'Time', opsHub:'Operations',
       // Admin workspace tabs
       settings:'Settings', userManagement:'Employees', integrations:'Settings',
       manager:'Workflow', systemConfig:'Settings',
@@ -639,8 +645,7 @@ const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
   Sales:       ['pipeline','lead','clients','estimates','communications'],
   Financial:   ['financialHub','invoices','gwReviews','gwStripe'],
-  Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker',
-                 'assetList','inventoryList','toolsConsumables','maintenanceQueue'],
+  Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Learning:    ['academy'],
   Admin:       ['settings','userManagement'],
 };
@@ -853,10 +858,7 @@ function _gwOpsNavConfig() {
     {id:'workOrderList',      label:'Work Orders'},
     {id:'recurringServices',  label:'Recurring Services'},
     {id:'gwRecurringPlans',   label:'Service Plans'},
-    {id:'assetList',          label:'Assets',      sub:true},
-    {id:'maintenanceQueue',   label:'Maintenance', sub:true},
-    {id:'inventoryList',      label:'Inventory',   sub:true},
-    {id:'toolsConsumables',   label:'Tools',       sub:true},
+    {id:'assetsHub',          label:'Assets'},
     {id:'timeTracker',        label:'Time Tracker'},
     {id:'gwTimesheetAdmin',   label:'Timesheet Review', sub:true},
     {id:'fieldMode',          label:'Field Preview',    sub:true},
@@ -871,11 +873,12 @@ function gwOperations(tab) {
   else if (tab === 'workOrderList')    (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
   else if (tab === 'recurringServices')(typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
   else if (tab === 'gwRecurringPlans') (typeof window.gwRecurringPlans==='function') ? window.gwRecurringPlans() : _gwTabStub('Service Plans');
-  else if (tab === 'gwResources')      gwResources('assetList');
-  else if (tab === 'assetList')        (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
-  else if (tab === 'maintenanceQueue') (typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
-  else if (tab === 'inventoryList')    (typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
-  else if (tab === 'toolsConsumables') (typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
+  else if (tab === 'gwResources')      (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : _gwTabStub('Assets');
+  else if (tab === 'assetsHub')        (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : _gwTabStub('Assets');
+  else if (tab === 'assetList')        (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : _gwTabStub('Assets');
+  else if (tab === 'maintenanceQueue') (typeof window.assetsHub==='function') ? window.assetsHub('maintenance') : _gwTabStub('Maintenance');
+  else if (tab === 'inventoryList')    (typeof window.assetsHub==='function') ? window.assetsHub('inventory') : _gwTabStub('Inventory');
+  else if (tab === 'toolsConsumables') (typeof window.assetsHub==='function') ? window.assetsHub('inventory') : _gwTabStub('Tools');
   else if (tab === 'timeTracker')      (typeof window.timeTracker==='function') ? window.timeTracker() : _gwTabStub('Time Tracker');
   else if (tab === 'gwTimesheetAdmin') (typeof window.gwTimesheetAdmin==='function') ? window.gwTimesheetAdmin() : _gwTabStub('Timesheet Review');
   else if (tab === 'fieldMode')        (typeof window.gwFieldPreview==='function') ? window.gwFieldPreview() : _gwTabStub('Field Preview');
@@ -942,16 +945,11 @@ window.gwFieldPreview = gwFieldPreview;
 
 // gwResources — legacy shim routes to direct Ops items (no longer a sub-workspace toggle)
 function gwResources(sub) {
-  sub = sub || 'assetList';
-  window._gwActiveSubTabs = {fn:'gwResources', sub};
-  window._gwPendingSubHeader = null;
-  _gwSetHeader('Operations', _gwOpsNavConfig(), sub);
-  activateNav(sub);
-  window._currentView = sub;
-  if (sub === 'assetList')            (typeof assetList==='function') ? assetList() : _gwTabStub('Assets');
-  else if (sub === 'maintenanceQueue')(typeof maintenanceQueue==='function') ? maintenanceQueue() : _gwTabStub('Maintenance');
-  else if (sub === 'inventoryList')   (typeof inventoryList==='function') ? inventoryList() : _gwTabStub('Inventory');
-  else if (sub === 'toolsConsumables')(typeof toolsConsumables==='function') ? toolsConsumables() : _gwTabStub('Tools');
+  // Legacy shim — all old Resources views now live in the unified Assets Hub
+  const tabMap = { assetList:'equipment', maintenanceQueue:'maintenance', inventoryList:'inventory', toolsConsumables:'inventory' };
+  const t = tabMap[sub] || 'equipment';
+  if (typeof window.assetsHub === 'function') window.assetsHub(t);
+  else _gwTabStub('Assets');
 }
 window.gwResources = gwResources;
 
@@ -1298,9 +1296,10 @@ function show(viewName='today', param){
       // Operations
       scheduleBoard:'Schedule', dispatchBoard:'Dispatch', recurringServices:'Recurring Services',
       crewView:'Crew View', workOrderList:'Work Orders', workOrderDetail:'Work Order',
-      assetList:'Resources', assetDetail:'Asset', maintenanceQueue:'Resources',
-      inventoryList:'Resources', materialAllocation:'Resources',
-      toolsConsumables:'Resources', timeTracker:'Time',
+      assetsHub:'Assets',
+      assetList:'Assets', assetDetail:'Asset', maintenanceQueue:'Assets',
+      inventoryList:'Assets', materialAllocation:'Assets',
+      toolsConsumables:'Assets', timeTracker:'Time',
       // Admin
       settings:'Settings', userManagement:'Employees', integrations:'Settings',
       manager:'Workflow', systemConfig:'Settings', systemTemplates:'Workflow',
@@ -1352,6 +1351,7 @@ function show(viewName='today', param){
     scheduleBoard:'Operations', dispatchBoard:'Operations',
     recurringServices:'Operations', crewView:'Operations',
     workOrderList:'Operations', workOrderDetail:'Operations',
+    assetsHub:'Operations',
     assetList:'Operations', assetDetail:'Operations',
     maintenanceQueue:'Operations', inventoryList:'Operations',
     materialAllocation:'Operations', toolsConsumables:'Operations',
@@ -1370,8 +1370,7 @@ function show(viewName='today', param){
     Operations: [
       {id:'scheduleBoard',label:'Schedule'},{id:'dispatchBoard',label:'Dispatch'},
       {id:'workOrderList',label:'Work Orders'},{id:'recurringServices',label:'Recurring Services'},
-      {id:'assetList',label:'Assets'},{id:'maintenanceQueue',label:'Maintenance'},
-      {id:'inventoryList',label:'Inventory'},{id:'toolsConsumables',label:'Tools'},
+      {id:'assetsHub',label:'Assets'},
       {id:'timeTracker',label:'Time Tracker'},{id:'gwTimesheetAdmin',label:'Timesheet Review'},
       {id:'fieldMode',label:'Field Preview'},
     ],
@@ -1391,7 +1390,7 @@ function show(viewName='today', param){
       else if (['integrations','systemConfig','gwWorkdaySettings','approvalQueue'].includes(viewName)) _tabHighlight = 'settings';
       else if (viewName === 'crewView')   _tabHighlight = 'scheduleBoard';
       else if (viewName === 'teamReports')_tabHighlight = 'teamView';
-      else if (viewName === 'assetDetail')_tabHighlight = 'assetList';
+      else if (['assetDetail','assetList','maintenanceQueue','inventoryList','toolsConsumables','materialAllocation'].includes(viewName)) _tabHighlight = 'assetsHub';
       // Communications-hub sections + their legacy aliases highlight the Communications tab
       else if (['templates','sequences','talkTracks','playbooks','aiAssist',
                 'automations','campaigns','scripts','objections','emailTemplates','ai'].includes(viewName)) _tabHighlight = 'communications';
@@ -1450,10 +1449,11 @@ function show(viewName='today', param){
     recurringServices:   ()   => recurringServices(),
     workOrderList:       ()   => workOrderList(),
     workOrderDetail:     (id) => workOrderDetail(id),
-    assetList:           ()   => assetList(),
-    assetDetail:         (id) => assetDetail(id),
-    maintenanceQueue:    ()   => maintenanceQueue(),
-    inventoryList:       ()   => inventoryList(),
+    assetsHub:           (tab)=> (typeof window.assetsHub==='function') ? window.assetsHub(tab||'equipment') : assetList(),
+    assetList:           ()   => (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : assetList(),
+    assetDetail:         (id) => (typeof window.ahAssetDetail==='function') ? window.ahAssetDetail(id) : assetDetail(id),
+    maintenanceQueue:    ()   => (typeof window.assetsHub==='function') ? window.assetsHub('maintenance') : maintenanceQueue(),
+    inventoryList:       ()   => (typeof window.assetsHub==='function') ? window.assetsHub('inventory') : inventoryList(),
     materialAllocation:  (id) => materialAllocation(id),
   };
   // Phase 7 routes — Full IA Restructure
@@ -1471,7 +1471,7 @@ function show(viewName='today', param){
     financialActivity:  ()   => financialActivity(),
     // Operations
     crewView:           ()   => crewView(),
-    toolsConsumables:   ()   => toolsConsumables(),
+    toolsConsumables:   ()   => (typeof window.assetsHub==='function') ? window.assetsHub('inventory') : toolsConsumables(),
     // Reports
     salesReports:       ()   => salesReports(),
     financialReports:   ()   => financialReports(),
@@ -1556,7 +1556,7 @@ function show(viewName='today', param){
     'process','forms','scripts','emailTemplates','objections','calculator'];
   const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
   const opsAliases   = ['dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
-    'assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
+    'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables'];
   const adminAliases = ['userManagement','integrations','manager','systemConfig','systemTemplates',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'];
   // Alias redirect: open workspace shell, then let the workspace render the right tab
