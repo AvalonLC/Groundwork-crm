@@ -613,10 +613,10 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
-    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
-    estimator: ['today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    estimator: ['today','pipeline','clients','properties','estimates','proposals','calculator','forms','playbooks'],
     foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
     laborer: ['today','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
     mechanic: ['today','fieldDashboard','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker'],
@@ -1066,7 +1066,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
     admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
-      'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates',
+      'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
       'communications','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
@@ -1076,7 +1076,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
       'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
-      'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates',
+      'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
       'communications','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
@@ -1085,10 +1085,10 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
       'settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     rep: ['gwDashboard','gwSales',
-      'today','myDashboard','pipeline','lead','clients','properties','estimates',
+      'today','myDashboard','pipeline','lead','clients','properties','estimates','proposals',
       'communications','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
-    estimator: ['gwDashboard','gwSales','today','pipeline','clients','properties','estimates','calculator','forms','playbooks'],
+    estimator: ['gwDashboard','gwSales','today','pipeline','clients','properties','estimates','proposals','calculator','forms','playbooks'],
     foreman: ['gwDashboard','gwOperations','gwAdmin',
       'today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
@@ -7052,7 +7052,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b018">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b019">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7076,8 +7076,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b018"></script>
-  <script src="/js/client_portal.js?v=20260716b018"></script>
+  <script src="/js/platform_core.js?v=20260716b019"></script>
+  <script src="/js/client_portal.js?v=20260716b019"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7707,9 +7707,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b018">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b018">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b018">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b019">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b019">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b019">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8257,36 +8257,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b018"></script>
-<script src="/js/db.js?v=20260716b018"></script>
-<script src="/js/data.js?v=20260716b018"></script>
-<script src="/js/reps.js?v=20260716b018"></script>
-<script src="/js/record-page.js?v=20260716b018"></script>
-<script src="/js/academy.js?v=20260716b018"></script>
-<script src="/js/task_engine.js?v=20260716b018"></script>
-<script src="/js/gw_i18n.js?v=20260716b018"></script>
-<script src="/js/app_premium.js?v=20260716b018"></script>
-<script src="/js/estimates.js?v=20260716b018"></script>
-<script src="/js/proposals.js?v=20260716b018"></script>
-<script src="/js/invoices.js?v=20260716b018"></script>
-<script src="/js/csv_import.js?v=20260716b018"></script>
-<script src="/js/onboarding.js?v=20260716b018"></script>
-<script src="/js/recurring_plans.js?v=20260716b018"></script>
-<script src="/js/reviews.js?v=20260716b018"></script>
-<script src="/js/stripe.js?v=20260716b018"></script>
-<script src="/js/email.js?v=20260716b018"></script>
-<script src="/js/notifications.js?v=20260716b018"></script>
-<script src="/js/integrations.js?v=20260716b018"></script>
-<script src="/js/user_management.js?v=20260716b018"></script>
-<script src="/js/platform_admin.js?v=20260716b018"></script>
-<script src="/js/time_tracker.js?v=20260716b018"></script>
-<script src="/js/field_workday.js?v=20260716b018"></script>
-<script src="/js/platform_core.js?v=20260716b018"></script>
-<script src="/js/approval_engine.js?v=20260716b018"></script>
-<script src="/js/automation_engine.js?v=20260716b018"></script>
-<script src="/js/client_portal.js?v=20260716b018"></script>
-<script src="/js/field_mode.js?v=20260716b018"></script>
-<script src="/js/assets_hub.js?v=20260716b018"></script>
+<script src="/js/gw-icons.js?v=20260716b019"></script>
+<script src="/js/db.js?v=20260716b019"></script>
+<script src="/js/data.js?v=20260716b019"></script>
+<script src="/js/reps.js?v=20260716b019"></script>
+<script src="/js/record-page.js?v=20260716b019"></script>
+<script src="/js/academy.js?v=20260716b019"></script>
+<script src="/js/task_engine.js?v=20260716b019"></script>
+<script src="/js/gw_i18n.js?v=20260716b019"></script>
+<script src="/js/app_premium.js?v=20260716b019"></script>
+<script src="/js/estimates.js?v=20260716b019"></script>
+<script src="/js/proposals.js?v=20260716b019"></script>
+<script src="/js/invoices.js?v=20260716b019"></script>
+<script src="/js/csv_import.js?v=20260716b019"></script>
+<script src="/js/onboarding.js?v=20260716b019"></script>
+<script src="/js/recurring_plans.js?v=20260716b019"></script>
+<script src="/js/reviews.js?v=20260716b019"></script>
+<script src="/js/stripe.js?v=20260716b019"></script>
+<script src="/js/email.js?v=20260716b019"></script>
+<script src="/js/notifications.js?v=20260716b019"></script>
+<script src="/js/integrations.js?v=20260716b019"></script>
+<script src="/js/user_management.js?v=20260716b019"></script>
+<script src="/js/platform_admin.js?v=20260716b019"></script>
+<script src="/js/time_tracker.js?v=20260716b019"></script>
+<script src="/js/field_workday.js?v=20260716b019"></script>
+<script src="/js/platform_core.js?v=20260716b019"></script>
+<script src="/js/approval_engine.js?v=20260716b019"></script>
+<script src="/js/automation_engine.js?v=20260716b019"></script>
+<script src="/js/client_portal.js?v=20260716b019"></script>
+<script src="/js/field_mode.js?v=20260716b019"></script>
+<script src="/js/assets_hub.js?v=20260716b019"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

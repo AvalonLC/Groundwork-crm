@@ -34,7 +34,7 @@ const _VIEW_WORKSPACE_MAP = {
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', customerDetail:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
   // Learning workspace
   gwLearning:'gwLearning', academy:'gwLearning', learnEstimating:'gwLearning', learnFinancial:'gwLearning', learnCrmGuide:'gwLearning',
-  estimates:'gwSales', communications:'gwSales', templates:'gwSales',
+  estimates:'gwSales', proposals:'gwSales', communications:'gwSales', templates:'gwSales',
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
   aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
   process:'gwSales', forms:'gwSales', scripts:'gwSales', emailTemplates:'gwSales',
@@ -252,7 +252,7 @@ const DEFAULT_NAV_PERMS = {
   // Admin: all views — bypasses gate anyway but listed for completeness
   admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
-    'pipeline','lead','clients','properties','estimates',
+    'pipeline','lead','clients','properties','estimates','proposals',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
@@ -266,7 +266,7 @@ const DEFAULT_NAV_PERMS = {
   // Office Manager: everything except system-level admin settings
   office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
-    'pipeline','lead','clients','properties','estimates',
+    'pipeline','lead','clients','properties','estimates','proposals',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
@@ -280,13 +280,13 @@ const DEFAULT_NAV_PERMS = {
   // Sales Rep: full sales workflow + learning
   rep: ['gwDashboard','gwSales','gwLearning',
     'today','myDashboard',
-    'pipeline','lead','clients','properties','estimates',
+    'pipeline','lead','clients','properties','estimates','proposals',
     'communications','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai',
     'academy','learnEstimating','learnFinancial','learnCrmGuide'],
   // Estimator: quote/pricing specialist + learning
   estimator: ['gwDashboard','gwSales','gwLearning',
-    'today','pipeline','clients','properties','estimates','calculator','forms','playbooks',
+    'today','pipeline','clients','properties','estimates','proposals','calculator','forms','playbooks',
     'academy','learnEstimating','learnCrmGuide'],
   // Division Manager: all operations in their division, no sales/financial
   division_manager: ['gwDashboard','gwOperations','gwAdmin',
@@ -543,7 +543,7 @@ function fallbackCopy(text){
       teamReports:'Team',
       // Sales workspace tabs
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
-      estimates:'Estimates', communications:'Communications',
+      estimates:'Estimates', proposals:'Proposals', communications:'Communications',
       automations:'Sequences', templates:'Templates', sequences:'Sequences',
       talkTracks:'Talk Tracks', playbooks:'Playbooks', aiAssist:'AI Assist',
       campaigns:'Sequences', process:'Playbooks',
@@ -643,7 +643,7 @@ const _gwWsNameToId = {
 // the mobile nav. Keep lists small: only what you'd realistically use in the field.
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
-  Sales:       ['pipeline','lead','clients','estimates','communications'],
+  Sales:       ['pipeline','lead','clients','estimates','proposals','communications'],
   Financial:   ['financialHub','invoices','gwReviews','gwStripe'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Learning:    ['academy'],
@@ -718,6 +718,7 @@ function gwSales(tab) {
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
+    {id:'proposals',      label:'Proposals'},
     {id:'communications', label:'Communications'},
   ], _GW_COMMS_HUB_TABS.includes(tab) ? 'communications' : tab);
   if (tab === 'pipeline')            pipeline();
@@ -725,6 +726,7 @@ function gwSales(tab) {
   else if (tab === 'clients')        clients();
   else if (tab === 'teamView')       (typeof teamView==='function') ? teamView() : _gwTabStub('Team');
   else if (tab === 'estimates')      (typeof estimates==='function') ? estimates() : ((typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates'));
+  else if (tab === 'proposals')      (typeof proposals==='function') ? proposals() : _gwTabStub('Proposals');
   else if (_GW_COMMS_HUB_TABS.includes(tab)) communicationsHub(tab);
   else if (tab === 'gwRecords')      lead();
   else pipeline();
@@ -777,6 +779,7 @@ function communicationsHub(section) {
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
+    {id:'proposals',      label:'Proposals'},
     {id:'communications', label:'Communications'},
   ], 'communications');
   activateNav('communications');
@@ -1107,6 +1110,7 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
+    {id:'proposals',      label:'Proposals'},
     {id:'communications', label:'Communications'},
   ], null);
 
@@ -1284,7 +1288,7 @@ function show(viewName='today', param){
       academy:'Sales Academy', learnEstimating:'Estimating 101', learnFinancial:'Financial Literacy', learnCrmGuide:'CRM Guide',
       // Sales
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
-      estimates:'Estimates', communications:'Communications', automations:'Sequences',
+      estimates:'Estimates', proposals:'Proposals', communications:'Communications', automations:'Sequences',
       templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
       playbooks:'Playbooks', aiAssist:'AI Assist',
       campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
@@ -1338,7 +1342,7 @@ function show(viewName='today', param){
     pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales', teamReports:'Sales',
     // Learning workspace tab aliases
     academy:'Learning', learnEstimating:'Learning', learnFinancial:'Learning', learnCrmGuide:'Learning',
-    estimates:'Sales', communications:'Sales', templates:'Sales',
+    estimates:'Sales', proposals:'Sales', communications:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
     scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
@@ -1364,7 +1368,7 @@ function show(viewName='today', param){
   };
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
-    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'proposals',label:'Proposals'},{id:'communications',label:'Communications'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [
@@ -1436,6 +1440,7 @@ function show(viewName='today', param){
   const p5Route = {
     financialHub,
     estimates:      (id) => id ? estimateDetail(id) : estimates(),
+    proposals:      (id) => id ? proposalBuilder(id) : proposals(),
     invoices:       (id) => (typeof window.gwInvoices === 'function') ? window.gwInvoices(id) : invoiceDetail(id),
     statement:      (id) => accountStatement(id),
     communications: ()   => communicationsBoard(),
@@ -1551,7 +1556,7 @@ function show(viewName='today', param){
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
   const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports'];
-  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','communications','templates',
+  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','proposals','communications','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
     'process','forms','scripts','emailTemplates','objections','calculator'];
   const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
