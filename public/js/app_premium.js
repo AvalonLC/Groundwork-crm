@@ -2042,13 +2042,70 @@ const _GW_MYDAY_WIDGETS = [
   { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml },
   { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads with no activity in 7+ days',             span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.staleLeadsHtml },
   { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml },
+  // ── Owner-operator widgets (async — loaded after render) ──────────────────
+  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from My Day', span:2, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
+  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>` },
+  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:2, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
+  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue and paid-this-month invoice totals', span:2, allowed:c=>c.showFin,     defaultOff:true, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
 ];
+
+/* ── My Day "Day Modes" — preset widget templates ────────────────────────────
+   An owner-operator's day isn't always the same day: some days they're on the
+   tools (need time clock + job lineup), some days they're running the office
+   (need financials + receivables). Modes are one-click preset layouts; the
+   user's own custom layout ("My Layout") is stored separately and never
+   touched by switching modes. */
+const _GW_MYDAY_MODES = [
+  { id:'custom', label:'My Layout', icon:'\u2B50',
+    desc:'Your own saved widget layout' },
+  { id:'field',  label:'Field Day', icon:'\uD83D\uDEE0\uFE0F',
+    desc:'On the tools today — time clock, job lineup, tasks and crew hours',
+    order:['clock','jobsToday','tasks','crewHours'],
+    spans:{ clock:2, jobsToday:4, tasks:4, crewHours:2 } },
+  { id:'office', label:'Office Day', icon:'\uD83D\uDCCA',
+    desc:'Running the business — financial pulse, money owed, follow-ups and wins',
+    order:['pipeStrip','finance','arSnapshot','tasks','staleLeads','recentWins'],
+    spans:{ pipeStrip:6, finance:3, arSnapshot:3, tasks:4, staleLeads:2, recentWins:6 } },
+  { id:'sales',  label:'Sales Day', icon:'\uD83D\uDCDE',
+    desc:'Filling the pipeline — leads, proposals, daily start-up and activity targets',
+    order:['pipeStrip','tasks','checklist','recent','staleLeads','activity'],
+    spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 } },
+];
+function _gwMyDayModeKey(){
+  let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
+  return 'gw-myday-mode-' + ((r && r.id) || 'anon');
+}
+function _gwMyDayGetMode(){
+  try {
+    const m = localStorage.getItem(_gwMyDayModeKey());
+    return _GW_MYDAY_MODES.some(x => x.id === m) ? m : 'custom';
+  } catch(e) { return 'custom'; }
+}
+window.gwMyDaySetMode = function(id){
+  if (!_GW_MYDAY_MODES.some(x => x.id === id)) return;
+  try { localStorage.setItem(_gwMyDayModeKey(), id); } catch(e) {}
+  window._gwMyDayEditing = false; window._gwMyDayLibOpen = false;
+  _gwTodayRender();
+  const m = _GW_MYDAY_MODES.find(x => x.id === id);
+  if (typeof showToast === 'function' && m) showToast(id === 'custom' ? 'Back to your layout' : m.label + ' mode');
+};
 function _gwMyDayLayoutKey(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
   return 'gw-myday-layout-' + ((r && r.id) || 'anon');
 }
 function _gwMyDayResolveLayout(ctx){
   const avail = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => w.id);
+  // ── Day mode templates: preset order/spans, everything else hidden ────────
+  const modeId = _gwMyDayGetMode();
+  if (modeId !== 'custom' && !window._gwMyDayEditing) {
+    const mode = _GW_MYDAY_MODES.find(m => m.id === modeId);
+    if (mode) {
+      const order  = mode.order.filter(id => avail.includes(id));
+      avail.forEach(id => { if (!order.includes(id)) order.push(id); });
+      const hidden = avail.filter(id => !mode.order.includes(id));
+      return { order, hidden, spans: Object.assign({}, mode.spans), heights: {}, mode: modeId };
+    }
+  }
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || 'null'); } catch(e) {}
   const order = [];
@@ -2138,7 +2195,14 @@ function _gwMyDayLibraryPanel(ctx, layout){
     <div class="gw-myday-lib-grid">${items}</div>
   </div>`;
 }
-window.gwMyDayCustomize = function(){ window._gwMyDayEditing = true; _gwTodayRender(); };
+window.gwMyDayCustomize = function(){
+  // Customizing always edits YOUR layout — presets are fixed templates.
+  if (_gwMyDayGetMode() !== 'custom') {
+    try { localStorage.setItem(_gwMyDayModeKey(), 'custom'); } catch(e) {}
+    if (typeof showToast === 'function') showToast('Editing your own layout (presets are fixed)');
+  }
+  window._gwMyDayEditing = true; _gwTodayRender();
+};
 window.gwMyDayDone = function(){
   window._gwMyDayEditing = false; window._gwMyDayLibOpen = false; _gwTodayRender();
   if (typeof showToast === 'function') showToast('My Day layout saved');
@@ -2266,6 +2330,177 @@ function _gwMyDayBindResize(grid){
   });
 }
 
+/* ── Owner-operator My Day widget loaders (async, mount-guarded) ───────────── */
+function _gwMyDayLoadOwnerWidgets(rep){
+  const _fmt$ = n => Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
+
+  // 1) Time Clock — big clock in/out card wired to the time tracker API
+  const clockMount = document.getElementById('gw-myday-clock-mount');
+  if (clockMount) {
+    const paint = () => {
+      const m = document.getElementById('gw-myday-clock-mount'); if (!m) return;
+      const entry = window._ttState && window._ttState.activeEntry;
+      const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+      m.innerHTML = `<section class="card"><div class="section-head"><h2>Time Clock</h2>
+        <button class="secondary-btn small" onclick="show('timeTracker')" style="font-size:11px">Timesheet</button></div>
+        ${entry ? `
+          <div class="gw-myday-clock gw-myday-clock--in">
+            <div class="gw-myday-clock-live"><span class="gw-myday-clock-dot"></span>Clocked in · ${el(entry.job_type || 'General Work')}</div>
+            <div class="gw-myday-clock-timer" id="gw-myday-clock-elapsed">--:--:--</div>
+            <button class="gw-myday-clock-btn gw-myday-clock-btn--out" onclick="_gwMyDayClockOut()">Clock Out</button>
+          </div>` : `
+          <div class="gw-myday-clock">
+            <div class="gw-myday-clock-timer gw-myday-clock-timer--idle">00:00:00</div>
+            <div class="muted" style="font-size:12px;margin:2px 0 10px">Not clocked in</div>
+            <button class="gw-myday-clock-btn" onclick="_gwMyDayClockIn()">Clock In</button>
+          </div>`}
+      </section>`;
+      if (window._gwMyDayClockTick) clearInterval(window._gwMyDayClockTick);
+      if (entry) {
+        const tick = () => {
+          const t = document.getElementById('gw-myday-clock-elapsed');
+          if (!t) { clearInterval(window._gwMyDayClockTick); return; }
+          const s = Math.max(0, Math.floor((Date.now() - new Date(entry.clock_in).getTime())/1000));
+          t.textContent = `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+        };
+        tick(); window._gwMyDayClockTick = setInterval(tick, 1000);
+      }
+    };
+    window._gwMyDayClockPaint = paint;
+    if (window._ttState && window._ttState.activeEntry !== undefined && window._ttState._loadedOnce) paint();
+    fetch('/api/time/active', { credentials:'include' }).then(r=>r.json()).then(j => {
+      window._ttState = window._ttState || {};
+      window._ttState.activeEntry = (j.ok && j.data) ? j.data : null;
+      window._ttState._loadedOnce = true;
+      paint();
+    }).catch(paint);
+  } else if (window._gwMyDayClockTick) { clearInterval(window._gwMyDayClockTick); window._gwMyDayClockTick = null; }
+
+  // 2) Today's Jobs — work orders scheduled for today + next few days
+  const jobsMount = document.getElementById('gw-myday-jobs-mount');
+  if (jobsMount) {
+    const today = todayISO();
+    const ahead = new Date(Date.now() + 6*86400000).toISOString().slice(0,10);
+    fetch(`/api/work-orders?date_from=${today}&date_to=${ahead}&limit=30`, { credentials:'include' })
+      .then(r=>r.json()).then(j => {
+        const m = document.getElementById('gw-myday-jobs-mount'); if (!m) return;
+        const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+        const wos = ((j.ok && j.data) || []).filter(w => !['cancelled','completed'].includes(w.status))
+          .sort((a,b) => (a.scheduled_date||'').localeCompare(b.scheduled_date||'') || (a.scheduled_time||'').localeCompare(b.scheduled_time||''));
+        const todayJobs = wos.filter(w => w.scheduled_date === today);
+        const upcoming  = wos.filter(w => w.scheduled_date > today).slice(0, 4);
+        const row = w => `
+          <div class="gw-myday-job-row" onclick="show('workOrderDetail','${el(w.id)}')">
+            <span class="gw-myday-job-dot" style="background:${el(w.crew_color || '#4D8A86')}"></span>
+            <div class="gw-myday-job-info">
+              <strong>${el(w.client_name || w.title || w.wo_number)}</strong>
+              <span>${el([w.scheduled_time, w.title !== w.client_name ? w.title : '', w.crew_name].filter(Boolean).join(' · ') || w.wo_number)}</span>
+            </div>
+            <span class="gw-myday-job-status gw-myday-job-status--${el(w.status)}">${el((w.status||'').replace('-',' '))}</span>
+          </div>`;
+        m.innerHTML = `<section class="card"><div class="section-head"><h2>Today's Jobs</h2>
+          ${todayJobs.length ? `<span class="badge">${todayJobs.length}</span>` : ''}
+          <button class="secondary-btn small" onclick="show('scheduleBoard')" style="margin-left:auto;font-size:11px">Schedule</button></div>
+          ${todayJobs.length ? todayJobs.map(row).join('') : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`}
+          ${upcoming.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcoming.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
+        </section>`;
+      }).catch(()=>{});
+  }
+
+  // 3) Crew Hours Today — who's clocked in + hours logged (admin/OM only)
+  const crewMount = document.getElementById('gw-myday-crew-mount');
+  if (crewMount) {
+    const today = todayISO();
+    fetch(`/api/time/team-summary?from=${today}&to=${today}`, { credentials:'include' })
+      .then(r=>r.json()).then(j => {
+        const m = document.getElementById('gw-myday-crew-mount'); if (!m) return;
+        const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+        const reps = (j.ok && j.data) || [];
+        const fmtH = min => (min/60).toFixed(1) + 'h';
+        const rows = reps.map(r => {
+          const live = (r.entries||[]).some(e => !e.clock_out);
+          const liveMin = (r.entries||[]).reduce((s,e) => s + (e.clock_out ? 0 : Math.floor((Date.now()-new Date(e.clock_in).getTime())/60000)), 0);
+          return `<div class="gw-myday-crew-row">
+            <span class="gw-myday-crew-dot" style="background:${el(r.rep_color||'#4D8A86')}"></span>
+            <strong>${el(r.rep_name)}</strong>
+            ${live ? '<span class="gw-myday-crew-live">● live</span>' : ''}
+            <span class="gw-myday-crew-hrs">${fmtH((r.total_min||0) + liveMin)}</span>
+          </div>`;
+        }).join('');
+        m.innerHTML = `<section class="card"><div class="section-head"><h2>Crew Hours Today</h2>
+          <button class="secondary-btn small" onclick="show('gwTimesheetAdmin')" style="font-size:11px">Review</button></div>
+          ${rows || `<div class="gw-myday-placeholder">No hours logged yet today.</div>`}
+        </section>`;
+      }).catch(()=>{});
+  }
+
+  // 4) Money Owed (A/R) — outstanding / overdue / paid MTD
+  const arMount = document.getElementById('gw-myday-ar-mount');
+  if (arMount) {
+    fetch('/api/invoices?limit=500', { credentials:'include' })
+      .then(r=>r.json()).then(list => {
+        const m = document.getElementById('gw-myday-ar-mount'); if (!m) return;
+        const invs = Array.isArray(list) ? list : ((list && list.data) || []);
+        const today = todayISO(), mo = today.slice(0,7);
+        const isOpen = i => ['sent','viewed','partial','overdue'].includes(i.status);
+        const open    = invs.filter(isOpen);
+        const overdue = open.filter(i => i.status === 'overdue' || (i.due_date && i.due_date < today));
+        const owed    = open.reduce((s,i) => s + Number(i.balance_due != null ? i.balance_due : i.total || 0), 0);
+        const odAmt   = overdue.reduce((s,i) => s + Number(i.balance_due != null ? i.balance_due : i.total || 0), 0);
+        const paidMTD = invs.filter(i => i.status === 'paid' && (i.paid_at||'').slice(0,7) === mo)
+                            .reduce((s,i) => s + Number(i.amount_paid || i.total || 0), 0);
+        m.innerHTML = `<section class="card"><div class="section-head"><h2>Money Owed</h2>
+          <button class="secondary-btn small" onclick="show('invoices')" style="font-size:11px">Invoices</button></div>
+          <div class="gw-myday-ar-grid">
+            <div class="gw-myday-ar-cell" onclick="show('invoices')">
+              <span class="gw-myday-ar-label">Outstanding</span>
+              <span class="gw-myday-ar-val">${_fmt$(owed)}</span>
+              <span class="gw-myday-ar-sub">${open.length} open invoice${open.length===1?'':'s'}</span>
+            </div>
+            <div class="gw-myday-ar-cell${odAmt ? ' gw-myday-ar-cell--bad' : ''}" onclick="show('invoices')">
+              <span class="gw-myday-ar-label">Overdue</span>
+              <span class="gw-myday-ar-val">${_fmt$(odAmt)}</span>
+              <span class="gw-myday-ar-sub">${overdue.length} invoice${overdue.length===1?'':'s'}</span>
+            </div>
+            <div class="gw-myday-ar-cell gw-myday-ar-cell--good">
+              <span class="gw-myday-ar-label">Paid this month</span>
+              <span class="gw-myday-ar-val">${_fmt$(paidMTD)}</span>
+            </div>
+          </div>
+        </section>`;
+      }).catch(()=>{});
+  }
+}
+window._gwMyDayClockIn = async function(){
+  try {
+    const res = await fetch('/api/time/clock-in', { method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({ jobType:'General Work' }) });
+    const j = await res.json();
+    if (j.ok) {
+      window._ttState = window._ttState || {};
+      window._ttState.activeEntry = { id: j.data.id, clock_in: j.data.clock_in, job_type: 'General Work' };
+      if (typeof showToast === 'function') showToast('Clocked in');
+      if (typeof ttRenderSidebarWidget === 'function') ttRenderSidebarWidget();
+    } else if (typeof showToast === 'function') showToast(j.error || 'Could not clock in');
+  } catch(e) { if (typeof showToast === 'function') showToast('Network error'); }
+  if (window._gwMyDayClockPaint) window._gwMyDayClockPaint();
+};
+window._gwMyDayClockOut = async function(){
+  const entry = window._ttState && window._ttState.activeEntry;
+  if (!entry) return;
+  try {
+    const res = await fetch(`/api/time/clock-out/${entry.id}`, { method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+    const j = await res.json();
+    if (j.ok) {
+      window._ttState.activeEntry = null;
+      if (typeof showToast === 'function') showToast('Clocked out');
+      if (typeof ttRenderSidebarWidget === 'function') ttRenderSidebarWidget();
+    } else if (typeof showToast === 'function') showToast(j.error || 'Could not clock out');
+  } catch(e) { if (typeof showToast === 'function') showToast('Network error'); }
+  if (window._gwMyDayClockPaint) window._gwMyDayClockPaint();
+};
+
 function _gwTodayRender() {
   // Fall back to _d1SessionRep if getCurrentRep() returns null (e.g. page
   // reload before localStorage key was written by bootstrapD1Auth).
@@ -2347,6 +2582,18 @@ function _gwTodayRender() {
     return;
   }
 
+  // Day-mode switcher (owner-operator presets) — field roles keep their own dashboard
+  const _curMode = _gwMyDayGetMode();
+  const _modeBar = _isField ? '' : `
+    <div class="gw-myday-modes" role="tablist" aria-label="My Day layout mode">
+      ${_GW_MYDAY_MODES.map(m => `
+        <button class="gw-myday-mode-pill${_curMode === m.id ? ' gw-myday-mode-pill--on' : ''}"
+          role="tab" aria-selected="${_curMode === m.id}"
+          onclick="gwMyDaySetMode('${m.id}')" title="${escapeHtml(m.desc || '')}">
+          <span class="gw-myday-mode-ic">${m.icon}</span>${m.label}
+        </button>`).join('')}
+    </div>`;
+
   // Hero header
   const _heroBlock = `
     <div class="pl-page-header">
@@ -2355,6 +2602,7 @@ function _gwTodayRender() {
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
+        ${_modeBar}
         ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize My Day widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
       </div>
     </div>`;
@@ -2424,6 +2672,8 @@ function _gwTodayRender() {
   if ((_isAdmin || _isOM) && typeof window.gwReviewsWidget === 'function') {
     setTimeout(() => window.gwReviewsWidget('gw-reviews-widget-mount'), 400);
   }
+  // Async: owner-operator widgets (only fetch if their mounts are on screen)
+  _gwMyDayLoadOwnerWidgets(_todayRep);
 
   // Load tasks from D1 async, then re-render the task workspace in place.
   // Guard: skip the re-fetch if a task was just completed within the last 3s —

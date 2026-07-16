@@ -14686,6 +14686,109 @@ h1.pl-title,
   font: inherit; font-size: 13.5px; line-height: 1.55; color: var(--gw-ink, #1F2A2B);
   background: #FFFEF8;
 }
+
+/* ── My Day day-mode switcher pills ─────────────────────────────────────── */
+.gw-myday-modes {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--gw-bg2, #F5F8F7);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 12px; padding: 4px; margin-right: 8px;
+}
+.gw-myday-mode-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid transparent;
+  border-radius: 9px; padding: 6px 12px;
+  font-size: 12.5px; font-weight: 650; color: var(--gw-muted, #5E6E6F);
+  cursor: pointer; white-space: nowrap; transition: background .12s, color .12s;
+}
+.gw-myday-mode-pill:hover { background: #EDF5F4; color: var(--gw-ink, #1F2A2B); }
+.gw-myday-mode-pill--on {
+  background: #fff; color: var(--gw-pine, #4D8A86);
+  border-color: rgba(77,138,134,.35);
+  box-shadow: 0 1px 3px rgba(15,36,25,.08);
+}
+.gw-myday-mode-ic { font-size: 13px; line-height: 1; }
+@media (max-width: 1100px) {
+  .gw-myday-modes { flex-wrap: wrap; }
+}
+
+/* ── Time Clock widget ──────────────────────────────────────────────────── */
+.gw-myday-clock { text-align: center; padding: 14px 8px 6px; }
+.gw-myday-clock-live {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: #2D7A55; margin-bottom: 8px;
+}
+.gw-myday-clock-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #4ade80;
+  box-shadow: 0 0 6px #4ade80aa; animation: tt-pulse 1.5s infinite ease-in-out;
+}
+@keyframes tt-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.gw-myday-clock-timer {
+  font-size: 34px; font-weight: 900; font-variant-numeric: tabular-nums;
+  letter-spacing: .04em; color: var(--gw-ink, #1F2A2B); line-height: 1.1; margin-bottom: 12px;
+}
+.gw-myday-clock-timer--idle { color: var(--gw-muted, #9AA8A8); margin-bottom: 0; }
+.gw-myday-clock-btn {
+  width: 100%; padding: 11px; border: none; border-radius: 10px;
+  background: var(--gw-pine, #4D8A86); color: #fff;
+  font-size: 13.5px; font-weight: 750; cursor: pointer; transition: filter .12s;
+}
+.gw-myday-clock-btn:hover { filter: brightness(1.08); }
+.gw-myday-clock-btn--out { background: #B3403C; }
+
+/* ── Today's Jobs widget ────────────────────────────────────────────────── */
+.gw-myday-job-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 10px; cursor: pointer;
+  border: 1px solid transparent; transition: background .12s, border-color .12s;
+}
+.gw-myday-job-row:hover { background: var(--gw-bg2, #F5F8F7); border-color: var(--gw-line, #E2EAE9); }
+.gw-myday-job-row--dim { opacity: .72; }
+.gw-myday-job-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.gw-myday-job-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gw-myday-job-info strong { font-size: 13.5px; color: var(--gw-ink, #1F2A2B); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-myday-job-info span { font-size: 11.5px; color: var(--gw-muted, #5E6E6F); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-myday-job-status {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: capitalize;
+  padding: 3px 9px; border-radius: 999px; background: var(--gw-bg2, #F5F8F7);
+  color: var(--gw-muted, #5E6E6F); flex-shrink: 0;
+}
+.gw-myday-job-status--in-progress { background: #E3F2EC; color: #2D7A55; }
+.gw-myday-job-status--scheduled   { background: #EAF1F8; color: #3B6EA5; }
+.gw-myday-job-status--on-hold     { background: #FBF0DC; color: #9A6B15; }
+.gw-myday-job-sub {
+  font-size: 10.5px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--gw-muted, #8FA0A0); margin: 12px 10px 4px;
+}
+
+/* ── Crew Hours widget ──────────────────────────────────────────────────── */
+.gw-myday-crew-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 6px; border-bottom: 1px solid var(--gw-line, #EDF2F1); font-size: 13px;
+}
+.gw-myday-crew-row:last-child { border-bottom: none; }
+.gw-myday-crew-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.gw-myday-crew-row strong { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gw-ink, #1F2A2B); }
+.gw-myday-crew-live { font-size: 10px; font-weight: 800; color: #2D9F63; }
+.gw-myday-crew-hrs { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gw-ink, #1F2A2B); }
+
+/* ── Money Owed (A/R) widget ────────────────────────────────────────────── */
+.gw-myday-ar-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.gw-myday-ar-cell {
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--gw-bg2, #F5F8F7);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: border-color .12s;
+}
+.gw-myday-ar-cell:hover { border-color: var(--gw-pine, #4D8A86); }
+.gw-myday-ar-cell--bad  { background: #FDF1F0; border-color: #EFC9C6; }
+.gw-myday-ar-cell--good { background: #F0F7F3; border-color: #CBE3D6; cursor: default; }
+.gw-myday-ar-label { font-size: 10.5px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; color: var(--gw-muted, #7B8B8B); }
+.gw-myday-ar-val   { font-size: 20px; font-weight: 850; color: var(--gw-ink, #1F2A2B); font-variant-numeric: tabular-nums; }
+.gw-myday-ar-cell--bad  .gw-myday-ar-val { color: #A93831; }
+.gw-myday-ar-cell--good .gw-myday-ar-val { color: #23724A; }
+.gw-myday-ar-sub   { font-size: 11px; color: var(--gw-muted, #7B8B8B); }
 .gw-myday-scratch:focus { outline: none; border-color: var(--gw-pine, #4D8A86); box-shadow: 0 0 0 3px rgba(77,138,134,.14); }
 
 /* customize-mode body stays interactive for scratchpad in edit mode? no — keep uniform */
