@@ -86,6 +86,28 @@ function getGoogleExpiry() {
 }
 function isGoogleConnected() { return !!getGoogleToken(); }
 function getGoogleClientId() { return getIntState('googleClientId') || ''; }
+
+// ── Effective Client ID resolver ───────────────────────────────────────
+// Asks the server which Google OAuth Client ID applies to this company:
+// company-scoped setting → legacy setting → PLATFORM DEFAULT (env secret).
+// With a platform default configured, brand-new companies can hit
+// "Sign in with Google" with ZERO Google Cloud setup.
+async function gwResolveGoogleClientId() {
+  const local = getGoogleClientId();
+  if (local) return local;
+  try {
+    const r = await fetch('/api/google/client-id', { credentials: 'include' });
+    if (!r.ok) return '';
+    const j = await r.json();
+    const cid = j?.data?.client_id || '';
+    if (cid) {
+      // Cache so sync call-sites (getGoogleClientId) see it immediately
+      saveIntState({ googleClientId: cid, googleClientIdSource: j.data.source || 'server' });
+    }
+    return cid;
+  } catch (_) { return ''; }
+}
+window.gwResolveGoogleClientId = gwResolveGoogleClientId;
 function getGoogleUserEmail() {
   const rec = _getUserGoogleRecord();
   if (rec && rec.email) return rec.email;
@@ -131,7 +153,8 @@ async function _gwStoreAccessToken(token, expiresIn, emailHint) {
 // Popup → Google consent (access_type=offline) → ?code → server exchange →
 // refresh token stored in D1 → user stays connected until manual disconnect.
 async function googleOAuthConnect() {
-  const clientId = getGoogleClientId();
+  // Resolve company creds → platform default before giving up
+  const clientId = getGoogleClientId() || await gwResolveGoogleClientId();
   if (!clientId) {
     showIntToast('Paste your Google Client ID first (see setup guide)', 'warn');
     return false;
@@ -605,7 +628,12 @@ async function integrations() {
   const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repName = currentRep ? (currentRep.name || 'You') : 'You';
   const repColor = currentRep ? (currentRep.color || '#4D8A86') : '#4D8A86';
-  const clientIdConfigured = !!getGoogleClientId();
+  // Company-saved Client ID, or the platform-wide default served by the API —
+  // either one makes the "Sign in with Google" button live.
+  let clientIdConfigured = !!getGoogleClientId();
+  if (!clientIdConfigured && !googleOk) {
+    clientIdConfigured = !!(await gwResolveGoogleClientId());
+  }
 
   if (!googleOk) {
     // ── NOT CONNECTED — show connect screen ───────────────────────────────────
@@ -1342,7 +1370,10 @@ function gwEnsureComposeModal() {
   if (document.getElementById('int-compose-modal')) return;
   const div = document.createElement('div');
   div.innerHTML = _buildComposeModalHTML();
-  document.body.appendChild(div.firstElementChild);
+  // The template contains a <style> block FIRST and the modal <div> after it —
+  // append ALL top-level children, not just the first (which was only the <style>,
+  // leaving the modal out of the DOM and breaking compose from the lead screen).
+  while (div.firstElementChild) document.body.appendChild(div.firstElementChild);
 }
 
 window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOppId='', prefillOppLabel='') {
@@ -2650,17 +2681,10 @@ window.intAdminSaveAiKey = intAdminSaveAiKey;
 setTimeout(async () => {
   try {
     if (getGoogleClientId()) return;
-    const r = await fetch('/api/settings');
-    if (!r.ok) return;
-    const j = await r.json();
-    const cid = (j.data && (j.data.google_client_id || j.data['google_client_id'])) || '';
-    if (cid) {
-      let st = {};
-      try { st = JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}'); } catch(e) {}
-      st.googleClientId = cid;
-      localStorage.setItem('avalonIntegrationsV1', JSON.stringify(st));
-      console.log('[Integrations] Google Client ID synced from server settings');
-    }
+    // Resolves company setting → legacy setting → platform default env secret,
+    // and caches into localStorage so every sync call-site sees it.
+    const cid = await gwResolveGoogleClientId();
+    if (cid) console.log('[Integrations] Google Client ID resolved from server');
   } catch(e){}
 }, 2000);
 

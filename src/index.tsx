@@ -17,7 +17,7 @@ import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 
 
-type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string }
+type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
 type Variables = { repId: string; companyId: string; role: string; isSuperAdmin: boolean }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
@@ -4307,7 +4307,7 @@ Rules:
 // connection survives logins and browser changes — until manual disconnect.
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function _googleClientCreds(db: D1Database, companyId: string): Promise<{ clientId: string; clientSecret: string }> {
+async function _googleClientCreds(db: D1Database, companyId: string, env?: Bindings): Promise<{ clientId: string; clientSecret: string; source: string }> {
   const rows = await db.prepare(
     `SELECT key, value FROM settings WHERE key IN (?,?,?,?)`
   ).bind(
@@ -4320,8 +4320,25 @@ async function _googleClientCreds(db: D1Database, companyId: string): Promise<{ 
     if (k === 'google_client_id' && (!clientId || r.key.includes(':'))) clientId = r.value
     if (k === 'google_client_secret' && (!clientSecret || r.key.includes(':'))) clientSecret = r.value
   }
-  return { clientId, clientSecret }
+  let source = clientId ? 'company' : ''
+  // Platform-level fallback: shared OAuth app owned by Groundwork itself.
+  // Set once as Cloudflare Pages secrets (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)
+  // and every company gets Google integration with ZERO Google Cloud setup.
+  // A company that saves its own creds in Admin Setup still overrides this.
+  if (!clientId && env?.GOOGLE_CLIENT_ID) { clientId = env.GOOGLE_CLIENT_ID; source = 'platform' }
+  if (!clientSecret && env?.GOOGLE_CLIENT_SECRET) clientSecret = env.GOOGLE_CLIENT_SECRET
+  return { clientId, clientSecret, source }
 }
+
+// GET /api/google/client-id — effective Google OAuth Client ID for this company
+// (company-scoped setting → legacy unscoped setting → platform default env secret).
+// Lets every tenant's browser start the OAuth flow without any admin setup when
+// the platform-level shared OAuth app is configured. Never exposes the secret.
+app.get('/api/google/client-id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const { clientId, source } = await _googleClientCreds(c.env.DB as D1Database, companyId, c.env)
+  return c.json({ ok: true, data: { client_id: clientId || '', source: source || 'none' } })
+})
 
 // POST /api/google/exchange — swap authorization code for tokens; store refresh token
 app.post('/api/google/exchange', requireAuth, async (c) => {
@@ -4333,7 +4350,7 @@ app.post('/api/google/exchange', requireAuth, async (c) => {
   const code = String(b.code || '')
   const redirectUri = String(b.redirect_uri || '')
   if (!code) return c.json({ ok: false, error: 'code required' }, 400)
-  const { clientId, clientSecret } = await _googleClientCreds(db, companyId)
+  const { clientId, clientSecret } = await _googleClientCreds(db, companyId, c.env)
   if (!clientId || !clientSecret) {
     return c.json({ ok: false, error: 'Google Client ID/Secret not configured — set both in Integrations → Admin Setup' }, 400)
   }
@@ -4386,7 +4403,7 @@ app.post('/api/google/refresh', requireAuth, async (c) => {
   const rec: any = await db.prepare(`SELECT refresh_token, email FROM google_tokens WHERE rep_id=? LIMIT 1`)
     .bind(repId).first()
   if (!rec) return c.json({ ok: false, error: 'not_connected' }, 404)
-  const { clientId, clientSecret } = await _googleClientCreds(db, companyId)
+  const { clientId, clientSecret } = await _googleClientCreds(db, companyId, c.env)
   if (!clientId || !clientSecret) return c.json({ ok: false, error: 'Google Client ID/Secret not configured' }, 400)
   const tr = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -6786,7 +6803,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b004">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6810,8 +6827,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b002"></script>
-  <script src="/js/client_portal.js?v=20260716b002"></script>
+  <script src="/js/platform_core.js?v=20260716b004"></script>
+  <script src="/js/client_portal.js?v=20260716b004"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7441,9 +7458,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b004">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b004">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b004">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -7991,36 +8008,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b002"></script>
-<script src="/js/db.js?v=20260716b002"></script>
-<script src="/js/data.js?v=20260716b002"></script>
-<script src="/js/reps.js?v=20260716b002"></script>
-<script src="/js/record-page.js?v=20260716b002"></script>
-<script src="/js/academy.js?v=20260716b002"></script>
-<script src="/js/task_engine.js?v=20260716b002"></script>
-<script src="/js/gw_i18n.js?v=20260716b002"></script>
-<script src="/js/app_premium.js?v=20260716b002"></script>
-<script src="/js/estimates.js?v=20260716b002"></script>
-<script src="/js/proposals.js?v=20260716b002"></script>
-<script src="/js/invoices.js?v=20260716b002"></script>
-<script src="/js/csv_import.js?v=20260716b002"></script>
-<script src="/js/onboarding.js?v=20260716b002"></script>
-<script src="/js/recurring_plans.js?v=20260716b002"></script>
-<script src="/js/reviews.js?v=20260716b002"></script>
-<script src="/js/stripe.js?v=20260716b002"></script>
-<script src="/js/email.js?v=20260716b002"></script>
-<script src="/js/notifications.js?v=20260716b002"></script>
-<script src="/js/integrations.js?v=20260716b002"></script>
-<script src="/js/user_management.js?v=20260716b002"></script>
-<script src="/js/platform_admin.js?v=20260716b002"></script>
-<script src="/js/time_tracker.js?v=20260716b002"></script>
-<script src="/js/field_workday.js?v=20260716b002"></script>
-<script src="/js/platform_core.js?v=20260716b002"></script>
-<script src="/js/approval_engine.js?v=20260716b002"></script>
-<script src="/js/automation_engine.js?v=20260716b002"></script>
-<script src="/js/client_portal.js?v=20260716b002"></script>
-<script src="/js/field_mode.js?v=20260716b002"></script>
-<script src="/js/assets_hub.js?v=20260716b002"></script>
+<script src="/js/gw-icons.js?v=20260716b004"></script>
+<script src="/js/db.js?v=20260716b004"></script>
+<script src="/js/data.js?v=20260716b004"></script>
+<script src="/js/reps.js?v=20260716b004"></script>
+<script src="/js/record-page.js?v=20260716b004"></script>
+<script src="/js/academy.js?v=20260716b004"></script>
+<script src="/js/task_engine.js?v=20260716b004"></script>
+<script src="/js/gw_i18n.js?v=20260716b004"></script>
+<script src="/js/app_premium.js?v=20260716b004"></script>
+<script src="/js/estimates.js?v=20260716b004"></script>
+<script src="/js/proposals.js?v=20260716b004"></script>
+<script src="/js/invoices.js?v=20260716b004"></script>
+<script src="/js/csv_import.js?v=20260716b004"></script>
+<script src="/js/onboarding.js?v=20260716b004"></script>
+<script src="/js/recurring_plans.js?v=20260716b004"></script>
+<script src="/js/reviews.js?v=20260716b004"></script>
+<script src="/js/stripe.js?v=20260716b004"></script>
+<script src="/js/email.js?v=20260716b004"></script>
+<script src="/js/notifications.js?v=20260716b004"></script>
+<script src="/js/integrations.js?v=20260716b004"></script>
+<script src="/js/user_management.js?v=20260716b004"></script>
+<script src="/js/platform_admin.js?v=20260716b004"></script>
+<script src="/js/time_tracker.js?v=20260716b004"></script>
+<script src="/js/field_workday.js?v=20260716b004"></script>
+<script src="/js/platform_core.js?v=20260716b004"></script>
+<script src="/js/approval_engine.js?v=20260716b004"></script>
+<script src="/js/automation_engine.js?v=20260716b004"></script>
+<script src="/js/client_portal.js?v=20260716b004"></script>
+<script src="/js/field_mode.js?v=20260716b004"></script>
+<script src="/js/assets_hub.js?v=20260716b004"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

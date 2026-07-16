@@ -2931,9 +2931,13 @@ function umSigPreviewManual() {
 // Settings widget, and User Management workspace tab.
 // ═══════════════════════════════════════════════════════════════════════════════
 async function umMyConnect() {
-  const clientId = (() => {
+  let clientId = (() => {
     try { return JSON.parse(localStorage.getItem('avalonIntegrationsV1') || '{}').googleClientId || ''; } catch(e) { return ''; }
   })();
+  // Fall back to the server-resolved Client ID (company setting → platform default)
+  if (!clientId && typeof window.gwResolveGoogleClientId === 'function') {
+    clientId = await window.gwResolveGoogleClientId();
+  }
   if (!clientId) {
     umToast('Google Client ID not configured. Ask your Admin to set it up in Integrations.', 'warn');
     return;
