@@ -182,6 +182,17 @@ function _prRenderBuilder() {
         <span id="pr-save-state" style="margin-left:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
       </div>
 
+      <!-- AI draft -->
+      <section style="background:linear-gradient(135deg,#113931 0%,#1E5E52 100%);border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#fff">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:13px;font-weight:800">✨ Draft with AI</div>
+            <div style="font-size:11.5px;opacity:.85">Writes the whole proposal — overview, option tables with pricing, payment schedule &amp; terms — from ${p.opp_id ? "this lead's notes and history" : 'your instructions'}. You review and edit everything before sending.</div>
+          </div>
+          <button id="pr-ai-btn" style="background:#fff;color:#113931;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap" onclick="_prAiModal()">Draft it for me</button>
+        </div>
+      </section>
+
       <!-- Templates quick-fill -->
       <section style="background:var(--gw-surface,#fff);border:1px solid var(--gw-border,#E4E0D6);border-radius:12px;padding:16px 18px;margin-bottom:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -651,6 +662,108 @@ async function _prDoSend() {
   _prRenderBuilder();
 }
 
+// ── AI PROPOSAL DRAFTING ──────────────────────────────────────────────────────
+
+function _prAiLeadContext() {
+  // Gather everything the AI needs about the linked lead from client state
+  const st = _prState();
+  const p = _prDraft;
+  const o = p.opp_id ? ((st && st.opportunities) || []).find(x => x.id === p.opp_id) : null;
+  const lead = o ? {
+    client: o.client || p.client_name, address: o.address || p.property_addr,
+    project: o.project || '', serviceLine: o.serviceLine || '',
+    stage: o.status || '', value: o.value || '',
+  } : {
+    client: p.client_name, address: p.property_addr, project: p.title, serviceLine: '', stage: '', value: '',
+  };
+
+  let notes = '';
+  if (o && st) {
+    const noteLines = (st.notes || []).filter(n => n.oppId === o.id)
+      .map(n => '- ' + (n.note || n.body || n.text || '')).filter(x => x.length > 2).slice(0, 25);
+    const commLines = (st.communications || []).filter(c => c.oppId === o.id)
+      .sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 15)
+      .map(c => `- [${c.type || 'note'} ${c.direction || ''}] ${(c.subject ? c.subject + ': ' : '')}${(c.body || '').slice(0, 300)}`);
+    notes = [
+      noteLines.length ? 'NOTES:\n' + noteLines.join('\n') : '',
+      commLines.length ? 'RECENT COMMUNICATIONS (newest first):\n' + commLines.join('\n') : '',
+    ].filter(Boolean).join('\n\n');
+  }
+  const est = p.estimate_id ? _prLinkableEstimates.find(e => e.id === p.estimate_id) : null;
+  const estimate = est ? {
+    est_number: est.est_number, title: est.title, total: est.total,
+    line_items: (typeof est.line_items === 'string' ? (function(){ try { return JSON.parse(est.line_items); } catch(e){ return []; } })() : est.line_items) || [],
+    scope_of_work: est.scope_of_work || '',
+  } : null;
+  return { lead, notes, estimate };
+}
+
+function _prAiModal() {
+  document.getElementById('pr-ai-modal')?.remove();
+  const hasLead = !!_prDraft.opp_id;
+  const hasEst = !!_prDraft.estimate_id;
+  const wrap = document.createElement('div');
+  wrap.id = 'pr-ai-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,26,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  wrap.innerHTML = `
+  <div style="background:#fff;border-radius:14px;max-width:540px;width:100%;padding:24px;box-shadow:0 24px 64px rgba(0,0,0,.3)" onclick="event.stopPropagation()">
+    <div style="font-size:17px;font-weight:800;margin-bottom:4px">✨ Draft this proposal with AI</div>
+    <div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">
+      The AI will use ${hasLead ? '<strong>this lead\u2019s details, notes and recent communications</strong>' : 'the client info entered above'}${hasEst ? ' plus the <strong>linked estimate\u2019s services and pricing</strong>' : ''} to write a complete draft. Nothing is sent to the client — you review and edit first.
+    </div>
+    <label class="est-label">Tell the AI what you want (optional but recommended)</label>
+    <textarea class="est-input" id="pr-ai-instructions" rows="5" style="resize:vertical;margin-bottom:8px" placeholder="e.g. 5-application turf program plus a premium option with grub control and aeration. Around $1,200 for the standard tier. Mention their concern about crabgrass in the front yard. 50/50 payment split."></textarea>
+    <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-bottom:16px">⚠️ Applying the draft replaces the title, overview, sections, payment schedule and terms currently in the builder. Client info is kept.</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+      <span id="pr-ai-status" style="margin-right:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
+      <button class="est-btn-secondary" onclick="document.getElementById('pr-ai-modal').remove()">Cancel</button>
+      <button class="est-btn-primary" id="pr-ai-go" onclick="_prAiGenerate()">Generate draft</button>
+    </div>
+  </div>`;
+  wrap.addEventListener('click', () => wrap.remove());
+  document.body.appendChild(wrap);
+  setTimeout(() => document.getElementById('pr-ai-instructions')?.focus(), 50);
+}
+
+async function _prAiGenerate() {
+  const btn = document.getElementById('pr-ai-go');
+  const status = document.getElementById('pr-ai-status');
+  const instructions = document.getElementById('pr-ai-instructions')?.value || '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Writing…'; btn.style.opacity = '.6'; }
+  if (status) status.textContent = 'Reading lead history & drafting — usually 10–30s…';
+
+  try {
+    const ctx = _prAiLeadContext();
+    const r = await fetch('/api/ai/generate-proposal', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead: ctx.lead, notes: ctx.notes, estimate: ctx.estimate, instructions }),
+    });
+    const j = await r.json();
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || 'Generation failed');
+    }
+    const d = j.data || {};
+    // Apply draft — keep client info, replace content
+    if (d.title) _prDraft.title = d.title;
+    if (d.subtitle) _prDraft.subtitle = d.subtitle;
+    if (d.overview) _prDraft.overview = d.overview;
+    if (Array.isArray(d.sections) && d.sections.length) _prDraft.sections = d.sections;
+    if (Array.isArray(d.payment_schedule)) _prDraft.payment_schedule = d.payment_schedule;
+    if (d.terms) _prDraft.terms = d.terms;
+    document.getElementById('pr-ai-modal')?.remove();
+    _prRenderBuilder();
+    _prToast('AI draft ready ✨ — review the options and prices, then save & send', 'success');
+    // Scroll to overview so the user starts reviewing at the top of the content
+    setTimeout(() => document.getElementById('pr-overview')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+  } catch (e) {
+    console.error('[_prAiGenerate]', e);
+    if (status) { status.textContent = ''; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate draft'; btn.style.opacity = '1'; }
+    _prToast(e.message || 'AI drafting failed — try again', 'error');
+  }
+}
+
 // ── TEMPLATES ─────────────────────────────────────────────────────────────────
 
 function _prApplyTemplate() {
@@ -728,6 +841,8 @@ window._prCopyPortalLink       = _prCopyPortalLink;
 window._prPreview              = _prPreview;
 window._prSendModal            = _prSendModal;
 window._prDoSend               = _prDoSend;
+window._prAiModal              = _prAiModal;
+window._prAiGenerate           = _prAiGenerate;
 window._prApplyTemplate        = _prApplyTemplate;
 window._prSaveAsTemplate       = _prSaveAsTemplate;
 window._prDeleteTemplate       = _prDeleteTemplate;

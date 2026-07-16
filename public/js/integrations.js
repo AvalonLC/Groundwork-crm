@@ -681,6 +681,17 @@ async function integrations() {
     <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);line-height:1.6;margin-bottom:12px">With the Client Secret saved, everyone's Google connection becomes <strong>permanent</strong> — no re-connecting every login. It's stored server-side in your company settings, never in the browser. From the same Google Cloud credential page, copy the Client Secret.</div>
     <button class="primary-btn" style="font-size:12px;padding:8px 14px" onclick="intAdminSaveGoogleCreds()">Save Google Credentials</button>
     <span id="int-admin-creds-status" style="font-size:11px;color:#2D7A55;margin-left:10px"></span>
+
+    <div style="border-top:1px solid var(--gds-line,#E0DDD5);margin:18px 0 14px"></div>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">AI API Key <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables ✨ AI proposal drafting)</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="int-admin-ai-key" type="password"
+        placeholder="sk-…"
+        style="flex:1;padding:9px 12px;background:var(--gds-surface,#FFFFFF);border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;color:var(--gds-ink,#1F2A2B);font-size:12px;font-family:monospace;box-sizing:border-box">
+      <button class="primary-btn" style="font-size:12px;padding:8px 14px;flex-shrink:0" onclick="intAdminSaveAiKey()">Save</button>
+    </div>
+    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);line-height:1.6">An OpenAI API key (from <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--gds-teal,#4D8A86)">platform.openai.com</a>) powers "Draft with AI" in the proposal builder. Stored server-side in company settings — never in the browser.</div>
+    <span id="int-admin-ai-status" style="font-size:11px;color:#2D7A55"></span>
   </div><!-- /Admin Setup gw-int-panel -->
 </div>`;
     return;
@@ -2616,6 +2627,24 @@ async function intAdminSaveGoogleCreds() {
   }
 }
 window.intAdminSaveGoogleCreds = intAdminSaveGoogleCreds;
+
+// ── intAdminSaveAiKey — save OpenAI API key for ✨ AI proposal drafting ────────
+async function intAdminSaveAiKey() {
+  const key = document.getElementById('int-admin-ai-key')?.value?.trim();
+  if (!key) { showIntToast('Paste your AI API key first', 'warn'); return; }
+  try {
+    const r = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:'openai_api_key', value: key }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const el = document.getElementById('int-admin-ai-status');
+    if (el) el.textContent = '✓ Saved — AI proposal drafting is now enabled for your team';
+    const input = document.getElementById('int-admin-ai-key');
+    if (input) input.value = '';
+    showIntToast('AI API key saved — "Draft with AI" is live in the proposal builder', 'success');
+  } catch(e){
+    showIntToast('Save failed: ' + (e.message||'error'), 'warn');
+  }
+}
+window.intAdminSaveAiKey = intAdminSaveAiKey;
 
 // ── Pull the shared Client ID from server settings if this browser lacks it ──
 setTimeout(async () => {

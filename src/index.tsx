@@ -17,7 +17,7 @@ import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 
 
-type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string }
+type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string }
 type Variables = { repId: string; companyId: string; role: string; isSuperAdmin: boolean }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
@@ -4171,6 +4171,136 @@ app.delete('/api/proposal-templates/:id', requireAuth, async (c) => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
+// AI PROPOSAL GENERATION — drafts a full proposal from lead context via an
+// OpenAI-compatible endpoint. API key resolution: company setting
+// `openai_api_key` (admin pastes in Integrations) → env OPENAI_API_KEY.
+// Base URL: company setting `openai_base_url` → env OPENAI_BASE_URL → api.openai.com.
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _aiCreds(db: D1Database, companyId: string, env: any): Promise<{ apiKey: string; baseUrl: string; model: string }> {
+  const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?)`)
+    .bind(`${companyId}:openai_api_key`, `${companyId}:openai_base_url`, `${companyId}:openai_model`,
+          'openai_api_key', 'openai_base_url', 'openai_model').all()
+  let apiKey = '', baseUrl = '', model = ''
+  for (const r of (rows.results as any[])) {
+    const k = r.key.includes(':') ? r.key.split(':').pop() : r.key
+    const scoped = r.key.includes(':')
+    if (k === 'openai_api_key'  && (!apiKey  || scoped)) apiKey  = r.value
+    if (k === 'openai_base_url' && (!baseUrl || scoped)) baseUrl = r.value
+    if (k === 'openai_model'    && (!model   || scoped)) model   = r.value
+  }
+  apiKey  = apiKey  || env.OPENAI_API_KEY  || ''
+  baseUrl = (baseUrl || env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
+  model   = model || 'gpt-5-mini'
+  return { apiKey, baseUrl, model }
+}
+
+// POST /api/ai/generate-proposal — { lead:{...}, notes, instructions, estimate:{...}? }
+app.post('/api/ai/generate-proposal', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) {
+    return c.json({ ok: false, error: 'no_api_key', message: 'No AI API key configured. An admin can add one under Integrations → Admin Setup (OpenAI API key).' }, 400)
+  }
+
+  const b: any = await c.req.json().catch(() => ({}))
+  const lead = b.lead || {}
+  const brand: any = await db.prepare('SELECT name, tagline, phone, website FROM companies WHERE id=? LIMIT 1').bind(companyId).first().catch(() => null)
+
+  const context = [
+    `Company: ${brand?.name || 'the company'}${brand?.tagline ? ' — ' + brand.tagline : ''} (lawn care / landscaping services)`,
+    `Client name: ${lead.client || 'Unknown'}`,
+    lead.address ? `Property address: ${lead.address}` : '',
+    lead.project ? `Requested work / project: ${lead.project}` : '',
+    lead.serviceLine ? `Service line: ${lead.serviceLine}` : '',
+    lead.stage ? `Pipeline stage: ${lead.stage}` : '',
+    lead.value ? `Estimated deal value: $${lead.value}` : '',
+    b.notes ? `Lead notes and communication history:\n${String(b.notes).slice(0, 6000)}` : '',
+    b.estimate ? `Existing linked estimate (use these services/prices as the basis for one option):\n${JSON.stringify(b.estimate).slice(0, 3000)}` : '',
+    b.instructions ? `Rep's specific instructions for this proposal:\n${String(b.instructions).slice(0, 2000)}` : '',
+  ].filter(Boolean).join('\n')
+
+  const sys = `You are an expert proposal writer for a professional lawn care & landscaping company. You write warm, confident, client-facing proposals that close deals — specific, benefit-oriented, never generic filler.
+
+Return ONLY valid JSON (no markdown fences, no commentary) matching exactly this schema:
+{
+  "title": "string — proposal title, e.g. 'Turf Care Program — 2026 Season'",
+  "subtitle": "string — one warm personalized line, e.g. 'Prepared exclusively for the Smith Residence'",
+  "overview": "string — 2-3 short paragraphs: thank them, what you observed/understood about their property & goals, what you recommend and why. Use \\n\\n between paragraphs.",
+  "sections": [
+    { "type": "option", "title": "OPTION 1: <name>", "goal": "one-line program goal", "rows": [ { "app": "application/visit name e.g. 'Round 1 — Early Spring'", "service": "what's included, specific", "price": 0 } ], "footnote": "optional fine print or empty string" }
+  ],
+  "payment_schedule": [ { "label": "string", "pct": 0 } ],
+  "terms": "string — brief professional terms (validity, weather dependency, payment)"
+}
+
+Rules:
+- Create 2 option sections (a standard and a premium tier) UNLESS the rep's instructions or a linked estimate imply otherwise.
+- If a linked estimate is provided, its line items and prices MUST form the basis of one option (keep its prices); the other option can be an upsell tier.
+- Prices must be realistic for residential lawn care/landscaping and consistent with any deal value or estimate given. Every row needs a numeric price.
+- payment_schedule percentages MUST sum to exactly 100. Use [] if a simple pay-on-completion makes more sense.
+- Never invent client personal details not provided. Keep the overview grounded in the actual notes.`
+
+  try {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: `Draft the proposal from this lead context:\n\n${context}` },
+        ],
+      }),
+    })
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '')
+      console.error('[ai/generate-proposal] upstream', r.status, errText.slice(0, 300))
+      return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}). Check the API key/model in Admin Setup.` }, 502)
+    }
+    const j: any = await r.json()
+    let raw = j?.choices?.[0]?.message?.content || ''
+    // Strip accidental markdown fences and extract the JSON object
+    raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+    const start = raw.indexOf('{'); const end = raw.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('No JSON in AI response')
+    const draft = JSON.parse(raw.slice(start, end + 1))
+
+    // Sanitize to the exact shape the builder expects
+    const sections = Array.isArray(draft.sections) ? draft.sections.map((s: any) => (
+      s && s.type === 'text'
+        ? { type: 'text', title: String(s.title || ''), body: String(s.body || '') }
+        : { type: 'option', title: String(s?.title || 'OPTION'), goal: String(s?.goal || ''),
+            rows: (Array.isArray(s?.rows) ? s.rows : []).map((row: any) => ({
+              app: String(row?.app || ''), service: String(row?.service || ''), price: Number(row?.price) || 0 })),
+            footnote: String(s?.footnote || '') }
+    )) : []
+    let sched = Array.isArray(draft.payment_schedule) ? draft.payment_schedule
+      .map((p: any) => ({ label: String(p?.label || 'Payment'), pct: Number(p?.pct) || 0 }))
+      .filter((p: any) => p.pct > 0) : []
+    const sum = sched.reduce((s: number, p: any) => s + p.pct, 0)
+    if (sched.length && Math.abs(sum - 100) > 0.01) {
+      // Normalize to 100 rather than reject the whole draft
+      sched = sched.map((p: any, i: number) => ({ ...p, pct: Math.round((p.pct / sum) * 1000) / 10 }))
+      const fix = 100 - sched.reduce((s: number, p: any) => s + p.pct, 0)
+      sched[sched.length - 1].pct = Math.round((sched[sched.length - 1].pct + fix) * 10) / 10
+    }
+
+    return c.json({ ok: true, data: {
+      title: String(draft.title || ''),
+      subtitle: String(draft.subtitle || ''),
+      overview: String(draft.overview || ''),
+      sections, payment_schedule: sched,
+      terms: String(draft.terms || ''),
+    }})
+  } catch (e: any) {
+    console.error('[ai/generate-proposal]', e?.message || e)
+    return c.json({ ok: false, error: 'ai_parse', message: 'The AI returned an unusable draft — please try again.' }, 502)
+  }
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
 // GOOGLE AUTH — persistent per-rep connection via authorization-code + refresh
 // The client secret lives in company settings (admin pastes it once alongside
 // the Client ID). Refresh tokens are stored server-side in google_tokens so the
@@ -6656,7 +6786,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b002">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6680,8 +6810,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b001"></script>
-  <script src="/js/client_portal.js?v=20260716b001"></script>
+  <script src="/js/platform_core.js?v=20260716b002"></script>
+  <script src="/js/client_portal.js?v=20260716b002"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7311,9 +7441,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b002">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -7861,36 +7991,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b001"></script>
-<script src="/js/db.js?v=20260716b001"></script>
-<script src="/js/data.js?v=20260716b001"></script>
-<script src="/js/reps.js?v=20260716b001"></script>
-<script src="/js/record-page.js?v=20260716b001"></script>
-<script src="/js/academy.js?v=20260716b001"></script>
-<script src="/js/task_engine.js?v=20260716b001"></script>
-<script src="/js/gw_i18n.js?v=20260716b001"></script>
-<script src="/js/app_premium.js?v=20260716b001"></script>
-<script src="/js/estimates.js?v=20260716b001"></script>
-<script src="/js/proposals.js?v=20260716b001"></script>
-<script src="/js/invoices.js?v=20260716b001"></script>
-<script src="/js/csv_import.js?v=20260716b001"></script>
-<script src="/js/onboarding.js?v=20260716b001"></script>
-<script src="/js/recurring_plans.js?v=20260716b001"></script>
-<script src="/js/reviews.js?v=20260716b001"></script>
-<script src="/js/stripe.js?v=20260716b001"></script>
-<script src="/js/email.js?v=20260716b001"></script>
-<script src="/js/notifications.js?v=20260716b001"></script>
-<script src="/js/integrations.js?v=20260716b001"></script>
-<script src="/js/user_management.js?v=20260716b001"></script>
-<script src="/js/platform_admin.js?v=20260716b001"></script>
-<script src="/js/time_tracker.js?v=20260716b001"></script>
-<script src="/js/field_workday.js?v=20260716b001"></script>
-<script src="/js/platform_core.js?v=20260716b001"></script>
-<script src="/js/approval_engine.js?v=20260716b001"></script>
-<script src="/js/automation_engine.js?v=20260716b001"></script>
-<script src="/js/client_portal.js?v=20260716b001"></script>
-<script src="/js/field_mode.js?v=20260716b001"></script>
-<script src="/js/assets_hub.js?v=20260716b001"></script>
+<script src="/js/gw-icons.js?v=20260716b002"></script>
+<script src="/js/db.js?v=20260716b002"></script>
+<script src="/js/data.js?v=20260716b002"></script>
+<script src="/js/reps.js?v=20260716b002"></script>
+<script src="/js/record-page.js?v=20260716b002"></script>
+<script src="/js/academy.js?v=20260716b002"></script>
+<script src="/js/task_engine.js?v=20260716b002"></script>
+<script src="/js/gw_i18n.js?v=20260716b002"></script>
+<script src="/js/app_premium.js?v=20260716b002"></script>
+<script src="/js/estimates.js?v=20260716b002"></script>
+<script src="/js/proposals.js?v=20260716b002"></script>
+<script src="/js/invoices.js?v=20260716b002"></script>
+<script src="/js/csv_import.js?v=20260716b002"></script>
+<script src="/js/onboarding.js?v=20260716b002"></script>
+<script src="/js/recurring_plans.js?v=20260716b002"></script>
+<script src="/js/reviews.js?v=20260716b002"></script>
+<script src="/js/stripe.js?v=20260716b002"></script>
+<script src="/js/email.js?v=20260716b002"></script>
+<script src="/js/notifications.js?v=20260716b002"></script>
+<script src="/js/integrations.js?v=20260716b002"></script>
+<script src="/js/user_management.js?v=20260716b002"></script>
+<script src="/js/platform_admin.js?v=20260716b002"></script>
+<script src="/js/time_tracker.js?v=20260716b002"></script>
+<script src="/js/field_workday.js?v=20260716b002"></script>
+<script src="/js/platform_core.js?v=20260716b002"></script>
+<script src="/js/approval_engine.js?v=20260716b002"></script>
+<script src="/js/automation_engine.js?v=20260716b002"></script>
+<script src="/js/client_portal.js?v=20260716b002"></script>
+<script src="/js/field_mode.js?v=20260716b002"></script>
+<script src="/js/assets_hub.js?v=20260716b002"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
