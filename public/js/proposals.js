@@ -1037,8 +1037,10 @@ function _prFillVars(text) {
   for (const k in vars) { if (vars[k]) out = out.split(k).join(vars[k]); }
   return out;
 }
+let _prCustomTpls = [];   // company's saved "My Templates" (fetched per modal open)
+
 function _prSendTemplates() {
-  // Built-in proposal delivery template + the company's Templates library (data.templates)
+  // Default + the user's own saved templates + the company's Templates library
   const p = _prDraft;
   const rep = (window.getCurrentRep ? window.getCurrentRep() : null) || window._d1SessionRep || {};
   const list = [{
@@ -1048,9 +1050,89 @@ function _prSendTemplates() {
     subject: p.title ? `Your Proposal — ${p.title}` : 'Your Proposal',
     body: `Hi ${(p.client_name || '').split(' ')[0] || 'there'},\n\nThank you for the opportunity! Your proposal${p.title ? ` — ${p.title}` : ''} is ready to review here:\n\n${_prPortalUrl()}\n\nYou can accept it right from that page. Let me know if you have any questions!\n\nBest,\n${rep.name || ''}`,
   }];
+  _prCustomTpls.forEach(t => list.push({ id: t.id, category: '★ My Templates', title: t.title, subject: t.subject || '', body: t.body || '', custom: true }));
   const lib = (typeof data !== 'undefined' && Array.isArray(data.templates)) ? data.templates : [];
   lib.forEach((t, i) => list.push({ id: 'lib_' + i, category: t.category || 'Templates', title: t.title || ('Template ' + (i + 1)), subject: t.subject || '', body: t.body || '' }));
   return list;
+}
+
+function _prSendTplOptions(selectedId) {
+  const tmpls = _prSendTemplates();
+  const groups = {};
+  tmpls.forEach(t => { (groups[t.category] = groups[t.category] || []).push(t); });
+  // My Templates group right after the default's group ordering: default first, then ★ My Templates
+  const cats = Object.keys(groups).sort((a, b) => {
+    const rank = c => c === 'Proposal' ? 0 : c === '★ My Templates' ? 1 : 2;
+    return rank(a) - rank(b);
+  });
+  return cats.map(cat =>
+    `<optgroup label="${_prEsc(cat)}">${groups[cat].map(t =>
+      `<option value="${_prEsc(t.id)}"${t.id === (selectedId || '_default') ? ' selected' : ''}>${_prEsc(t.title)}</option>`).join('')}</optgroup>`
+  ).join('');
+}
+
+async function _prLoadCustomTpls() {
+  try {
+    const r = await fetch('/api/email-templates', { credentials: 'include' });
+    const j = await r.json();
+    _prCustomTpls = Array.isArray(j.templates) ? j.templates : [];
+  } catch (e) { _prCustomTpls = []; }
+}
+
+window._prSaveCurrentAsTpl = async function () {
+  const subject = document.getElementById('pr-send-subject')?.value || '';
+  const body = document.getElementById('pr-send-body')?.value || '';
+  const title = prompt('Template name:', 'My proposal email');
+  if (!title || !title.trim()) return;
+  try {
+    // De-personalize: swap this proposal's specifics back to tokens so the
+    // template works for the next client too.
+    const vars = _prSendVars();
+    let tSubject = subject, tBody = body;
+    const detok = [
+      [vars['[link]'], '[link]'], [vars['[Client Name]'], '[Client Name]'],
+      [vars['[Project Name]'], '[Project Name]'], [vars['[address]'], '[address]'],
+      [vars['[Name]'], '[Name]'],
+    ];
+    for (const [val, tok] of detok) {
+      if (val && String(val).length > 2) { tSubject = tSubject.split(val).join(tok); tBody = tBody.split(val).join(tok); }
+    }
+    const r = await fetch('/api/email-templates', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title.trim(), subject: tSubject, body: tBody }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || 'Save failed');
+    await _prLoadCustomTpls();
+    const sel = document.getElementById('pr-send-template');
+    if (sel) sel.innerHTML = _prSendTplOptions(j.id);
+    _prTplDelBtnSync();
+    _prToast('Template saved to My Templates ✓', 'success');
+  } catch (e) { _prToast(e.message || 'Could not save template', 'error'); }
+};
+
+window._prDeleteTpl = async function () {
+  const sel = document.getElementById('pr-send-template');
+  const id = sel?.value;
+  const t = _prSendTemplates().find(x => x.id === id);
+  if (!t || !t.custom) return;
+  if (!confirm(`Delete template "${t.title}"?`)) return;
+  try {
+    await fetch('/api/email-templates/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'include' });
+    await _prLoadCustomTpls();
+    if (sel) { sel.innerHTML = _prSendTplOptions('_default'); _prSendApplyTemplate('_default'); }
+    _prTplDelBtnSync();
+    _prToast('Template deleted', 'success');
+  } catch (e) { _prToast('Delete failed', 'error'); }
+};
+
+function _prTplDelBtnSync() {
+  const sel = document.getElementById('pr-send-template');
+  const del = document.getElementById('pr-send-tpl-del');
+  if (!sel || !del) return;
+  const t = _prSendTemplates().find(x => x.id === sel.value);
+  del.style.display = (t && t.custom) ? '' : 'none';
 }
 window._prSendApplyTemplate = function (id) {
   const t = _prSendTemplates().find(x => x.id === id);
@@ -1062,6 +1144,7 @@ window._prSendApplyTemplate = function (id) {
   // Every proposal email must carry the portal link — append if the template lacks it
   if (!body.includes(_prPortalUrl())) body += `\n\nReview your proposal here:\n${_prPortalUrl()}`;
   if (bodyEl) bodyEl.value = body;
+  _prTplDelBtnSync();
 };
 
 function _prSendModal() {
@@ -1069,16 +1152,14 @@ function _prSendModal() {
   if (!p?.portal_token) { _prToast('Save the proposal first', 'error'); return; }
   document.getElementById('pr-send-modal')?.remove();
   const gmailOk = typeof isGoogleConnected === 'function' && isGoogleConnected();
-  const tmpls = _prSendTemplates();
-  const def = tmpls[0];
+  const def = _prSendTemplates()[0];
+  const options = _prSendTplOptions('_default');
 
-  // Group library templates by category for the picker
-  const groups = {};
-  tmpls.forEach(t => { (groups[t.category] = groups[t.category] || []).push(t); });
-  const options = Object.keys(groups).map(cat =>
-    `<optgroup label="${_prEsc(cat)}">${groups[cat].map(t =>
-      `<option value="${_prEsc(t.id)}"${t.id === '_default' ? ' selected' : ''}>${_prEsc(t.title)}</option>`).join('')}</optgroup>`
-  ).join('');
+  // Refresh the user's saved templates in the background, then rebuild the picker
+  _prLoadCustomTpls().then(() => {
+    const sel = document.getElementById('pr-send-template');
+    if (sel) { const cur = sel.value; sel.innerHTML = _prSendTplOptions(cur); _prTplDelBtnSync(); }
+  });
 
   const wrap = document.createElement('div');
   wrap.id = 'pr-send-modal';
@@ -1091,7 +1172,11 @@ function _prSendModal() {
     </div>
     <div style="padding:18px 24px;overflow-y:auto;flex:1">
       <label class="est-label">Email template</label>
-      <select class="est-input" id="pr-send-template" onchange="_prSendApplyTemplate(this.value)" style="margin-bottom:12px;cursor:pointer">${options}</select>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <select class="est-input" id="pr-send-template" onchange="_prSendApplyTemplate(this.value)" style="flex:1;margin-bottom:0;cursor:pointer">${options}</select>
+        <button class="est-btn-secondary" onclick="_prSaveCurrentAsTpl()" title="Save the current subject & message as a reusable template" style="white-space:nowrap">Save as template</button>
+        <button class="est-btn-secondary" id="pr-send-tpl-del" onclick="_prDeleteTpl()" title="Delete this saved template" style="display:none;color:#A93831">Delete</button>
+      </div>
       <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
         <div style="flex:2 1 260px">
           <label class="est-label">To</label>

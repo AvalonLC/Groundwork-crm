@@ -15,6 +15,7 @@ import mig0029 from '../migrations/0029_language_preference.sql?raw'
 import mig0030 from '../migrations/0030_plan_visits_v2.sql?raw'
 import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
+import mig0033 from '../migrations/0033_email_templates.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -345,6 +346,24 @@ async function ensureProposalsSchema(db: D1Database): Promise<void> {
   } catch {}
   await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_prop_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
   _prop32SchemaOk = true
+}
+
+// ── Custom email templates schema (migration 0033) ──
+let _emailTplSchemaOk = false
+async function ensureEmailTplSchema(db: D1Database): Promise<void> {
+  if (_emailTplSchemaOk) return
+  const stmts = mig0033.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensureEmailTplSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0033_email_templates.sql', '0033_email_templates.sql').run()
+  } catch {}
+  _emailTplSchemaOk = true
 }
 
 function secureToken(bytes = 32): string {
@@ -5771,6 +5790,60 @@ app.get('/api/email/status', requireAuth, async (c) => {
   return c.json({ configured })
 })
 
+// ── CUSTOM EMAIL TEMPLATES (My Templates) ────────────────────────────────────
+
+// GET /api/email-templates — list company's custom templates
+app.get('/api/email-templates', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureEmailTplSchema(db)
+  const rows = await db.prepare(
+    `SELECT * FROM email_templates WHERE company_id=? ORDER BY updated_at DESC`
+  ).bind(c.var.companyId as string).all()
+  return c.json({ templates: rows.results || [] })
+})
+
+// POST /api/email-templates — create a template
+app.post('/api/email-templates', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureEmailTplSchema(db)
+  const b = await c.req.json() as any
+  const title = (b.title || '').trim()
+  if (!title) return c.json({ error: 'title required' }, 400)
+  const id = `etpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  await db.prepare(
+    `INSERT INTO email_templates (id, company_id, title, category, subject, body, created_by)
+     VALUES (?,?,?,?,?,?,?)`
+  ).bind(id, c.var.companyId as string, title, (b.category || 'My Templates').trim() || 'My Templates',
+         b.subject || '', b.body || '', c.var.repId as string).run()
+  return c.json({ ok: true, id }, 201)
+})
+
+// PUT /api/email-templates/:id — update a template
+app.put('/api/email-templates/:id', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureEmailTplSchema(db)
+  const id = c.req.param('id')
+  const b = await c.req.json() as any
+  const existing = await db.prepare(`SELECT id FROM email_templates WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(id, c.var.companyId as string).first()
+  if (!existing) return c.json({ error: 'not found' }, 404)
+  await db.prepare(
+    `UPDATE email_templates SET title=?, category=?, subject=?, body=?, updated_at=datetime('now')
+     WHERE id=? AND company_id=?`
+  ).bind((b.title || '').trim() || 'Untitled', (b.category || 'My Templates').trim() || 'My Templates',
+         b.subject || '', b.body || '', id, c.var.companyId as string).run()
+  return c.json({ ok: true })
+})
+
+// DELETE /api/email-templates/:id — delete a template
+app.delete('/api/email-templates/:id', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureEmailTplSchema(db)
+  await db.prepare(`DELETE FROM email_templates WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), c.var.companyId as string).run()
+  return c.json({ ok: true })
+})
+
 // POST /api/email/send — send a transactional email
 app.post('/api/email/send', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -5786,21 +5859,56 @@ app.post('/api/email/send', requireAuth, async (c) => {
   }
 
   // Brand the email with the sender's company (and reply-to their own address)
-  const co = await db.prepare(`SELECT name FROM companies WHERE id=? LIMIT 1`).bind(companyId).first<any>().catch(() => null)
+  const co = await db.prepare(`SELECT name, logo_url, brand_color, phone, website FROM companies WHERE id=? LIMIT 1`).bind(companyId).first<any>().catch(() => null)
   const rep = await db.prepare(`SELECT email, name FROM reps WHERE id=? AND company_id=? LIMIT 1`).bind(c.var.repId as string, companyId).first<any>().catch(() => null)
   const coName = (co && co.name) || 'Groundwork CRM'
+  const esc = (s: string) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const bc = (co && /^#[0-9a-fA-F]{3,8}$/.test(co.brand_color || '') ? co.brand_color : '#2D7A55')
+  const logo = (co && /^https?:\/\//.test(co.logo_url || '')) ? co.logo_url : ''
 
-  // Convert plain text body to simple HTML (auto-link URLs)
-  const escaped = msgBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-  const linked = escaped.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" style="color:#2D7A55;font-weight:600">$1</a>')
-  const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;max-width:600px;margin:40px auto;padding:0 20px;color:#374151">
-    <div style="border-bottom:3px solid #2D7A55;padding-bottom:12px;margin-bottom:24px">
-      <strong style="font-size:18px;color:#111827">${coName.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</strong>
-    </div>
-    <div style="font-size:15px;line-height:1.7;white-space:pre-wrap">${linked}</div>
-    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #E5E7EB;font-size:11px;color:#9CA3AF">
-      Sent by ${coName.replace(/&/g,'&amp;').replace(/</g,'&lt;')} via Groundwork CRM
-    </div>
+  // Pull the first portal/CTA link out of the body and promote it to a button.
+  // The paragraph that is *only* that URL gets dropped from the text (no dupes).
+  const urlRe = /(https?:\/\/[^\s]+)/
+  const ctaMatch = msgBody.match(urlRe)
+  const ctaUrl = ctaMatch ? ctaMatch[1] : ''
+  let textBody = msgBody
+  if (ctaUrl) {
+    textBody = textBody.split('\n').filter((l: string) => l.trim() !== ctaUrl).join('\n')
+      .replace(/\n{3,}/g, '\n\n').trim()
+  }
+  const ctaLabel = entity_type === 'proposal' ? 'View Your Proposal'
+    : entity_type === 'invoice' ? 'View & Pay Invoice'
+    : entity_type === 'estimate' ? 'View Your Estimate'
+    : 'View Details'
+
+  // Escape remaining text, auto-link any other URLs
+  const linked = esc(textBody).replace(/(https?:\/\/[^\s]+)/g, `<a href="$1" style="color:${bc};font-weight:600">$1</a>`)
+
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#F2F4F3">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F2F4F3;padding:32px 12px"><tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+      <tr><td style="background:${bc};padding:26px 32px" align="left">
+        ${logo
+          ? `<img src="${esc(logo)}" alt="${esc(coName)}" height="44" style="display:block;max-height:44px;width:auto;border:0">`
+          : `<span style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:.3px">${esc(coName)}</span>`}
+      </td></tr>
+      <tr><td style="padding:32px 32px 8px">
+        <div style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.7;color:#374151;white-space:pre-wrap">${linked}</div>
+      </td></tr>
+      ${ctaUrl ? `
+      <tr><td style="padding:22px 32px 30px" align="center">
+        <a href="${esc(ctaUrl)}" style="display:inline-block;background:${bc};color:#ffffff;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:700;text-decoration:none;padding:13px 34px;border-radius:9px">${ctaLabel}</a>
+        <div style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:11px;color:#9CA3AF;margin-top:12px">Or copy this link: <a href="${esc(ctaUrl)}" style="color:${bc}">${esc(ctaUrl)}</a></div>
+      </td></tr>` : ''}
+      <tr><td style="padding:18px 32px;border-top:1px solid #E9ECEB;background:#FAFBFA">
+        <div style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:12px;color:#6B7280;font-weight:600">${esc(coName)}</div>
+        <div style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:11px;color:#9CA3AF;margin-top:2px">
+          ${[co?.phone, co?.website].filter(Boolean).map(esc).join(' · ')}
+        </div>
+        <div style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:10px;color:#C2C8C5;margin-top:8px">Sent via Groundwork CRM</div>
+      </td></tr>
+    </table>
+  </td></tr></table>
   </body></html>`
 
   const sent = await sendEmail(apiKey, to_email, subject, html, { cc: cc_email || undefined, fromName: coName, replyTo: (rep && rep.email) || undefined })
@@ -6944,7 +7052,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b017">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b018">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6968,8 +7076,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b017"></script>
-  <script src="/js/client_portal.js?v=20260716b017"></script>
+  <script src="/js/platform_core.js?v=20260716b018"></script>
+  <script src="/js/client_portal.js?v=20260716b018"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7599,9 +7707,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b017">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b017">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b017">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b018">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b018">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b018">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8149,36 +8257,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b017"></script>
-<script src="/js/db.js?v=20260716b017"></script>
-<script src="/js/data.js?v=20260716b017"></script>
-<script src="/js/reps.js?v=20260716b017"></script>
-<script src="/js/record-page.js?v=20260716b017"></script>
-<script src="/js/academy.js?v=20260716b017"></script>
-<script src="/js/task_engine.js?v=20260716b017"></script>
-<script src="/js/gw_i18n.js?v=20260716b017"></script>
-<script src="/js/app_premium.js?v=20260716b017"></script>
-<script src="/js/estimates.js?v=20260716b017"></script>
-<script src="/js/proposals.js?v=20260716b017"></script>
-<script src="/js/invoices.js?v=20260716b017"></script>
-<script src="/js/csv_import.js?v=20260716b017"></script>
-<script src="/js/onboarding.js?v=20260716b017"></script>
-<script src="/js/recurring_plans.js?v=20260716b017"></script>
-<script src="/js/reviews.js?v=20260716b017"></script>
-<script src="/js/stripe.js?v=20260716b017"></script>
-<script src="/js/email.js?v=20260716b017"></script>
-<script src="/js/notifications.js?v=20260716b017"></script>
-<script src="/js/integrations.js?v=20260716b017"></script>
-<script src="/js/user_management.js?v=20260716b017"></script>
-<script src="/js/platform_admin.js?v=20260716b017"></script>
-<script src="/js/time_tracker.js?v=20260716b017"></script>
-<script src="/js/field_workday.js?v=20260716b017"></script>
-<script src="/js/platform_core.js?v=20260716b017"></script>
-<script src="/js/approval_engine.js?v=20260716b017"></script>
-<script src="/js/automation_engine.js?v=20260716b017"></script>
-<script src="/js/client_portal.js?v=20260716b017"></script>
-<script src="/js/field_mode.js?v=20260716b017"></script>
-<script src="/js/assets_hub.js?v=20260716b017"></script>
+<script src="/js/gw-icons.js?v=20260716b018"></script>
+<script src="/js/db.js?v=20260716b018"></script>
+<script src="/js/data.js?v=20260716b018"></script>
+<script src="/js/reps.js?v=20260716b018"></script>
+<script src="/js/record-page.js?v=20260716b018"></script>
+<script src="/js/academy.js?v=20260716b018"></script>
+<script src="/js/task_engine.js?v=20260716b018"></script>
+<script src="/js/gw_i18n.js?v=20260716b018"></script>
+<script src="/js/app_premium.js?v=20260716b018"></script>
+<script src="/js/estimates.js?v=20260716b018"></script>
+<script src="/js/proposals.js?v=20260716b018"></script>
+<script src="/js/invoices.js?v=20260716b018"></script>
+<script src="/js/csv_import.js?v=20260716b018"></script>
+<script src="/js/onboarding.js?v=20260716b018"></script>
+<script src="/js/recurring_plans.js?v=20260716b018"></script>
+<script src="/js/reviews.js?v=20260716b018"></script>
+<script src="/js/stripe.js?v=20260716b018"></script>
+<script src="/js/email.js?v=20260716b018"></script>
+<script src="/js/notifications.js?v=20260716b018"></script>
+<script src="/js/integrations.js?v=20260716b018"></script>
+<script src="/js/user_management.js?v=20260716b018"></script>
+<script src="/js/platform_admin.js?v=20260716b018"></script>
+<script src="/js/time_tracker.js?v=20260716b018"></script>
+<script src="/js/field_workday.js?v=20260716b018"></script>
+<script src="/js/platform_core.js?v=20260716b018"></script>
+<script src="/js/approval_engine.js?v=20260716b018"></script>
+<script src="/js/automation_engine.js?v=20260716b018"></script>
+<script src="/js/client_portal.js?v=20260716b018"></script>
+<script src="/js/field_mode.js?v=20260716b018"></script>
+<script src="/js/assets_hub.js?v=20260716b018"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
