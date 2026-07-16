@@ -250,17 +250,21 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
 }
 
 // ── SendGrid email helper ─────────────────────────────────────────────────────
-async function sendEmail(apiKey: string, to: string, subject: string, html: string): Promise<boolean> {
+async function sendEmail(apiKey: string, to: string, subject: string, html: string, opts?: { cc?: string; fromName?: string; replyTo?: string }): Promise<boolean> {
   try {
+    const personalization: any = { to: [{ email: to }] }
+    if (opts?.cc) personalization.cc = [{ email: opts.cc }]
+    const payload: any = {
+      personalizations: [personalization],
+      from: { email: 'noreply@groundwork-crm.com', name: opts?.fromName || 'Groundwork CRM' },
+      subject,
+      content: [{ type: 'text/html', value: html }]
+    }
+    if (opts?.replyTo) payload.reply_to = { email: opts.replyTo }
     const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: 'noreply@groundwork-crm.com', name: 'Groundwork CRM' },
-        subject,
-        content: [{ type: 'text/html', value: html }]
-      })
+      body: JSON.stringify(payload)
     })
     return res.status >= 200 && res.status < 300
   } catch { return false }
@@ -5773,7 +5777,7 @@ app.post('/api/email/send', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   const apiKey = (c.env as any).SENDGRID_API_KEY as string | undefined
   const body = await c.req.json() as any
-  const { to_email, subject, body: msgBody, entity_type, entity_id } = body
+  const { to_email, cc_email, subject, body: msgBody, entity_type, entity_id } = body
   if (!to_email || !subject || !msgBody) return c.json({ error: 'to_email, subject, body required' }, 400)
 
   if (!apiKey) {
@@ -5781,18 +5785,25 @@ app.post('/api/email/send', requireAuth, async (c) => {
     return c.json({ fallback: true, message: 'SendGrid not configured — use mailto fallback' })
   }
 
-  // Convert plain text body to simple HTML
+  // Brand the email with the sender's company (and reply-to their own address)
+  const co = await db.prepare(`SELECT name FROM companies WHERE id=? LIMIT 1`).bind(companyId).first<any>().catch(() => null)
+  const rep = await db.prepare(`SELECT email, name FROM reps WHERE id=? AND company_id=? LIMIT 1`).bind(c.var.repId as string, companyId).first<any>().catch(() => null)
+  const coName = (co && co.name) || 'Groundwork CRM'
+
+  // Convert plain text body to simple HTML (auto-link URLs)
+  const escaped = msgBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const linked = escaped.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" style="color:#2D7A55;font-weight:600">$1</a>')
   const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;max-width:600px;margin:40px auto;padding:0 20px;color:#374151">
     <div style="border-bottom:3px solid #2D7A55;padding-bottom:12px;margin-bottom:24px">
-      <strong style="font-size:18px;color:#111827">Groundwork CRM</strong>
+      <strong style="font-size:18px;color:#111827">${coName.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</strong>
     </div>
-    <div style="font-size:15px;line-height:1.7;white-space:pre-wrap">${msgBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+    <div style="font-size:15px;line-height:1.7;white-space:pre-wrap">${linked}</div>
     <div style="margin-top:32px;padding-top:16px;border-top:1px solid #E5E7EB;font-size:11px;color:#9CA3AF">
-      Sent via Groundwork CRM
+      Sent by ${coName.replace(/&/g,'&amp;').replace(/</g,'&lt;')} via Groundwork CRM
     </div>
   </body></html>`
 
-  const sent = await sendEmail(apiKey, to_email, subject, html)
+  const sent = await sendEmail(apiKey, to_email, subject, html, { cc: cc_email || undefined, fromName: coName, replyTo: (rep && rep.email) || undefined })
   if (!sent) return c.json({ error: 'Email delivery failed' }, 500)
 
   return c.json({ ok: true, to: to_email, subject })
@@ -6933,7 +6944,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b015">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6957,8 +6968,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b007"></script>
-  <script src="/js/client_portal.js?v=20260716b007"></script>
+  <script src="/js/platform_core.js?v=20260716b015"></script>
+  <script src="/js/client_portal.js?v=20260716b015"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7588,9 +7599,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b015">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b015">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b015">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8138,36 +8149,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b007"></script>
-<script src="/js/db.js?v=20260716b007"></script>
-<script src="/js/data.js?v=20260716b007"></script>
-<script src="/js/reps.js?v=20260716b007"></script>
-<script src="/js/record-page.js?v=20260716b007"></script>
-<script src="/js/academy.js?v=20260716b007"></script>
-<script src="/js/task_engine.js?v=20260716b007"></script>
-<script src="/js/gw_i18n.js?v=20260716b007"></script>
-<script src="/js/app_premium.js?v=20260716b007"></script>
-<script src="/js/estimates.js?v=20260716b007"></script>
-<script src="/js/proposals.js?v=20260716b007"></script>
-<script src="/js/invoices.js?v=20260716b007"></script>
-<script src="/js/csv_import.js?v=20260716b007"></script>
-<script src="/js/onboarding.js?v=20260716b007"></script>
-<script src="/js/recurring_plans.js?v=20260716b007"></script>
-<script src="/js/reviews.js?v=20260716b007"></script>
-<script src="/js/stripe.js?v=20260716b007"></script>
-<script src="/js/email.js?v=20260716b007"></script>
-<script src="/js/notifications.js?v=20260716b007"></script>
-<script src="/js/integrations.js?v=20260716b007"></script>
-<script src="/js/user_management.js?v=20260716b007"></script>
-<script src="/js/platform_admin.js?v=20260716b007"></script>
-<script src="/js/time_tracker.js?v=20260716b007"></script>
-<script src="/js/field_workday.js?v=20260716b007"></script>
-<script src="/js/platform_core.js?v=20260716b007"></script>
-<script src="/js/approval_engine.js?v=20260716b007"></script>
-<script src="/js/automation_engine.js?v=20260716b007"></script>
-<script src="/js/client_portal.js?v=20260716b007"></script>
-<script src="/js/field_mode.js?v=20260716b007"></script>
-<script src="/js/assets_hub.js?v=20260716b007"></script>
+<script src="/js/gw-icons.js?v=20260716b015"></script>
+<script src="/js/db.js?v=20260716b015"></script>
+<script src="/js/data.js?v=20260716b015"></script>
+<script src="/js/reps.js?v=20260716b015"></script>
+<script src="/js/record-page.js?v=20260716b015"></script>
+<script src="/js/academy.js?v=20260716b015"></script>
+<script src="/js/task_engine.js?v=20260716b015"></script>
+<script src="/js/gw_i18n.js?v=20260716b015"></script>
+<script src="/js/app_premium.js?v=20260716b015"></script>
+<script src="/js/estimates.js?v=20260716b015"></script>
+<script src="/js/proposals.js?v=20260716b015"></script>
+<script src="/js/invoices.js?v=20260716b015"></script>
+<script src="/js/csv_import.js?v=20260716b015"></script>
+<script src="/js/onboarding.js?v=20260716b015"></script>
+<script src="/js/recurring_plans.js?v=20260716b015"></script>
+<script src="/js/reviews.js?v=20260716b015"></script>
+<script src="/js/stripe.js?v=20260716b015"></script>
+<script src="/js/email.js?v=20260716b015"></script>
+<script src="/js/notifications.js?v=20260716b015"></script>
+<script src="/js/integrations.js?v=20260716b015"></script>
+<script src="/js/user_management.js?v=20260716b015"></script>
+<script src="/js/platform_admin.js?v=20260716b015"></script>
+<script src="/js/time_tracker.js?v=20260716b015"></script>
+<script src="/js/field_workday.js?v=20260716b015"></script>
+<script src="/js/platform_core.js?v=20260716b015"></script>
+<script src="/js/approval_engine.js?v=20260716b015"></script>
+<script src="/js/automation_engine.js?v=20260716b015"></script>
+<script src="/js/client_portal.js?v=20260716b015"></script>
+<script src="/js/field_mode.js?v=20260716b015"></script>
+<script src="/js/assets_hub.js?v=20260716b015"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

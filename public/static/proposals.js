@@ -1005,56 +1005,189 @@ function _prPvRender() {
   frame.onload = () => { try { frame.contentWindow.scrollTo(0, scrollY); } catch (_) {} };
 }
 
-// ── SEND (Gmail if connected, mailto fallback) ────────────────────────────────
+// ── SEND (full composer: Gmail → SendGrid → mailto, with template library) ────
+
+function _prSendVars() {
+  // Variable map used to fill placeholder tokens in email templates
+  const p = _prDraft;
+  const rep = (window.getCurrentRep ? window.getCurrentRep() : null) || window._d1SessionRep || {};
+  const boot = (window._gwBootstrap && window._gwBootstrap.company) || {};
+  const brand = window._scBrand || {};
+  const co = brand.name || boot.name || 'our company';
+  const total = (typeof _prComputeTotal === 'function') ? _prComputeTotal() : 0;
+  return {
+    '[Name]': (p.client_name || '').split(' ')[0] || 'there',
+    '[Client Name]': p.client_name || '',
+    '[Your Name]': rep.name || '',
+    '[Phone]': brand.phone || boot.phone || '',
+    '[Email]': rep.email || '',
+    '[Company]': co,
+    '[Project Name]': p.title || 'your project',
+    '[project type]': p.title || 'your project',
+    '[address]': p.property_addr || 'your property',
+    '[price]': total ? total.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : (typeof _prFirstCalloutAmount === 'function' ? (_prFirstCalloutAmount() || '') : ''),
+    '[link]': _prPortalUrl(),
+  };
+}
+function _prFillVars(text) {
+  const vars = _prSendVars();
+  let out = String(text || '');
+  // Only substitute tokens that have a real value — empty ones stay visible
+  // (e.g. [price] on a proposal with no priced options) so the user fills them in.
+  for (const k in vars) { if (vars[k]) out = out.split(k).join(vars[k]); }
+  return out;
+}
+function _prSendTemplates() {
+  // Built-in proposal delivery template + the company's Templates library (data.templates)
+  const p = _prDraft;
+  const rep = (window.getCurrentRep ? window.getCurrentRep() : null) || window._d1SessionRep || {};
+  const list = [{
+    id: '_default',
+    category: 'Proposal',
+    title: 'Proposal delivery (default)',
+    subject: p.title ? `Your Proposal — ${p.title}` : 'Your Proposal',
+    body: `Hi ${(p.client_name || '').split(' ')[0] || 'there'},\n\nThank you for the opportunity! Your proposal${p.title ? ` — ${p.title}` : ''} is ready to review here:\n\n${_prPortalUrl()}\n\nYou can accept it right from that page. Let me know if you have any questions!\n\nBest,\n${rep.name || ''}`,
+  }];
+  const lib = (typeof data !== 'undefined' && Array.isArray(data.templates)) ? data.templates : [];
+  lib.forEach((t, i) => list.push({ id: 'lib_' + i, category: t.category || 'Templates', title: t.title || ('Template ' + (i + 1)), subject: t.subject || '', body: t.body || '' }));
+  return list;
+}
+window._prSendApplyTemplate = function (id) {
+  const t = _prSendTemplates().find(x => x.id === id);
+  if (!t) return;
+  const subjEl = document.getElementById('pr-send-subject');
+  const bodyEl = document.getElementById('pr-send-body');
+  if (subjEl) subjEl.value = _prFillVars(t.subject);
+  let body = _prFillVars(t.body);
+  // Every proposal email must carry the portal link — append if the template lacks it
+  if (!body.includes(_prPortalUrl())) body += `\n\nReview your proposal here:\n${_prPortalUrl()}`;
+  if (bodyEl) bodyEl.value = body;
+};
 
 function _prSendModal() {
   const p = _prDraft;
   if (!p?.portal_token) { _prToast('Save the proposal first', 'error'); return; }
   document.getElementById('pr-send-modal')?.remove();
   const gmailOk = typeof isGoogleConnected === 'function' && isGoogleConnected();
-  const defBody = `Hi ${(p.client_name || '').split(' ')[0] || 'there'},\n\nThank you for the opportunity! Your proposal${p.title ? ` — ${p.title}` : ''} is ready to review here:\n\n${_prPortalUrl()}\n\nYou can accept it right from that page. Let me know if you have any questions!\n\nBest,\n${(window.getCurrentRep ? (window.getCurrentRep()?.name || '') : '')}`;
+  const tmpls = _prSendTemplates();
+  const def = tmpls[0];
+
+  // Group library templates by category for the picker
+  const groups = {};
+  tmpls.forEach(t => { (groups[t.category] = groups[t.category] || []).push(t); });
+  const options = Object.keys(groups).map(cat =>
+    `<optgroup label="${_prEsc(cat)}">${groups[cat].map(t =>
+      `<option value="${_prEsc(t.id)}"${t.id === '_default' ? ' selected' : ''}>${_prEsc(t.title)}</option>`).join('')}</optgroup>`
+  ).join('');
+
   const wrap = document.createElement('div');
   wrap.id = 'pr-send-modal';
-  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,26,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,26,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.innerHTML = `
-  <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;padding:22px;box-shadow:0 24px 64px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
-    <div style="font-size:16px;font-weight:800;margin-bottom:4px">Send proposal to client</div>
-    <div style="font-size:12px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">${gmailOk ? 'Sends from your connected Gmail and logs to the lead.' : 'Gmail not connected — this will open your email app instead.'}</div>
-    <label class="est-label">To</label>
-    <input class="est-input" id="pr-send-to" type="email" value="${_prEsc(p.client_email || '')}" placeholder="client@email.com" style="margin-bottom:10px">
-    <label class="est-label">Subject</label>
-    <input class="est-input" id="pr-send-subject" value="${_prEsc(p.title ? `Your Proposal — ${p.title}` : 'Your Proposal')}" style="margin-bottom:10px">
-    <label class="est-label">Message</label>
-    <textarea class="est-input" id="pr-send-body" rows="8" style="resize:vertical;margin-bottom:16px">${_prEsc(defBody)}</textarea>
-    <div style="display:flex;gap:10px;justify-content:flex-end">
+  <div style="background:#fff;border-radius:16px;max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.28)" onclick="event.stopPropagation()">
+    <div style="padding:20px 24px 14px;border-bottom:1px solid var(--gw-line,#E8EDEC)">
+      <div style="font-size:17px;font-weight:800">Send proposal to client</div>
+      <div style="font-size:12px;color:var(--gw-text-subtle,#8A948C);margin-top:3px" id="pr-send-via">Checking email delivery…</div>
+    </div>
+    <div style="padding:18px 24px;overflow-y:auto;flex:1">
+      <label class="est-label">Email template</label>
+      <select class="est-input" id="pr-send-template" onchange="_prSendApplyTemplate(this.value)" style="margin-bottom:12px;cursor:pointer">${options}</select>
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="flex:2 1 260px">
+          <label class="est-label">To</label>
+          <input class="est-input" id="pr-send-to" type="email" value="${_prEsc(p.client_email || '')}" placeholder="client@email.com">
+        </div>
+        <div style="flex:1 1 180px">
+          <label class="est-label">CC (optional)</label>
+          <input class="est-input" id="pr-send-cc" type="email" value="" placeholder="cc@email.com">
+        </div>
+      </div>
+      <label class="est-label">Subject</label>
+      <input class="est-input" id="pr-send-subject" value="${_prEsc(_prFillVars(def.subject))}" style="margin-bottom:12px">
+      <label class="est-label">Message</label>
+      <textarea class="est-input" id="pr-send-body" rows="12" style="resize:vertical;min-height:220px;line-height:1.55">${_prEsc(_prFillVars(def.body))}</textarea>
+      <div style="display:flex;align-items:center;gap:7px;margin-top:10px;padding:9px 12px;background:var(--gw-bg2,#F5F8F7);border:1px solid var(--gw-line,#E2EAE9);border-radius:9px;font-size:12px">
+        <span style="color:var(--gw-text-subtle,#8A948C)">Client link:</span>
+        <a href="${_prEsc(_prPortalUrl())}" target="_blank" style="color:var(--gw-pine,#4D8A86);font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_prEsc(_prPortalUrl())}</a>
+      </div>
+      <div id="pr-send-error" style="display:none;margin-top:10px;padding:9px 12px;background:#FDF1F0;border:1px solid #EFC9C6;border-radius:9px;font-size:12.5px;color:#A93831"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center;padding:14px 24px;border-top:1px solid var(--gw-line,#E8EDEC)">
       <button class="est-btn-secondary" onclick="document.getElementById('pr-send-modal').remove()">Cancel</button>
-      <button class="est-btn-primary" onclick="_prDoSend()">${gmailOk ? 'Send via Gmail' : 'Open in email app'}</button>
+      <button class="est-btn-secondary" onclick="_prDoSend('mailto')" title="Compose in your own email app instead">Open in email app</button>
+      <button class="est-btn-primary" id="pr-send-btn" onclick="_prDoSend()">Send Email</button>
     </div>
   </div>`;
   wrap.addEventListener('click', () => wrap.remove());
   document.body.appendChild(wrap);
+
+  // Delivery-path notice: Gmail beats SendGrid beats mailto
+  const via = document.getElementById('pr-send-via');
+  if (gmailOk) {
+    if (via) via.textContent = 'Sends from your connected Gmail and logs to the lead.';
+  } else {
+    fetch('/api/email/status', { credentials: 'include' }).then(r => r.json()).then(d => {
+      const v = document.getElementById('pr-send-via'); if (!v) return;
+      v.textContent = d.configured
+        ? 'Sends directly from Groundwork (replies go to your email) and logs to the lead.'
+        : 'Email not configured — this will open your email app instead.';
+      if (!d.configured) {
+        const btn = document.getElementById('pr-send-btn');
+        if (btn) btn.textContent = 'Open in email app';
+        window._prSendNoDirect = true;
+      } else window._prSendNoDirect = false;
+    }).catch(() => { window._prSendNoDirect = true; });
+  }
+  if (gmailOk) window._prSendNoDirect = false;
 }
 
-async function _prDoSend() {
+async function _prDoSend(forceMode) {
   const p = _prDraft;
   const to = document.getElementById('pr-send-to')?.value?.trim();
+  const cc = document.getElementById('pr-send-cc')?.value?.trim() || '';
   const subject = document.getElementById('pr-send-subject')?.value || 'Your Proposal';
   const body = document.getElementById('pr-send-body')?.value || _prPortalUrl();
+  const errEl = document.getElementById('pr-send-error');
+  if (errEl) errEl.style.display = 'none';
   if (!to) { _prToast('Enter the client email', 'error'); return; }
 
-  const gmailOk = typeof isGoogleConnected === 'function' && isGoogleConnected() && typeof gmailSendEmail === 'function';
+  const openMailto = () => {
+    window.location.href = `mailto:${encodeURIComponent(to)}${cc ? `?cc=${encodeURIComponent(cc)}&` : '?'}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const gmailOk = !forceMode && typeof isGoogleConnected === 'function' && isGoogleConnected() && typeof gmailSendEmail === 'function';
   let sentViaGmail = false;
+  let sentDirect = false;
+  const btn = document.getElementById('pr-send-btn');
+  const btnOrig = btn ? btn.textContent : '';
+  if (btn && forceMode !== 'mailto') { btn.textContent = 'Sending…'; btn.disabled = true; }
+
   try {
-    if (gmailOk) {
-      await gmailSendEmail({ to, subject, body });
+    if (forceMode === 'mailto') {
+      openMailto();
+    } else if (gmailOk) {
+      await gmailSendEmail({ to, cc: cc || undefined, subject, body: body.replace(/\n/g, '<br>') });
       sentViaGmail = true;
+    } else if (!window._prSendNoDirect) {
+      // Direct send from Groundwork (SendGrid)
+      const res = await fetch('/api/email/send', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_email: to, cc_email: cc || undefined, subject, body, entity_type: 'proposal', entity_id: p.id }),
+      });
+      const j = await res.json();
+      if (j.fallback) { openMailto(); }
+      else if (!res.ok || j.error) throw new Error(j.error || 'Send failed');
+      else sentDirect = true;
     } else {
-      window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      openMailto();
     }
   } catch (e) {
     console.error('[_prDoSend]', e);
-    _prToast('Gmail send failed — opening email app instead', 'error');
-    window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (btn) { btn.textContent = btnOrig; btn.disabled = false; }
+    if (errEl) { errEl.textContent = (e.message || 'Send failed') + ' — you can still use "Open in email app".'; errEl.style.display = 'block'; }
+    else _prToast('Send failed — try "Open in email app"', 'error');
+    return;
   }
 
   // Mark as sent + log to lead comms
@@ -1081,6 +1214,7 @@ async function _prDoSend() {
           ts: new Date().toISOString(),
           sentBy: (window.getCurrentRep ? window.getCurrentRep() : null)?.name || 'Rep',
           gmailSent: sentViaGmail,
+          directSent: sentDirect,
           files: [],
         });
         if (typeof window.saveState === 'function') window.saveState();
@@ -1089,7 +1223,7 @@ async function _prDoSend() {
   }
 
   document.getElementById('pr-send-modal')?.remove();
-  _prToast(sentViaGmail ? 'Proposal sent via Gmail ✓' : 'Proposal handed to your email app', 'success');
+  _prToast(sentViaGmail ? 'Proposal sent via Gmail ✓' : sentDirect ? 'Proposal sent ✓' : 'Proposal handed to your email app', 'success');
   _prRenderBuilder();
 }
 
