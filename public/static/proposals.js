@@ -170,9 +170,24 @@ function _prRenderBuilder() {
   const p = _prDraft;
   const isEdit = !!p.id;
 
+  const pvOn = _prPvOn();
+
+  // #view is overflow:auto (a scroll container that never actually scrolls —
+  // the window does), which silently disables position:sticky for children.
+  // Override it while the builder is open so the preview + rail stick, and
+  // auto-restore the moment any other view replaces the builder.
+  view.style.setProperty('overflow', 'visible', 'important');
+  if (!window._prViewOverflowWatch) {
+    window._prViewOverflowWatch = new MutationObserver(() => {
+      const v = document.getElementById('view');
+      if (v && v.style.overflow === 'visible' && !document.getElementById('pr-builder-shell')) v.style.removeProperty('overflow');
+    });
+    window._prViewOverflowWatch.observe(view, { childList: true });
+  }
+
   view.innerHTML = `
-  <div style="max-width:1120px;margin:0 auto;padding:20px 18px 60px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px" id="pr-builder-shell">
-    <div style="min-width:0">
+  <div style="max-width:${pvOn ? '1760px' : '1120px'};margin:0 auto;padding:20px 18px 60px;display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start" id="pr-builder-shell">
+    <div style="flex:1 1 540px;min-width:0">
 
       <!-- Top nav -->
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
@@ -180,6 +195,7 @@ function _prRenderBuilder() {
         <div style="font-size:17px;font-weight:800">${isEdit ? `Edit ${_prEsc(p.prop_number || 'Proposal')}` : 'New Proposal'}</div>
         ${_prStatusPill(p.status)}
         <span id="pr-save-state" style="margin-left:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
+        <button class="est-btn-secondary" style="font-size:12px;padding:7px 12px;white-space:nowrap${pvOn ? ';background:var(--gw-teal,#4D8A86);color:#fff;border-color:transparent' : ''}" onclick="_prTogglePreview()" title="Show the client-facing document side-by-side, updating live as you type">${pvOn ? '✓ Live preview' : '👁 Live preview'}</button>
       </div>
 
       <!-- AI draft -->
@@ -304,8 +320,19 @@ function _prRenderBuilder() {
       </div>
     </div>
 
+    <!-- Live client preview -->
+    <div id="pr-preview-col" style="flex:1 1 520px;min-width:340px;align-self:stretch;${pvOn ? '' : 'display:none'}">
+      <div style="position:sticky;top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C)">Client view · updates as you type</div>
+          <button style="border:none;background:transparent;font-size:11.5px;color:var(--gw-text-subtle,#8A948C);cursor:pointer;text-decoration:underline" onclick="_prTogglePreview()">Hide</button>
+        </div>
+        <iframe id="pr-pv-frame" title="Live proposal preview" style="width:100%;height:calc(100vh - 100px);min-height:420px;border:1px solid var(--gw-border,#E4E0D6);border-radius:12px;background:#F5F3EE;box-shadow:0 8px 28px rgba(17,57,49,.08)"></iframe>
+      </div>
+    </div>
+
     <!-- Right rail -->
-    <aside>
+    <aside style="flex:${pvOn ? '1 1 220px;max-width:300px' : '0 0 300px'};min-width:220px">
       <div style="background:var(--gw-surface,#fff);border:1px solid var(--gw-border,#E4E0D6);border-radius:12px;padding:16px;position:sticky;top:16px">
         <div style="font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C);margin-bottom:10px">Summary</div>
         <div id="pr-rail-summary">${_prRailHtml()}</div>
@@ -322,6 +349,16 @@ function _prRenderBuilder() {
       </div>
     </aside>
   </div>`;
+
+  // Live preview: any keystroke anywhere in the builder refreshes the client
+  // view (all field editors mutate _prDraft via inline oninput first, so a
+  // delegated listener firing after them always sees fresh data).
+  const shell = document.getElementById('pr-builder-shell');
+  if (shell) {
+    shell.addEventListener('input', _prPvQueue);
+    shell.addEventListener('change', _prPvQueue);
+  }
+  if (pvOn) _prPvRender();
 }
 
 // ── SECTIONS EDITOR — universal block system ─────────────────────────────────
@@ -505,6 +542,7 @@ function _prSectionsRefresh() {
   const el = document.getElementById('pr-sections');
   if (el) el.innerHTML = _prSectionsHtml();
   _prRailRefresh();
+  _prPvQueue();
 }
 function _prAddSection(type) {
   if (!_prDraft) return;
@@ -621,6 +659,7 @@ function _prRailHtml() {
 function _prRailRefresh() {
   const el = document.getElementById('pr-rail-summary');
   if (el) el.innerHTML = _prRailHtml();
+  _prPvQueue();
 }
 
 // ── PAYMENT SCHEDULE (proposal) ───────────────────────────────────────────────
@@ -743,6 +782,227 @@ function _prCopyPortalLink() {
 function _prPreview() {
   const url = _prPortalUrl();
   if (url) window.open(url, '_blank');
+}
+
+// ── LIVE PREVIEW — client-side mirror of the portal renderer ─────────────────
+// Renders the current draft into the side iframe exactly the way the client
+// portal will show it, updating (debounced) on every keystroke. Persisted
+// on/off per user via localStorage.
+
+function _prPvOn() {
+  try { return localStorage.getItem('gwProposalPreviewV1') === '1'; } catch (_) { return false; }
+}
+
+function _prTogglePreview() {
+  try { localStorage.setItem('gwProposalPreviewV1', _prPvOn() ? '0' : '1'); } catch (_) {}
+  _prRenderBuilder();          // re-layout builder with/without the preview column
+}
+
+let _prPvTimer = null;
+function _prPvQueue() {        // debounced refresh — called from every input
+  if (!_prPvOn()) return;
+  clearTimeout(_prPvTimer);
+  _prPvTimer = setTimeout(_prPvRender, 220);
+}
+
+function _prPvBrand() {
+  const b = window._scBrand || {};
+  const boot = (window._gwBootstrap && window._gwBootstrap.company) || {};
+  return {
+    name: b.name || boot.name || 'Your Company',
+    tagline: b.tagline || '',
+    logo_url: b.logo_url || '',
+    brand_color: b.brand_color || '#113931',
+    phone: b.phone || '',
+    website: b.website || '',
+  };
+}
+
+function _prPvFmtDate(d) {
+  if (!d) return '';
+  try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); } catch (_) { return d; }
+}
+
+function _prPvBullet(raw) {
+  const t = String(raw || '');
+  const ci = t.indexOf(':');
+  if (ci > 0 && ci < 90) return `<strong>${_prEsc(t.slice(0, ci))}:</strong>${_prEsc(t.slice(ci + 1))}`;
+  return _prEsc(t);
+}
+
+function _prPvSectionHtml(s, si, optCount) {
+  const esc = _prEsc, money = _prFmt;
+  const t = s.type;
+  if (t === 'text' || !t) {
+    return `<div class="pp-section"><h2>${esc(s.title || '')}</h2><p class="pp-body-text">${esc(s.body || '').replace(/\n/g, '<br>')}</p></div>`;
+  }
+  if (t === 'bullets') {
+    const items = (Array.isArray(s.items) ? s.items : []).filter(it => String(it || '').trim());
+    return `<div class="pp-section"><h2>${esc(s.title || '')}</h2>
+      ${s.intro ? `<p class="pp-body-text" style="margin-bottom:10px">${esc(s.intro)}</p>` : ''}
+      <ul class="pp-bullets">${items.map(it => `<li>${_prPvBullet(it)}</li>`).join('')}</ul></div>`;
+  }
+  if (t === 'option') {
+    const rows = Array.isArray(s.rows) ? s.rows : [];
+    const subtotal = rows.reduce((tt, r) => tt + Number(r.price || 0), 0);
+    return `<div class="pp-section">
+      <h2>${esc(s.title || `Option ${si + 1}`)}</h2>
+      ${s.goal ? `<p class="pp-goal">${esc(s.goal)}</p>` : ''}
+      <table class="pp-table">
+        <thead><tr><th>${esc(s.col1 || 'Application')}</th><th>${esc(s.col2 || 'Included Service')}</th><th class="pp-price-col">${esc(s.col3 || 'Price')}</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td>${esc(r.app || '')}</td><td>${esc(r.service || '')}</td><td class="pp-price-col">${r.price !== '' && r.price != null ? money(Number(r.price)) : ''}</td></tr>`).join('')}</tbody>
+        ${subtotal > 0 ? `<tfoot><tr><td colspan="2"><strong>Option Total</strong></td><td class="pp-price-col"><strong>${money(subtotal)}</strong></td></tr></tfoot>` : ''}
+      </table>
+      ${s.footnote ? `<p class="pp-footnote">${esc(s.footnote)}</p>` : ''}
+      ${optCount > 1 ? `<button class="pp-accept-btn" disabled style="opacity:.55;cursor:default">Accept ${esc(s.title || `Option ${si + 1}`)}</button>` : ''}
+    </div>`;
+  }
+  if (t === 'table') {
+    const cols = (Array.isArray(s.columns) && s.columns.length) ? s.columns : ['Item', 'Description'];
+    const rows = Array.isArray(s.rows) ? s.rows : [];
+    return `<div class="pp-section"><h2>${esc(s.title || '')}</h2>
+      <table class="pp-table">
+        <thead><tr>${cols.map(cn => `<th>${esc(cn)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r => `<tr>${cols.map((_, ci) => `<td>${esc((r.cells || [])[ci] || '').replace(/\n/g, '<br>')}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+      ${s.footnote ? `<p class="pp-footnote">${esc(s.footnote)}</p>` : ''}</div>`;
+  }
+  if (t === 'cards') {
+    const cards = (Array.isArray(s.cards) ? s.cards : []).filter(cd => (cd.head || '').trim() || (cd.body || '').trim());
+    return `<div class="pp-section"><h2>${esc(s.title || '')}</h2>
+      ${s.intro ? `<p class="pp-body-text" style="margin-bottom:14px">${esc(s.intro)}</p>` : ''}
+      <div class="pp-cards">${cards.map(cd => `<div class="pp-card">
+        <div class="pp-card-head">${esc(cd.head || '')}</div>
+        ${cd.price ? `<div class="pp-card-price">${esc(cd.price)}</div>` : ''}
+        ${cd.body ? `<div class="pp-card-body">${esc(cd.body).replace(/\n/g, '<br>')}</div>` : ''}
+      </div>`).join('')}</div></div>`;
+  }
+  if (t === 'fields') {
+    const pairs = (Array.isArray(s.pairs) ? s.pairs : []).filter(pv => (pv.k || '').trim() || (pv.v || '').trim());
+    return `<div class="pp-section">${s.title ? `<h2>${esc(s.title)}</h2>` : ''}
+      <div class="pp-fields">${pairs.map(pv => `<div class="pp-field"><div class="k">${esc(pv.k || '')}</div><div class="v">${esc(pv.v || '')}</div></div>`).join('')}</div></div>`;
+  }
+  if (t === 'price') {
+    return `<div class="pp-price-callout">
+      ${s.title ? `<div class="pp-price-title">${esc(s.title)}</div>` : ''}
+      <div class="pp-price-line">${s.label ? `<span class="pp-price-label">${esc(s.label)}:</span> ` : ''}<span class="pp-price-amount">${esc(s.amount || '')}</span></div>
+      ${s.note ? `<div class="pp-price-note">${esc(s.note)}</div>` : ''}</div>`;
+  }
+  if (t === 'signature') {
+    const sig = (party) => `<div class="pp-sig-party">
+      <div class="pp-sig-name">${_prEsc(party)}</div>
+      <div class="pp-sig-line"><span>Signature</span></div>
+      <div class="pp-sig-line"><span>Printed Name</span></div>
+      <div class="pp-sig-row"><div class="pp-sig-line" style="flex:1"><span>Title</span></div><div class="pp-sig-line" style="flex:1"><span>Date</span></div></div>
+    </div>`;
+    return `<div class="pp-section"><h2>${esc(s.title || 'Acceptance & Authorization')}</h2>
+      ${s.body ? `<p class="pp-body-text" style="margin-bottom:18px;font-size:12.5px">${esc(s.body).replace(/\n/g, '<br>')}</p>` : ''}
+      <div class="pp-sig-grid" style="grid-template-columns:${s.party2 ? '1fr 1fr' : '1fr'}">${sig(s.party1 || 'Client')}${s.party2 ? sig(s.party2) : ''}</div></div>`;
+  }
+  return '';
+}
+
+function _prPvRender() {
+  const frame = document.getElementById('pr-pv-frame');
+  if (!frame || !_prDraft) return;
+  const p = _prDraft, esc = _prEsc, money = _prFmt;
+  const brand = _prPvBrand();
+  const bc = brand.brand_color;
+  const sections = Array.isArray(p.sections) ? p.sections : [];
+  const sched = Array.isArray(p.payment_schedule) ? p.payment_schedule : [];
+  const optCount = sections.filter(s => s.type === 'option').length;
+  const total = _prComputeTotal();
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#F5F3EE;color:#1F2A2B;line-height:1.6}
+  .pp-hero{background:${bc};color:#fff;padding:34px 20px 30px;text-align:center}
+  .pp-logo{height:44px;margin-bottom:12px}
+  .pp-hero .pp-co{font-size:11px;letter-spacing:.24em;text-transform:uppercase;opacity:.85;font-weight:600}
+  .pp-hero h1{font-size:22px;font-weight:800;margin-top:8px;letter-spacing:.02em}
+  .pp-hero .pp-sub{font-size:13px;opacity:.8;margin-top:5px}
+  .pp-wrap{max-width:720px;margin:0 auto;padding:0 16px 60px}
+  .pp-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:#DDD8CE;border:1px solid #DDD8CE;margin:-22px auto 28px;max-width:680px;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(17,57,49,.12)}
+  .pp-meta-cell{background:#fff;padding:13px 15px}
+  .pp-meta-cell .k{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6F7E6A;margin-bottom:3px}
+  .pp-meta-cell .v{font-size:13px;font-weight:600;color:#1F2A2B}
+  .pp-section{background:#fff;border:1px solid #E4E0D6;border-radius:12px;padding:22px 24px;margin-bottom:16px}
+  .pp-section h2{font-size:13.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${bc};border-bottom:2px solid ${bc}22;padding-bottom:8px;margin-bottom:12px}
+  .pp-body-text{font-size:13px;color:#3D4A46}
+  .pp-goal{font-size:12.5px;color:#5A675F;margin-bottom:12px}
+  .pp-table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .pp-table th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:${bc};padding:8px 10px}
+  .pp-table td{padding:9px 10px;border-bottom:1px solid #EDEAE2;color:#37423E;vertical-align:top}
+  .pp-table tfoot td{border-top:2px solid ${bc}33;border-bottom:none;padding-top:10px}
+  .pp-price-col{text-align:right;white-space:nowrap;width:100px}
+  .pp-footnote{font-size:11px;color:#77826F;margin-top:8px;font-style:italic}
+  .pp-accept-btn{margin-top:14px;background:${bc};color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;font-family:inherit}
+  .pp-actions{background:#fff;border:1px solid #E4E0D6;border-radius:12px;padding:22px;text-align:center}
+  .pp-decline-btn{background:transparent;color:#8B5A4A;border:1.5px solid #D8BBB0;border-radius:8px;padding:9px 18px;font-size:12px;font-weight:600;margin:5px 7px;font-family:inherit}
+  .pp-sched-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #EDEAE2;font-size:12.5px}
+  .pp-sched-row:last-child{border-bottom:none}
+  .pp-bullets{padding-left:18px;font-size:13px;color:#3D4A46}
+  .pp-bullets li{margin-bottom:7px}
+  .pp-bullets li:last-child{margin-bottom:0}
+  .pp-bullets b,.pp-bullets strong{color:#1F2A2B}
+  .pp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
+  .pp-card{border:1px solid #E4E0D6;border-radius:10px;padding:14px 15px;background:#FBFAF7}
+  .pp-card-head{font-size:12.5px;font-weight:700;color:#1F2A2B;margin-bottom:3px}
+  .pp-card-price{font-size:13px;font-weight:800;color:${bc};margin-bottom:7px}
+  .pp-card-body{font-size:11.5px;color:#5A675F;line-height:1.55}
+  .pp-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:#EDEAE2;border:1px solid #EDEAE2;border-radius:10px;overflow:hidden}
+  .pp-field{background:#fff;padding:11px 14px}
+  .pp-field .k{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6F7E6A;margin-bottom:2px}
+  .pp-field .v{font-size:12.5px;font-weight:600;color:#1F2A2B}
+  .pp-price-callout{background:#fff;border:1px solid #E4E0D6;border-left:4px solid ${bc};border-radius:12px;padding:22px 24px;margin-bottom:16px;text-align:center}
+  .pp-price-title{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#6F7E6A;margin-bottom:8px}
+  .pp-price-line{display:flex;align-items:baseline;justify-content:center;gap:12px;flex-wrap:wrap}
+  .pp-price-label{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6F7E6A}
+  .pp-price-amount{font-size:25px;font-weight:800;color:${bc};letter-spacing:-.01em}
+  .pp-price-note{font-size:11.5px;color:#77826F;margin-top:7px;font-style:italic}
+  .pp-sig-grid{display:grid;gap:28px;margin-top:18px}
+  .pp-sig-party{min-width:0}
+  .pp-sig-name{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#5A675F;margin-bottom:28px}
+  .pp-sig-row{display:flex;gap:18px}
+  .pp-sig-line{flex:1;border-bottom:1.5px solid #B8B2A4;padding-bottom:3px;margin-bottom:15px;min-height:28px;display:flex;align-items:flex-end}
+  .pp-sig-line span{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8A948C}
+  .pp-footer{text-align:center;font-size:11px;color:#8A948C;margin-top:28px}
+</style></head>
+<body>
+  <div class="pp-hero">
+    ${brand.logo_url ? `<img class="pp-logo" src="${esc(brand.logo_url)}" alt="">` : ''}
+    <div class="pp-co">${esc(brand.name)}${brand.tagline ? ' — ' + esc(brand.tagline) : ''}</div>
+    <h1>${esc(p.title || 'Service Proposal')}</h1>
+    ${p.subtitle ? `<div class="pp-sub">${esc(p.subtitle)}</div>` : ''}
+  </div>
+  <div class="pp-wrap">
+    <div class="pp-meta">
+      <div class="pp-meta-cell"><div class="k">Prepared For</div><div class="v">${esc(p.client_name || '—')}</div></div>
+      <div class="pp-meta-cell"><div class="k">Proposal Date</div><div class="v">${esc(_prPvFmtDate(p.proposal_date) || '—')}</div></div>
+      ${p.property_addr ? `<div class="pp-meta-cell"><div class="k">Property</div><div class="v">${esc(p.property_addr)}</div></div>` : ''}
+      ${p.valid_through ? `<div class="pp-meta-cell"><div class="k">Valid Through</div><div class="v">${esc(_prPvFmtDate(p.valid_through))}</div></div>` : ''}
+    </div>
+    ${p.overview ? `<div class="pp-section"><h2>Overview</h2><p class="pp-body-text">${esc(p.overview).replace(/\n/g, '<br>')}</p></div>` : ''}
+    ${sections.map((s, si) => _prPvSectionHtml(s, si, optCount)).join('')}
+    ${sched.length ? `<div class="pp-section"><h2>Payment Schedule</h2>${sched.map(sp =>
+      `<div class="pp-sched-row"><span>${esc(sp.label || 'Payment')}</span><strong>${Number(sp.pct || 0)}%${total ? ' — ' + money(total * Number(sp.pct || 0) / 100) : ''}</strong></div>`).join('')}</div>` : ''}
+    ${p.terms ? `<div class="pp-section"><h2>Terms</h2><p class="pp-body-text" style="font-size:11.5px">${esc(p.terms).replace(/\n/g, '<br>')}</p></div>` : ''}
+    <div class="pp-actions">
+      <div style="font-size:13px;font-weight:600;margin-bottom:7px">Ready to move forward?</div>
+      <button class="pp-accept-btn" disabled style="opacity:.55">Accept Proposal</button>
+      <button class="pp-decline-btn" disabled style="opacity:.55">Decline</button>
+    </div>
+    <div class="pp-footer">${esc(brand.name)}${brand.phone ? ' · ' + esc(brand.phone) : ''}${brand.website ? ' · ' + esc(brand.website) : ''}</div>
+  </div>
+</body></html>`;
+
+  // Preserve the reader's scroll position across refreshes
+  let scrollY = 0;
+  try { scrollY = frame.contentWindow?.scrollY || 0; } catch (_) {}
+  frame.srcdoc = html;
+  frame.onload = () => { try { frame.contentWindow.scrollTo(0, scrollY); } catch (_) {} };
 }
 
 // ── SEND (Gmail if connected, mailto fallback) ────────────────────────────────
@@ -1014,6 +1274,8 @@ window._prPaySchedSumRefresh   = _prPaySchedSumRefresh;
 window._prRailRefresh          = _prRailRefresh;
 window._prCopyPortalLink       = _prCopyPortalLink;
 window._prPreview              = _prPreview;
+window._prTogglePreview        = _prTogglePreview;
+window._prPvRender             = _prPvRender;
 window._prSendModal            = _prSendModal;
 window._prDoSend               = _prDoSend;
 window._prAiModal              = _prAiModal;
