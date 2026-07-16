@@ -16,6 +16,7 @@ import mig0030 from '../migrations/0030_plan_visits_v2.sql?raw'
 import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 import mig0033 from '../migrations/0033_email_templates.sql?raw'
+import mig0034 from '../migrations/0034_price_book_estimate_merge.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -366,6 +367,24 @@ async function ensureEmailTplSchema(db: D1Database): Promise<void> {
   _emailTplSchemaOk = true
 }
 
+// ── Price book + estimate merge schema (migration 0034) ──
+let _priceBookSchemaOk = false
+async function ensurePriceBookSchema(db: D1Database): Promise<void> {
+  if (_priceBookSchemaOk) return
+  const stmts = mig0034.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensurePriceBookSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0034_price_book_estimate_merge.sql', '0034_price_book_estimate_merge.sql').run()
+  } catch {}
+  _priceBookSchemaOk = true
+}
+
 function secureToken(bytes = 32): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)))
     .map(b => b.toString(16).padStart(2,'0')).join('')
@@ -613,8 +632,8 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','pricing'],
     rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['today','pipeline','clients','properties','estimates','proposals','calculator','forms','playbooks'],
     foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
@@ -1105,7 +1124,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
       'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-      'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
+      'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing',
       'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
@@ -1115,7 +1134,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
       'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-      'settings','userManagement','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
+      'settings','userManagement','integrations','manager','pricing','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     rep: ['gwDashboard','gwSales',
       'today','myDashboard','pipeline','lead','clients','properties','estimates','proposals',
       'communications','templates','sequences','talkTracks','playbooks','aiAssist',
@@ -3743,8 +3762,31 @@ app.post('/api/estimates', requireAuth, async (c) => {
     b.estimate_date||new Date().toISOString().slice(0,10),
     b.expiry_date||''
   ).run()
+  // Merge-extension fields (mode/tiers/cost engine/recurring) — best-effort secondary update
+  await _estApplyExtFields(db, id, companyId, b)
   return c.json({ ok: true, data: { id, est_number: estNumber, portal_token: portalToken } }, 201)
 })
+
+// Persist estimate merge-extension columns when present in the payload (0034)
+async function _estApplyExtFields(db: D1Database, id: string, companyId: string, b: any) {
+  const sets: string[] = []; const binds: any[] = []
+  const push = (col: string, v: any) => { sets.push(`${col}=?`); binds.push(v) }
+  if (b.mode !== undefined)           push('mode', b.mode === 'advanced' ? 'advanced' : 'simple')
+  if (b.doc_type !== undefined)       push('doc_type', b.doc_type === 'recurring' ? 'recurring' : 'onetime')
+  if (b.overview !== undefined)       push('overview', String(b.overview || ''))
+  if (b.sections !== undefined)       push('sections', JSON.stringify(b.sections || []))
+  if (b.tiers !== undefined)          push('tiers', JSON.stringify(b.tiers || []))
+  if (b.accepted_tier !== undefined)  push('accepted_tier', String(b.accepted_tier || ''))
+  if (b.payment_schedule !== undefined) push('payment_schedule', JSON.stringify(b.payment_schedule || []))
+  if (b.cost_data !== undefined)      push('cost_data', JSON.stringify(b.cost_data || {}))
+  if (b.recurring_data !== undefined) push('recurring_data', JSON.stringify(b.recurring_data || {}))
+  if (b.ai_meta !== undefined)        push('ai_meta', JSON.stringify(b.ai_meta || {}))
+  if (!sets.length) return
+  try {
+    await ensurePriceBookSchema(db)
+    await db.prepare(`UPDATE estimates SET ${sets.join(',')} WHERE id=? AND company_id=?`).bind(...binds, id, companyId).run()
+  } catch (e: any) { console.log('estExtFields err', String(e?.message || e).slice(0, 120)) }
+}
 
 // PUT /api/estimates/:id — update
 app.put('/api/estimates/:id', requireAuth, async (c) => {
@@ -3783,6 +3825,7 @@ app.put('/api/estimates/:id', requireAuth, async (c) => {
     b.estimate_date||'',b.expiry_date||'',
     id,companyId
   ).run()
+  await _estApplyExtFields(db, id, companyId, b)
   return c.json({ ok: true, data: { id, subtotal, total } })
 })
 
@@ -3873,6 +3916,236 @@ app.delete('/api/estimates/:id', requireAuth, async (c) => {
   await db.prepare(`DELETE FROM estimates WHERE id=? AND company_id=?`)
     .bind(c.req.param('id'), companyId).run()
   return c.json({ ok: true })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PRICE BOOK — company services & pricing catalog (replaces "Service Data" sheet)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/price-items?category=&q=&all=1
+app.get('/api/price-items', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  const cat = c.req.query('category') || ''
+  const q   = (c.req.query('q') || '').trim()
+  const showAll = c.req.query('all') === '1'
+  let sql = `SELECT * FROM price_items WHERE company_id=?`
+  const binds: any[] = [companyId]
+  if (!showAll) sql += ` AND active=1`
+  if (cat) { sql += ` AND category=?`; binds.push(cat) }
+  if (q)   { sql += ` AND name LIKE ?`; binds.push(`%${q}%`) }
+  sql += ` ORDER BY category, sort_order, name LIMIT 3000`
+  const rows = await db.prepare(sql).bind(...binds).all()
+  // Distinct categories for tab UI
+  const cats = await db.prepare(`SELECT DISTINCT category FROM price_items WHERE company_id=? ORDER BY category`).bind(companyId).all()
+  return c.json({ ok: true, data: rows.results || [], categories: (cats.results || []).map((r: any) => r.category) })
+})
+
+// POST /api/price-items — create one item
+app.post('/api/price-items', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  const b: any = await c.req.json()
+  const name = (b.name || '').trim()
+  if (!name) return c.json({ ok: false, error: 'Name required' }, 400)
+  const id = 'pi_' + uid()
+  await db.prepare(`
+    INSERT INTO price_items (id,company_id,category,name,unit,unit_cost,unit_time,item_type,sku,vendor,notes,active,sort_order)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, companyId, (b.category || 'General').trim(), name, b.unit || '',
+    Number(b.unit_cost || 0), Number(b.unit_time || 0), b.item_type || 'material',
+    b.sku || '', b.vendor || '', b.notes || '', b.active === 0 ? 0 : 1, Number(b.sort_order || 0)).run()
+  return c.json({ ok: true, id }, 201)
+})
+
+// PUT /api/price-items/:id
+app.put('/api/price-items/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  const b: any = await c.req.json()
+  const fields = ['category','name','unit','unit_cost','unit_time','item_type','sku','vendor','notes','active','sort_order']
+  const sets: string[] = []; const binds: any[] = []
+  for (const f of fields) {
+    if (b[f] !== undefined) { sets.push(`${f}=?`); binds.push(['unit_cost','unit_time','active','sort_order'].includes(f) ? Number(b[f]) : b[f]) }
+  }
+  if (!sets.length) return c.json({ ok: false, error: 'No fields' }, 400)
+  sets.push(`updated_at=datetime('now')`)
+  binds.push(c.req.param('id'), companyId)
+  const r = await db.prepare(`UPDATE price_items SET ${sets.join(',')} WHERE id=? AND company_id=?`).bind(...binds).run()
+  if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// DELETE /api/price-items/:id
+app.delete('/api/price-items/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  await db.prepare(`DELETE FROM price_items WHERE id=? AND company_id=?`).bind(c.req.param('id'), companyId).run()
+  return c.json({ ok: true })
+})
+
+// POST /api/price-items/import — bulk import from parsed CSV/Excel rows
+// { rows: [{category?,name,unit?,unit_cost?,unit_time?,item_type?}], mode: 'merge'|'replace' }
+// merge: upsert by (category,name) — update cost/time if exists, insert if new
+// replace: wipe the company's price book (or just the categories present) and insert fresh
+app.post('/api/price-items/import', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  const b: any = await c.req.json()
+  const rows: any[] = Array.isArray(b.rows) ? b.rows : []
+  if (!rows.length) return c.json({ ok: false, error: 'No rows' }, 400)
+  if (rows.length > 5000) return c.json({ ok: false, error: 'Too many rows (max 5000)' }, 400)
+  const mode = b.mode === 'replace' ? 'replace' : 'merge'
+
+  const clean = rows.map((r: any) => ({
+    category:  String(r.category || 'General').trim().slice(0, 80) || 'General',
+    name:      String(r.name || '').trim().slice(0, 200),
+    unit:      String(r.unit || '').trim().slice(0, 80),
+    unit_cost: Number(r.unit_cost || 0) || 0,
+    unit_time: Number(r.unit_time || 0) || 0,
+    item_type: ['material','labor','service','equipment','plant'].includes(r.item_type) ? r.item_type : 'material',
+  })).filter((r: any) => r.name)
+  if (!clean.length) return c.json({ ok: false, error: 'No valid rows (name required)' }, 400)
+
+  let inserted = 0, updated = 0
+  if (mode === 'replace') {
+    const cats = [...new Set(clean.map((r: any) => r.category))]
+    for (const cat of cats) {
+      await db.prepare(`DELETE FROM price_items WHERE company_id=? AND category=?`).bind(companyId, cat).run()
+    }
+  }
+  // Existing (category|name) → id map for merge
+  const existing = await db.prepare(`SELECT id, category, name FROM price_items WHERE company_id=?`).bind(companyId).all()
+  const byKey = new Map<string, string>()
+  for (const r of (existing.results || []) as any[]) byKey.set(`${r.category}|${r.name.toLowerCase()}`, r.id)
+
+  // Batch in chunks of 40 statements
+  let batch: any[] = []
+  const flush = async () => { if (batch.length) { await db.batch(batch); batch = [] } }
+  for (let i = 0; i < clean.length; i++) {
+    const r = clean[i]
+    const key = `${r.category}|${r.name.toLowerCase()}`
+    const exId = mode === 'merge' ? byKey.get(key) : undefined
+    if (exId) {
+      batch.push(db.prepare(`UPDATE price_items SET unit=?, unit_cost=?, unit_time=?, item_type=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+        .bind(r.unit, r.unit_cost, r.unit_time, r.item_type, exId, companyId))
+      updated++
+    } else {
+      const id = 'pi_' + uid() + i.toString(36)
+      byKey.set(key, id)
+      batch.push(db.prepare(`INSERT INTO price_items (id,company_id,category,name,unit,unit_cost,unit_time,item_type,sort_order) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .bind(id, companyId, r.category, r.name, r.unit, r.unit_cost, r.unit_time, r.item_type, i))
+      inserted++
+    }
+    if (batch.length >= 40) await flush()
+  }
+  await flush()
+  return c.json({ ok: true, inserted, updated, total: clean.length })
+})
+
+// ── Pricing settings (labor rate, OHR, profit %, tax %, warranty %, non-productive) ──
+const PRICING_DEFAULTS = {
+  labor_rate: 27.25,          // $/man-hour direct labor cost
+  ohr_rate: 35.08,            // $/budgeted-hour overhead recovery
+  setup_pay_rate: 35.58,      // owner/estimator setup pay per hour
+  setup_hours_default: 0,
+  profit_pct: 22,             // target profit on BEP
+  tax_pct: 6,                 // sales tax on materials
+  warranty_pct: 10,           // warranty reserve on plant material
+  nonprod_hours_per_person_day: 1.5,
+  crew_size_default: 3,
+  workday_hours: 10,
+  rev_per_hour_goal: 86.13,   // budgeted revenue per man-hour
+  maint_labor_rate: 26.83,    // maintenance division labor rate
+  maint_ohr_rate: 22.62,
+  maint_profit_pct: 22,
+  escalation_pct: 3,          // yearly contract escalation
+  contingency_default: 50,
+  disposal_default: 35,
+  pickup_default: 10,
+}
+app.get('/api/pricing-settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const row: any = await db.prepare(`SELECT value FROM settings WHERE key=? LIMIT 1`).bind(`${companyId}:pricing_settings`).first().catch(() => null)
+  let saved = {}
+  try { saved = row?.value ? JSON.parse(row.value) : {} } catch {}
+  return c.json({ ok: true, data: { ...PRICING_DEFAULTS, ...saved } })
+})
+app.put('/api/pricing-settings', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  if (!['admin', 'office_manager'].includes(role)) return c.json({ ok: false, error: 'Admin only' }, 403)
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json()
+  const merged: any = {}
+  for (const k of Object.keys(PRICING_DEFAULTS)) {
+    if (b[k] !== undefined && isFinite(Number(b[k]))) merged[k] = Number(b[k])
+  }
+  await db.prepare(`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`)
+    .bind(`${companyId}:pricing_settings`, JSON.stringify(merged)).run()
+  return c.json({ ok: true })
+})
+
+// ── Convert estimate → job (work order + optional schedule) ──
+app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  const est: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=?`).bind(c.req.param('id'), companyId).first()
+  if (!est) return c.json({ ok: false, error: 'Not found' }, 404)
+  if (est.work_order_id) {
+    const exists: any = await db.prepare(`SELECT id, wo_number FROM work_orders WHERE id=? AND company_id=?`).bind(est.work_order_id, companyId).first()
+    if (exists) return c.json({ ok: false, error: 'already_converted', work_order_id: exists.id, wo_number: exists.wo_number }, 409)
+  }
+  const b: any = await c.req.json().catch(() => ({}))
+
+  // Materials from line items (and accepted tier if advanced)
+  let items: any[] = []
+  try { items = JSON.parse(est.line_items || '[]') } catch {}
+  if (est.accepted_tier) {
+    try {
+      const tiers = JSON.parse(est.tiers || '[]')
+      const t = tiers.find((x: any) => x.id === est.accepted_tier || x.name === est.accepted_tier)
+      if (t && Array.isArray(t.line_items) && t.line_items.length) items = t.line_items
+    } catch {}
+  }
+  const materials = items.map((i: any) => ({ name: i.name || i.desc || '', qty: Number(i.qty || 1), unit: i.unit || '' })).filter((m: any) => m.name)
+
+  // Budgeted hours from the cost engine if present
+  let budgetHours = 0
+  try { budgetHours = Number(JSON.parse(est.cost_data || '{}')?.rollup?.budgeted_hours || 0) } catch {}
+
+  const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM work_orders WHERE company_id=?`).bind(companyId).first()
+  const woNumber = `WO-${((countRow?.n || 0) + 1).toString().padStart(5, '0')}`
+  const woId = 'wo_' + uid()
+  await db.prepare(`
+    INSERT INTO work_orders (id,company_id,wo_number,opp_id,estimate_id,client_name,client_id,property_addr,
+      title,type,status,scheduled_date,scheduled_time,duration_hours,notes,amount_est,materials,checklist,timeline,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    woId, companyId, woNumber, est.opp_id || null, est.id,
+    est.client_name || '', est.client_id || null, est.property_addr || est.client_address || '',
+    est.title || `Job from ${est.est_number}`,
+    b.type || (est.doc_type === 'recurring' ? 'Maintenance' : 'Install'),
+    'scheduled', b.scheduled_date || null, b.scheduled_time || null,
+    budgetHours || Number(b.duration_hours || 0) || null,
+    (est.scope_of_work || '') + (est.internal_notes ? `\n\n[Internal] ${est.internal_notes}` : ''),
+    Number(est.total || 0), JSON.stringify(materials),
+    JSON.stringify([]), JSON.stringify([{ at: new Date().toISOString(), event: `Created from estimate ${est.est_number}`, by: repId }]),
+    repId
+  ).run()
+
+  await db.prepare(`UPDATE estimates SET work_order_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(woId, est.id, companyId).run()
+
+  return c.json({ ok: true, work_order_id: woId, wo_number: woNumber }, 201)
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4481,6 +4754,175 @@ Rules:
     }})
   } catch (e: any) {
     console.error('[ai/generate-proposal]', e?.message || e)
+    return c.json({ ok: false, error: 'ai_parse', message: 'The AI returned an unusable draft — please try again.' }, 502)
+  }
+})
+
+// POST /api/ai/generate-quote — the AI Quote Generator.
+// Inputs: lead conversation history + the company's OWN price book + brand +
+// (optional) live market-rate search. Output: a tiered quote whose line items
+// reference real price_items (AI never invents unit prices for known items),
+// priced through the company's job-cost settings, plus a ready-to-send email.
+// { opp_id?, notes?, instructions?, tier_count?, market_check? }
+app.post('/api/ai/generate-quote', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensurePriceBookSchema(db)
+  const { apiKey, baseUrl, model } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) {
+    return c.json({ ok: false, error: 'no_api_key', message: 'No AI API key configured. An admin can add one under Integrations → Admin Setup (OpenAI API key).' }, 400)
+  }
+  const b: any = await c.req.json().catch(() => ({}))
+
+  // 1. Lead + conversation context
+  let lead: any = null
+  let comms = ''
+  if (b.opp_id) {
+    lead = await db.prepare(`SELECT * FROM opportunities WHERE id=? AND company_id=? LIMIT 1`).bind(b.opp_id, companyId).first().catch(() => null)
+    if (lead) {
+      // Pull the lead's actual conversation history (calls, emails, texts, notes)
+      const cr = await db.prepare(`SELECT type, direction, subject, body, ts FROM communications WHERE opp_id=? AND company_id=? ORDER BY ts DESC LIMIT 40`)
+        .bind(b.opp_id, companyId).all().catch(() => ({ results: [] }))
+      const list = ((cr.results || []) as any[]).reverse()
+      comms = list.map((n: any) =>
+        `[${String(n.ts || '').slice(0, 10)} ${n.type || 'note'}${n.direction ? '/' + n.direction : ''}]${n.subject ? ' ' + n.subject + ' —' : ''} ${String(n.body || '').slice(0, 500)}`).join('\n')
+      // Lead intake fields are context too
+      const intake = [lead.prompt, lead.desired_outcome, lead.project].filter(Boolean).join(' | ')
+      if (intake) comms = `[Lead intake] ${intake}\n` + comms
+    }
+  }
+  if (b.notes) comms = (comms ? comms + '\n' : '') + String(b.notes).slice(0, 6000)
+
+  // 2. The company's price book (compact catalog for the model)
+  const pbRows = await db.prepare(`SELECT id, category, name, unit, unit_cost, unit_time FROM price_items WHERE company_id=? AND active=1 ORDER BY category, name LIMIT 1200`).bind(companyId).all()
+  const priceBook = (pbRows.results || []) as any[]
+  const pbCompact = priceBook.map((p: any) => `${p.id}|${p.category}|${p.name}|${p.unit || ''}|$${p.unit_cost}|${p.unit_time}h`).join('\n')
+
+  // 3. Pricing settings (job cost engine parameters)
+  const psRow: any = await db.prepare(`SELECT value FROM settings WHERE key=? LIMIT 1`).bind(`${companyId}:pricing_settings`).first().catch(() => null)
+  let ps: any = {}
+  try { ps = psRow?.value ? JSON.parse(psRow.value) : {} } catch {}
+  ps = { ...PRICING_DEFAULTS, ...ps }
+
+  // 4. Brand
+  const brand: any = await db.prepare('SELECT name, tagline, phone, website FROM companies WHERE id=? LIMIT 1').bind(companyId).first().catch(() => null)
+
+  const context = [
+    `Company: ${brand?.name || 'the company'}${brand?.tagline ? ' — ' + brand.tagline : ''}`,
+    lead ? `Client: ${lead.client || ''} | Address: ${lead.address || ''} | Project: ${lead.project || lead.service_line || ''} | Stage: ${lead.pipeline_stage || lead.status || ''}${lead.job_value ? ' | Est. value: $' + lead.job_value : ''}` : '',
+    comms ? `CONVERSATION HISTORY (what the client asked for — extract scope and quantities from this):\n${comms}` : '',
+    b.instructions ? `Rep's instructions: ${String(b.instructions).slice(0, 2000)}` : '',
+    `\nJOB COST PARAMETERS (for pricing sanity — sell price must recover these):`,
+    `Labor $${ps.labor_rate}/hr + Overhead $${ps.ohr_rate}/budgeted-hr, target profit ${ps.profit_pct}%, materials tax ${ps.tax_pct}%, plant warranty ${ps.warranty_pct}%, revenue/man-hour goal $${ps.rev_per_hour_goal}`,
+    pbCompact ? `\nPRICE BOOK (id|category|name|unit|unit_cost|unit_time) — line items for known services/materials MUST use these ids and costs:\n${pbCompact.slice(0, 60000)}` : '\n(No price book yet — estimate reasonable market prices and mark every line "custom":true.)',
+  ].filter(Boolean).join('\n')
+
+  const tierCount = Math.min(3, Math.max(1, Number(b.tier_count || 3)))
+  const sys = `You are an expert estimator for a service business. Read what the client asked for in the conversation, match it against the company's price book, and build a ${tierCount}-tier quote (${tierCount === 3 ? 'Good / Better / Best' : tierCount === 2 ? 'Standard / Premium' : 'single option'}).
+
+PRICING METHOD (the company's own formula):
+- For each line: total_cost = qty × unit_cost (from price book), total_time = qty × unit_time.
+- Job direct expense = materials(+${ps.tax_pct}% tax; plants also +${ps.warranty_pct}% warranty) + labor(total man-hours × $${ps.labor_rate}).
+- Overhead = total man-hours × $${ps.ohr_rate}. Break-even = direct + overhead. Sell price ≈ break-even × ${(1 + ps.profit_pct / 100).toFixed(2)}.
+- Set each tier's "client_price" near that sell price (round to a clean number). Sanity-check: client_price / total man-hours should be ≥ $${ps.rev_per_hour_goal}.
+
+Return ONLY valid JSON:
+{
+ "title": "quote title",
+ "scope_summary": "2-3 sentence plain-language summary of what the client asked for",
+ "tiers": [
+   { "id": "tier1", "name": "string e.g. 'Essential'", "desc": "1-2 sentences on what this tier delivers and who it's for",
+     "line_items": [ { "price_item_id": "pi_xxx or ''", "custom": false, "name": "string", "qty": 0, "unit": "string", "unit_cost": 0, "unit_time": 0, "rate": 0, "note": "" } ],
+     "man_hours": 0, "direct_cost": 0, "client_price": 0, "recommended": false }
+ ],
+ "email": { "subject": "string", "body": "ready-to-send email presenting the tiers, warm and specific, with prices; \\n between paragraphs. Do NOT include a link — the CRM appends the client portal link." },
+ "sms": "string — a 2-3 sentence text-message version with tier prices",
+ "pricing_notes": "internal: how you derived the numbers, which price book items you matched, assumptions on quantities, anything the rep should verify"
+}
+Rules:
+- "rate" is the per-unit CLIENT price for that line (line client subtotal = qty × rate); the sum over lines should equal client_price for the tier.
+- Use price_item_id + real unit_cost/unit_time from the price book whenever the item exists there. Only set custom:true for items truly absent.
+- Quantities must come from the conversation (sq ft, yards, counts). If unknown, make a clearly-stated assumption in pricing_notes and choose sensible defaults.
+- Tiers must be meaningfully different (scope, materials grade, or extras) — not just the same list at 3 prices. Mark exactly one tier recommended:true${tierCount === 1 ? ' (the only one)' : ''}.
+- Never quote below break-even.`
+
+  // 5. Optional market-rate cross-reference — a second lightweight model pass
+  //    (uses the model's knowledge; flagged clearly as an estimate, not live data)
+  let marketNote = ''
+  if (b.market_check) {
+    marketNote = `\nAfter pricing, add to pricing_notes a short "MARKET CHECK" paragraph: typical current market price ranges for the main services in this quote for the client's region, and whether this quote sits low / mid / high in that range.`
+  }
+
+  try {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: sys + marketNote },
+          { role: 'user', content: `Build the tiered quote from this context:\n\n${context}` },
+        ],
+      }),
+    })
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '')
+      console.error('[ai/generate-quote] upstream', r.status, errText.slice(0, 300))
+      return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}). Check the API key/model in Admin Setup.` }, 502)
+    }
+    const j: any = await r.json()
+    let raw = j?.choices?.[0]?.message?.content || ''
+    raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+    const start = raw.indexOf('{'); const end = raw.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('No JSON in AI response')
+    const draft = JSON.parse(raw.slice(start, end + 1))
+
+    // Sanitize + re-verify price book references (AI must not drift stored costs)
+    const pbById = new Map(priceBook.map((p: any) => [p.id, p]))
+    const S = (v: any) => String(v ?? '')
+    const N = (v: any) => (isFinite(Number(v)) ? Number(v) : 0)
+    const tiers = (Array.isArray(draft.tiers) ? draft.tiers : []).slice(0, 3).map((t: any, ti: number) => {
+      const lines = (Array.isArray(t.line_items) ? t.line_items : []).slice(0, 60).map((li: any) => {
+        const pb: any = li.price_item_id ? pbById.get(li.price_item_id) : null
+        return {
+          id: 'li_' + uid(),
+          price_item_id: pb ? li.price_item_id : '',
+          custom: !pb,
+          name: S(li.name || (pb && pb.name)).slice(0, 200),
+          qty: N(li.qty) || 1,
+          unit: S(li.unit || (pb && pb.unit)).slice(0, 60),
+          unit_cost: pb ? N(pb.unit_cost) : N(li.unit_cost),
+          unit_time: pb ? N(pb.unit_time) : N(li.unit_time),
+          rate: N(li.rate),
+          note: S(li.note).slice(0, 300),
+        }
+      }).filter((li: any) => li.name)
+      const clientPrice = N(t.client_price) || lines.reduce((s: number, li: any) => s + li.qty * li.rate, 0)
+      return {
+        id: t.id || `tier${ti + 1}`,
+        name: S(t.name || `Option ${ti + 1}`).slice(0, 80),
+        desc: S(t.desc).slice(0, 500),
+        line_items: lines,
+        man_hours: N(t.man_hours) || lines.reduce((s: number, li: any) => s + li.qty * li.unit_time, 0),
+        direct_cost: N(t.direct_cost),
+        total: clientPrice,
+        recommended: !!t.recommended,
+      }
+    })
+    if (!tiers.length) throw new Error('No tiers in AI response')
+    if (!tiers.some((t: any) => t.recommended)) tiers[Math.min(1, tiers.length - 1)].recommended = true
+
+    return c.json({ ok: true, data: {
+      title: S(draft.title || 'Custom Quote'),
+      scope_summary: S(draft.scope_summary),
+      tiers,
+      email: { subject: S(draft.email?.subject), body: S(draft.email?.body) },
+      sms: S(draft.sms),
+      pricing_notes: S(draft.pricing_notes),
+      ai_meta: { model, generated_at: new Date().toISOString(), used_price_book: priceBook.length > 0, market_check: !!b.market_check, opp_id: b.opp_id || '' },
+    }})
+  } catch (e: any) {
+    console.error('[ai/generate-quote]', e?.message || e)
     return c.json({ ok: false, error: 'ai_parse', message: 'The AI returned an unusable draft — please try again.' }, 502)
   }
 })
@@ -7091,7 +7533,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b020">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b022">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7115,8 +7557,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b020"></script>
-  <script src="/js/client_portal.js?v=20260716b020"></script>
+  <script src="/js/platform_core.js?v=20260716b022"></script>
+  <script src="/js/client_portal.js?v=20260716b022"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7746,9 +8188,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b020">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b020">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b020">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b022">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b022">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b022">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8296,36 +8738,37 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b020"></script>
-<script src="/js/db.js?v=20260716b020"></script>
-<script src="/js/data.js?v=20260716b020"></script>
-<script src="/js/reps.js?v=20260716b020"></script>
-<script src="/js/record-page.js?v=20260716b020"></script>
-<script src="/js/academy.js?v=20260716b020"></script>
-<script src="/js/task_engine.js?v=20260716b020"></script>
-<script src="/js/gw_i18n.js?v=20260716b020"></script>
-<script src="/js/app_premium.js?v=20260716b020"></script>
-<script src="/js/estimates.js?v=20260716b020"></script>
-<script src="/js/proposals.js?v=20260716b020"></script>
-<script src="/js/invoices.js?v=20260716b020"></script>
-<script src="/js/csv_import.js?v=20260716b020"></script>
-<script src="/js/onboarding.js?v=20260716b020"></script>
-<script src="/js/recurring_plans.js?v=20260716b020"></script>
-<script src="/js/reviews.js?v=20260716b020"></script>
-<script src="/js/stripe.js?v=20260716b020"></script>
-<script src="/js/email.js?v=20260716b020"></script>
-<script src="/js/notifications.js?v=20260716b020"></script>
-<script src="/js/integrations.js?v=20260716b020"></script>
-<script src="/js/user_management.js?v=20260716b020"></script>
-<script src="/js/platform_admin.js?v=20260716b020"></script>
-<script src="/js/time_tracker.js?v=20260716b020"></script>
-<script src="/js/field_workday.js?v=20260716b020"></script>
-<script src="/js/platform_core.js?v=20260716b020"></script>
-<script src="/js/approval_engine.js?v=20260716b020"></script>
-<script src="/js/automation_engine.js?v=20260716b020"></script>
-<script src="/js/client_portal.js?v=20260716b020"></script>
-<script src="/js/field_mode.js?v=20260716b020"></script>
-<script src="/js/assets_hub.js?v=20260716b020"></script>
+<script src="/js/gw-icons.js?v=20260716b022"></script>
+<script src="/js/db.js?v=20260716b022"></script>
+<script src="/js/data.js?v=20260716b022"></script>
+<script src="/js/reps.js?v=20260716b022"></script>
+<script src="/js/record-page.js?v=20260716b022"></script>
+<script src="/js/academy.js?v=20260716b022"></script>
+<script src="/js/task_engine.js?v=20260716b022"></script>
+<script src="/js/gw_i18n.js?v=20260716b022"></script>
+<script src="/js/app_premium.js?v=20260716b022"></script>
+<script src="/js/estimates.js?v=20260716b022"></script>
+<script src="/js/proposals.js?v=20260716b022"></script>
+<script src="/js/pricing.js?v=20260716b022"></script>
+<script src="/js/invoices.js?v=20260716b022"></script>
+<script src="/js/csv_import.js?v=20260716b022"></script>
+<script src="/js/onboarding.js?v=20260716b022"></script>
+<script src="/js/recurring_plans.js?v=20260716b022"></script>
+<script src="/js/reviews.js?v=20260716b022"></script>
+<script src="/js/stripe.js?v=20260716b022"></script>
+<script src="/js/email.js?v=20260716b022"></script>
+<script src="/js/notifications.js?v=20260716b022"></script>
+<script src="/js/integrations.js?v=20260716b022"></script>
+<script src="/js/user_management.js?v=20260716b022"></script>
+<script src="/js/platform_admin.js?v=20260716b022"></script>
+<script src="/js/time_tracker.js?v=20260716b022"></script>
+<script src="/js/field_workday.js?v=20260716b022"></script>
+<script src="/js/platform_core.js?v=20260716b022"></script>
+<script src="/js/approval_engine.js?v=20260716b022"></script>
+<script src="/js/automation_engine.js?v=20260716b022"></script>
+<script src="/js/client_portal.js?v=20260716b022"></script>
+<script src="/js/field_mode.js?v=20260716b022"></script>
+<script src="/js/assets_hub.js?v=20260716b022"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

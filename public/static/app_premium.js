@@ -55,7 +55,7 @@ const _VIEW_WORKSPACE_MAP = {
   timeTracker:'gwOperations', opsHub:'gwOperations',
   gwTimesheetAdmin:'gwOperations', gwWorkdaySettings:'gwAdmin',
   // Admin workspace
-  settings:'gwAdmin', userManagement:'gwAdmin', integrations:'gwAdmin',
+  settings:'gwAdmin', userManagement:'gwAdmin', integrations:'gwAdmin', pricing:'gwAdmin',
   manager:'gwAdmin', systemConfig:'gwAdmin', systemTemplates:'gwAdmin',
   approvalQueue:'gwAdmin', auditLog:'gwAdmin',
   portalAdmin:'gwAdmin', automationCenter:'gwAdmin', fieldMode:'gwOperations',
@@ -260,7 +260,7 @@ const DEFAULT_NAV_PERMS = {
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-    'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub',
+    'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
   // Office Manager: everything except system-level admin settings
@@ -274,7 +274,7 @@ const DEFAULT_NAV_PERMS = {
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
-    'settings','userManagement','integrations','manager',
+    'settings','userManagement','integrations','manager','pricing',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
   // Sales Rep: full sales workflow + learning
@@ -563,6 +563,7 @@ function fallbackCopy(text){
       toolsConsumables:'Assets', timeTracker:'Time', opsHub:'Operations',
       // Admin workspace tabs
       settings:'Settings', userManagement:'Employees', integrations:'Settings',
+      pricing:'Services & Pricing',
       manager:'Workflow', systemConfig:'Settings',
       systemTemplates:'Workflow', approvalQueue:'Workflow',
       auditLog:'Audit', portalAdmin:'Client Portal',
@@ -961,6 +962,7 @@ function _gwAdminNavConfig(canManageUsers, isAdmin) {
   return [
     {id:'settings',        label:'Settings'},
     ...(canManageUsers ? [{id:'userManagement', label:'Employees'}] : []),
+    ...(canManageUsers ? [{id:'pricing',        label:'Services & Pricing'}] : []),
     {id:'systemTemplates', label:'Templates',      sub:true},
     {id:'portalAdmin',     label:'Client Portal',  sub:true},
     // Field Ops — visible to admin, office_manager, division_manager
@@ -980,6 +982,7 @@ function gwAdmin(tab) {
   _gwSetHeader('Admin', _gwAdminNavConfig(canManageUsers, isAdmin), tab);
   if (tab === 'settings')              (typeof settings==='function') ? settings() : _gwTabStub('Settings');
   else if (tab === 'userManagement')   (typeof userManagement==='function') ? userManagement() : _gwTabStub('Employees');
+  else if (tab === 'pricing')          (typeof window.pricing==='function') ? window.pricing() : _gwTabStub('Services & Pricing');
   else if (tab === 'integrations')     settings('integrations');
   else if (tab === 'gwAdminWorkflow')   gwAdminWorkflow('systemTemplates');
   else if (tab === 'systemTemplates')  (typeof systemTemplates==='function') ? systemTemplates() : _gwTabStub('Templates & Automations');
@@ -1306,6 +1309,7 @@ function show(viewName='today', param){
       toolsConsumables:'Assets', timeTracker:'Time',
       // Admin
       settings:'Settings', userManagement:'Employees', integrations:'Settings',
+      pricing:'Services & Pricing',
       manager:'Workflow', systemConfig:'Settings', systemTemplates:'Workflow',
       approvalQueue:'Workflow', auditLog:'Audit',
       portalAdmin:'Client Portal', automationCenter:'Workflow', fieldMode:'Field Preview',
@@ -1361,7 +1365,7 @@ function show(viewName='today', param){
     materialAllocation:'Operations', toolsConsumables:'Operations',
     timeTracker:'Operations', opsHub:'Operations',
     // Admin workspace tab aliases
-    settings:'Admin', userManagement:'Admin', integrations:'Admin',
+    settings:'Admin', userManagement:'Admin', integrations:'Admin', pricing:'Admin',
     manager:'Admin', systemConfig:'Admin', systemTemplates:'Admin',
     approvalQueue:'Admin', auditLog:'Admin',
     portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Operations',
@@ -1380,6 +1384,7 @@ function show(viewName='today', param){
     ],
     Admin: [
       {id:'settings',label:'Settings'},{id:'userManagement',label:'Employees'},
+      {id:'pricing',label:'Services & Pricing'},
       {id:'systemTemplates',label:'Templates'},{id:'portalAdmin',label:'Client Portal'},
     ],
   };
@@ -1441,6 +1446,7 @@ function show(viewName='today', param){
     financialHub,
     estimates:      (id) => id ? estimateDetail(id) : estimates(),
     proposals:      (id) => id ? proposalBuilder(id) : proposals(),
+    pricing:        ()   => (typeof window.pricing==='function') ? window.pricing() : null,
     invoices:       (id) => (typeof window.gwInvoices === 'function') ? window.gwInvoices(id) : invoiceDetail(id),
     statement:      (id) => accountStatement(id),
     communications: ()   => communicationsBoard(),
