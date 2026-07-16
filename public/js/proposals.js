@@ -1134,6 +1134,9 @@ function _prSendModal() {
       if (!d.configured) {
         const btn = document.getElementById('pr-send-btn');
         if (btn) btn.textContent = 'Open in email app';
+        // Hide the secondary mailto button — the primary already does that
+        const sec = document.querySelector('#pr-send-modal button[onclick="_prDoSend(\'mailto\')"]');
+        if (sec) sec.style.display = 'none';
         window._prSendNoDirect = true;
       } else window._prSendNoDirect = false;
     }).catch(() => { window._prSendNoDirect = true; });
