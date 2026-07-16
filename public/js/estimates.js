@@ -62,8 +62,10 @@ function _estNormalize(est) {
   if (!est) return est;
   if (typeof est.line_items === 'string') try { est.line_items = JSON.parse(est.line_items); } catch(e) { est.line_items = []; }
   if (typeof est.attachments === 'string') try { est.attachments = JSON.parse(est.attachments); } catch(e) { est.attachments = []; }
+  if (typeof est.payment_schedule === 'string') try { est.payment_schedule = JSON.parse(est.payment_schedule); } catch(e) { est.payment_schedule = []; }
   if (!Array.isArray(est.line_items)) est.line_items = [];
   if (!Array.isArray(est.attachments)) est.attachments = [];
+  if (!Array.isArray(est.payment_schedule)) est.payment_schedule = [];
   return est;
 }
 
@@ -881,6 +883,7 @@ async function estimateBuilder(id) {
     title: '',
     client_id: '', client_name: '', client_email: '', client_phone: '', client_address: '',
     property_id: '', property_addr: '',
+    opp_id: '',
     assigned_to: '', rep_id: '',
     status: 'draft',
     estimate_date: new Date().toISOString().slice(0, 10),
@@ -890,11 +893,41 @@ async function estimateBuilder(id) {
     subtotal: 0, discount_pct: 0, discount_amt: 0,
     tax_pct: 0, tax_amt: 0, total: 0,
     deposit_pct: 30, deposit_amt: 0,
+    payment_schedule: [],
     attachments: [],
     customer_notes: '', internal_notes: '', terms: '',
   };
+  if (!Array.isArray(_estDraft.payment_schedule)) _estDraft.payment_schedule = [];
 
   _estRenderBuilder();
+}
+
+// ── CREATE ESTIMATE DIRECTLY FROM A LEAD ─────────────────────────────────────
+// Called from the lead Quick Actions bar. Prefills client/contact/property and
+// links the estimate back to the opportunity via opp_id.
+async function estimateBuilderForLead(oppId) {
+  const opps = (window._avalonState && window._avalonState.opportunities) ||
+               (typeof state !== 'undefined' && state.opportunities) || [];
+  const o = opps.find(x => x.id === oppId);
+
+  // Navigate to the estimates area so back-buttons behave, then open builder
+  await estimateBuilder(); // initializes a fresh _estDraft (no fetch when no id)
+
+  if (o && _estDraft) {
+    _estDraft.opp_id       = o.id;
+    _estDraft.client_id    = o.clientId || '';
+    _estDraft.client_name  = o.client || '';
+    _estDraft.client_email = o.email || '';
+    _estDraft.client_phone = o.phone || '';
+    _estDraft.client_address = o.address || '';
+    _estDraft.property_addr  = o.address || '';
+    _estDraft.title = o.project || o.serviceLine || (o.client ? `Estimate for ${o.client}` : '');
+    if (o.repId) _estDraft.assigned_to = o.repId;
+    _estRenderBuilder();
+    if (typeof showToast === 'function') showToast(`New estimate started for ${o.client || 'lead'} — linked to this lead`, 'success');
+  } else if (!o) {
+    if (typeof showToast === 'function') showToast('Lead not found — starting a blank estimate', 'info');
+  }
 }
 
 function _estRenderBuilder() {
@@ -1053,6 +1086,11 @@ function _estRenderBuilder() {
             <label class="est-label">Deposit Required (%)</label>
             <input id="est-deposit-pct" class="est-input" type="number" min="0" max="100" step="1" value="${est.deposit_pct || 30}" oninput="_estDraftField('deposit_pct',parseFloat(this.value)||30);_estCalcTotals()">
           </div>
+        </div>
+
+        <!-- Custom Payment Schedule -->
+        <div class="est-payment-schedule" id="est-payment-schedule" style="margin-top:18px;padding-top:16px;border-top:1px dashed var(--gw-border,#E4E0D6)">
+          ${_estPaySchedHtml()}
         </div>
       </section>
 
@@ -1236,6 +1274,13 @@ function _estCalcTotals() {
       </div>` : ''}
       <div class="est-summary-items-count">${items.length} line item${items.length !== 1 ? 's' : ''}</div>`;
   }
+
+  // Keep payment-schedule dollar amounts in sync with the new total
+  if (Array.isArray(_estDraft.payment_schedule) && _estDraft.payment_schedule.length) {
+    const active = document.activeElement;
+    const inSched = active && active.closest && active.closest('#est-payment-schedule');
+    if (!inSched) _estPaySchedRefresh();
+  }
 }
 
 // Client search for builder
@@ -1365,8 +1410,114 @@ function _estRenderAttachmentList() {
 }
 
 // Save Builder
+// ── CUSTOM PAYMENT SCHEDULE (builder section) ────────────────────────────────
+// Lets the rep define any number of payments with a % each; must total 100%.
+
+function _estPaySchedHtml() {
+  const sched = (_estDraft && Array.isArray(_estDraft.payment_schedule)) ? _estDraft.payment_schedule : [];
+  const total = Number(_estDraft?.total || 0);
+  const sum = sched.reduce((s, p) => s + (Number(p.pct) || 0), 0);
+  const ok = Math.abs(sum - 100) <= 0.01;
+  const sumColor = sched.length === 0 ? 'var(--gw-text-subtle,#8A948C)' : (ok ? '#1E5E3E' : '#B4482E');
+
+  const rows = sched.map((p, i) => {
+    const amt = total > 0 ? (total * (Number(p.pct) || 0) / 100) : 0;
+    return `
+    <div class="est-paysched-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input class="est-input" type="text" placeholder="Payment ${i + 1} label (e.g. Deposit, At start, On completion)" value="${_estEsc(p.label || '')}" style="flex:1" oninput="_estPaySchedField(${i},'label',this.value)">
+      <div style="position:relative;width:104px;flex:none">
+        <input class="est-input" type="number" min="0" max="100" step="0.1" value="${p.pct != null ? p.pct : ''}" placeholder="%" style="width:100%;padding-right:26px" oninput="_estPaySchedField(${i},'pct',parseFloat(this.value)||0)">
+        <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--gw-text-subtle,#8A948C);pointer-events:none">%</span>
+      </div>
+      <span style="width:92px;flex:none;text-align:right;font-size:12.5px;color:var(--gw-text-subtle,#6F7E6A);font-variant-numeric:tabular-nums">${total > 0 ? _estFmt(amt) : '—'}</span>
+      <button type="button" title="Remove payment" style="border:none;background:transparent;color:#B4482E;cursor:pointer;font-size:16px;line-height:1;padding:4px" onclick="_estPaySchedRemove(${i})">×</button>
+    </div>`;
+  }).join('');
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gw-text,#1F2A2B)">Custom Payment Schedule <span style="font-weight:500;color:var(--gw-text-subtle,#8A948C)">(optional)</span></div>
+        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C)">Split the total into any number of payments — percentages must add up to 100%.</div>
+      </div>
+      <span id="est-paysched-sum" style="font-size:12.5px;font-weight:800;color:${sumColor};white-space:nowrap;font-variant-numeric:tabular-nums">${sched.length ? sum.toFixed(sum % 1 ? 1 : 0) + '% / 100%' + (ok ? ' ✓' : '') : 'No custom schedule'}</span>
+    </div>
+    ${rows}
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="est-btn-secondary" style="font-size:12.5px;padding:7px 12px" onclick="_estPaySchedAdd()">+ Add payment</button>
+      ${sched.length === 0 ? `
+        <button type="button" style="border:1px dashed var(--gw-border,#CFC9BC);background:transparent;border-radius:8px;font-size:12px;padding:7px 12px;cursor:pointer;color:var(--gw-text-subtle,#5A675F)" onclick="_estPaySchedPreset([['Deposit',50],['On completion',50]])">50 / 50</button>
+        <button type="button" style="border:1px dashed var(--gw-border,#CFC9BC);background:transparent;border-radius:8px;font-size:12px;padding:7px 12px;cursor:pointer;color:var(--gw-text-subtle,#5A675F)" onclick="_estPaySchedPreset([['Deposit',34],['Mid-project',33],['On completion',33]])">Thirds</button>
+        <button type="button" style="border:1px dashed var(--gw-border,#CFC9BC);background:transparent;border-radius:8px;font-size:12px;padding:7px 12px;cursor:pointer;color:var(--gw-text-subtle,#5A675F)" onclick="_estPaySchedPreset([['Deposit',30],['On completion',70]])">30 / 70</button>` : `
+        <button type="button" style="border:none;background:transparent;font-size:12px;cursor:pointer;color:#B4482E;text-decoration:underline" onclick="_estPaySchedClear()">Clear schedule</button>
+        ${!ok ? `<span style="font-size:11.5px;color:#B4482E">Must total 100% before it can be saved.</span>` : ''}`}
+    </div>`;
+}
+
+function _estPaySchedRefresh() {
+  const wrap = document.getElementById('est-payment-schedule');
+  if (wrap) wrap.innerHTML = _estPaySchedHtml();
+}
+
+function _estPaySchedField(i, key, val) {
+  if (!_estDraft || !Array.isArray(_estDraft.payment_schedule) || !_estDraft.payment_schedule[i]) return;
+  _estDraft.payment_schedule[i][key] = val;
+  if (key === 'pct') {
+    // Live-update only the sum badge + amounts so typing isn't interrupted
+    const sched = _estDraft.payment_schedule;
+    const sum = sched.reduce((s, p) => s + (Number(p.pct) || 0), 0);
+    const ok = Math.abs(sum - 100) <= 0.01;
+    const badge = document.getElementById('est-paysched-sum');
+    if (badge) {
+      badge.textContent = sum.toFixed(sum % 1 ? 1 : 0) + '% / 100%' + (ok ? ' ✓' : '');
+      badge.style.color = ok ? '#1E5E3E' : '#B4482E';
+    }
+  }
+}
+
+function _estPaySchedAdd() {
+  if (!_estDraft) return;
+  if (!Array.isArray(_estDraft.payment_schedule)) _estDraft.payment_schedule = [];
+  const sched = _estDraft.payment_schedule;
+  const sum = sched.reduce((s, p) => s + (Number(p.pct) || 0), 0);
+  sched.push({ label: '', pct: Math.max(0, Math.round((100 - sum) * 10) / 10) });
+  _estPaySchedRefresh();
+}
+
+function _estPaySchedRemove(i) {
+  if (!_estDraft || !Array.isArray(_estDraft.payment_schedule)) return;
+  _estDraft.payment_schedule.splice(i, 1);
+  _estPaySchedRefresh();
+}
+
+function _estPaySchedPreset(pairs) {
+  if (!_estDraft) return;
+  _estDraft.payment_schedule = pairs.map(([label, pct]) => ({ label, pct }));
+  _estPaySchedRefresh();
+}
+
+function _estPaySchedClear() {
+  if (!_estDraft) return;
+  _estDraft.payment_schedule = [];
+  _estPaySchedRefresh();
+}
+
 async function _estSaveBuilder(action) {
   if (!_estDraft) return;
+
+  // Enforce payment-schedule 100% rule before saving
+  const _sched = Array.isArray(_estDraft.payment_schedule) ? _estDraft.payment_schedule.filter(p => (p.label || '').trim() || Number(p.pct)) : [];
+  if (_sched.length) {
+    const _sum = _sched.reduce((s, p) => s + (Number(p.pct) || 0), 0);
+    if (Math.abs(_sum - 100) > 0.01) {
+      showToast(`Payment schedule must total 100% (currently ${_sum.toFixed(1)}%)`, 'error');
+      const wrap = document.getElementById('est-payment-schedule');
+      if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+  _estDraft.payment_schedule = _sched;
+
   const saveState = document.getElementById('est-save-state');
   if (saveState) saveState.textContent = 'Saving…';
 
@@ -1402,6 +1553,18 @@ async function _estSaveBuilder(action) {
       _estDraft.id = data.id;
       _estDraft.est_number = data.est_number;
       _estDraft.portal_token = data.portal_token;
+    }
+
+    // Persist the custom payment schedule via its dedicated endpoint
+    if (_estDraft.id) {
+      try {
+        await fetch(`/api/estimates/${_estDraft.id}/payment-schedule`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payment_schedule: _estDraft.payment_schedule || [] }),
+        });
+      } catch (e) { console.warn('[payment-schedule save]', e); }
     }
 
     if (saveState) saveState.textContent = 'Saved ✓';
@@ -1886,6 +2049,13 @@ function _estFallbackCopy(text) {
 window.estimates       = estimates;
 window.estimateDetail  = estimateDetail;
 window.estimateBuilder = estimateBuilder;
+window.estimateBuilderForLead = estimateBuilderForLead;
+window._estPaySchedField  = _estPaySchedField;
+window._estPaySchedAdd    = _estPaySchedAdd;
+window._estPaySchedRemove = _estPaySchedRemove;
+window._estPaySchedPreset = _estPaySchedPreset;
+window._estPaySchedClear  = _estPaySchedClear;
+window._estPaySchedRefresh = _estPaySchedRefresh;
 window._estPortalPreview = _estPortalPreview;
 window._estNewEstimate = _estNewEstimate;
 window._estDuplicate   = _estDuplicate;
