@@ -719,6 +719,38 @@ app.get('/api/branding/login', async (c) => {
   return c.json({ name: 'Groundwork', logo_url: '', brand_color: '#2D7A55' })
 })
 
+// GET /api/branding/logo/:id — PUBLIC: serves the company logo as a real image.
+// The CRM stores uploaded logos as base64 data: URLs in companies.logo_url;
+// email clients (Gmail/Outlook) strip data: images, so branded emails reference
+// this endpoint instead. Logos are already public-facing (login page, portal).
+app.get('/api/branding/logo/:id', async (c) => {
+  const db = c.env.DB as D1Database
+  const id = c.req.param('id')
+  const row: any = await db.prepare(
+    `SELECT logo_url FROM companies WHERE (id = ? OR slug = ?) AND active = 1 LIMIT 1`
+  ).bind(id, id).first().catch(() => null)
+  const lu = ((row && row.logo_url) || '').trim()
+  if (!lu) return c.notFound()
+  // Hosted URL — just redirect
+  if (/^https?:\/\//.test(lu)) return c.redirect(lu, 302)
+  // Base64 data URL — decode and serve as binary with caching
+  const m = lu.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/)
+  if (!m) return c.notFound()
+  try {
+    const b64 = m[2].replace(/\s/g, '')
+    const bin = Uint8Array.from(atob(b64), (ch: string) => ch.charCodeAt(0))
+    return new Response(bin, {
+      headers: {
+        'Content-Type': m[1],
+        'Cache-Control': 'public, max-age=3600',
+        'Access-Control-Allow-Origin': '*',
+      },
+    })
+  } catch {
+    return c.notFound()
+  }
+})
+
 // GET /api/company/branding  — full branding/identity for authenticated company
 app.get('/api/company/branding', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -5864,7 +5896,14 @@ app.post('/api/email/send', requireAuth, async (c) => {
   const coName = (co && co.name) || 'Groundwork CRM'
   const esc = (s: string) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   const bc = (co && /^#[0-9a-fA-F]{3,8}$/.test(co.brand_color || '') ? co.brand_color : '#2D7A55')
-  const logo = (co && /^https?:\/\//.test(co.logo_url || '')) ? co.logo_url : ''
+  // Logo for email: hosted URLs pass through; base64 data-URL uploads (the CRM's
+  // Choose File flow) are served via the public logo endpoint — email clients
+  // strip inline data: images, so we must reference a real https URL.
+  const luRaw = (co && co.logo_url) || ''
+  const reqUrl = new URL(c.req.url)
+  const logo = /^https?:\/\//.test(luRaw) ? luRaw
+    : /^data:image\//.test(luRaw) ? `${reqUrl.origin}/api/branding/logo/${companyId}`
+    : ''
 
   // Pull the first portal/CTA link out of the body and promote it to a button.
   // The paragraph that is *only* that URL gets dropped from the text (no dupes).
@@ -7052,7 +7091,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b019">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b020">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7076,8 +7115,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b019"></script>
-  <script src="/js/client_portal.js?v=20260716b019"></script>
+  <script src="/js/platform_core.js?v=20260716b020"></script>
+  <script src="/js/client_portal.js?v=20260716b020"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7707,9 +7746,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b019">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b019">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b019">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b020">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b020">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b020">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8257,36 +8296,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b019"></script>
-<script src="/js/db.js?v=20260716b019"></script>
-<script src="/js/data.js?v=20260716b019"></script>
-<script src="/js/reps.js?v=20260716b019"></script>
-<script src="/js/record-page.js?v=20260716b019"></script>
-<script src="/js/academy.js?v=20260716b019"></script>
-<script src="/js/task_engine.js?v=20260716b019"></script>
-<script src="/js/gw_i18n.js?v=20260716b019"></script>
-<script src="/js/app_premium.js?v=20260716b019"></script>
-<script src="/js/estimates.js?v=20260716b019"></script>
-<script src="/js/proposals.js?v=20260716b019"></script>
-<script src="/js/invoices.js?v=20260716b019"></script>
-<script src="/js/csv_import.js?v=20260716b019"></script>
-<script src="/js/onboarding.js?v=20260716b019"></script>
-<script src="/js/recurring_plans.js?v=20260716b019"></script>
-<script src="/js/reviews.js?v=20260716b019"></script>
-<script src="/js/stripe.js?v=20260716b019"></script>
-<script src="/js/email.js?v=20260716b019"></script>
-<script src="/js/notifications.js?v=20260716b019"></script>
-<script src="/js/integrations.js?v=20260716b019"></script>
-<script src="/js/user_management.js?v=20260716b019"></script>
-<script src="/js/platform_admin.js?v=20260716b019"></script>
-<script src="/js/time_tracker.js?v=20260716b019"></script>
-<script src="/js/field_workday.js?v=20260716b019"></script>
-<script src="/js/platform_core.js?v=20260716b019"></script>
-<script src="/js/approval_engine.js?v=20260716b019"></script>
-<script src="/js/automation_engine.js?v=20260716b019"></script>
-<script src="/js/client_portal.js?v=20260716b019"></script>
-<script src="/js/field_mode.js?v=20260716b019"></script>
-<script src="/js/assets_hub.js?v=20260716b019"></script>
+<script src="/js/gw-icons.js?v=20260716b020"></script>
+<script src="/js/db.js?v=20260716b020"></script>
+<script src="/js/data.js?v=20260716b020"></script>
+<script src="/js/reps.js?v=20260716b020"></script>
+<script src="/js/record-page.js?v=20260716b020"></script>
+<script src="/js/academy.js?v=20260716b020"></script>
+<script src="/js/task_engine.js?v=20260716b020"></script>
+<script src="/js/gw_i18n.js?v=20260716b020"></script>
+<script src="/js/app_premium.js?v=20260716b020"></script>
+<script src="/js/estimates.js?v=20260716b020"></script>
+<script src="/js/proposals.js?v=20260716b020"></script>
+<script src="/js/invoices.js?v=20260716b020"></script>
+<script src="/js/csv_import.js?v=20260716b020"></script>
+<script src="/js/onboarding.js?v=20260716b020"></script>
+<script src="/js/recurring_plans.js?v=20260716b020"></script>
+<script src="/js/reviews.js?v=20260716b020"></script>
+<script src="/js/stripe.js?v=20260716b020"></script>
+<script src="/js/email.js?v=20260716b020"></script>
+<script src="/js/notifications.js?v=20260716b020"></script>
+<script src="/js/integrations.js?v=20260716b020"></script>
+<script src="/js/user_management.js?v=20260716b020"></script>
+<script src="/js/platform_admin.js?v=20260716b020"></script>
+<script src="/js/time_tracker.js?v=20260716b020"></script>
+<script src="/js/field_workday.js?v=20260716b020"></script>
+<script src="/js/platform_core.js?v=20260716b020"></script>
+<script src="/js/approval_engine.js?v=20260716b020"></script>
+<script src="/js/automation_engine.js?v=20260716b020"></script>
+<script src="/js/client_portal.js?v=20260716b020"></script>
+<script src="/js/field_mode.js?v=20260716b020"></script>
+<script src="/js/assets_hub.js?v=20260716b020"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
