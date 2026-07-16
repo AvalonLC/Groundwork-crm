@@ -345,7 +345,10 @@ function _estRenderTable(rows) {
     const total = _estFmt(est.total);
     return `
     <tr class="est-table-row" data-id="${_estEsc(est.id)}" onclick="_estRowClick('${_estEsc(est.id)}')">
-      <td><span class="est-number-tag">${_estEsc(est.est_number || '—')}</span></td>
+      <td>
+        <span class="est-number-tag">${_estEsc(est.est_number || '—')}</span>
+        ${_estModeChips(est)}
+      </td>
       <td>
         <div class="est-row-client">${_estEsc(est.client_name || '—')}</div>
         ${est.property_addr ? `<div class="est-row-prop">${_estEsc(est.property_addr)}</div>` : ''}
@@ -375,6 +378,14 @@ function _estRenderTable(rows) {
       </td>
     </tr>`;
   }).join('');
+}
+
+// Small type indicator under the number: Proposal (advanced mode) / Recurring
+function _estModeChips(est) {
+  const chips = [];
+  if (est.mode === 'advanced') chips.push(`<span title="Advanced proposal — overview & option tiers" style="display:inline-block;margin-top:3px;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;letter-spacing:.3px;background:rgba(77,138,134,.16);color:#4D8A86;border:1px solid rgba(77,138,134,.35)">PROPOSAL</span>`);
+  if (est.doc_type === 'recurring') chips.push(`<span title="Recurring / maintenance contract" style="display:inline-block;margin-top:3px;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;letter-spacing:.3px;background:rgba(201,123,106,.14);color:#C97B6A;border:1px solid rgba(201,123,106,.35)">RECURRING</span>`);
+  return chips.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${chips.join('')}</div>` : '';
 }
 
 function _estEngagementChips(est) {

@@ -148,6 +148,44 @@ npx wrangler d1 execute avalon-sales-hub-production --local --command "SELECT CO
   idempotently (`ensureFullSchema`, flag `_schema_full_v1`) so production D1 never lags the code.
 - **E2E tests**: `node tests/e2e_full.js` (see tests/README.md).
 
+## Unified Estimates & Proposals + Price Book (added 2026-07-16)
+
+The old separate Estimates and Proposals pages are merged into one document system under
+**Sales → Estimates**. An estimate is simply a "simple-mode" proposal.
+
+- **Simple ⇄ Advanced toggle** in the builder. Advanced adds an overview section and
+  **Good / Better / Best option tiers** (stored in `estimates.tiers` JSON).
+- **One-Time ⇄ Recurring toggle**. Recurring opens the maintenance-contract calculator:
+  per-service visits/year × man-hours × materials → yearly cost → +profit → **monthly price**,
+  with a multi-year escalation table (default 3%/yr from year 2). Rollup persists in `recurring_data`.
+- **Job Cost Engine** (internal-only panel, never shown to customers): materials + tax +
+  plant warranty + misc + setup pay + equipment + labor (budgeted hrs) → direct cost →
+  + overhead recovery → break-even → + profit % → **recommended selling price**, with
+  revenue-per-man-hour goal check and crew/days estimate. Rollup persists in `cost_data`.
+  All rates are per-company settings (`GET/PUT /api/pricing-settings`, editable in
+  Services & Pricing → Job Cost Settings) so any service business can customize.
+- **Price Book — Admin → Services & Pricing** (`pricing` tab, admin/office_manager):
+  CRUD for services/materials/labor/equipment items (`price_items` table) plus
+  **CSV/Excel import** (SheetJS, multi-block sheet detection, merge or replace) via
+  `POST /api/price-items/import`. Builder line items get a type-ahead **price-book picker**
+  that auto-fills unit, unit cost, and unit time.
+- **✨ AI Quote Generator** in the builder: `POST /api/ai/generate-quote` reads the lead's
+  conversation + notes, matches against the company price book, optionally cross-references
+  market rates, and drafts a tiered quote with email/SMS copy. **Review-before-apply** — nothing
+  changes until you click Apply. Requires the company `openai_api_key`
+  (Integrations → Admin Setup); returns a graceful `no_api_key` message otherwise.
+- **Convert to Job / Event**: accepted estimates get a "Convert to Job" button (also in the
+  ⋯ menus) → `POST /api/estimates/:id/convert-to-job` creates a work order (409 with a link
+  if already converted). The detail view shows "View Work Order" once linked.
+- **Proposals tab retired from nav** — deep links (`show('proposals')`, portal, composer)
+  still work and highlight the Estimates tab. Existing `/api/proposals` documents remain
+  fully accessible. The estimates list shows **PROPOSAL** / **RECURRING** chips so
+  advanced/recurring documents are visible at a glance.
+- **Schema**: migration `0034_price_book_estimate_merge.sql`; production self-heals via
+  `ensurePriceBookSchema` on first API hit (no manual remote migration needed).
+
+---
+
 ## Environment variables / secrets
 
 | Variable | Where to set | Purpose |

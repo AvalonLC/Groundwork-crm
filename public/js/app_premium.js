@@ -75,9 +75,12 @@ function activateNav(viewName) {
     const isActive = bView === viewName || bView === wsTarget;
     b.classList.toggle('active', isActive);
   });
-  // Highlight the correct sidebar subtab button
+  // Highlight the correct sidebar subtab button.
+  // Some deep-link views were merged into another tab's home — highlight that tab.
+  const _subtabAlias = { proposals: 'estimates' };
+  const subtabTarget = _subtabAlias[viewName] || viewName;
   document.querySelectorAll('.nav-subtab').forEach(b => {
-    b.classList.toggle('nav-subtab--active', b.dataset.tab === viewName);
+    b.classList.toggle('nav-subtab--active', b.dataset.tab === subtabTarget);
   });
   // Auto-expand the active workspace panel — but respect manual closes.
   // Only force-open if the user hasn't explicitly collapsed this panel themselves.
@@ -644,7 +647,7 @@ const _gwWsNameToId = {
 // the mobile nav. Keep lists small: only what you'd realistically use in the field.
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
-  Sales:       ['pipeline','lead','clients','estimates','proposals','communications'],
+  Sales:       ['pipeline','lead','clients','estimates','communications'],
   Financial:   ['financialHub','invoices','gwReviews','gwStripe'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Learning:    ['academy'],
@@ -719,9 +722,8 @@ function gwSales(tab) {
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
-    {id:'proposals',      label:'Proposals'},
     {id:'communications', label:'Communications'},
-  ], _GW_COMMS_HUB_TABS.includes(tab) ? 'communications' : tab);
+  ], _GW_COMMS_HUB_TABS.includes(tab) ? 'communications' : (tab === 'proposals' ? 'estimates' : tab));
   if (tab === 'pipeline')            pipeline();
   else if (tab === 'lead')           lead();
   else if (tab === 'clients')        clients();
@@ -780,7 +782,6 @@ function communicationsHub(section) {
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
-    {id:'proposals',      label:'Proposals'},
     {id:'communications', label:'Communications'},
   ], 'communications');
   activateNav('communications');
@@ -1113,7 +1114,6 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
     {id:'properties',     label:'Properties'},
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
-    {id:'proposals',      label:'Proposals'},
     {id:'communications', label:'Communications'},
   ], null);
 
@@ -1372,7 +1372,7 @@ function show(viewName='today', param){
   };
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
-    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'proposals',label:'Proposals'},{id:'communications',label:'Communications'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [
