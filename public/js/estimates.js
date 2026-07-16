@@ -926,8 +926,21 @@ async function estimateBuilder(id) {
   };
   if (!Array.isArray(_estDraft.payment_schedule)) _estDraft.payment_schedule = [];
 
+  // Always open on the customer-facing document tab
+  _estBuilderTab = 'document';
+
   // Load price book + pricing settings in the background for the picker & engine
   _estPBEnsure();
+
+  // Load estimate templates in the background, then refresh the template picker
+  _estTplLoad().then(() => {
+    const sel = document.getElementById('est-tpl-select');
+    if (sel && _estTemplates.length) {
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">Choose a template…</option>` + _estTemplates.map(t => `<option value="${_estEsc(t.id)}">${_estEsc(t.name)}</option>`).join('');
+      sel.value = cur;
+    }
+  });
 
   _estRenderBuilder();
 }
@@ -969,14 +982,39 @@ function _estRenderBuilder() {
   const repOptions = (window.REPS || []).filter(r => !['field','tech'].includes(r.role))
     .map(r => `<option value="${_estEsc(r.id)}" ${est.assigned_to === r.id || est.rep_id === r.id ? 'selected' : ''}>${_estEsc(r.name)}</option>`).join('');
 
+  const tab = _estBuilderTab === 'workbench' ? 'workbench' : 'document';
+  const pvOn = tab === 'document' && _estPvEnabled();
+  const engineSelling = est.cost_data?.rollup?.selling_price;
+
+  // #view is overflow:auto (a scroll container that never actually scrolls —
+  // the window does), which silently disables position:sticky for the preview
+  // and rail. Override it while the builder is open; auto-restore after.
+  view.style.setProperty('overflow', 'visible', 'important');
+  if (!window._estViewOverflowWatch) {
+    window._estViewOverflowWatch = new MutationObserver(() => {
+      const v = document.getElementById('view');
+      if (v && v.style.overflow === 'visible' && !document.getElementById('est-builder-shell') && !document.getElementById('pr-builder-shell')) v.style.removeProperty('overflow');
+    });
+    window._estViewOverflowWatch.observe(view, { childList: true });
+  }
+
   view.innerHTML = `
-  <div class="est-builder-shell" id="est-builder-shell">
+  <style>
+    #est-builder-shell.est-builder-shell--pv { grid-template-columns: minmax(0,1fr) minmax(400px,46%) !important; max-width: 1900px !important; margin: 0 auto !important; }
+    #est-pv-doc .est-portal-content { grid-template-columns: 1fr !important; padding: 26px 22px !important; max-width: none !important; }
+    #est-pv-doc .est-portal-doc { padding-right: 0 !important; }
+    #est-pv-doc .est-portal-panel { position: static !important; margin-top: 18px; }
+    .est-btab { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 800; display: flex; align-items: center; gap: 7px; background: transparent; color: var(--gw-text-subtle,#6F7E6A); transition: background .15s; }
+    .est-btab--active { background: var(--gw-surface,#fff); color: var(--gw-text,#2F3B33); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .est-btab-badge { font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 99px; background: rgba(45,122,85,.12); color: var(--gw-action,#2D7A55); }
+  </style>
+  <div class="est-builder-shell ${pvOn ? 'est-builder-shell--pv' : ''}" id="est-builder-shell">
 
     <!-- Builder Main Canvas -->
     <div class="est-builder-main">
 
       <!-- Top Nav -->
-      <div class="est-builder-topnav">
+      <div class="est-builder-topnav" style="flex-wrap:wrap">
         <button class="est-back-btn" onclick="${isEdit ? `estimateDetail('${_estEsc(est.id)}')` : 'estimates()'}">
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9 11L4 7l5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           ${isEdit ? 'Detail' : 'Estimates'}
@@ -985,9 +1023,9 @@ function _estRenderBuilder() {
           ${isEdit ? `Edit ${_estEsc(est.est_number || 'Estimate')}` : 'New Estimate'}
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <div class="est-mode-toggle" style="display:flex;border:1px solid var(--gw-border,#DDD8CE);border-radius:8px;overflow:hidden">
+          <div class="est-mode-toggle" style="display:flex;border:1px solid var(--gw-border,#DDD8CE);border-radius:8px;overflow:hidden" title="Simple = a clean quote. Advanced = full proposal with overview and Good/Better/Best options.">
             <button type="button" onclick="_estSetMode('simple')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.mode!=='advanced'?'var(--gw-action,#2D7A55)':'transparent'};color:${est.mode!=='advanced'?'#fff':'var(--gw-text,#2F3B33)'}">Simple</button>
-            <button type="button" onclick="_estSetMode('advanced')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.mode==='advanced'?'var(--gw-action,#2D7A55)':'transparent'};color:${est.mode==='advanced'?'#fff':'var(--gw-text,#2F3B33)'}">Advanced</button>
+            <button type="button" onclick="_estSetMode('advanced')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.mode==='advanced'?'var(--gw-action,#2D7A55)':'transparent'};color:${est.mode==='advanced'?'#fff':'var(--gw-text,#2F3B33)'}">Proposal</button>
           </div>
           <div class="est-mode-toggle" style="display:flex;border:1px solid var(--gw-border,#DDD8CE);border-radius:8px;overflow:hidden">
             <button type="button" onclick="_estSetDocType('onetime')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.doc_type!=='recurring'?'var(--gw-ink,#2F3B33)':'transparent'};color:${est.doc_type!=='recurring'?'#fff':'var(--gw-text,#2F3B33)'}">One-Time</button>
@@ -997,6 +1035,42 @@ function _estRenderBuilder() {
           <div class="est-builder-save-state" id="est-save-state"></div>
         </div>
       </div>
+
+      <!-- Builder Tabs: customer document vs internal pricing workbench -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="display:flex;gap:4px;background:var(--gw-bg,#EDEAE2);border:1px solid var(--gw-border,#E4E0D6);border-radius:11px;padding:4px" role="tablist">
+          <button type="button" class="est-btab ${tab==='document'?'est-btab--active':''}" id="est-btab-document" onclick="_estSetBuilderTab('document')" role="tab">📄 ${est.mode==='advanced' ? 'Proposal' : 'Estimate'} <span style="font-weight:600;opacity:.7">· what the customer sees</span></button>
+          <button type="button" class="est-btab ${tab==='workbench'?'est-btab--active':''}" id="est-btab-workbench" onclick="_estSetBuilderTab('workbench')" role="tab">🔒 Pricing Workbench ${engineSelling ? `<span class="est-btab-badge">${_estFmt(engineSelling)}</span>` : `<span style="font-weight:600;opacity:.7">· internal</span>`}</button>
+        </div>
+        ${tab === 'document' ? `
+        <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 13px;margin-left:auto${pvOn ? ';background:var(--gw-action,#2D7A55);color:#fff;border-color:transparent' : ''}" onclick="_estTogglePv()" title="Show the branded customer document side-by-side, updating live as you type">${pvOn ? '✓ Live Preview' : '👁 Live Preview'}</button>` : ''}
+      </div>
+
+      ${tab === 'document' ? `
+      <!-- Context banner -->
+      <div style="display:flex;gap:10px;align-items:center;background:rgba(45,122,85,.07);border:1px solid rgba(45,122,85,.22);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--gw-text,#2F3B33)">
+        <span style="font-size:15px">📄</span>
+        <span><b>Customer-facing.</b> Everything on this tab appears on the customer's document${pvOn ? ' — watch it update live on the right' : ' — turn on Live Preview to see it exactly as they will'}. Build your costs & margin in the <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:800">Pricing Workbench</a>.</span>
+      </div>
+
+      <!-- Section: Templates -->
+      <section class="est-builder-section" style="padding:14px 18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:13px;font-weight:800">Templates</div>
+            <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C)">Quick-fill the whole document from a saved template, or save this one for reuse.</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="est-tpl-select" class="est-input" style="font-size:12.5px;min-width:190px;width:auto">
+              <option value="">${(_estTemplates||[]).length ? 'Choose a template…' : 'No templates saved yet'}</option>
+              ${(_estTemplates||[]).map(t => `<option value="${_estEsc(t.id)}">${_estEsc(t.name)}</option>`).join('')}
+            </select>
+            <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_estTplApply()">Apply</button>
+            <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_estTplSave()">Save as template</button>
+            ${(_estTemplates||[]).length ? `<button type="button" style="border:none;background:transparent;font-size:11.5px;color:#B4482E;cursor:pointer;text-decoration:underline" onclick="_estTplDelete()">Delete selected</button>` : ''}
+          </div>
+        </div>
+      </section>
 
       <!-- Section: Customer & Property -->
       <section class="est-builder-section" id="est-section-customer">
@@ -1106,14 +1180,14 @@ function _estRenderBuilder() {
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
           Add line item
         </button>
-        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">💡 Start typing an item name to pull it from your <b>price book</b> — cost and man-hours auto-fill into the cost engine.</div>
+        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">💡 Start typing an item name to pull it from your <b>price book</b> — cost and man-hours auto-fill into the Pricing Workbench. Use <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:700">the workbench</a> to price this job, then push the total back here.</div>
       </section>
 
       ${est.mode === 'advanced' ? `
-      <!-- Section: Overview + Tiers (Advanced) -->
+      <!-- Section: Overview + Tiers (Proposal mode) -->
       <section class="est-builder-section" id="est-section-advanced">
-        <h3 class="est-builder-section-title"><span class="est-builder-section-num">4b</span> Proposal Overview &amp; Option Tiers</h3>
-        <p class="est-builder-section-hint">Advanced mode — add an executive overview and up to 3 pricing options (Good / Better / Best). The customer picks a tier in the portal.</p>
+        <h3 class="est-builder-section-title"><span class="est-builder-section-num">5</span> Proposal Overview &amp; Option Tiers</h3>
+        <p class="est-builder-section-hint">Proposal mode — add an executive overview and up to 3 pricing options (Good / Better / Best). The customer picks a tier in the portal.</p>
         <div class="est-builder-field-group" style="margin-bottom:14px">
           <label class="est-label">Overview / Executive Summary</label>
           <textarea id="est-overview" class="est-input" rows="4" placeholder="Why this project, your approach, what makes your company the right choice…" oninput="_estDraftField('overview',this.value)">${_estEsc(est.overview || '')}</textarea>
@@ -1122,25 +1196,11 @@ function _estRenderBuilder() {
         <button type="button" class="est-btn-secondary" style="font-size:12.5px;margin-top:8px" onclick="_estTierAdd()">+ Add option tier</button>
       </section>` : ''}
 
-      ${est.doc_type === 'recurring' ? `
-      <!-- Section: Recurring Contract Calculator -->
-      <section class="est-builder-section" id="est-section-recurring">
-        <h3 class="est-builder-section-title"><span class="est-builder-section-num">4c</span> Recurring Contract Calculator</h3>
-        <p class="est-builder-section-hint">Maintenance / contract pricing — each service × visits per year, priced with your maintenance division rates, rolled into a monthly payment with yearly escalation.</p>
-        <div id="est-recurring-wrap"></div>
-      </section>` : ''}
-
-      <!-- Section: Job Cost Engine (internal) -->
-      <section class="est-builder-section" id="est-section-engine">
-        <h3 class="est-builder-section-title" style="display:flex;align-items:center;gap:8px"><span class="est-builder-section-num">🔒</span> Job Cost Engine <span style="font-size:10.5px;font-weight:700;background:var(--gw-bg,#F4F1EA);color:var(--gw-text-subtle,#6F7E6A);padding:2px 8px;border-radius:99px;letter-spacing:.04em">INTERNAL — never shown to customer</span></h3>
-        <div id="est-engine-wrap"></div>
-      </section>
-
       <!-- Section: Pricing Config -->
       <section class="est-builder-section">
         <h3 class="est-builder-section-title">
-          <span class="est-builder-section-num">5</span>
-          Pricing &amp; Deposit
+          <span class="est-builder-section-num">${est.mode === 'advanced' ? 6 : 5}</span>
+          Discount, Tax &amp; Deposit
         </h3>
         <div class="est-pricing-grid">
           <div class="est-builder-field-group">
@@ -1166,7 +1226,7 @@ function _estRenderBuilder() {
       <!-- Section: Attachments -->
       <section class="est-builder-section">
         <h3 class="est-builder-section-title">
-          <span class="est-builder-section-num">6</span>
+          <span class="est-builder-section-num">${est.mode === 'advanced' ? 7 : 6}</span>
           Photos &amp; Documents
         </h3>
         <p class="est-builder-section-hint">Upload site photos, plans, reference images, or documents. These appear in the customer estimate.</p>
@@ -1182,7 +1242,7 @@ function _estRenderBuilder() {
       <!-- Section: Notes & Terms -->
       <section class="est-builder-section">
         <h3 class="est-builder-section-title">
-          <span class="est-builder-section-num">7</span>
+          <span class="est-builder-section-num">${est.mode === 'advanced' ? 8 : 7}</span>
           Notes &amp; Terms
         </h3>
         <div class="est-notes-grid">
@@ -1202,6 +1262,35 @@ function _estRenderBuilder() {
           </div>
         </div>
       </section>
+      ` : `
+      <!-- ══════════════ PRICING WORKBENCH TAB (internal) ══════════════ -->
+      <div style="display:flex;gap:10px;align-items:center;background:rgba(47,59,51,.05);border:1px solid var(--gw-border,#DDD8CE);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--gw-text,#2F3B33)">
+        <span style="font-size:15px">🔒</span>
+        <span><b>Internal only — the customer never sees this tab.</b> This is your spreadsheet replacement: build the true job cost here, then push the recommended price to the <a href="javascript:void(0)" onclick="_estSetBuilderTab('document')" style="color:var(--gw-action,#2D7A55);font-weight:800">${est.mode==='advanced' ? 'Proposal' : 'Estimate'} tab</a>.</span>
+      </div>
+
+      <!-- Workbench: Line item cost inputs -->
+      <section class="est-builder-section">
+        <h3 class="est-builder-section-title"><span class="est-builder-section-num">A</span> Materials &amp; Unit Times</h3>
+        <p class="est-builder-section-hint">The line items from the document, with their price-book cost and man-hour data. Edit qty here or pick items from the price book on the document tab.</p>
+        <div id="est-wb-lines"></div>
+      </section>
+
+      ${est.doc_type === 'recurring' ? `
+      <!-- Workbench: Recurring Contract Calculator -->
+      <section class="est-builder-section" id="est-section-recurring">
+        <h3 class="est-builder-section-title"><span class="est-builder-section-num">B</span> Recurring Contract Calculator</h3>
+        <p class="est-builder-section-hint">Maintenance / contract pricing — each service × visits per year, priced with your maintenance division rates, rolled into a monthly payment with yearly escalation.</p>
+        <div id="est-recurring-wrap"></div>
+      </section>` : ''}
+
+      <!-- Workbench: Job Cost Engine -->
+      <section class="est-builder-section" id="est-section-engine">
+        <h3 class="est-builder-section-title" style="display:flex;align-items:center;gap:8px"><span class="est-builder-section-num">${est.doc_type === 'recurring' ? 'C' : 'B'}</span> Job Cost Engine</h3>
+        <p class="est-builder-section-hint">Direct cost → overhead recovery → break-even → profit → recommended selling price. Rates come from <a href="javascript:void(0)" onclick="show&&show('pricing')" style="color:var(--gw-action,#2D7A55);font-weight:700">Services &amp; Pricing → Job Cost Settings</a>.</p>
+        <div id="est-engine-wrap"></div>
+      </section>
+      `}
 
       <!-- Bottom Action Bar -->
       <div class="est-builder-footer">
@@ -1220,10 +1309,21 @@ function _estRenderBuilder() {
 
     </div>
 
+    ${pvOn ? `
+    <!-- Right: LIVE PREVIEW — the branded customer document, updating as you type -->
+    <div style="position:sticky;top:14px;align-self:start;min-width:0" id="est-pv-rail">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--gw-text-subtle,#6F7E6A)">Live Preview</div>
+        <span style="font-size:10.5px;font-weight:700;background:#E7F2EA;color:#1E5E3E;padding:2px 9px;border-radius:99px">Exactly what the customer sees</span>
+        <div id="est-summary-content" style="display:none"></div>
+        <span style="margin-left:auto;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums" id="est-pv-total"></span>
+      </div>
+      <div id="est-pv-doc" style="background:#F4F1EA;border:1px solid var(--gw-border,#DDD8CE);border-radius:14px;overflow-y:auto;max-height:calc(100vh - 90px);box-shadow:0 10px 40px rgba(17,57,49,.10)"></div>
+    </div>` : `
     <!-- Right Rail: Live Summary -->
     <div class="est-builder-rail" id="est-builder-rail">
       <div class="est-rail-card est-rail-card--sticky" id="est-builder-summary">
-        <div class="est-rail-card-title">Estimate Summary</div>
+        <div class="est-rail-card-title">${tab === 'workbench' ? 'Quote Summary' : 'Estimate Summary'}</div>
         <div id="est-summary-content">
           <!-- Rendered by _estCalcTotals -->
         </div>
@@ -1232,17 +1332,22 @@ function _estRenderBuilder() {
           <button class="est-btn-secondary est-btn-sm" onclick="_estPortalPreviewBuilder()">Preview</button>
         </div>
       </div>
-    </div>
+    </div>`}
 
   </div>`;
 
-  // Render initial line items
-  _estRenderLineRows();
-  _estRenderAttachmentList();
+  // Render tab-specific dynamic regions
+  if (tab === 'document') {
+    _estRenderLineRows();
+    _estRenderAttachmentList();
+    if (est.mode === 'advanced') _estRenderTiers();
+  } else {
+    _estRenderWbLines();
+    if (est.doc_type === 'recurring') _estRenderRecurring();
+    _estRenderEngine();
+  }
   _estCalcTotals();
-  if (est.mode === 'advanced') _estRenderTiers();
-  if (est.doc_type === 'recurring') _estRenderRecurring();
-  _estRenderEngine();
+  if (pvOn) { _estPvBrandEnsure(); _estPvRender(); }
 }
 
 function _estDraftField(field, value) {
@@ -1277,7 +1382,8 @@ function _estUpdateLine(idx, field, value) {
 
 function _estRenderLineRows() {
   const container = document.getElementById('est-line-rows');
-  if (!container || !_estDraft) return;
+  if (!container) { if (typeof _estRenderWbLines === 'function') _estRenderWbLines(); return; }
+  if (!_estDraft) return;
   const items = _estDraft.line_items || [];
   if (!items.length) {
     container.innerHTML = `<div class="est-line-empty">No items yet — click "Add line item" below</div>`;
@@ -1358,6 +1464,11 @@ function _estCalcTotals() {
 
   // Live-refresh the internal Job Cost Engine numbers
   if (typeof _estEngineCalc === 'function') _estEngineCalc();
+
+  // Live preview: refresh the branded document + the header total (debounced)
+  const pvTotal = document.getElementById('est-pv-total');
+  if (pvTotal) pvTotal.textContent = _estFmt(total);
+  if (typeof _estPvQueue === 'function') _estPvQueue();
 }
 
 // Client search for builder
@@ -1809,7 +1920,13 @@ async function _estPortalPreview(estId) {
 function _estRenderPortal(est, brand) {
   const body = document.getElementById('est-portal-body');
   if (!body) return;
+  body.innerHTML = _estPortalContentHtml(est, brand, true);
+}
 
+// Shared customer-document renderer — used by the full-screen portal preview
+// (interactive=true: live Accept/Decline buttons) AND the builder's live
+// side-by-side preview (interactive=false: buttons shown but inert).
+function _estPortalContentHtml(est, brand, interactive) {
   // Resolve brand defaults
   brand = brand || { name:'Groundwork', logo_url:'', tagline:'', brand_color:'#2D7A55', address_line1:'', address_city:'', address_state:'', phone:'', website:'' };
   const companyName   = brand.name || 'Groundwork';
@@ -1828,7 +1945,7 @@ function _estRenderPortal(est, brand) {
   const depPct   = Number(est.deposit_pct || 30);
   const sc       = _estStatusConfig(est.status);
 
-  body.innerHTML = `
+  return `
   <div class="est-portal-content">
     <!-- Left: Document -->
     <div class="est-portal-doc">
@@ -1866,10 +1983,30 @@ function _estRenderPortal(est, brand) {
         <div class="est-portal-property-addr">${_estEsc(est.property_addr)}</div>
       </div>` : ''}
 
+      ${est.mode === 'advanced' && est.overview ? `
+      <div class="est-portal-section">
+        <h3 class="est-portal-section-title">Overview</h3>
+        <div class="est-portal-scope">${_estEsc(est.overview).replace(/\n/g,'<br>')}</div>
+      </div>` : ''}
+
       ${est.scope_of_work ? `
       <div class="est-portal-section">
         <h3 class="est-portal-section-title">Scope of Work</h3>
         <div class="est-portal-scope">${_estEsc(est.scope_of_work).replace(/\n/g,'<br>')}</div>
+      </div>` : ''}
+
+      ${est.mode === 'advanced' && Array.isArray(est.tiers) && est.tiers.length ? `
+      <div class="est-portal-section">
+        <h3 class="est-portal-section-title">Your Options</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+          ${est.tiers.map(t => `
+          <div style="border:1.5px solid ${t.recommended ? (brand.brand_color || '#2D7A55') : 'var(--gw-border,#E4E0D6)'};border-radius:12px;padding:16px 14px;position:relative;text-align:center">
+            ${t.recommended ? `<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:${brand.brand_color || '#2D7A55'};color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.06em;padding:2px 10px;border-radius:99px;white-space:nowrap">RECOMMENDED</div>` : ''}
+            <div style="font-weight:800;font-size:14px;margin-bottom:6px">${_estEsc(t.name || 'Option')}</div>
+            ${t.desc ? `<div style="font-size:12px;color:var(--gw-text-muted,#6F7E6A);line-height:1.5;margin-bottom:10px">${_estEsc(t.desc).replace(/\n/g,'<br>')}</div>` : ''}
+            <div style="font-size:20px;font-weight:900;color:${brand.brand_color || '#2D7A55'}">${_estFmt(t.total || 0)}</div>
+          </div>`).join('')}
+        </div>
       </div>` : ''}
 
       ${est.line_items.length ? `
@@ -1938,15 +2075,15 @@ function _estRenderPortal(est, brand) {
         </div>` : ''}
 
         <div class="est-portal-cta-stack">
-          <button class="est-portal-cta-primary" onclick="_estPortalAccept('${_estEsc(est.id)}')">
+          <button class="est-portal-cta-primary" ${interactive ? `onclick="_estPortalAccept('${_estEsc(est.id)}')"` : 'style="pointer-events:none" tabindex="-1"'}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 8l4 4 8-8"/></svg>
             ${depAmt > 0 ? `Accept &amp; Pay Deposit` : 'Accept Estimate'}
           </button>
-          <button class="est-portal-cta-secondary" onclick="_estPortalChanges('${_estEsc(est.id)}')">
+          <button class="est-portal-cta-secondary" ${interactive ? `onclick="_estPortalChanges('${_estEsc(est.id)}')"` : 'style="pointer-events:none" tabindex="-1"'}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
             Request Changes
           </button>
-          <button class="est-portal-cta-text" onclick="_estPortalDecline('${_estEsc(est.id)}')">Decline</button>
+          <button class="est-portal-cta-text" ${interactive ? `onclick="_estPortalDecline('${_estEsc(est.id)}')"` : 'style="pointer-events:none" tabindex="-1"'}>Decline</button>
         </div>
 
         ${est.expiry_date ? `
@@ -2367,6 +2504,21 @@ function _estEngineCalc() {
     labor, ohr, direct_cost: direct, bep, profit, selling_price: selling, rev_per_hour: revHr };
   cd.rollup = rollup;
 
+  // Keep the Pricing Workbench tab badge (recommended price) live
+  const wbTabBtn = document.getElementById('est-btab-workbench');
+  if (wbTabBtn) {
+    let badge = wbTabBtn.querySelector('.est-btab-badge');
+    if (selling > 0) {
+      if (!badge) {
+        wbTabBtn.querySelector('span')?.remove(); // drop the "· internal" hint
+        badge = document.createElement('span');
+        badge.className = 'est-btab-badge';
+        wbTabBtn.appendChild(badge);
+      }
+      badge.textContent = _estFmt(selling);
+    }
+  }
+
   if (wrap) {
     const row = (l, v, hl) => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;${hl ? 'font-weight:800;border-top:1.5px solid var(--gw-border,#DDD8CE);margin-top:4px;padding-top:7px' : ''}"><span>${l}</span><span style="font-variant-numeric:tabular-nums">${v}</span></div>`;
     const revOk = revHr >= goal;
@@ -2720,3 +2872,229 @@ async function _estConvertToJob(estId) {
   }
 }
 window._estConvertToJob = _estConvertToJob;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUILDER TABS — "Document" (customer-facing) vs "Pricing Workbench" (internal)
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _estBuilderTab = 'document';
+
+function _estSetBuilderTab(t) {
+  _estBuilderTab = t === 'workbench' ? 'workbench' : 'document';
+  _estRenderBuilder();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+window._estSetBuilderTab = _estSetBuilderTab;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE PREVIEW — branded customer document rendered side-by-side, debounced
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _estPvEnabled() {
+  try { return localStorage.getItem('gw_est_pv') !== '0'; } catch (e) { return true; }
+}
+function _estTogglePv() {
+  try { localStorage.setItem('gw_est_pv', _estPvEnabled() ? '0' : '1'); } catch (e) {}
+  _estRenderBuilder();
+}
+window._estTogglePv = _estTogglePv;
+
+let _estPvBrand = null;
+async function _estPvBrandEnsure() {
+  if (_estPvBrand) { _estPvRender(); return _estPvBrand; }
+  // Prefer already-loaded app branding
+  if (window._scBrand && window._scBrand.name) { _estPvBrand = { ...window._scBrand }; _estPvRender(); return _estPvBrand; }
+  try {
+    const r = await fetch('/api/company/branding', { credentials: 'include' });
+    if (r.ok) {
+      const raw = await r.json();
+      const bd = (raw && raw.data) ? raw.data : raw;
+      if (bd && bd.name !== undefined) _estPvBrand = bd;
+    }
+  } catch (e) {}
+  if (!_estPvBrand) _estPvBrand = {};
+  _estPvRender();
+  return _estPvBrand;
+}
+
+let _estPvTimer = null;
+function _estPvQueue() {
+  if (!document.getElementById('est-pv-doc')) return;
+  clearTimeout(_estPvTimer);
+  _estPvTimer = setTimeout(_estPvRender, 250);
+}
+window._estPvQueue = _estPvQueue;
+
+function _estPvRender() {
+  const box = document.getElementById('est-pv-doc');
+  if (!box || !_estDraft) return;
+  const brand = _estPvBrand || (window._scBrand && window._scBrand.name ? window._scBrand : {}) || {};
+  // Snapshot the draft with normalized arrays so the shared renderer is safe
+  const est = { ..._estDraft };
+  est.line_items = Array.isArray(est.line_items) ? est.line_items : [];
+  est.attachments = Array.isArray(est.attachments) ? est.attachments : [];
+  est.tiers = Array.isArray(est.tiers) ? est.tiers : [];
+  box.innerHTML = _estPortalContentHtml(est, brand, false);
+}
+window._estPvRender = _estPvRender;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRICING WORKBENCH — internal cost table (mirrors the estimate spreadsheet):
+// each line item with its price-book cost, unit time, extended cost and hours.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _estRenderWbLines() {
+  const wrap = document.getElementById('est-wb-lines');
+  if (!wrap || !_estDraft) return;
+  const items = _estDraft.line_items || [];
+  if (!items.length) {
+    wrap.innerHTML = `<div style="border:1px dashed var(--gw-border,#DDD8CE);border-radius:10px;padding:20px;text-align:center;font-size:12.5px;color:var(--gw-text-subtle,#8A948C)">No line items yet — add them on the <a href="javascript:void(0)" onclick="_estSetBuilderTab('document')" style="color:var(--gw-action,#2D7A55);font-weight:700">document tab</a> (type a name to pull from the price book), or add a costed row here.</div>
+    <button type="button" class="est-add-line-btn" onclick="_estWbAddLine()" style="margin-top:10px">+ Add costed line</button>`;
+    return;
+  }
+  const head = (t, align) => `<span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--gw-text-subtle,#8A948C);${align ? 'text-align:right' : ''}">${t}</span>`;
+  let totCost = 0, totHours = 0;
+  const rows = items.map((li, i) => {
+    const qty = Number(li.qty || 1), uc = Number(li.unit_cost || 0), ut = Number(li.unit_time || 0);
+    const extCost = qty * uc, extHrs = qty * ut;
+    totCost += (li.item_type || 'material') === 'labor' ? 0 : extCost;
+    totHours += extHrs;
+    return `
+    <div style="display:grid;grid-template-columns:2.2fr .8fr .7fr .9fr .8fr .9fr .9fr 30px;gap:8px;align-items:center;margin-bottom:7px">
+      <div style="position:relative">
+        <input class="est-input" style="font-size:12.5px" placeholder="Item — type to search price book" autocomplete="off" value="${_estEsc(li.name || '')}"
+          oninput="_estUpdateLine(${i},'name',this.value);_estPBSuggest(${i},this.value)"
+          onblur="setTimeout(()=>{const s=document.getElementById('est-pb-suggest-${i}');if(s)s.innerHTML='';},250)">
+        <div id="est-pb-suggest-${i}" style="position:absolute;top:100%;left:0;right:0;z-index:50"></div>
+      </div>
+      <select class="est-input" style="font-size:12px;padding:7px 6px" onchange="_estWbField(${i},'item_type',this.value)">
+        ${['material','plant','labor','equipment','service'].map(t => `<option value="${t}" ${(li.item_type||'material')===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
+      </select>
+      <input class="est-input" type="number" min="0" step="0.1" title="Quantity" value="${li.qty ?? 1}" style="font-size:12.5px" oninput="_estUpdateLine(${i},'qty',this.value)">
+      <input class="est-input" type="number" min="0" step="0.01" title="Unit cost (what YOU pay)" value="${li.unit_cost ?? ''}" placeholder="Unit cost" style="font-size:12.5px" oninput="_estWbField(${i},'unit_cost',parseFloat(this.value)||0)">
+      <input class="est-input" type="number" min="0" step="0.05" title="Man-hours per unit" value="${li.unit_time ?? ''}" placeholder="Hrs/unit" style="font-size:12.5px" oninput="_estWbField(${i},'unit_time',parseFloat(this.value)||0)">
+      <span style="text-align:right;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums" id="est-wb-cost-${i}">${_estFmt(extCost)}</span>
+      <span style="text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--gw-text-subtle,#5A675F)" id="est-wb-hrs-${i}">${extHrs.toFixed(2)} h</span>
+      <button type="button" style="border:none;background:none;color:#B4482E;cursor:pointer;font-size:15px" title="Remove line" onclick="_estRemoveLine(${i})">×</button>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:2.2fr .8fr .7fr .9fr .8fr .9fr .9fr 30px;gap:8px;margin-bottom:6px">
+      ${head('Item / Material')}${head('Type')}${head('Qty')}${head('Unit cost')}${head('Hrs / unit')}${head('Ext. cost', 1)}${head('Ext. hours', 1)}<span></span>
+    </div>
+    ${rows}
+    <div style="display:grid;grid-template-columns:2.2fr .8fr .7fr .9fr .8fr .9fr .9fr 30px;gap:8px;border-top:1.5px solid var(--gw-border,#DDD8CE);padding-top:8px;margin-top:2px">
+      <span style="font-size:12px;font-weight:800;grid-column:1/6">MATERIAL &amp; UNIT TOTALS</span>
+      <span style="text-align:right;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums">${_estFmt(totCost)}</span>
+      <span style="text-align:right;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums">${totHours.toFixed(2)} h</span><span></span>
+    </div>
+    <button type="button" class="est-add-line-btn" onclick="_estWbAddLine()" style="margin-top:10px">+ Add costed line</button>`;
+}
+window._estRenderWbLines = _estRenderWbLines;
+
+function _estWbField(i, k, v) {
+  if (!_estDraft?.line_items?.[i]) return;
+  _estDraft.line_items[i][k] = v;
+  // Update extended cells in place, then recalc the engine
+  const li = _estDraft.line_items[i];
+  const c = document.getElementById(`est-wb-cost-${i}`), h = document.getElementById(`est-wb-hrs-${i}`);
+  if (c) c.textContent = _estFmt(Number(li.qty || 1) * Number(li.unit_cost || 0));
+  if (h) h.textContent = (Number(li.qty || 1) * Number(li.unit_time || 0)).toFixed(2) + ' h';
+  _estCalcTotals();
+}
+window._estWbField = _estWbField;
+
+function _estWbAddLine() {
+  if (!_estDraft) return;
+  _estDraft.line_items = _estDraft.line_items || [];
+  _estDraft.line_items.push({ id: _estUID(), name: '', desc: '', qty: 1, rate: 0, total: 0, unit_cost: 0, unit_time: 0, item_type: 'material' });
+  _estRenderWbLines();
+}
+window._estWbAddLine = _estWbAddLine;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTIMATE TEMPLATES — save/apply/delete full document templates.
+// Reuses /api/proposal-templates storage with content.kind='estimate'.
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _estTemplates = [];
+
+async function _estTplLoad() {
+  try {
+    const r = await fetch('/api/proposal-templates', { credentials: 'include' });
+    const j = await r.json();
+    _estTemplates = (j.data || []).filter(t => t.content && t.content.kind === 'estimate');
+  } catch (e) { _estTemplates = []; }
+  return _estTemplates;
+}
+
+async function _estTplSave() {
+  if (!_estDraft) return;
+  const name = prompt('Template name (e.g. "Mulch Refresh — Standard", "Maintenance Contract"):', _estDraft.title || '');
+  if (!name || !name.trim()) return;
+  const d = _estDraft;
+  const content = {
+    kind: 'estimate',
+    mode: d.mode || 'simple', doc_type: d.doc_type || 'onetime',
+    title: d.title || '', scope_of_work: d.scope_of_work || '', overview: d.overview || '',
+    line_items: (d.line_items || []).map(li => ({ ...li })),
+    tiers: (d.tiers || []).map(t => ({ ...t })),
+    recurring_data: d.recurring_data && Object.keys(d.recurring_data).length ? JSON.parse(JSON.stringify(d.recurring_data)) : {},
+    cost_data: (() => { const cd = { ...(d.cost_data || {}) }; delete cd.rollup; return cd; })(),
+    discount_pct: d.discount_pct || 0, tax_pct: d.tax_pct || 0, deposit_pct: d.deposit_pct ?? 30,
+    payment_schedule: (d.payment_schedule || []).map(p => ({ ...p })),
+    customer_notes: d.customer_notes || '', terms: d.terms || '',
+  };
+  try {
+    const r = await fetch('/api/proposal-templates', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), description: 'Estimate template', content }),
+    });
+    if (!r.ok) throw new Error();
+    await _estTplLoad();
+    _estRenderBuilder();
+    showToast(`Template "${name.trim()}" saved`, 'success');
+  } catch (e) { showToast('Failed to save template', 'error'); }
+}
+window._estTplSave = _estTplSave;
+
+function _estTplApply() {
+  const sel = document.getElementById('est-tpl-select');
+  const t = _estTemplates.find(x => x.id === sel?.value);
+  if (!t) { showToast('Choose a template first', 'info'); return; }
+  const c = t.content || {};
+  if (!confirm(`Apply "${t.name}"? This fills the document content (title, scope, line items, pricing, notes, terms). Your customer selection is kept.`)) return;
+  const d = _estDraft;
+  d.mode = c.mode || 'simple';
+  d.doc_type = c.doc_type || 'onetime';
+  if (c.title) d.title = c.title;
+  d.scope_of_work = c.scope_of_work || '';
+  d.overview = c.overview || '';
+  d.line_items = (c.line_items || []).map(li => ({ ...li, id: _estUID() }));
+  d.tiers = (c.tiers || []).map(x => ({ ...x, id: _estUID() }));
+  d.recurring_data = c.recurring_data ? JSON.parse(JSON.stringify(c.recurring_data)) : {};
+  d.cost_data = c.cost_data ? { ...c.cost_data } : {};
+  d.discount_pct = c.discount_pct || 0;
+  d.tax_pct = c.tax_pct || 0;
+  d.deposit_pct = c.deposit_pct ?? 30;
+  d.payment_schedule = (c.payment_schedule || []).map(p => ({ ...p }));
+  d.customer_notes = c.customer_notes || '';
+  d.terms = c.terms || '';
+  _estRenderBuilder();
+  showToast(`Template "${t.name}" applied — review and adjust`, 'success');
+}
+window._estTplApply = _estTplApply;
+
+async function _estTplDelete() {
+  const sel = document.getElementById('est-tpl-select');
+  const t = _estTemplates.find(x => x.id === sel?.value);
+  if (!t) { showToast('Choose a template first', 'info'); return; }
+  if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+  try {
+    await fetch(`/api/proposal-templates/${t.id}`, { method: 'DELETE', credentials: 'include' });
+    await _estTplLoad();
+    _estRenderBuilder();
+    showToast('Template deleted', 'info');
+  } catch (e) { showToast('Failed to delete', 'error'); }
+}
+window._estTplDelete = _estTplDelete;

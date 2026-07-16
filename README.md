@@ -184,6 +184,30 @@ The old separate Estimates and Proposals pages are merged into one document syst
 - **Schema**: migration `0034_price_book_estimate_merge.sql`; production self-heals via
   `ensurePriceBookSchema` on first API hit (no manual remote migration needed).
 
+### Tabbed Builder — Document tab + Pricing Workbench (added 2026-07-16)
+
+The estimate builder is split into two clearly-separated tabs so it's obvious whether
+you're editing what the **customer sees** vs. **internal pricing**:
+
+- **📄 Proposal/Estimate tab (customer-facing)** — green banner. Title, scope,
+  customer-visible line items, overview + Good/Better/Best tiers (Proposal mode),
+  attachments, notes, terms. The Simple ⇄ **Proposal** toggle (formerly "Advanced")
+  switches between a quick estimate and a high-level branded proposal.
+- **Live branded preview** — sticky side-by-side panel rendering the *exact* customer
+  portal document (same renderer, company logo/brand color, tiers, CTAs inert) with a
+  250ms-debounced refresh as you type. Toggleable (persisted per-browser, default ON);
+  when off, the classic quote-summary rail returns.
+- **🔒 Pricing Workbench tab (internal, never shown to customers)** — grey lock banner,
+  sections lettered A/B/C. Spreadsheet-style **costed lines** (item type, qty, unit cost,
+  hrs/unit → extended cost & hours), the recurring-contract calculator, and the Job Cost
+  Engine all live here. "Use $X" pushes the engine's recommended selling price into the
+  customer document, and the workbench tab shows a **live price badge** so the current
+  recommended total is visible from the Document tab.
+- **Estimate templates** — save the current document (content + workbench cost data,
+  minus customer) as a reusable template; apply/delete from a picker on the Document tab.
+  Stored via the existing `/api/proposal-templates` endpoints with `content.kind='estimate'`
+  so estimate and proposal templates stay separate.
+
 ---
 
 ## Environment variables / secrets
