@@ -63,9 +63,18 @@ function _estNormalize(est) {
   if (typeof est.line_items === 'string') try { est.line_items = JSON.parse(est.line_items); } catch(e) { est.line_items = []; }
   if (typeof est.attachments === 'string') try { est.attachments = JSON.parse(est.attachments); } catch(e) { est.attachments = []; }
   if (typeof est.payment_schedule === 'string') try { est.payment_schedule = JSON.parse(est.payment_schedule); } catch(e) { est.payment_schedule = []; }
+  if (typeof est.tiers === 'string') try { est.tiers = JSON.parse(est.tiers); } catch(e) { est.tiers = []; }
+  if (typeof est.sections === 'string') try { est.sections = JSON.parse(est.sections); } catch(e) { est.sections = []; }
+  if (typeof est.cost_data === 'string') try { est.cost_data = JSON.parse(est.cost_data); } catch(e) { est.cost_data = {}; }
+  if (typeof est.recurring_data === 'string') try { est.recurring_data = JSON.parse(est.recurring_data); } catch(e) { est.recurring_data = {}; }
   if (!Array.isArray(est.line_items)) est.line_items = [];
   if (!Array.isArray(est.attachments)) est.attachments = [];
   if (!Array.isArray(est.payment_schedule)) est.payment_schedule = [];
+  if (!Array.isArray(est.tiers)) est.tiers = [];
+  if (!est.cost_data || typeof est.cost_data !== 'object') est.cost_data = {};
+  if (!est.recurring_data || typeof est.recurring_data !== 'object') est.recurring_data = {};
+  if (!est.mode) est.mode = 'simple';
+  if (!est.doc_type) est.doc_type = 'onetime';
   return est;
 }
 
@@ -556,10 +565,14 @@ function _estRenderDetail(est) {
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg> Resend</button>`;
   } else if (est.status === 'accepted') {
     primaryAction = `<button class="est-detail-action-primary est-detail-action-primary--green" onclick="_estConvertToInvoice('${_estEsc(est.id)}')">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="1" width="14" height="14" rx="1.5"/><path d="M4 8h8M4 5h5M4 11h6"/></svg> Convert to Invoice</button>`;
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="1" width="14" height="14" rx="1.5"/><path d="M4 8h8M4 5h5M4 11h6"/></svg> Convert to Invoice</button>
+    ${!est.work_order_id ? `<button class="est-detail-action-primary" style="margin-left:8px" onclick="_estConvertToJob('${_estEsc(est.id)}')">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg> Convert to Job</button>` : ''}`;
   }
+  const woBtn = est.work_order_id ? `<button class="est-detail-action-btn" onclick="typeof workOrderDetail==='function'?workOrderDetail('${_estEsc(est.work_order_id)}'):window.show('workOrderDetail','${_estEsc(est.work_order_id)}')">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg> View Work Order</button>` : '';
 
-  secondaryActions = `
+  secondaryActions = woBtn + `
     <button class="est-detail-action-btn" onclick="estimateBuilder('${_estEsc(est.id)}')">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 2l3 3-9 9H2v-3l9-9z"/></svg> Edit
     </button>
@@ -843,6 +856,7 @@ function _estDetailMoreMenu(btn, id, status) {
   menu.className = 'est-more-menu est-more-menu--inline';
   const actions = [`<button onclick="_estDuplicate('${id}');_estCloseMenu()">Duplicate</button>`];
   if (status !== 'invoiced') actions.push(`<button onclick="_estConvertToInvoice('${id}');_estCloseMenu()">Convert to Invoice</button>`);
+  actions.push(`<button onclick="_estConvertToJob('${id}');_estCloseMenu()">Convert to Job / Event</button>`);
   actions.push(`<button class="est-more-menu--danger" onclick="_estDeleteConfirm('${id}')">Delete</button>`);
   menu.innerHTML = actions.join('');
   btn.closest('.est-more-wrap-inline').appendChild(menu);
@@ -896,8 +910,13 @@ async function estimateBuilder(id) {
     payment_schedule: [],
     attachments: [],
     customer_notes: '', internal_notes: '', terms: '',
+    mode: 'simple', doc_type: 'onetime', overview: '', tiers: [],
+    cost_data: {}, recurring_data: {},
   };
   if (!Array.isArray(_estDraft.payment_schedule)) _estDraft.payment_schedule = [];
+
+  // Load price book + pricing settings in the background for the picker & engine
+  _estPBEnsure();
 
   _estRenderBuilder();
 }
@@ -954,7 +973,18 @@ function _estRenderBuilder() {
         <div class="est-builder-topnav-title">
           ${isEdit ? `Edit ${_estEsc(est.est_number || 'Estimate')}` : 'New Estimate'}
         </div>
-        <div class="est-builder-save-state" id="est-save-state"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="est-mode-toggle" style="display:flex;border:1px solid var(--gw-border,#DDD8CE);border-radius:8px;overflow:hidden">
+            <button type="button" onclick="_estSetMode('simple')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.mode!=='advanced'?'var(--gw-action,#2D7A55)':'transparent'};color:${est.mode!=='advanced'?'#fff':'var(--gw-text,#2F3B33)'}">Simple</button>
+            <button type="button" onclick="_estSetMode('advanced')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.mode==='advanced'?'var(--gw-action,#2D7A55)':'transparent'};color:${est.mode==='advanced'?'#fff':'var(--gw-text,#2F3B33)'}">Advanced</button>
+          </div>
+          <div class="est-mode-toggle" style="display:flex;border:1px solid var(--gw-border,#DDD8CE);border-radius:8px;overflow:hidden">
+            <button type="button" onclick="_estSetDocType('onetime')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.doc_type!=='recurring'?'var(--gw-ink,#2F3B33)':'transparent'};color:${est.doc_type!=='recurring'?'#fff':'var(--gw-text,#2F3B33)'}">One-Time</button>
+            <button type="button" onclick="_estSetDocType('recurring')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.doc_type==='recurring'?'var(--gw-ink,#2F3B33)':'transparent'};color:${est.doc_type==='recurring'?'#fff':'var(--gw-text,#2F3B33)'}">Recurring</button>
+          </div>
+          <button type="button" class="est-btn-secondary" style="font-size:12px;padding:6px 12px" onclick="_estOpenAiGen()">✨ Generate with AI</button>
+          <div class="est-builder-save-state" id="est-save-state"></div>
+        </div>
       </div>
 
       <!-- Section: Customer & Property -->
@@ -1065,6 +1095,34 @@ function _estRenderBuilder() {
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
           Add line item
         </button>
+        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">💡 Start typing an item name to pull it from your <b>price book</b> — cost and man-hours auto-fill into the cost engine.</div>
+      </section>
+
+      ${est.mode === 'advanced' ? `
+      <!-- Section: Overview + Tiers (Advanced) -->
+      <section class="est-builder-section" id="est-section-advanced">
+        <h3 class="est-builder-section-title"><span class="est-builder-section-num">4b</span> Proposal Overview &amp; Option Tiers</h3>
+        <p class="est-builder-section-hint">Advanced mode — add an executive overview and up to 3 pricing options (Good / Better / Best). The customer picks a tier in the portal.</p>
+        <div class="est-builder-field-group" style="margin-bottom:14px">
+          <label class="est-label">Overview / Executive Summary</label>
+          <textarea id="est-overview" class="est-input" rows="4" placeholder="Why this project, your approach, what makes your company the right choice…" oninput="_estDraftField('overview',this.value)">${_estEsc(est.overview || '')}</textarea>
+        </div>
+        <div id="est-tiers-wrap"></div>
+        <button type="button" class="est-btn-secondary" style="font-size:12.5px;margin-top:8px" onclick="_estTierAdd()">+ Add option tier</button>
+      </section>` : ''}
+
+      ${est.doc_type === 'recurring' ? `
+      <!-- Section: Recurring Contract Calculator -->
+      <section class="est-builder-section" id="est-section-recurring">
+        <h3 class="est-builder-section-title"><span class="est-builder-section-num">4c</span> Recurring Contract Calculator</h3>
+        <p class="est-builder-section-hint">Maintenance / contract pricing — each service × visits per year, priced with your maintenance division rates, rolled into a monthly payment with yearly escalation.</p>
+        <div id="est-recurring-wrap"></div>
+      </section>` : ''}
+
+      <!-- Section: Job Cost Engine (internal) -->
+      <section class="est-builder-section" id="est-section-engine">
+        <h3 class="est-builder-section-title" style="display:flex;align-items:center;gap:8px"><span class="est-builder-section-num">🔒</span> Job Cost Engine <span style="font-size:10.5px;font-weight:700;background:var(--gw-bg,#F4F1EA);color:var(--gw-text-subtle,#6F7E6A);padding:2px 8px;border-radius:99px;letter-spacing:.04em">INTERNAL — never shown to customer</span></h3>
+        <div id="est-engine-wrap"></div>
       </section>
 
       <!-- Section: Pricing Config -->
@@ -1171,6 +1229,9 @@ function _estRenderBuilder() {
   _estRenderLineRows();
   _estRenderAttachmentList();
   _estCalcTotals();
+  if (est.mode === 'advanced') _estRenderTiers();
+  if (est.doc_type === 'recurring') _estRenderRecurring();
+  _estRenderEngine();
 }
 
 function _estDraftField(field, value) {
@@ -1216,9 +1277,11 @@ function _estRenderLineRows() {
     <div class="est-line-drag-handle" title="Drag to reorder">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="2" width="10" height="1.5" rx="1"/><rect x="1" y="5.25" width="10" height="1.5" rx="1"/><rect x="1" y="8.5" width="10" height="1.5" rx="1"/></svg>
     </div>
-    <div class="est-line-col est-line-col--desc">
-      <input class="est-line-input est-line-input--name" type="text" placeholder="Item or service name" value="${_estEsc(li.name || li.description || '')}" oninput="_estUpdateLine(${i},'name',this.value)">
+    <div class="est-line-col est-line-col--desc" style="position:relative">
+      <input class="est-line-input est-line-input--name" type="text" placeholder="Item or service name — type to search price book" value="${_estEsc(li.name || li.description || '')}" autocomplete="off" oninput="_estUpdateLine(${i},'name',this.value);_estPBSuggest(${i},this.value)" onblur="setTimeout(()=>{const s=document.getElementById('est-pb-suggest-${i}');if(s)s.innerHTML='';},250)">
+      <div class="est-pb-suggest" id="est-pb-suggest-${i}" style="position:absolute;top:100%;left:0;right:0;z-index:50"></div>
       <input class="est-line-input est-line-input--desc" type="text" placeholder="Description (optional)" value="${_estEsc(li.desc || li.description2 || '')}" oninput="_estUpdateLine(${i},'desc',this.value)">
+      ${li.price_item_id ? `<div style="font-size:10.5px;color:var(--gw-action,#2D7A55);font-weight:700;margin-top:2px">📘 ${_estEsc(li.unit || '')} · cost ${_estFmt(li.unit_cost || 0)} · ${li.unit_time || 0}h/unit</div>` : ''}
     </div>
     <div class="est-line-col est-line-col--qty">
       <input class="est-line-input est-line-input--num" type="number" min="0" step="0.1" value="${li.qty || 1}" oninput="_estUpdateLine(${i},'qty',this.value)">
@@ -1281,6 +1344,9 @@ function _estCalcTotals() {
     const inSched = active && active.closest && active.closest('#est-payment-schedule');
     if (!inSched) _estPaySchedRefresh();
   }
+
+  // Live-refresh the internal Job Cost Engine numbers
+  if (typeof _estEngineCalc === 'function') _estEngineCalc();
 }
 
 // Client search for builder
@@ -2092,3 +2158,554 @@ window._estHandleFiles = _estHandleFiles;
 window._estHandleDrop  = _estHandleDrop;
 window._estRemoveAttachment = _estRemoveAttachment;
 window._estDraftField  = _estDraftField;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRICE BOOK INTEGRATION — line-item picker fed by /api/price-items
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _estPB = null;          // cached price book items
+let _estPS = null;          // cached pricing settings (job cost engine params)
+
+async function _estPBEnsure() {
+  if (!_estPB) {
+    try {
+      const r = await fetch('/api/price-items?all=1', { credentials: 'include' });
+      const j = await r.json();
+      _estPB = j.data || [];
+    } catch (e) { _estPB = []; }
+  }
+  if (!_estPS) {
+    try {
+      const r = await fetch('/api/pricing-settings', { credentials: 'include' });
+      const j = await r.json();
+      _estPS = j.data || {};
+    } catch (e) { _estPS = {}; }
+  }
+  return _estPB;
+}
+
+function _estPBSuggest(idx, q) {
+  const box = document.getElementById(`est-pb-suggest-${idx}`);
+  if (!box) return;
+  q = (q || '').trim().toLowerCase();
+  if (q.length < 2 || !Array.isArray(_estPB) || !_estPB.length) { box.innerHTML = ''; return; }
+  const hits = _estPB.filter(p => (p.name || '').toLowerCase().includes(q)).slice(0, 8);
+  if (!hits.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div style="background:var(--gw-surface,#fff);border:1px solid var(--gw-border,#DDD8CE);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.13);overflow:hidden;margin-top:2px">
+    ${hits.map(p => `<div onmousedown="_estPBPick(${idx},'${_estEsc(p.id)}')" style="padding:8px 12px;cursor:pointer;font-size:12.5px;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--gw-border,#F0EDE5)" onmouseover="this.style.background='var(--gw-bg,#F4F1EA)'" onmouseout="this.style.background=''">
+      <span><b>${_estEsc(p.name)}</b> <span style="color:var(--gw-text-subtle,#8A948C)">· ${_estEsc(p.category)}${p.unit ? ' · ' + _estEsc(p.unit) : ''}</span></span>
+      <span style="white-space:nowrap;color:var(--gw-text-subtle,#6F7E6A)">${_estFmt(p.unit_cost)}${p.unit_time ? ' · ' + p.unit_time + 'h' : ''}</span>
+    </div>`).join('')}
+  </div>`;
+}
+
+function _estPBPick(idx, pbId) {
+  const p = (_estPB || []).find(x => x.id === pbId);
+  if (!p || !_estDraft || !_estDraft.line_items[idx]) return;
+  const li = _estDraft.line_items[idx];
+  li.name = p.name;
+  li.price_item_id = p.id;
+  li.unit = p.unit || '';
+  li.unit_cost = Number(p.unit_cost || 0);
+  li.unit_time = Number(p.unit_time || 0);
+  li.item_type = p.item_type || 'material';
+  // Default customer rate: cost marked up to hit the company's rev/hour goal is
+  // engine work — as a starting point, rate = cost (engine sets selling price)
+  if (!li.rate) li.rate = Number(p.unit_cost || 0);
+  _estRenderLineRows();
+  _estCalcTotals();
+}
+
+window._estPBSuggest = _estPBSuggest;
+window._estPBPick = _estPBPick;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MODE / DOC TYPE toggles
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _estSetMode(m) {
+  if (!_estDraft) return;
+  _estDraft.mode = m;
+  if (m === 'advanced' && !Array.isArray(_estDraft.tiers)) _estDraft.tiers = [];
+  _estRenderBuilder();
+}
+function _estSetDocType(t) {
+  if (!_estDraft) return;
+  _estDraft.doc_type = t;
+  if (t === 'recurring' && (!_estDraft.recurring_data || !Array.isArray(_estDraft.recurring_data.services))) {
+    _estDraft.recurring_data = { services: [], years: 3, ...( _estDraft.recurring_data || {}) };
+    if (!Array.isArray(_estDraft.recurring_data.services)) _estDraft.recurring_data.services = [];
+  }
+  _estRenderBuilder();
+}
+window._estSetMode = _estSetMode;
+window._estSetDocType = _estSetDocType;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPTION TIERS (Advanced mode) — Good / Better / Best
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _estRenderTiers() {
+  const wrap = document.getElementById('est-tiers-wrap');
+  if (!wrap || !_estDraft) return;
+  const tiers = _estDraft.tiers || [];
+  if (!tiers.length) {
+    wrap.innerHTML = `<div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);padding:10px 0">No option tiers yet — the main line items above act as the single price. Add tiers to offer Good / Better / Best choices.</div>`;
+    return;
+  }
+  wrap.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">
+    ${tiers.map((t, i) => `
+    <div style="border:1.5px solid ${t.recommended ? 'var(--gw-action,#2D7A55)' : 'var(--gw-border,#DDD8CE)'};border-radius:12px;padding:14px;position:relative">
+      ${t.recommended ? `<div style="position:absolute;top:-9px;left:12px;background:var(--gw-action,#2D7A55);color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.06em;padding:2px 9px;border-radius:99px">RECOMMENDED</div>` : ''}
+      <input class="est-input" style="font-weight:800;margin-bottom:6px" placeholder="Tier name (e.g. Better)" value="${_estEsc(t.name || '')}" oninput="_estTierField(${i},'name',this.value)">
+      <textarea class="est-input" rows="2" placeholder="What's included in this option…" style="font-size:12px;margin-bottom:6px" oninput="_estTierField(${i},'desc',this.value)">${_estEsc(t.desc || '')}</textarea>
+      <input class="est-input" type="number" min="0" step="0.01" placeholder="Price" value="${t.total || ''}" oninput="_estTierField(${i},'total',parseFloat(this.value)||0)">
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <label style="font-size:11.5px;display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" ${t.recommended ? 'checked' : ''} onchange="_estTierRecommend(${i},this.checked)"> Recommended</label>
+        <button type="button" style="margin-left:auto;border:none;background:none;color:#B4482E;cursor:pointer;font-size:12px" onclick="_estTierRemove(${i})">Remove</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function _estTierAdd() {
+  if (!_estDraft) return;
+  _estDraft.tiers = _estDraft.tiers || [];
+  const names = ['Good', 'Better', 'Best'];
+  _estDraft.tiers.push({ id: _estUID(), name: names[_estDraft.tiers.length] || `Option ${_estDraft.tiers.length + 1}`, desc: '', line_items: [], total: 0, recommended: _estDraft.tiers.length === 1 });
+  _estRenderTiers();
+}
+function _estTierField(i, k, v) { if (_estDraft?.tiers?.[i]) _estDraft.tiers[i][k] = v; }
+function _estTierRecommend(i, on) {
+  if (!_estDraft?.tiers) return;
+  _estDraft.tiers.forEach((t, j) => t.recommended = on && j === i);
+  _estRenderTiers();
+}
+function _estTierRemove(i) { if (_estDraft?.tiers) { _estDraft.tiers.splice(i, 1); _estRenderTiers(); } }
+window._estTierAdd = _estTierAdd; window._estTierField = _estTierField;
+window._estTierRecommend = _estTierRecommend; window._estTierRemove = _estTierRemove;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JOB COST ENGINE — the internal calculator that replaces the job spreadsheet.
+// Replicates the TEMPLATE math:
+//   materials (+ tax, + plant warranty) + misc + setup pay + equipment
+//   + labor (budgeted hrs × labor rate) = direct cost
+//   + OHR (budgeted hrs × ohr rate)     = break-even price (BEP)
+//   + profit (BEP × profit%)            = selling price
+//   budgeted hrs = productive unit-time hrs + non-productive (1.5/person/day)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _estEngineData() {
+  if (!_estDraft.cost_data || typeof _estDraft.cost_data !== 'object') _estDraft.cost_data = {};
+  const cd = _estDraft.cost_data;
+  const ps = _estPS || {};
+  if (cd.crew_size == null) cd.crew_size = ps.crew_size_default ?? 3;
+  if (cd.setup_hours == null) cd.setup_hours = ps.setup_hours_default ?? 0;
+  if (cd.equipment_cost == null) cd.equipment_cost = 0;
+  if (cd.contingency == null) cd.contingency = ps.contingency_default ?? 50;
+  if (cd.disposal == null) cd.disposal = ps.disposal_default ?? 35;
+  if (cd.pickup == null) cd.pickup = ps.pickup_default ?? 10;
+  return cd;
+}
+
+function _estEngineCalc() {
+  const wrap = document.getElementById('est-engine-results');
+  if (!_estDraft) return null;
+  const ps = _estPS || {};
+  const cd = _estEngineData();
+  const items = _estDraft.line_items || [];
+
+  // Materials & unit-time roll-up from line items
+  let matCost = 0, plantCost = 0, prodHours = 0;
+  for (const li of items) {
+    const qty = Number(li.qty || 1);
+    const uc = Number(li.unit_cost || 0);
+    const ut = Number(li.unit_time || 0);
+    const cost = qty * uc;
+    if ((li.item_type || 'material') === 'plant') plantCost += cost; else matCost += cost;
+    prodHours += qty * ut;
+  }
+  const taxPct = Number(ps.tax_pct ?? 6), warrPct = Number(ps.warranty_pct ?? 10);
+  const matTax = (matCost + plantCost) * taxPct / 100;
+  const warranty = plantCost * warrPct / 100;
+  const misc = Number(cd.contingency || 0) + Number(cd.disposal || 0) + Number(cd.pickup || 0);
+  const setupPay = Number(cd.setup_hours || 0) * Number(ps.setup_pay_rate ?? 35.58);
+  const equip = Number(cd.equipment_cost || 0);
+
+  // Crew / schedule → non-productive hours
+  const crew = Math.max(1, Number(cd.crew_size || ps.crew_size_default || 3));
+  const dayHrs = Number(ps.workday_hours ?? 10);
+  const days = prodHours > 0 ? Math.max(0.5, Math.ceil((prodHours / dayHrs / crew) * 2) / 2) : 0;
+  const nonprod = Number(ps.nonprod_hours_per_person_day ?? 1.5) * crew * days;
+  const budgetHrs = prodHours + nonprod;
+
+  const laborRate = Number(ps.labor_rate ?? 27.25), ohrRate = Number(ps.ohr_rate ?? 35.08);
+  const labor = budgetHrs * laborRate;
+  const ohr = budgetHrs * ohrRate;
+
+  const direct = matCost + plantCost + matTax + warranty + misc + setupPay + equip + labor;
+  const bep = direct + ohr;
+  const profitPct = Number(ps.profit_pct ?? 22);
+  const profit = bep * profitPct / 100;
+  const selling = bep + profit;
+  const revHr = budgetHrs > 0 ? selling / budgetHrs : 0;
+  const goal = Number(ps.rev_per_hour_goal ?? 86.13);
+
+  const rollup = { mat_cost: matCost, plant_cost: plantCost, mat_tax: matTax, warranty, misc, setup_pay: setupPay,
+    equipment: equip, prod_hours: prodHours, nonprod_hours: nonprod, budgeted_hours: budgetHrs, days, crew,
+    labor, ohr, direct_cost: direct, bep, profit, selling_price: selling, rev_per_hour: revHr };
+  cd.rollup = rollup;
+
+  if (wrap) {
+    const row = (l, v, hl) => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;${hl ? 'font-weight:800;border-top:1.5px solid var(--gw-border,#DDD8CE);margin-top:4px;padding-top:7px' : ''}"><span>${l}</span><span style="font-variant-numeric:tabular-nums">${v}</span></div>`;
+    const revOk = revHr >= goal;
+    const gap = _estDraft.total > 0 ? _estDraft.total - selling : 0;
+    wrap.innerHTML = `
+      ${row('Materials', _estFmt(matCost))}
+      ${plantCost > 0 ? row('Plant material', _estFmt(plantCost)) : ''}
+      ${row(`Materials tax (${taxPct}%)`, _estFmt(matTax))}
+      ${plantCost > 0 ? row(`Plant warranty (${warrPct}%)`, _estFmt(warranty)) : ''}
+      ${row('Misc (contingency + disposal + pick-up)', _estFmt(misc))}
+      ${setupPay > 0 ? row('Setup / estimator pay', _estFmt(setupPay)) : ''}
+      ${equip > 0 ? row('Equipment rental', _estFmt(equip)) : ''}
+      ${row(`Labor — ${budgetHrs.toFixed(1)} hrs (${prodHours.toFixed(1)} productive + ${nonprod.toFixed(1)} non-productive) × ${_estFmt(laborRate)}`, _estFmt(labor))}
+      ${row('DIRECT COST', _estFmt(direct), true)}
+      ${row(`Overhead recovery — ${budgetHrs.toFixed(1)} hrs × ${_estFmt(ohrRate)}`, _estFmt(ohr))}
+      ${row('BREAK-EVEN PRICE', _estFmt(bep), true)}
+      ${row(`Profit (${profitPct}%)`, _estFmt(profit))}
+      ${row('RECOMMENDED SELLING PRICE', _estFmt(selling), true)}
+      <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap">
+        <span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:${revOk ? '#E7F2EA' : '#FBEDEA'};color:${revOk ? '#1E5E3E' : '#A6543F'};font-weight:800">${_estFmt(revHr)}/man-hr ${revOk ? '≥' : '<'} ${_estFmt(goal)} goal ${revOk ? '✓' : '⚠'}</span>
+        <span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:var(--gw-bg,#F4F1EA);font-weight:700">${crew}-person crew · ~${days} day${days !== 1 ? 's' : ''}</span>
+        ${_estDraft.total > 0 ? `<span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:${gap >= 0 ? '#E7F2EA' : '#FBEDEA'};color:${gap >= 0 ? '#1E5E3E' : '#A6543F'};font-weight:700">Quoted ${_estFmt(_estDraft.total)} (${gap >= 0 ? '+' : ''}${_estFmt(gap)} vs recommended)</span>` : ''}
+      </div>
+      <button type="button" class="est-btn-secondary" style="font-size:12px;margin-top:10px" onclick="_estEngineApplyPrice()">Use ${_estFmt(selling)} as the quote total →</button>`;
+  }
+  return rollup;
+}
+
+function _estRenderEngine() {
+  const wrap = document.getElementById('est-engine-wrap');
+  if (!wrap || !_estDraft) return;
+  const cd = _estEngineData();
+  const inp = (id, label, val, step) => `
+    <div>
+      <label style="font-size:11.5px;font-weight:700;display:block;margin-bottom:2px">${label}</label>
+      <input class="est-input" type="number" min="0" step="${step || 'any'}" value="${val}" style="font-size:12.5px;padding:7px 9px"
+        oninput="_estEngineField('${id}',parseFloat(this.value)||0)">
+    </div>`;
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:12px">
+      ${inp('crew_size', 'Crew size', cd.crew_size, 1)}
+      ${inp('setup_hours', 'Setup hours', cd.setup_hours)}
+      ${inp('equipment_cost', 'Equipment rental $', cd.equipment_cost)}
+      ${inp('contingency', 'Contingency $', cd.contingency)}
+      ${inp('disposal', 'Disposal $', cd.disposal)}
+      ${inp('pickup', 'Material pick-up $', cd.pickup)}
+    </div>
+    <div id="est-engine-results" style="background:var(--gw-bg,#FAF8F3);border:1px solid var(--gw-border,#EEE9DF);border-radius:10px;padding:14px 16px"></div>`;
+  _estEngineCalc();
+}
+
+function _estEngineField(k, v) {
+  const cd = _estEngineData();
+  cd[k] = v;
+  _estEngineCalc();
+}
+
+// Apply the engine's recommended selling price to the quote by scaling line
+// item rates proportionally (keeps the customer-facing breakdown intact).
+function _estEngineApplyPrice() {
+  const cd = _estDraft?.cost_data;
+  const target = cd?.rollup?.selling_price;
+  if (!target || !_estDraft) return;
+  const items = _estDraft.line_items || [];
+  const current = items.reduce((s, li) => s + Number(li.qty || 1) * Number(li.rate || 0), 0);
+  if (current > 0) {
+    const k = target / current;
+    for (const li of items) { li.rate = Math.round(Number(li.rate || 0) * k * 100) / 100; li.total = (li.qty || 1) * li.rate; }
+  } else if (items.length) {
+    // Distribute evenly by cost weight, or flat if no costs
+    const costs = items.map(li => Number(li.qty || 1) * Number(li.unit_cost || 0));
+    const costSum = costs.reduce((a, b) => a + b, 0);
+    items.forEach((li, i) => {
+      const share = costSum > 0 ? costs[i] / costSum : 1 / items.length;
+      li.rate = Math.round((target * share / Number(li.qty || 1)) * 100) / 100;
+      li.total = (li.qty || 1) * li.rate;
+    });
+  } else {
+    _estDraft.line_items = [{ id: _estUID(), name: _estDraft.title || 'Project total', desc: '', qty: 1, rate: Math.round(target * 100) / 100, total: target }];
+  }
+  _estRenderLineRows();
+  _estCalcTotals();
+  if (typeof showToast === 'function') showToast('Quote priced from the cost engine', 'success');
+}
+window._estEngineField = _estEngineField;
+window._estEngineApplyPrice = _estEngineApplyPrice;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RECURRING CONTRACT CALCULATOR — replaces the maintenance TEMPLATE sheets.
+// Each service: materials + man-hrs × (maint labor + maint OHR), × visits/year.
+// Yearly total → profit → selling → ÷12 monthly, with escalation years 2-3.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _estRecurData() {
+  if (!_estDraft.recurring_data || typeof _estDraft.recurring_data !== 'object') _estDraft.recurring_data = {};
+  const rd = _estDraft.recurring_data;
+  if (!Array.isArray(rd.services)) rd.services = [];
+  if (rd.years == null) rd.years = 3;
+  return rd;
+}
+
+function _estRenderRecurring() {
+  const wrap = document.getElementById('est-recurring-wrap');
+  if (!wrap || !_estDraft) return;
+  const rd = _estRecurData();
+  const rows = rd.services.map((s, i) => `
+    <div style="display:grid;grid-template-columns:2fr .9fr .9fr .9fr 1fr 30px;gap:8px;align-items:center;margin-bottom:8px">
+      <input class="est-input" placeholder="Service (e.g. Mowing, Mulch refresh, Spring cleanup)" value="${_estEsc(s.name || '')}" style="font-size:12.5px" oninput="_estRecurField(${i},'name',this.value)">
+      <input class="est-input" type="number" min="0" step="1" placeholder="Visits/yr" title="Visits per year" value="${s.occurrences ?? ''}" style="font-size:12.5px" oninput="_estRecurField(${i},'occurrences',parseFloat(this.value)||0)">
+      <input class="est-input" type="number" min="0" step="0.1" placeholder="Man-hrs" title="Man-hours per visit" value="${s.man_hours ?? ''}" style="font-size:12.5px" oninput="_estRecurField(${i},'man_hours',parseFloat(this.value)||0)">
+      <input class="est-input" type="number" min="0" step="0.01" placeholder="Mat $/visit" title="Materials $ per visit" value="${s.materials ?? ''}" style="font-size:12.5px" oninput="_estRecurField(${i},'materials',parseFloat(this.value)||0)">
+      <span id="est-recur-line-${i}" style="text-align:right;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--gw-text-subtle,#5A675F)"></span>
+      <button type="button" style="border:none;background:none;color:#B4482E;cursor:pointer;font-size:15px" onclick="_estRecurRemove(${i})">×</button>
+    </div>`).join('');
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:2fr .9fr .9fr .9fr 1fr 30px;gap:8px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--gw-text-subtle,#8A948C);margin-bottom:5px">
+      <span>Service</span><span>Visits / yr</span><span>Man-hrs / visit</span><span>Materials $ / visit</span><span style="text-align:right">Yearly cost</span><span></span>
+    </div>
+    ${rows || '<div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);padding:6px 0">No services yet — add each recurring service below.</div>'}
+    <button type="button" class="est-btn-secondary" style="font-size:12.5px;margin:6px 0 12px" onclick="_estRecurAdd()">+ Add service</button>
+    <div id="est-recur-summary" style="background:var(--gw-bg,#FAF8F3);border:1px solid var(--gw-border,#EEE9DF);border-radius:10px;padding:14px 16px"></div>`;
+  _estRecurCalc();
+}
+
+function _estRecurCalc() {
+  const rd = _estRecurData();
+  const ps = _estPS || {};
+  const laborR = Number(ps.maint_labor_rate ?? 26.83), ohrR = Number(ps.maint_ohr_rate ?? 22.62);
+  const profitPct = Number(ps.maint_profit_pct ?? 22), escPct = Number(ps.escalation_pct ?? 3);
+  const taxPct = Number(ps.tax_pct ?? 6);
+
+  let yearlyCost = 0, yearlyHours = 0;
+  rd.services.forEach((s, i) => {
+    const occ = Number(s.occurrences || 0), mh = Number(s.man_hours || 0), mat = Number(s.materials || 0);
+    const perVisit = mat * (1 + taxPct / 100) + mh * (laborR + ohrR);
+    const yr = perVisit * occ;
+    yearlyCost += yr;
+    yearlyHours += mh * occ;
+    const el = document.getElementById(`est-recur-line-${i}`);
+    if (el) el.textContent = yr > 0 ? _estFmt(yr) : '—';
+  });
+  const profit = yearlyCost * profitPct / 100;
+  const selling = yearlyCost + profit;
+  const monthly = selling / 12;
+  const years = Math.max(1, Math.min(5, Number(rd.years || 3)));
+  let escRows = '';
+  for (let y = 1; y <= years; y++) {
+    const f = Math.pow(1 + escPct / 100, y - 1);
+    escRows += `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0"><span>Year ${y}${y > 1 ? ` (+${escPct}%/yr)` : ''}</span><span style="font-variant-numeric:tabular-nums"><b>${_estFmt(selling * f)}</b> / yr · ${_estFmt(selling * f / 12)} / mo</span></div>`;
+  }
+  rd.rollup = { yearly_cost: yearlyCost, yearly_hours: yearlyHours, profit, yearly_selling: selling, monthly, escalation_pct: escPct, years };
+
+  const sm = document.getElementById('est-recur-summary');
+  if (sm) sm.innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Yearly break-even (materials + tax + labor ${_estFmt(laborR)} + OHR ${_estFmt(ohrR)})</span><span style="font-variant-numeric:tabular-nums">${_estFmt(yearlyCost)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>Profit (${profitPct}%)</span><span style="font-variant-numeric:tabular-nums">${_estFmt(profit)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:7px 0 3px;border-top:1.5px solid var(--gw-border,#DDD8CE);margin-top:4px"><span>CONTRACT PRICE</span><span style="font-variant-numeric:tabular-nums">${_estFmt(selling)} / yr — ${_estFmt(monthly)} / month</span></div>
+    <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin:2px 0 8px">${yearlyHours.toFixed(1)} man-hours per year across ${rd.services.length} service${rd.services.length !== 1 ? 's' : ''}</div>
+    ${escRows}
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <label style="font-size:11.5px;font-weight:700">Contract years <input type="number" min="1" max="5" value="${years}" style="width:52px;padding:4px 6px;border:1px solid var(--gw-border,#DDD8CE);border-radius:6px;font-size:12px" oninput="_estRecurYears(parseInt(this.value)||3)"></label>
+      <button type="button" class="est-btn-secondary" style="font-size:12px" onclick="_estRecurApply()">Use ${_estFmt(monthly)}/mo as the quote →</button>
+    </div>`;
+}
+
+function _estRecurAdd() { _estRecurData().services.push({ name: '', occurrences: 0, man_hours: 0, materials: 0 }); _estRenderRecurring(); }
+function _estRecurRemove(i) { _estRecurData().services.splice(i, 1); _estRenderRecurring(); }
+function _estRecurField(i, k, v) { const rd = _estRecurData(); if (rd.services[i]) { rd.services[i][k] = v; _estRecurCalc(); } }
+function _estRecurYears(y) { _estRecurData().years = y; _estRecurCalc(); }
+function _estRecurApply() {
+  const rd = _estRecurData();
+  const r = rd.rollup;
+  if (!r || !r.monthly || !_estDraft) return;
+  _estDraft.line_items = rd.services.filter(s => (s.name || '').trim()).map(s => {
+    const occ = Number(s.occurrences || 0);
+    const ps = _estPS || {};
+    const perVisit = Number(s.materials || 0) * (1 + Number(ps.tax_pct ?? 6) / 100) + Number(s.man_hours || 0) * (Number(ps.maint_labor_rate ?? 26.83) + Number(ps.maint_ohr_rate ?? 22.62));
+    const sell = perVisit * (1 + Number(ps.maint_profit_pct ?? 22) / 100);
+    return { id: _estUID(), name: s.name, desc: `${occ} visit${occ !== 1 ? 's' : ''} per year`, qty: occ, rate: Math.round(sell * 100) / 100, total: occ * sell };
+  });
+  _estDraft.customer_notes = (_estDraft.customer_notes || '').includes('per month') ? _estDraft.customer_notes :
+    `Contract price: ${_estFmt(r.yearly_selling)} per year, billed at ${_estFmt(r.monthly)} per month.` + (r.years > 1 ? ` Years 2–${r.years} escalate ${r.escalation_pct}% annually.` : '') + (_estDraft.customer_notes ? '\n\n' + _estDraft.customer_notes : '');
+  _estRenderLineRows();
+  _estCalcTotals();
+  const notesEl = document.getElementById('est-customer-notes');
+  if (notesEl) notesEl.value = _estDraft.customer_notes;
+  if (typeof showToast === 'function') showToast('Contract pricing applied to the quote', 'success');
+}
+window._estRecurAdd = _estRecurAdd; window._estRecurRemove = _estRecurRemove;
+window._estRecurField = _estRecurField; window._estRecurYears = _estRecurYears;
+window._estRecurApply = _estRecurApply;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✨ AI QUOTE GENERATOR — reads the lead's conversations + the price book and
+// drafts a tiered quote. Review-before-apply: nothing touches the draft until
+// the user clicks Apply.
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _estAiResult = null;
+
+function _estOpenAiGen() {
+  if (!_estDraft) return;
+  const old = document.getElementById('est-ai-modal'); if (old) old.remove();
+  const div = document.createElement('div');
+  div.id = 'est-ai-modal';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(20,26,22,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
+  div.onclick = e => { if (e.target === div) div.remove(); };
+  div.innerHTML = `
+    <div style="background:var(--gw-surface,#fff);border-radius:14px;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <h2 style="font-size:17px;font-weight:800;margin:0">✨ AI Quote Generator</h2>
+        <button onclick="document.getElementById('est-ai-modal').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--gw-text-subtle,#8A948C)">✕</button>
+      </div>
+      <div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">
+        Reads the linked lead's conversation history (calls, emails, texts), matches the work to your price book and job-cost formulas, and drafts a quote${_estDraft.opp_id ? '' : ' — <b>no lead linked</b>, so describe the job below'}.
+      </div>
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Extra notes for the AI (optional)</label>
+      <textarea id="est-ai-notes" class="est-input" rows="3" placeholder="e.g. ~2,000 sqft of beds, customer wants low-maintenance plants, sloped backyard with drainage issue…"></textarea>
+      <div style="display:flex;gap:16px;align-items:center;margin:12px 0;flex-wrap:wrap">
+        <label style="font-size:12.5px;font-weight:700">Options
+          <select id="est-ai-tiers" class="est-input" style="width:auto;display:inline-block;margin-left:6px;padding:6px 10px;font-size:12.5px">
+            <option value="1">Single price</option>
+            <option value="2">2 tiers</option>
+            <option value="3" selected>3 tiers (Good / Better / Best)</option>
+          </select>
+        </label>
+        <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="est-ai-market"> Include market-rate sanity check</label>
+      </div>
+      <div id="est-ai-result"></div>
+      <div id="est-ai-err" style="display:none;margin:10px 0;padding:9px 12px;background:#FBEDEA;color:#A6543F;border-radius:8px;font-size:12.5px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="est-btn-secondary" onclick="document.getElementById('est-ai-modal').remove()">Cancel</button>
+        <button class="est-btn-primary" id="est-ai-go" onclick="_estAiRun()">Generate Quote</button>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+}
+
+async function _estAiRun() {
+  const btn = document.getElementById('est-ai-go');
+  const errEl = document.getElementById('est-ai-err');
+  if (errEl) errEl.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = 'Thinking… (up to 60s)'; }
+  try {
+    const r = await fetch('/api/ai/generate-quote', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        opp_id: _estDraft.opp_id || null,
+        notes: (document.getElementById('est-ai-notes') || {}).value || '',
+        tier_count: parseInt((document.getElementById('est-ai-tiers') || {}).value || '3'),
+        market_check: !!(document.getElementById('est-ai-market') || {}).checked,
+        doc_type: _estDraft.doc_type || 'onetime',
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.message || j.error || 'Generation failed');
+    _estAiResult = j.data;
+    _estAiRenderResult();
+  } catch (e) {
+    if (errEl) { errEl.textContent = e.message || 'Generation failed'; errEl.style.display = 'block'; }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Regenerate'; }
+}
+
+function _estAiRenderResult() {
+  const box = document.getElementById('est-ai-result');
+  const d = _estAiResult;
+  if (!box || !d) return;
+  const tiers = d.tiers || [];
+  box.innerHTML = `
+    <div style="border:1px solid var(--gw-border,#DDD8CE);border-radius:12px;padding:16px;margin-top:6px">
+      <div style="font-size:14px;font-weight:800;margin-bottom:4px">${_estEsc(d.title || 'Generated quote')}</div>
+      <div style="font-size:12.5px;color:var(--gw-text-subtle,#5A675F);margin-bottom:10px;white-space:pre-wrap">${_estEsc(d.scope_summary || '')}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+        ${tiers.map(t => `
+        <div style="border:1.5px solid ${t.recommended ? 'var(--gw-action,#2D7A55)' : 'var(--gw-border,#DDD8CE)'};border-radius:10px;padding:11px">
+          <div style="font-size:12.5px;font-weight:800">${_estEsc(t.name)}${t.recommended ? ' ⭐' : ''}</div>
+          <div style="font-size:16px;font-weight:800;margin:3px 0">${_estFmt(t.total)}</div>
+          <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C)">${(t.line_items || []).length} items · ${Number(t.man_hours || 0).toFixed(1)} man-hrs</div>
+          <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-top:3px">${_estEsc((t.desc || '').slice(0, 90))}</div>
+        </div>`).join('')}
+      </div>
+      ${d.pricing_notes ? `<div style="font-size:11.5px;color:var(--gw-text-subtle,#6F7E6A);margin-top:10px;padding:9px 11px;background:var(--gw-bg,#F4F1EA);border-radius:8px;white-space:pre-wrap">${_estEsc(d.pricing_notes)}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="est-btn-primary" style="font-size:12.5px" onclick="_estAiApply()">✓ Apply to this estimate</button>
+        ${d.email ? `<span style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);align-self:center">Email + SMS drafts included — saved to notes on apply</span>` : ''}
+      </div>
+    </div>`;
+}
+
+function _estAiApply() {
+  const d = _estAiResult;
+  if (!d || !_estDraft) return;
+  const tiers = d.tiers || [];
+  const rec = tiers.find(t => t.recommended) || tiers[0];
+
+  if (d.title && !_estDraft.title) _estDraft.title = d.title;
+  if (d.scope_summary) _estDraft.scope_of_work = d.scope_summary;
+
+  if (tiers.length > 1) {
+    // Multi-tier → advanced mode with option tiers; recommended tier's items as main lines
+    _estDraft.mode = 'advanced';
+    _estDraft.tiers = tiers.map(t => ({ id: t.id || _estUID(), name: t.name, desc: t.desc || '', line_items: t.line_items || [], total: Number(t.total || 0), recommended: !!t.recommended }));
+  }
+  if (rec) {
+    _estDraft.line_items = (rec.line_items || []).map(li => ({
+      id: li.id || _estUID(), name: li.name || '', desc: li.note || '',
+      qty: Number(li.qty || 1), rate: Number(li.rate || 0),
+      total: Number(li.qty || 1) * Number(li.rate || 0),
+      price_item_id: li.price_item_id || null,
+      unit: li.unit || '', unit_cost: Number(li.unit_cost || 0), unit_time: Number(li.unit_time || 0),
+    }));
+  }
+  // Stash comms drafts + meta
+  if (d.email || d.sms) {
+    const drafts = [d.email ? `— AI email draft —\nSubject: ${d.email.subject}\n${d.email.body}` : '', d.sms ? `— AI SMS draft —\n${d.sms}` : ''].filter(Boolean).join('\n\n');
+    _estDraft.internal_notes = drafts + (_estDraft.internal_notes ? '\n\n' + _estDraft.internal_notes : '');
+  }
+  _estDraft.ai_meta = d.ai_meta || { generated: true, at: new Date().toISOString() };
+
+  document.getElementById('est-ai-modal')?.remove();
+  _estRenderBuilder();
+  if (typeof showToast === 'function') showToast('AI quote applied — review every number before sending', 'success');
+}
+window._estOpenAiGen = _estOpenAiGen;
+window._estAiRun = _estAiRun;
+window._estAiApply = _estAiApply;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONVERT TO JOB — estimate → work order (+ scheduling)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function _estConvertToJob(estId) {
+  if (!confirm('Create a work order (job) from this estimate? Materials and budgeted hours carry over.')) return;
+  try {
+    const r = await fetch(`/api/estimates/${estId}/convert-to-job`, {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const j = await r.json();
+    if (r.status === 409) { showToast('Already converted — opening the existing work order', 'info'); if (j.work_order_id && typeof workOrderDetail === 'function') workOrderDetail(j.work_order_id); return; }
+    if (!r.ok || !j.ok) throw new Error(j.error || 'Conversion failed');
+    if (typeof window.gwAudit === 'function') window.gwAudit({ type: 'estimate_converted_job', entityType: 'estimate', entityId: estId, entityLabel: j.wo_number });
+    showToast(`Work order ${j.wo_number} created!`, 'success');
+    setTimeout(() => {
+      if (typeof workOrderDetail === 'function') workOrderDetail(j.work_order_id);
+      else if (typeof window.show === 'function') window.show('workOrderDetail', j.work_order_id);
+    }, 700);
+  } catch (e) {
+    showToast(e.message || 'Could not convert to job', 'error');
+  }
+}
+window._estConvertToJob = _estConvertToJob;
