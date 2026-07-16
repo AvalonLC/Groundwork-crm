@@ -187,7 +187,7 @@ function _prRenderBuilder() {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div>
             <div style="font-size:13px;font-weight:800">✨ Draft with AI</div>
-            <div style="font-size:11.5px;opacity:.85">Writes the whole proposal — overview, option tables with pricing, payment schedule &amp; terms — from ${p.opp_id ? "this lead's notes and history" : 'your instructions'}. You review and edit everything before sending.</div>
+            <div style="font-size:11.5px;opacity:.85">Writes the whole document — from priced option quotes to formal bids or planning frameworks with investment ranges — using ${p.opp_id ? "this lead's notes and history" : 'your instructions'}. You review and edit everything before sending.</div>
           </div>
           <button id="pr-ai-btn" style="background:#fff;color:#113931;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap" onclick="_prAiModal()">Draft it for me</button>
         </div>
@@ -260,12 +260,18 @@ function _prRenderBuilder() {
 
       <!-- Sections -->
       <section style="background:var(--gw-surface,#fff);border:1px solid var(--gw-border,#E4E0D6);border-radius:12px;padding:18px;margin-bottom:16px">
-        <div style="font-size:13px;font-weight:800;margin-bottom:4px">3 · Program Options &amp; Content</div>
-        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:12px">Option tables render like your PDF: APPLICATION · INCLUDED SERVICE · PRICE. Add text blocks for narrative sections.</div>
+        <div style="font-size:13px;font-weight:800;margin-bottom:4px">3 · Document Content</div>
+        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:12px">Build the proposal from blocks — stack them in any order to match any format: formal bids, renovation proposals, planning frameworks, service programs, or anything else.</div>
         <div id="pr-sections">${_prSectionsHtml()}</div>
-        <div style="display:flex;gap:10px;margin-top:12px">
-          <button class="est-btn-secondary" style="font-size:12.5px;padding:8px 13px" onclick="_prAddSection('option')">+ Option table</button>
-          <button class="est-btn-secondary" style="font-size:12.5px;padding:8px 13px" onclick="_prAddSection('text')">+ Text block</button>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('text')">+ Text</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('bullets')">+ Bullet list</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('option')">+ Priced option</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('table')">+ Custom table</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('cards')">+ Card menu</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('fields')">+ Info grid</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('price')">+ Price callout</button>
+          <button class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_prAddSection('signature')">+ Signature block</button>
         </div>
       </section>
 
@@ -318,48 +324,95 @@ function _prRenderBuilder() {
   </div>`;
 }
 
-// ── SECTIONS EDITOR ───────────────────────────────────────────────────────────
+// ── SECTIONS EDITOR — universal block system ─────────────────────────────────
+// Block types (any order, any count — shape any document):
+//   text      — narrative paragraphs                          (all four PDFs)
+//   bullets   — bullet list w/ optional intro                 (scope lists, exclusions, assumptions)
+//   option    — priced table w/ editable columns + subtotal   (service programs, commercial bids)
+//   table     — free-form table, any columns, no math         (plant schedules, scope/range tables)
+//   cards     — card menu: name + price/range + description   (Sydney-style option menus)
+//   fields    — label/value info grid                         (formal proposal metadata blocks)
+//   price     — big price callout: label + amount + note      ("Total Investment: $15,000")
+//   signature — acceptance & signature lines (1 or 2 parties) (all proposals)
+
+const _PR_BLOCKS = {
+  text:      { label: 'Text',          color: '#8A948C' },
+  bullets:   { label: 'Bullet List',   color: '#6E8B74' },
+  option:    { label: 'Priced Option', color: 'var(--gw-teal,#4D8A86)' },
+  table:     { label: 'Custom Table',  color: '#7B6E9E' },
+  cards:     { label: 'Card Menu',     color: '#4D7A9E' },
+  fields:    { label: 'Info Grid',     color: '#9E7B4D' },
+  price:     { label: 'Price Callout', color: '#1E5E3E' },
+  signature: { label: 'Signature',     color: '#5A5E66' },
+};
 
 function _prSectionsHtml() {
   const secs = (_prDraft && _prDraft.sections) || [];
   if (!secs.length) {
-    return `<div style="border:1px dashed var(--gw-border,#DDD8CE);border-radius:10px;padding:22px;text-align:center;font-size:12.5px;color:var(--gw-text-subtle,#8A948C)">No sections yet — add an option table or text block below.</div>`;
+    return `<div style="border:1px dashed var(--gw-border,#DDD8CE);border-radius:10px;padding:22px;text-align:center;font-size:12.5px;color:var(--gw-text-subtle,#8A948C)">No content yet — add blocks below, apply a template, or let AI draft the whole document.</div>`;
   }
-  return secs.map((s, si) => {
-    const head = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:${s.type === 'option' ? 'var(--gw-teal,#4D8A86)' : '#8A948C'};padding:3px 8px;border-radius:5px">${s.type === 'option' ? 'Option Table' : 'Text Block'}</span>
-        <input class="est-input" style="flex:1;font-weight:700" value="${_prEsc(s.title || '')}" placeholder="${s.type === 'option' ? 'e.g. OPTION 1: Standard 5-Application Program' : 'Section title'}" oninput="_prDraft.sections[${si}].title=this.value">
-        <button title="Move up" style="border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--gw-text-subtle,#8A948C)" onclick="_prMoveSection(${si},-1)">↑</button>
-        <button title="Move down" style="border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--gw-text-subtle,#8A948C)" onclick="_prMoveSection(${si},1)">↓</button>
-        <button title="Remove section" style="border:none;background:transparent;cursor:pointer;font-size:16px;color:#B4482E" onclick="_prRemoveSection(${si})">×</button>
-      </div>`;
+  return secs.map((s, si) => _prBlockHtml(s, si)).join('');
+}
 
-    if (s.type === 'text') {
-      return `
-      <div style="border:1px solid var(--gw-border,#E4E0D6);border-radius:10px;padding:14px;margin-bottom:12px">
-        ${head}
-        <textarea class="est-input" rows="4" style="resize:vertical" placeholder="Section content…" oninput="_prDraft.sections[${si}].body=this.value">${_prEsc(s.body || '')}</textarea>
-      </div>`;
-    }
+function _prBlockHtml(s, si) {
+  const meta = _PR_BLOCKS[s.type] || _PR_BLOCKS.text;
+  const titlePh = {
+    text: 'Section title — e.g. Project Overview / Scope Boundary / Warranty',
+    bullets: 'Section title — e.g. Included Work / Exclusions / Assumptions',
+    option: 'e.g. OPTION 1: Standard Program / Base Bid Summary',
+    table: 'Table title — e.g. Plant Material Schedule / Preliminary Budget Breakdown',
+    cards: 'Menu title — e.g. Option Menu / Project Directions',
+    fields: 'Grid title — e.g. Proposal Details / Project Information',
+    price: 'Callout title (optional) — e.g. Front Entry Landscape Renovation',
+    signature: 'e.g. Acceptance & Authorization',
+  }[s.type] || 'Section title';
+  const head = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:${meta.color};padding:3px 8px;border-radius:5px;white-space:nowrap">${meta.label}</span>
+      <input class="est-input" style="flex:1;font-weight:700" value="${_prEsc(s.title || '')}" placeholder="${titlePh}" oninput="_prDraft.sections[${si}].title=this.value">
+      <button title="Move up" style="border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--gw-text-subtle,#8A948C)" onclick="_prMoveSection(${si},-1)">↑</button>
+      <button title="Move down" style="border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--gw-text-subtle,#8A948C)" onclick="_prMoveSection(${si},1)">↓</button>
+      <button title="Duplicate" style="border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--gw-text-subtle,#8A948C)" onclick="_prDupSection(${si})">⧉</button>
+      <button title="Remove section" style="border:none;background:transparent;cursor:pointer;font-size:16px;color:#B4482E" onclick="_prRemoveSection(${si})">×</button>
+    </div>`;
+  const wrap = (inner) => `<div style="border:1px solid var(--gw-border,#E4E0D6);border-radius:10px;padding:14px;margin-bottom:12px">${head}${inner}</div>`;
 
-    // option table
+  // ── TEXT ──
+  if (s.type === 'text' || !_PR_BLOCKS[s.type]) {
+    return wrap(`<textarea class="est-input" rows="4" style="resize:vertical" placeholder="Section content — paragraphs separated by blank lines…" oninput="_prDraft.sections[${si}].body=this.value">${_prEsc(s.body || '')}</textarea>`);
+  }
+
+  // ── BULLETS ──
+  if (s.type === 'bullets') {
+    const items = Array.isArray(s.items) ? s.items : (s.items = []);
+    return wrap(`
+      <input class="est-input" style="margin-bottom:8px;font-size:12.5px" value="${_prEsc(s.intro || '')}" placeholder="Intro line (optional) — e.g. Unless specifically added by written amendment, the following are excluded:" oninput="_prDraft.sections[${si}].intro=this.value">
+      ${items.map((it, ii) => `
+      <div style="display:flex;gap:6px;margin-bottom:6px;align-items:start">
+        <span style="padding-top:9px;color:var(--gw-text-subtle,#8A948C);font-size:13px">•</span>
+        <textarea class="est-input" rows="1" style="flex:1;font-size:12.5px;resize:vertical;min-height:34px" placeholder="Bullet item — a bold lead-in before a colon renders as a heading" oninput="_prDraft.sections[${si}].items[${ii}]=this.value">${_prEsc(it || '')}</textarea>
+        <button title="Remove" style="border:none;background:transparent;cursor:pointer;font-size:15px;color:#B4482E;padding-top:6px" onclick="_prDraft.sections[${si}].items.splice(${ii},1);_prSectionsRefresh()">×</button>
+      </div>`).join('')}
+      <button class="est-btn-secondary" style="font-size:12px;padding:6px 11px;margin-top:2px" onclick="_prDraft.sections[${si}].items.push('');_prSectionsRefresh()">+ Add bullet</button>`);
+  }
+
+  // ── OPTION (priced table, editable column headers) ──
+  if (s.type === 'option') {
     const rows = Array.isArray(s.rows) ? s.rows : (s.rows = []);
     const subtotal = rows.reduce((t, r) => t + (Number(r.price) || 0), 0);
-    return `
-    <div style="border:1px solid var(--gw-border,#E4E0D6);border-radius:10px;padding:14px;margin-bottom:12px">
-      ${head}
-      <input class="est-input" style="margin-bottom:10px;font-size:12.5px" value="${_prEsc(s.goal || '')}" placeholder="Program goal (optional) — e.g. Maintain healthy turf with balanced fertilization" oninput="_prDraft.sections[${si}].goal=this.value">
+    const c1 = s.col1 || 'Application', c2 = s.col2 || 'Included Service', c3 = s.col3 || 'Price';
+    return wrap(`
+      <input class="est-input" style="margin-bottom:10px;font-size:12.5px" value="${_prEsc(s.goal || '')}" placeholder="Goal / lead-in (optional) — e.g. Maintain healthy turf with balanced fertilization" oninput="_prDraft.sections[${si}].goal=this.value">
       <div style="display:grid;grid-template-columns:1fr 1.4fr 110px 26px;gap:6px;margin-bottom:6px">
-        <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C)">Application</span>
-        <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C)">Included Service</span>
-        <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C);text-align:right">Price</span>
+        <input class="est-input" style="font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:5px 8px" value="${_prEsc(c1)}" title="Column 1 header — rename to fit your industry" oninput="_prDraft.sections[${si}].col1=this.value">
+        <input class="est-input" style="font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:5px 8px" value="${_prEsc(c2)}" title="Column 2 header" oninput="_prDraft.sections[${si}].col2=this.value">
+        <input class="est-input" style="font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:5px 8px;text-align:right" value="${_prEsc(c3)}" title="Column 3 header" oninput="_prDraft.sections[${si}].col3=this.value">
         <span></span>
       </div>
       ${rows.map((r, ri) => `
       <div style="display:grid;grid-template-columns:1fr 1.4fr 110px 26px;gap:6px;margin-bottom:6px;align-items:start">
-        <input class="est-input" style="font-size:12.5px" value="${_prEsc(r.app || '')}" placeholder="Round 1 — Early Spring" oninput="_prDraft.sections[${si}].rows[${ri}].app=this.value">
-        <input class="est-input" style="font-size:12.5px" value="${_prEsc(r.service || '')}" placeholder="Pre-emergent + balanced fertilizer" oninput="_prDraft.sections[${si}].rows[${ri}].service=this.value">
+        <input class="est-input" style="font-size:12.5px" value="${_prEsc(r.app || '')}" placeholder="${_prEsc(c1)}" oninput="_prDraft.sections[${si}].rows[${ri}].app=this.value">
+        <input class="est-input" style="font-size:12.5px" value="${_prEsc(r.service || '')}" placeholder="${_prEsc(c2)}" oninput="_prDraft.sections[${si}].rows[${ri}].service=this.value">
         <input class="est-input" type="number" min="0" step="0.01" style="font-size:12.5px;text-align:right" value="${r.price != null && r.price !== '' ? r.price : ''}" placeholder="0.00" oninput="_prDraft.sections[${si}].rows[${ri}].price=parseFloat(this.value)||0;_prOptionSubtotalRefresh(${si})">
         <button title="Remove row" style="border:none;background:transparent;cursor:pointer;font-size:15px;color:#B4482E;padding-top:6px" onclick="_prRemoveRow(${si},${ri})">×</button>
       </div>`).join('')}
@@ -367,9 +420,85 @@ function _prSectionsHtml() {
         <button class="est-btn-secondary" style="font-size:12px;padding:6px 11px" onclick="_prAddRow(${si})">+ Add row</button>
         <span id="pr-opt-subtotal-${si}" style="font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums">Option total: ${_prFmt(subtotal)}</span>
       </div>
-      <input class="est-input" style="margin-top:10px;font-size:12px" value="${_prEsc(s.footnote || '')}" placeholder="Footnote (optional) — e.g. *Prices include all materials and labor" oninput="_prDraft.sections[${si}].footnote=this.value">
-    </div>`;
-  }).join('');
+      <input class="est-input" style="margin-top:10px;font-size:12px" value="${_prEsc(s.footnote || '')}" placeholder="Footnote (optional) — e.g. *Prices include all materials and labor" oninput="_prDraft.sections[${si}].footnote=this.value">`);
+  }
+
+  // ── CUSTOM TABLE (any columns, free text cells, no math) ──
+  if (s.type === 'table') {
+    const cols = Array.isArray(s.columns) && s.columns.length ? s.columns : (s.columns = ['Item', 'Description']);
+    const rows = Array.isArray(s.rows) ? s.rows : (s.rows = []);
+    rows.forEach(r => { if (!Array.isArray(r.cells)) r.cells = []; while (r.cells.length < cols.length) r.cells.push(''); });
+    const grid = cols.map(() => '1fr').join(' ') + ' 26px';
+    return wrap(`
+      <div style="display:grid;grid-template-columns:${grid};gap:6px;margin-bottom:6px">
+        ${cols.map((cName, ci) => `
+        <div style="display:flex;gap:2px;align-items:center">
+          <input class="est-input" style="font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:5px 8px;flex:1;min-width:0" value="${_prEsc(cName)}" oninput="_prDraft.sections[${si}].columns[${ci}]=this.value">
+          ${cols.length > 1 ? `<button title="Remove column" style="border:none;background:transparent;cursor:pointer;font-size:12px;color:#B4482E;padding:0 2px;flex:none" onclick="_prTableDelCol(${si},${ci})">×</button>` : ''}
+        </div>`).join('')}
+        <button title="Add column" style="border:1px dashed var(--gw-border,#CFC9BC);background:transparent;border-radius:6px;cursor:pointer;font-size:13px;color:var(--gw-text-subtle,#8A948C)" onclick="_prTableAddCol(${si})">+</button>
+      </div>
+      ${rows.map((r, ri) => `
+      <div style="display:grid;grid-template-columns:${grid};gap:6px;margin-bottom:6px;align-items:start">
+        ${cols.map((_, ci) => `<textarea class="est-input" rows="1" style="font-size:12.5px;resize:vertical;min-height:34px" oninput="_prDraft.sections[${si}].rows[${ri}].cells[${ci}]=this.value">${_prEsc(r.cells[ci] || '')}</textarea>`).join('')}
+        <button title="Remove row" style="border:none;background:transparent;cursor:pointer;font-size:15px;color:#B4482E;padding-top:6px" onclick="_prRemoveRow(${si},${ri})">×</button>
+      </div>`).join('')}
+      <button class="est-btn-secondary" style="font-size:12px;padding:6px 11px;margin-top:2px" onclick="_prDraft.sections[${si}].rows.push({cells:_prDraft.sections[${si}].columns.map(function(){return ''})});_prSectionsRefresh()">+ Add row</button>
+      <input class="est-input" style="margin-top:10px;font-size:12px" value="${_prEsc(s.footnote || '')}" placeholder="Footnote (optional) — e.g. Final placement will be field-adjusted…" oninput="_prDraft.sections[${si}].footnote=this.value">`);
+  }
+
+  // ── CARD MENU ──
+  if (s.type === 'cards') {
+    const cards = Array.isArray(s.cards) ? s.cards : (s.cards = []);
+    return wrap(`
+      <input class="est-input" style="margin-bottom:10px;font-size:12.5px" value="${_prEsc(s.intro || '')}" placeholder="Intro line (optional) — e.g. Each item can stand alone or combine into a first phase." oninput="_prDraft.sections[${si}].intro=this.value">
+      ${cards.map((cd, ci) => `
+      <div style="border:1px solid var(--gw-border-soft,#EDEAE2);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--gw-bg,#FAF9F5)">
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input class="est-input" style="flex:1.4;font-size:12.5px;font-weight:700" value="${_prEsc(cd.head || '')}" placeholder="Card name — e.g. Backyard Perimeter Planting" oninput="_prDraft.sections[${si}].cards[${ci}].head=this.value">
+          <input class="est-input" style="flex:1;font-size:12.5px" value="${_prEsc(cd.price || '')}" placeholder="Price / range — e.g. $6,500–$15,000" oninput="_prDraft.sections[${si}].cards[${ci}].price=this.value">
+          <button title="Remove card" style="border:none;background:transparent;cursor:pointer;font-size:15px;color:#B4482E" onclick="_prDraft.sections[${si}].cards.splice(${ci},1);_prSectionsRefresh()">×</button>
+        </div>
+        <textarea class="est-input" rows="2" style="font-size:12px;resize:vertical" placeholder="Description — what's included, scope, notes…" oninput="_prDraft.sections[${si}].cards[${ci}].body=this.value">${_prEsc(cd.body || '')}</textarea>
+      </div>`).join('')}
+      <button class="est-btn-secondary" style="font-size:12px;padding:6px 11px" onclick="_prDraft.sections[${si}].cards.push({head:'',price:'',body:''});_prSectionsRefresh()">+ Add card</button>`);
+  }
+
+  // ── INFO GRID (label / value pairs) ──
+  if (s.type === 'fields') {
+    const pairs = Array.isArray(s.pairs) ? s.pairs : (s.pairs = []);
+    return wrap(`
+      ${pairs.map((pv, pi) => `
+      <div style="display:grid;grid-template-columns:1fr 1.6fr 26px;gap:6px;margin-bottom:6px;align-items:start">
+        <input class="est-input" style="font-size:12.5px;font-weight:700" value="${_prEsc(pv.k || '')}" placeholder="Label — e.g. Proposal Number / Bid Due / Design Stage" oninput="_prDraft.sections[${si}].pairs[${pi}].k=this.value">
+        <input class="est-input" style="font-size:12.5px" value="${_prEsc(pv.v || '')}" placeholder="Value" oninput="_prDraft.sections[${si}].pairs[${pi}].v=this.value">
+        <button title="Remove" style="border:none;background:transparent;cursor:pointer;font-size:15px;color:#B4482E;padding-top:6px" onclick="_prDraft.sections[${si}].pairs.splice(${pi},1);_prSectionsRefresh()">×</button>
+      </div>`).join('')}
+      <button class="est-btn-secondary" style="font-size:12px;padding:6px 11px" onclick="_prDraft.sections[${si}].pairs.push({k:'',v:''});_prSectionsRefresh()">+ Add field</button>`);
+  }
+
+  // ── PRICE CALLOUT ──
+  if (s.type === 'price') {
+    return wrap(`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <input class="est-input" style="font-size:12.5px" value="${_prEsc(s.label || '')}" placeholder="Label — e.g. Total Investment / Base Bid Amount / Estimated Phase 1" oninput="_prDraft.sections[${si}].label=this.value">
+        <input class="est-input" style="font-size:14px;font-weight:800" value="${_prEsc(s.amount || '')}" placeholder="Amount — e.g. $15,000 or $12,000–$18,500" oninput="_prDraft.sections[${si}].amount=this.value;_prRailRefresh()">
+      </div>
+      <input class="est-input" style="font-size:12px" value="${_prEsc(s.note || '')}" placeholder="Note (optional) — e.g. Preliminary planning range only — not final construction pricing" oninput="_prDraft.sections[${si}].note=this.value">`);
+  }
+
+  // ── SIGNATURE ──
+  if (s.type === 'signature') {
+    return wrap(`
+      <textarea class="est-input" rows="2" style="font-size:12.5px;resize:vertical;margin-bottom:8px" placeholder="Acceptance language (optional) — e.g. Acceptance of this proposal indicates agreement with the scope, pricing, and terms herein…" oninput="_prDraft.sections[${si}].body=this.value">${_prEsc(s.body || '')}</textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input class="est-input" style="font-size:12.5px" value="${_prEsc(s.party1 || '')}" placeholder="Party 1 — e.g. Client / Authorized Representative" oninput="_prDraft.sections[${si}].party1=this.value">
+        <input class="est-input" style="font-size:12.5px" value="${_prEsc(s.party2 || '')}" placeholder="Party 2 (optional) — e.g. Avalon Landscape Construction" oninput="_prDraft.sections[${si}].party2=this.value">
+      </div>
+      <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">Renders as signature / printed name / date lines for each party on the client page. Leave Party 2 blank for a single-signer block.</div>`);
+  }
+
+  return wrap('');
 }
 
 function _prSectionsRefresh() {
@@ -379,12 +508,28 @@ function _prSectionsRefresh() {
 }
 function _prAddSection(type) {
   if (!_prDraft) return;
+  const blocks = {
+    text:      { type: 'text', title: '', body: '' },
+    bullets:   { type: 'bullets', title: '', intro: '', items: [''] },
+    option:    null, // handled below (needs numbering)
+    table:     { type: 'table', title: '', columns: ['Item', 'Description'], rows: [{ cells: ['', ''] }], footnote: '' },
+    cards:     { type: 'cards', title: '', intro: '', cards: [{ head: '', price: '', body: '' }] },
+    fields:    { type: 'fields', title: '', pairs: [{ k: '', v: '' }, { k: '', v: '' }] },
+    price:     { type: 'price', title: '', label: 'Total Investment', amount: '', note: '' },
+    signature: { type: 'signature', title: 'Acceptance & Authorization', body: '', party1: 'Client', party2: '' },
+  };
   if (type === 'option') {
     const n = _prDraft.sections.filter(s => s.type === 'option').length + 1;
-    _prDraft.sections.push({ type: 'option', title: `OPTION ${n}: `, goal: '', rows: [{ app: '', service: '', price: 0 }], footnote: '' });
+    _prDraft.sections.push({ type: 'option', title: `OPTION ${n}: `, goal: '', col1: 'Application', col2: 'Included Service', col3: 'Price', rows: [{ app: '', service: '', price: 0 }], footnote: '' });
   } else {
-    _prDraft.sections.push({ type: 'text', title: '', body: '' });
+    _prDraft.sections.push(blocks[type] || blocks.text);
   }
+  _prSectionsRefresh();
+}
+function _prDupSection(si) {
+  const s = _prDraft.sections[si];
+  if (!s) return;
+  _prDraft.sections.splice(si + 1, 0, JSON.parse(JSON.stringify(s)));
   _prSectionsRefresh();
 }
 function _prRemoveSection(si) {
@@ -403,13 +548,28 @@ function _prAddRow(si) {
   const s = _prDraft.sections[si];
   if (!s) return;
   if (!Array.isArray(s.rows)) s.rows = [];
-  s.rows.push({ app: '', service: '', price: 0 });
+  if (s.type === 'table') s.rows.push({ cells: (s.columns || []).map(() => '') });
+  else s.rows.push({ app: '', service: '', price: 0 });
   _prSectionsRefresh();
 }
 function _prRemoveRow(si, ri) {
   const s = _prDraft.sections[si];
   if (!s || !Array.isArray(s.rows)) return;
   s.rows.splice(ri, 1);
+  _prSectionsRefresh();
+}
+function _prTableAddCol(si) {
+  const s = _prDraft.sections[si];
+  if (!s || s.type !== 'table') return;
+  s.columns.push('Column ' + (s.columns.length + 1));
+  (s.rows || []).forEach(r => { if (!Array.isArray(r.cells)) r.cells = []; r.cells.push(''); });
+  _prSectionsRefresh();
+}
+function _prTableDelCol(si, ci) {
+  const s = _prDraft.sections[si];
+  if (!s || s.type !== 'table' || (s.columns || []).length <= 1) return;
+  s.columns.splice(ci, 1);
+  (s.rows || []).forEach(r => { if (Array.isArray(r.cells)) r.cells.splice(ci, 1); });
   _prSectionsRefresh();
 }
 function _prOptionSubtotalRefresh(si) {
@@ -428,8 +588,19 @@ function _prComputeTotal() {
   // tables when exactly one, else the highest option (client picks one).
   const opts = (_prDraft.sections || []).filter(s => s.type === 'option')
     .map(s => (s.rows || []).reduce((t, r) => t + (Number(r.price) || 0), 0));
-  if (!opts.length) return 0;
-  return opts.length === 1 ? opts[0] : Math.max(...opts);
+  if (opts.length) return opts.length === 1 ? opts[0] : Math.max(...opts);
+  // No priced option tables — fall back to the first numeric price callout
+  // (e.g. "Total Investment: $15,000") so the pipeline still sees a value.
+  const callout = (_prDraft.sections || []).find(s => s.type === 'price' && s.amount);
+  if (callout) {
+    const m = String(callout.amount).replace(/,/g, '').match(/\$?\s*([0-9]+(?:\.[0-9]+)?)/);
+    if (m) return Number(m[1]) || 0;
+  }
+  return 0;
+}
+function _prFirstCalloutAmount() {
+  const callout = (_prDraft.sections || []).find(s => s.type === 'price' && s.amount);
+  return callout ? String(callout.amount) : '';
 }
 
 function _prRailHtml() {
@@ -441,9 +612,9 @@ function _prRailHtml() {
   return `
     <div style="font-size:13px;font-weight:700;margin-bottom:2px">${_prEsc(p.client_name || 'No client set')}</div>
     ${p.property_addr ? `<div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:8px">${_prEsc(p.property_addr)}</div>` : '<div style="margin-bottom:8px"></div>'}
-    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0"><span>Sections</span><strong>${(p.sections || []).length}</strong></div>
-    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0"><span>Options offered</span><strong>${opts.length}</strong></div>
-    <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0;border-top:1px solid var(--gw-border-soft,#F0EEE8);margin-top:6px"><span style="font-weight:700">${opts.length > 1 ? 'Top option value' : 'Proposal value'}</span><strong>${_prFmt(total)}</strong></div>
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0"><span>Content blocks</span><strong>${(p.sections || []).length}</strong></div>
+    ${opts.length ? `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0"><span>Priced options</span><strong>${opts.length}</strong></div>` : ''}
+    <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0;border-top:1px solid var(--gw-border-soft,#F0EEE8);margin-top:6px"><span style="font-weight:700">${opts.length > 1 ? 'Top option value' : 'Proposal value'}</span><strong>${opts.length ? (total > 0 ? _prFmt(total) : '—') : (_prEsc(_prFirstCalloutAmount()) || (total > 0 ? _prFmt(total) : '—'))}</strong></div>
     ${sched.length ? sched.map(s2 => `<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--gw-text-subtle,#6F7E6A);padding:2px 0"><span>${_prEsc(s2.label || 'Payment')}</span><span>${Number(s2.pct) || 0}%${total ? ' · ' + _prFmt(total * (Number(s2.pct) || 0) / 100) : ''}</span></div>`).join('') : ''}
     ${p.portal_token ? `<div style="margin-top:10px;font-size:11px;color:var(--gw-text-subtle,#8A948C);word-break:break-all">Client link ready ✓</div>` : ''}`;
 }
@@ -712,7 +883,7 @@ function _prAiModal() {
       The AI will use ${hasLead ? '<strong>this lead\u2019s details, notes and recent communications</strong>' : 'the client info entered above'}${hasEst ? ' plus the <strong>linked estimate\u2019s services and pricing</strong>' : ''} to write a complete draft. Nothing is sent to the client — you review and edit first.
     </div>
     <label class="est-label">Tell the AI what you want (optional but recommended)</label>
-    <textarea class="est-input" id="pr-ai-instructions" rows="5" style="resize:vertical;margin-bottom:8px" placeholder="e.g. 5-application turf program plus a premium option with grub control and aeration. Around $1,200 for the standard tier. Mention their concern about crabgrass in the front yard. 50/50 payment split."></textarea>
+    <textarea class="est-input" id="pr-ai-instructions" rows="5" style="resize:vertical;margin-bottom:8px" placeholder="Describe the document you want — a priced quote with 2 option tiers, a formal bid with project details and signature lines, a planning framework with investment ranges, an options menu with price ranges… e.g. 'Preliminary planning framework: patio, drainage and lighting areas with investment ranges, total range callout, no fixed pricing.'"></textarea>
     <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-bottom:16px">⚠️ Applying the draft replaces the title, overview, sections, payment schedule and terms currently in the builder. Client info is kept.</div>
     <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
       <span id="pr-ai-status" style="margin-right:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
@@ -830,8 +1001,12 @@ window._prDelete               = _prDelete;
 window._prAddSection           = _prAddSection;
 window._prRemoveSection        = _prRemoveSection;
 window._prMoveSection          = _prMoveSection;
+window._prDupSection           = _prDupSection;
 window._prAddRow               = _prAddRow;
 window._prRemoveRow            = _prRemoveRow;
+window._prTableAddCol          = _prTableAddCol;
+window._prTableDelCol          = _prTableDelCol;
+window._prSectionsRefresh      = _prSectionsRefresh;
 window._prOptionSubtotalRefresh = _prOptionSubtotalRefresh;
 window._prPaySchedAdd          = _prPaySchedAdd;
 window._prPaySchedRefresh      = _prPaySchedRefresh;

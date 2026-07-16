@@ -4018,16 +4018,32 @@ app.get('/portal/proposal/:token', async (c) => {
   const isDone = ['accepted','declined'].includes(row.status)
   const optionSections = sections.filter((s:any) => s.type === 'option')
 
+  // Bullet items support a "bold lead-in:" pattern — text before the first
+  // colon renders bold (matches the style of formal scope/exclusion lists).
+  const bulletItem = (raw: string) => {
+    const t = String(raw || '')
+    const ci = t.indexOf(':')
+    if (ci > 0 && ci < 90) return `<strong>${esc(t.slice(0, ci))}:</strong>${esc(t.slice(ci + 1))}`
+    return esc(t)
+  }
+
   const sectionHtml = sections.map((s: any, si: number) => {
-    if (s.type === 'text') {
+    if (s.type === 'text' || (!s.type)) {
       return `<div class="pp-section"><h2>${esc(s.title||'')}</h2><p class="pp-body-text">${esc(s.body||'').replace(/\n/g,'<br>')}</p></div>`
+    }
+    if (s.type === 'bullets') {
+      const items = (Array.isArray(s.items) ? s.items : []).filter((it: any) => String(it||'').trim())
+      return `<div class="pp-section"><h2>${esc(s.title||'')}</h2>
+        ${s.intro ? `<p class="pp-body-text" style="margin-bottom:10px">${esc(s.intro)}</p>` : ''}
+        <ul class="pp-bullets">${items.map((it: any) => `<li>${bulletItem(it)}</li>`).join('')}</ul>
+      </div>`
     }
     if (s.type === 'option') {
       const rows = Array.isArray(s.rows) ? s.rows : []
       const subtotal = rows.reduce((t: number, r: any) => t + Number(r.price||0), 0)
       return `<div class="pp-section pp-option">
         <h2>${esc(s.title || `Option ${si+1}`)}</h2>
-        ${s.goal ? `<p class="pp-goal"><strong>Program goal:</strong> ${esc(s.goal)}</p>` : ''}
+        ${s.goal ? `<p class="pp-goal">${esc(s.goal)}</p>` : ''}
         <table class="pp-table">
           <thead><tr><th>${esc(s.col1 || 'Application')}</th><th>${esc(s.col2 || 'Included Service')}</th><th class="pp-price-col">${esc(s.col3 || 'Price')}</th></tr></thead>
           <tbody>
@@ -4037,6 +4053,65 @@ app.get('/portal/proposal/:token', async (c) => {
         </table>
         ${s.footnote ? `<p class="pp-footnote">${esc(s.footnote)}</p>` : ''}
         ${!isDone && optionSections.length > 1 ? `<button class="pp-accept-btn" onclick="ppRespond('accept','${esc(s.title || `Option ${si+1}`)}')">Accept ${esc(s.title || `Option ${si+1}`)}</button>` : ''}
+      </div>`
+    }
+    if (s.type === 'table') {
+      const cols = Array.isArray(s.columns) && s.columns.length ? s.columns : ['Item','Description']
+      const rows = Array.isArray(s.rows) ? s.rows : []
+      return `<div class="pp-section">
+        <h2>${esc(s.title||'')}</h2>
+        <table class="pp-table">
+          <thead><tr>${cols.map((cName: any) => `<th>${esc(cName)}</th>`).join('')}</tr></thead>
+          <tbody>${rows.map((r: any) => `<tr>${cols.map((_: any, ci: number) => `<td>${esc((r.cells||[])[ci]||'').replace(/\n/g,'<br>')}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+        ${s.footnote ? `<p class="pp-footnote">${esc(s.footnote)}</p>` : ''}
+      </div>`
+    }
+    if (s.type === 'cards') {
+      const cards = (Array.isArray(s.cards) ? s.cards : []).filter((cd: any) => (cd.head||'').trim() || (cd.body||'').trim())
+      return `<div class="pp-section">
+        <h2>${esc(s.title||'')}</h2>
+        ${s.intro ? `<p class="pp-body-text" style="margin-bottom:14px">${esc(s.intro)}</p>` : ''}
+        <div class="pp-cards">${cards.map((cd: any) => `
+          <div class="pp-card">
+            <div class="pp-card-head">${esc(cd.head||'')}</div>
+            ${cd.price ? `<div class="pp-card-price">${esc(cd.price)}</div>` : ''}
+            ${cd.body ? `<div class="pp-card-body">${esc(cd.body).replace(/\n/g,'<br>')}</div>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>`
+    }
+    if (s.type === 'fields') {
+      const pairs = (Array.isArray(s.pairs) ? s.pairs : []).filter((pv: any) => (pv.k||'').trim() || (pv.v||'').trim())
+      return `<div class="pp-section">
+        ${s.title ? `<h2>${esc(s.title)}</h2>` : ''}
+        <div class="pp-fields">${pairs.map((pv: any) => `
+          <div class="pp-field"><div class="k">${esc(pv.k||'')}</div><div class="v">${esc(pv.v||'')}</div></div>`).join('')}
+        </div>
+      </div>`
+    }
+    if (s.type === 'price') {
+      return `<div class="pp-price-callout">
+        ${s.title ? `<div class="pp-price-title">${esc(s.title)}</div>` : ''}
+        <div class="pp-price-line">${s.label ? `<span class="pp-price-label">${esc(s.label)}:</span> ` : ''}<span class="pp-price-amount">${esc(s.amount||'')}</span></div>
+        ${s.note ? `<div class="pp-price-note">${esc(s.note)}</div>` : ''}
+      </div>`
+    }
+    if (s.type === 'signature') {
+      const sigLines = (party: string) => `
+        <div class="pp-sig-party">
+          <div class="pp-sig-name">${esc(party)}</div>
+          <div class="pp-sig-line"><span>Signature</span></div>
+          <div class="pp-sig-line"><span>Printed Name</span></div>
+          <div class="pp-sig-row"><div class="pp-sig-line" style="flex:1"><span>Title</span></div><div class="pp-sig-line" style="flex:1"><span>Date</span></div></div>
+        </div>`
+      return `<div class="pp-section">
+        <h2>${esc(s.title || 'Acceptance & Authorization')}</h2>
+        ${s.body ? `<p class="pp-body-text" style="margin-bottom:18px;font-size:12.5px">${esc(s.body).replace(/\n/g,'<br>')}</p>` : ''}
+        <div class="pp-sig-grid" style="grid-template-columns:${s.party2 ? '1fr 1fr' : '1fr'}">
+          ${sigLines(s.party1 || 'Client')}
+          ${s.party2 ? sigLines(s.party2) : ''}
+        </div>
       </div>`
     }
     return ''
@@ -4082,6 +4157,31 @@ app.get('/portal/proposal/:token', async (c) => {
   .pp-status-declined{background:#F7E8E3;color:#8B4432;border:1px solid #E4C4B8}
   .pp-sched-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EDEAE2;font-size:13.5px}
   .pp-sched-row:last-child{border-bottom:none}
+  .pp-bullets{padding-left:20px;font-size:14px;color:#3D4A46}
+  .pp-bullets li{margin-bottom:8px}
+  .pp-bullets li:last-child{margin-bottom:0}
+  .pp-bullets b,.pp-bullets strong{color:#1F2A2B}
+  .pp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:4px}
+  .pp-card{border:1px solid #E4E0D6;border-radius:10px;padding:16px 18px;background:#FBFAF7}
+  .pp-card-head{font-size:13.5px;font-weight:700;color:#1F2A2B;margin-bottom:4px}
+  .pp-card-price{font-size:14px;font-weight:800;color:${brandColor};margin-bottom:8px}
+  .pp-card-body{font-size:12.5px;color:#5A675F;line-height:1.55}
+  .pp-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:#EDEAE2;border:1px solid #EDEAE2;border-radius:10px;overflow:hidden}
+  .pp-field{background:#fff;padding:13px 16px}
+  .pp-field .k{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6F7E6A;margin-bottom:3px}
+  .pp-field .v{font-size:13.5px;font-weight:600;color:#1F2A2B}
+  .pp-price-callout{background:#fff;border:1px solid #E4E0D6;border-left:4px solid ${brandColor};border-radius:12px;padding:26px 28px;margin-bottom:20px;text-align:center}
+  .pp-price-title{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#6F7E6A;margin-bottom:10px}
+  .pp-price-line{display:flex;align-items:baseline;justify-content:center;gap:14px;flex-wrap:wrap}
+  .pp-price-label{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6F7E6A}
+  .pp-price-amount{font-size:30px;font-weight:800;color:${brandColor};letter-spacing:-.01em}
+  .pp-price-note{font-size:12.5px;color:#77826F;margin-top:8px;font-style:italic}
+  .pp-sig-grid{display:grid;gap:34px;margin-top:22px}
+  .pp-sig-party{min-width:0}
+  .pp-sig-name{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#5A675F;margin-bottom:34px}
+  .pp-sig-row{display:flex;gap:22px}
+  .pp-sig-line{flex:1;border-bottom:1.5px solid #B8B2A4;padding-bottom:4px;margin-bottom:18px;min-height:34px;display:flex;align-items:flex-end}
+  .pp-sig-line span{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8A948C}
   .pp-footer{text-align:center;font-size:12px;color:#8A948C;margin-top:34px}
 </style></head>
 <body>
@@ -4209,7 +4309,7 @@ app.post('/api/ai/generate-proposal', requireAuth, async (c) => {
   const brand: any = await db.prepare('SELECT name, tagline, phone, website FROM companies WHERE id=? LIMIT 1').bind(companyId).first().catch(() => null)
 
   const context = [
-    `Company: ${brand?.name || 'the company'}${brand?.tagline ? ' — ' + brand.tagline : ''} (lawn care / landscaping services)`,
+    `Company: ${brand?.name || 'the company'}${brand?.tagline ? ' — ' + brand.tagline : ''}`,
     `Client name: ${lead.client || 'Unknown'}`,
     lead.address ? `Property address: ${lead.address}` : '',
     lead.project ? `Requested work / project: ${lead.project}` : '',
@@ -4221,24 +4321,33 @@ app.post('/api/ai/generate-proposal', requireAuth, async (c) => {
     b.instructions ? `Rep's specific instructions for this proposal:\n${String(b.instructions).slice(0, 2000)}` : '',
   ].filter(Boolean).join('\n')
 
-  const sys = `You are an expert proposal writer for a professional lawn care & landscaping company. You write warm, confident, client-facing proposals that close deals — specific, benefit-oriented, never generic filler.
+  const sys = `You are an expert proposal writer for a professional services business. You write warm, confident, client-facing proposals that close deals — specific, benefit-oriented, never generic filler. Adapt tone and structure to the company's industry and the type of document the rep asks for (a priced quote, a formal bid, an options menu, or a preliminary planning framework with investment ranges).
 
 Return ONLY valid JSON (no markdown fences, no commentary) matching exactly this schema:
 {
-  "title": "string — proposal title, e.g. 'Turf Care Program — 2026 Season'",
+  "title": "string — proposal title",
   "subtitle": "string — one warm personalized line, e.g. 'Prepared exclusively for the Smith Residence'",
-  "overview": "string — 2-3 short paragraphs: thank them, what you observed/understood about their property & goals, what you recommend and why. Use \\n\\n between paragraphs.",
-  "sections": [
-    { "type": "option", "title": "OPTION 1: <name>", "goal": "one-line program goal", "rows": [ { "app": "application/visit name e.g. 'Round 1 — Early Spring'", "service": "what's included, specific", "price": 0 } ], "footnote": "optional fine print or empty string" }
-  ],
+  "overview": "string — 2-3 short paragraphs: thank them, what you understood about their goals, what you recommend and why. Use \\n\\n between paragraphs.",
+  "sections": [ /* ordered array of content blocks; each block is one of the 8 shapes below */ ],
   "payment_schedule": [ { "label": "string", "pct": 0 } ],
-  "terms": "string — brief professional terms (validity, weather dependency, payment)"
+  "terms": "string — brief professional terms (validity, dependencies, payment)"
 }
 
+Available section block shapes (choose the right ones for this document):
+1. { "type": "text", "title": "string", "body": "paragraphs, \\n between them" } — narrative sections (project understanding, approach, why us).
+2. { "type": "bullets", "title": "string", "intro": "optional lead-in sentence or ''", "items": ["string"] } — scope lists, inclusions/exclusions, assumptions. Start an item with 'Bold lead-in: rest' to bold the lead-in.
+3. { "type": "option", "title": "OPTION 1: <name>", "goal": "one-line goal", "col1": "first column header e.g. 'Visit'", "col2": "second header e.g. 'Included Services'", "col3": "price header e.g. 'Price'", "rows": [ { "app": "row label", "service": "what's included, specific", "price": 0 } ], "footnote": "fine print or ''" } — a priced, acceptable package. Every row needs a numeric price; the client can accept an option on the portal.
+4. { "type": "table", "title": "string", "columns": ["string"], "rows": [ { "cells": ["string"] } ], "footnote": "''" } — free-form data table (no math), e.g. project areas with preliminary investment ranges, schedules, spec matrices. Each row's cells array must match columns length.
+5. { "type": "cards", "title": "string", "intro": "''", "cards": [ { "head": "card name", "price": "free text e.g. '$4,500–$6,500'", "body": "short description" } ] } — an options menu with price ranges (planning frameworks, add-on menus).
+6. { "type": "fields", "title": "string", "pairs": [ { "k": "label", "v": "value" } ] } — formal metadata grid (Proposal #, Project Location, Bid Due, Design Stage…). Use for formal/government-style bids.
+7. { "type": "price", "title": "string or ''", "label": "e.g. 'Total Investment'", "amount": "free text — '$15,000' or '$28,000–$41,500'", "note": "optional qualifier or ''" } — big price callout for single-price or range-based documents.
+8. { "type": "signature", "title": "Acceptance & Authorization", "body": "one-line acceptance statement", "party1": "Client", "party2": "company name or '' for single-party" } — signature lines. Include for formal proposals.
+
 Rules:
-- Create 2 option sections (a standard and a premium tier) UNLESS the rep's instructions or a linked estimate imply otherwise.
-- If a linked estimate is provided, its line items and prices MUST form the basis of one option (keep its prices); the other option can be an upsell tier.
-- Prices must be realistic for residential lawn care/landscaping and consistent with any deal value or estimate given. Every row needs a numeric price.
+- Pick block types that fit the document: a standard quote = option blocks; a formal bid = fields + text + bullets + option/price + signature; a planning framework = text + table/cards with ranges + price callout; an options menu = cards.
+- Default (no contrary instructions): 2 option blocks (a standard and a premium tier).
+- If a linked estimate is provided, its line items and prices MUST form the basis of one option (keep its prices); another option can be an upsell tier.
+- Prices must be realistic for the industry and consistent with any deal value or estimate given.
 - payment_schedule percentages MUST sum to exactly 100. Use [] if a simple pay-on-completion makes more sense.
 - Never invent client personal details not provided. Keep the overview grounded in the actual notes.`
 
@@ -4267,15 +4376,36 @@ Rules:
     if (start === -1 || end === -1) throw new Error('No JSON in AI response')
     const draft = JSON.parse(raw.slice(start, end + 1))
 
-    // Sanitize to the exact shape the builder expects
-    const sections = Array.isArray(draft.sections) ? draft.sections.map((s: any) => (
-      s && s.type === 'text'
-        ? { type: 'text', title: String(s.title || ''), body: String(s.body || '') }
-        : { type: 'option', title: String(s?.title || 'OPTION'), goal: String(s?.goal || ''),
-            rows: (Array.isArray(s?.rows) ? s.rows : []).map((row: any) => ({
-              app: String(row?.app || ''), service: String(row?.service || ''), price: Number(row?.price) || 0 })),
-            footnote: String(s?.footnote || '') }
-    )) : []
+    // Sanitize to the exact shapes the builder expects (8 block types)
+    const S = (v: any) => String(v ?? '')
+    const sections = (Array.isArray(draft.sections) ? draft.sections : []).map((s: any) => {
+      const t = s?.type
+      if (t === 'text') return { type: 'text', title: S(s.title), body: S(s.body) }
+      if (t === 'bullets') return { type: 'bullets', title: S(s.title), intro: S(s.intro),
+        items: (Array.isArray(s.items) ? s.items : []).map((it: any) => S(it)).filter(Boolean) }
+      if (t === 'table') {
+        const columns = (Array.isArray(s.columns) ? s.columns : []).map((cn: any) => S(cn))
+        const cols = columns.length ? columns : ['Item', 'Description']
+        return { type: 'table', title: S(s.title), columns: cols,
+          rows: (Array.isArray(s.rows) ? s.rows : []).map((row: any) => {
+            const cells = (Array.isArray(row?.cells) ? row.cells : []).map((cell: any) => S(cell))
+            while (cells.length < cols.length) cells.push('')
+            return { cells: cells.slice(0, cols.length) }
+          }), footnote: S(s.footnote) }
+      }
+      if (t === 'cards') return { type: 'cards', title: S(s.title), intro: S(s.intro),
+        cards: (Array.isArray(s.cards) ? s.cards : []).map((cd: any) => ({ head: S(cd?.head), price: S(cd?.price), body: S(cd?.body) })) }
+      if (t === 'fields') return { type: 'fields', title: S(s.title),
+        pairs: (Array.isArray(s.pairs) ? s.pairs : []).map((p: any) => ({ k: S(p?.k), v: S(p?.v) })) }
+      if (t === 'price') return { type: 'price', title: S(s.title), label: S(s.label || 'Total Investment'), amount: S(s.amount), note: S(s.note) }
+      if (t === 'signature') return { type: 'signature', title: S(s.title || 'Acceptance & Authorization'), body: S(s.body), party1: S(s.party1 || 'Client'), party2: S(s.party2) }
+      // default / 'option'
+      return { type: 'option', title: S(s?.title || 'OPTION'), goal: S(s?.goal),
+        col1: S(s?.col1), col2: S(s?.col2), col3: S(s?.col3),
+        rows: (Array.isArray(s?.rows) ? s.rows : []).map((row: any) => ({
+          app: S(row?.app), service: S(row?.service), price: Number(row?.price) || 0 })),
+        footnote: S(s?.footnote) }
+    })
     let sched = Array.isArray(draft.payment_schedule) ? draft.payment_schedule
       .map((p: any) => ({ label: String(p?.label || 'Payment'), pct: Number(p?.pct) || 0 }))
       .filter((p: any) => p.pct > 0) : []
@@ -6803,7 +6933,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b007">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -6827,8 +6957,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260716b004"></script>
-  <script src="/js/client_portal.js?v=20260716b004"></script>
+  <script src="/js/platform_core.js?v=20260716b007"></script>
+  <script src="/js/client_portal.js?v=20260716b007"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -7458,9 +7588,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260716b004">
-  <link rel="stylesheet" href="/js/styles.css?v=20260716b004">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260716b007">
+  <link rel="stylesheet" href="/js/styles.css?v=20260716b007">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260716b007">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8008,36 +8138,36 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260716b004"></script>
-<script src="/js/db.js?v=20260716b004"></script>
-<script src="/js/data.js?v=20260716b004"></script>
-<script src="/js/reps.js?v=20260716b004"></script>
-<script src="/js/record-page.js?v=20260716b004"></script>
-<script src="/js/academy.js?v=20260716b004"></script>
-<script src="/js/task_engine.js?v=20260716b004"></script>
-<script src="/js/gw_i18n.js?v=20260716b004"></script>
-<script src="/js/app_premium.js?v=20260716b004"></script>
-<script src="/js/estimates.js?v=20260716b004"></script>
-<script src="/js/proposals.js?v=20260716b004"></script>
-<script src="/js/invoices.js?v=20260716b004"></script>
-<script src="/js/csv_import.js?v=20260716b004"></script>
-<script src="/js/onboarding.js?v=20260716b004"></script>
-<script src="/js/recurring_plans.js?v=20260716b004"></script>
-<script src="/js/reviews.js?v=20260716b004"></script>
-<script src="/js/stripe.js?v=20260716b004"></script>
-<script src="/js/email.js?v=20260716b004"></script>
-<script src="/js/notifications.js?v=20260716b004"></script>
-<script src="/js/integrations.js?v=20260716b004"></script>
-<script src="/js/user_management.js?v=20260716b004"></script>
-<script src="/js/platform_admin.js?v=20260716b004"></script>
-<script src="/js/time_tracker.js?v=20260716b004"></script>
-<script src="/js/field_workday.js?v=20260716b004"></script>
-<script src="/js/platform_core.js?v=20260716b004"></script>
-<script src="/js/approval_engine.js?v=20260716b004"></script>
-<script src="/js/automation_engine.js?v=20260716b004"></script>
-<script src="/js/client_portal.js?v=20260716b004"></script>
-<script src="/js/field_mode.js?v=20260716b004"></script>
-<script src="/js/assets_hub.js?v=20260716b004"></script>
+<script src="/js/gw-icons.js?v=20260716b007"></script>
+<script src="/js/db.js?v=20260716b007"></script>
+<script src="/js/data.js?v=20260716b007"></script>
+<script src="/js/reps.js?v=20260716b007"></script>
+<script src="/js/record-page.js?v=20260716b007"></script>
+<script src="/js/academy.js?v=20260716b007"></script>
+<script src="/js/task_engine.js?v=20260716b007"></script>
+<script src="/js/gw_i18n.js?v=20260716b007"></script>
+<script src="/js/app_premium.js?v=20260716b007"></script>
+<script src="/js/estimates.js?v=20260716b007"></script>
+<script src="/js/proposals.js?v=20260716b007"></script>
+<script src="/js/invoices.js?v=20260716b007"></script>
+<script src="/js/csv_import.js?v=20260716b007"></script>
+<script src="/js/onboarding.js?v=20260716b007"></script>
+<script src="/js/recurring_plans.js?v=20260716b007"></script>
+<script src="/js/reviews.js?v=20260716b007"></script>
+<script src="/js/stripe.js?v=20260716b007"></script>
+<script src="/js/email.js?v=20260716b007"></script>
+<script src="/js/notifications.js?v=20260716b007"></script>
+<script src="/js/integrations.js?v=20260716b007"></script>
+<script src="/js/user_management.js?v=20260716b007"></script>
+<script src="/js/platform_admin.js?v=20260716b007"></script>
+<script src="/js/time_tracker.js?v=20260716b007"></script>
+<script src="/js/field_workday.js?v=20260716b007"></script>
+<script src="/js/platform_core.js?v=20260716b007"></script>
+<script src="/js/approval_engine.js?v=20260716b007"></script>
+<script src="/js/automation_engine.js?v=20260716b007"></script>
+<script src="/js/client_portal.js?v=20260716b007"></script>
+<script src="/js/field_mode.js?v=20260716b007"></script>
+<script src="/js/assets_hub.js?v=20260716b007"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
