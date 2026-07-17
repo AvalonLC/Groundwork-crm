@@ -235,6 +235,26 @@ you're editing what the **customer sees** vs. **internal pricing**:
   per-document); existing estimates are never touched, late-arriving defaults never
   overwrite user typing, and templates without their own terms keep the company default.
 
+## Google Calendar Sync + Meeting Automation (added 2026-07-17)
+
+- **Server-side sync** (`POST /api/calendar/sync`): pulls Google Calendar events (past 30d → next 90d)
+  using each rep's stored OAuth refresh token (`google_tokens`), upserts into the `calendar_events`
+  D1 table (migration `0035_calendar_sync.sql`). Runs automatically ~2.5s after login (throttled 4 min).
+- **Booking-page capture**: events booked through Google appointment-schedule links are flagged
+  (`is_booking=1`, "Booked online" chip) and auto-matched to leads by attendee email or a
+  `[opp_xxx]` tag in the event description. Manual link/unlink via `PUT /api/calendar/events/:id/link`
+  (manual links survive re-syncs).
+- **My Day widget** ("My Calendar"): hour-by-hour agenda for today with live-now highlight,
+  lead links, ↻ Sync and Expand (→ full month/week/agenda calendar in Integrations).
+  Rendered by `public/js/calendar_sync.js` via mount `#gw-myday-cal-mount`.
+- **Lead record**: synced Google meetings render in the lead's Meetings rail
+  ("From Google Calendar") via mount `#gw-lead-cal-meetings` + MutationObserver.
+- **Post-meeting automation**: when a lead-matched meeting ends, sync auto-creates a
+  high-priority "Send post-meeting follow-up email" task on that lead (due 4h after end,
+  `source='calendar_automation'`, deduped by `[cal:<eventId>]` tag in the description).
+- **Endpoints**: `POST /api/calendar/sync`, `GET /api/calendar/events?from=&to=&oppId=`,
+  `PUT /api/calendar/events/:id/link`.
+
 ---
 
 ## Environment variables / secrets
