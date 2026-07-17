@@ -20783,7 +20783,7 @@ function systemConfig() {
     s.id = 'sc-styles';
     s.textContent = `
       /* ── Layout ── */
-      .sc-page { max-width: 920px; margin: 0 auto; padding: 20px 20px 60px; }
+      .sc-page { width: 100%; max-width: none; margin: 0; padding: 20px 28px 60px; box-sizing: border-box; }
 
       /* ── Sticky save bar (approved premium style) ── */
       .sc-topbar {

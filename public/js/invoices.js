@@ -1131,7 +1131,7 @@ function _invInjectCSS() {
   style.textContent = `
 
 /* ── Wrapper ── */
-.inv-wrap { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
+.inv-wrap { padding: 24px 28px 60px; width: 100%; max-width: none; margin: 0; box-sizing: border-box; }
 
 /* ── Header ── */
 .inv-list-header { display:flex; align-items:flex-start; justify-content:space-between; padding:24px 0 0; gap:12px; flex-wrap:wrap; }

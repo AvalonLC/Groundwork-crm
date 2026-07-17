@@ -9320,6 +9320,8 @@ h1.pl-title,
 .sched-shell {
   min-height: 100vh;
   background: var(--gw-bark-25, #f9f8f6);
+  width: 100%; max-width: none; margin: 0;
+  box-sizing: border-box;
 }
 
 /* Header */
@@ -10878,7 +10880,8 @@ h1.pl-title,
 /* ── Estimate List ─────────────────────────────────────────────────────────── */
 .est-list-shell {
   padding: 24px 28px 60px;
-  max-width: 1400px; margin: 0 auto;
+  width: 100%; max-width: none; margin: 0;
+  box-sizing: border-box;
 }
 
 .est-list-header {
@@ -14958,7 +14961,7 @@ h1.pl-title,
 /* ═══════════════════════════════════════════════════════════════════
    ASSETS HUB (.ah-*) — unified Equipment / Maintenance / Inventory
    ═══════════════════════════════════════════════════════════════════ */
-.ah-shell { max-width: 1180px; margin: 0 auto; padding: 4px 2px 40px; }
+.ah-shell { width: 100%; max-width: none; margin: 0; padding: 4px 2px 40px; box-sizing: border-box; }
 .ah-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .ah-header h2 { margin: 0 0 2px; font-size: 22px; color: var(--gw-ink); }
 .ah-header-sub { font-size: 13px; color: var(--gw-muted); }
@@ -15116,9 +15119,10 @@ h1.pl-title,
 
 .gwp-shell {
   padding: 24px 28px 60px;
-  max-width: 1400px; margin: 0 auto;
+  width: 100%; max-width: none; margin: 0;
+  box-sizing: border-box;
 }
-.gwp-shell--narrow { max-width: 1100px; }
+.gwp-shell--narrow { max-width: none; }
 
 /* ── Page header ── */
 .gwp-header {

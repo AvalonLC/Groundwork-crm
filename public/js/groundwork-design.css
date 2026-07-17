@@ -5629,7 +5629,7 @@ h1.ld-name {
 .ops-empty-desc  { font-size: 13px; color: var(--gw-text-muted); max-width: 340px; margin: 0 auto 18px; line-height: 1.6; }
 
 /* ── 8. SCHEDULING WORKSPACE (sched-*) ───────────────────────────────────── */
-.sched-shell { max-width: 1280px; margin: 0 auto; padding: 20px 24px; }
+.sched-shell { width: 100%; max-width: none; margin: 0; padding: 20px 24px; box-sizing: border-box; }
 .sched-week-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
