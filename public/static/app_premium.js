@@ -21255,6 +21255,35 @@ function systemConfig() {
       </div>
     </div>
 
+    <!-- ══ 5b. Estimate Defaults — company-wide Terms & Conditions ═════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('estimate', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Estimate &amp; Proposal Defaults</div>
+          <div class="sc-card-desc">Auto-filled into every new estimate — editable per document in the builder</div>
+        </div>
+      </div>
+      <div class="sc-card-body">
+        <div class="sc-field" style="margin-bottom:12px">
+          <label class="sc-label">Default Terms &amp; Conditions</label>
+          <textarea id="sc-est-terms" class="sc-input" rows="7" style="resize:vertical;line-height:1.55;font-size:12.5px"
+            placeholder="Payment schedule, cancellation policy, warranty coverage, material substitutions, weather delays…"></textarea>
+          <span class="sc-hint">Shown in the Terms &amp; Conditions section of the customer's document.</span>
+        </div>
+        <div class="sc-field" style="margin-bottom:12px">
+          <label class="sc-label">Default Customer Notes <span style="text-transform:none;font-weight:400">(optional)</span></label>
+          <textarea id="sc-est-notes" class="sc-input" rows="3" style="resize:vertical;line-height:1.55;font-size:12.5px"
+            placeholder="What to expect, how to prepare for the crew, contact info…"></textarea>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--gw-line);padding-top:14px">
+          <span style="font-size:11px;color:var(--gw-muted);flex:1">${gwIcon('info', 11, '#9CA3AF')} Existing estimates are not changed — only new ones start with these.</span>
+          <span id="sc-est-defaults-status" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved ✓</span>
+          <button class="sc-btn sc-btn-primary" id="sc-est-defaults-btn" onclick="_scSaveEstimateDefaults()">${gwIcon('floppy', 13, '#fff')} Save Defaults</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ 6. Data Retention ═══════════════════════════════════════════════════ -->
     <div class="sc-card">
       <div class="sc-card-head">
@@ -21317,6 +21346,22 @@ function systemConfig() {
     }
   })();
 
+  // ── Estimate & Proposal Defaults (company-wide default T&C) ────────────────
+  (function _scLoadEstimateDefaults() {
+    const t = document.getElementById('sc-est-terms');
+    const n = document.getElementById('sc-est-notes');
+    if (!t) return;
+    fetch('/api/estimate-defaults', { credentials: 'include' })
+      .then(r => r.json())
+      .then(j => {
+        const d = (j && j.data) || {};
+        t.value = d.terms || '';
+        if (n) n.value = d.customer_notes || '';
+        window._scEstDefaultsLoaded = true;
+      })
+      .catch(() => { t.value = ''; window._scEstDefaultsLoaded = true; });
+  })();
+
   // ── Wire helpers ─────────────────────────────────────────────────────────────
   window._scToggleDay = function(d) {
     const cb  = document.getElementById(`sc-h-${d}`);
@@ -21354,7 +21399,36 @@ function systemConfig() {
     systemConfig();
     showToast('Settings reset to defaults');
   };
+  window._scSaveEstimateDefaults = async function(silent) {
+    const t = document.getElementById('sc-est-terms');
+    const n = document.getElementById('sc-est-notes');
+    // Never save before the GET has populated the fields (avoids wiping with placeholder)
+    if (!t || !window._scEstDefaultsLoaded) return;
+    const btn = document.getElementById('sc-est-defaults-btn');
+    if (!silent && btn) { btn.disabled = true; btn.innerHTML = `${gwIcon('sync', 13, '#fff')} Saving…`; }
+    try {
+      const r = await fetch('/api/estimate-defaults', {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terms: t.value || '', customer_notes: (n && n.value) || '' }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || 'Save failed');
+      // Bust the builder's cache so the next new estimate picks up fresh defaults
+      window._estDefaults = undefined;
+      const st = document.getElementById('sc-est-defaults-status');
+      if (st) { st.style.opacity = '1'; setTimeout(() => { st.style.opacity = '0'; }, 2000); }
+      if (!silent && typeof showToast === 'function') showToast('Estimate defaults saved — new estimates will start with these', 'success');
+    } catch (e) {
+      if (!silent && typeof showToast === 'function') showToast(e.message || 'Failed to save estimate defaults', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = `${gwIcon('floppy', 13, '#fff')} Save Defaults`; }
+    }
+  };
+
   window._scSaveAll = async function(silent) {
+    // Estimate & Proposal defaults save with everything else (incl. autosave)
+    if (typeof window._scSaveEstimateDefaults === 'function') window._scSaveEstimateDefaults(true);
     const cur = _scLoad() || _scDefault();
     const g  = id => (document.getElementById(id) || {}).value;
     const gc = id => !!(document.getElementById(id) || {}).checked;

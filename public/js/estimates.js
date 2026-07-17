@@ -929,6 +929,33 @@ async function estimateBuilder(id) {
   // Always open on the customer-facing document tab
   _estBuilderTab = 'document';
 
+  // NEW estimates: auto-fill company default Terms & Conditions / customer notes
+  // (set in Settings → Company → Estimate & Proposal Defaults). Cached per session;
+  // fetched in the background and applied only while the fields are still empty.
+  if (!est) {
+    const applyDefaults = (d) => {
+      if (!d || !_estDraft || _estDraft.id) return;
+      if (d.terms && !_estDraft.terms) {
+        _estDraft.terms = d.terms;
+        const el = document.getElementById('est-terms');
+        if (el && !el.value) el.value = d.terms;
+      }
+      if (d.customer_notes && !_estDraft.customer_notes) {
+        _estDraft.customer_notes = d.customer_notes;
+        const el = document.getElementById('est-customer-notes');
+        if (el && !el.value) el.value = d.customer_notes;
+      }
+      if ((d.terms || d.customer_notes) && typeof _estPvQueue === 'function') _estPvQueue();
+    };
+    if (window._estDefaults) applyDefaults(window._estDefaults);
+    else {
+      fetch('/api/estimate-defaults', { credentials: 'include' })
+        .then(r => r.json())
+        .then(j => { window._estDefaults = (j && j.data) || {}; applyDefaults(window._estDefaults); })
+        .catch(() => {});
+    }
+  }
+
   // Load price book + pricing settings in the background for the picker & engine
   _estPBEnsure();
 
@@ -1261,6 +1288,7 @@ function _estRenderBuilder() {
           </div>
           <div class="est-builder-field-group est-builder-field-group--wide">
             <label class="est-label">Terms &amp; Conditions</label>
+            <p class="est-field-hint">Auto-filled from your company defaults (<a href="javascript:void(0)" onclick="show&&show('systemConfig')" style="color:var(--gw-action,#2D7A55);font-weight:700">Settings → Estimate &amp; Proposal Defaults</a>) — edit freely for this document</p>
             <textarea id="est-terms" class="est-input est-textarea--md" rows="5" placeholder="Standard terms: payment schedule, cancellation policy, warranty…" oninput="_estDraftField('terms',this.value)">${_estEsc(est.terms)}</textarea>
           </div>
         </div>
@@ -3396,8 +3424,9 @@ function _estTplApply() {
   d.tax_pct = c.tax_pct || 0;
   d.deposit_pct = c.deposit_pct ?? 30;
   d.payment_schedule = (c.payment_schedule || []).map(p => ({ ...p }));
-  d.customer_notes = c.customer_notes || '';
-  d.terms = c.terms || '';
+  // Keep existing (e.g. company-default) terms/notes when the template has none
+  d.customer_notes = c.customer_notes || d.customer_notes || '';
+  d.terms = c.terms || d.terms || '';
   _estRenderBuilder();
   showToast(`Template "${t.name}" applied — review and adjust`, 'success');
 }

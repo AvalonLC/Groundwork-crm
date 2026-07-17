@@ -228,6 +228,12 @@ you're editing what the **customer sees** vs. **internal pricing**:
   mode banner explaining what each mode adds.
 - **Price Book export** — "⬇ Export CSV" on Services & Pricing downloads the whole price
   book (same headers the importer detects, so it round-trips through Sheets/Excel).
+- **Company default Terms & Conditions** — Settings → Company → "Estimate & Proposal
+  Defaults" card stores company-wide default T&C + customer notes
+  (`GET/PUT /api/estimate-defaults`, admin/office_manager write, settings key
+  `{companyId}:estimate_defaults`). Every NEW estimate auto-fills them (editable
+  per-document); existing estimates are never touched, late-arriving defaults never
+  overwrite user typing, and templates without their own terms keep the company default.
 
 ---
 
