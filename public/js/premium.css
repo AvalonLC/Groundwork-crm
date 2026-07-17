@@ -11184,6 +11184,31 @@ h1.pl-title,
   display: flex; align-items: center; gap: 8px;
 }
 .est-internal-tag { font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: #fef3c7; color: #92400e; }
+
+/* ── Traffic-light scheduling (hold = yellow, confirmed = green, cancelled = red) ── */
+.est-traffic-dot { display:inline-block; width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
+.est-traffic-dot--yellow { background:#EAB308; box-shadow:0 0 0 3px rgba(234,179,8,.28); animation: sbHoldPulse 1.8s ease-in-out infinite; }
+.est-traffic-dot--green  { background:#22C55E; box-shadow:0 0 0 3px rgba(34,197,94,.22); }
+.est-traffic-dot--red    { background:#DC2626; box-shadow:0 0 0 3px rgba(220,38,38,.22); }
+@keyframes sbHoldPulse {
+  0%,100% { box-shadow:0 0 0 3px rgba(234,179,8,.28); }
+  50%     { box-shadow:0 0 0 5px rgba(234,179,8,.12); }
+}
+.est-sched-btn--hold  { background:#B45309 !important; }
+.est-sched-btn--hold:hover  { background:#92400E !important; }
+.est-sched-btn--green { background:#15803D !important; }
+.est-sched-btn--green:hover { background:#166534 !important; }
+.est-detail-action-btn--danger { color:#B91C1C !important; border-color:#FECACA !important; }
+.est-detail-action-btn--danger:hover { background:#FEF2F2 !important; }
+
+/* Internal-only column markers in the pricing breakdown */
+.est-col-internal { background: rgba(254,243,199,.45); }
+.est-col-internal-dot { color:#D97706; font-size:8px; vertical-align:2px; }
+
+/* Hold styling on schedule board month chips */
+.sb-month-chip--hold { background:#FEF9E7; }
+.sb-month-dot--hold { animation: sbHoldPulse 1.8s ease-in-out infinite; }
+.sb-job-card.wo-status--hold { outline:1.5px dashed #EAB308; outline-offset:-1.5px; }
 .est-section-internal { opacity: .9; }
 
 .est-detail-scope {
@@ -11687,6 +11712,11 @@ h1.pl-title,
   display: grid; grid-template-columns: 1fr 60px 80px 80px;
   gap: 0; padding: 12px 14px; border-bottom: 1px solid var(--gw-border);
   align-items: center;
+}
+/* Customer-simple table: Item · Qty · Total (no rate column) */
+.est-portal-line-table--simple .est-portal-line-header,
+.est-portal-line-table--simple .est-portal-line-row {
+  grid-template-columns: 1fr 60px 90px;
 }
 .est-portal-line-row:last-child { border-bottom: none; }
 .est-portal-li-name  { font-size: 14px; font-weight: 600; color: var(--gw-text); }

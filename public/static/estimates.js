@@ -566,6 +566,7 @@ function _estRenderDetail(est) {
   const depositAmt = Number(est.deposit_amt || 0);
 
   // Primary action config
+  const isAccepted = est.status === 'accepted' || est.status === 'approved' || est.status === 'invoiced';
   let primaryAction = '';
   let secondaryActions = '';
   if (est.status === 'draft') {
@@ -576,14 +577,21 @@ function _estRenderDetail(est) {
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6l7 4 7-4"/></svg> Resend</button>`;
   } else if (est.status === 'accepted') {
     primaryAction = `<button class="est-detail-action-primary est-detail-action-primary--green" onclick="_estConvertToInvoice('${_estEsc(est.id)}')">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="1" width="14" height="14" rx="1.5"/><path d="M4 8h8M4 5h5M4 11h6"/></svg> Convert to Invoice</button>
-    ${!est.work_order_id ? `<button class="est-detail-action-primary" style="margin-left:8px" onclick="_estConvertToJob('${_estEsc(est.id)}')">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg> Convert to Job</button>` : ''}`;
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="1" width="14" height="14" rx="1.5"/><path d="M4 8h8M4 5h5M4 11h6"/></svg> Convert to Invoice</button>`;
   }
-  const woBtn = est.work_order_id ? `<button class="est-detail-action-btn" onclick="typeof workOrderDetail==='function'?workOrderDetail('${_estEsc(est.work_order_id)}'):window.show('workOrderDetail','${_estEsc(est.work_order_id)}')">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg> View Work Order</button>` : '';
+  // Schedule to Job — always prominent. Before acceptance = yellow "hold" (flips
+  // green automatically when the client accepts, like a traffic light).
+  const schedBtn = est.work_order_id
+    ? `<button class="est-detail-action-primary ${isAccepted ? 'est-sched-btn--green' : 'est-sched-btn--hold'}" onclick="typeof workOrderDetail==='function'?workOrderDetail('${_estEsc(est.work_order_id)}'):(typeof _sbOpenVisitModal==='function'?_sbOpenVisitModal('${_estEsc(est.work_order_id)}'):window.show('scheduleBoard'))">
+        <span class="est-traffic-dot ${isAccepted ? 'est-traffic-dot--green' : 'est-traffic-dot--yellow'}"></span>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg> View Scheduled Job</button>`
+    : `<button class="est-detail-action-primary ${isAccepted ? 'est-sched-btn--green' : 'est-sched-btn--hold'}" onclick="_estScheduleToJob('${_estEsc(est.id)}','${_estEsc(est.status)}')">
+        <span class="est-traffic-dot ${isAccepted ? 'est-traffic-dot--green' : 'est-traffic-dot--yellow'}"></span>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1v4M11 1v4M2 7h12"/></svg> ${isAccepted ? 'Schedule to Job' : 'Schedule to Job (Hold)'}</button>`;
+  primaryAction = primaryAction + (primaryAction ? ' ' : '') + schedBtn;
 
-  secondaryActions = woBtn + `
+  // All secondary actions visible — no "More ▾" dropdown
+  secondaryActions = `
     <button class="est-detail-action-btn" onclick="estimateBuilder('${_estEsc(est.id)}')">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 2l3 3-9 9H2v-3l9-9z"/></svg> Edit
     </button>
@@ -596,9 +604,12 @@ function _estRenderDetail(est) {
     <button class="est-detail-action-btn" onclick="_estDuplicate('${_estEsc(est.id)}')">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M2 11V3a1 1 0 011-1h8"/></svg> Duplicate
     </button>
-    <div class="est-more-wrap-inline">
-      <button class="est-detail-action-btn" onclick="_estDetailMoreMenu(this,'${_estEsc(est.id)}','${_estEsc(est.status)}')">More ▾</button>
-    </div>`;
+    ${est.status !== 'invoiced' && est.status !== 'accepted' ? `<button class="est-detail-action-btn" onclick="_estConvertToInvoice('${_estEsc(est.id)}')">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="1" y="1" width="14" height="14" rx="1.5"/><path d="M4 8h8M4 5h5M4 11h6"/></svg> Convert to Invoice
+    </button>` : ''}
+    <button class="est-detail-action-btn est-detail-action-btn--danger" onclick="_estDeleteConfirm('${_estEsc(est.id)}')">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 4h12M6 4V2h4v2M4 4l1 10h6l1-10"/></svg> Delete
+    </button>`;
 
   // Engagement timeline
   const engagementItems = _estBuildEngagementTimeline(est);
@@ -667,33 +678,44 @@ function _estRenderDetail(est) {
         <div class="est-detail-scope">${_estEsc(est.scope_of_work).replace(/\n/g,'<br>')}</div>
       </section>` : ''}
 
-      <!-- Line Items -->
+      <!-- Line Items — internal view: cost/rate, qty/hr, budgeted hours, taxes, total -->
       <section class="est-detail-section">
-        <h2 class="est-detail-section-title">Pricing Breakdown</h2>
+        <h2 class="est-detail-section-title">Pricing Breakdown <span class="est-internal-tag" title="Customers see only Item, Qty and Total">Internal view</span></h2>
         ${est.line_items.length ? `
         <table class="est-detail-line-table">
           <thead>
             <tr>
               <th>Item / Description</th>
-              <th class="est-col-num">Qty</th>
-              <th class="est-col-num">Rate</th>
+              <th class="est-col-num">Cost/Rate</th>
+              <th class="est-col-num">Qty/Hr</th>
+              <th class="est-col-num" title="Not visible to the client — internal only">Budgeted Hours <span class="est-col-internal-dot" title="Internal only">●</span></th>
+              <th class="est-col-num">Taxes</th>
               <th class="est-col-num">Total</th>
             </tr>
           </thead>
           <tbody>
-            ${est.line_items.map(li => `
+            ${est.line_items.map(li => {
+              const qty = Number(li.qty || 1);
+              const rate = Number(li.rate || li.unit || 0);
+              const budgetHrs = qty * Number(li.unit_time || 0);
+              const taxPct = Number(est.tax_pct || 0);
+              return `
             <tr>
               <td>
                 <div class="est-li-name">${_estEsc(li.name || li.description || '—')}</div>
                 ${li.desc || li.description2 ? `<div class="est-li-desc">${_estEsc(li.desc || li.description2)}</div>` : ''}
+                ${li.group && li.group !== 'General' ? `<div class="est-li-desc" style="font-size:11px;opacity:.75">${_estEsc(li.group)}</div>` : ''}
               </td>
-              <td class="est-col-num">${li.qty || 1}</td>
-              <td class="est-col-num">${_estFmt(li.rate || li.unit || 0)}</td>
-              <td class="est-col-num est-li-total">${_estFmt(Number(li.qty || 1) * Number(li.rate || li.unit || 0))}</td>
-            </tr>`).join('')}
+              <td class="est-col-num">${_estFmt(rate)}${li.unit_cost ? `<div class="est-li-desc" style="font-size:11px" title="Your unit cost">cost ${_estFmt(li.unit_cost)}</div>` : ''}</td>
+              <td class="est-col-num">${qty}${li.unit ? ` <span style="font-size:11px;color:var(--gw-text-muted)">${_estEsc(li.unit)}</span>` : ''}</td>
+              <td class="est-col-num est-col-internal">${budgetHrs > 0 ? budgetHrs.toFixed(2) + ' h' : '—'}</td>
+              <td class="est-col-num">${taxPct > 0 ? taxPct + '%' : '—'}</td>
+              <td class="est-col-num est-li-total">${_estFmt(qty * rate)}</td>
+            </tr>`;}).join('')}
           </tbody>
         </table>
         <div class="est-detail-totals">
+          ${(() => { const bh = est.line_items.reduce((s, li) => s + Number(li.qty || 1) * Number(li.unit_time || 0), 0) || Number(est.cost_data?.rollup?.budgeted_hours || 0); return bh > 0 ? `<div class="est-totals-row est-col-internal" title="Internal only — not shown to the client"><span>Budgeted Hours <span class="est-col-internal-dot">●</span></span><span>${bh.toFixed(2)} h</span></div>` : ''; })()}
           <div class="est-totals-row"><span>Subtotal</span><span>${_estFmt(subtotal)}</span></div>
           ${discAmt > 0 ? `<div class="est-totals-row est-text-green"><span>Discount</span><span>−${_estFmt(discAmt)}</span></div>` : ''}
           ${taxAmt > 0 ? `<div class="est-totals-row"><span>Tax (${est.tax_pct || 0}%)</span><span>${_estFmt(taxAmt)}</span></div>` : ''}
@@ -2075,11 +2097,11 @@ function _estPortalContentHtml(est, brand, interactive) {
       ${est.line_items.length ? `
       <div class="est-portal-section">
         <h3 class="est-portal-section-title">Pricing Breakdown</h3>
-        <div class="est-portal-line-table">
+        <!-- Customer view: Item → Qty → Total only (no rate) -->
+        <div class="est-portal-line-table est-portal-line-table--simple">
           <div class="est-portal-line-header">
             <span>Item</span>
             <span>Qty</span>
-            <span>Rate</span>
             <span>Total</span>
           </div>
           ${est.line_items.map(li => `
@@ -2089,7 +2111,6 @@ function _estPortalContentHtml(est, brand, interactive) {
               ${li.desc ? `<div class="est-portal-li-desc">${_estEsc(li.desc)}</div>` : ''}
             </div>
             <div class="est-portal-li-num">${li.qty || 1}</div>
-            <div class="est-portal-li-num">${_estFmt(li.rate || li.unit || 0)}</div>
             <div class="est-portal-li-num est-portal-li-total">${_estFmt(Number(li.qty||1)*Number(li.rate||li.unit||0))}</div>
           </div>`).join('')}
         </div>
@@ -3098,24 +3119,80 @@ window._estAiApply = _estAiApply;
 
 async function _estConvertToJob(estId) {
   if (!confirm('Create a work order (job) from this estimate? Materials and budgeted hours carry over.')) return;
+  return _estDoConvertToJob(estId, {});
+}
+window._estConvertToJob = _estConvertToJob;
+
+// Schedule to Job — one-click scheduling from the estimate detail page.
+// If the client hasn't accepted yet, the job is created as a YELLOW "hold";
+// it flips GREEN (scheduled) automatically the moment the client accepts.
+function _estScheduleToJob(estId, status) {
+  const isAccepted = status === 'accepted' || status === 'approved' || status === 'invoiced';
+  document.getElementById('est-sched-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'est-sched-modal';
+  modal.className = 'est-modal-overlay';
+  modal.innerHTML = `
+  <div class="est-modal" style="max-width:440px" onclick="event.stopPropagation()">
+    <div class="est-modal-header">
+      <h3 style="display:flex;align-items:center;gap:8px;margin:0">
+        <span class="est-traffic-dot ${isAccepted ? 'est-traffic-dot--green' : 'est-traffic-dot--yellow'}" style="width:12px;height:12px"></span>
+        Schedule to Job
+      </h3>
+      <button class="est-modal-close" onclick="document.getElementById('est-sched-modal').remove()">✕</button>
+    </div>
+    <div class="est-modal-body">
+      ${!isAccepted ? `
+      <div style="background:var(--gw-warning-bg,#FEF7E0);border:1px solid var(--gw-warning-border,#F5D889);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:14px;color:var(--gw-warning,#8B6914)">
+        <strong>Hold:</strong> the client hasn't accepted yet, so this day will be reserved with a <strong style="color:#B45309">yellow hold</strong> on the schedule. It turns <strong style="color:#15803D">green</strong> automatically when they accept — and is released if they decline.
+      </div>` : `
+      <div style="background:var(--gw-emerald-tint,#E7F4EC);border:1px solid var(--gw-emerald-border,#BBDFC9);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:14px;color:var(--gw-emerald,#1A6042)">
+        Estimate accepted — this job will be scheduled as <strong>confirmed (green)</strong>.
+      </div>`}
+      <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Date${isAccepted ? '' : ' to hold'}</label>
+      <input type="date" id="est-sched-date" class="est-input" value="" style="margin-bottom:10px">
+      <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Start time (optional)</label>
+      <input type="time" id="est-sched-time" class="est-input" style="margin-bottom:14px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="est-btn-ghost" onclick="document.getElementById('est-sched-modal').remove()">Cancel</button>
+        <button class="est-btn-primary" id="est-sched-go" onclick="_estSchedSubmit('${_estEsc(estId)}', ${isAccepted ? 'false' : 'true'})">
+          ${isAccepted ? 'Schedule Job' : 'Place Hold on Day'}
+        </button>
+      </div>
+    </div>
+  </div>`;
+  modal.onclick = () => modal.remove();
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('est-sched-date')?.focus(), 60);
+}
+window._estScheduleToJob = _estScheduleToJob;
+
+async function _estSchedSubmit(estId, hold) {
+  const date = document.getElementById('est-sched-date')?.value || '';
+  const time = document.getElementById('est-sched-time')?.value || '';
+  if (!date) { showToast('Pick a date first', 'error'); return; }
+  document.getElementById('est-sched-modal')?.remove();
+  return _estDoConvertToJob(estId, { scheduled_date: date, scheduled_time: time || null, hold: !!hold });
+}
+window._estSchedSubmit = _estSchedSubmit;
+
+async function _estDoConvertToJob(estId, body) {
   try {
     const r = await fetch(`/api/estimates/${estId}/convert-to-job`, {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
     });
     const j = await r.json();
     if (r.status === 409) { showToast('Already converted — opening the existing work order', 'info'); if (j.work_order_id && typeof workOrderDetail === 'function') workOrderDetail(j.work_order_id); return; }
     if (!r.ok || !j.ok) throw new Error(j.error || 'Conversion failed');
     if (typeof window.gwAudit === 'function') window.gwAudit({ type: 'estimate_converted_job', entityType: 'estimate', entityId: estId, entityLabel: j.wo_number });
-    showToast(`Work order ${j.wo_number} created!`, 'success');
-    setTimeout(() => {
-      if (typeof workOrderDetail === 'function') workOrderDetail(j.work_order_id);
-      else if (typeof window.show === 'function') window.show('workOrderDetail', j.work_order_id);
-    }, 700);
+    if (window._sbState) window._sbState.loaded = false; // refresh schedule board data
+    showToast(j.hold ? `${j.wo_number} placed on HOLD — turns green when the client accepts` : `Work order ${j.wo_number} created!`, 'success');
+    setTimeout(() => estimateDetail(estId), 700);
   } catch (e) {
     showToast(e.message || 'Could not convert to job', 'error');
   }
 }
-window._estConvertToJob = _estConvertToJob;
+window._estDoConvertToJob = _estDoConvertToJob;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BUILDER TABS — "Document" (customer-facing) vs "Pricing Workbench" (internal)

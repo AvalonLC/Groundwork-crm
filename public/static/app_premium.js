@@ -14819,13 +14819,21 @@ window.financialHub = financialHub;
 function _p6WOStatusClass(s) {
   return { scheduled:'wo-status--scheduled', 'in-progress':'wo-status--inprogress',
     completed:'wo-status--completed', cancelled:'wo-status--cancelled',
-    'on-hold':'wo-status--onhold' }[s] || 'wo-status--scheduled';
+    hold:'wo-status--hold', 'on-hold':'wo-status--onhold' }[s] || 'wo-status--scheduled';
 }
 function _p6WOStatusLabel(s) {
   const _T = (typeof window._t === 'function') ? window._t : (x => x);
   return { scheduled:_T('Scheduled'),'in-progress':_T('In Progress'),completed:_T('Completed'),
-    cancelled:_T('Cancelled'),'on-hold':_T('On Hold') }[s] || s || _T('Scheduled');
+    cancelled:_T('Cancelled'), hold:_T('Hold — awaiting acceptance'), 'on-hold':_T('On Hold') }[s] || s || _T('Scheduled');
 }
+// Traffic-light dot for schedule cards: yellow = hold (pre-acceptance),
+// green = confirmed/scheduled, red = cancelled/declined.
+function _p6WOTrafficDot(s) {
+  const color = s === 'hold' ? '#EAB308' : (s === 'cancelled' ? '#DC2626' : (s === 'completed' ? '#16A34A' : (s === 'in-progress' ? '#2563EB' : '#22C55E')));
+  const title = s === 'hold' ? 'HOLD — waiting for the client to accept the estimate' : (s === 'cancelled' ? 'Cancelled / declined' : 'Confirmed');
+  return `<span class="sb-traffic-dot" title="${title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${color};flex:0 0 auto;${s==='hold' ? 'box-shadow:0 0 0 3px rgba(234,179,8,.25);animation:sbHoldPulse 1.8s ease-in-out infinite' : ''}"></span>`;
+}
+window._p6WOTrafficDot = _p6WOTrafficDot;
 function _p6AssetLabel(s) {
   return { active:'Active', idle:'Idle', maintenance:'In Maintenance',
     retired:'Retired', rented:'Rented Out', pending:'Pending',
@@ -15079,6 +15087,7 @@ function _sbJobCard(wo, crews, draggable) {
             <circle cx="3" cy="12" r="1.3"/><circle cx="7" cy="12" r="1.3"/>
           </svg>
         </span>
+        ${_p6WOTrafficDot(wo.status)}
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
       </div>
@@ -15240,8 +15249,9 @@ function _sbRender() {
       const isToday = iso === today;
       const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
       const dots = jobs.slice(0,5).map(wo => {
-        const crewColor = wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8';
-        return `<span class="sb-month-dot" style="background:${crewColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}"></span>`;
+        // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
+        const dotColor = wo.status === 'hold' ? '#EAB308' : (wo.status === 'cancelled' ? '#DC2626' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8'));
+        return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${wo.status==='hold' ? ' — HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
         <div class="sb-month-cell${isToday?' sb-month-cell--today':''}"
@@ -15253,9 +15263,9 @@ function _sbRender() {
           <div class="sb-month-num">${d}</div>
           ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
           ${jobs.slice(0,3).map(wo=>{
-            const crewColor = wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8';
-            return `<div class="sb-month-chip" style="border-left:2px solid ${crewColor}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
-              ${escapeHtml((wo.client_name||wo.title||'Job').slice(0,22))}
+            const crewColor = wo.status === 'hold' ? '#EAB308' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');
+            return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}" style="border-left:2px solid ${crewColor}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
+              ${_p6WOTrafficDot(wo.status)} ${escapeHtml((wo.client_name||wo.title||'Job').slice(0,20))}
             </div>`;
           }).join('')}
           ${jobs.length>3 ? `<div class="sb-month-more-link">+${jobs.length-3} more</div>` : ''}
@@ -15268,6 +15278,7 @@ function _sbRender() {
 
   // Stats bar
   const totalScheduled  = visibleWOs.filter(w=>w.status==='scheduled').length;
+  const totalHolds      = visibleWOs.filter(w=>w.status==='hold').length;
   const totalInProgress = visibleWOs.filter(w=>w.status==='in-progress').length;
   const totalCompleted  = visibleWOs.filter(w=>w.status==='completed').length;
 
@@ -15301,6 +15312,7 @@ function _sbRender() {
 
     <div class="sb-stats-bar">
       <div class="sb-stat"><span class="sb-stat-num">${totalScheduled}</span><span class="sb-stat-lbl">Scheduled</span></div>
+      ${totalHolds ? `<div class="sb-stat" title="Jobs held on the calendar — waiting for the client to accept the estimate"><span class="sb-stat-num" style="color:#B45309">${totalHolds}</span><span class="sb-stat-lbl" style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#EAB308;display:inline-block"></span>Holds</span></div>` : ''}
       <div class="sb-stat"><span class="sb-stat-num sb-stat-num--blue">${totalInProgress}</span><span class="sb-stat-lbl">In Progress</span></div>
       <div class="sb-stat"><span class="sb-stat-num sb-stat-num--green">${totalCompleted}</span><span class="sb-stat-lbl">Completed</span></div>
       <div class="sb-stat"><span class="sb-stat-num sb-stat-num--muted">${allCrews.length}</span><span class="sb-stat-lbl">Crews</span></div>
@@ -15581,6 +15593,7 @@ function _sbMobileJobCard(wo, crews) {
   return `
   <div class="sbm-job-card ${statusCls}" style="border-left:4px solid ${crewColor}" onclick="_sbOpenVisitModal('${wo.id}')">
     <div class="sbm-job-top">
+      ${_p6WOTrafficDot(wo.status)}
       <span class="sbm-job-num">${wo.wo_number||wo.id}</span>
       ${timeStr ? `<span class="sbm-job-time">${timeStr}${endStr}</span>` : ''}
       <span class="sbm-job-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
@@ -15786,7 +15799,7 @@ window._sbOpenVisitModal = async function(woId) {
               <label class="sb-modal-field">
                 <span>Status</span>
                 <select class="rp-input" id="sbm-status">
-                  ${['scheduled','in-progress','completed','on-hold','cancelled'].map(s=>
+                  ${['hold','scheduled','in-progress','completed','on-hold','cancelled'].map(s=>
                     `<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
                 </select>
               </label>
@@ -16957,7 +16970,7 @@ async function workOrderList() {
     }));
   }
 
-  const counts = { scheduled:0, 'in-progress':0, completed:0, cancelled:0, 'on-hold':0 };
+  const counts = { hold:0, scheduled:0, 'in-progress':0, completed:0, cancelled:0, 'on-hold':0 };
   wos.forEach(w => { if (counts[w.status]!==undefined) counts[w.status]++; });
 
   const rows = wos.length ? wos.map(wo => {
@@ -17137,7 +17150,7 @@ function workOrderDetail(id) {
         <label class="rp-field">
           <span class="rp-field-label">Status</span>
           <select class="rp-input" id="wo-status">
-            ${['scheduled','in-progress','completed','on-hold','cancelled'].map(s=>`<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
+            ${['hold','scheduled','in-progress','completed','on-hold','cancelled'].map(s=>`<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
           </select>
         </label>
         <label class="rp-field">

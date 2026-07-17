@@ -3839,12 +3839,30 @@ app.post('/api/estimates/:id/send', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ── Hold → traffic-light helper ─────────────────────────────────────────────
+// Jobs scheduled BEFORE the client accepts sit in status 'hold' (yellow).
+// When the client accepts, holds flip to 'scheduled' (green). Decline → 'cancelled' (red).
+async function _woFlipHolds(db: D1Database, estimateId: string, companyId: string, toStatus: 'scheduled' | 'cancelled') {
+  try {
+    const holds = await db.prepare(`SELECT id, timeline FROM work_orders WHERE estimate_id=? AND company_id=? AND status='hold'`)
+      .bind(estimateId, companyId).all()
+    for (const wo of (holds.results || []) as any[]) {
+      let tl: any[] = []
+      try { tl = JSON.parse(wo.timeline || '[]') } catch {}
+      tl.push({ at: new Date().toISOString(), event: toStatus === 'scheduled' ? 'Hold confirmed — client accepted the estimate' : 'Hold released — client declined the estimate' })
+      await db.prepare(`UPDATE work_orders SET status=?, timeline=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+        .bind(toStatus, JSON.stringify(tl), wo.id, companyId).run()
+    }
+  } catch (e: any) { console.log('woFlipHolds err', String(e?.message || e).slice(0, 120)) }
+}
+
 // POST /api/estimates/:id/accept — portal or internal accept
 app.post('/api/estimates/:id/accept', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   const r = await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(c.req.param('id'), c.var.companyId as string).run()
   if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
+  await _woFlipHolds(db, c.req.param('id'), c.var.companyId as string, 'scheduled')
   return c.json({ ok: true })
 })
 
@@ -3855,6 +3873,7 @@ app.post('/api/estimates/:id/decline', requireAuth, async (c) => {
   const r = await db.prepare(`UPDATE estimates SET status='declined', declined_at=datetime('now'), decline_reason=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(b.reason||'', c.req.param('id'), c.var.companyId as string).run()
   if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
+  await _woFlipHolds(db, c.req.param('id'), c.var.companyId as string, 'cancelled')
   return c.json({ ok: true })
 })
 
@@ -4160,7 +4179,10 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
     est.client_name || '', est.client_id || null, est.property_addr || est.client_address || '',
     est.title || `Job from ${est.est_number}`,
     b.type || (est.doc_type === 'recurring' ? 'Maintenance' : 'Install'),
-    'scheduled', b.scheduled_date || null, b.scheduled_time || null,
+    // Traffic-light hold: scheduling before the client accepts puts the job on
+    // a yellow "hold" — it flips green (scheduled) automatically on acceptance.
+    (b.hold === true || (b.hold !== false && est.status !== 'accepted' && est.status !== 'approved' && est.status !== 'invoiced')) ? 'hold' : 'scheduled',
+    b.scheduled_date || null, b.scheduled_time || null,
     budgetHours || Number(b.duration_hours || 0) || null,
     (est.scope_of_work || '') + (est.internal_notes ? `\n\n[Internal] ${est.internal_notes}` : ''),
     Number(est.total || 0), JSON.stringify(materials),
@@ -4171,7 +4193,8 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
   await db.prepare(`UPDATE estimates SET work_order_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(woId, est.id, companyId).run()
 
-  return c.json({ ok: true, work_order_id: woId, wo_number: woNumber }, 201)
+  const woRow: any = await db.prepare(`SELECT status FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
+  return c.json({ ok: true, work_order_id: woId, wo_number: woNumber, status: woRow?.status || 'scheduled', hold: woRow?.status === 'hold' }, 201)
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4337,6 +4360,7 @@ app.post('/api/proposals/portal/:token/respond', async (c) => {
     if (full?.estimate_id) {
       await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
         .bind(full.estimate_id, full.company_id).run().catch(() => {})
+      await _woFlipHolds(db, full.estimate_id, full.company_id, 'scheduled')
     }
   } else {
     await db.prepare(`UPDATE proposals SET status='declined', declined_at=datetime('now'), updated_at=datetime('now') WHERE id=?`)
@@ -6758,7 +6782,7 @@ app.get('/estimates/portal/:token', async (c) => {
   const statusLabel = { draft:'Draft', sent:'Sent', approved:'Approved ✓', declined:'Declined', expired:'Expired' }[est.status] || est.status
   const canAct = ['sent','draft'].includes(est.status)
   const lineItems = (() => { try { return JSON.parse(est.line_items||'[]') } catch { return [] } })()
-  const total = lineItems.reduce((s: number, i: any) => s + (Number(i.qty||1) * Number(i.unit_price||0)), 0)
+  const total = Number(est.total || 0) || lineItems.reduce((s: number, i: any) => s + (Number(i.qty||1) * Number(i.rate ?? i.unit_price ?? i.unit ?? 0)), 0)
 
   return c.html(`<!DOCTYPE html>
 <html lang="en"><head>
@@ -6826,15 +6850,14 @@ app.get('/estimates/portal/:token', async (c) => {
     <div class="portal-section">
       <div class="portal-label" style="margin-bottom:12px">Line Items</div>
       <table>
-        <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th style="text-align:right">Total</th></tr></thead>
+        <thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Total</th></tr></thead>
         <tbody>
           ${lineItems.map((li: any) => {
             const qty = Number(li.qty||1)
-            const price = Number(li.unit_price||0)
+            const price = Number(li.rate ?? li.unit_price ?? li.unit ?? 0)
             return `<tr>
               <td>${li.name||li.description||'Service'}</td>
               <td>${qty}</td>
-              <td>$${price.toFixed(2)}</td>
               <td style="text-align:right">$${(qty*price).toFixed(2)}</td>
             </tr>`
           }).join('')}
@@ -6915,6 +6938,7 @@ app.post('/api/estimates/portal/:token/approve', async (c) => {
   const pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
   if (!pt) return c.json({ error: 'Invalid token' }, 404)
   await db.prepare(`UPDATE estimates SET status='approved' WHERE id=? AND company_id=?`).bind(pt.estimate_id, pt.company_id).run()
+  await _woFlipHolds(db, pt.estimate_id, pt.company_id, 'scheduled')
   await db.prepare(`UPDATE estimate_portal_tokens SET used_at=? WHERE token=?`).bind(new Date().toISOString(), token).run()
   // Create notification for the company
   const est = await db.prepare(`SELECT estimate_number, client_name FROM estimates WHERE id=?`).bind(pt.estimate_id).first() as any
@@ -7559,7 +7583,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260717b003">
+  <link rel="stylesheet" href="/js/premium.css?v=20260717b005">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7583,8 +7607,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260717b003"></script>
-  <script src="/js/client_portal.js?v=20260717b003"></script>
+  <script src="/js/platform_core.js?v=20260717b005"></script>
+  <script src="/js/client_portal.js?v=20260717b005"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8214,9 +8238,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260717b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260717b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260717b003">
+  <link rel="stylesheet" href="/js/premium.css?v=20260717b005">
+  <link rel="stylesheet" href="/js/styles.css?v=20260717b005">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260717b005">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8764,37 +8788,37 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260717b003"></script>
-<script src="/js/db.js?v=20260717b003"></script>
-<script src="/js/data.js?v=20260717b003"></script>
-<script src="/js/reps.js?v=20260717b003"></script>
-<script src="/js/record-page.js?v=20260717b003"></script>
-<script src="/js/academy.js?v=20260717b003"></script>
-<script src="/js/task_engine.js?v=20260717b003"></script>
-<script src="/js/gw_i18n.js?v=20260717b003"></script>
-<script src="/js/app_premium.js?v=20260717b003"></script>
-<script src="/js/estimates.js?v=20260717b003"></script>
-<script src="/js/proposals.js?v=20260717b003"></script>
-<script src="/js/pricing.js?v=20260717b003"></script>
-<script src="/js/invoices.js?v=20260717b003"></script>
-<script src="/js/csv_import.js?v=20260717b003"></script>
-<script src="/js/onboarding.js?v=20260717b003"></script>
-<script src="/js/recurring_plans.js?v=20260717b003"></script>
-<script src="/js/reviews.js?v=20260717b003"></script>
-<script src="/js/stripe.js?v=20260717b003"></script>
-<script src="/js/email.js?v=20260717b003"></script>
-<script src="/js/notifications.js?v=20260717b003"></script>
-<script src="/js/integrations.js?v=20260717b003"></script>
-<script src="/js/user_management.js?v=20260717b003"></script>
-<script src="/js/platform_admin.js?v=20260717b003"></script>
-<script src="/js/time_tracker.js?v=20260717b003"></script>
-<script src="/js/field_workday.js?v=20260717b003"></script>
-<script src="/js/platform_core.js?v=20260717b003"></script>
-<script src="/js/approval_engine.js?v=20260717b003"></script>
-<script src="/js/automation_engine.js?v=20260717b003"></script>
-<script src="/js/client_portal.js?v=20260717b003"></script>
-<script src="/js/field_mode.js?v=20260717b003"></script>
-<script src="/js/assets_hub.js?v=20260717b003"></script>
+<script src="/js/gw-icons.js?v=20260717b005"></script>
+<script src="/js/db.js?v=20260717b005"></script>
+<script src="/js/data.js?v=20260717b005"></script>
+<script src="/js/reps.js?v=20260717b005"></script>
+<script src="/js/record-page.js?v=20260717b005"></script>
+<script src="/js/academy.js?v=20260717b005"></script>
+<script src="/js/task_engine.js?v=20260717b005"></script>
+<script src="/js/gw_i18n.js?v=20260717b005"></script>
+<script src="/js/app_premium.js?v=20260717b005"></script>
+<script src="/js/estimates.js?v=20260717b005"></script>
+<script src="/js/proposals.js?v=20260717b005"></script>
+<script src="/js/pricing.js?v=20260717b005"></script>
+<script src="/js/invoices.js?v=20260717b005"></script>
+<script src="/js/csv_import.js?v=20260717b005"></script>
+<script src="/js/onboarding.js?v=20260717b005"></script>
+<script src="/js/recurring_plans.js?v=20260717b005"></script>
+<script src="/js/reviews.js?v=20260717b005"></script>
+<script src="/js/stripe.js?v=20260717b005"></script>
+<script src="/js/email.js?v=20260717b005"></script>
+<script src="/js/notifications.js?v=20260717b005"></script>
+<script src="/js/integrations.js?v=20260717b005"></script>
+<script src="/js/user_management.js?v=20260717b005"></script>
+<script src="/js/platform_admin.js?v=20260717b005"></script>
+<script src="/js/time_tracker.js?v=20260717b005"></script>
+<script src="/js/field_workday.js?v=20260717b005"></script>
+<script src="/js/platform_core.js?v=20260717b005"></script>
+<script src="/js/approval_engine.js?v=20260717b005"></script>
+<script src="/js/automation_engine.js?v=20260717b005"></script>
+<script src="/js/client_portal.js?v=20260717b005"></script>
+<script src="/js/field_mode.js?v=20260717b005"></script>
+<script src="/js/assets_hub.js?v=20260717b005"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

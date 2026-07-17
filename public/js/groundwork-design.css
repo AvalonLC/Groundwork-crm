@@ -6164,6 +6164,8 @@ h1.ld-name {
 .wo-status--inprogress  { background: var(--gw-accent3-tint)   !important; color: var(--gw-accent3)   !important; border-color: var(--gw-accent3-border)   !important; }
 .wo-status--completed   { background: var(--gw-emerald-tint)   !important; color: var(--gw-emerald)   !important; border-color: var(--gw-emerald-border)   !important; }
 .wo-status--onhold      { background: var(--gw-warning-bg)     !important; color: var(--gw-warning)   !important; border-color: var(--gw-warning-border)   !important; }
+/* Traffic-light HOLD — job scheduled before the client accepted (yellow) */
+.wo-status--hold        { background: #FEF3C7 !important; color: #92400E !important; border-color: #FCD34D !important; }
 .wo-status--cancelled   { background: var(--gw-danger-tint)    !important; color: var(--gw-danger)    !important; border-color: var(--gw-danger-border)    !important; }
 
 /* Schedule — additional sched-* classes */

@@ -311,3 +311,9 @@ Edit `public/js/gw_i18n.js`:
 2. For strings with numbers/names in them, add a regex row to `_GW_PATTERNS`.
 3. Copy the file to keep both copies in sync: `cp public/static/gw_i18n.js public/js/gw_i18n.js` (or vice versa — `/js/` is the one served).
 4. `npm run build` + deploy. Untranslated strings simply stay in English (safe fallback).
+
+## Estimate Presentation & Traffic-Light Hold Scheduling (2026-07-17)
+- **Customer-facing pricing**: portal/preview line items show only Item → Qty → Total (no rate column, no cost/hours leakage).
+- **Internal Pricing Breakdown** (estimate detail): Cost/Rate → Qty/Hr → Budgeted Hours (internal-only, amber-tinted) → Taxes → Total, plus a Budgeted Hours rollup in totals.
+- **Flat action bar**: "More ▾" dropdown dissolved — Edit / Email / Preview / Duplicate / Convert to Invoice / Delete all visible.
+- **Schedule to Job button**: always prominent. Before client acceptance it places a YELLOW "hold" on the chosen day (`work_orders.status='hold'`); when the client accepts (internal accept, portal approve, or proposal accept) all holds auto-flip GREEN to `scheduled`; decline releases them to `cancelled` (red). Traffic-light dots on schedule board week cards, month dots/chips, mobile cards; Holds counter in the stats bar.
