@@ -15106,3 +15106,206 @@ h1.pl-title,
   }
   .gw-sub-tabs::-webkit-scrollbar { display: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GWP — GROUNDWORK PREMIUM PAGE SHELL (approved high-end formatting style)
+   Shared vocabulary cloned from the estimates-module design language.
+   Used by: Financial Reports, Invoices, Schedule, Dispatch, Recurring,
+   Assets, Company Settings, General Settings, Pricing, Client Portal.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.gwp-shell {
+  padding: 24px 28px 60px;
+  max-width: 1400px; margin: 0 auto;
+}
+.gwp-shell--narrow { max-width: 1100px; }
+
+/* ── Page header ── */
+.gwp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px; flex-wrap: wrap;
+}
+.gwp-header-left { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.gwp-title { font-size: 22px; font-weight: 800; color: var(--gw-text, #1C2B22); margin: 0; letter-spacing: -.02em; }
+.gwp-subtitle { font-size: 13px; color: var(--gw-text-muted, #64748b); }
+.gwp-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+
+.gwp-btn-primary {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--gw-action, #2A6E51); color: #fff; border: 1px solid var(--gw-action, #2A6E51);
+  border-radius: 8px; padding: 8px 15px; font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: inherit; transition: background .15s;
+}
+.gwp-btn-primary:hover { background: var(--gw-pine-600, #1f5640); }
+.gwp-btn-ghost {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--gw-surface, #fff); color: var(--gw-text, #1C2B22);
+  border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 8px; padding: 8px 13px; font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: background .15s, border-color .15s;
+}
+.gwp-btn-ghost:hover { background: var(--gw-bark-25, #F8F6F0); border-color: var(--gw-pine-300, #7BB89A); }
+.gwp-btn-danger { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.gwp-btn-danger:hover { background: #fecaca; border-color: #f87171; }
+
+/* ── KPI row (est-kpi clone) ── */
+.gwp-kpi-row {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+}
+.gwp-kpi-row--5 { grid-template-columns: repeat(5, 1fr); }
+.gwp-kpi-row--3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) { .gwp-kpi-row, .gwp-kpi-row--5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 680px)  { .gwp-kpi-row, .gwp-kpi-row--5, .gwp-kpi-row--3 { grid-template-columns: repeat(2, 1fr); } }
+
+.gwp-kpi-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--gw-surface, #fff); border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 10px; padding: 14px 16px;
+  transition: box-shadow .15s, border-color .15s; position: relative; overflow: hidden;
+}
+.gwp-kpi-card--click { cursor: pointer; }
+.gwp-kpi-card--click:hover { box-shadow: 0 2px 10px rgba(0,0,0,.07); border-color: var(--gw-pine-300, #7BB89A); }
+.gwp-kpi-card--yellow { border-left: 3px solid #f59e0b; }
+.gwp-kpi-card--red    { border-left: 3px solid #ef4444; }
+.gwp-kpi-card--green  { border-left: 3px solid #10b981; }
+.gwp-kpi-card--blue   { border-left: 3px solid #3b82f6; }
+.gwp-kpi-card--muted  { border-left: 3px solid var(--gw-border, #DDD8CE); }
+
+.gwp-kpi-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.gwp-kpi-icon--blue  { background: #dbeafe; color: #1d4ed8; }
+.gwp-kpi-icon--green { background: #d1fae5; color: #059669; }
+.gwp-kpi-icon--yellow{ background: #fef3c7; color: #d97706; }
+.gwp-kpi-icon--red   { background: #fee2e2; color: #dc2626; }
+.gwp-kpi-icon--purple{ background: #ede9fe; color: #6d28d9; }
+.gwp-kpi-icon--muted { background: var(--gw-bark-25, #F8F6F0); color: var(--gw-text-muted, #64748b); }
+
+.gwp-kpi-body { min-width: 0; }
+.gwp-kpi-value { font-size: 22px; font-weight: 800; color: var(--gw-text, #1C2B22); line-height: 1; font-variant-numeric: tabular-nums; }
+.gwp-kpi-label { font-size: 11.5px; font-weight: 600; color: var(--gw-text-muted, #64748b); margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
+.gwp-kpi-sub   { font-size: 11px; color: var(--gw-text-muted, #64748b); margin-top: 1px; }
+
+/* ── Filter / toolbar bar (est-filter clone) ── */
+.gwp-filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--gw-surface, #fff); border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+}
+.gwp-search-wrap {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--gw-bark-25, #F8F6F0); border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 6px; padding: 0 10px; flex: 1; min-width: 180px; max-width: 400px;
+}
+.gwp-search-icon { color: var(--gw-text-muted, #64748b); flex-shrink: 0; }
+.gwp-search-input {
+  flex: 1; border: none; background: transparent; padding: 7px 0;
+  font-size: 13px; color: var(--gw-text, #1C2B22); font-family: inherit;
+}
+.gwp-search-input:focus { outline: none; }
+.gwp-filter-select {
+  padding: 7px 11px; border-radius: 6px; font-size: 13px;
+  border: 1px solid var(--gw-border, #DDD8CE); background: var(--gw-surface, #fff);
+  color: var(--gw-text, #1C2B22); font-family: inherit; cursor: pointer;
+}
+.gwp-chip {
+  padding: 4px 11px; border-radius: 20px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--gw-border, #DDD8CE); background: var(--gw-surface, #fff);
+  color: var(--gw-text-muted, #64748b); cursor: pointer; font-family: inherit;
+  transition: background .15s, color .15s, border-color .15s; white-space: nowrap;
+}
+.gwp-chip:hover { border-color: var(--gw-pine-400, #4DA876); color: var(--gw-text, #1C2B22); }
+.gwp-chip--active { background: var(--gw-action, #2A6E51); color: #fff; border-color: var(--gw-action, #2A6E51); }
+
+/* ── Table (est-table clone) ── */
+.gwp-table-wrap {
+  background: var(--gw-surface, #fff); border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 10px; overflow: hidden; margin-bottom: 18px;
+}
+.gwp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gwp-table thead th {
+  padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+  color: var(--gw-text-muted, #64748b); background: var(--gw-bark-25, #F8F6F0);
+  border-bottom: 1px solid var(--gw-border, #DDD8CE); white-space: nowrap;
+}
+.gwp-table tbody td { padding: 11px 14px; vertical-align: middle; border-bottom: 1px solid var(--gw-border-soft, #F0EEE8); }
+.gwp-table tbody tr:last-child td { border-bottom: none; }
+.gwp-table tbody tr.gwp-row--click { cursor: pointer; transition: background .1s; }
+.gwp-table tbody tr.gwp-row--click:hover { background: var(--gw-bark-25, #F8F6F0); }
+
+/* ── Section card (premium settings-style card) ── */
+.gwp-card {
+  background: var(--gw-surface, #fff); border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+}
+.gwp-card-head {
+  display: flex; align-items: center; gap: 11px;
+  padding: 14px 18px; border-bottom: 1px solid var(--gw-border-soft, #F0EEE8);
+  background: var(--gw-bark-25, #F8F6F0);
+}
+.gwp-card-icon {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #d1fae5; color: #059669;
+}
+.gwp-card-icon--yellow { background: #fef3c7; color: #d97706; }
+.gwp-card-icon--blue   { background: #dbeafe; color: #1d4ed8; }
+.gwp-card-icon--red    { background: #fee2e2; color: #dc2626; }
+.gwp-card-icon--muted  { background: var(--gw-bark-50, #F2EDE3); color: var(--gw-text-muted, #64748b); }
+.gwp-card-title { font-size: 14px; font-weight: 700; color: var(--gw-text, #1C2B22); }
+.gwp-card-desc  { font-size: 12px; color: var(--gw-text-muted, #64748b); margin-top: 1px; }
+.gwp-card-body  { padding: 16px 18px; }
+.gwp-card--danger { border-color: #fca5a5; }
+.gwp-card--danger .gwp-card-head { background: #fef2f2; border-bottom-color: #fecaca; }
+
+/* ── Section eyebrow label ── */
+.gwp-sect-label {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--gw-text-muted, #64748b); margin: 22px 0 10px 2px;
+}
+.gwp-sect-label--danger { color: #dc2626; }
+
+/* ── Tab bar (underline style, stmt-tab refined) ── */
+.gwp-tab-bar {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--gw-surface, #fff); border: 1px solid var(--gw-border, #DDD8CE);
+  border-radius: 10px; padding: 4px 6px; margin-bottom: 16px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.gwp-tab-bar::-webkit-scrollbar { display: none; }
+.gwp-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; font-size: 12.5px; font-weight: 600;
+  color: var(--gw-text-muted, #64748b); border: none; background: none;
+  border-radius: 7px; cursor: pointer; white-space: nowrap; font-family: inherit;
+  transition: background .15s, color .15s;
+}
+.gwp-tab:hover { color: var(--gw-text, #1C2B22); background: var(--gw-bark-25, #F8F6F0); }
+.gwp-tab--active { background: var(--gw-action, #2A6E51); color: #fff; }
+.gwp-tab--active:hover { background: var(--gw-pine-600, #1f5640); color: #fff; }
+
+/* ── Empty state (est-empty clone) ── */
+.gwp-empty {
+  background: var(--gw-surface, #fff); border: 1px dashed var(--gw-border, #DDD8CE);
+  border-radius: 12px; padding: 48px 24px; text-align: center; margin-bottom: 18px;
+}
+.gwp-empty-icon { margin-bottom: 10px; opacity: .8; }
+.gwp-empty-title { font-size: 15px; font-weight: 700; color: var(--gw-text, #1C2B22); margin-bottom: 5px; }
+.gwp-empty-sub { font-size: 13px; color: var(--gw-text-muted, #64748b); margin-bottom: 16px; max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.5; }
+.gwp-empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+/* ── Info banner ── */
+.gwp-banner {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--gw-pine-50, #e8f5ee); border: 1px solid var(--gw-pine-200, #A8D4BC);
+  color: var(--gw-pine-700, #1B4A33); border-radius: 10px;
+  padding: 10px 14px; font-size: 12.5px; margin-bottom: 16px;
+}
+
+/* ── Responsive shell padding ── */
+@media (max-width: 768px) {
+  .gwp-shell { padding: 16px 14px 50px; }
+  .gwp-title { font-size: 19px; }
+}

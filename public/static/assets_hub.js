@@ -206,7 +206,7 @@ function renderEquipment(view) {
   const catCounts = {};
   AH.assets.forEach(a => { catCounts[a.category] = (catCounts[a.category]||0)+1; });
   const catChips = [''].concat(CATEGORIES.map(c=>c[0]).filter(c=>catCounts[c]))
-    .map(c => `<button class="ah-chip${catF===c?' ah-chip--on':''}" onclick="window._ahSetCat('${c}')">${c?catLabel(c):'All'}${c?` <span style="opacity:.6">${catCounts[c]}</span>`:''}</button>`).join('');
+    .map(c => `<button class="gwp-chip${catF===c?' gwp-chip--active':''}" onclick="window._ahSetCat('${c}')">${c?catLabel(c):'All'}${c?` <span style="opacity:.6">${catCounts[c]}</span>`:''}</button>`).join('');
 
   const isMobile = window.innerWidth <= 768;
 
@@ -242,33 +242,51 @@ function renderEquipment(view) {
   }).join('');
 
   const emptyState = !AH.assets.length ? `
-    <div style="padding:48px 24px;text-align:center">
-      <p style="color:var(--gw-muted);margin-bottom:14px">No equipment tracked yet.</p>
-      ${canWrite() ? `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button class="primary-btn" onclick="window._ahNewAsset()">+ Add Equipment</button>
-        <button class="secondary-btn" onclick="window._ahImportExport('assets')">⇪ Import from Spreadsheet</button>
+    <div class="gwp-empty">
+      <div class="gwp-empty-title">No equipment tracked yet</div>
+      <div class="gwp-empty-sub">Add trucks, trailers, mowers, and tools to track service schedules, meters, and assignments.</div>
+      ${canWrite() ? `<div class="gwp-empty-actions">
+        <button class="gwp-btn-primary" onclick="window._ahNewAsset()">+ Add Equipment</button>
+        <button class="gwp-btn-ghost" onclick="window._ahImportExport('assets')">⇪ Import from Spreadsheet</button>
       </div>`:''}
     </div>` : '';
 
   view.insertAdjacentHTML('beforeend', `
-  <div class="ah-shell">
-    <header class="ah-header">
-      <div>
-        <h1 style="margin:0 0 4px">Assets</h1>
-        <p style="margin:0;font-size:13px;color:var(--gw-muted)">
-          ${totals.total} tracked · ${totals.active} active
-          ${totals.overdue?` · <strong style="color:#A05050">${totals.overdue} overdue service</strong>`:''}
-          ${totals.dueSoon?` · <strong style="color:#8B6914">${totals.dueSoon} due soon</strong>`:''}
-        </p>
+  <div class="gwp-shell ah-shell" style="padding-top:12px">
+    <header class="gwp-header" style="margin-bottom:14px">
+      <div class="gwp-header-left">
+        <h1 class="gwp-title">Assets</h1>
+        <span class="gwp-subtitle">${totals.total} tracked · ${totals.active} active</span>
       </div>
-      <div class="ah-header-actions">
-        ${canWrite() ? `<button class="secondary-btn" onclick="window._ahImportExport('assets')" style="font-size:13px">⇅ Import / Export</button>
-        <button class="primary-btn" onclick="window._ahNewAsset()" style="font-size:13px">+ Add Equipment</button>`:''}
+      <div class="gwp-header-actions">
+        ${canWrite() ? `<button class="gwp-btn-ghost" onclick="window._ahImportExport('assets')">⇅ Import / Export</button>
+        <button class="gwp-btn-primary" onclick="window._ahNewAsset()">+ Add Equipment</button>`:''}
       </div>
     </header>
-    <div class="ah-toolbar">
-      <input type="search" class="ah-search" placeholder="Search name, make, VIN, tag…" value="${esc(window._ahSearch||'')}"
-        oninput="window._ahSearch=this.value;window.assetsHub('equipment')">
+    <div class="gwp-kpi-row" style="margin-bottom:14px">
+      <div class="gwp-kpi-card gwp-kpi-card--blue">
+        <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1.5" y="6" width="10" height="6" rx="1"/><path d="M11.5 8h2l1 2v2h-3M4 12v1.5M9 12v1.5"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totals.total}</div><div class="gwp-kpi-label">Tracked</div></div>
+      </div>
+      <div class="gwp-kpi-card gwp-kpi-card--green">
+        <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totals.active}</div><div class="gwp-kpi-label">Active</div></div>
+      </div>
+      <div class="gwp-kpi-card${totals.dueSoon?' gwp-kpi-card--yellow':' gwp-kpi-card--muted'}">
+        <div class="gwp-kpi-icon ${totals.dueSoon?'gwp-kpi-icon--yellow':'gwp-kpi-icon--muted'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totals.dueSoon}</div><div class="gwp-kpi-label">Due Soon</div><div class="gwp-kpi-sub">service within window</div></div>
+      </div>
+      <div class="gwp-kpi-card${totals.overdue?' gwp-kpi-card--red':' gwp-kpi-card--muted'}">
+        <div class="gwp-kpi-icon ${totals.overdue?'gwp-kpi-icon--red':'gwp-kpi-icon--muted'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 1.5l6.5 12h-13z"/><path d="M8 6.5v3.2M8 12h.01"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totals.overdue}</div><div class="gwp-kpi-label">Overdue Service</div></div>
+      </div>
+    </div>
+    <div class="gwp-filter-bar ah-toolbar" style="margin-bottom:14px">
+      <div class="gwp-search-wrap">
+        <svg class="gwp-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="5"/><path d="M14 14l-3.5-3.5"/></svg>
+        <input type="search" class="gwp-search-input" placeholder="Search name, make, VIN, tag…" value="${esc(window._ahSearch||'')}"
+          oninput="window._ahSearch=this.value;window.assetsHub('equipment')">
+      </div>
       <div class="ah-chips">${catChips}</div>
     </div>
     ${emptyState || (isMobile
@@ -657,19 +675,30 @@ function renderMaintenance(view) {
   }).join('');
 
   view.insertAdjacentHTML('beforeend', `
-  <div class="ah-shell">
-    <header class="ah-header">
-      <div>
-        <h1 style="margin:0 0 4px">Maintenance</h1>
-        <p style="margin:0;font-size:13px;color:var(--gw-muted)">
-          ${overdue.length?`<strong style="color:#A05050">${overdue.length} overdue</strong> · `:''}
-          ${dueSoon.length?`<strong style="color:#8B6914">${dueSoon.length} due soon</strong> · `:''}
-          ${items.length} tracked services across ${AH.assets.length} assets
-        </p>
+  <div class="gwp-shell ah-shell" style="padding-top:12px">
+    <header class="gwp-header" style="margin-bottom:14px">
+      <div class="gwp-header-left">
+        <h1 class="gwp-title">Maintenance</h1>
+        <span class="gwp-subtitle">${items.length} tracked services across ${AH.assets.length} assets</span>
       </div>
     </header>
-    ${!items.length ? `<div style="padding:48px 24px;text-align:center;color:var(--gw-muted)">
-        No service plans yet. Open an asset in <a href="javascript:void(0)" onclick="window.assetsHub('equipment')" style="color:#4D8A86">Equipment</a> and add its service plan to start tracking maintenance.
+    <div class="gwp-kpi-row gwp-kpi-row--3" style="margin-bottom:14px">
+      <div class="gwp-kpi-card${overdue.length?' gwp-kpi-card--red':' gwp-kpi-card--muted'}">
+        <div class="gwp-kpi-icon ${overdue.length?'gwp-kpi-icon--red':'gwp-kpi-icon--muted'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 1.5l6.5 12h-13z"/><path d="M8 6.5v3.2M8 12h.01"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${overdue.length}</div><div class="gwp-kpi-label">Overdue</div></div>
+      </div>
+      <div class="gwp-kpi-card${dueSoon.length?' gwp-kpi-card--yellow':' gwp-kpi-card--muted'}">
+        <div class="gwp-kpi-icon ${dueSoon.length?'gwp-kpi-icon--yellow':'gwp-kpi-icon--muted'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${dueSoon.length}</div><div class="gwp-kpi-label">Due Soon</div></div>
+      </div>
+      <div class="gwp-kpi-card gwp-kpi-card--green">
+        <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${upcoming.length}</div><div class="gwp-kpi-label">Upcoming</div></div>
+      </div>
+    </div>
+    ${!items.length ? `<div class="gwp-empty">
+        <div class="gwp-empty-title">No service plans yet</div>
+        <div class="gwp-empty-sub">Open an asset in <a href="javascript:void(0)" onclick="window.assetsHub('equipment')" style="color:#2D7A55;font-weight:600">Equipment</a> and add its service plan to start tracking maintenance.</div>
       </div>` : `
     ${section('Overdue', overdue, '#A05050')}
     ${section('Due Soon (30 days / near meter)', dueSoon, '#8B6914')}
@@ -758,24 +787,37 @@ function renderInventory(view) {
   }).join('');
 
   view.insertAdjacentHTML('beforeend', `
-  <div class="ah-shell">
-    <header class="ah-header">
-      <div>
-        <h1 style="margin:0 0 4px">Inventory & Tools</h1>
-        <p style="margin:0;font-size:13px;color:var(--gw-muted)">
-          ${AH.stock.length} items
-          ${out.length?` · <strong style="color:#A05050">${out.length} out of stock</strong>`:''}
-          ${low.length?` · <strong style="color:#8B6914">${low.length} low</strong>`:''}
-        </p>
+  <div class="gwp-shell ah-shell" style="padding-top:12px">
+    <header class="gwp-header" style="margin-bottom:14px">
+      <div class="gwp-header-left">
+        <h1 class="gwp-title">Inventory &amp; Tools</h1>
+        <span class="gwp-subtitle">${AH.stock.length} items</span>
       </div>
-      <div class="ah-header-actions">
-        ${w?`<button class="secondary-btn" onclick="window._ahImportExport('stock')" style="font-size:13px">⇅ Import / Export</button>
-        <button class="primary-btn" onclick="window._ahStockModal('')" style="font-size:13px">+ Add Item</button>`:''}
+      <div class="gwp-header-actions">
+        ${w?`<button class="gwp-btn-ghost" onclick="window._ahImportExport('stock')">⇅ Import / Export</button>
+        <button class="gwp-btn-primary" onclick="window._ahStockModal('')">+ Add Item</button>`:''}
       </div>
     </header>
-    <div class="ah-toolbar">
-      <input type="search" class="ah-search" placeholder="Search items, vendor, location…" value="${esc(window._ahStockSearch||'')}"
-        oninput="window._ahStockSearch=this.value;window.assetsHub('inventory')">
+    <div class="gwp-kpi-row gwp-kpi-row--3" style="margin-bottom:14px">
+      <div class="gwp-kpi-card gwp-kpi-card--blue">
+        <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 5l6-3 6 3v6l-6 3-6-3zM2 5l6 3 6-3M8 8v6"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${AH.stock.length}</div><div class="gwp-kpi-label">Items</div></div>
+      </div>
+      <div class="gwp-kpi-card${low.length?' gwp-kpi-card--yellow':' gwp-kpi-card--muted'}">
+        <div class="gwp-kpi-icon ${low.length?'gwp-kpi-icon--yellow':'gwp-kpi-icon--muted'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12h12M4 12V7M8 12V4M12 12V9"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${low.length}</div><div class="gwp-kpi-label">Low Stock</div></div>
+      </div>
+      <div class="gwp-kpi-card${out.length?' gwp-kpi-card--red':' gwp-kpi-card--muted'}">
+        <div class="gwp-kpi-icon ${out.length?'gwp-kpi-icon--red':'gwp-kpi-icon--muted'}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M5 5l6 6M11 5l-6 6"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${out.length}</div><div class="gwp-kpi-label">Out of Stock</div></div>
+      </div>
+    </div>
+    <div class="gwp-filter-bar ah-toolbar" style="margin-bottom:14px">
+      <div class="gwp-search-wrap">
+        <svg class="gwp-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="5"/><path d="M14 14l-3.5-3.5"/></svg>
+        <input type="search" class="gwp-search-input" placeholder="Search items, vendor, location…" value="${esc(window._ahStockSearch||'')}"
+          oninput="window._ahStockSearch=this.value;window.assetsHub('inventory')">
+      </div>
       <div class="ah-chips">${chips}</div>
     </div>
     ${!AH.stock.length ? `<div style="padding:48px 24px;text-align:center">

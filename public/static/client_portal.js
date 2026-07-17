@@ -178,35 +178,64 @@ function portalAdmin() {
   }
 
   view.innerHTML = `
-    <div class="view-wrap">
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Client Portal Access</h1>
-          <p class="page-sub">Control which clients have portal access and what they can see.</p>
+    <div class="gwp-shell gwp-shell--narrow" style="padding-top:20px">
+      <header class="gwp-header" style="margin-bottom:16px">
+        <div class="gwp-header-left">
+          <h1 class="gwp-title">Client Portal Access</h1>
+          <span class="gwp-subtitle">Control which clients have portal access and what they can see.</span>
         </div>
-        ${canManage ? `<button class="primary-btn" onclick="_portalGrantModal()">+ Grant Portal Access</button>` : ''}
+        <div class="gwp-header-actions">
+          ${canManage ? `<button class="gwp-btn-primary" onclick="_portalGrantModal()">+ Grant Portal Access</button>` : ''}
+        </div>
+      </header>
+
+      <div class="gwp-kpi-row gwp-kpi-row--3" style="margin-bottom:16px">
+        <div class="gwp-kpi-card gwp-kpi-card--green">
+          <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg></div>
+          <div class="gwp-kpi-body">
+            <div class="gwp-kpi-value">${active.length}</div>
+            <div class="gwp-kpi-label">Active Access</div>
+            <div class="gwp-kpi-sub">clients with live portal links</div>
+          </div>
+        </div>
+        <div class="gwp-kpi-card ${inactive.length > 0 ? 'gwp-kpi-card--red' : 'gwp-kpi-card--muted'}">
+          <div class="gwp-kpi-icon ${inactive.length > 0 ? 'gwp-kpi-icon--red' : 'gwp-kpi-icon--muted'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="23" y2="14"/><line x1="23" y1="8" x2="17" y2="14"/></svg></div>
+          <div class="gwp-kpi-body">
+            <div class="gwp-kpi-value">${inactive.length}</div>
+            <div class="gwp-kpi-label">Revoked</div>
+            <div class="gwp-kpi-sub">access removed</div>
+          </div>
+        </div>
+        <div class="gwp-kpi-card gwp-kpi-card--blue">
+          <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div class="gwp-kpi-body">
+            <div class="gwp-kpi-value">${actions.length}</div>
+            <div class="gwp-kpi-label">Recent Actions</div>
+            <div class="gwp-kpi-sub">last 20 portal events</div>
+          </div>
+        </div>
       </div>
 
-      <div class="portal-info-banner">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7" x2="8" y2="11"/><circle cx="8" cy="5" r=".5" fill="currentColor" stroke="none"/></svg>
+      <div class="gwp-banner">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7" x2="8" y2="11"/><circle cx="8" cy="5" r=".5" fill="currentColor" stroke="none"/></svg>
         Clients access the portal via a secure link. They can view estimates, invoices, and job status. No internal CRM data is exposed.
       </div>
 
-      <div class="portal-section">
-        <h2 class="portal-section-title">Active Access (${active.length})</h2>
-        ${active.length === 0 ? '<div class="portal-empty">No clients currently have portal access.</div>' : active.map(accessRow).join('')}
+      <div class="portal-section" style="margin-top:20px">
+        <div class="gwp-sect-label">Active Access (${active.length})</div>
+        ${active.length === 0 ? '<div class="gwp-empty" style="padding:28px 20px"><div class="gwp-empty-title">No active portal access</div><div class="gwp-empty-sub">No clients currently have portal access.' + (canManage ? '</div><div class="gwp-empty-actions"><button class="gwp-btn-primary" onclick="_portalGrantModal()">+ Grant Portal Access</button></div>' : '</div>') + '</div>' : active.map(accessRow).join('')}
       </div>
 
       ${inactive.length > 0 ? `
       <div class="portal-section" style="margin-top:24px">
-        <h2 class="portal-section-title">Revoked Access (${inactive.length})</h2>
+        <div class="gwp-sect-label">Revoked Access (${inactive.length})</div>
         ${inactive.map(accessRow).join('')}
       </div>` : ''}
 
       <div class="portal-section" style="margin-top:28px">
-        <h2 class="portal-section-title">Recent Portal Activity</h2>
+        <div class="gwp-sect-label">Recent Portal Activity</div>
         ${actions.length === 0
-          ? '<div class="portal-empty">No portal actions recorded yet.</div>'
+          ? '<div class="gwp-empty" style="padding:28px 20px"><div class="gwp-empty-title">No activity yet</div><div class="gwp-empty-sub">No portal actions recorded yet.</div></div>'
           : `<div class="portal-action-header"><span>Action</span><span>Client</span><span>Record</span><span>Date</span></div>` + actions.map(actionRow).join('')}
       </div>
     </div>`;

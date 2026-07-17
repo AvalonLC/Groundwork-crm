@@ -61,18 +61,18 @@ window.gwRecurringPlans = function() {
 };
 
 function _rpShell() {
-  return `<div class="rp-wrap">
-    <div class="rp-topbar">
-      <div class="rp-title-row">
-        ${gwIcon('repeat',20,'#2D7A55')}
-        <h1 class="rp-page-title">Recurring Services</h1>
+  return `<div class="gwp-shell rp-wrap">
+    <header class="gwp-header">
+      <div class="gwp-header-left">
+        <h1 class="gwp-title" style="display:flex;align-items:center;gap:9px">${gwIcon('repeat',20,'#2D7A55')} Recurring Services</h1>
+        <span class="gwp-subtitle">Plans, subscriptions &amp; scheduled visits</span>
       </div>
-      <div id="rpTopbarActions" class="rp-topbar-actions"></div>
-    </div>
-    <div class="rp-tab-bar">
-      <button class="rp-tab${_rpTab==='visits'?' rp-tab--active':''}" onclick="_rpLoadTab('visits')">${gwIcon('calendar',13)} Schedule</button>
-      <button class="rp-tab${_rpTab==='subscriptions'?' rp-tab--active':''}" onclick="_rpLoadTab('subscriptions')">${gwIcon('user',13)} Clients</button>
-      <button class="rp-tab${_rpTab==='plans'?' rp-tab--active':''}" onclick="_rpLoadTab('plans')">${gwIcon('list',13)} Plans</button>
+      <div id="rpTopbarActions" class="gwp-header-actions"></div>
+    </header>
+    <div class="gwp-tab-bar rp-tab-bar" style="max-width:420px">
+      <button class="gwp-tab rp-tab${_rpTab==='visits'?' gwp-tab--active':''}" onclick="_rpLoadTab('visits')">${gwIcon('calendar',13,'currentColor')} Schedule</button>
+      <button class="gwp-tab rp-tab${_rpTab==='subscriptions'?' gwp-tab--active':''}" onclick="_rpLoadTab('subscriptions')">${gwIcon('user',13,'currentColor')} Clients</button>
+      <button class="gwp-tab rp-tab${_rpTab==='plans'?' gwp-tab--active':''}" onclick="_rpLoadTab('plans')">${gwIcon('list',13,'currentColor')} Plans</button>
     </div>
     <div id="rpContent" class="rp-content">
       <div class="rp-loading">${gwIcon('hourglass',20,'#9CA3AF')} Loading…</div>
@@ -83,17 +83,18 @@ function _rpShell() {
 window._rpLoadTab = function(tab) {
   _rpTab = tab;
   document.querySelectorAll('.rp-tab').forEach(t => {
-    t.classList.toggle('rp-tab--active',
-      (tab==='visits'&&t.textContent.includes('Schedule'))||
+    const on = (tab==='visits'&&t.textContent.includes('Schedule'))||
       (tab==='subscriptions'&&t.textContent.includes('Clients'))||
-      (tab==='plans'&&t.textContent.includes('Plans')));
+      (tab==='plans'&&t.textContent.includes('Plans'));
+    t.classList.toggle('rp-tab--active', on);
+    t.classList.toggle('gwp-tab--active', on);
   });
   const actions = document.getElementById('rpTopbarActions');
   if (actions) {
     actions.innerHTML =
-      tab==='plans'         ? `<button class="rp-btn-primary" onclick="_rpOpenPlanBuilder(null)">${gwIcon('plus',13,'#fff')} New Plan</button>` :
-      tab==='subscriptions' ? `<button class="rp-btn-primary" onclick="_rpOpenSubscribeModal()">${gwIcon('plus',13,'#fff')} Subscribe Client</button>` :
-      `<button class="rp-btn-primary" onclick="_rpOpenScheduleVisit()">${gwIcon('plus',13,'#fff')} Schedule Visit</button>`;
+      tab==='plans'         ? `<button class="gwp-btn-primary" onclick="_rpOpenPlanBuilder(null)">${gwIcon('plus',13,'#fff')} New Plan</button>` :
+      tab==='subscriptions' ? `<button class="gwp-btn-primary" onclick="_rpOpenSubscribeModal()">${gwIcon('plus',13,'#fff')} Subscribe Client</button>` :
+      `<button class="gwp-btn-primary" onclick="_rpOpenScheduleVisit()">${gwIcon('plus',13,'#fff')} Schedule Visit</button>`;
   }
   if (tab==='plans')         _rpLoadPlans();
   if (tab==='subscriptions') _rpLoadSubscriptions();
@@ -1195,15 +1196,15 @@ function _rpInjectCSS() {
   style.id = 'rp-styles';
   style.textContent = `
 /* ── Shell ── */
-.rp-wrap { padding:0 0 60px; max-width:1100px; }
+.rp-wrap { }
 .rp-topbar { display:flex;align-items:center;justify-content:space-between;padding:20px 0 0;gap:12px;flex-wrap:wrap; }
 .rp-title-row { display:flex;align-items:center;gap:10px; }
 .rp-page-title { font-size:20px;font-weight:800;color:var(--gw-ink);letter-spacing:-.02em; }
 .rp-topbar-actions { display:flex;gap:8px; }
-.rp-tab-bar { display:flex;gap:4px;margin:14px 0 0;border-bottom:2px solid var(--gw-line);padding-bottom:0; }
-.rp-tab { display:inline-flex;align-items:center;gap:6px;padding:9px 16px;background:transparent;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;font-size:13px;font-weight:600;color:var(--gw-muted);cursor:pointer;font-family:inherit;transition:all .15s; }
-.rp-tab--active { color:#2D7A55;border-bottom-color:#2D7A55; }
-.rp-tab:hover:not(.rp-tab--active) { color:var(--gw-ink); }
+.rp-tab-bar { }
+.rp-tab { }
+.rp-tab--active { }
+
 .rp-content { margin-top:16px; }
 .rp-loading { text-align:center;padding:40px;color:var(--gw-muted);font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px; }
 

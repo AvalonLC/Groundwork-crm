@@ -17,23 +17,27 @@ async function pricing() {
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `
-  <div style="max-width:1180px;margin:0 auto;padding:22px 18px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px">
-      <div>
-        <h1 style="font-size:22px;font-weight:800;margin:0">Services &amp; Pricing</h1>
-        <span style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C)">Your master price book — every service, material, and plant with unit cost and man-hours. Powers the estimate builder and AI quotes.</span>
+  <div class="gwp-shell">
+    <header class="gwp-header">
+      <div class="gwp-header-left" style="flex-direction:column;align-items:flex-start;gap:2px">
+        <h1 class="gwp-title">Services &amp; Pricing</h1>
+        <span class="gwp-subtitle">Your master price book — every service, material, and plant with unit cost and man-hours. Powers the estimate builder and AI quotes.</span>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="est-btn-secondary" onclick="_pbOpenSettings()" id="pb-settings-btn">⚙️ Job Cost Settings</button>
-        <button class="est-btn-secondary" onclick="_pbOpenImport()">⬆ Import CSV / Excel</button>
-        <button class="est-btn-secondary" onclick="_pbExport()" title="Download the whole price book as a CSV you can open in Sheets/Excel">⬇ Export CSV</button>
-        <button class="est-btn-primary" onclick="_pbOpenItem()">+ Add Item</button>
+      <div class="gwp-header-actions">
+        <button class="gwp-btn-ghost" onclick="_pbOpenSettings()" id="pb-settings-btn">⚙️ Job Cost Settings</button>
+        <button class="gwp-btn-ghost" onclick="_pbOpenImport()">⬆ Import CSV / Excel</button>
+        <button class="gwp-btn-ghost" onclick="_pbExport()" title="Download the whole price book as a CSV you can open in Sheets/Excel">⬇ Export CSV</button>
+        <button class="gwp-btn-primary" onclick="_pbOpenItem()">+ Add Item</button>
       </div>
-    </div>
+    </header>
 
-    <div style="display:flex;gap:8px;align-items:center;margin:14px 0 12px;flex-wrap:wrap">
-      <input id="pb-search" placeholder="Search services, materials, plants…" oninput="_pbSearch(this.value)"
-        style="flex:1;min-width:220px;max-width:380px;padding:9px 12px;border:1px solid var(--gw-border,#DDD8CE);border-radius:9px;font-size:13.5px;background:var(--gw-surface,#fff)">
+    <div class="gwp-kpi-row" id="pb-kpi-row" style="display:none"></div>
+
+    <div class="gwp-filter-bar">
+      <div class="gwp-search-wrap">
+        <svg class="gwp-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="5"/><path d="M14 14l-3.5-3.5"/></svg>
+        <input id="pb-search" class="gwp-search-input" placeholder="Search services, materials, plants…" oninput="_pbSearch(this.value)">
+      </div>
       <div id="pb-cat-tabs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
     </div>
 
@@ -61,8 +65,7 @@ async function _pbLoad() {
 function _pbRenderTabs() {
   const el = document.getElementById('pb-cat-tabs');
   if (!el) return;
-  const mk = (id, label, active) => `<button onclick="_pbSetCat('${_pbEsc(id).replace(/'/g, "\\'")}')"
-    style="padding:7px 13px;border-radius:99px;border:1px solid ${active ? 'var(--gw-action,#2D7A55)' : 'var(--gw-border,#DDD8CE)'};font-size:12.5px;font-weight:${active ? 700 : 600};cursor:pointer;background:${active ? 'var(--gw-action,#2D7A55)' : 'var(--gw-surface,#fff)'};color:${active ? '#fff' : 'var(--gw-text,#2F3B33)'}">${_pbEsc(label)}</button>`;
+  const mk = (id, label, active) => `<button class="gwp-chip${active ? ' gwp-chip--active' : ''}" onclick="_pbSetCat('${_pbEsc(id).replace(/'/g, "\\'")}')">${_pbEsc(label)}</button>`;
   el.innerHTML = mk('', `All (${_pbItems.length})`, !_pbActiveCat) +
     _pbCats.map(c => mk(c, c, _pbActiveCat === c)).join('');
 }

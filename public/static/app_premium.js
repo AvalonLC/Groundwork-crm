@@ -10856,19 +10856,23 @@ function _settingsGeneral(){
       </section>` : '';
 
   view.innerHTML = `
-    <div class="eyebrow">Settings</div>
-    <h1>General ${_viewLabel}</h1>
-    <p class="lede">Your account, data tools, and admin controls.</p>
+    <div class="gwp-shell gwp-shell--narrow" style="padding-top:20px">
+    <header class="gwp-header" style="margin-bottom:16px">
+      <div class="gwp-header-left" style="flex-direction:column;align-items:flex-start;gap:2px">
+        <h1 class="gwp-title">General ${_viewLabel}</h1>
+        <span class="gwp-subtitle">Your account, data tools, and admin controls.</span>
+      </div>
+    </header>
 
     <!-- ── YOUR ACCOUNT ── side-by-side: Google | Signature -->
-    <div class="gw-settings-sect">Your Account</div>
+    <div class="gwp-sect-label">Your Account</div>
     <div class="grid grid-2" style="align-items:start">
       <div id="gw-settings-google-wrap"></div>
       <div id="gw-settings-sig-wrap" style="margin-top:0"></div>
     </div>
 
     <!-- ── DATA & BACKUP ── single compact row -->
-    <div class="gw-settings-sect">Data &amp; Backup</div>
+    <div class="gwp-sect-label">Data &amp; Backup</div>
     <div class="grid grid-3" style="align-items:start">
       ${exportCard}
       ${cloudSyncCard}
@@ -10877,7 +10881,7 @@ function _settingsGeneral(){
 
     ${_ia ? `
     <!-- ── ADMINISTRATION ── -->
-    <div class="gw-settings-sect">Administration</div>
+    <div class="gwp-sect-label">Administration</div>
     <div class="gw-comm-tools" style="margin-top:0;margin-bottom:12px">
       <div>
         <div class="gw-comm-tools-title" style="margin-bottom:2px">User &amp; Access Management</div>
@@ -10887,7 +10891,7 @@ function _settingsGeneral(){
     </div>
 
     <!-- ── COMMISSIONS ── collapsed panels, expand on demand ── -->
-    <div class="gw-settings-sect">Commissions</div>
+    <div class="gwp-sect-label">Commissions</div>
     ${accordion('comm-rules', 'Commission Rules', gwIcon('revenue',16,'#2D7A55'), `<div id="comm-rules-panel">${renderCommissionRulesPanel()}</div>`, 'rates, caps &amp; thresholds')}
     ${accordion('comm-sim', 'Commission Simulator', gwIcon('chart',16,'#4D8A86'), `<div id="comm-sim-panel">${renderCommissionSimulator()}</div>`, 'test payout scenarios')}
     ${accordion('comm-audit', 'Commission Audit Trail', gwIcon('notes',16,'#8B6914'), `<div id="comm-audit-panel">${renderCommissionAuditTrail()}</div>`, 'change history')}
@@ -10910,9 +10914,10 @@ function _settingsGeneral(){
     `, 'migration, QA &amp; flags')}
 
     <!-- ── DANGER ZONE ── -->
-    <div class="gw-settings-sect" style="color:#C97B6A">Danger Zone</div>
+    <div class="gwp-sect-label gwp-sect-label--danger">Danger Zone</div>
     ${resetCard}
     ` : ''}
+    </div>
   `;
 
   // Wire accordion toggle globally
@@ -15290,32 +15295,49 @@ function _sbRender() {
 
   view.innerHTML = `
   <div class="sched-shell">
-    <header class="sb-header">
-      <div class="sb-header-left">
-        <h1 class="rp-title">Schedule</h1>
-        <div class="sb-nav-controls">
-          <button class="sb-nav-btn" onclick="_sbNav(-1)">‹</button>
-          <span class="sb-period-label">${headerLabel}</span>
-          <button class="sb-nav-btn" onclick="_sbNav(1)">›</button>
-          <button class="sb-today-btn" onclick="_sbGoToday()">Today</button>
+    <div class="gwp-shell" style="padding-bottom:0">
+      <header class="gwp-header" style="margin-bottom:14px">
+        <div class="gwp-header-left">
+          <h1 class="gwp-title">Schedule</h1>
+          <div class="sb-nav-controls">
+            <button class="sb-nav-btn" onclick="_sbNav(-1)">‹</button>
+            <span class="sb-period-label">${headerLabel}</span>
+            <button class="sb-nav-btn" onclick="_sbNav(1)">›</button>
+            <button class="gwp-chip" onclick="_sbGoToday()">Today</button>
+          </div>
         </div>
-      </div>
-      <div class="sb-header-right">
-        <div class="sb-view-toggle">
-          <button class="sb-view-btn${sb.viewMode==='week'?' active':''}" onclick="_sbSetView('week')">Week</button>
-          <button class="sb-view-btn${sb.viewMode==='month'?' active':''}" onclick="_sbSetView('month')">Month</button>
+        <div class="gwp-header-actions">
+          <div class="sb-view-toggle">
+            <button class="sb-view-btn${sb.viewMode==='week'?' active':''}" onclick="_sbSetView('week')">Week</button>
+            <button class="sb-view-btn${sb.viewMode==='month'?' active':''}" onclick="_sbSetView('month')">Month</button>
+          </div>
+          <button class="gwp-btn-ghost" onclick="show('dispatchBoard')">Dispatch</button>
+          <button class="gwp-btn-primary" onclick="_sbOpenNewVisit(null,null)">+ Work Order</button>
         </div>
-        <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch</button>
-        <button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null,null)">+ Work Order</button>
-      </div>
-    </header>
+      </header>
 
-    <div class="sb-stats-bar">
-      <div class="sb-stat"><span class="sb-stat-num">${totalScheduled}</span><span class="sb-stat-lbl">Scheduled</span></div>
-      ${totalHolds ? `<div class="sb-stat" title="Jobs held on the calendar — waiting for the client to accept the estimate"><span class="sb-stat-num" style="color:#B45309">${totalHolds}</span><span class="sb-stat-lbl" style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#EAB308;display:inline-block"></span>Holds</span></div>` : ''}
-      <div class="sb-stat"><span class="sb-stat-num sb-stat-num--blue">${totalInProgress}</span><span class="sb-stat-lbl">In Progress</span></div>
-      <div class="sb-stat"><span class="sb-stat-num sb-stat-num--green">${totalCompleted}</span><span class="sb-stat-lbl">Completed</span></div>
-      <div class="sb-stat"><span class="sb-stat-num sb-stat-num--muted">${allCrews.length}</span><span class="sb-stat-lbl">Crews</span></div>
+      <div class="gwp-kpi-row${totalHolds ? ' gwp-kpi-row--5' : ''}" style="margin-bottom:14px">
+        <div class="gwp-kpi-card gwp-kpi-card--blue">
+          <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled</div></div>
+        </div>
+        ${totalHolds ? `<div class="gwp-kpi-card gwp-kpi-card--yellow" title="Jobs held on the calendar — waiting for the client to accept the estimate">
+          <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><span style="width:10px;height:10px;border-radius:50%;background:#EAB308;display:inline-block"></span></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalHolds}</div><div class="gwp-kpi-label">Holds</div><div class="gwp-kpi-sub">awaiting acceptance</div></div>
+        </div>` : ''}
+        <div class="gwp-kpi-card">
+          <div class="gwp-kpi-icon gwp-kpi-icon--purple"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalInProgress}</div><div class="gwp-kpi-label">In Progress</div></div>
+        </div>
+        <div class="gwp-kpi-card gwp-kpi-card--green">
+          <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalCompleted}</div><div class="gwp-kpi-label">Completed</div></div>
+        </div>
+        <div class="gwp-kpi-card gwp-kpi-card--muted">
+          <div class="gwp-kpi-icon gwp-kpi-icon--muted"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div></div>
+        </div>
+      </div>
     </div>
 
     ${crewFilterBar}
@@ -16832,9 +16854,12 @@ function dispatchBoard() {
         <div class="disp-crew-jobs">${jobRows}</div>
       </div>`;
   }).join('') || `
-    <div class="rp-empty-state">
-      <p>No active dispatches today.</p>
-      <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Schedule Work Order</button>
+    <div class="gwp-empty" style="margin-bottom:0;padding:36px 20px">
+      <div class="gwp-empty-title">No active dispatches today</div>
+      <div class="gwp-empty-sub">Schedule a work order to see it on the board.</div>
+      <div class="gwp-empty-actions">
+        <button class="gwp-btn-primary" onclick="show('workOrderList')">+ Schedule Work Order</button>
+      </div>
     </div>`;
 
   // Activity feed
@@ -16846,28 +16871,60 @@ function dispatchBoard() {
   }));
   const feedHtml = R ? R.OpsTL(feedEvents) : feedEvents.map(e => `<div style="padding:8px 0;border-bottom:1px solid var(--gw-border)"><strong>${escapeHtml(e.title)}</strong><br><small>${escapeHtml(e.desc)}</small></div>`).join('');
 
+  const _dInProg = wos.filter(w=>w.status==='in-progress').length;
+  const _dSched  = wos.filter(w=>w.status==='scheduled').length;
+  const _dHolds  = wos.filter(w=>w.status==='hold').length;
+  const _dDone   = wos.filter(w=>w.status==='completed').length;
+
   view.innerHTML = `
-  <div class="disp-shell">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <h1 class="rp-title">Dispatch Board</h1>
-        <p class="rp-subtitle">${crewNames.length} crew${crewNames.length!==1?'s':''} · ${wos.filter(w=>w.status==='in-progress').length} in progress</p>
+  <div class="gwp-shell">
+    <header class="gwp-header">
+      <div class="gwp-header-left">
+        <h1 class="gwp-title">Dispatch Board</h1>
+        <span class="gwp-subtitle">${crewNames.length} crew${crewNames.length!==1?'s':''} · ${_dInProg} in progress</span>
       </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule View</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+      <div class="gwp-header-actions">
+        <button class="gwp-btn-ghost" onclick="show('scheduleBoard')">Schedule View</button>
+        <button class="gwp-btn-primary" onclick="show('workOrderList')">+ Work Order</button>
       </div>
     </header>
-    <div>
-      <div class="disp-layout">
-        <div class="disp-crew-panel">
-          <div class="disp-panel-head">Crews</div>
-          ${crewPanels}
+
+    <div class="gwp-kpi-row">
+      <div class="gwp-kpi-card gwp-kpi-card--blue">
+        <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${_dSched}</div><div class="gwp-kpi-label">Scheduled</div></div>
+      </div>
+      <div class="gwp-kpi-card${_dInProg?' gwp-kpi-card--green':''}">
+        <div class="gwp-kpi-icon gwp-kpi-icon--purple"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${_dInProg}</div><div class="gwp-kpi-label">In Progress</div></div>
+      </div>
+      ${_dHolds ? `<div class="gwp-kpi-card gwp-kpi-card--yellow" title="Jobs held — waiting for the client to accept the estimate">
+        <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><span style="width:10px;height:10px;border-radius:50%;background:#EAB308;display:inline-block"></span></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${_dHolds}</div><div class="gwp-kpi-label">Holds</div></div>
+      </div>` : `<div class="gwp-kpi-card gwp-kpi-card--green">
+        <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${_dDone}</div><div class="gwp-kpi-label">Completed</div></div>
+      </div>`}
+      <div class="gwp-kpi-card gwp-kpi-card--muted">
+        <div class="gwp-kpi-icon gwp-kpi-icon--muted"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
+        <div class="gwp-kpi-body"><div class="gwp-kpi-value">${crewNames.length}</div><div class="gwp-kpi-label">Active Crews</div></div>
+      </div>
+    </div>
+
+    <div class="disp-layout" style="grid-template-columns:minmax(300px,380px) 1fr">
+      <div class="gwp-card" id="disp-crew-panel" style="margin-bottom:0">
+        <div class="gwp-card-head">
+          <div class="gwp-card-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
+          <div class="gwp-card-head-text"><div class="gwp-card-title">Crews</div><div class="gwp-card-desc">Today's dispatched jobs by crew</div></div>
         </div>
-        <div class="disp-feed-panel">
-          <div class="disp-panel-head">Activity Feed</div>
-          ${feedHtml || '<p style="color:var(--gw-text-muted);font-style:italic;padding:16px 0">No recent activity.</p>'}
+        <div class="gwp-card-body">${crewPanels}</div>
+      </div>
+      <div class="gwp-card" id="disp-feed-panel" style="margin-bottom:0">
+        <div class="gwp-card-head">
+          <div class="gwp-card-icon gwp-card-icon--blue"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8h3l2-5 3 10 2-5h2"/></svg></div>
+          <div class="gwp-card-head-text"><div class="gwp-card-title">Activity Feed</div><div class="gwp-card-desc">Latest work order updates</div></div>
         </div>
+        <div class="gwp-card-body">${feedHtml || '<p style="color:var(--gw-text-muted);font-style:italic;margin:0">No recent activity.</p>'}</div>
       </div>
     </div>
   </div>`;
@@ -19253,25 +19310,62 @@ function _stmtRender(report, opts) {
     { id:'tax',         label:'Sales Tax'        },
   ];
   const tabHtml = tabs.map(t => `
-    <button class="stmt-tab${window._stmtReport===t.id?' active':''}"
+    <button class="gwp-tab${window._stmtReport===t.id?' gwp-tab--active':''}"
       onclick="window._stmtReport='${t.id}';_stmtRender()">
       ${t.label}
     </button>`).join('');
 
+  // ── KPI row (approved premium style) ──────────────────────────────────────
+  const kpiHtml = `
+    <div class="gwp-kpi-row">
+      <div class="gwp-kpi-card gwp-kpi-card--blue">
+        <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="1" width="12" height="14" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h4"/></svg></div>
+        <div class="gwp-kpi-body">
+          <div class="gwp-kpi-value">${_p5Money(totalBilled)}</div>
+          <div class="gwp-kpi-label">Billed</div>
+          <div class="gwp-kpi-sub">${fInvs.length} invoice${fInvs.length!==1?'s':''} in range</div>
+        </div>
+      </div>
+      <div class="gwp-kpi-card gwp-kpi-card--green">
+        <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
+        <div class="gwp-kpi-body">
+          <div class="gwp-kpi-value">${_p5Money(totalCollected)}</div>
+          <div class="gwp-kpi-label">Collected</div>
+          <div class="gwp-kpi-sub">payments + applied deposits</div>
+        </div>
+      </div>
+      <div class="gwp-kpi-card gwp-kpi-card--yellow">
+        <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
+        <div class="gwp-kpi-body">
+          <div class="gwp-kpi-value">${_p5Money(totalOutstanding)}</div>
+          <div class="gwp-kpi-label">Outstanding</div>
+          <div class="gwp-kpi-sub">open balances</div>
+        </div>
+      </div>
+      <div class="gwp-kpi-card gwp-kpi-card--red">
+        <div class="gwp-kpi-icon gwp-kpi-icon--red"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 1.5l6.5 12h-13z"/><path d="M8 6.5v3.2M8 12h.01"/></svg></div>
+        <div class="gwp-kpi-body">
+          <div class="gwp-kpi-value">${_p5Money(totalOverdue)}</div>
+          <div class="gwp-kpi-label">Overdue</div>
+          <div class="gwp-kpi-sub">past due date</div>
+        </div>
+      </div>
+    </div>`;
+
   // ── Date range bar ─────────────────────────────────────────────────────────
   const rangeHtml = `
-    <div class="stmt-range-bar">
-      <label class="stmt-range-label">From
-        <input type="date" class="stmt-range-input" value="${dateFrom}"
+    <div class="gwp-filter-bar">
+      <label class="stmt-range-label" style="display:flex;align-items:center;gap:7px">From
+        <input type="date" class="gwp-filter-select" value="${dateFrom}"
           onchange="window._stmtDateFrom=this.value;_stmtRender()">
       </label>
-      <label class="stmt-range-label">To
-        <input type="date" class="stmt-range-input" value="${dateTo}"
+      <label class="stmt-range-label" style="display:flex;align-items:center;gap:7px">To
+        <input type="date" class="gwp-filter-select" value="${dateTo}"
           onchange="window._stmtDateTo=this.value;_stmtRender()">
       </label>
-      <button class="stmt-preset" onclick="window._stmtDateFrom='${thisYear}-01-01';window._stmtDateTo='${TODAY}';_stmtRender()">YTD</button>
-      <button class="stmt-preset" onclick="window._stmtDateFrom='${thisMonth}-01';window._stmtDateTo='${TODAY}';_stmtRender()">MTD</button>
-      <button class="stmt-preset" onclick="window._stmtDateFrom='${String(Number(thisYear)-1)}-01-01';window._stmtDateTo='${String(Number(thisYear)-1)}-12-31';_stmtRender()">Last Year</button>
+      <button class="gwp-chip" onclick="window._stmtDateFrom='${thisYear}-01-01';window._stmtDateTo='${TODAY}';_stmtRender()">YTD</button>
+      <button class="gwp-chip" onclick="window._stmtDateFrom='${thisMonth}-01';window._stmtDateTo='${TODAY}';_stmtRender()">MTD</button>
+      <button class="gwp-chip" onclick="window._stmtDateFrom='${String(Number(thisYear)-1)}-01-01';window._stmtDateTo='${String(Number(thisYear)-1)}-12-31';_stmtRender()">Last Year</button>
     </div>`;
 
   // ── Render the active report body ──────────────────────────────────────────
@@ -19604,22 +19698,23 @@ function _stmtRender(report, opts) {
 
   // ── Render full page ───────────────────────────────────────────────────────
   view.innerHTML = `
-  <div class="stmt-shell">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <h1 class="rp-title">Financial Reports</h1>
-        <p class="rp-subtitle">P&L · AR · AP · Revenue · Forecasts · Tax</p>
+  <div class="gwp-shell">
+    <header class="gwp-header">
+      <div class="gwp-header-left">
+        <h1 class="gwp-title">Financial Reports</h1>
+        <span class="gwp-subtitle">P&L · AR · AP · Revenue · Forecasts · Tax</span>
       </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('invoices')">Invoices</button>
-        <button class="rp-btn" onclick="show('payments')">Payments</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('revenueAdmin')">Financial Admin</button>
+      <div class="gwp-header-actions">
+        <button class="gwp-btn-ghost" onclick="show('invoices')">Invoices</button>
+        <button class="gwp-btn-ghost" onclick="show('payments')">Payments</button>
+        <button class="gwp-btn-primary" onclick="show('revenueAdmin')">Financial Admin</button>
       </div>
     </header>
 
-    <nav class="stmt-tab-bar">${tabHtml}</nav>
+    ${kpiHtml}
+    <nav class="gwp-tab-bar">${tabHtml}</nav>
     ${rangeHtml}
-    <div class="stmt-body">${body}</div>
+    <div class="stmt-body" style="padding:0;overflow:visible">${body}</div>
   </div>`;
 }
 window._stmtRender = _stmtRender;
@@ -20688,19 +20783,21 @@ function systemConfig() {
     s.id = 'sc-styles';
     s.textContent = `
       /* ── Layout ── */
-      .sc-page { max-width: 820px; margin: 0 auto; padding: 0 0 60px; }
+      .sc-page { max-width: 920px; margin: 0 auto; padding: 20px 20px 60px; }
 
-      /* ── Sticky save bar ── */
+      /* ── Sticky save bar (approved premium style) ── */
       .sc-topbar {
         position: sticky; top: 0; z-index: 40;
         display: flex; align-items: center; gap: 12px;
-        padding: 10px 0 10px;
-        background: var(--gw-bg, #0f1a0e);
-        border-bottom: 1px solid var(--gw-line);
-        margin-bottom: 24px;
+        padding: 12px 16px;
+        background: var(--gw-surface, #fff);
+        border: 1px solid var(--gw-border, #DDD8CE);
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,.04);
+        margin-bottom: 20px;
       }
-      .sc-topbar-title { font-size: 18px; font-weight: 800; color: var(--gw-ink); letter-spacing: -.02em; flex: 1; }
-      .sc-topbar-sub { font-size: 12px; color: var(--gw-muted); }
+      .sc-topbar-title { font-size: 20px; font-weight: 800; color: var(--gw-text, #1C2B22); letter-spacing: -.02em; flex: 1; }
+      .sc-topbar-sub { font-size: 12px; color: var(--gw-text-muted, #64748b); }
 
       /* ── Primary + secondary buttons ── */
       .sc-btn {
@@ -20720,21 +20817,23 @@ function systemConfig() {
 
       /* ── Section card ── */
       .sc-card {
-        background: var(--gw-surface);
-        border: 1px solid var(--gw-line);
-        border-radius: 16px;
+        background: var(--gw-surface, #fff);
+        border: 1px solid var(--gw-border, #DDD8CE);
+        border-radius: 12px;
         overflow: hidden;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
+        transition: box-shadow .15s;
       }
+      .sc-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.05); }
       .sc-card-head {
         display: flex; align-items: center; gap: 12px;
-        padding: 13px 20px;
-        border-bottom: 1px solid var(--gw-line);
-        background: var(--gw-surface-2);
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--gw-border-soft, #F0EEE8);
+        background: var(--gw-bark-25, #F8F6F0);
       }
       .sc-card-icon {
-        width: 34px; height: 34px; border-radius: 10px;
-        background: rgba(45,122,85,.12);
+        width: 32px; height: 32px; border-radius: 8px;
+        background: #d1fae5; color: #059669;
         display: flex; align-items: center; justify-content: center;
         flex-shrink: 0;
       }

@@ -67,43 +67,43 @@ window.gwInvoices = function() {
 /* ── Shell ──────────────────────────────────────────────────────────────────── */
 function _invShell() {
   return `
-<div class="inv-wrap">
+<div class="gwp-shell inv-wrap">
 
-  <!-- ── Header ── -->
-  <div class="inv-list-header">
-    <div class="inv-list-header-left">
-      <h1 class="inv-list-title">Invoices</h1>
-      <span class="inv-list-subtitle" id="invSubtitle">Loading…</span>
+  <!-- ── Header (approved premium style) ── -->
+  <header class="gwp-header">
+    <div class="gwp-header-left">
+      <h1 class="gwp-title">Invoices</h1>
+      <span class="gwp-subtitle" id="invSubtitle">Loading…</span>
     </div>
-    <div class="inv-list-header-right">
-      <button class="inv-btn-primary" onclick="_invOpenBuilder(null)">
+    <div class="gwp-header-actions">
+      <button class="gwp-btn-primary" onclick="_invOpenBuilder(null)">
         ${gwIcon('plus',13,'#fff')} New Invoice
       </button>
     </div>
-  </div>
+  </header>
 
-  <!-- ── KPI Cards (matches Estimates style) ── -->
-  <div class="inv-kpi-row" id="invKpiRow">
-    <div class="inv-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
-    <div class="inv-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
-    <div class="inv-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
-    <div class="inv-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
+  <!-- ── KPI Cards (approved premium style) ── -->
+  <div class="gwp-kpi-row" id="invKpiRow">
+    <div class="gwp-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
+    <div class="gwp-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
+    <div class="gwp-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
+    <div class="gwp-kpi-card inv-kpi-card--loading"><div class="inv-kpi-shimmer"></div></div>
   </div>
 
   <!-- ── Filter bar ── -->
-  <div class="inv-filter-bar">
-    <div class="inv-search-wrap">
-      <svg class="inv-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="5"/><path d="M14 14l-3.5-3.5"/></svg>
-      <input id="invSearchInput" class="inv-search-input" type="text"
+  <div class="gwp-filter-bar">
+    <div class="gwp-search-wrap">
+      <svg class="gwp-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="5"/><path d="M14 14l-3.5-3.5"/></svg>
+      <input id="invSearchInput" class="gwp-search-input" type="text"
         placeholder="Search client, invoice #, title…" oninput="_invLoadList()" autocomplete="off">
     </div>
     <div class="inv-chip-bar" id="invChipBar">
-      <button class="inv-chip active" data-s="" onclick="_invSetChip(this,'')">All</button>
-      <button class="inv-chip" data-s="draft" onclick="_invSetChip(this,'draft')">Draft</button>
-      <button class="inv-chip" data-s="sent" onclick="_invSetChip(this,'sent')">Sent</button>
-      <button class="inv-chip" data-s="partial" onclick="_invSetChip(this,'partial')">Partial</button>
-      <button class="inv-chip" data-s="paid" onclick="_invSetChip(this,'paid')">Paid</button>
-      <button class="inv-chip" data-s="overdue" onclick="_invSetChip(this,'overdue')">Overdue</button>
+      <button class="gwp-chip gwp-chip--active" data-s="" onclick="_invSetChip(this,'')">All</button>
+      <button class="gwp-chip" data-s="draft" onclick="_invSetChip(this,'draft')">Draft</button>
+      <button class="gwp-chip" data-s="sent" onclick="_invSetChip(this,'sent')">Sent</button>
+      <button class="gwp-chip" data-s="partial" onclick="_invSetChip(this,'partial')">Partial</button>
+      <button class="gwp-chip" data-s="paid" onclick="_invSetChip(this,'paid')">Paid</button>
+      <button class="gwp-chip" data-s="overdue" onclick="_invSetChip(this,'overdue')">Overdue</button>
     </div>
   </div>
 
@@ -117,8 +117,8 @@ function _invShell() {
 
 /* ── Chip filter ────────────────────────────────────────────────────────────── */
 window._invSetChip = function(btn, status) {
-  document.querySelectorAll('.inv-chip').forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
+  document.querySelectorAll('#invChipBar .gwp-chip').forEach(c => c.classList.remove('gwp-chip--active'));
+  btn.classList.add('gwp-chip--active');
   _invCurrentStatus = status;
   _invLoadList();
 };
@@ -178,37 +178,37 @@ function _invUpdateKpis(invoices) {
   if (!kpiRow) return;
 
   kpiRow.innerHTML = `
-    <div class="inv-kpi-card inv-kpi-card--blue" onclick="_invSetChip(document.querySelector('[data-s=sent]'),'sent')">
-      <div class="inv-kpi-top">
-        <div class="inv-kpi-icon inv-kpi-icon--blue">${gwIcon('invoice',16,'#1D4ED8')}</div>
-        <div class="inv-kpi-count">${nOutstanding}</div>
+    <div class="gwp-kpi-card gwp-kpi-card--click gwp-kpi-card--blue" onclick="_invSetChip(document.querySelector('[data-s=sent]'),'sent')">
+      <div class="gwp-kpi-icon gwp-kpi-icon--blue">${gwIcon('invoice',16,'#1D4ED8')}</div>
+      <div class="gwp-kpi-body">
+        <div class="gwp-kpi-value">${_invFmt(outstanding)}</div>
+        <div class="gwp-kpi-label">Outstanding</div>
+        <div class="gwp-kpi-sub">${nOutstanding} invoice${nOutstanding!==1?'s':''} open</div>
       </div>
-      <div class="inv-kpi-value">${_invFmt(outstanding)}</div>
-      <div class="inv-kpi-label">Outstanding</div>
     </div>
-    <div class="inv-kpi-card inv-kpi-card--amber" onclick="_invSetChip(document.querySelector('[data-s=partial]'),'partial')">
-      <div class="inv-kpi-top">
-        <div class="inv-kpi-icon inv-kpi-icon--amber">${gwIcon('payment',16,'#92400E')}</div>
-        <div class="inv-kpi-count">${nPartial}</div>
+    <div class="gwp-kpi-card gwp-kpi-card--click gwp-kpi-card--yellow" onclick="_invSetChip(document.querySelector('[data-s=partial]'),'partial')">
+      <div class="gwp-kpi-icon gwp-kpi-icon--yellow">${gwIcon('payment',16,'#92400E')}</div>
+      <div class="gwp-kpi-body">
+        <div class="gwp-kpi-value">${_invFmt(partials)}</div>
+        <div class="gwp-kpi-label">Deposits / Partials</div>
+        <div class="gwp-kpi-sub">${nPartial} collecting</div>
       </div>
-      <div class="inv-kpi-value">${_invFmt(partials)}</div>
-      <div class="inv-kpi-label">Deposits / Partials Collected</div>
     </div>
-    <div class="inv-kpi-card inv-kpi-card--green" onclick="_invSetChip(document.querySelector('[data-s=paid]'),'paid')">
-      <div class="inv-kpi-top">
-        <div class="inv-kpi-icon inv-kpi-icon--green">${gwIcon('status-accepted',16,'#166534')}</div>
-        <div class="inv-kpi-count">${nPaid}</div>
+    <div class="gwp-kpi-card gwp-kpi-card--click gwp-kpi-card--green" onclick="_invSetChip(document.querySelector('[data-s=paid]'),'paid')">
+      <div class="gwp-kpi-icon gwp-kpi-icon--green">${gwIcon('status-accepted',16,'#166534')}</div>
+      <div class="gwp-kpi-body">
+        <div class="gwp-kpi-value">${_invFmt(paid)}</div>
+        <div class="gwp-kpi-label">Paid</div>
+        <div class="gwp-kpi-sub">${nPaid} settled</div>
       </div>
-      <div class="inv-kpi-value">${_invFmt(paid)}</div>
-      <div class="inv-kpi-label">Paid</div>
     </div>
-    <div class="inv-kpi-card inv-kpi-card--red ${nPastDue > 0 ? 'inv-kpi-card--pulse' : ''}" onclick="_invSetChip(document.querySelector('[data-s=overdue]'),'overdue')">
-      <div class="inv-kpi-top">
-        <div class="inv-kpi-icon inv-kpi-icon--red">${gwIcon('status-expired',16,'#991B1B')}</div>
-        <div class="inv-kpi-count">${nPastDue}</div>
+    <div class="gwp-kpi-card gwp-kpi-card--click gwp-kpi-card--red ${nPastDue > 0 ? 'inv-kpi-card--pulse' : ''}" onclick="_invSetChip(document.querySelector('[data-s=overdue]'),'overdue')">
+      <div class="gwp-kpi-icon gwp-kpi-icon--red">${gwIcon('status-expired',16,'#991B1B')}</div>
+      <div class="gwp-kpi-body">
+        <div class="gwp-kpi-value">${_invFmt(pastDue)}</div>
+        <div class="gwp-kpi-label">Past Due</div>
+        <div class="gwp-kpi-sub">${nPastDue} overdue</div>
       </div>
-      <div class="inv-kpi-value">${_invFmt(pastDue)}</div>
-      <div class="inv-kpi-label">Past Due</div>
     </div>`;
 }
 
@@ -1131,7 +1131,7 @@ function _invInjectCSS() {
   style.textContent = `
 
 /* ── Wrapper ── */
-.inv-wrap { padding: 0 0 60px; max-width: 1200px; }
+.inv-wrap { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
 
 /* ── Header ── */
 .inv-list-header { display:flex; align-items:flex-start; justify-content:space-between; padding:24px 0 0; gap:12px; flex-wrap:wrap; }
