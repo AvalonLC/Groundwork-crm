@@ -17,6 +17,7 @@ import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 import mig0033 from '../migrations/0033_email_templates.sql?raw'
 import mig0034 from '../migrations/0034_price_book_estimate_merge.sql?raw'
+import mig0035 from '../migrations/0035_calendar_sync.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -5129,6 +5130,250 @@ app.delete('/api/google/disconnect', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// GOOGLE CALENDAR SYNC — pull events server-side (via stored refresh token),
+// store in D1, match attendees to leads, drive post-meeting task automation.
+// ══════════════════════════════════════════════════════════════════════════════
+let _cal35SchemaOk = false
+async function ensureCalendarSchema(db: D1Database): Promise<void> {
+  if (_cal35SchemaOk) return
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_cal_v1' LIMIT 1").first<any>()
+  if (flag) { _cal35SchemaOk = true; return }
+  const stmts = mig0035.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensureCalendarSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0035_calendar_sync.sql', '0035_calendar_sync.sql').run()
+  } catch {}
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_cal_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  _cal35SchemaOk = true
+}
+
+// Mint a Google access token server-side from the rep's stored refresh token
+async function _googleAccessToken(db: D1Database, companyId: string, repId: string, env?: Bindings): Promise<{ token?: string; email?: string; error?: string }> {
+  const rec: any = await db.prepare(`SELECT refresh_token, email FROM google_tokens WHERE rep_id=? LIMIT 1`).bind(repId).first()
+  if (!rec) return { error: 'not_connected' }
+  const { clientId, clientSecret } = await _googleClientCreds(db, companyId, env)
+  if (!clientId || !clientSecret) return { error: 'client_not_configured' }
+  const tr = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: rec.refresh_token, client_id: clientId,
+      client_secret: clientSecret, grant_type: 'refresh_token'
+    })
+  })
+  const tj: any = await tr.json()
+  if (!tr.ok || !tj.access_token) {
+    if (tj.error === 'invalid_grant') await db.prepare(`DELETE FROM google_tokens WHERE rep_id=?`).bind(repId).run()
+    return { error: tj.error_description || tj.error || 'refresh_failed' }
+  }
+  return { token: tj.access_token, email: rec.email || '' }
+}
+
+// POST /api/calendar/sync — fetch Google events (past 30d → next 90d), upsert
+// into calendar_events, auto-match attendee emails to leads, and create
+// post-meeting follow-up tasks for matched meetings that have ended.
+app.post('/api/calendar/sync', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  await ensureProposalsSchema(db)
+  await ensureCalendarSchema(db)
+
+  const auth = await _googleAccessToken(db, companyId, repId, c.env)
+  if (!auth.token) return c.json({ ok: false, error: auth.error }, auth.error === 'not_connected' ? 404 : 400)
+
+  const now = new Date()
+  const timeMin = new Date(now.getTime() - 30 * 86400000).toISOString()
+  const timeMax = new Date(now.getTime() + 90 * 86400000).toISOString()
+
+  // Fetch events (paginate up to 3 pages / 750 events)
+  const events: any[] = []
+  let pageToken = ''
+  for (let p = 0; p < 3; p++) {
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=250&singleEvents=true&orderBy=startTime` +
+      `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}` +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${auth.token}` } })
+    if (!r.ok) {
+      const ej: any = await r.json().catch(() => ({}))
+      return c.json({ ok: false, error: ej?.error?.message || `google_http_${r.status}` }, 400)
+    }
+    const j: any = await r.json()
+    events.push(...(j.items || []))
+    pageToken = j.nextPageToken || ''
+    if (!pageToken) break
+  }
+
+  // Lead email index for attendee matching (case-insensitive)
+  const { results: opps } = await db.prepare(
+    `SELECT id, client, email, status, pipeline_stage FROM opportunities WHERE company_id=? AND email != ''`
+  ).bind(companyId).all()
+  const oppByEmail = new Map<string, any>()
+  for (const o of (opps as any[])) oppByEmail.set(String(o.email).trim().toLowerCase(), o)
+
+  // Existing rows: preserve manual links + automation flags
+  const { results: existing } = await db.prepare(
+    `SELECT id, opp_id, opp_match_how, automation_done FROM calendar_events WHERE company_id=? AND rep_id=?`
+  ).bind(companyId, repId).all()
+  const prior = new Map<string, any>()
+  for (const e of (existing as any[])) prior.set(e.id, e)
+
+  let synced = 0, matched = 0, cancelled = 0
+  const nowIso = now.toISOString()
+  const seenIds: string[] = []
+
+  for (const ev of events) {
+    if (!ev.id) continue
+    seenIds.push(ev.id)
+    const isCancelled = ev.status === 'cancelled'
+    if (isCancelled) cancelled++
+    const allDay = !!(ev.start?.date && !ev.start?.dateTime)
+    const startAt = ev.start?.dateTime || ev.start?.date || ''
+    const endAt   = ev.end?.dateTime || ev.end?.date || ''
+    const attendees = (ev.attendees || []).map((a: any) => ({
+      email: a.email || '', name: a.displayName || '', response: a.responseStatus || ''
+    }))
+    // Booking-page bookings: Google marks appointment-schedule events with
+    // eventType, and the description usually carries "Booked via" + the
+    // booker's form answers.
+    const desc = String(ev.description || '')
+    const isBooking = ev.eventType === 'appointment' ||
+      /booked via|appointment schedule|booking page|this event was created from/i.test(desc)
+
+    // Attendee → lead match (skip the rep's own email)
+    const pr = prior.get(ev.id)
+    let oppId = pr?.opp_id || ''
+    let matchHow = pr?.opp_match_how || ''
+    if (!oppId || matchHow === 'attendee_email') {
+      // Try description tag "[opp_xxx]" first (events created from Groundwork)
+      const tagM = desc.match(/\[(opp_[A-Za-z0-9_-]+)\]/)
+      if (tagM) { oppId = tagM[1]; matchHow = 'description_tag' }
+      else {
+        for (const a of attendees) {
+          const em = String(a.email || '').trim().toLowerCase()
+          if (!em || em === String(auth.email).toLowerCase()) continue
+          const o = oppByEmail.get(em)
+          if (o) { oppId = o.id; matchHow = 'attendee_email'; break }
+        }
+      }
+    }
+    if (oppId) matched++
+
+    await db.prepare(`
+      INSERT INTO calendar_events (
+        id, company_id, rep_id, rep_email, summary, description, location,
+        start_at, end_at, all_day, attendees, organizer_email, hangout_link,
+        html_link, color_id, status, event_type, is_booking, opp_id,
+        opp_match_how, automation_done, synced_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET
+        summary=excluded.summary, description=excluded.description,
+        location=excluded.location, start_at=excluded.start_at,
+        end_at=excluded.end_at, all_day=excluded.all_day,
+        attendees=excluded.attendees, hangout_link=excluded.hangout_link,
+        html_link=excluded.html_link, color_id=excluded.color_id,
+        status=excluded.status, is_booking=excluded.is_booking,
+        opp_id=CASE WHEN calendar_events.opp_match_how='manual' THEN calendar_events.opp_id ELSE excluded.opp_id END,
+        opp_match_how=CASE WHEN calendar_events.opp_match_how='manual' THEN 'manual' ELSE excluded.opp_match_how END,
+        synced_at=excluded.synced_at, updated_at=excluded.updated_at
+    `).bind(
+      ev.id, companyId, repId, auth.email || '',
+      ev.summary || '(no title)', desc.slice(0, 4000), ev.location || '',
+      startAt, endAt, allDay ? 1 : 0, JSON.stringify(attendees),
+      ev.organizer?.email || '', ev.hangoutLink || '', ev.htmlLink || '',
+      ev.colorId || '', ev.status || 'confirmed', ev.eventType || '',
+      isBooking ? 1 : 0, oppId, matchHow, pr?.automation_done || 0,
+      nowIso, nowIso
+    ).run()
+    synced++
+  }
+
+  // ── Post-meeting automation: matched, ended, not yet automated ────────────
+  // Creates a "Send post-meeting follow-up email" task on the lead.
+  let tasksCreated = 0
+  const { results: ended } = await db.prepare(`
+    SELECT ce.id, ce.summary, ce.opp_id, ce.end_at, ce.is_booking
+    FROM calendar_events ce
+    WHERE ce.company_id=? AND ce.rep_id=? AND ce.opp_id != ''
+      AND ce.automation_done=0 AND ce.status='confirmed'
+      AND ce.end_at != '' AND ce.end_at <= ? AND ce.end_at >= ?
+  `).bind(companyId, repId, nowIso, timeMin).all()
+
+  for (const m of (ended as any[])) {
+    const opp: any = await db.prepare(`SELECT id, client FROM opportunities WHERE id=? AND company_id=? LIMIT 1`)
+      .bind(m.opp_id, companyId).first()
+    if (!opp) continue
+    // Dedupe: don't create if an open task already references this event
+    const dupe: any = await db.prepare(
+      `SELECT id FROM tasks WHERE company_id=? AND description LIKE ? LIMIT 1`
+    ).bind(companyId, `%[cal:${m.id}]%`).first()
+    if (!dupe) {
+      const taskId = 'task_' + uid()
+      const due = new Date(new Date(m.end_at).getTime() + 4 * 3600000) // due 4h after meeting ends
+      await db.prepare(`
+        INSERT INTO tasks (
+          id, company_id, title, description, task_type,
+          linked_record_type, linked_record_id, linked_record_label,
+          assigned_user_id, assigned_user_label, created_by,
+          due_date, due_time, priority, status,
+          calendar_sync_state, source, created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).bind(
+        taskId, companyId,
+        `Send post-meeting follow-up email — ${opp.client || 'client'}`,
+        `Auto-created after "${m.summary}" ended. Send the post-site-meeting email recapping next steps. [cal:${m.id}]`,
+        'follow_up', 'opportunity', opp.id, opp.client || '',
+        repId, '', repId,
+        due.toISOString().slice(0, 10), due.toISOString().slice(11, 16),
+        'high', 'open', 'none', 'calendar_automation', nowIso, nowIso
+      ).run()
+      tasksCreated++
+    }
+    await db.prepare(`UPDATE calendar_events SET automation_done=1, updated_at=? WHERE id=?`).bind(nowIso, m.id).run()
+  }
+
+  return c.json({ ok: true, data: { synced, matched, cancelled, tasksCreated, syncedAt: nowIso } })
+})
+
+// GET /api/calendar/events?from=&to=&oppId= — synced events from D1 (fast, no Google call)
+app.get('/api/calendar/events', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureCalendarSchema(db)
+  const from  = c.req.query('from') || ''
+  const to    = c.req.query('to') || ''
+  const oppId = c.req.query('oppId') || ''
+  let q = `SELECT * FROM calendar_events WHERE company_id=? AND status != 'cancelled'`
+  const params: any[] = [companyId]
+  if (oppId) { q += ` AND opp_id=?`; params.push(oppId) }
+  if (from)  { q += ` AND start_at >= ?`; params.push(from) }
+  if (to)    { q += ` AND start_at <= ?`; params.push(to) }
+  q += ` ORDER BY start_at ASC LIMIT 500`
+  const { results } = await db.prepare(q).bind(...params).all()
+  ;(results as any[]).forEach(r => { try { r.attendees = JSON.parse(r.attendees || '[]') } catch { r.attendees = [] } })
+  return c.json({ ok: true, data: results })
+})
+
+// PUT /api/calendar/events/:id/link — manually link/unlink an event to a lead
+app.put('/api/calendar/events/:id/link', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureCalendarSchema(db)
+  const id = c.req.param('id')
+  const b = await c.req.json() as any
+  const oppId = String(b.oppId || '')
+  await db.prepare(`UPDATE calendar_events SET opp_id=?, opp_match_how=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(oppId, oppId ? 'manual' : '', id, companyId).run()
+  return c.json({ ok: true })
+})
+
 // ── INVOICES (D1) ─────────────────────────────────────────────────────────────
 
 // GET /api/invoices — list invoices with filters
@@ -7583,7 +7828,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260717b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260717b011">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7607,8 +7852,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260717b010"></script>
-  <script src="/js/client_portal.js?v=20260717b010"></script>
+  <script src="/js/platform_core.js?v=20260717b011"></script>
+  <script src="/js/client_portal.js?v=20260717b011"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8238,9 +8483,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260717b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260717b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260717b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260717b011">
+  <link rel="stylesheet" href="/js/styles.css?v=20260717b011">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260717b011">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -8788,37 +9033,38 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260717b010"></script>
-<script src="/js/db.js?v=20260717b010"></script>
-<script src="/js/data.js?v=20260717b010"></script>
-<script src="/js/reps.js?v=20260717b010"></script>
-<script src="/js/record-page.js?v=20260717b010"></script>
-<script src="/js/academy.js?v=20260717b010"></script>
-<script src="/js/task_engine.js?v=20260717b010"></script>
-<script src="/js/gw_i18n.js?v=20260717b010"></script>
-<script src="/js/app_premium.js?v=20260717b010"></script>
-<script src="/js/estimates.js?v=20260717b010"></script>
-<script src="/js/proposals.js?v=20260717b010"></script>
-<script src="/js/pricing.js?v=20260717b010"></script>
-<script src="/js/invoices.js?v=20260717b010"></script>
-<script src="/js/csv_import.js?v=20260717b010"></script>
-<script src="/js/onboarding.js?v=20260717b010"></script>
-<script src="/js/recurring_plans.js?v=20260717b010"></script>
-<script src="/js/reviews.js?v=20260717b010"></script>
-<script src="/js/stripe.js?v=20260717b010"></script>
-<script src="/js/email.js?v=20260717b010"></script>
-<script src="/js/notifications.js?v=20260717b010"></script>
-<script src="/js/integrations.js?v=20260717b010"></script>
-<script src="/js/user_management.js?v=20260717b010"></script>
-<script src="/js/platform_admin.js?v=20260717b010"></script>
-<script src="/js/time_tracker.js?v=20260717b010"></script>
-<script src="/js/field_workday.js?v=20260717b010"></script>
-<script src="/js/platform_core.js?v=20260717b010"></script>
-<script src="/js/approval_engine.js?v=20260717b010"></script>
-<script src="/js/automation_engine.js?v=20260717b010"></script>
-<script src="/js/client_portal.js?v=20260717b010"></script>
-<script src="/js/field_mode.js?v=20260717b010"></script>
-<script src="/js/assets_hub.js?v=20260717b010"></script>
+<script src="/js/gw-icons.js?v=20260717b011"></script>
+<script src="/js/db.js?v=20260717b011"></script>
+<script src="/js/data.js?v=20260717b011"></script>
+<script src="/js/reps.js?v=20260717b011"></script>
+<script src="/js/record-page.js?v=20260717b011"></script>
+<script src="/js/academy.js?v=20260717b011"></script>
+<script src="/js/task_engine.js?v=20260717b011"></script>
+<script src="/js/gw_i18n.js?v=20260717b011"></script>
+<script src="/js/app_premium.js?v=20260717b011"></script>
+<script src="/js/estimates.js?v=20260717b011"></script>
+<script src="/js/proposals.js?v=20260717b011"></script>
+<script src="/js/pricing.js?v=20260717b011"></script>
+<script src="/js/invoices.js?v=20260717b011"></script>
+<script src="/js/csv_import.js?v=20260717b011"></script>
+<script src="/js/onboarding.js?v=20260717b011"></script>
+<script src="/js/recurring_plans.js?v=20260717b011"></script>
+<script src="/js/reviews.js?v=20260717b011"></script>
+<script src="/js/stripe.js?v=20260717b011"></script>
+<script src="/js/email.js?v=20260717b011"></script>
+<script src="/js/notifications.js?v=20260717b011"></script>
+<script src="/js/integrations.js?v=20260717b011"></script>
+<script src="/js/calendar_sync.js?v=20260717b011"></script>
+<script src="/js/user_management.js?v=20260717b011"></script>
+<script src="/js/platform_admin.js?v=20260717b011"></script>
+<script src="/js/time_tracker.js?v=20260717b011"></script>
+<script src="/js/field_workday.js?v=20260717b011"></script>
+<script src="/js/platform_core.js?v=20260717b011"></script>
+<script src="/js/approval_engine.js?v=20260717b011"></script>
+<script src="/js/automation_engine.js?v=20260717b011"></script>
+<script src="/js/client_portal.js?v=20260717b011"></script>
+<script src="/js/field_mode.js?v=20260717b011"></script>
+<script src="/js/assets_hub.js?v=20260717b011"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

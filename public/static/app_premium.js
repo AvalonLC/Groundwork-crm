@@ -2044,6 +2044,7 @@ const _GW_MYDAY_SPAN_LABEL = { 1:'\u2159', 2:'\u2153', 3:'\u00BD', 4:'\u2154', 5
 const _GW_MYDAY_WIDGETS = [
   { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField,        render:c=>c.pipeStrip },
   { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
+  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>` },
   { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
   { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>` },
   { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>` },
@@ -2344,6 +2345,21 @@ function _gwMyDayBindResize(grid){
 /* ── Owner-operator My Day widget loaders (async, mount-guarded) ───────────── */
 function _gwMyDayLoadOwnerWidgets(rep){
   const _fmt$ = n => Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
+
+  // 0) My Calendar — today's Google Calendar agenda (calendar_sync.js)
+  if (document.getElementById('gw-myday-cal-mount')) {
+    if (typeof window.gwCalRenderMyDayWidget === 'function') {
+      window.gwCalRenderMyDayWidget();
+    } else {
+      // calendar_sync.js not loaded yet — retry briefly
+      let tries = 0;
+      const t = setInterval(() => {
+        tries++;
+        if (typeof window.gwCalRenderMyDayWidget === 'function') { clearInterval(t); window.gwCalRenderMyDayWidget(); }
+        else if (tries > 20 || !document.getElementById('gw-myday-cal-mount')) clearInterval(t);
+      }, 300);
+    }
+  }
 
   // 1) Time Clock — big clock in/out card wired to the time tracker API
   const clockMount = document.getElementById('gw-myday-clock-mount');
@@ -5870,6 +5886,7 @@ function opportunityDetail(id){
                   + (m.calSynced?'<svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="#4D8A86" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round"/></svg>':'')
                   + '</div>').join('');
               })()}
+            <div id="gw-lead-cal-meetings" data-opp="${o.id}"></div>
           </div>
         </div>
       </aside>
