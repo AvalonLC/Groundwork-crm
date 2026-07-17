@@ -206,7 +206,28 @@ you're editing what the **customer sees** vs. **internal pricing**:
 - **Estimate templates** — save the current document (content + workbench cost data,
   minus customer) as a reusable template; apply/delete from a picker on the Document tab.
   Stored via the existing `/api/proposal-templates` endpoints with `content.kind='estimate'`
-  so estimate and proposal templates stay separate.
+  so estimate and proposal templates stay separate. Picker labels show each template's
+  kind (Simple/Proposal · Recurring · # lines).
+
+### Adjustable rates, workbench sections & proposal cover (added 2026-07-17)
+
+- **Per-estimate rate overrides** — a "Rates for this estimate" panel in the Job Cost
+  Engine lets anyone adjust profit %, OHR $/hr, labor rate, sales tax %, warranty %,
+  setup pay, rev/man-hr goal, workday hours, and non-productive hrs for *that estimate
+  only* (blank = company default from Job Cost Settings). Overrides live in
+  `cost_data.rates`, save with the estimate and its templates, show amber ✎ highlights
+  plus a "N custom rates" badge, and are one-click resettable. The recurring calculator
+  has its own panel (maint labor/OHR/profit/escalation/tax → `recurring_data.rates`).
+- **Workbench cost sections** — costed lines group into sheet-style sections
+  (Landscaping, Hardscaping / Drainage, Miscellaneous, Equipment Rental, or custom "+ New
+  section") with per-section highlighted subtotals and a grand total, matching the
+  spreadsheet layout. Price-book picks auto-assign their category as the section.
+- **Proposal mode is visually distinct** — Proposal-mode documents get a full-width
+  branded cover band (brand color gradient, logo, "PROJECT PROPOSAL", title, prepared-for
+  block) in the portal and live preview; Simple stays a clean quote. The builder shows a
+  mode banner explaining what each mode adds.
+- **Price Book export** — "⬇ Export CSV" on Services & Pricing downloads the whole price
+  book (same headers the importer detects, so it round-trips through Sheets/Excel).
 
 ---
 

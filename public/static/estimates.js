@@ -937,7 +937,7 @@ async function estimateBuilder(id) {
     const sel = document.getElementById('est-tpl-select');
     if (sel && _estTemplates.length) {
       const cur = sel.value;
-      sel.innerHTML = `<option value="">Choose a template…</option>` + _estTemplates.map(t => `<option value="${_estEsc(t.id)}">${_estEsc(t.name)}</option>`).join('');
+      sel.innerHTML = `<option value="">Choose a template…</option>` + _estTemplates.map(t => `<option value="${_estEsc(t.id)}">${_estEsc(_estTplOptLabel(t))}</option>`).join('');
       sel.value = cur;
     }
   });
@@ -1052,6 +1052,9 @@ function _estRenderBuilder() {
         <span style="font-size:15px">📄</span>
         <span><b>Customer-facing.</b> Everything on this tab appears on the customer's document${pvOn ? ' — watch it update live on the right' : ' — turn on Live Preview to see it exactly as they will'}. Build your costs & margin in the <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:800">Pricing Workbench</a>.</span>
       </div>
+      ${est.mode === 'advanced'
+        ? `<div style="display:flex;gap:10px;align-items:center;background:rgba(77,138,134,.08);border:1px solid rgba(77,138,134,.3);border-radius:10px;padding:9px 14px;margin:-8px 0 16px;font-size:12px;color:var(--gw-text,#2F3B33)"><span style="font-size:14px">✨</span><span><b>Proposal mode</b> — the customer gets a <b>branded cover page</b>, an <b>Overview</b> section, and <b>Good / Better / Best option tiers</b> they can pick from. Switch to Simple for a quick single-price quote.</span></div>`
+        : `<div style="display:flex;gap:10px;align-items:center;background:rgba(140,140,140,.06);border:1px dashed var(--gw-border,#DDD8CE);border-radius:10px;padding:9px 14px;margin:-8px 0 16px;font-size:12px;color:var(--gw-text-subtle,#5A675F)"><span style="font-size:14px">⚡</span><span><b>Simple mode</b> — a clean, single-price quote. Switch to <a href="javascript:void(0)" onclick="_estSetMode('advanced')" style="color:var(--gw-action,#2D7A55);font-weight:800">Proposal</a> for a branded cover page, overview, and Good / Better / Best options.</span></div>`}
 
       <!-- Section: Templates -->
       <section class="est-builder-section" style="padding:14px 18px">
@@ -1063,7 +1066,7 @@ function _estRenderBuilder() {
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="est-tpl-select" class="est-input" style="font-size:12.5px;min-width:190px;width:auto">
               <option value="">${(_estTemplates||[]).length ? 'Choose a template…' : 'No templates saved yet'}</option>
-              ${(_estTemplates||[]).map(t => `<option value="${_estEsc(t.id)}">${_estEsc(t.name)}</option>`).join('')}
+              ${(_estTemplates||[]).map(t => `<option value="${_estEsc(t.id)}">${_estEsc(_estTplOptLabel(t))}</option>`).join('')}
             </select>
             <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_estTplApply()">Apply</button>
             <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_estTplSave()">Save as template</button>
@@ -1377,6 +1380,14 @@ function _estUpdateLine(idx, field, value) {
   // Update total display in same row
   const totalEl = document.getElementById(`est-li-total-${idx}`);
   if (totalEl) totalEl.textContent = _estFmt(_estDraft.line_items[idx].total);
+  // Workbench tab: update ext cells + section subtotals in place
+  if (field === 'qty') {
+    const li = _estDraft.line_items[idx];
+    const c = document.getElementById(`est-wb-cost-${idx}`), h = document.getElementById(`est-wb-hrs-${idx}`);
+    if (c) c.textContent = _estFmt(Number(li.qty || 1) * Number(li.unit_cost || 0));
+    if (h) h.textContent = (Number(li.qty || 1) * Number(li.unit_time || 0)).toFixed(2) + ' h';
+    if (typeof _estWbRefreshTotals === 'function' && document.getElementById('est-wb-grand-cost')) _estWbRefreshTotals();
+  }
   _estCalcTotals();
 }
 
@@ -1945,11 +1956,34 @@ function _estPortalContentHtml(est, brand, interactive) {
   const depPct   = Number(est.deposit_pct || 30);
   const sc       = _estStatusConfig(est.status);
 
+  const isProposal = est.mode === 'advanced';
+
   return `
   <div class="est-portal-content">
     <!-- Left: Document -->
-    <div class="est-portal-doc">
-      <div class="est-portal-doc-header">
+    <div class="est-portal-doc" style="${isProposal ? 'padding-top:0' : ''}">
+      ${isProposal ? `
+      <!-- PROPOSAL COVER BAND — the visual difference between a simple estimate and a high-level proposal -->
+      <div style="background:linear-gradient(135deg, ${companyColor} 0%, ${companyColor}D9 60%, ${companyColor}B3 100%);color:#fff;border-radius:0 0 18px 18px;padding:34px 34px 28px;margin:0 -1px 26px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+          <div>
+            ${companyLogo ? `<div style="background:#fff;border-radius:10px;padding:7px 12px;display:inline-block;margin-bottom:14px"><img src="${_estEsc(companyLogo)}" alt="${_estEsc(companyName)}" style="max-height:40px;max-width:160px;object-fit:contain;display:block"></div>` : `<div style="font-size:19px;font-weight:900;letter-spacing:.02em;margin-bottom:12px">${_estEsc(companyName)}</div>`}
+            <div style="font-size:11px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;opacity:.85;margin-bottom:6px">Project Proposal</div>
+            <div style="font-size:24px;font-weight:900;line-height:1.2;max-width:520px">${_estEsc(est.title || 'Your Project')}</div>
+            ${companyTagline ? `<div style="font-size:12.5px;opacity:.85;margin-top:8px">${_estEsc(companyTagline)}</div>` : ''}
+          </div>
+          <div style="text-align:right;font-size:11.5px;line-height:1.7;opacity:.92">
+            <div style="margin-bottom:6px"><span class="est-badge ${sc.cls}" style="background:#fff">${sc.label}</span></div>
+            <div style="font-weight:800">${_estEsc(est.est_number || 'EST')}</div>
+            <div>${_estDate(est.estimate_date || est.created_at)}</div>
+            <div style="margin-top:6px">Prepared for</div>
+            <div style="font-weight:800;font-size:13px">${_estEsc(est.client_name || 'You')}</div>
+            ${companyPhone ? `<div style="margin-top:6px">${_estEsc(companyPhone)}</div>` : ''}
+            ${companyWeb ? `<div>${_estEsc(companyWeb)}</div>` : ''}
+          </div>
+        </div>
+      </div>` : ''}
+      <div class="est-portal-doc-header" ${isProposal ? 'style="display:none"' : ''}>
         <div>
           ${companyLogo
             ? `<div class="est-portal-company-logo"><img src="${_estEsc(companyLogo)}" alt="${_estEsc(companyName)}" style="max-height:48px;max-width:180px;object-fit:contain"></div>`
@@ -1974,8 +2008,9 @@ function _estPortalContentHtml(est, brand, interactive) {
 
       <div class="est-portal-greeting">
         <h2>Hello, ${_estEsc((est.client_name || 'there').split(' ')[0])} <span class="est-portal-wave">${gwIcon('wave',22,'var(--gw-primary,#2D7A55)')}</span></h2>
-        <p>Your estimate is ready for review. Please look it over and let us know how you'd like to proceed.</p>
+        <p>${isProposal ? 'Thank you for the opportunity — here is our full proposal for your project. Review the options below and choose the one that fits best.' : 'Your estimate is ready for review. Please look it over and let us know how you\'d like to proceed.'}</p>
       </div>
+
 
       ${est.property_addr ? `
       <div class="est-portal-property">
@@ -2357,6 +2392,7 @@ function _estPBPick(idx, pbId) {
   li.unit_cost = Number(p.unit_cost || 0);
   li.unit_time = Number(p.unit_time || 0);
   li.item_type = p.item_type || 'material';
+  if (!li.group || li.group === 'General') li.group = p.category || 'General';
   // Default customer rate: cost marked up to hit the company's rev/hour goal is
   // engine work — as a starting point, rate = cost (engine sets selling price)
   if (!li.rate) li.rate = Number(p.unit_cost || 0);
@@ -2456,6 +2492,20 @@ function _estEngineData() {
   return cd;
 }
 
+// Effective engine rates: company defaults (_estPS) overridable per-estimate via cd.rates
+function _estEngineRates(cd) {
+  const ps = _estPS || {};
+  const o = (cd && cd.rates) || {};
+  const pick = (k, d) => { const v = o[k]; return (v === '' || v == null || isNaN(Number(v))) ? Number(ps[k] ?? d) : Number(v); };
+  return {
+    tax_pct: pick('tax_pct', 6), warranty_pct: pick('warranty_pct', 10),
+    labor_rate: pick('labor_rate', 27.25), ohr_rate: pick('ohr_rate', 35.08),
+    profit_pct: pick('profit_pct', 22), setup_pay_rate: pick('setup_pay_rate', 35.58),
+    rev_per_hour_goal: pick('rev_per_hour_goal', 86.13), workday_hours: pick('workday_hours', 10),
+    nonprod_hours_per_person_day: pick('nonprod_hours_per_person_day', 1.5),
+  };
+}
+
 function _estEngineCalc() {
   const wrap = document.getElementById('est-engine-results');
   if (!_estDraft) return null;
@@ -2473,31 +2523,32 @@ function _estEngineCalc() {
     if ((li.item_type || 'material') === 'plant') plantCost += cost; else matCost += cost;
     prodHours += qty * ut;
   }
-  const taxPct = Number(ps.tax_pct ?? 6), warrPct = Number(ps.warranty_pct ?? 10);
+  const R = _estEngineRates(cd);
+  const taxPct = R.tax_pct, warrPct = R.warranty_pct;
   const matTax = (matCost + plantCost) * taxPct / 100;
   const warranty = plantCost * warrPct / 100;
   const misc = Number(cd.contingency || 0) + Number(cd.disposal || 0) + Number(cd.pickup || 0);
-  const setupPay = Number(cd.setup_hours || 0) * Number(ps.setup_pay_rate ?? 35.58);
+  const setupPay = Number(cd.setup_hours || 0) * R.setup_pay_rate;
   const equip = Number(cd.equipment_cost || 0);
 
   // Crew / schedule → non-productive hours
   const crew = Math.max(1, Number(cd.crew_size || ps.crew_size_default || 3));
-  const dayHrs = Number(ps.workday_hours ?? 10);
+  const dayHrs = R.workday_hours;
   const days = prodHours > 0 ? Math.max(0.5, Math.ceil((prodHours / dayHrs / crew) * 2) / 2) : 0;
-  const nonprod = Number(ps.nonprod_hours_per_person_day ?? 1.5) * crew * days;
+  const nonprod = R.nonprod_hours_per_person_day * crew * days;
   const budgetHrs = prodHours + nonprod;
 
-  const laborRate = Number(ps.labor_rate ?? 27.25), ohrRate = Number(ps.ohr_rate ?? 35.08);
+  const laborRate = R.labor_rate, ohrRate = R.ohr_rate;
   const labor = budgetHrs * laborRate;
   const ohr = budgetHrs * ohrRate;
 
   const direct = matCost + plantCost + matTax + warranty + misc + setupPay + equip + labor;
   const bep = direct + ohr;
-  const profitPct = Number(ps.profit_pct ?? 22);
+  const profitPct = R.profit_pct;
   const profit = bep * profitPct / 100;
   const selling = bep + profit;
   const revHr = budgetHrs > 0 ? selling / budgetHrs : 0;
-  const goal = Number(ps.rev_per_hour_goal ?? 86.13);
+  const goal = R.rev_per_hour_goal;
 
   const rollup = { mat_cost: matCost, plant_cost: plantCost, mat_tax: matTax, warranty, misc, setup_pay: setupPay,
     equipment: equip, prod_hours: prodHours, nonprod_hours: nonprod, budgeted_hours: budgetHrs, days, crew,
@@ -2566,9 +2617,111 @@ function _estRenderEngine() {
       ${inp('disposal', 'Disposal $', cd.disposal)}
       ${inp('pickup', 'Material pick-up $', cd.pickup)}
     </div>
+    <div id="est-rates-wrap" style="margin-bottom:12px"></div>
     <div id="est-engine-results" style="background:var(--gw-bg,#FAF8F3);border:1px solid var(--gw-border,#EEE9DF);border-radius:10px;padding:14px 16px"></div>`;
+  _estRenderRates();
   _estEngineCalc();
 }
+
+// ── Per-estimate rate overrides panel (profit %, OHR, labor rate, tax, etc.) ──
+const _EST_RATE_FIELDS = [
+  ['profit_pct', 'Profit %', '%'],
+  ['ohr_rate', 'Overhead recovery $/hr', '$'],
+  ['labor_rate', 'Labor rate $/hr', '$'],
+  ['tax_pct', 'Sales tax %', '%'],
+  ['warranty_pct', 'Plant warranty %', '%'],
+  ['setup_pay_rate', 'Setup pay $/hr', '$'],
+  ['rev_per_hour_goal', 'Rev/man-hr goal $', '$'],
+  ['workday_hours', 'Workday hours', 'h'],
+  ['nonprod_hours_per_person_day', 'Non-prod hrs/person/day', 'h'],
+];
+
+function _estRenderRates() {
+  const wrap = document.getElementById('est-rates-wrap');
+  if (!wrap || !_estDraft) return;
+  const cd = _estEngineData();
+  const ps = _estPS || {};
+  const ov = cd.rates || {};
+  const nOver = Object.keys(ov).filter(k => ov[k] !== '' && ov[k] != null && !isNaN(Number(ov[k]))).length;
+  const open = !!cd._rates_open || nOver > 0;
+  const R = _estEngineRates(cd);
+  const defaults = { tax_pct: 6, warranty_pct: 10, labor_rate: 27.25, ohr_rate: 35.08, profit_pct: 22, setup_pay_rate: 35.58, rev_per_hour_goal: 86.13, workday_hours: 10, nonprod_hours_per_person_day: 1.5 };
+  wrap.innerHTML = `
+    <div style="border:1px solid ${nOver ? 'rgba(180,120,40,.45)' : 'var(--gw-border,#EEE9DF)'};border-radius:10px;overflow:hidden;background:${nOver ? 'rgba(240,180,80,.06)' : 'var(--gw-surface,#fff)'}">
+      <button type="button" onclick="_estRatesToggle()" style="width:100%;display:flex;align-items:center;gap:8px;border:none;background:transparent;padding:10px 14px;cursor:pointer;font-size:12.5px;font-weight:800;color:var(--gw-text,#2F3B33);text-align:left">
+        <span style="font-size:13px">${open ? '▾' : '▸'}</span> Rates for this estimate
+        ${nOver
+          ? `<span style="font-size:10.5px;font-weight:800;background:#F5E6C8;color:#8A5A18;padding:2px 9px;border-radius:99px">${nOver} custom rate${nOver !== 1 ? 's' : ''}</span>`
+          : `<span style="font-size:11px;font-weight:600;color:var(--gw-text-subtle,#8A948C)">using company defaults</span>`}
+        <span style="margin-left:auto;font-size:11px;font-weight:600;color:var(--gw-text-subtle,#8A948C)">Profit ${R.profit_pct}% · OHR ${_estFmt(R.ohr_rate)} · Labor ${_estFmt(R.labor_rate)} · Tax ${R.tax_pct}%</span>
+      </button>
+      ${open ? `
+      <div style="padding:2px 14px 12px">
+        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:9px">Adjust any rate for <b>this estimate only</b> — blank = company default (set in <a href="javascript:void(0)" onclick="show&&show('pricing')" style="color:var(--gw-action,#2D7A55);font-weight:700">Job Cost Settings</a>). Overrides save with the estimate and its templates.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px">
+          ${_EST_RATE_FIELDS.map(([k, label]) => {
+            const isOver = ov[k] !== '' && ov[k] != null && !isNaN(Number(ov[k]));
+            const defVal = Number(ps[k] ?? defaults[k]);
+            return `
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:2px;${isOver ? 'color:#8A5A18' : ''}">${label}${isOver ? ' ✎' : ''}</label>
+              <input class="est-input" type="number" min="0" step="any" placeholder="${defVal}" value="${isOver ? ov[k] : ''}"
+                style="font-size:12.5px;padding:7px 9px;${isOver ? 'border-color:rgba(180,120,40,.55);background:rgba(240,180,80,.08)' : ''}"
+                oninput="_estRateField('${k}',this.value)">
+            </div>`;
+          }).join('')}
+        </div>
+        ${nOver ? `<button type="button" style="margin-top:10px;border:none;background:transparent;font-size:11.5px;color:#B4482E;cursor:pointer;text-decoration:underline" onclick="_estRatesReset()">Reset all to company defaults</button>` : ''}
+      </div>` : ''}
+    </div>`;
+}
+
+function _estRatesToggle() {
+  const cd = _estEngineData();
+  cd._rates_open = !cd._rates_open;
+  _estRenderRates();
+}
+function _estRateField(k, v) {
+  const cd = _estEngineData();
+  if (!cd.rates || typeof cd.rates !== 'object') cd.rates = {};
+  if (v === '' || v == null || isNaN(Number(v))) delete cd.rates[k]; else cd.rates[k] = Number(v);
+  cd._rates_open = true;
+  // Live-update the header badge + rate summary in place (no re-render → input keeps focus)
+  const wrap = document.getElementById('est-rates-wrap');
+  if (wrap) {
+    const btn = wrap.querySelector('button');
+    if (btn) {
+      const nOver = Object.keys(cd.rates).filter(x => cd.rates[x] !== '' && cd.rates[x] != null && !isNaN(Number(cd.rates[x]))).length;
+      const spans = btn.querySelectorAll('span');
+      // spans[1] = badge/"using company defaults", spans[2] = rate summary
+      if (spans[1]) {
+        if (nOver) {
+          spans[1].textContent = `${nOver} custom rate${nOver !== 1 ? 's' : ''}`;
+          spans[1].style.cssText = 'font-size:10.5px;font-weight:800;background:#F5E6C8;color:#8A5A18;padding:2px 9px;border-radius:99px';
+        } else {
+          spans[1].textContent = 'using company defaults';
+          spans[1].style.cssText = 'font-size:11px;font-weight:600;color:var(--gw-text-subtle,#8A948C)';
+        }
+      }
+      if (spans[2]) {
+        const R = _estEngineRates(cd);
+        spans[2].textContent = `Profit ${R.profit_pct}% · OHR ${_estFmt(R.ohr_rate)} · Labor ${_estFmt(R.labor_rate)} · Tax ${R.tax_pct}%`;
+      }
+    }
+  }
+  _estCalcTotals();          // re-runs engine + recurring + preview
+  if (typeof _estRecurCalc === 'function' && _estDraft?.doc_type === 'recurring' && document.getElementById('est-recur-summary')) _estRecurCalc();
+}
+function _estRatesReset() {
+  const cd = _estEngineData();
+  cd.rates = {};
+  _estRenderRates();
+  _estCalcTotals();
+  if (typeof _estRecurCalc === 'function' && _estDraft?.doc_type === 'recurring' && document.getElementById('est-recur-summary')) _estRecurCalc();
+}
+window._estRatesToggle = _estRatesToggle;
+window._estRateField = _estRateField;
+window._estRatesReset = _estRatesReset;
 
 function _estEngineField(k, v) {
   const cd = _estEngineData();
@@ -2639,16 +2792,79 @@ function _estRenderRecurring() {
     </div>
     ${rows || '<div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);padding:6px 0">No services yet — add each recurring service below.</div>'}
     <button type="button" class="est-btn-secondary" style="font-size:12.5px;margin:6px 0 12px" onclick="_estRecurAdd()">+ Add service</button>
+    <div id="est-recur-rates" style="margin-bottom:10px"></div>
     <div id="est-recur-summary" style="background:var(--gw-bg,#FAF8F3);border:1px solid var(--gw-border,#EEE9DF);border-radius:10px;padding:14px 16px"></div>`;
+  _estRecurRenderRates();
   _estRecurCalc();
 }
 
-function _estRecurCalc() {
+// Effective recurring rates: company defaults overridable per-estimate via rd.rates
+function _estRecurRates(rd) {
+  const ps = _estPS || {};
+  const o = (rd && rd.rates) || {};
+  const pick = (k, d) => { const v = o[k]; return (v === '' || v == null || isNaN(Number(v))) ? Number(ps[k] ?? d) : Number(v); };
+  return {
+    maint_labor_rate: pick('maint_labor_rate', 26.83), maint_ohr_rate: pick('maint_ohr_rate', 22.62),
+    maint_profit_pct: pick('maint_profit_pct', 22), escalation_pct: pick('escalation_pct', 3),
+    tax_pct: pick('tax_pct', 6),
+  };
+}
+function _estRecurRateField(k, v) {
+  const rd = _estRecurData();
+  if (!rd.rates || typeof rd.rates !== 'object') rd.rates = {};
+  if (v === '' || v == null || isNaN(Number(v))) delete rd.rates[k]; else rd.rates[k] = Number(v);
+  _estRecurCalc();
+  if (typeof _estPvQueue === 'function') _estPvQueue();
+}
+window._estRecurRateField = _estRecurRateField;
+
+// Rates panel for the recurring calculator — rendered once (not on every calc)
+// so typing in a rate field never loses focus.
+function _estRecurRenderRates() {
+  const wrap = document.getElementById('est-recur-rates');
+  if (!wrap || !_estDraft) return;
   const rd = _estRecurData();
   const ps = _estPS || {};
-  const laborR = Number(ps.maint_labor_rate ?? 26.83), ohrR = Number(ps.maint_ohr_rate ?? 22.62);
-  const profitPct = Number(ps.maint_profit_pct ?? 22), escPct = Number(ps.escalation_pct ?? 3);
-  const taxPct = Number(ps.tax_pct ?? 6);
+  const ov = rd.rates || {};
+  const defaults = { maint_labor_rate: 26.83, maint_ohr_rate: 22.62, maint_profit_pct: 22, escalation_pct: 3, tax_pct: 6 };
+  const fields = [
+    ['maint_labor_rate', 'Maint. labor $/hr'], ['maint_ohr_rate', 'Maint. OHR $/hr'],
+    ['maint_profit_pct', 'Profit %'], ['escalation_pct', 'Escalation %/yr'], ['tax_pct', 'Materials tax %'],
+  ];
+  const nOver = fields.filter(([k]) => ov[k] !== '' && ov[k] != null && !isNaN(Number(ov[k]))).length;
+  wrap.innerHTML = `
+    <div style="border:1px solid ${nOver ? 'rgba(180,120,40,.45)' : 'var(--gw-border,#EEE9DF)'};border-radius:10px;padding:11px 14px;background:${nOver ? 'rgba(240,180,80,.06)' : 'var(--gw-surface,#fff)'}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:800">Rates for this contract</span>
+        ${nOver
+          ? `<span style="font-size:10.5px;font-weight:800;background:#F5E6C8;color:#8A5A18;padding:2px 9px;border-radius:99px">${nOver} custom</span>`
+          : `<span style="font-size:11px;font-weight:600;color:var(--gw-text-subtle,#8A948C)">using company defaults</span>`}
+        <span style="margin-left:auto;font-size:11px;color:var(--gw-text-subtle,#8A948C)">blank = default from <a href="javascript:void(0)" onclick="show&&show('pricing')" style="color:var(--gw-action,#2D7A55);font-weight:700">Job Cost Settings</a></span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:9px">
+        ${fields.map(([k, label]) => {
+          const isOver = ov[k] !== '' && ov[k] != null && !isNaN(Number(ov[k]));
+          const defVal = Number(ps[k] ?? defaults[k]);
+          return `
+          <div>
+            <label style="font-size:11px;font-weight:700;display:block;margin-bottom:2px;${isOver ? 'color:#8A5A18' : ''}">${label}${isOver ? ' ✎' : ''}</label>
+            <input class="est-input" type="number" min="0" step="any" placeholder="${defVal}" value="${isOver ? ov[k] : ''}"
+              style="font-size:12px;padding:6px 8px;${isOver ? 'border-color:rgba(180,120,40,.55);background:rgba(240,180,80,.08)' : ''}"
+              oninput="_estRecurRateField('${k}',this.value)">
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+window._estRecurRenderRates = _estRecurRenderRates;
+
+function _estRecurCalc() {
+  const rd = _estRecurData();
+  const RR = _estRecurRates(rd);
+  const laborR = RR.maint_labor_rate, ohrR = RR.maint_ohr_rate;
+  const profitPct = RR.maint_profit_pct, escPct = RR.escalation_pct;
+  const taxPct = RR.tax_pct;
+  const _rOver = (k) => { const o = (rd.rates || {})[k]; return o !== '' && o != null && !isNaN(Number(o)); };
 
   let yearlyCost = 0, yearlyHours = 0;
   rd.services.forEach((s, i) => {
@@ -2694,9 +2910,9 @@ function _estRecurApply() {
   if (!r || !r.monthly || !_estDraft) return;
   _estDraft.line_items = rd.services.filter(s => (s.name || '').trim()).map(s => {
     const occ = Number(s.occurrences || 0);
-    const ps = _estPS || {};
-    const perVisit = Number(s.materials || 0) * (1 + Number(ps.tax_pct ?? 6) / 100) + Number(s.man_hours || 0) * (Number(ps.maint_labor_rate ?? 26.83) + Number(ps.maint_ohr_rate ?? 22.62));
-    const sell = perVisit * (1 + Number(ps.maint_profit_pct ?? 22) / 100);
+    const RR = _estRecurRates(rd);
+    const perVisit = Number(s.materials || 0) * (1 + RR.tax_pct / 100) + Number(s.man_hours || 0) * (RR.maint_labor_rate + RR.maint_ohr_rate);
+    const sell = perVisit * (1 + RR.maint_profit_pct / 100);
     return { id: _estUID(), name: s.name, desc: `${occ} visit${occ !== 1 ? 's' : ''} per year`, qty: occ, rate: Math.round(sell * 100) / 100, total: occ * sell };
   });
   _estDraft.customer_notes = (_estDraft.customer_notes || '').includes('per month') ? _estDraft.customer_notes :
@@ -2953,20 +3169,35 @@ function _estRenderWbLines() {
     return;
   }
   const head = (t, align) => `<span style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--gw-text-subtle,#8A948C);${align ? 'text-align:right' : ''}">${t}</span>`;
+  const GRID = '2fr .95fr .8fr .6fr .85fr .75fr .85fr .85fr 26px';
+  const groupOptions = _estWbGroups();
+
+  // Group lines like the spreadsheet sections (Landscaping / Hardscaping / Misc / Equipment)
+  const groups = [];
+  const byGroup = {};
+  items.forEach((li, i) => {
+    const g = (li.group || '').trim() || 'General';
+    if (!byGroup[g]) { byGroup[g] = []; groups.push(g); }
+    byGroup[g].push(i);
+  });
+
   let totCost = 0, totHours = 0;
-  const rows = items.map((li, i) => {
+  const row = (i) => {
+    const li = items[i];
     const qty = Number(li.qty || 1), uc = Number(li.unit_cost || 0), ut = Number(li.unit_time || 0);
     const extCost = qty * uc, extHrs = qty * ut;
-    totCost += (li.item_type || 'material') === 'labor' ? 0 : extCost;
-    totHours += extHrs;
     return `
-    <div style="display:grid;grid-template-columns:2.2fr .8fr .7fr .9fr .8fr .9fr .9fr 30px;gap:8px;align-items:center;margin-bottom:7px">
+    <div style="display:grid;grid-template-columns:${GRID};gap:7px;align-items:center;margin-bottom:7px">
       <div style="position:relative">
         <input class="est-input" style="font-size:12.5px" placeholder="Item — type to search price book" autocomplete="off" value="${_estEsc(li.name || '')}"
           oninput="_estUpdateLine(${i},'name',this.value);_estPBSuggest(${i},this.value)"
           onblur="setTimeout(()=>{const s=document.getElementById('est-pb-suggest-${i}');if(s)s.innerHTML='';},250)">
         <div id="est-pb-suggest-${i}" style="position:absolute;top:100%;left:0;right:0;z-index:50"></div>
       </div>
+      <select class="est-input" title="Cost section (like your sheet's sections)" style="font-size:12px;padding:7px 6px" onchange="_estWbSetGroup(${i},this.value)">
+        ${groupOptions.map(g => `<option value="${_estEsc(g)}" ${((li.group||'').trim()||'General')===g?'selected':''}>${_estEsc(g)}</option>`).join('')}
+        <option value="__new__">+ New section…</option>
+      </select>
       <select class="est-input" style="font-size:12px;padding:7px 6px" onchange="_estWbField(${i},'item_type',this.value)">
         ${['material','plant','labor','equipment','service'].map(t => `<option value="${t}" ${(li.item_type||'material')===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
       </select>
@@ -2977,19 +3208,76 @@ function _estRenderWbLines() {
       <span style="text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--gw-text-subtle,#5A675F)" id="est-wb-hrs-${i}">${extHrs.toFixed(2)} h</span>
       <button type="button" style="border:none;background:none;color:#B4482E;cursor:pointer;font-size:15px" title="Remove line" onclick="_estRemoveLine(${i})">×</button>
     </div>`;
+  };
+
+  const sections = groups.map(g => {
+    let gCost = 0, gHrs = 0;
+    byGroup[g].forEach(i => {
+      const li = items[i];
+      const qty = Number(li.qty || 1);
+      gCost += (li.item_type || 'material') === 'labor' ? 0 : qty * Number(li.unit_cost || 0);
+      gHrs += qty * Number(li.unit_time || 0);
+    });
+    totCost += gCost; totHours += gHrs;
+    return `
+    <div style="border:1px solid var(--gw-border,#EEE9DF);border-radius:10px;padding:11px 12px 8px;margin-bottom:12px;background:var(--gw-surface,#fff)">
+      <div style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gw-text,#2F3B33);margin-bottom:8px">${_estEsc(g)}</div>
+      ${byGroup[g].map(row).join('')}
+      <div style="display:grid;grid-template-columns:${GRID};gap:7px;border-top:1px dashed var(--gw-border,#DDD8CE);padding-top:7px">
+        <span style="font-size:11.5px;font-weight:800;grid-column:1/7;background:rgba(240,220,120,.28);border-radius:5px;padding:3px 8px">Total ${_estEsc(g)}:</span>
+        <span data-wbg-cost="${_estEsc(g)}" style="text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;align-self:center">${_estFmt(gCost)}</span>
+        <span data-wbg-hrs="${_estEsc(g)}" style="text-align:right;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;align-self:center">${gHrs.toFixed(2)} h</span><span></span>
+      </div>
+      <button type="button" class="est-add-line-btn" style="margin-top:8px;font-size:12px" onclick="_estWbAddLine('${_estEsc(g)}')">+ Add line to ${_estEsc(g)}</button>
+    </div>`;
   }).join('');
+
   wrap.innerHTML = `
-    <div style="display:grid;grid-template-columns:2.2fr .8fr .7fr .9fr .8fr .9fr .9fr 30px;gap:8px;margin-bottom:6px">
-      ${head('Item / Material')}${head('Type')}${head('Qty')}${head('Unit cost')}${head('Hrs / unit')}${head('Ext. cost', 1)}${head('Ext. hours', 1)}<span></span>
+    <div style="display:grid;grid-template-columns:${GRID};gap:7px;margin-bottom:6px;padding:0 12px">
+      ${head('Item / Material')}${head('Section')}${head('Type')}${head('Qty')}${head('Unit cost')}${head('Hrs / unit')}${head('Ext. cost', 1)}${head('Ext. hours', 1)}<span></span>
     </div>
-    ${rows}
-    <div style="display:grid;grid-template-columns:2.2fr .8fr .7fr .9fr .8fr .9fr .9fr 30px;gap:8px;border-top:1.5px solid var(--gw-border,#DDD8CE);padding-top:8px;margin-top:2px">
-      <span style="font-size:12px;font-weight:800;grid-column:1/6">MATERIAL &amp; UNIT TOTALS</span>
-      <span style="text-align:right;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums">${_estFmt(totCost)}</span>
-      <span style="text-align:right;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums">${totHours.toFixed(2)} h</span><span></span>
+    ${sections}
+    <div style="display:grid;grid-template-columns:${GRID};gap:7px;border-top:2px solid var(--gw-text,#2F3B33);padding:9px 12px 0;margin-top:2px">
+      <span style="font-size:12px;font-weight:900;grid-column:1/7">MATERIAL &amp; UNIT TOTALS — ALL SECTIONS</span>
+      <span id="est-wb-grand-cost" style="text-align:right;font-size:12.5px;font-weight:900;font-variant-numeric:tabular-nums">${_estFmt(totCost)}</span>
+      <span id="est-wb-grand-hrs" style="text-align:right;font-size:12.5px;font-weight:900;font-variant-numeric:tabular-nums">${totHours.toFixed(2)} h</span><span></span>
     </div>
-    <button type="button" class="est-add-line-btn" onclick="_estWbAddLine()" style="margin-top:10px">+ Add costed line</button>`;
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <button type="button" class="est-add-line-btn" onclick="_estWbAddLine()">+ Add costed line</button>
+      <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 11px" onclick="_estWbNewGroup()">+ New section</button>
+      <span style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C)">Items pull cost &amp; man-hours from the <a href="javascript:void(0)" onclick="show&&show('pricing')" style="color:var(--gw-action,#2D7A55);font-weight:700">price book</a> — import/export your whole price list there.</span>
+    </div>`;
 }
+
+// Section (group) helpers — mirrors the spreadsheet's cost sections
+const _EST_WB_DEFAULT_GROUPS = ['Landscaping', 'Hardscaping / Drainage', 'Miscellaneous', 'Equipment Rental'];
+function _estWbGroups() {
+  const set = [];
+  const add = (g) => { g = (g || '').trim(); if (g && !set.includes(g)) set.push(g); };
+  (_estDraft?.line_items || []).forEach(li => add(li.group || 'General'));
+  if (!set.length) add('General');
+  _EST_WB_DEFAULT_GROUPS.forEach(add);
+  (_estPB || []).forEach(p => add(p.category));
+  return set;
+}
+function _estWbSetGroup(i, g) {
+  if (!_estDraft?.line_items?.[i]) return;
+  if (g === '__new__') {
+    const name = prompt('New section name (e.g. "Irrigation", "Lighting"):');
+    if (!name || !name.trim()) { _estRenderWbLines(); return; }
+    g = name.trim();
+  }
+  _estDraft.line_items[i].group = g;
+  _estRenderWbLines();
+  _estCalcTotals();
+}
+function _estWbNewGroup() {
+  const name = prompt('New section name (e.g. "Irrigation", "Lighting"):');
+  if (!name || !name.trim()) return;
+  _estWbAddLine(name.trim());
+}
+window._estWbSetGroup = _estWbSetGroup;
+window._estWbNewGroup = _estWbNewGroup;
 window._estRenderWbLines = _estRenderWbLines;
 
 function _estWbField(i, k, v) {
@@ -3000,14 +3288,34 @@ function _estWbField(i, k, v) {
   const c = document.getElementById(`est-wb-cost-${i}`), h = document.getElementById(`est-wb-hrs-${i}`);
   if (c) c.textContent = _estFmt(Number(li.qty || 1) * Number(li.unit_cost || 0));
   if (h) h.textContent = (Number(li.qty || 1) * Number(li.unit_time || 0)).toFixed(2) + ' h';
+  _estWbRefreshTotals();
   _estCalcTotals();
+}
+
+// Live-update section subtotals + grand totals without re-rendering (keeps input focus)
+function _estWbRefreshTotals() {
+  const items = _estDraft?.line_items || [];
+  const per = {}; let tc = 0, th = 0;
+  for (const li of items) {
+    const g = (li.group || '').trim() || 'General';
+    const qty = Number(li.qty || 1);
+    const cost = (li.item_type || 'material') === 'labor' ? 0 : qty * Number(li.unit_cost || 0);
+    const hrs = qty * Number(li.unit_time || 0);
+    per[g] = per[g] || { c: 0, h: 0 }; per[g].c += cost; per[g].h += hrs;
+    tc += cost; th += hrs;
+  }
+  document.querySelectorAll('[data-wbg-cost]').forEach(el => { const g = el.getAttribute('data-wbg-cost'); if (per[g]) el.textContent = _estFmt(per[g].c); });
+  document.querySelectorAll('[data-wbg-hrs]').forEach(el => { const g = el.getAttribute('data-wbg-hrs'); if (per[g]) el.textContent = per[g].h.toFixed(2) + ' h'; });
+  const gc = document.getElementById('est-wb-grand-cost'), gh = document.getElementById('est-wb-grand-hrs');
+  if (gc) gc.textContent = _estFmt(tc);
+  if (gh) gh.textContent = th.toFixed(2) + ' h';
 }
 window._estWbField = _estWbField;
 
-function _estWbAddLine() {
+function _estWbAddLine(group) {
   if (!_estDraft) return;
   _estDraft.line_items = _estDraft.line_items || [];
-  _estDraft.line_items.push({ id: _estUID(), name: '', desc: '', qty: 1, rate: 0, total: 0, unit_cost: 0, unit_time: 0, item_type: 'material' });
+  _estDraft.line_items.push({ id: _estUID(), name: '', desc: '', qty: 1, rate: 0, total: 0, unit_cost: 0, unit_time: 0, item_type: 'material', group: group || 'General' });
   _estRenderWbLines();
 }
 window._estWbAddLine = _estWbAddLine;
@@ -3018,6 +3326,16 @@ window._estWbAddLine = _estWbAddLine;
 // ═══════════════════════════════════════════════════════════════════════════
 
 let _estTemplates = [];
+
+function _estTplOptLabel(t) {
+  const c = t.content || {};
+  const bits = [];
+  bits.push(c.mode === 'advanced' ? 'Proposal' : 'Simple');
+  if (c.doc_type === 'recurring') bits.push('Recurring');
+  if ((c.line_items || []).length) bits.push(`${c.line_items.length} line${c.line_items.length !== 1 ? 's' : ''}`);
+  return `${t.name} — ${bits.join(' · ')}`;
+}
+window._estTplOptLabel = _estTplOptLabel;
 
 async function _estTplLoad() {
   try {
@@ -3040,7 +3358,7 @@ async function _estTplSave() {
     line_items: (d.line_items || []).map(li => ({ ...li })),
     tiers: (d.tiers || []).map(t => ({ ...t })),
     recurring_data: d.recurring_data && Object.keys(d.recurring_data).length ? JSON.parse(JSON.stringify(d.recurring_data)) : {},
-    cost_data: (() => { const cd = { ...(d.cost_data || {}) }; delete cd.rollup; return cd; })(),
+    cost_data: (() => { const cd = { ...(d.cost_data || {}) }; delete cd.rollup; delete cd._rates_open; return cd; })(),
     discount_pct: d.discount_pct || 0, tax_pct: d.tax_pct || 0, deposit_pct: d.deposit_pct ?? 30,
     payment_schedule: (d.payment_schedule || []).map(p => ({ ...p })),
     customer_notes: d.customer_notes || '', terms: d.terms || '',

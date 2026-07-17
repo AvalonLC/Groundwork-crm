@@ -26,6 +26,7 @@ async function pricing() {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="est-btn-secondary" onclick="_pbOpenSettings()" id="pb-settings-btn">⚙️ Job Cost Settings</button>
         <button class="est-btn-secondary" onclick="_pbOpenImport()">⬆ Import CSV / Excel</button>
+        <button class="est-btn-secondary" onclick="_pbExport()" title="Download the whole price book as a CSV you can open in Sheets/Excel">⬇ Export CSV</button>
         <button class="est-btn-primary" onclick="_pbOpenItem()">+ Add Item</button>
       </div>
     </div>
@@ -517,6 +518,32 @@ window._pbOpenSettings = async function() {
       </div>
     </div>
   </div>`;
+};
+
+// Export the entire price book as CSV (opens straight in Sheets / Excel).
+// Round-trips with the importer — same headers it detects.
+window._pbExport = function() {
+  const items = _pbItems || [];
+  if (!items.length) { if (typeof showToast === 'function') showToast('Price book is empty — nothing to export', 'info'); return; }
+  const esc = (v) => {
+    v = String(v ?? '');
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  const header = ['Category', 'Service / Material', 'Unit', 'Unit Cost', 'Unit Time', 'Type', 'SKU', 'Vendor', 'Notes'];
+  const lines = [header.join(',')];
+  // Keep category blocks together like the spreadsheet
+  const sorted = [...items].sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+  for (const it of sorted) {
+    lines.push([esc(it.category), esc(it.name), esc(it.unit), Number(it.unit_cost || 0), Number(it.unit_time || 0), esc(it.item_type), esc(it.sku), esc(it.vendor), esc(it.notes)].join(','));
+  }
+  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `price-book-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  if (typeof showToast === 'function') showToast(`Exported ${items.length} price book item${items.length !== 1 ? 's' : ''}`, 'success');
 };
 
 window._pbSaveSettings = async function() {
