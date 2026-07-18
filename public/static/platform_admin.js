@@ -33,7 +33,7 @@
   const dateStr = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
   const gwI = (name,sz,col) => (typeof gwIcon === 'function') ? gwIcon(name,sz||16,col||'currentColor') : '';
 
-  const PLAN_COLORS = { trial:'#8B6914', starter:'#1A4740', pro:'#4D8A86', enterprise:'#2D7A55', churned:'#C97B6A' };
+  const PLAN_COLORS = { trial:'#8B6914', starter:'#1A4740', core:'#4D8A86', growth:'#2D7A55', pro:'#7B5EA7', enterprise:'#B8860B', churned:'#C97B6A' };
   const STAGE_COLORS = { prospect:'#6F7E6A', qualified:'#4D8A86', demo:'#8B6914', proposal:'#1A4740', negotiation:'#7B5EA7', closed_won:'#2D7A55', closed_lost:'#C97B6A' };
   const PRIORITY_COLORS = { low:'#6F7E6A', medium:'#8B6914', high:'#C97B6A', urgent:'#B03E30' };
   const TICKET_STATUS_COLORS = { open:'#C97B6A', 'in_progress':'#8B6914', waiting:'#4D8A86', resolved:'#2D7A55', closed:'#6F7E6A' };
@@ -179,7 +179,7 @@
     // MRR from the live pricing plan table (falls back to legacy map if empty)
     const priceMap = {};
     pricingPlans.forEach(p => { priceMap[p.id] = p.monthly_price || 0; });
-    if (!Object.keys(priceMap).length) Object.assign(priceMap, {starter:99,pro:249,enterprise:499});
+    if (!Object.keys(priceMap).length) Object.assign(priceMap, {starter:29,core:49,growth:65,pro:85,enterprise:0});
     const mrr = companies.filter(c=>c.active && c.plan !== 'trial')
       .reduce((s,c) => s + (priceMap[c.plan]||0), 0);
     const pendingDemos = recentDemos.filter(d => d.status === 'requested' || d.status === 'scheduled').length;
@@ -293,7 +293,7 @@
     try { companies = await apiGet('/api/admin/companies'); if (!Array.isArray(companies)) companies = []; }
     catch(e) { v.innerHTML = `<div style="padding:60px;text-align:center;color:#C97B6A">Error: ${esc(e.message)}</div>`; return; }
 
-    const PLANS = ['trial','starter','pro','enterprise'];
+    const PLANS = ['trial','starter','core','growth','pro','enterprise'];
 
     v.innerHTML = shell(
       'Customer Tenants',
@@ -303,7 +303,7 @@
       `
       <!-- Filters -->
       <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-        ${['all','trial','starter','pro','enterprise'].map(p => `
+        ${['all','trial','starter','core','growth','pro','enterprise'].map(p => `
         <button onclick="window._gwFilterTenants('${p}')" id="gwTenantFilter_${p}"
           style="padding:7px 16px;border-radius:20px;border:1px solid ${p==='all'?'#4D8A86':'var(--line,#e5e5e0)'};
                  background:${p==='all'?'rgba(77,138,134,.15)':'transparent'};
@@ -427,7 +427,7 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div><label class="um-label">Plan</label>
         <select id="gwT-plan" class="um-input">
-          ${['trial','starter','pro','enterprise'].map(p=>`<option value="${p}" ${(co?.plan||'trial')===p?'selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}
+          ${['trial','starter','core','growth','pro','enterprise'].map(p=>`<option value="${p}" ${(co?.plan||'trial')===p?'selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}
         </select></div>
       <div><label class="um-label">Status</label>
         <select id="gwT-active" class="um-input">
@@ -965,12 +965,18 @@
     try { companies = await apiGet('/api/admin/companies'); if (!Array.isArray(companies)) companies = []; }
     catch(e) { v.innerHTML = `<div style="padding:60px;text-align:center;color:#C97B6A">Error: ${esc(e.message)}</div>`; return; }
 
-    const PLAN_PRICES = { trial:0, starter:99, pro:249, enterprise:499 };
+    // Live prices from the Pricing Plans table (fallback to real base prices)
+    let _plans = [];
+    try { _plans = await apiGet('/api/platform/pricing-plans'); if (!Array.isArray(_plans)) _plans = []; } catch(_) {}
+    const PLAN_PRICES = { trial:0 };
+    _plans.forEach(p => { PLAN_PRICES[p.id] = p.monthly_price || 0; });
+    if (Object.keys(PLAN_PRICES).length <= 1) Object.assign(PLAN_PRICES, {starter:29,core:49,growth:65,pro:85,enterprise:0});
+    const PLAN_IDS = _plans.length ? _plans.map(p=>p.id) : ['starter','core','growth','pro','enterprise'];
     const active = companies.filter(c => c.active);
     const mrr = active.reduce((s,c) => s + (PLAN_PRICES[c.plan]||0), 0);
     const arr = mrr * 12;
     const byPlan = {};
-    ['trial','starter','pro','enterprise'].forEach(p => byPlan[p] = companies.filter(c=>c.plan===p));
+    ['trial',...PLAN_IDS].forEach(p => byPlan[p] = companies.filter(c=>c.plan===p));
 
     v.innerHTML = shell(
       'Billing & Plans',
@@ -988,9 +994,9 @@
 
       <!-- Plan breakdown -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:28px">
-        ${['starter','pro','enterprise'].map(plan => {
+        ${PLAN_IDS.map(plan => {
           const cos = byPlan[plan] || [];
-          const rev = cos.filter(c=>c.active).length * PLAN_PRICES[plan];
+          const rev = cos.filter(c=>c.active).length * (PLAN_PRICES[plan]||0);
           const c = PLAN_COLORS[plan];
           return `
 <div style="background:var(--card,#fff);border:1px solid ${c}44;border-radius:16px;padding:22px">
@@ -1024,7 +1030,7 @@
             <td style="padding:12px 14px;color:#6F7E6A;font-size:12px">${esc(co.owner_email||'—')}</td>
             <td style="padding:12px 14px">
               <select onchange="window._gwChangePlan('${esc(co.id)}',this.value)" style="padding:5px 10px;border-radius:8px;border:1px solid var(--line,#e5e5e0);background:transparent;color:#6F7E6A;font-size:12px;cursor:pointer">
-                ${['trial','starter','pro','enterprise'].map(p=>`<option value="${p}" ${co.plan===p?'selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}
+                ${['trial','starter','core','growth','pro','enterprise'].map(p=>`<option value="${p}" ${co.plan===p?'selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}
               </select>
             </td>
           </tr>`).join('')}
@@ -1214,9 +1220,21 @@
           <td style="padding:10px 8px;text-align:center;font-size:12px;color:#E8E4D9">${fmt(u.platform_actions||0)} <span style="color:#5C6B58">actions</span><div style="font-size:10px;color:#5C6B58">${fmt(u.platform_tokens||0)} tokens</div></td>
           <td style="padding:10px 8px;text-align:center">
             <select onchange="window._gwSetAiPlan('${esc(co.id)}', this.value, this)" style="padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--line,#2A3A38);border-radius:8px;color:#E8E4D9;font-size:12px;cursor:pointer">
-              <option value="starter" ${co.ai_plan==='starter'?'selected':''}>Starter · 200/mo</option>
-              <option value="pro" ${co.ai_plan==='pro'?'selected':''}>Pro · 1,000/mo</option>
-              <option value="unlimited" ${co.ai_plan==='unlimited'?'selected':''}>Unlimited</option>
+              <optgroup label="CRM plan included">
+                <option value="starter" ${co.ai_plan==='starter'?'selected':''}>Starter · 50/mo</option>
+                <option value="core" ${co.ai_plan==='core'?'selected':''}>Core · 100/mo</option>
+                <option value="growth" ${co.ai_plan==='growth'?'selected':''}>Growth · 250/mo</option>
+                <option value="pro" ${co.ai_plan==='pro'?'selected':''}>Pro · 500/mo</option>
+              </optgroup>
+              <optgroup label="AI packages">
+                <option value="essentials" ${co.ai_plan==='essentials'?'selected':''}>AI Essentials · 500/mo</option>
+                <option value="plus" ${co.ai_plan==='plus'?'selected':''}>AI Plus · 1,500/mo</option>
+                <option value="max" ${co.ai_plan==='max'?'selected':''}>AI Max · 5,000/mo</option>
+              </optgroup>
+              <optgroup label="Uncapped">
+                <option value="enterprise" ${co.ai_plan==='enterprise'?'selected':''}>Enterprise · custom</option>
+                <option value="unlimited" ${co.ai_plan==='unlimited'?'selected':''}>Unlimited</option>
+              </optgroup>
             </select>
           </td>
           <td style="padding:10px 8px;text-align:center">${quotaBar}</td>
@@ -1583,14 +1601,16 @@
     const v = view(); if (!v) return;
     v.innerHTML = `<div style="padding:60px;text-align:center;color:#6F7E6A">Loading pricing plans…</div>`;
 
-    let plans = [], companies = [];
+    let plans = [], companies = [], aiPkgs = [];
     try {
-      [plans, companies] = await Promise.all([
+      [plans, companies, aiPkgs] = await Promise.all([
         apiGet('/api/platform/pricing-plans'),
         apiGet('/api/admin/companies').catch(()=>[]),
+        apiGet('/api/platform/ai-packages').catch(()=>[]),
       ]);
       if (!Array.isArray(plans)) plans = [];
       if (!Array.isArray(companies)) companies = [];
+      if (!Array.isArray(aiPkgs)) aiPkgs = [];
     }
     catch(e) { v.innerHTML = `<div style="padding:60px;text-align:center;color:#C97B6A">Error: ${esc(e.message)}</div>`; return; }
 
@@ -1598,54 +1618,126 @@
     companies.forEach(c => { tenantsByPlan[c.plan] = (tenantsByPlan[c.plan]||0) + (c.active?1:0); });
     const totalMrr = plans.reduce((s,p) => s + (p.monthly_price||0) * (tenantsByPlan[p.id]||0), 0);
 
+    const _planCard = p => {
+      const features = (() => { try { return JSON.parse(p.features||'[]'); } catch { return []; } })();
+      const nTenants = tenantsByPlan[p.id]||0;
+      const hasSeats = (p.seat_rep||0) > 0 || (p.seat_field||0) > 0 || (p.seat_office||0) > 0;
+      return `
+        <div style="background:var(--card,#fff);border:1px solid ${p.highlight?'#4D8A86':'var(--line,#e5e5e0)'};border-radius:18px;padding:24px;position:relative;overflow:hidden;${p.active?'':'opacity:.55'};box-shadow:${p.highlight?'0 12px 32px -14px rgba(77,138,134,.45)':'0 1px 3px rgba(0,0,0,.12)'};transition:transform .15s;display:flex;flex-direction:column" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+          ${p.highlight ? '<div style="position:absolute;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,#4D8A86,#2D7A55)"></div><div style="position:absolute;top:14px;right:14px;background:linear-gradient(135deg,#4D8A86,#1A4740);color:#fff;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">MOST POPULAR</div>' : ''}
+          ${!p.active ? '<div style="position:absolute;top:14px;right:14px;background:#6F7E6A22;color:#6F7E6A;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">INACTIVE</div>' : ''}
+          <div style="font-size:13px;font-weight:800;color:${PLAN_COLORS[p.id]||'#4D8A86'};text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${esc(p.name)}</div>
+          ${p.is_custom
+            ? `<div style="font-size:26px;font-weight:900;color:#E8E4D9;letter-spacing:-.02em;margin-bottom:4px">Custom pricing</div>`
+            : `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px">
+                <span style="font-size:13px;color:#6F7E6A">${hasSeats?'Starting at':''}</span>
+                <span style="font-size:34px;font-weight:900;color:#E8E4D9;letter-spacing:-.02em">${fmtMoney(p.monthly_price)}</span>
+                <span style="font-size:13px;color:#6F7E6A">/mo</span>
+              </div>`}
+          ${p.tagline ? `<div style="font-size:12px;color:#6F7E6A;margin-bottom:12px;line-height:1.5">${esc(p.tagline)}</div>` : '<div style="margin-bottom:12px"></div>'}
+          <div style="display:flex;gap:14px;margin-bottom:12px;font-size:12px;color:#6F7E6A;flex-wrap:wrap">
+            <span><strong style="color:#E8E4D9">${p.ai_credits ? fmt(p.ai_credits) : (p.is_custom ? 'Custom' : '∞')}</strong> AI actions/mo</span>
+            ${p.max_reps ? `<span><strong style="color:#E8E4D9">${fmt(p.max_reps)}</strong> rep seat${p.max_reps===1?'':'s'} max</span>` : ''}
+          </div>
+          ${features.length ? `<ul style="margin:0 0 14px;padding:0;list-style:none">${features.map(f=>`<li style="font-size:12px;color:#6F7E6A;padding:3px 0;display:flex;gap:8px;align-items:flex-start"><span style="color:#2D7A55;font-weight:800">✓</span>${esc(f)}</li>`).join('')}</ul>` : ''}
+          ${hasSeats ? `
+          <div style="background:rgba(77,138,134,.06);border:1px solid rgba(77,138,134,.16);border-radius:12px;padding:12px 14px;margin-bottom:14px">
+            <div style="font-size:10px;font-weight:800;color:#4D8A86;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Additional seats / mo</div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:12px">
+              <span style="color:#6F7E6A">Rep/Estimator</span><strong style="color:#E8E4D9;text-align:right">${fmtMoney(p.seat_rep)}</strong>
+              <span style="color:#6F7E6A">Field</span><strong style="color:#E8E4D9;text-align:right">${fmtMoney(p.seat_field)}</strong>
+              <span style="color:#6F7E6A">Office Manager</span><strong style="color:#E8E4D9;text-align:right">${fmtMoney(p.seat_office)}</strong>
+              <span style="color:#6F7E6A">View-only</span><strong style="color:#E8E4D9;text-align:right">${p.viewonly_included?`${p.viewonly_included} incl, then `:''}${fmtMoney(p.seat_viewonly)}</strong>
+            </div>
+          </div>` : (p.id==='starter' ? '<div style="font-size:11px;color:#8B6914;background:rgba(139,105,20,.1);border:1px solid rgba(139,105,20,.25);border-radius:10px;padding:8px 12px;margin-bottom:14px;font-weight:700">Additional seats not available — best for one-person companies</div>' : '')}
+          <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line,#e5e5e0);padding-top:14px;margin-top:auto">
+            <span style="font-size:12px;color:#5C6B58"><strong style="color:#4D8A86">${nTenants}</strong> tenant${nTenants===1?'':'s'}${p.is_custom?'':' · '+fmtMoney((p.monthly_price||0)*nTenants)+'/mo'}</span>
+            <button onclick="window._gwPlanModal('${esc(p.id)}')" style="padding:6px 14px;background:rgba(77,138,134,.12);border:1px solid #4D8A8644;border-radius:8px;color:#4D8A86;font-size:12px;font-weight:700;cursor:pointer">Edit</button>
+          </div>
+        </div>`;
+    };
+
+    const _aiPkgCard = p => {
+      const features = (() => { try { return JSON.parse(p.features||'[]'); } catch { return []; } })();
+      return `
+        <div style="background:var(--card,#fff);border:1px solid ${p.highlight?'#7B5EA7':'var(--line,#e5e5e0)'};border-radius:16px;padding:20px;position:relative;overflow:hidden;${p.active?'':'opacity:.55'};box-shadow:${p.highlight?'0 10px 28px -14px rgba(123,94,167,.5)':'0 1px 3px rgba(0,0,0,.1)'}">
+          ${p.highlight ? '<div style="position:absolute;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,#7B5EA7,#4D8A86)"></div><div style="position:absolute;top:12px;right:12px;background:linear-gradient(135deg,#7B5EA7,#4D8A86);color:#fff;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">MOST POPULAR</div>' : ''}
+          <div style="font-size:12px;font-weight:800;color:#7B5EA7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${esc(p.name)}</div>
+          ${p.is_custom || (!p.monthly_price && !p.ai_actions)
+            ? `<div style="font-size:20px;font-weight:900;color:#E8E4D9;margin-bottom:4px">${p.id==='byok'?'No AI charge':'Contact Sales'}</div>`
+            : `<div style="display:flex;align-items:baseline;gap:5px;margin-bottom:4px">
+                <span style="font-size:26px;font-weight:900;color:#E8E4D9">${fmtMoney(p.monthly_price)}</span><span style="font-size:12px;color:#6F7E6A">/mo</span>
+                <span style="font-size:12px;color:#4D8A86;font-weight:700;margin-left:8px">${fmt(p.ai_actions)} actions</span>
+              </div>`}
+          ${p.description ? `<div style="font-size:11px;color:#6F7E6A;margin-bottom:10px">${esc(p.description)}</div>` : ''}
+          ${features.length ? `<ul style="margin:0 0 12px;padding:0;list-style:none">${features.map(f=>`<li style="font-size:11px;color:#6F7E6A;padding:2px 0;display:flex;gap:7px"><span style="color:#7B5EA7;font-weight:800">✓</span>${esc(f)}</li>`).join('')}</ul>` : ''}
+          <button onclick="window._gwAiPkgModal('${esc(p.id)}')" style="padding:5px 12px;background:rgba(123,94,167,.1);border:1px solid #7B5EA744;border-radius:8px;color:#7B5EA7;font-size:11px;font-weight:700;cursor:pointer">Edit</button>
+        </div>`;
+    };
+
     v.innerHTML = shell(
       'Pricing Plans',
-      'Source of truth for subscription pricing — MRR on the Overview dashboard is computed from these numbers',
+      'Source of truth for subscription + AI pricing — MRR across the platform is computed from these numbers',
       'PLATFORM ADMIN › PRICING',
       `${actionBtn('↺ Refresh','show(\'gwPricing\')')}
        ${primaryBtn('+ New Plan','window._gwPlanModal(null)')}`,
       `
       <div class="gw-pa-stat-grid" style="margin-bottom:26px">
-        ${statCard('Active Plans', fmt(plans.filter(p=>p.active).length), gwI('tag',40,'#4D8A86'), '#4D8A86')}
-        ${statCard('Est. MRR', fmtMoney(totalMrr), gwI('revenue',40,'#2D7A55'), '#2D7A55', 'active tenants × plan price')}
+        ${statCard('CRM Plans', fmt(plans.filter(p=>p.active).length), gwI('tag',40,'#4D8A86'), '#4D8A86')}
+        ${statCard('AI Packages', fmt(aiPkgs.filter(p=>p.active).length), gwI('reports',40,'#7B5EA7'), '#7B5EA7', 'company-wide add-ons')}
+        ${statCard('Est. Base MRR', fmtMoney(totalMrr), gwI('revenue',40,'#2D7A55'), '#2D7A55', 'active tenants × base price')}
         ${statCard('Paying Tenants', fmt(companies.filter(c=>c.active && c.plan!=='trial').length), gwI('building',40,'#1A4740'), '#1A4740')}
       </div>
 
-      <!-- Plan cards -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:26px">
-        ${plans.map(p => {
-          const features = (() => { try { return JSON.parse(p.features||'[]'); } catch { return []; } })();
-          const nTenants = tenantsByPlan[p.id]||0;
-          return `
-        <div style="background:var(--card,#fff);border:1px solid ${p.highlight?'#4D8A86':'var(--line,#e5e5e0)'};border-radius:18px;padding:24px;position:relative;overflow:hidden;${p.active?'':'opacity:.55'};box-shadow:${p.highlight?'0 12px 32px -14px rgba(77,138,134,.45)':'0 1px 3px rgba(0,0,0,.12)'};transition:transform .15s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-          ${p.highlight ? '<div style="position:absolute;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,#4D8A86,#2D7A55)"></div><div style="position:absolute;top:14px;right:14px;background:linear-gradient(135deg,#4D8A86,#1A4740);color:#fff;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">MOST POPULAR</div>' : ''}
-          ${!p.active ? '<div style="position:absolute;top:14px;right:14px;background:#6F7E6A22;color:#6F7E6A;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">INACTIVE</div>' : ''}
-          <div style="font-size:13px;font-weight:800;color:#4D8A86;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">${esc(p.name)}</div>
-          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px">
-            <span style="font-size:34px;font-weight:900;color:#E8E4D9;letter-spacing:-.02em">${fmtMoney(p.monthly_price)}</span>
-            <span style="font-size:13px;color:#6F7E6A">/mo</span>
-          </div>
-          ${p.annual_price ? `<div style="font-size:12px;color:#2D7A55;font-weight:700;margin-bottom:12px">${fmtMoney(p.annual_price)}/mo billed annually</div>` : '<div style="margin-bottom:12px"></div>'}
-          <div style="display:flex;gap:14px;margin-bottom:14px;font-size:12px;color:#6F7E6A">
-            <span><strong style="color:#E8E4D9">${p.ai_credits ? fmt(p.ai_credits) : '∞'}</strong> AI actions/mo</span>
-            <span><strong style="color:#E8E4D9">${p.max_reps ? fmt(p.max_reps) : '∞'}</strong> team members</span>
-          </div>
-          ${features.length ? `<ul style="margin:0 0 16px;padding:0;list-style:none">${features.map(f=>`<li style="font-size:12px;color:#6F7E6A;padding:4px 0;display:flex;gap:8px;align-items:flex-start"><span style="color:#2D7A55;font-weight:800">✓</span>${esc(f)}</li>`).join('')}</ul>` : ''}
-          <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line,#e5e5e0);padding-top:14px">
-            <span style="font-size:12px;color:#5C6B58"><strong style="color:#4D8A86">${nTenants}</strong> tenant${nTenants===1?'':'s'} · ${fmtMoney((p.monthly_price||0)*nTenants)}/mo</span>
-            <button onclick="window._gwPlanModal('${esc(p.id)}')" style="padding:6px 14px;background:rgba(77,138,134,.12);border:1px solid #4D8A8644;border-radius:8px;color:#4D8A86;font-size:12px;font-weight:700;cursor:pointer">Edit</button>
-          </div>
-        </div>`;
-        }).join('')}
+      <!-- CRM Plan cards -->
+      <div style="font-size:13px;font-weight:800;color:#E8E4D9;text-transform:uppercase;letter-spacing:.09em;margin-bottom:14px;display:flex;align-items:center;gap:8px"><span style="width:3px;height:14px;background:#4D8A86;border-radius:2px"></span>CRM Plans</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:32px">
+        ${plans.map(_planCard).join('')}
         ${!plans.length ? '<div style="padding:60px;text-align:center;color:#5C6B58;grid-column:1/-1">No pricing plans found — click "+ New Plan" to create one.</div>' : ''}
+      </div>
+
+      <!-- Field seat volume discounts -->
+      ${panel('Field-Seat Volume Pricing',
+        '<span style="font-size:11px;color:#5C6B58">Applies to field seats only — not Rep/Estimator or Office Manager</span>',
+        `<div style="padding:20px 22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+          <div style="background:rgba(77,138,134,.05);border:1px solid rgba(77,138,134,.15);border-radius:12px;padding:16px;text-align:center">
+            <div style="font-size:22px;font-weight:900;color:#6F7E6A">1–5</div>
+            <div style="font-size:11px;color:#5C6B58;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:4px">field seats</div>
+            <div style="font-size:13px;color:#E8E4D9;font-weight:700;margin-top:8px">Standard rate</div>
+          </div>
+          <div style="background:rgba(45,122,85,.06);border:1px solid rgba(45,122,85,.2);border-radius:12px;padding:16px;text-align:center">
+            <div style="font-size:22px;font-weight:900;color:#2D7A55">6–10</div>
+            <div style="font-size:11px;color:#5C6B58;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:4px">field seats</div>
+            <div style="font-size:13px;color:#2D7A55;font-weight:800;margin-top:8px">10% off field seats</div>
+          </div>
+          <div style="background:rgba(45,122,85,.09);border:1px solid rgba(45,122,85,.3);border-radius:12px;padding:16px;text-align:center">
+            <div style="font-size:22px;font-weight:900;color:#2D7A55">11+</div>
+            <div style="font-size:11px;color:#5C6B58;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:4px">field seats</div>
+            <div style="font-size:13px;color:#2D7A55;font-weight:800;margin-top:8px">15% off or custom pricing</div>
+          </div>
+        </div>`,
+        'margin-bottom:32px'
+      )}
+
+      <!-- AI Packages -->
+      <div style="font-size:13px;font-weight:800;color:#E8E4D9;text-transform:uppercase;letter-spacing:.09em;margin-bottom:6px;display:flex;align-items:center;gap:8px"><span style="width:3px;height:14px;background:#7B5EA7;border-radius:2px"></span>Groundwork AI — Company-Wide Packages</div>
+      <div style="font-size:12px;color:#6F7E6A;margin-bottom:14px">Every CRM plan includes monthly AI actions (Starter 50 · Core 100 · Growth 250 · Pro 500). These optional packages replace the included allowance with a larger company-wide pool. Usage is shared — never charged per employee. No automatic overages.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-bottom:26px">
+        ${aiPkgs.map(_aiPkgCard).join('')}
+        ${!aiPkgs.length ? '<div style="padding:40px;text-align:center;color:#5C6B58;grid-column:1/-1">No AI packages found.</div>' : ''}
       </div>
       <div id="gwPlanModalWrap"></div>
     `);
 
     window._gwAllPlans = plans;
+    window._gwAllAiPkgs = aiPkgs;
     window._gwPlanModal = function(id) {
       const plan = id ? (window._gwAllPlans||[]).find(p=>p.id===id) : null;
       _planModal(plan);
+    };
+    window._gwAiPkgModal = function(id) {
+      const pkg = id ? (window._gwAllAiPkgs||[]).find(p=>p.id===id) : null;
+      _aiPkgModal(pkg);
     };
   }
 
@@ -1668,6 +1760,8 @@
       <div><label class="um-label">Display Name *</label>
         <input id="gwP-name" class="um-input" value="${esc(plan?.name||'')}" placeholder="Starter"></div>
     </div>
+    <div><label class="um-label">Tagline</label>
+      <input id="gwP-tagline" class="um-input" value="${esc(plan?.tagline||'')}" placeholder="For solo operators testing Groundwork."></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div><label class="um-label">Monthly Price ($)</label>
         <input id="gwP-monthly" class="um-input" type="number" min="0" step="1" value="${esc(plan?.monthly_price??'')}" placeholder="99"></div>
@@ -1682,6 +1776,21 @@
       <div><label class="um-label">Sort Order</label>
         <input id="gwP-sort" class="um-input" type="number" min="0" value="${esc(plan?.sort??'')}" placeholder="1"></div>
     </div>
+    <div style="border:1px solid var(--line,#2A3A38);border-radius:12px;padding:14px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6F7E6A;margin-bottom:10px">Per-Seat Pricing ($/mo, 0 = seats not available)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label class="um-label">Rep / Estimator seat</label>
+          <input id="gwP-seatRep" class="um-input" type="number" min="0" step="1" value="${esc(plan?.seat_rep??'')}" placeholder="49"></div>
+        <div><label class="um-label">Field seat</label>
+          <input id="gwP-seatField" class="um-input" type="number" min="0" step="1" value="${esc(plan?.seat_field??'')}" placeholder="25"></div>
+        <div><label class="um-label">Office Manager seat</label>
+          <input id="gwP-seatOffice" class="um-input" type="number" min="0" step="1" value="${esc(plan?.seat_office??'')}" placeholder="89"></div>
+        <div><label class="um-label">View-only seat</label>
+          <input id="gwP-seatView" class="um-input" type="number" min="0" step="1" value="${esc(plan?.seat_viewonly??'')}" placeholder="10"></div>
+        <div><label class="um-label">View-only seats included</label>
+          <input id="gwP-viewIncl" class="um-input" type="number" min="0" value="${esc(plan?.viewonly_included??'')}" placeholder="1"></div>
+      </div>
+    </div>
     <div><label class="um-label">Features (one per line)</label>
       <textarea id="gwP-features" class="um-input" rows="5" placeholder="Full CRM &amp; pipeline&#10;Estimates &amp; invoicing" style="resize:vertical">${esc(features.join('\n'))}</textarea></div>
     <div style="display:flex;gap:24px">
@@ -1690,6 +1799,9 @@
       </label>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
         <input id="gwP-active" type="checkbox" ${(plan?.active??1)?'checked':''} style="width:16px;height:16px;accent-color:#4D8A86"> Active
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+        <input id="gwP-custom" type="checkbox" ${plan?.is_custom?'checked':''} style="width:16px;height:16px;accent-color:#B8860B"> Custom pricing (Contact Sales)
       </label>
     </div>
   </div>
@@ -1715,7 +1827,15 @@
         features:      featureLines,
         highlight:     document.getElementById('gwP-highlight')?.checked ? 1 : 0,
         active:        document.getElementById('gwP-active')?.checked ? 1 : 0,
+        tagline:            document.getElementById('gwP-tagline')?.value?.trim() || '',
+        seat_rep:           parseFloat(document.getElementById('gwP-seatRep')?.value)||0,
+        seat_field:         parseFloat(document.getElementById('gwP-seatField')?.value)||0,
+        seat_office:        parseFloat(document.getElementById('gwP-seatOffice')?.value)||0,
+        seat_viewonly:      parseFloat(document.getElementById('gwP-seatView')?.value)||0,
+        viewonly_included:  parseInt(document.getElementById('gwP-viewIncl')?.value)||0,
+        is_custom:          document.getElementById('gwP-custom')?.checked ? 1 : 0,
       };
+      payload.extra_seats_available = (payload.seat_rep||payload.seat_field||payload.seat_office||payload.seat_viewonly) ? 1 : 0;
       if (!payload.name) { toast('Plan name required'); return; }
       try {
         if (existingId) { await apiPut(`/api/platform/pricing-plans/${existingId}`, payload); toast('Plan updated'); }
@@ -1735,6 +1855,99 @@
         await apiDelete(`/api/platform/pricing-plans/${id}`);
         document.getElementById('gwPlanModalOverlay')?.remove();
         toast('Plan deleted');
+        show('gwPricing');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AI PACKAGE MODAL (create / edit)
+  // ─────────────────────────────────────────────────────────────────────────
+  function _aiPkgModal(pkg) {
+    const isEdit = !!pkg;
+    const features = (() => { try { return JSON.parse(pkg?.features||'[]'); } catch { return []; } })();
+    const el = document.createElement('div');
+    el.id = 'gwAiPkgModalOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:#000c;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML = `
+<div style="background:var(--card,#1E2B29);border:1px solid var(--line,#2A3A38);border-radius:20px;width:min(600px,100%);max-height:92vh;overflow-y:auto;padding:28px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+    <h2 style="margin:0;font-size:18px;font-weight:800;color:#E8E4D9">${isEdit ? 'Edit AI Package — ' + esc(pkg.name) : 'New AI Package'}</h2>
+    <button onclick="document.getElementById('gwAiPkgModalOverlay').remove()" style="background:none;border:none;color:#6F7E6A;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Package ID ${isEdit?'(locked)':'*'}</label>
+        <input id="gwAP-id" class="um-input" value="${esc(pkg?.id||'')}" placeholder="essentials" ${isEdit?'disabled style="opacity:.5"':''}></div>
+      <div><label class="um-label">Display Name *</label>
+        <input id="gwAP-name" class="um-input" value="${esc(pkg?.name||'')}" placeholder="AI Essentials"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div><label class="um-label">Monthly Price ($)</label>
+        <input id="gwAP-monthly" class="um-input" type="number" min="0" step="1" value="${esc(pkg?.monthly_price??'')}" placeholder="12"></div>
+      <div><label class="um-label">AI Actions/mo (0 = custom/∞)</label>
+        <input id="gwAP-actions" class="um-input" type="number" min="0" value="${esc(pkg?.ai_actions??'')}" placeholder="500"></div>
+      <div><label class="um-label">Sort Order</label>
+        <input id="gwAP-sort" class="um-input" type="number" min="0" value="${esc(pkg?.sort??'')}" placeholder="1"></div>
+    </div>
+    <div><label class="um-label">Description</label>
+      <input id="gwAP-desc" class="um-input" value="${esc(pkg?.description||'')}" placeholder="Shared across the company"></div>
+    <div><label class="um-label">Features (one per line)</label>
+      <textarea id="gwAP-features" class="um-input" rows="5" placeholder="500 total AI actions&#10;Shared across the company" style="resize:vertical">${esc(features.join('\n'))}</textarea></div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+        <input id="gwAP-highlight" type="checkbox" ${pkg?.highlight?'checked':''} style="width:16px;height:16px;accent-color:#7B5EA7"> "Most Popular" badge
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+        <input id="gwAP-custom" type="checkbox" ${pkg?.is_custom?'checked':''} style="width:16px;height:16px;accent-color:#B8860B"> Custom pricing (Contact Sales)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+        <input id="gwAP-active" type="checkbox" ${(pkg?.active??1)?'checked':''} style="width:16px;height:16px;accent-color:#4D8A86"> Active
+      </label>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px">
+    ${isEdit ? dangerBtn('Delete Package',`window._gwDeleteAiPkg('${esc(pkg.id)}')`) : '<span></span>'}
+    <div style="display:flex;gap:10px">
+      <button class="secondary-btn" onclick="document.getElementById('gwAiPkgModalOverlay').remove()">Cancel</button>
+      <button class="primary-btn" onclick="window._gwSaveAiPkg('${esc(pkg?.id||'')}')">${isEdit ? 'Save' : 'Create Package'}</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(el);
+
+    window._gwSaveAiPkg = async function(existingId) {
+      const featureLines = (document.getElementById('gwAP-features')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+      const payload = {
+        name:          document.getElementById('gwAP-name')?.value?.trim(),
+        monthly_price: parseFloat(document.getElementById('gwAP-monthly')?.value)||0,
+        ai_actions:    parseInt(document.getElementById('gwAP-actions')?.value)||0,
+        description:   document.getElementById('gwAP-desc')?.value?.trim() || '',
+        features:      featureLines,
+        highlight:     document.getElementById('gwAP-highlight')?.checked ? 1 : 0,
+        is_custom:     document.getElementById('gwAP-custom')?.checked ? 1 : 0,
+        active:        document.getElementById('gwAP-active')?.checked ? 1 : 0,
+        sort:          parseInt(document.getElementById('gwAP-sort')?.value)||0,
+      };
+      if (!payload.name) { toast('Package name required'); return; }
+      try {
+        if (existingId) { await apiPut(`/api/platform/ai-packages/${existingId}`, payload); toast('AI package updated'); }
+        else {
+          const id = document.getElementById('gwAP-id')?.value?.trim();
+          if (!id) { toast('Package ID required'); return; }
+          await apiPost('/api/platform/ai-packages', Object.assign({ id }, payload));
+          toast('AI package created');
+        }
+        document.getElementById('gwAiPkgModalOverlay')?.remove();
+        show('gwPricing');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwDeleteAiPkg = async function(id) {
+      if (!confirm(`Delete the "${id}" AI package? Tenants assigned to it fall back to their CRM plan's included AI allowance.`)) return;
+      try {
+        await apiDelete(`/api/platform/ai-packages/${id}`);
+        document.getElementById('gwAiPkgModalOverlay')?.remove();
+        toast('AI package deleted');
         show('gwPricing');
       } catch(e) { toast('Error: ' + e.message); }
     };

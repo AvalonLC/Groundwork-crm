@@ -391,6 +391,16 @@ Edit `public/js/gw_i18n.js`:
 - **Flat action bar**: "More ▾" dropdown dissolved — Edit / Email / Preview / Duplicate / Convert to Invoice / Delete all visible.
 - **Schedule to Job button**: always prominent. Before client acceptance it places a YELLOW "hold" on the chosen day (`work_orders.status='hold'`); when the client accepts (internal accept, portal approve, or proposal accept) all holds auto-flip GREEN to `scheduled`; decline releases them to `cancelled` (red). Traffic-light dots on schedule board week cards, month dots/chips, mobile cards; Holds counter in the stats bar.
 
+## Real Pricing Import (T21)
+- **Migration 0038** (`0038_real_pricing_import.sql`): extends `gw_pricing_plans` with per-seat pricing (`tagline`, `seat_rep`, `seat_field`, `seat_office`, `seat_viewonly`, `viewonly_included`, `extra_seats_available`, `is_custom`); creates `gw_ai_packages`; purges placeholder plans; seeds the real Groundwork pricing.
+- **CRM Plans** (base = 1 Rep/Estimator seat): Starter $29 (50 AI, no extra seats), Core $49 (100 AI; seats $49/$25/$89, 1 view-only incl then $10), Growth $65 ★Most Popular (250 AI; $65/$30/$105, 3 incl), Pro $85 (500 AI; $85/$35/$135, 5 incl), Enterprise custom.
+- **Field-seat volume discounts** (settings key `gw_field_seat_discounts`): 1–5 standard, 6–10 = 10% off, 11+ = 15% off / custom (field seats only).
+- **AI Packages** (`gw_ai_packages`): Essentials $12/500, Plus $29/1,500 ★, Max $59/5,000, Custom AI (contact sales), BYOK (no AI charge).
+- **AI quota caps** (`AI_PLAN_CAPS`) now match: starter 50 / core 100 / growth 250 / pro 500 / essentials 500 / plus 1500 / max 5000 / enterprise & unlimited uncapped. BYOK never capped; per-company override via `{companyId}:ai_custom_cap`.
+- **New API**: `GET/POST/PUT/DELETE /api/platform/ai-packages` (super-admin only). Pricing-plans CRUD accepts the 8 new seat/custom fields.
+- **Self-heal**: `ensureGwOpsSchema` flag bumped to `_schema_gwops_v2` and runs migrations 0037+0038, so production picks up the new schema + seed on the first platform/demos/pricing API call after deploy.
+- **UI**: Pricing Plans view rebuilt — plan cards with seat-pricing tables & "Starting at $X/mo", Field-Seat Volume Pricing panel, AI package cards (purple theme), stat row (Est. Base MRR). Plan modal now edits tagline/seat prices/view-only included/custom flag; new AI-package modal with full CRUD. Platform Settings AI dropdown grouped: CRM-included / AI packages / Uncapped.
+
 ## Platform Admin Remodel (T20 — Phase A)
 - **Full-width premium layout**: `shell()` in platform_admin.js no longer caps at 1280px — pages stretch to the window with a gradient hero header band; stat cards (hover lift, gradient accents) and panels (accent-bar titles, row hover) restyled. New CSS section 63 in groundwork-design.css (`gw-pa-shell`, `gw-pa-stat-grid`, `gw-pa-panel`).
 - **Demo Requests** (`gwDemos` view + `/api/platform/demos` CRUD + `POST /api/platform/demos/:id/convert` → gw_leads): tracks demos from groundwork-crm.info (status: requested/scheduled/completed/no_show/converted/cancelled).
