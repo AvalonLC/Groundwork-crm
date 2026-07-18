@@ -432,3 +432,13 @@ Edit `public/js/gw_i18n.js`:
 - **Public demo intake**: `POST /api/public/demo-request` (no auth; honeypot `website_url` field; 3/email/day rate limit; email+name validation) — wire groundwork-crm.info forms to this. Payload: `{name, email, company?, phone?, message?, source_page?}`.
 - **Google Workspace card** in Platform Settings: connect tyler@groundwork-crm.com via existing OAuth flow (`window.gwGoogleOAuthConnect`), status/disconnect wired to `/api/google/status|disconnect`.
 - **Schema**: migration 0037 (gw_demos + gw_pricing_plans) with prod self-heal `ensureGwOpsSchema` (`_schema_gwops_v1` flag).
+
+## Groundwork AI Setup Copilot (T26)
+- **`public/js/gw_copilot.js`** — gamified onboarding layer on top of the existing wizard + checklist (nothing removed/replaced):
+  - **Spotlight guided tours** (10, keyed to Getting Started items `cl_*`): dims the app, navigates to the right view, highlights the exact button with a pulsing green ring, shows step cards with pro tips. `clickToAdvance` steps let the user do the real action; clicking the highlighted target advances the tour. Element finding is resilient (CSS selector → visible-text fallback, polling `waitForEl`).
+  - **AI chat panel** (✨ Groundwork AI): context-aware — sends current view + live checklist status to `/api/ai/copilot`; answers how-to questions and returns an optional `tour` id, rendered as a "✨ Show me" button that launches the matching spotlight tour. Suggestion chips; graceful fallback to tours when AI is not enabled.
+  - **Celebrations**: confetti on tour finish and on NEW checklist completions (localStorage-tracked delta); 🏆 full-screen "Setup Complete!" moment at 100%; wizard finish now fires confetti + surfaces the Getting Started launcher.
+- **`POST /api/ai/copilot`** (src/index.tsx, after checklist POST): reuses `_aiCreds` (BYOK → platform key → env), `_aiQuotaGate`, `_logAiUsage` (feature `copilot`). System prompt encodes real app navigation facts + valid tour ids; returns `{answer, tour|null}` (tour id validated `^cl_[a-z_]+$`).
+- **Getting Started panel** (onboarding.js): each undone item now has a green "✨ Show me" tour button above the existing CTA; footer button opens the AI chat. Version `v20260718t26`.
+- Script tag added after onboarding.js in index.tsx (`gw_copilot.js?v=20260718t26`).
+- E2E-verified: 10 tours registered, cl_client tour navigates + spotlights "+ Add Client" with pulse ring, chat opens with 4 chips, chip launches tour, GS panel shows Show-me/Ask-AI. Deployed `71d77e1`, prod-verified.
