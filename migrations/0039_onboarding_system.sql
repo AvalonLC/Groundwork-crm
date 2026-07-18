@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_gw_onb_prog_subject ON gw_onboarding_progress(sub
 -- ── Seed: templates ─────────────────────────────────────────────────────────
 INSERT OR IGNORE INTO gw_onboarding_templates (id, type, name, description, sort) VALUES
   ('sales_default', 'sales', 'Sales Onboarding Playbook', 'Internal checklist from demo to go-live. Attached to every demo request.', 1),
-  ('wizard_default', 'customer_wizard', 'New Company Signup Wizard', 'The first-login setup wizard every new tenant admin sees. Built-in steps are locked; add custom questions below.', 2),
+  ('wizard_default', 'customer_wizard', 'New Company Signup Wizard', 'The first-login setup wizard every new tenant admin sees. Built-in steps are locked — add custom questions below.', 2),
   ('checklist_default', 'tenant_checklist', 'Getting Started Checklist', 'Shown inside every new tenant account after the wizard. Auto-detects completion where possible.', 3);
 
 -- ── Seed: sales playbook steps ──────────────────────────────────────────────
@@ -56,12 +56,12 @@ INSERT OR IGNORE INTO gw_onboarding_steps (id, template_id, title, description, 
   ('sp_demo_done',    'sales_default', 'Demo delivered',                    'Walk through pipeline, estimates, invoicing, scheduling, AI features.', 1, 2),
   ('sp_needs',        'sales_default', 'Needs assessment',                  'Team size, seat counts (rep/field/office), must-have features, current tools, data to import.', 1, 3),
   ('sp_proposal',     'sales_default', 'Proposal & pricing sent',           'Plan recommendation + seat pricing + AI package if needed. Volume discounts for 6+ field seats.', 1, 4),
-  ('sp_agreement',    'sales_default', 'Agreement signed',                  'Terms accepted; billing details collected.', 1, 5),
+  ('sp_agreement',    'sales_default', 'Agreement signed',                  'Terms accepted — billing details collected.', 1, 5),
   ('sp_account',      'sales_default', 'Account created',                   'Signup completed (or created for them) — convert the demo to mark it.', 1, 6),
   ('sp_plan_config',  'sales_default', 'Plan & seats configured',           'Set the correct plan and AI package in Platform Settings → tenant row.', 1, 7),
   ('sp_branding',     'sales_default', 'Branding & assets collected',       'Logo, brand colors, license/insurance info entered in their account.', 0, 8),
   ('sp_import',       'sales_default', 'Data import complete',              'Clients, price book, and open estimates imported.', 0, 9),
-  ('sp_kickoff',      'sales_default', 'Kickoff call & training',           'Admin + office staff trained; field crew app walkthrough scheduled.', 1, 10),
+  ('sp_kickoff',      'sales_default', 'Kickoff call & training',           'Admin + office staff trained — field crew app walkthrough scheduled.', 1, 10),
   ('sp_golive',       'sales_default', 'Go-live confirmed',                 'First real estimate/invoice sent. Schedule 1-week check-in.', 1, 11);
 
 -- ── Seed: wizard steps (built-ins locked, one custom-questions slot) ───────
