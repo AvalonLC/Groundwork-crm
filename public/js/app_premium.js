@@ -1676,7 +1676,7 @@ window._updateSidebarRep = function updateSidebarRep() {
       // Footer: show rep identity + role badge
       const footer = document.querySelector('.sidebar-footer');
       if (footer) {
-        const displayName = isPlatformAdmin ? 'Tyler Grigg' : (rep?.name || 'User');
+        const displayName = isPlatformAdmin ? 'Tyler Johnson' : (rep?.name || 'User');
         const displayRole = isPlatformAdmin ? 'Platform Owner' :
                             isAdmin ? 'Owner' : isOM ? 'Office Manager' :
                             (rep?.title || 'Sales Rep');
@@ -13330,7 +13330,7 @@ window.superAdmin = superAdmin;
         footer.innerHTML = `
           <div style="width:32px;height:32px;border-radius:50%;background:rgba(77,138,134,.45);border:1px solid rgba(77,138,134,.6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;letter-spacing:-.01em" onclick="${logoutAction}" title="Sign out">TG</div>
           <div style="min-width:0;flex:1">
-            <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:13px;color:#ffffff">Tyler Grigg</strong>
+            <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:13px;color:#ffffff">Tyler Johnson</strong>
             <span style="font-size:11px;color:rgba(255,255,255,.50)">Platform Owner</span>
           </div>`;
       }

@@ -48,7 +48,7 @@ INSERT OR IGNORE INTO reps (
   company_id, is_super_admin, email
 ) VALUES (
   'gw_tyler',
-  'Tyler Grigg',
+  'Tyler Johnson',
   'Platform Owner',
   'admin',
   '1234',

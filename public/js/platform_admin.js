@@ -1040,7 +1040,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
               <div>
                 <div style="font-size:11px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Platform Owner</div>
-                <div style="font-size:15px;font-weight:700;color:#E8E4D9">Tyler Grigg</div>
+                <div style="font-size:15px;font-weight:700;color:#E8E4D9">Tyler Johnson</div>
                 <div style="font-size:13px;color:#6F7E6A">tyler@groundwork-crm.com</div>
               </div>
               <div>
