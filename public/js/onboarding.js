@@ -646,6 +646,11 @@ window._onbFinish = async function(view) {
   } catch(e) {}
   document.getElementById('onb-overlay')?.remove();
   if (typeof show === 'function') show(view);
+  // Hand off to the AI copilot: celebrate + surface the Getting Started launcher
+  try {
+    if (window.gwCopilot) window.gwCopilot.confetti(36);
+    setTimeout(() => { try { _gwGettingStartedInit(); } catch(e) {} }, 1500);
+  } catch(e) {}
 };
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
@@ -816,16 +821,24 @@ async function _gwGSOpenPanel() {
     <div style="font-size:12px;margin-top:6px;opacity:.9">${data.done} of ${data.total} complete — ${pct}%</div>
   </div>
   <div style="max-height:340px;overflow-y:auto">
-    ${items.map(it => `
+    ${items.map(it => {
+      const hasTour = window.gwCopilot && window.gwCopilot.TOURS && window.gwCopilot.TOURS[it.id];
+      return `
     <div style="display:flex;align-items:flex-start;gap:12px;padding:13px 18px;border-bottom:1px solid #F3F4F6;${it.done?'opacity:.55':''}">
       <div style="width:20px;height:20px;border-radius:50%;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;${it.done?'background:#2D7A55;color:#fff':'border:2px solid #D1D5DB;color:transparent'}">✓</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13.5px;font-weight:700;color:#1F2937;${it.done?'text-decoration:line-through':''}">${_escOnb(it.title)}</div>
         <div style="font-size:11.5px;color:#6B7280;margin-top:2px">${_escOnb(it.description||'')}</div>
       </div>
-      ${!it.done && it.view ? `<button onclick="document.getElementById('gwGSPanel').remove();if(typeof show==='function')show('${_escOnb(it.view)}')" style="flex-shrink:0;background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11.5px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit">${_escOnb(it.cta||'Open')}</button>` : ''}
-    </div>`).join('')}
-  </div>`;
+      ${!it.done ? `<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-items:stretch">
+        ${hasTour ? `<button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.startTour('${_escOnb(it.id)}')" style="background:#2D7A55;border:none;color:#fff;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✨ Show me</button>` : ''}
+        ${it.view ? `<button onclick="document.getElementById('gwGSPanel').remove();if(typeof show==='function')show('${_escOnb(it.view)}')" style="background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${_escOnb(it.cta||'Open')}</button>` : ''}
+      </div>` : ''}
+    </div>`;}).join('')}
+  </div>
+  ${window.gwCopilot ? `<div style="padding:11px 16px;background:#F7F9F7;border-top:1px solid #EDEDE8">
+    <button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.openChat()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1C3A2B,#2D7A55);border:none;color:#fff;font-size:12.5px;font-weight:800;padding:11px;border-radius:11px;cursor:pointer;font-family:inherit">✨ Ask Groundwork AI — I'll walk you through it</button>
+  </div>` : ''}`;
   document.body.appendChild(panel);
 }
 
@@ -837,4 +850,4 @@ window._gwGSDismiss = function() {
 };
 window.gwGettingStarted = _gwGSOpenPanel;
 
-console.log('[Groundwork] onboarding.js loaded v20260718t22');
+console.log('[Groundwork] onboarding.js loaded v20260718t26');

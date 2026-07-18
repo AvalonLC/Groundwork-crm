@@ -3702,6 +3702,84 @@ app.post('/api/onboarding/checklist/:stepId', requireAuth, async (c) => {
   return json(c, { done: true })
 })
 
+// ── AI Setup Copilot chat — POST /api/ai/copilot ─────────────────────────────
+// { question, view, checklist:[{id,title,done}] } → { answer, tour? }
+// `tour` is a Getting Started step id (cl_*) when a guided spotlight tour
+// exists for what the user asked about; the frontend renders a "Show me" button.
+app.post('/api/ai/copilot', requireAuth, async (c) => {
+  const companyId = (c as any).get('companyId') as string
+  const repId = (c as any).get('repId') as string
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) {
+    return c.json({ ok: false, error: 'no_api_key', message: 'AI chat is not enabled for your company yet — but the guided tours below work without it!' }, 400)
+  }
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
+
+  const b: any = await c.req.json().catch(() => ({}))
+  const question = String(b.question || '').slice(0, 1500)
+  if (!question) return err(c, 'question required')
+  const checklist = Array.isArray(b.checklist) ? b.checklist.slice(0, 20) : []
+  const co: any = await db.prepare('SELECT name, business_type FROM companies WHERE id = ? LIMIT 1').bind(companyId).first().catch(() => null)
+
+  const sys = `You are the Groundwork AI Setup Copilot — a friendly, encouraging in-app guide inside Groundwork CRM, a field-services CRM (clients, estimates, proposals, invoices, work orders/dispatch, price book, Stripe payments, Google Calendar/Gmail sync, review requests, team roles with a mobile field mode).
+
+Your job: help a NEW company get set up fast, answer how-to questions, and share tips. Be warm, concise (2-5 short sentences or a tight numbered list), and use the user's business context. Celebrate progress. Never invent features not listed above.
+
+App navigation facts you may reference:
+- Clients page: add clients (+ Add Client) or import CSV
+- Services & Pricing: build the price book (+ Add Item or Import CSV/Excel)
+- Estimates: New Estimate → pick client → add price-book lines → email to client; client can accept online; accepted estimates convert to invoices and can schedule jobs
+- Invoices: New Invoice, or convert from estimate; Pay Now appears when Stripe is connected
+- Dispatch board: New Work Order, drag between days, assign crews (yellow=hold, green=scheduled)
+- Integrations: Connect Stripe (online payments), Connect Google (calendar + email sync)
+- Employees: Send Invite with a role; field roles get a simplified mobile view
+- Settings: upload logo + brand color (shows on all documents)
+- Reviews: automatic review requests after jobs complete
+
+GUIDED TOURS: these tour ids exist — cl_branding (logo/branding), cl_client (add first client), cl_pricebook (price book), cl_estimate (first estimate), cl_workorder (schedule a job), cl_invoice (first invoice), cl_payments (connect Stripe), cl_team (invite team), cl_google (connect Google), cl_reviews (review requests).
+If the user's question maps clearly to ONE of these setup tasks, include its id in "tour" so the app can offer a click-by-click walkthrough. Otherwise use null.
+
+Return ONLY valid JSON: {"answer":"string","tour":"cl_xxx or null"}`
+
+  const ctx = [
+    `Company: ${co?.name || 'Unknown'}${co?.business_type ? ' (' + co.business_type + ')' : ''}`,
+    `User is currently on view: ${String(b.view || 'dashboard').slice(0, 60)}`,
+    checklist.length ? `Getting Started checklist status:\n${checklist.map((i: any) => `- [${i.done ? 'x' : ' '}] ${String(i.title || '').slice(0, 80)} (${String(i.id || '')})`).join('\n')}` : '',
+    `Question: ${question}`,
+  ].filter(Boolean).join('\n\n')
+
+  try {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: sys }, { role: 'user', content: ctx }] }),
+    })
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '')
+      console.error('[ai/copilot] upstream', r.status, errText.slice(0, 300))
+      return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}).` }, 502)
+    }
+    const data: any = await r.json()
+    await _logAiUsage(db, companyId, repId, 'copilot', model, data?.usage, keySource)
+    let parsed: any = null
+    try {
+      const raw = String(data?.choices?.[0]?.message?.content || '').replace(/^```(json)?\s*/i, '').replace(/```\s*$/, '')
+      parsed = JSON.parse(raw)
+    } catch {}
+    if (!parsed || !parsed.answer) {
+      const plain = String(data?.choices?.[0]?.message?.content || '').trim()
+      parsed = { answer: plain || 'Sorry — I hit a snag. Try asking again.', tour: null }
+    }
+    if (parsed.tour && !/^cl_[a-z_]+$/.test(String(parsed.tour))) parsed.tour = null
+    return json(c, { answer: String(parsed.answer).slice(0, 3000), tour: parsed.tour || null })
+  } catch (e: any) {
+    console.error('[ai/copilot]', e?.message || e)
+    return c.json({ ok: false, error: 'ai_error', message: 'AI request failed — try again.' }, 502)
+  }
+})
+
 // ── PUBLIC: demo request intake from groundwork-crm.info ────────────────────
 // No auth — CORS-restricted to the marketing site (+ prod/local origins).
 // Includes a honeypot field and a light per-email rate limit.
@@ -8645,7 +8723,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b013">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b015">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8669,8 +8747,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b013"></script>
-  <script src="/js/client_portal.js?v=20260718b013"></script>
+  <script src="/js/platform_core.js?v=20260718b015"></script>
+  <script src="/js/client_portal.js?v=20260718b015"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9305,9 +9383,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b013">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b013">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b013">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b015">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b015">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b015">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9867,39 +9945,40 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b013"></script>
-<script src="/js/db.js?v=20260718b013"></script>
-<script src="/js/data.js?v=20260718b013"></script>
-<script src="/js/reps.js?v=20260718b013"></script>
-<script src="/js/record-page.js?v=20260718b013"></script>
-<script src="/js/academy.js?v=20260718b013"></script>
-<script src="/js/task_engine.js?v=20260718b013"></script>
-<script src="/js/gw_i18n.js?v=20260718b013"></script>
-<script src="/js/app_premium.js?v=20260718b013"></script>
-<script src="/js/estimates.js?v=20260718b013"></script>
-<script src="/js/proposals.js?v=20260718b013"></script>
-<script src="/js/pricing.js?v=20260718b013"></script>
-<script src="/js/invoices.js?v=20260718b013"></script>
-<script src="/js/csv_import.js?v=20260718b013"></script>
-<script src="/js/onboarding.js?v=20260718b013"></script>
-<script src="/js/recurring_plans.js?v=20260718b013"></script>
-<script src="/js/reviews.js?v=20260718b013"></script>
-<script src="/js/stripe.js?v=20260718b013"></script>
-<script src="/js/email.js?v=20260718b013"></script>
-<script src="/js/notifications.js?v=20260718b013"></script>
-<script src="/js/integrations.js?v=20260718b013"></script>
-<script src="/js/calendar_sync.js?v=20260718b013"></script>
-<script src="/js/ai_followup.js?v=20260718b013"></script>
-<script src="/js/user_management.js?v=20260718b013"></script>
-<script src="/js/platform_admin.js?v=20260718b013"></script>
-<script src="/js/time_tracker.js?v=20260718b013"></script>
-<script src="/js/field_workday.js?v=20260718b013"></script>
-<script src="/js/platform_core.js?v=20260718b013"></script>
-<script src="/js/approval_engine.js?v=20260718b013"></script>
-<script src="/js/automation_engine.js?v=20260718b013"></script>
-<script src="/js/client_portal.js?v=20260718b013"></script>
-<script src="/js/field_mode.js?v=20260718b013"></script>
-<script src="/js/assets_hub.js?v=20260718b013"></script>
+<script src="/js/gw-icons.js?v=20260718b015"></script>
+<script src="/js/db.js?v=20260718b015"></script>
+<script src="/js/data.js?v=20260718b015"></script>
+<script src="/js/reps.js?v=20260718b015"></script>
+<script src="/js/record-page.js?v=20260718b015"></script>
+<script src="/js/academy.js?v=20260718b015"></script>
+<script src="/js/task_engine.js?v=20260718b015"></script>
+<script src="/js/gw_i18n.js?v=20260718b015"></script>
+<script src="/js/app_premium.js?v=20260718b015"></script>
+<script src="/js/estimates.js?v=20260718b015"></script>
+<script src="/js/proposals.js?v=20260718b015"></script>
+<script src="/js/pricing.js?v=20260718b015"></script>
+<script src="/js/invoices.js?v=20260718b015"></script>
+<script src="/js/csv_import.js?v=20260718b015"></script>
+<script src="/js/onboarding.js?v=20260718b015"></script>
+<script src="/js/gw_copilot.js?v=20260718b015"></script>
+<script src="/js/recurring_plans.js?v=20260718b015"></script>
+<script src="/js/reviews.js?v=20260718b015"></script>
+<script src="/js/stripe.js?v=20260718b015"></script>
+<script src="/js/email.js?v=20260718b015"></script>
+<script src="/js/notifications.js?v=20260718b015"></script>
+<script src="/js/integrations.js?v=20260718b015"></script>
+<script src="/js/calendar_sync.js?v=20260718b015"></script>
+<script src="/js/ai_followup.js?v=20260718b015"></script>
+<script src="/js/user_management.js?v=20260718b015"></script>
+<script src="/js/platform_admin.js?v=20260718b015"></script>
+<script src="/js/time_tracker.js?v=20260718b015"></script>
+<script src="/js/field_workday.js?v=20260718b015"></script>
+<script src="/js/platform_core.js?v=20260718b015"></script>
+<script src="/js/approval_engine.js?v=20260718b015"></script>
+<script src="/js/automation_engine.js?v=20260718b015"></script>
+<script src="/js/client_portal.js?v=20260718b015"></script>
+<script src="/js/field_mode.js?v=20260718b015"></script>
+<script src="/js/assets_hub.js?v=20260718b015"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
