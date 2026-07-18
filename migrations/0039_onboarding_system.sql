@@ -77,9 +77,9 @@ INSERT OR IGNORE INTO gw_onboarding_steps (id, template_id, title, description, 
 INSERT OR IGNORE INTO gw_onboarding_steps (id, template_id, title, description, fields, sort) VALUES
   ('cl_wizard',    'checklist_default', 'Complete the setup wizard',   'Company profile, industry, and team basics.', '{"auto":"wizard","view":"gwDashboard","cta":"Open"}', 1),
   ('cl_client',    'checklist_default', 'Add your first client',       'Your client list powers estimates, invoices, and scheduling.', '{"auto":"clients","view":"clients","cta":"Add Client"}', 2),
-  ('cl_pricebook', 'checklist_default', 'Set up your price book',      'Add your services and rates for one-click estimate line items.', '{"auto":"price_items","view":"priceBook","cta":"Price Book"}', 3),
+  ('cl_pricebook', 'checklist_default', 'Set up your price book',      'Add your services and rates for one-click estimate line items.', '{"auto":"price_items","view":"pricing","cta":"Price Book"}', 3),
   ('cl_estimate',  'checklist_default', 'Create your first estimate',  'Send a professional estimate your client can accept online.', '{"auto":"estimates","view":"estimates","cta":"New Estimate"}', 4),
   ('cl_invoice',   'checklist_default', 'Send your first invoice',     'Get paid — invoices support online payment via Stripe.', '{"auto":"invoices","view":"invoices","cta":"Invoices"}', 5),
   ('cl_team',      'checklist_default', 'Invite your team',            'Add reps, field crew, and office staff with role-based access.', '{"auto":"reps","view":"userManagement","cta":"Invite"}', 6),
   ('cl_google',    'checklist_default', 'Connect Google Workspace',    'Sync Gmail and Calendar for AI email drafting and scheduling.', '{"auto":"google","view":"integrations","cta":"Connect"}', 7),
-  ('cl_reviews',   'checklist_default', 'Turn on review requests',     'Auto-request Google reviews when jobs complete.', '{"auto":"manual","view":"reviewEngine","cta":"Set Up"}', 8);
+  ('cl_reviews',   'checklist_default', 'Turn on review requests',     'Auto-request Google reviews when jobs complete.', '{"auto":"manual","view":"reviews","cta":"Set Up"}', 8);

@@ -1551,6 +1551,17 @@
     <div><label class="um-label">Notes</label>
       <textarea id="gwD-notes" class="um-input" rows="3" placeholder="Prep notes, follow-up items…" style="resize:vertical">${esc(demo?.notes||'')}</textarea></div>
   </div>
+  ${isEdit ? `
+  <div style="margin-top:20px;border:1px solid var(--line,#2A3A38);border-radius:14px;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(77,138,134,.07)">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#4D8A86">Sales Playbook</div>
+      <div id="gwDPlaybookPct" style="font-size:12px;font-weight:800;color:#4D8A86"></div>
+    </div>
+    <div id="gwDPlaybookBar" style="height:5px;background:rgba(111,126,106,.15)"><div id="gwDPlaybookFill" style="height:100%;width:0%;background:#4D8A86;transition:width .3s"></div></div>
+    <div id="gwDPlaybook" style="max-height:300px;overflow-y:auto;padding:6px 16px 12px">
+      <div style="padding:16px;text-align:center;color:#6F7E6A;font-size:12px">Loading playbook…</div>
+    </div>
+  </div>` : ''}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;flex-wrap:wrap;gap:10px">
     <div style="display:flex;gap:8px">
       ${isEdit ? dangerBtn('Delete',`window._gwDeleteDemo('${esc(demo.id)}')`) : '<span></span>'}
@@ -1564,6 +1575,65 @@
   </div>
 </div>`;
     document.body.appendChild(el);
+
+    // ── Embedded Sales Playbook (edit mode only) ─────────────────────────
+    if (isEdit) (async () => {
+      try {
+        const [tplData, prog] = await Promise.all([
+          apiGet('/api/platform/onboarding/templates'),
+          apiGet(`/api/platform/onboarding/progress?subject_type=demo&subject_id=${encodeURIComponent(demo.id)}`),
+        ]);
+        const steps = (tplData.steps||[]).filter(s => s.template_id === 'sales_default' && s.active)
+          .sort((a,b)=>(a.sort||0)-(b.sort||0));
+        const doneSet = new Set((Array.isArray(prog)?prog:[]).map(p => p.step_id));
+        const box = document.getElementById('gwDPlaybook');
+        if (!box) return;
+
+        const paint = () => {
+          const pct = steps.length ? Math.round(doneSet.size / steps.length * 100) : 0;
+          const pctEl = document.getElementById('gwDPlaybookPct');
+          const fillEl = document.getElementById('gwDPlaybookFill');
+          if (pctEl) pctEl.textContent = `${doneSet.size} / ${steps.length} · ${pct}%`;
+          if (fillEl) { fillEl.style.width = pct + '%'; fillEl.style.background = pct >= 100 ? '#2D7A55' : '#4D8A86'; }
+        };
+
+        let lastPhase = null;
+        box.innerHTML = steps.map(s => {
+          let phase = ''; try { phase = JSON.parse(s.fields||'{}').phase || ''; } catch {}
+          const header = phase && phase !== lastPhase
+            ? `<div style="font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8B6914;padding:12px 0 4px">${esc(phase)}</div>` : '';
+          lastPhase = phase || lastPhase;
+          const done = doneSet.has(s.id);
+          return `${header}
+<div style="display:flex;align-items:flex-start;gap:10px;padding:6px 0">
+  <input type="checkbox" ${done?'checked':''} data-gwdpb="${esc(s.id)}"
+    style="width:16px;height:16px;accent-color:#2D7A55;cursor:pointer;margin-top:1px;flex-shrink:0">
+  <div style="flex:1">
+    <div class="gwdpb-title" style="font-size:12.5px;font-weight:700;color:${done?'#5C6B58':'#E8E4D9'};${done?'text-decoration:line-through;opacity:.7':''}">${esc(s.title)}${s.required?' <span style="color:#C97B6A;font-size:10px">*</span>':''}</div>
+    ${s.description?`<div style="font-size:11px;color:#6F7E6A;margin-top:1px;line-height:1.45">${esc(s.description)}</div>`:''}
+  </div>
+</div>`;
+        }).join('') || '<div style="padding:14px;text-align:center;color:#6F7E6A;font-size:12px">No playbook steps defined. Add them in Onboarding → Template Builder.</div>';
+        paint();
+
+        box.querySelectorAll('input[data-gwdpb]').forEach(cb => {
+          cb.addEventListener('change', async function() {
+            const sid = this.getAttribute('data-gwdpb');
+            const checked = this.checked;
+            try {
+              await apiPost('/api/platform/onboarding/progress', { step_id: sid, subject_type: 'demo', subject_id: demo.id, done: checked });
+              checked ? doneSet.add(sid) : doneSet.delete(sid);
+              const t = this.parentElement.querySelector('.gwdpb-title');
+              if (t) { t.style.color = checked?'#5C6B58':'#E8E4D9'; t.style.textDecoration = checked?'line-through':''; t.style.opacity = checked?'.7':''; }
+              paint();
+            } catch(e) { this.checked = !checked; toast('Error: ' + e.message); }
+          });
+        });
+      } catch(e) {
+        const box = document.getElementById('gwDPlaybook');
+        if (box) box.innerHTML = `<div style="padding:14px;text-align:center;color:#C97B6A;font-size:12px">Playbook failed to load: ${esc(e.message)}</div>`;
+      }
+    })();
 
     window._gwSaveDemo = async function(existingId) {
       const payload = {
@@ -2049,9 +2119,13 @@
     <span id="gwOnbChev_${esc(d.id)}" style="color:#6F7E6A;font-size:12px;transition:transform .2s">▾</span>
   </div>
   <div id="gwOnbSteps_${esc(d.id)}" style="display:none;padding:6px 20px 18px 70px">
-    ${salesSteps.map(s => {
+    ${(() => { let lastPhase = null; return salesSteps.map(s => {
       const done = doneSet.has(s.id);
-      return `
+      let phase = ''; try { phase = JSON.parse(s.fields||'{}').phase || ''; } catch {}
+      const header = phase && phase !== lastPhase
+        ? `<div style="font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8B6914;padding:12px 0 4px">${esc(phase)}</div>` : '';
+      lastPhase = phase || lastPhase;
+      return `${header}
     <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0">
       <input type="checkbox" ${done?'checked':''} onchange="window._gwOnbToggle('${esc(s.id)}','${esc(d.id)}',this.checked)"
         style="width:17px;height:17px;accent-color:#2D7A55;cursor:pointer;margin-top:2px;flex-shrink:0">
@@ -2060,7 +2134,7 @@
         ${s.description?`<div style="font-size:11.5px;color:#6F7E6A;margin-top:2px">${esc(s.description)}</div>`:''}
       </div>
     </div>`;
-    }).join('')}
+    }).join(''); })()}
   </div>
 </div>`;
       }).join('');
@@ -2085,6 +2159,9 @@
           } else if (tpl.id === 'checklist_default') {
             let m = {}; try { m = JSON.parse(s.fields||'{}'); } catch {}
             metaNote = m.auto && m.auto !== 'manual' ? `auto-detects: ${m.auto}` : 'manual check-off';
+          } else if (tpl.id === 'sales_default') {
+            let m = {}; try { m = JSON.parse(s.fields||'{}'); } catch {}
+            metaNote = m.phase || '';
           }
           return `
 <div style="display:flex;align-items:center;gap:14px;padding:13px 20px;border-bottom:1px solid var(--line,#e5e5e0);${s.active?'':'opacity:.45'}">
@@ -2189,6 +2266,9 @@
     const isEdit = !!step;
     const isWizard = templateId === 'wizard_default';
     const isChecklist = templateId === 'checklist_default';
+    const isSales = templateId === 'sales_default';
+    let salesPhase = '';
+    if (isSales) { try { salesPhase = JSON.parse(step?.fields||'{}').phase || ''; } catch {} }
     let fieldsText = '';
     if (isWizard) {
       let qs = []; try { qs = JSON.parse(step?.fields||'[]'); } catch {}
@@ -2223,6 +2303,10 @@
         </label>
       </div>
     </div>
+    ${isSales ? `
+    <div><label class="um-label">Phase (groups steps under a header — e.g. "Discovery & Demo")</label>
+      <input id="gwOS-phase" class="um-input" value="${esc(salesPhase)}" placeholder="Discovery & Demo" list="gwOSPhaseList">
+      <datalist id="gwOSPhaseList"><option value="Discovery & Demo"><option value="Proposal & Close"><option value="Account Setup"><option value="Launch & Success"></datalist></div>` : ''}
     ${isWizard ? `
     <div><label class="um-label">Questions (one per line: <code style="font-size:11px">Label | text</code> or <code style="font-size:11px">Label | select | Opt1, Opt2</code>)</label>
       <textarea id="gwOS-questions" class="um-input" rows="6" style="resize:vertical;font-family:monospace;font-size:12px" placeholder="What tools do you use today? | text&#10;Team size? | select | Just me, 2-5, 6-10, 11+">${esc(fieldsText)}</textarea></div>` : ''}
@@ -2230,7 +2314,7 @@
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
       <div><label class="um-label">Auto-detect</label>
         <select id="gwOS-auto" class="um-input">
-          ${['manual','wizard','clients','price_items','estimates','invoices','reps','google'].map(a=>`<option value="${a}" ${clMeta.auto===a?'selected':''}>${a==='manual'?'Manual check-off':a}</option>`).join('')}
+          ${['manual','wizard','branding','clients','price_items','estimates','work_orders','invoices','stripe','reps','google'].map(a=>`<option value="${a}" ${clMeta.auto===a?'selected':''}>${a==='manual'?'Manual check-off':a}</option>`).join('')}
         </select></div>
       <div><label class="um-label">Opens view</label>
         <input id="gwOS-view" class="um-input" value="${esc(clMeta.view||'')}" placeholder="clients"></div>
@@ -2272,6 +2356,9 @@
           view: document.getElementById('gwOS-view')?.value?.trim() || '',
           cta:  document.getElementById('gwOS-cta')?.value?.trim() || 'Open',
         };
+      }
+      if (tplId === 'sales_default') {
+        payload.fields = { phase: document.getElementById('gwOS-phase')?.value?.trim() || '' };
       }
       try {
         if (existingId) { await apiPut(`/api/platform/onboarding/steps/${existingId}`, payload); toast('Step updated'); }

@@ -391,6 +391,14 @@ Edit `public/js/gw_i18n.js`:
 - **Flat action bar**: "More ▾" dropdown dissolved — Edit / Email / Preview / Duplicate / Convert to Invoice / Delete all visible.
 - **Schedule to Job button**: always prominent. Before client acceptance it places a YELLOW "hold" on the chosen day (`work_orders.status='hold'`); when the client accepts (internal accept, portal approve, or proposal accept) all holds auto-flip GREEN to `scheduled`; decline releases them to `cancelled` (red). Traffic-light dots on schedule board week cards, month dots/chips, mobile cards; Holds counter in the stats bar.
 
+## Onboarding Build-Out (T23)
+- **Migration 0040** (`0040_onboarding_buildout.sql`, INSERT OR REPLACE — preserves recorded progress): sales playbook expanded to **17 steps across 4 phases** (Discovery & Demo → Proposal & Close → Account Setup → Launch & Success) with tactical guidance in each description (pre-demo research, 48-hr follow-up, objection handling, Google connect, 1-week check-in, 30-day success review); wizard custom questions refined to **4 fast all-select questions** (heard-about, current tools, #1 pain, data import); Getting Started checklist expanded to **11 items, 9 auto-detecting** (added: branding, first job scheduled, Stripe payments).
+- **Auto-detection extended** (`/api/onboarding/checklist`): `branding` (logo_url/brand_color), `work_orders`, `stripe` (connected + onboarded) — all checklist view targets corrected to real app views (settings/pricing/dispatchBoard/integrations/reviews).
+- **Demo modal now embeds the Sales Playbook**: opening any demo request shows the full phase-grouped checklist inline with progress bar + %; checkboxes save instantly without leaving the modal.
+- **Phase support**: playbook rows in the Onboarding tab group steps under phase headers; sales-step editor modal has a Phase field (with datalist of the 4 standard phases); builder list shows each step's phase.
+- **Self-heal**: `_schema_gwops_v4` (0037+0038+0039+0040).
+- E2E-verified via Playwright: phase headers render, demo-modal playbook loads 17 steps, toggle round-trips 0/17→1/17, builder shows new items, no page errors.
+
 ## Onboarding System (T22)
 - **Migration 0039** (`0039_onboarding_system.sql`): `gw_onboarding_templates` (types: `sales` | `customer_wizard` | `tenant_checklist`), `gw_onboarding_steps` (JSON `fields` for wizard questions / checklist auto-detect meta), `gw_onboarding_progress` (per demo or company). Seeded: 11-step sales playbook, 6 wizard steps (5 built-in locked + 1 custom-questions), 8-item Getting Started checklist.
 - **Platform Admin → Onboarding** (`gwOnboarding`), three tabs:
