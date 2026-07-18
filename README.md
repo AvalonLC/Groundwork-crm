@@ -391,6 +391,16 @@ Edit `public/js/gw_i18n.js`:
 - **Flat action bar**: "More ▾" dropdown dissolved — Edit / Email / Preview / Duplicate / Convert to Invoice / Delete all visible.
 - **Schedule to Job button**: always prominent. Before client acceptance it places a YELLOW "hold" on the chosen day (`work_orders.status='hold'`); when the client accepts (internal accept, portal approve, or proposal accept) all holds auto-flip GREEN to `scheduled`; decline releases them to `cancelled` (red). Traffic-light dots on schedule board week cards, month dots/chips, mobile cards; Holds counter in the stats bar.
 
+## Onboarding System (T22)
+- **Migration 0039** (`0039_onboarding_system.sql`): `gw_onboarding_templates` (types: `sales` | `customer_wizard` | `tenant_checklist`), `gw_onboarding_steps` (JSON `fields` for wizard questions / checklist auto-detect meta), `gw_onboarding_progress` (per demo or company). Seeded: 11-step sales playbook, 6 wizard steps (5 built-in locked + 1 custom-questions), 8-item Getting Started checklist.
+- **Platform Admin → Onboarding** (`gwOnboarding`), three tabs:
+  - **Sales Playbook** — every active demo request gets the internal demo→live checklist; expandable rows with per-step check-off and progress bars; stat cards for in-flight/not-started.
+  - **Template Builder** — edit all three templates: add/edit/delete steps, reorder, activate/deactivate. Wizard custom questions use `Label | text` or `Label | select | Opt1, Opt2` lines. Checklist items configure auto-detect key + target view + CTA label. Built-in wizard steps are locked.
+  - **Tenant Funnel** — every tenant with wizard progress (step X/6 or ✓), manual checklist count, and their custom wizard answers (expandable).
+- **APIs**: `GET /api/platform/onboarding/templates`, `POST/PUT/DELETE /api/platform/onboarding/steps[/:id]`, `GET/POST /api/platform/onboarding/progress`, `GET /api/platform/onboarding/funnel` (super-admin). Tenant-facing: `GET /api/onboarding/wizard-config`, `POST /api/onboarding/wizard-answers`, `GET /api/onboarding/checklist` (auto-detects clients/price book/estimates/invoices/team/Google), `POST /api/onboarding/checklist/:stepId` (requireAuth).
+- **Tenant experience** (`onboarding.js`): platform-defined custom questions render as extra wizard step(s) before the Done screen (answers → `onboarding_responses`, visible in Tenant Funnel); after the wizard, admins get a floating **🚀 Getting Started** launcher (bottom-right) with progress ring and per-item CTAs that auto-checks off as they use the product; session-dismissable; hidden for the platform owner account and once all items complete.
+- **Self-heal**: flag bumped to `_schema_gwops_v3` (runs 0037+0038+0039 on first platform/onboarding API call in prod).
+
 ## Real Pricing Import (T21)
 - **Migration 0038** (`0038_real_pricing_import.sql`): extends `gw_pricing_plans` with per-seat pricing (`tagline`, `seat_rep`, `seat_field`, `seat_office`, `seat_viewonly`, `viewonly_included`, `extra_seats_available`, `is_custom`); creates `gw_ai_packages`; purges placeholder plans; seeds the real Groundwork pricing.
 - **CRM Plans** (base = 1 Rep/Estimator seat): Starter $29 (50 AI, no extra seats), Core $49 (100 AI; seats $49/$25/$89, 1 view-only incl then $10), Growth $65 ★Most Popular (250 AI; $65/$30/$105, 3 incl), Pro $85 (500 AI; $85/$35/$135, 5 incl), Enterprise custom.

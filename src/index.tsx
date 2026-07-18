@@ -21,6 +21,7 @@ import mig0035 from '../migrations/0035_calendar_sync.sql?raw'
 import mig0036 from '../migrations/0036_ai_usage.sql?raw'
 import mig0037 from '../migrations/0037_platform_demos_pricing.sql?raw'
 import mig0038 from '../migrations/0038_real_pricing_import.sql?raw'
+import mig0039 from '../migrations/0039_onboarding_system.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -3328,10 +3329,10 @@ app.delete('/api/platform/announcements/:id', requireSuperAdmin, async (c) => {
 let _gwOps37Ok = false
 async function ensureGwOpsSchema(db: D1Database): Promise<void> {
   if (_gwOps37Ok) return
-  // v2 flag: 0037 (tables) + 0038 (real pricing import) both applied
-  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_gwops_v2' LIMIT 1").first<any>()
+  // v3 flag: 0037 (tables) + 0038 (real pricing) + 0039 (onboarding system)
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_gwops_v3' LIMIT 1").first<any>()
   if (flag) { _gwOps37Ok = true; return }
-  const sql = mig0037 + '\n' + mig0038
+  const sql = mig0037 + '\n' + mig0038 + '\n' + mig0039
   const stmts = sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
     .split(';').map(x => x.trim()).filter(x => x.length > 0)
   for (const stmt of stmts) {
@@ -3340,7 +3341,7 @@ async function ensureGwOpsSchema(db: D1Database): Promise<void> {
       if (!/already exists|duplicate/i.test(msg)) console.error('[ensureGwOpsSchema]', msg)
     }
   }
-  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_gwops_v2', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_gwops_v3', ?, datetime('now'))").bind(new Date().toISOString()).run()
   _gwOps37Ok = true
 }
 
@@ -3482,6 +3483,218 @@ app.delete('/api/platform/ai-packages/:id', requireSuperAdmin, async (c) => {
   await ensureGwOpsSchema(c.env.DB)
   await c.env.DB.prepare(`DELETE FROM gw_ai_packages WHERE id = ?`).bind(c.req.param('id')).run()
   return json(c, { deleted: c.req.param('id') })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ONBOARDING SYSTEM  (/api/platform/onboarding/*)  — migration 0039
+// Templates (sales | customer_wizard | tenant_checklist) → steps → progress
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET all templates with their steps
+app.get('/api/platform/onboarding/templates', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const tpls = await c.env.DB.prepare(`SELECT * FROM gw_onboarding_templates ORDER BY sort, name`).all()
+  const steps = await c.env.DB.prepare(`SELECT * FROM gw_onboarding_steps ORDER BY sort, title`).all()
+  return json(c, { templates: tpls.results || [], steps: steps.results || [] })
+})
+
+// POST create step  { template_id, title, description?, fields?, required?, sort?, active? }
+app.post('/api/platform/onboarding/steps', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const b = await c.req.json().catch(() => ({}))
+  if (!b.template_id || !b.title) return err(c, 'template_id and title required')
+  const tpl = await c.env.DB.prepare(`SELECT id FROM gw_onboarding_templates WHERE id = ?`).bind(b.template_id).first()
+  if (!tpl) return err(c, 'Unknown template')
+  const id = 'st_' + uid()
+  await c.env.DB.prepare(
+    `INSERT INTO gw_onboarding_steps (id, template_id, title, description, fields, required, locked, active, sort)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`
+  ).bind(
+    id, b.template_id, String(b.title).slice(0, 200), String(b.description || '').slice(0, 1000),
+    typeof b.fields === 'string' ? b.fields : JSON.stringify(b.fields ?? []),
+    b.required ? 1 : 0, (b.active ?? 1) ? 1 : 0, Number(b.sort) || 0
+  ).run()
+  return json(c, { id })
+})
+
+// PUT update step
+app.put('/api/platform/onboarding/steps/:id', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const b = await c.req.json().catch(() => ({}))
+  const id = c.req.param('id')
+  const allowed = ['title', 'description', 'fields', 'required', 'active', 'sort']
+  const sets: string[] = []; const vals: any[] = []
+  for (const f of allowed) {
+    if (b[f] === undefined) continue
+    sets.push(`${f} = ?`)
+    if (f === 'fields') vals.push(typeof b[f] === 'string' ? b[f] : JSON.stringify(b[f]))
+    else if (f === 'required' || f === 'active') vals.push(b[f] ? 1 : 0)
+    else if (f === 'sort') vals.push(Number(b[f]) || 0)
+    else vals.push(String(b[f]))
+  }
+  if (!sets.length) return err(c, 'Nothing to update')
+  vals.push(id)
+  await c.env.DB.prepare(`UPDATE gw_onboarding_steps SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).bind(...vals).run()
+  return json(c, { updated: id })
+})
+
+// DELETE step (locked steps are protected)
+app.delete('/api/platform/onboarding/steps/:id', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const id = c.req.param('id')
+  const row = await c.env.DB.prepare(`SELECT locked FROM gw_onboarding_steps WHERE id = ?`).bind(id).first<any>()
+  if (!row) return err(c, 'Step not found')
+  if (row.locked) return err(c, 'Built-in wizard steps cannot be deleted (you can deactivate custom ones instead)')
+  await c.env.DB.prepare(`DELETE FROM gw_onboarding_steps WHERE id = ?`).bind(id).run()
+  await c.env.DB.prepare(`DELETE FROM gw_onboarding_progress WHERE step_id = ?`).bind(id).run()
+  return json(c, { deleted: id })
+})
+
+// GET progress for a subject (demo or company): ?subject_type=demo&subject_id=xyz
+// Or all progress for a template type (playbook board): ?template_id=sales_default
+app.get('/api/platform/onboarding/progress', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const st = c.req.query('subject_type'); const sid = c.req.query('subject_id')
+  const tid = c.req.query('template_id')
+  if (st && sid) {
+    const rows = await c.env.DB.prepare(`SELECT * FROM gw_onboarding_progress WHERE subject_type = ? AND subject_id = ?`).bind(st, sid).all()
+    return json(c, rows.results || [])
+  }
+  if (tid) {
+    const rows = await c.env.DB.prepare(`SELECT * FROM gw_onboarding_progress WHERE template_id = ?`).bind(tid).all()
+    return json(c, rows.results || [])
+  }
+  const rows = await c.env.DB.prepare(`SELECT * FROM gw_onboarding_progress ORDER BY completed_at DESC LIMIT 500`).all()
+  return json(c, rows.results || [])
+})
+
+// POST toggle progress  { step_id, subject_type, subject_id, done, notes? }
+app.post('/api/platform/onboarding/progress', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const b = await c.req.json().catch(() => ({}))
+  if (!b.step_id || !b.subject_type || !b.subject_id) return err(c, 'step_id, subject_type, subject_id required')
+  const step = await c.env.DB.prepare(`SELECT template_id FROM gw_onboarding_steps WHERE id = ?`).bind(b.step_id).first<any>()
+  if (!step) return err(c, 'Unknown step')
+  if (b.done === false) {
+    await c.env.DB.prepare(`DELETE FROM gw_onboarding_progress WHERE step_id = ? AND subject_type = ? AND subject_id = ?`)
+      .bind(b.step_id, b.subject_type, b.subject_id).run()
+    return json(c, { done: false })
+  }
+  const repId = (c as any).get?.('repId') || 'platform'
+  await c.env.DB.prepare(
+    `INSERT OR REPLACE INTO gw_onboarding_progress (id, template_id, step_id, subject_type, subject_id, status, completed_by, notes, completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  ).bind(
+    'pg_' + uid(), step.template_id, b.step_id, String(b.subject_type), String(b.subject_id),
+    b.status === 'skipped' ? 'skipped' : 'done', String(repId), String(b.notes || '').slice(0, 500)
+  ).run()
+  return json(c, { done: true })
+})
+
+// GET tenant funnel — companies + wizard state + checklist counts + custom answers
+app.get('/api/platform/onboarding/funnel', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const companies = await c.env.DB.prepare(
+    `SELECT id, name, plan, subscription_status, onboarding_completed, onboarding_step, onboarding_data, created_at
+     FROM companies WHERE id != 'groundwork_platform' ORDER BY created_at DESC LIMIT 100`
+  ).all()
+  const prog = await c.env.DB.prepare(
+    `SELECT subject_id, COUNT(*) AS done FROM gw_onboarding_progress WHERE subject_type = 'company' GROUP BY subject_id`
+  ).all()
+  const totalSteps = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM gw_onboarding_steps WHERE template_id = 'checklist_default' AND active = 1`
+  ).first<any>()
+  const answers = await c.env.DB.prepare(
+    `SELECT company_id, question, answer FROM onboarding_responses ORDER BY created_at DESC LIMIT 500`
+  ).all().catch(() => ({ results: [] as any[] }))
+  return json(c, {
+    companies: companies.results || [],
+    checklist_progress: prog.results || [],
+    checklist_total: totalSteps?.n || 0,
+    responses: (answers as any).results || [],
+  })
+})
+
+// ── TENANT-FACING (requireAuth): wizard config + Getting Started checklist ──
+
+// Custom wizard questions for the signup wizard (any authenticated user)
+app.get('/api/onboarding/wizard-config', requireAuth, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const rows = await c.env.DB.prepare(
+    `SELECT id, title, description, fields, sort FROM gw_onboarding_steps
+     WHERE template_id = 'wizard_default' AND locked = 0 AND active = 1 ORDER BY sort`
+  ).all()
+  return json(c, rows.results || [])
+})
+
+// Save custom wizard answers  { answers: [{key, question, answer}] }
+app.post('/api/onboarding/wizard-answers', requireAuth, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const cid = (c as any).get('companyId')
+  const b = await c.req.json().catch(() => ({}))
+  const answers = Array.isArray(b.answers) ? b.answers.slice(0, 20) : []
+  for (const a of answers) {
+    await c.env.DB.prepare(
+      `INSERT INTO onboarding_responses (id, company_id, step, question, answer) VALUES (?, ?, ?, ?, ?)`
+    ).bind('or_' + uid(), cid, 99, String(a.question || a.key || '').slice(0, 300), String(a.answer || '').slice(0, 1000)).run()
+  }
+  return json(c, { saved: answers.length })
+})
+
+// Getting Started checklist w/ auto-detection (admin of the tenant)
+app.get('/api/onboarding/checklist', requireAuth, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const cid = (c as any).get('companyId')
+  const steps = await c.env.DB.prepare(
+    `SELECT id, title, description, fields, sort FROM gw_onboarding_steps
+     WHERE template_id = 'checklist_default' AND active = 1 ORDER BY sort`
+  ).all()
+  const manual = await c.env.DB.prepare(
+    `SELECT step_id FROM gw_onboarding_progress WHERE subject_type = 'company' AND subject_id = ?`
+  ).bind(cid).all()
+  const manualDone = new Set((manual.results || []).map((r: any) => r.step_id))
+
+  // Auto-detection counts (cheap single-row queries, tolerate missing tables)
+  const cnt = async (sql: string) => {
+    try { const r = await c.env.DB.prepare(sql).bind(cid).first<any>(); return Number(r?.n) || 0 } catch { return 0 }
+  }
+  const co = await c.env.DB.prepare(`SELECT onboarding_completed FROM companies WHERE id = ?`).bind(cid).first<any>()
+  const auto: Record<string, boolean> = {
+    wizard:      !!co?.onboarding_completed,
+    clients:     (await cnt(`SELECT COUNT(*) n FROM clients WHERE company_id = ?`)) > 0,
+    price_items: (await cnt(`SELECT COUNT(*) n FROM price_items WHERE company_id = ?`)) > 0,
+    estimates:   (await cnt(`SELECT COUNT(*) n FROM estimates WHERE company_id = ?`)) > 0,
+    invoices:    (await cnt(`SELECT COUNT(*) n FROM invoices WHERE company_id = ?`)) > 0,
+    reps:        (await cnt(`SELECT COUNT(*) n FROM reps WHERE company_id = ? AND active = 1`)) > 1,
+    google:      (await cnt(`SELECT COUNT(*) n FROM google_tokens WHERE company_id = ?`)) > 0,
+  }
+  const items = (steps.results || []).map((s: any) => {
+    let meta: any = {}; try { meta = JSON.parse(s.fields || '{}') } catch {}
+    const autoKey = meta.auto || 'manual'
+    const done = autoKey !== 'manual' && auto[autoKey] !== undefined ? auto[autoKey] : manualDone.has(s.id)
+    return { id: s.id, title: s.title, description: s.description, view: meta.view || '', cta: meta.cta || 'Open', done }
+  })
+  return json(c, { items, done: items.filter((i: any) => i.done).length, total: items.length })
+})
+
+// Tenant marks a manual checklist item done/undone
+app.post('/api/onboarding/checklist/:stepId', requireAuth, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const cid = (c as any).get('companyId')
+  const repId = (c as any).get('repId')
+  const stepId = c.req.param('stepId')
+  const b = await c.req.json().catch(() => ({}))
+  const step = await c.env.DB.prepare(`SELECT template_id FROM gw_onboarding_steps WHERE id = ? AND template_id = 'checklist_default'`).bind(stepId).first<any>()
+  if (!step) return err(c, 'Unknown checklist item')
+  if (b.done === false) {
+    await c.env.DB.prepare(`DELETE FROM gw_onboarding_progress WHERE step_id = ? AND subject_type = 'company' AND subject_id = ?`).bind(stepId, cid).run()
+    return json(c, { done: false })
+  }
+  await c.env.DB.prepare(
+    `INSERT OR REPLACE INTO gw_onboarding_progress (id, template_id, step_id, subject_type, subject_id, status, completed_by, completed_at)
+     VALUES (?, 'checklist_default', ?, 'company', ?, 'done', ?, datetime('now'))`
+  ).bind('pg_' + uid(), stepId, cid, String(repId || '')).run()
+  return json(c, { done: true })
 })
 
 // ── PUBLIC: demo request intake from groundwork-crm.info ────────────────────
@@ -8427,7 +8640,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b011">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8451,8 +8664,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b010"></script>
-  <script src="/js/client_portal.js?v=20260718b010"></script>
+  <script src="/js/platform_core.js?v=20260718b011"></script>
+  <script src="/js/client_portal.js?v=20260718b011"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9087,9 +9300,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b011">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b011">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b011">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9554,6 +9767,10 @@ function getHtml(): string {
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><path d="M8.7 1.5H14v5.3l-6.8 6.8a1.5 1.5 0 0 1-2.1 0L1.9 10.4a1.5 1.5 0 0 1 0-2.1L8.7 1.5z"/><circle cx="11" cy="4.8" r="1" fill="currentColor" stroke="none"/></svg>
             Pricing Plans
           </button>
+          <button class="nav-item" data-view="gwOnboarding" onclick="show('gwOnboarding')">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><path d="M2 8.5l3.5 3.5L14 3.5"/><path d="M2 13h6"/></svg>
+            Onboarding
+          </button>
           <button class="nav-item" data-view="gwSupport" onclick="show('gwSupport')">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><path d="M8 2C4.7 2 2 4.7 2 8s2.7 6 6 6 6-2.7 6-6-2.7-6-6-6z"/><path d="M6 6c0-1.1.9-2 2-2s2 .9 2 2c0 1.5-2 2-2 3"/><circle cx="8" cy="13" r=".5" fill="currentColor"/></svg>
             Support &amp; Tickets
@@ -9645,39 +9862,39 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b010"></script>
-<script src="/js/db.js?v=20260718b010"></script>
-<script src="/js/data.js?v=20260718b010"></script>
-<script src="/js/reps.js?v=20260718b010"></script>
-<script src="/js/record-page.js?v=20260718b010"></script>
-<script src="/js/academy.js?v=20260718b010"></script>
-<script src="/js/task_engine.js?v=20260718b010"></script>
-<script src="/js/gw_i18n.js?v=20260718b010"></script>
-<script src="/js/app_premium.js?v=20260718b010"></script>
-<script src="/js/estimates.js?v=20260718b010"></script>
-<script src="/js/proposals.js?v=20260718b010"></script>
-<script src="/js/pricing.js?v=20260718b010"></script>
-<script src="/js/invoices.js?v=20260718b010"></script>
-<script src="/js/csv_import.js?v=20260718b010"></script>
-<script src="/js/onboarding.js?v=20260718b010"></script>
-<script src="/js/recurring_plans.js?v=20260718b010"></script>
-<script src="/js/reviews.js?v=20260718b010"></script>
-<script src="/js/stripe.js?v=20260718b010"></script>
-<script src="/js/email.js?v=20260718b010"></script>
-<script src="/js/notifications.js?v=20260718b010"></script>
-<script src="/js/integrations.js?v=20260718b010"></script>
-<script src="/js/calendar_sync.js?v=20260718b010"></script>
-<script src="/js/ai_followup.js?v=20260718b010"></script>
-<script src="/js/user_management.js?v=20260718b010"></script>
-<script src="/js/platform_admin.js?v=20260718b010"></script>
-<script src="/js/time_tracker.js?v=20260718b010"></script>
-<script src="/js/field_workday.js?v=20260718b010"></script>
-<script src="/js/platform_core.js?v=20260718b010"></script>
-<script src="/js/approval_engine.js?v=20260718b010"></script>
-<script src="/js/automation_engine.js?v=20260718b010"></script>
-<script src="/js/client_portal.js?v=20260718b010"></script>
-<script src="/js/field_mode.js?v=20260718b010"></script>
-<script src="/js/assets_hub.js?v=20260718b010"></script>
+<script src="/js/gw-icons.js?v=20260718b011"></script>
+<script src="/js/db.js?v=20260718b011"></script>
+<script src="/js/data.js?v=20260718b011"></script>
+<script src="/js/reps.js?v=20260718b011"></script>
+<script src="/js/record-page.js?v=20260718b011"></script>
+<script src="/js/academy.js?v=20260718b011"></script>
+<script src="/js/task_engine.js?v=20260718b011"></script>
+<script src="/js/gw_i18n.js?v=20260718b011"></script>
+<script src="/js/app_premium.js?v=20260718b011"></script>
+<script src="/js/estimates.js?v=20260718b011"></script>
+<script src="/js/proposals.js?v=20260718b011"></script>
+<script src="/js/pricing.js?v=20260718b011"></script>
+<script src="/js/invoices.js?v=20260718b011"></script>
+<script src="/js/csv_import.js?v=20260718b011"></script>
+<script src="/js/onboarding.js?v=20260718b011"></script>
+<script src="/js/recurring_plans.js?v=20260718b011"></script>
+<script src="/js/reviews.js?v=20260718b011"></script>
+<script src="/js/stripe.js?v=20260718b011"></script>
+<script src="/js/email.js?v=20260718b011"></script>
+<script src="/js/notifications.js?v=20260718b011"></script>
+<script src="/js/integrations.js?v=20260718b011"></script>
+<script src="/js/calendar_sync.js?v=20260718b011"></script>
+<script src="/js/ai_followup.js?v=20260718b011"></script>
+<script src="/js/user_management.js?v=20260718b011"></script>
+<script src="/js/platform_admin.js?v=20260718b011"></script>
+<script src="/js/time_tracker.js?v=20260718b011"></script>
+<script src="/js/field_workday.js?v=20260718b011"></script>
+<script src="/js/platform_core.js?v=20260718b011"></script>
+<script src="/js/approval_engine.js?v=20260718b011"></script>
+<script src="/js/automation_engine.js?v=20260718b011"></script>
+<script src="/js/client_portal.js?v=20260718b011"></script>
+<script src="/js/field_mode.js?v=20260718b011"></script>
+<script src="/js/assets_hub.js?v=20260718b011"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

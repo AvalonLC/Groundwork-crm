@@ -573,7 +573,7 @@ function fallbackCopy(text){
       automationCenter:'Workflow', fieldMode:'Field Preview',
       // Platform Admin
       gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support',
-      gwDemos:'Demo Requests', gwPricing:'Pricing Plans',
+      gwDemos:'Demo Requests', gwPricing:'Pricing Plans', gwOnboarding:'Onboarding',
       gwAnnounce:'Announcements', gwBilling:'Billing',
       gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
     };
@@ -1316,7 +1316,7 @@ function show(viewName='today', param){
       portalAdmin:'Client Portal', automationCenter:'Workflow', fieldMode:'Field Preview',
       // Platform Admin
       gwTenants:'Tenants', gwLeads:'Sales Pipeline', gwSupport:'Support & Tickets',
-      gwDemos:'Demo Requests', gwPricing:'Pricing Plans',
+      gwDemos:'Demo Requests', gwPricing:'Pricing Plans', gwOnboarding:'Onboarding',
       gwAnnounce:'Announcements', gwBilling:'Billing & Plans',
       gwPlatformSettings:'Platform Settings', superAdmin:'Platform Overview',
       // Legacy / misc
@@ -1439,6 +1439,7 @@ function show(viewName='today', param){
         gwLeads:   () => window.gwPlatformAdmin.leads(),
         gwDemos:   () => window.gwPlatformAdmin.demos(),
         gwPricing: () => window.gwPlatformAdmin.pricingPlans(),
+        gwOnboarding: () => window.gwPlatformAdmin.onboarding(),
         gwSupport: () => window.gwPlatformAdmin.support(),
         gwAnnounce:() => window.gwPlatformAdmin.announce(),
         gwBilling: () => window.gwPlatformAdmin.billing(),

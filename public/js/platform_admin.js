@@ -1954,6 +1954,346 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // ONBOARDING  (Sales Playbook · Template Builder · Tenant Funnel)
+  // ─────────────────────────────────────────────────────────────────────────
+  async function onboarding() {
+    const v = view(); if (!v) return;
+    v.innerHTML = `<div style="padding:60px;text-align:center;color:#6F7E6A">Loading onboarding…</div>`;
+
+    let data, demosRows = [], funnel = { companies: [], checklist_progress: [], checklist_total: 0, responses: [] }, salesProg = [];
+    try {
+      [data, demosRows, funnel, salesProg] = await Promise.all([
+        apiGet('/api/platform/onboarding/templates'),
+        apiGet('/api/platform/demos').catch(()=>[]),
+        apiGet('/api/platform/onboarding/funnel').catch(()=>funnel),
+        apiGet('/api/platform/onboarding/progress?template_id=sales_default').catch(()=>[]),
+      ]);
+    } catch(e) { v.innerHTML = `<div style="padding:60px;text-align:center;color:#C97B6A">Error: ${esc(e.message)}</div>`; return; }
+
+    const templates = data.templates || [];
+    const steps = data.steps || [];
+    const stepsFor = tid => steps.filter(s => s.template_id === tid).sort((a,b)=>(a.sort||0)-(b.sort||0));
+    const salesSteps = stepsFor('sales_default').filter(s=>s.active);
+    const wizardSteps = stepsFor('wizard_default');
+    const checklistSteps = stepsFor('checklist_default');
+
+    // Progress lookup: subject_id → Set(step_id)
+    const progBySubject = {};
+    (Array.isArray(salesProg)?salesProg:[]).forEach(p => {
+      (progBySubject[p.subject_id] = progBySubject[p.subject_id] || new Set()).add(p.step_id);
+    });
+
+    // Active playbook subjects: demos not cancelled; converted stay until all steps done
+    const activeDemos = (demosRows||[]).filter(d => d.status !== 'cancelled')
+      .filter(d => {
+        const done = progBySubject[d.id]?.size || 0;
+        return !(d.status === 'converted' && done >= salesSteps.length && salesSteps.length > 0);
+      });
+    const inFlight = activeDemos.filter(d => (progBySubject[d.id]?.size||0) > 0 && (progBySubject[d.id]?.size||0) < salesSteps.length).length;
+    const notStarted = activeDemos.filter(d => !(progBySubject[d.id]?.size)).length;
+
+    // Tenant funnel stats
+    const cos = funnel.companies || [];
+    const wizDone = cos.filter(c => c.onboarding_completed).length;
+    const clProgMap = {}; (funnel.checklist_progress||[]).forEach(r => clProgMap[r.subject_id] = r.done);
+
+    v.innerHTML = shell(
+      'Onboarding',
+      'Your sales-to-live playbook, the new-company signup wizard, and the tenant Getting Started checklist — all editable here',
+      'PLATFORM ADMIN › ONBOARDING',
+      `${actionBtn('↺ Refresh','show(\'gwOnboarding\')')}`,
+      `
+      <div class="gw-pa-stat-grid" style="margin-bottom:24px">
+        ${statCard('Playbook Steps', fmt(salesSteps.length), gwI('list',40,'#4D8A86'), '#4D8A86', 'sales onboarding checklist')}
+        ${statCard('In Flight', fmt(inFlight), gwI('clock',40,'#8B6914'), '#8B6914', 'demos mid-playbook')}
+        ${statCard('Not Started', fmt(notStarted), gwI('flag',40,'#C97B6A'), '#C97B6A', 'demos w/ no steps done')}
+        ${statCard('Wizard Completed', fmt(wizDone) + ' / ' + fmt(cos.length), gwI('check',40,'#2D7A55'), '#2D7A55', 'tenants finished setup wizard')}
+        ${statCard('Checklist Items', fmt(checklistSteps.filter(s=>s.active).length), gwI('star',40,'#7B5EA7'), '#7B5EA7', 'shown to new tenants')}
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:10px;margin-bottom:22px;flex-wrap:wrap">
+        ${[['playbook','Sales Playbook'],['builder','Template Builder'],['funnel','Tenant Funnel']].map(([id,label],i)=>`
+        <button onclick="window._gwOnbTab('${id}')" id="gwOnbTab_${id}"
+          style="padding:9px 20px;border-radius:12px;border:1px solid ${i===0?'#4D8A86':'var(--line,#e5e5e0)'};
+                 background:${i===0?'rgba(77,138,134,.15)':'transparent'};
+                 color:${i===0?'#4D8A86':'#6F7E6A'};font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.02em">
+          ${label}
+        </button>`).join('')}
+      </div>
+
+      <div id="gwOnbPane"></div>
+      `
+    );
+
+    /* ── Pane renderers ─────────────────────────────────────────────────── */
+    const paneEl = () => document.getElementById('gwOnbPane');
+
+    function renderPlaybook() {
+      const rows = activeDemos.map(d => {
+        const doneSet = progBySubject[d.id] || new Set();
+        const pct = salesSteps.length ? Math.round(doneSet.size / salesSteps.length * 100) : 0;
+        const barCol = pct >= 100 ? '#2D7A55' : pct >= 50 ? '#4D8A86' : '#8B6914';
+        return `
+<div style="border-bottom:1px solid var(--line,#e5e5e0)">
+  <div onclick="window._gwOnbExpand('${esc(d.id)}')" style="display:flex;align-items:center;gap:14px;padding:15px 20px;cursor:pointer" onmouseover="this.style.background='rgba(77,138,134,.05)'" onmouseout="this.style.background=''">
+    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,rgba(77,138,134,.2),rgba(26,71,64,.15));display:flex;align-items:center;justify-content:center;font-weight:800;color:#4D8A86;font-size:13px;flex-shrink:0">${esc((d.company_name||d.contact_name||'?').trim().charAt(0).toUpperCase())}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:14px;color:#E8E4D9">${esc(d.company_name||d.contact_name||'Unknown')}</div>
+      <div style="font-size:12px;color:#5C6B58">${esc(d.contact_name||'')}${d.email?' · '+esc(d.email):''} · ${demoStatusBadge(d.status)}</div>
+    </div>
+    <div style="width:220px;flex-shrink:0">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#6F7E6A;margin-bottom:5px"><span>${doneSet.size} / ${salesSteps.length} steps</span><span style="font-weight:800;color:${barCol}">${pct}%</span></div>
+      <div style="height:7px;background:rgba(111,126,106,.15);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barCol};border-radius:4px;transition:width .3s"></div></div>
+    </div>
+    <span id="gwOnbChev_${esc(d.id)}" style="color:#6F7E6A;font-size:12px;transition:transform .2s">▾</span>
+  </div>
+  <div id="gwOnbSteps_${esc(d.id)}" style="display:none;padding:6px 20px 18px 70px">
+    ${salesSteps.map(s => {
+      const done = doneSet.has(s.id);
+      return `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:8px 0">
+      <input type="checkbox" ${done?'checked':''} onchange="window._gwOnbToggle('${esc(s.id)}','${esc(d.id)}',this.checked)"
+        style="width:17px;height:17px;accent-color:#2D7A55;cursor:pointer;margin-top:2px;flex-shrink:0">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:${done?'#5C6B58':'#E8E4D9'};${done?'text-decoration:line-through;opacity:.7':''}">${esc(s.title)}${s.required?' <span style="color:#C97B6A;font-size:11px">*</span>':''}</div>
+        ${s.description?`<div style="font-size:11.5px;color:#6F7E6A;margin-top:2px">${esc(s.description)}</div>`:''}
+      </div>
+    </div>`;
+    }).join('')}
+  </div>
+</div>`;
+      }).join('');
+
+      paneEl().innerHTML = panel('Sales Onboarding Playbook',
+        `<span style="font-size:12px;color:#5C6B58">${activeDemos.length} active · click a row to expand its checklist</span>`,
+        rows || `<div style="padding:60px;text-align:center;color:#5C6B58">No active demos.<br><br><span style="font-size:12px">Every demo request automatically gets this playbook. Log one from the Demo Requests page to start.</span></div>`
+      );
+    }
+
+    function renderBuilder() {
+      const tplSection = (tpl, tSteps, color, hint) => panel(
+        esc(tpl?.name || ''),
+        `${primaryBtn('+ Add Step',`window._gwOnbStepModal(null,'${esc(tpl.id)}')`)}`,
+        `
+        <div style="padding:14px 20px;font-size:12.5px;color:#6F7E6A;border-bottom:1px solid var(--line,#e5e5e0);background:rgba(77,138,134,.04)">${esc(hint || tpl?.description || '')}</div>
+        ${tSteps.map(s => {
+          let metaNote = '';
+          if (tpl.id === 'wizard_default' && !s.locked) {
+            let qs = []; try { qs = JSON.parse(s.fields||'[]'); } catch {}
+            metaNote = qs.length ? `${qs.length} question${qs.length!==1?'s':''}` : 'no questions yet';
+          } else if (tpl.id === 'checklist_default') {
+            let m = {}; try { m = JSON.parse(s.fields||'{}'); } catch {}
+            metaNote = m.auto && m.auto !== 'manual' ? `auto-detects: ${m.auto}` : 'manual check-off';
+          }
+          return `
+<div style="display:flex;align-items:center;gap:14px;padding:13px 20px;border-bottom:1px solid var(--line,#e5e5e0);${s.active?'':'opacity:.45'}">
+  <div style="width:28px;height:28px;border-radius:8px;background:${color}22;border:1px solid ${color}44;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:${color};flex-shrink:0">${s.sort||'·'}</div>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:13.5px;font-weight:700;color:#E8E4D9">${esc(s.title)}
+      ${s.locked?'<span style="font-size:10px;font-weight:700;color:#8B6914;background:rgba(139,105,20,.14);border:1px solid rgba(139,105,20,.3);padding:2px 7px;border-radius:8px;margin-left:6px">BUILT-IN</span>':''}
+      ${s.required?'<span style="font-size:10px;font-weight:700;color:#C97B6A;background:rgba(201,123,106,.12);border:1px solid rgba(201,123,106,.3);padding:2px 7px;border-radius:8px;margin-left:6px">REQUIRED</span>':''}
+      ${s.active?'':'<span style="font-size:10px;font-weight:700;color:#6F7E6A;border:1px solid #6F7E6A44;padding:2px 7px;border-radius:8px;margin-left:6px">INACTIVE</span>'}
+    </div>
+    <div style="font-size:11.5px;color:#6F7E6A;margin-top:2px">${esc(s.description||'')}${metaNote?` <span style="color:${color};font-weight:700">· ${esc(metaNote)}</span>`:''}</div>
+  </div>
+  ${s.locked
+    ? '<span style="font-size:11px;color:#5C6B58;flex-shrink:0">locked</span>'
+    : `<button onclick="window._gwOnbStepModal('${esc(s.id)}','${esc(tpl.id)}')" style="padding:6px 14px;background:${color}18;border:1px solid ${color}44;border-radius:8px;color:${color};font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">Edit</button>`}
+</div>`;
+        }).join('') || '<div style="padding:40px;text-align:center;color:#5C6B58">No steps yet.</div>'}
+        `, 'margin-bottom:28px');
+
+      const tSales = templates.find(t=>t.id==='sales_default');
+      const tWiz = templates.find(t=>t.id==='wizard_default');
+      const tCl = templates.find(t=>t.id==='checklist_default');
+      paneEl().innerHTML =
+        (tSales ? tplSection(tSales, stepsFor('sales_default'), '#4D8A86', 'Internal checklist your team works through for every demo → live customer. Attached automatically to all demo requests in the Sales Playbook tab.') : '') +
+        (tWiz ? tplSection(tWiz, wizardSteps, '#8B6914', 'The first-login wizard every new tenant admin sees. Built-in steps are locked. Add custom question steps — answers appear in the Tenant Funnel.') : '') +
+        (tCl ? tplSection(tCl, checklistSteps, '#7B5EA7', 'The "Getting Started" panel inside every new tenant dashboard. Auto-detect items check themselves off when the tenant does the thing.') : '');
+    }
+
+    function renderFunnel() {
+      const respByCo = {};
+      (funnel.responses||[]).forEach(r => (respByCo[r.company_id] = respByCo[r.company_id] || []).push(r));
+      const rows = cos.map(co => {
+        const clDone = clProgMap[co.id] || 0;
+        const wizPct = co.onboarding_completed ? 100 : Math.min(99, Math.round(((co.onboarding_step||0) / 6) * 100));
+        const answers = respByCo[co.id] || [];
+        return `
+<div style="border-bottom:1px solid var(--line,#e5e5e0)">
+  <div onclick="window._gwOnbExpand('fn_${esc(co.id)}')" style="display:flex;align-items:center;gap:14px;padding:14px 20px;cursor:pointer" onmouseover="this.style.background='rgba(77,138,134,.05)'" onmouseout="this.style.background=''">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:14px;color:#E8E4D9">${esc(co.name||co.id)}</div>
+      <div style="font-size:11.5px;color:#5C6B58">${esc(co.plan||'—')} · ${esc(co.subscription_status||'')} · joined ${ago(co.created_at)}</div>
+    </div>
+    <div style="width:170px;flex-shrink:0">
+      <div style="font-size:11px;color:#6F7E6A;margin-bottom:4px">Wizard ${co.onboarding_completed?'<span style="color:#2D7A55;font-weight:800">✓ done</span>':`<span style="color:#8B6914;font-weight:800">step ${(co.onboarding_step||0)+1}/6</span>`}</div>
+      <div style="height:6px;background:rgba(111,126,106,.15);border-radius:4px;overflow:hidden"><div style="height:100%;width:${wizPct}%;background:${co.onboarding_completed?'#2D7A55':'#8B6914'};border-radius:4px"></div></div>
+    </div>
+    <div style="width:120px;text-align:right;flex-shrink:0;font-size:12px;color:#6F7E6A">Checklist <span style="font-weight:800;color:#7B5EA7">${clDone}</span>${funnel.checklist_total?` <span style="opacity:.6">manual</span>`:''}</div>
+    <span id="gwOnbChev_fn_${esc(co.id)}" style="color:#6F7E6A;font-size:12px">▾</span>
+  </div>
+  <div id="gwOnbSteps_fn_${esc(co.id)}" style="display:none;padding:4px 20px 16px 24px">
+    ${answers.length ? `<div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6F7E6A;margin:8px 0 6px">Custom Wizard Answers</div>
+      ${answers.map(a=>`<div style="font-size:12.5px;padding:5px 0;border-bottom:1px dashed var(--line,#e5e5e0)"><span style="color:#6F7E6A">${esc(a.question)}:</span> <span style="color:#E8E4D9;font-weight:600">${esc(a.answer||'—')}</span></div>`).join('')}`
+      : '<div style="font-size:12px;color:#5C6B58;padding:10px 0">No custom wizard answers recorded for this tenant.</div>'}
+  </div>
+</div>`;
+      }).join('');
+      paneEl().innerHTML = panel('Tenant Onboarding Funnel',
+        `<span style="font-size:12px;color:#5C6B58">${cos.length} tenants · ${wizDone} completed the wizard</span>`,
+        rows || '<div style="padding:60px;text-align:center;color:#5C6B58">No tenants yet.</div>'
+      );
+    }
+
+    /* ── Handlers ────────────────────────────────────────────────────────── */
+    window._gwOnbTab = function(id) {
+      ['playbook','builder','funnel'].forEach(t => {
+        const b = document.getElementById('gwOnbTab_'+t); if (!b) return;
+        const on = t === id;
+        b.style.background = on ? 'rgba(77,138,134,.15)' : 'transparent';
+        b.style.borderColor = on ? '#4D8A86' : 'var(--line,#e5e5e0)';
+        b.style.color = on ? '#4D8A86' : '#6F7E6A';
+      });
+      if (id === 'playbook') renderPlaybook();
+      else if (id === 'builder') renderBuilder();
+      else renderFunnel();
+    };
+    window._gwOnbExpand = function(id) {
+      const el = document.getElementById('gwOnbSteps_'+id);
+      const ch = document.getElementById('gwOnbChev_'+id);
+      if (!el) return;
+      const open = el.style.display !== 'none';
+      el.style.display = open ? 'none' : 'block';
+      if (ch) ch.style.transform = open ? '' : 'rotate(180deg)';
+    };
+    window._gwOnbToggle = async function(stepId, demoId, done) {
+      try {
+        await apiPost('/api/platform/onboarding/progress', { step_id: stepId, subject_type: 'demo', subject_id: demoId, done });
+        const set = (progBySubject[demoId] = progBySubject[demoId] || new Set());
+        done ? set.add(stepId) : set.delete(stepId);
+        toast(done ? 'Step completed' : 'Step reopened');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwOnbStepModal = function(stepId, templateId) {
+      const step = stepId ? steps.find(s => s.id === stepId) : null;
+      _onbStepModal(step, templateId);
+    };
+
+    renderPlaybook();
+  }
+
+  // ── Step editor modal (all template types) ────────────────────────────────
+  function _onbStepModal(step, templateId) {
+    const isEdit = !!step;
+    const isWizard = templateId === 'wizard_default';
+    const isChecklist = templateId === 'checklist_default';
+    let fieldsText = '';
+    if (isWizard) {
+      let qs = []; try { qs = JSON.parse(step?.fields||'[]'); } catch {}
+      fieldsText = qs.map(q => q.type === 'select' ? `${q.label} | select | ${(q.options||[]).join(', ')}` : `${q.label} | text`).join('\n');
+    }
+    let clMeta = { auto: 'manual', view: '', cta: 'Open' };
+    if (isChecklist) { try { clMeta = Object.assign(clMeta, JSON.parse(step?.fields||'{}')); } catch {} }
+
+    const el = document.createElement('div');
+    el.id = 'gwOnbStepOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:#000c;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML = `
+<div style="background:var(--card,#1E2B29);border:1px solid var(--line,#2A3A38);border-radius:20px;width:min(620px,100%);max-height:92vh;overflow-y:auto;padding:28px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+    <h2 style="margin:0;font-size:18px;font-weight:800;color:#E8E4D9">${isEdit ? 'Edit Step' : 'New Step'}</h2>
+    <button onclick="document.getElementById('gwOnbStepOverlay').remove()" style="background:none;border:none;color:#6F7E6A;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div style="display:grid;gap:14px">
+    <div><label class="um-label">Title *</label>
+      <input id="gwOS-title" class="um-input" value="${esc(step?.title||'')}" placeholder="e.g. Kickoff call scheduled"></div>
+    <div><label class="um-label">Description</label>
+      <textarea id="gwOS-desc" class="um-input" rows="2" style="resize:vertical" placeholder="What does completing this step involve?">${esc(step?.description||'')}</textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Sort Order</label>
+        <input id="gwOS-sort" class="um-input" type="number" min="0" value="${esc(step?.sort??'')}" placeholder="1"></div>
+      <div style="display:flex;align-items:flex-end;gap:20px;padding-bottom:8px">
+        ${!isWizard && !isChecklist ? `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+          <input id="gwOS-required" type="checkbox" ${step?.required?'checked':''} style="width:16px;height:16px;accent-color:#C97B6A"> Required
+        </label>` : ''}
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+          <input id="gwOS-active" type="checkbox" ${(step?.active??1)?'checked':''} style="width:16px;height:16px;accent-color:#4D8A86"> Active
+        </label>
+      </div>
+    </div>
+    ${isWizard ? `
+    <div><label class="um-label">Questions (one per line: <code style="font-size:11px">Label | text</code> or <code style="font-size:11px">Label | select | Opt1, Opt2</code>)</label>
+      <textarea id="gwOS-questions" class="um-input" rows="6" style="resize:vertical;font-family:monospace;font-size:12px" placeholder="What tools do you use today? | text&#10;Team size? | select | Just me, 2-5, 6-10, 11+">${esc(fieldsText)}</textarea></div>` : ''}
+    ${isChecklist ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div><label class="um-label">Auto-detect</label>
+        <select id="gwOS-auto" class="um-input">
+          ${['manual','wizard','clients','price_items','estimates','invoices','reps','google'].map(a=>`<option value="${a}" ${clMeta.auto===a?'selected':''}>${a==='manual'?'Manual check-off':a}</option>`).join('')}
+        </select></div>
+      <div><label class="um-label">Opens view</label>
+        <input id="gwOS-view" class="um-input" value="${esc(clMeta.view||'')}" placeholder="clients"></div>
+      <div><label class="um-label">Button label</label>
+        <input id="gwOS-cta" class="um-input" value="${esc(clMeta.cta||'')}" placeholder="Add Client"></div>
+    </div>` : ''}
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px">
+    ${isEdit && !step.locked ? dangerBtn('Delete Step',`window._gwOnbDeleteStep('${esc(step.id)}')`) : '<span></span>'}
+    <div style="display:flex;gap:10px">
+      <button class="secondary-btn" onclick="document.getElementById('gwOnbStepOverlay').remove()">Cancel</button>
+      <button class="primary-btn" onclick="window._gwOnbSaveStep('${esc(step?.id||'')}','${esc(templateId)}')">${isEdit ? 'Save' : 'Create Step'}</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(el);
+
+    window._gwOnbSaveStep = async function(existingId, tplId) {
+      const payload = {
+        title:       document.getElementById('gwOS-title')?.value?.trim(),
+        description: document.getElementById('gwOS-desc')?.value?.trim() || '',
+        sort:        parseInt(document.getElementById('gwOS-sort')?.value)||0,
+        required:    document.getElementById('gwOS-required')?.checked ? 1 : 0,
+        active:      document.getElementById('gwOS-active')?.checked ? 1 : 0,
+      };
+      if (!payload.title) { toast('Title required'); return; }
+      if (tplId === 'wizard_default') {
+        const lines = (document.getElementById('gwOS-questions')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+        payload.fields = lines.map((ln,i) => {
+          const parts = ln.split('|').map(p=>p.trim());
+          const q = { key: 'q'+(i+1), label: parts[0]||ln, type: (parts[1]||'text').toLowerCase()==='select'?'select':'text' };
+          if (q.type==='select') q.options = (parts[2]||'').split(',').map(o=>o.trim()).filter(Boolean);
+          return q;
+        });
+      }
+      if (tplId === 'checklist_default') {
+        payload.fields = {
+          auto: document.getElementById('gwOS-auto')?.value || 'manual',
+          view: document.getElementById('gwOS-view')?.value?.trim() || '',
+          cta:  document.getElementById('gwOS-cta')?.value?.trim() || 'Open',
+        };
+      }
+      try {
+        if (existingId) { await apiPut(`/api/platform/onboarding/steps/${existingId}`, payload); toast('Step updated'); }
+        else { await apiPost('/api/platform/onboarding/steps', Object.assign({ template_id: tplId }, payload)); toast('Step created'); }
+        document.getElementById('gwOnbStepOverlay')?.remove();
+        show('gwOnboarding');
+        setTimeout(()=>{ try { window._gwOnbTab('builder'); } catch(e){} }, 400);
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwOnbDeleteStep = async function(id) {
+      if (!confirm('Delete this step? Progress recorded against it will also be removed.')) return;
+      try {
+        await apiDelete(`/api/platform/onboarding/steps/${id}`);
+        document.getElementById('gwOnbStepOverlay')?.remove();
+        toast('Step deleted');
+        show('gwOnboarding');
+        setTimeout(()=>{ try { window._gwOnbTab('builder'); } catch(e){} }, 400);
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // REGISTER MODULE
   // ─────────────────────────────────────────────────────────────────────────
   window.gwPlatformAdmin = {
@@ -1962,6 +2302,7 @@
     leads,
     demos,
     pricingPlans,
+    onboarding,
     support,
     announce,
     billing,

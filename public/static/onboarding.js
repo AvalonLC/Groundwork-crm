@@ -118,11 +118,13 @@ window.gwCheckOnboarding = async function() {
     // Only trigger for admin role and uncompleted onboarding
     const rep = window._d1SessionRep;
     if (!rep || rep.role !== 'admin') return;
+    if (rep.company_id === 'groundwork_platform') return; // platform owner: no tenant onboarding
     // Treat missing field (undefined) as completed — only show for explicit 0
-    if (co.onboarding_completed !== 0) return;
-    if (co.onboarding_step >= 6) return;
-    // Extra safety: if company already has a phone/address it's an existing account
-    if (co.phone || co.address_line1) return;
+    if (co.onboarding_completed !== 0 || co.onboarding_step >= 6 || co.phone || co.address_line1) {
+      // Wizard done (or existing account) → show Getting Started checklist launcher instead
+      try { _gwGettingStartedInit(); } catch(e) {}
+      return;
+    }
     // Pre-fill state from existing company data
     _onbState.companyName   = co.name || '';
     _onbState.businessType  = co.business_type || 'home_services';
@@ -132,6 +134,15 @@ window.gwCheckOnboarding = async function() {
     _onbState.state         = co.address_state || '';
     _onbState.ownerName     = rep.name || '';
     _onbState.step          = co.onboarding_step || 0;
+    // Load platform-defined custom questions (non-blocking)
+    try {
+      const cr = await fetch('/api/onboarding/wizard-config', { credentials: 'include' });
+      if (cr.ok) {
+        const cd = await cr.json();
+        const list = (cd && cd.data) ? cd.data : cd;
+        _onbState.customSteps = Array.isArray(list) ? list : [];
+      }
+    } catch(e) { _onbState.customSteps = []; }
     gwLaunchOnboarding();
   } catch(e) {
     console.warn('[Onboarding] Check failed:', e.message);
@@ -524,7 +535,64 @@ window._onbSaveStep4 = async function() {
       })
     });
   } catch(e) {}
-  _onbShowStep(5);
+  // Platform-defined custom questions come before the Done screen (if any)
+  const _cs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
+  if (_cs.length) _onbShowCustomStep(0);
+  else _onbShowStep(5);
+};
+
+/* ── Custom question steps (defined in Platform Admin → Onboarding) ───────── */
+function _onbShowCustomStep(idx) {
+  const customs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
+  const step = customs[idx];
+  if (!step) { _onbShowStep(5); return; }
+  let questions = []; try { questions = JSON.parse(step.fields||'[]'); } catch {}
+
+  const overlay = _onbCreateOverlay();
+  document.body.appendChild(overlay);
+  overlay.innerHTML = `<div class="onb-modal">
+    ${_onbProgressBar(4)}
+    ${_onbHeader(step.title || 'A few quick questions', step.description || 'This helps us tailor Groundwork to your business.')}
+    <div class="onb-body">
+      ${questions.map((q,i) => `
+      <div class="onb-field-group" style="margin-bottom:14px">
+        <label class="onb-label">${_escOnb(q.label||'')}</label>
+        ${q.type === 'select'
+          ? `<select class="onb-select" id="onbCQ_${i}"><option value="">Select…</option>${(q.options||[]).map(o=>`<option value="${_escOnb(o)}">${_escOnb(o)}</option>`).join('')}</select>`
+          : `<input class="onb-input" id="onbCQ_${i}" placeholder="Your answer…">`}
+      </div>`).join('')}
+    </div>
+    ${_onbFooter(4, idx < customs.length - 1 ? 'Continue' : 'Almost Done', `_onbSaveCustomStep(${idx})`, `_onbSkipCustomStep(${idx})`)}
+  </div>`;
+}
+
+window._onbSaveCustomStep = async function(idx) {
+  const customs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
+  const step = customs[idx];
+  if (step) {
+    let questions = []; try { questions = JSON.parse(step.fields||'[]'); } catch {}
+    const answers = questions.map((q,i) => ({
+      key: q.key || ('q'+(i+1)),
+      question: q.label || '',
+      answer: document.getElementById('onbCQ_'+i)?.value || ''
+    })).filter(a => a.answer);
+    if (answers.length) {
+      try {
+        await fetch('/api/onboarding/wizard-answers', {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answers })
+        });
+      } catch(e) {}
+    }
+  }
+  if (idx < customs.length - 1) _onbShowCustomStep(idx + 1);
+  else _onbShowStep(5);
+};
+window._onbSkipCustomStep = function(idx) {
+  const customs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
+  if (idx < customs.length - 1) _onbShowCustomStep(idx + 1);
+  else _onbShowStep(5);
 };
 
 /* ── Step 5: Done / Launch ─────────────────────────────────────────────────── */
@@ -695,4 +763,78 @@ function _escOnb(s) {
   document.head.appendChild(style);
 })();
 
-console.log('[Groundwork] onboarding.js loaded v20260711p48');
+/* ── Getting Started checklist (platform-defined, floating launcher) ─────────
+Shown to tenant admins after the wizard until every item is done (or dismissed
+for the session). Items auto-detect via /api/onboarding/checklist. ────────── */
+async function _gwGettingStartedInit() {
+  if (window._gwGSDismissed || document.getElementById('gwGSLauncher')) return;
+  if (sessionStorage.getItem('gwGSDismissed')) return;
+  let data;
+  try {
+    const r = await fetch('/api/onboarding/checklist', { credentials: 'include' });
+    if (!r.ok) return;
+    const raw = await r.json();
+    data = (raw && raw.data) ? raw.data : raw;
+  } catch(e) { return; }
+  if (!data || !Array.isArray(data.items) || !data.items.length) return;
+  if (data.done >= data.total) return; // all done — stay hidden forever
+
+  const btn = document.createElement('button');
+  btn.id = 'gwGSLauncher';
+  btn.innerHTML = `🚀 Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${data.done}/${data.total}</span>`;
+  btn.style.cssText = 'position:fixed;bottom:22px;right:22px;z-index:8000;background:#2D7A55;color:#fff;border:none;border-radius:26px;padding:12px 20px;font-size:13.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 24px rgba(29,58,43,.35);font-family:inherit;display:flex;align-items:center;transition:transform .15s';
+  btn.onmouseover = () => btn.style.transform = 'translateY(-2px)';
+  btn.onmouseout = () => btn.style.transform = '';
+  btn.onclick = () => _gwGSOpenPanel();
+  document.body.appendChild(btn);
+}
+
+async function _gwGSOpenPanel() {
+  document.getElementById('gwGSPanel')?.remove();
+  let data;
+  try {
+    const r = await fetch('/api/onboarding/checklist', { credentials: 'include' });
+    const raw = await r.json();
+    data = (raw && raw.data) ? raw.data : raw;
+  } catch(e) { return; }
+  const items = (data && data.items) || [];
+  const pct = data.total ? Math.round(data.done / data.total * 100) : 0;
+
+  const panel = document.createElement('div');
+  panel.id = 'gwGSPanel';
+  panel.style.cssText = 'position:fixed;bottom:80px;right:22px;z-index:8001;width:min(380px,calc(100vw - 44px));background:#fff;border:1.5px solid #E5E7EB;border-radius:18px;box-shadow:0 16px 48px rgba(0,0,0,.18);overflow:hidden;font-family:inherit';
+  panel.innerHTML = `
+  <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:18px 20px;color:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:15px;font-weight:800">Getting Started</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="window._gwGSDismiss()" title="Hide for this session" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:8px;cursor:pointer">Hide</button>
+        <button onclick="document.getElementById('gwGSPanel').remove()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1">✕</button>
+      </div>
+    </div>
+    <div style="margin-top:10px;height:7px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#fff;border-radius:4px"></div></div>
+    <div style="font-size:12px;margin-top:6px;opacity:.9">${data.done} of ${data.total} complete — ${pct}%</div>
+  </div>
+  <div style="max-height:340px;overflow-y:auto">
+    ${items.map(it => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:13px 18px;border-bottom:1px solid #F3F4F6;${it.done?'opacity:.55':''}">
+      <div style="width:20px;height:20px;border-radius:50%;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;${it.done?'background:#2D7A55;color:#fff':'border:2px solid #D1D5DB;color:transparent'}">✓</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;color:#1F2937;${it.done?'text-decoration:line-through':''}">${_escOnb(it.title)}</div>
+        <div style="font-size:11.5px;color:#6B7280;margin-top:2px">${_escOnb(it.description||'')}</div>
+      </div>
+      ${!it.done && it.view ? `<button onclick="document.getElementById('gwGSPanel').remove();if(typeof show==='function')show('${_escOnb(it.view)}')" style="flex-shrink:0;background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11.5px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit">${_escOnb(it.cta||'Open')}</button>` : ''}
+    </div>`).join('')}
+  </div>`;
+  document.body.appendChild(panel);
+}
+
+window._gwGSDismiss = function() {
+  window._gwGSDismissed = true;
+  try { sessionStorage.setItem('gwGSDismissed', '1'); } catch(e) {}
+  document.getElementById('gwGSPanel')?.remove();
+  document.getElementById('gwGSLauncher')?.remove();
+};
+window.gwGettingStarted = _gwGSOpenPanel;
+
+console.log('[Groundwork] onboarding.js loaded v20260718t22');
