@@ -3022,6 +3022,20 @@ app.get('/api/admin/ai', requireSuperAdmin, async (c) => {
     if (u.key_source === 'platform') { m.platform_actions += u.actions; m.platform_tokens += u.tokens || 0 }
   }
   const platKeyVal = String(platKey?.value || '')
+  // Plan + month-to-date quota per company (Phase 2)
+  const planRows = await db.prepare(`SELECT key, value FROM settings WHERE key LIKE '%:ai_plan' OR key LIKE '%:ai_custom_cap'`).all()
+  const planMap: Record<string, string> = {}, capMap: Record<string, string> = {}
+  for (const r of (planRows.results as any[])) {
+    if (r.key.endsWith(':ai_plan')) planMap[r.key.slice(0, -8)] = String(r.value || '')
+    else if (r.key.endsWith(':ai_custom_cap')) capMap[r.key.slice(0, -14)] = String(r.value || '')
+  }
+  const mtd = await db.prepare(`
+    SELECT company_id, COUNT(*) AS actions FROM ai_usage
+    WHERE key_source = 'platform' AND created_at >= datetime('now','start of month')
+    GROUP BY company_id
+  `).all()
+  const mtdMap: Record<string, number> = {}
+  for (const m of (mtd.results as any[])) mtdMap[m.company_id] = Number(m.actions) || 0
   return json(c, {
     platform_key_set: !!platKeyVal,
     platform_key_masked: platKeyVal ? (platKeyVal.length > 10 ? platKeyVal.slice(0, 7) + '…' + platKeyVal.slice(-4) : 'sk-…') : '',
@@ -3030,6 +3044,13 @@ app.get('/api/admin/ai', requireSuperAdmin, async (c) => {
       id: co.id, name: co.name, plan: co.plan, active: co.active,
       ai_enabled: co.ai_enabled === '1', has_byok: !!co.has_byok,
       usage_30d: usageMap[co.id] || { actions: 0, tokens: 0, platform_actions: 0, platform_tokens: 0 },
+      ai_plan: (planMap[co.id] in AI_PLAN_CAPS) ? planMap[co.id] : 'starter',
+      ai_cap: (() => {
+        const p = (planMap[co.id] in AI_PLAN_CAPS) ? planMap[co.id] : 'starter'
+        const cc = capMap[co.id]
+        return (cc !== undefined && cc !== '' && isFinite(Number(cc))) ? Number(cc) : AI_PLAN_CAPS[p]
+      })(),
+      ai_used_mtd: mtdMap[co.id] || 0,
     })),
   })
 })
@@ -3077,9 +3098,35 @@ app.put('/api/admin/ai/company/:id', requireSuperAdmin, async (c) => {
   const b: any = await c.req.json().catch(() => ({}))
   const co = await c.env.DB.prepare('SELECT id FROM companies WHERE id = ? LIMIT 1').bind(id).first()
   if (!co) return err(c, 'Company not found', 404)
-  await c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
-    .bind(`${id}:ai_enabled`, b.ai_enabled ? '1' : '0').run()
-  return json(c, { id, ai_enabled: !!b.ai_enabled })
+  const stmts: any[] = []
+  if ('ai_enabled' in b) stmts.push(c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+    .bind(`${id}:ai_enabled`, b.ai_enabled ? '1' : '0'))
+  if ('ai_plan' in b) {
+    const plan = String(b.ai_plan || 'starter')
+    if (!(plan in AI_PLAN_CAPS)) return err(c, 'Invalid plan — use starter, pro, or unlimited', 400)
+    stmts.push(c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .bind(`${id}:ai_plan`, plan))
+  }
+  if ('ai_custom_cap' in b) {
+    const v = b.ai_custom_cap === null || b.ai_custom_cap === '' ? '' : String(Math.max(0, Number(b.ai_custom_cap) || 0))
+    stmts.push(c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .bind(`${id}:ai_custom_cap`, v))
+  }
+  if (stmts.length) await c.env.DB.batch(stmts)
+  return json(c, { id, ai_enabled: b.ai_enabled, ai_plan: b.ai_plan, ai_custom_cap: b.ai_custom_cap })
+})
+
+// GET /api/ai/quota — tenant-facing month-to-date AI quota (for 80% warnings in the UI)
+app.get('/api/ai/quota', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const { keySource, aiEnabled } = await _aiCreds(db, companyId, c.env)
+  if (keySource === 'byok' || keySource === 'env') {
+    return json(c, { metered: false, key_source: keySource })
+  }
+  if (!aiEnabled) return json(c, { metered: false, key_source: '', ai_enabled: false })
+  const q = await _aiQuota(db, companyId)
+  return json(c, { metered: true, key_source: 'platform', ai_enabled: true, ...q })
 })
 
 // GET /api/admin/ai/usage?company_id=&days=30 — detailed usage rows for billing
@@ -4768,7 +4815,7 @@ app.delete('/api/proposal-templates/:id', requireAuth, async (c) => {
 let _ai36SchemaOk = false
 async function ensureAiSchema(db: D1Database): Promise<void> {
   if (_ai36SchemaOk) return
-  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_ai_v1' LIMIT 1").first<any>()
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_ai_v2' LIMIT 1").first<any>()
   if (flag) { _ai36SchemaOk = true; return }
   const stmts = mig0036.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
     .split(';').map(x => x.trim()).filter(x => x.length > 0)
@@ -4778,7 +4825,10 @@ async function ensureAiSchema(db: D1Database): Promise<void> {
       if (!/already exists|duplicate/i.test(msg)) console.error('[ensureAiSchema]', msg)
     }
   }
-  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_ai_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  // One-time default: Avalon (the founding tenant) gets platform AI enabled.
+  // INSERT OR IGNORE — if the owner later flips it OFF, that choice sticks.
+  try { await db.prepare("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('avalon:ai_enabled', '1', datetime('now'))").run() } catch {}
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_ai_v2', ?, datetime('now'))").bind(new Date().toISOString()).run()
   _ai36SchemaOk = true
 }
 
@@ -4834,6 +4884,50 @@ async function _logAiUsage(db: D1Database, companyId: string, repId: string, fea
   } catch (e: any) { console.error('[ai_usage]', e?.message || e) }
 }
 
+// ── AI PLAN TIERS & MONTHLY QUOTAS (Phase 2) ─────────────────────────────────
+// Plans apply ONLY to platform-key usage (BYOK tenants are never capped — it's
+// their own key/money). Caps are AI actions per calendar month.
+//   starter   → 200 actions/mo (default for every enabled tenant)
+//   pro       → 1,000 actions/mo
+//   unlimited → no cap
+// Override per tenant with `{companyId}:ai_custom_cap` (a number; 0 = no cap).
+const AI_PLAN_CAPS: Record<string, number> = { starter: 200, pro: 1000, unlimited: 0 }
+
+async function _aiQuota(db: D1Database, companyId: string): Promise<{ plan: string; cap: number; used: number; remaining: number; warn: boolean; blocked: boolean }> {
+  await ensureAiSchema(db)
+  const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (?,?)`)
+    .bind(`${companyId}:ai_plan`, `${companyId}:ai_custom_cap`).all()
+  let plan = 'starter', customCap = ''
+  for (const r of (rows.results as any[])) {
+    if (r.key === `${companyId}:ai_plan`) plan = String(r.value || 'starter')
+    else if (r.key === `${companyId}:ai_custom_cap`) customCap = String(r.value || '')
+  }
+  if (!(plan in AI_PLAN_CAPS)) plan = 'starter'
+  let cap = AI_PLAN_CAPS[plan]
+  if (customCap !== '' && isFinite(Number(customCap))) cap = Number(customCap)
+  const u: any = await db.prepare(
+    `SELECT COUNT(*) AS n FROM ai_usage WHERE company_id = ? AND key_source = 'platform' AND created_at >= datetime('now','start of month')`
+  ).bind(companyId).first()
+  const used = Number(u?.n) || 0
+  const remaining = cap > 0 ? Math.max(0, cap - used) : -1  // -1 = unlimited
+  return {
+    plan, cap, used, remaining,
+    warn:    cap > 0 && used >= Math.floor(cap * 0.8) && used < cap,
+    blocked: cap > 0 && used >= cap,
+  }
+}
+
+// Gate a tenant AI request against its monthly quota. Only platform-key usage
+// counts; returns null when the request may proceed, or a ready error payload.
+async function _aiQuotaGate(db: D1Database, companyId: string, keySource: string): Promise<{ status: number; body: any } | null> {
+  if (keySource !== 'platform') return null
+  const q = await _aiQuota(db, companyId)
+  if (q.blocked) {
+    return { status: 429, body: { ok: false, error: 'quota_exceeded', message: `Your team has used all ${q.cap} AI actions in your ${q.plan} plan this month. Upgrade your AI plan or wait for the monthly reset.`, quota: q } }
+  }
+  return null
+}
+
 // POST /api/ai/generate-proposal — { lead:{...}, notes, instructions, estimate:{...}? }
 app.post('/api/ai/generate-proposal', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -4842,6 +4936,8 @@ app.post('/api/ai/generate-proposal', requireAuth, async (c) => {
   if (!apiKey) {
     return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
   }
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
 
   const b: any = await c.req.json().catch(() => ({}))
   const lead = b.lead || {}
@@ -4981,6 +5077,8 @@ app.post('/api/ai/draft-followup', requireAuth, async (c) => {
   if (!apiKey) {
     return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
   }
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
   const b: any = await c.req.json().catch(() => ({}))
   const transcript = String(b.transcript || '').trim()
   if (!transcript) return err(c, 'transcript required')
@@ -5078,6 +5176,8 @@ app.post('/api/ai/generate-quote', requireAuth, async (c) => {
   if (!apiKey) {
     return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
   }
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
   const b: any = await c.req.json().catch(() => ({}))
 
   // 1. Lead + conversation context
@@ -5572,7 +5672,32 @@ app.post('/api/calendar/sync', requireAuth, async (c) => {
     ).bind(companyId, `%[cal:${m.id}]%`).first()
     if (!dupe) {
       const taskId = 'task_' + uid()
-      const due = new Date(new Date(m.end_at).getTime() + 4 * 3600000) // due 4h after meeting ends
+      // ── Meeting-type rules (Phase 3) ──────────────────────────────────────
+      // Classify the meeting from its title/booking flag and tailor the task.
+      const sm = String(m.summary || '').toLowerCase()
+      let mType = 'meeting'   // generic default
+      if (/estimate|quote|bid|proposal/.test(sm))                        mType = 'estimate'
+      else if (/site visit|site-visit|walkthrough|walk-through|assessment|consult/.test(sm) || m.is_booking) mType = 'site_visit'
+      else if (/kickoff|kick-off|project start|onboard/.test(sm))        mType = 'kickoff'
+      else if (/check[- ]?in|review|status/.test(sm))                    mType = 'checkin'
+      const RULES: Record<string, { title: string; hint: string; priority: string }> = {
+        estimate:   { title: 'Send estimate follow-up email',    hint: 'They are waiting on pricing — recap the scope discussed and confirm when the estimate will land.', priority: 'high' },
+        site_visit: { title: 'Send post-site-visit follow-up email', hint: 'Recap what you saw on site, the recommended work, and clear next steps.', priority: 'high' },
+        kickoff:    { title: 'Send project kickoff recap email', hint: 'Confirm the start date, crew details, prep the client needs to do, and points of contact.', priority: 'high' },
+        checkin:    { title: 'Send check-in recap email',        hint: 'Summarize status, decisions made, and any changes to scope or schedule.', priority: 'normal' },
+        meeting:    { title: 'Send post-meeting follow-up email', hint: 'Send the post-meeting email recapping next steps.', priority: 'high' },
+      }
+      const rule = RULES[mType]
+      // ── Due date: next business MORNING after the meeting ends ───────────
+      // Same-day meetings that end before 2pm → due 9am next business day still
+      // gives breathing room; anything later also lands next business morning.
+      // Skips Sat/Sun. Times are kept in the meeting's own UTC frame (matches
+      // how due 4h-after used to behave — dates here are advisory).
+      const endD = new Date(m.end_at)
+      const due = new Date(endD)
+      due.setUTCDate(due.getUTCDate() + 1)
+      while (due.getUTCDay() === 0 || due.getUTCDay() === 6) due.setUTCDate(due.getUTCDate() + 1)  // 0=Sun 6=Sat
+      due.setUTCHours(9, 0, 0, 0)
       await db.prepare(`
         INSERT INTO tasks (
           id, company_id, title, description, task_type,
@@ -5583,12 +5708,12 @@ app.post('/api/calendar/sync', requireAuth, async (c) => {
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).bind(
         taskId, companyId,
-        `Send post-meeting follow-up email — ${opp.client || 'client'}`,
-        `Auto-created after "${m.summary}" ended. Send the post-site-meeting email recapping next steps. [cal:${m.id}]`,
+        `${rule.title} — ${opp.client || 'client'}`,
+        `Auto-created after "${m.summary}" ended. ${rule.hint} [cal:${m.id}]`,
         'follow_up', 'opportunity', opp.id, opp.client || '',
         repId, '', repId,
         due.toISOString().slice(0, 10), due.toISOString().slice(11, 16),
-        'high', 'open', 'none', 'calendar_automation', nowIso, nowIso
+        rule.priority, 'open', 'none', 'calendar_automation', nowIso, nowIso
       ).run()
       tasksCreated++
     }
@@ -8084,7 +8209,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b008">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8108,8 +8233,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b007"></script>
-  <script src="/js/client_portal.js?v=20260718b007"></script>
+  <script src="/js/platform_core.js?v=20260718b008"></script>
+  <script src="/js/client_portal.js?v=20260718b008"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8744,9 +8869,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b008">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9294,39 +9419,39 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b007"></script>
-<script src="/js/db.js?v=20260718b007"></script>
-<script src="/js/data.js?v=20260718b007"></script>
-<script src="/js/reps.js?v=20260718b007"></script>
-<script src="/js/record-page.js?v=20260718b007"></script>
-<script src="/js/academy.js?v=20260718b007"></script>
-<script src="/js/task_engine.js?v=20260718b007"></script>
-<script src="/js/gw_i18n.js?v=20260718b007"></script>
-<script src="/js/app_premium.js?v=20260718b007"></script>
-<script src="/js/estimates.js?v=20260718b007"></script>
-<script src="/js/proposals.js?v=20260718b007"></script>
-<script src="/js/pricing.js?v=20260718b007"></script>
-<script src="/js/invoices.js?v=20260718b007"></script>
-<script src="/js/csv_import.js?v=20260718b007"></script>
-<script src="/js/onboarding.js?v=20260718b007"></script>
-<script src="/js/recurring_plans.js?v=20260718b007"></script>
-<script src="/js/reviews.js?v=20260718b007"></script>
-<script src="/js/stripe.js?v=20260718b007"></script>
-<script src="/js/email.js?v=20260718b007"></script>
-<script src="/js/notifications.js?v=20260718b007"></script>
-<script src="/js/integrations.js?v=20260718b007"></script>
-<script src="/js/calendar_sync.js?v=20260718b007"></script>
-<script src="/js/ai_followup.js?v=20260718b007"></script>
-<script src="/js/user_management.js?v=20260718b007"></script>
-<script src="/js/platform_admin.js?v=20260718b007"></script>
-<script src="/js/time_tracker.js?v=20260718b007"></script>
-<script src="/js/field_workday.js?v=20260718b007"></script>
-<script src="/js/platform_core.js?v=20260718b007"></script>
-<script src="/js/approval_engine.js?v=20260718b007"></script>
-<script src="/js/automation_engine.js?v=20260718b007"></script>
-<script src="/js/client_portal.js?v=20260718b007"></script>
-<script src="/js/field_mode.js?v=20260718b007"></script>
-<script src="/js/assets_hub.js?v=20260718b007"></script>
+<script src="/js/gw-icons.js?v=20260718b008"></script>
+<script src="/js/db.js?v=20260718b008"></script>
+<script src="/js/data.js?v=20260718b008"></script>
+<script src="/js/reps.js?v=20260718b008"></script>
+<script src="/js/record-page.js?v=20260718b008"></script>
+<script src="/js/academy.js?v=20260718b008"></script>
+<script src="/js/task_engine.js?v=20260718b008"></script>
+<script src="/js/gw_i18n.js?v=20260718b008"></script>
+<script src="/js/app_premium.js?v=20260718b008"></script>
+<script src="/js/estimates.js?v=20260718b008"></script>
+<script src="/js/proposals.js?v=20260718b008"></script>
+<script src="/js/pricing.js?v=20260718b008"></script>
+<script src="/js/invoices.js?v=20260718b008"></script>
+<script src="/js/csv_import.js?v=20260718b008"></script>
+<script src="/js/onboarding.js?v=20260718b008"></script>
+<script src="/js/recurring_plans.js?v=20260718b008"></script>
+<script src="/js/reviews.js?v=20260718b008"></script>
+<script src="/js/stripe.js?v=20260718b008"></script>
+<script src="/js/email.js?v=20260718b008"></script>
+<script src="/js/notifications.js?v=20260718b008"></script>
+<script src="/js/integrations.js?v=20260718b008"></script>
+<script src="/js/calendar_sync.js?v=20260718b008"></script>
+<script src="/js/ai_followup.js?v=20260718b008"></script>
+<script src="/js/user_management.js?v=20260718b008"></script>
+<script src="/js/platform_admin.js?v=20260718b008"></script>
+<script src="/js/time_tracker.js?v=20260718b008"></script>
+<script src="/js/field_workday.js?v=20260718b008"></script>
+<script src="/js/platform_core.js?v=20260718b008"></script>
+<script src="/js/approval_engine.js?v=20260718b008"></script>
+<script src="/js/automation_engine.js?v=20260718b008"></script>
+<script src="/js/client_portal.js?v=20260718b008"></script>
+<script src="/js/field_mode.js?v=20260718b008"></script>
+<script src="/js/assets_hub.js?v=20260718b008"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

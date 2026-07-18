@@ -120,7 +120,34 @@
     renderStep1();
     document.getElementById('gw-aifu-overlay').style.display = 'flex';
     setTimeout(() => document.getElementById('gw-aifu-transcript')?.focus(), 60);
+    _checkQuota();
   };
+
+  // Phase 2: quota awareness — warn at 80%+, explain when blocked at 100%.
+  async function _checkQuota() {
+    try {
+      const r = await fetch('/api/ai/quota', { credentials: 'include' });
+      const j = await r.json().catch(() => ({}));
+      const q = j.data || j;
+      if (!q || !q.metered) return;   // BYOK / env keys are never capped
+      const errEl = document.getElementById('gw-aifu-error');
+      if (!errEl) return;
+      if (q.blocked) {
+        errEl.style.display = 'block';
+        errEl.innerHTML = '<strong>Monthly AI limit reached</strong> — your team has used ' + q.used + ' of ' + q.cap +
+          ' AI actions this month (' + q.plan + ' plan). Drafting is paused until the monthly reset. Ask your Groundwork rep about upgrading.';
+        const btn = document.getElementById('gw-aifu-draft-btn');
+        if (btn) { btn.disabled = true; btn.style.opacity = '.5'; btn.style.cursor = 'not-allowed'; }
+      } else if (q.warn) {
+        errEl.style.display = 'block';
+        errEl.style.background = 'rgba(201,162,74,.1)';
+        errEl.style.borderColor = 'rgba(201,162,74,.35)';
+        errEl.style.color = '#8A6D2F';
+        errEl.innerHTML = '<strong>Heads up:</strong> ' + q.used + ' of ' + q.cap + ' monthly AI actions used (' +
+          Math.round(q.used / q.cap * 100) + '%). ' + q.remaining + ' remaining on the ' + q.plan + ' plan.';
+      }
+    } catch (e) { /* quota check is best-effort — never blocks the modal */ }
+  }
 
   window.gwAiFollowupClose = function () {
     const o = document.getElementById('gw-aifu-overlay');

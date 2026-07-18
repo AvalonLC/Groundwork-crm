@@ -273,6 +273,35 @@ Turn a meeting transcript into a sent, logged follow-up email in under a minute:
 - Frontend: `public/js/ai_followup.js` — 2-step modal (`window.gwAiFollowupOpen({taskId, oppId, oppLabel})`), Gmail send via `window.gwAiGmailSend` (exported from integrations.js), task completion via `window.gwTask.complete`.
 - Task rows: ✨ action button in `task_engine.js` `gwRenderTaskRow` for open, non-archived `follow_up`/`email` tasks with a linked opportunity/lead.
 
+## AI Phase 2 — Plans, Quotas & Billing Guardrails (added 2026-07-18)
+
+Platform-key AI usage is now capped by per-tenant monthly plans (BYOK tenants are never capped — their key, their money):
+
+| Plan | Monthly AI actions |
+|---|---|
+| Starter (default) | 200 |
+| Pro | 1,000 |
+| Unlimited | no cap |
+
+- **Enforcement**: all three tenant AI endpoints (proposal, quote, follow-up email) call `_aiQuotaGate` — at 100% of cap they return `429 quota_exceeded` with an upgrade message. Custom override: `{companyId}:ai_custom_cap` setting (a number; 0 = uncapped).
+- **80% warning / 100% block in the UI**: `GET /api/ai/quota` (tenant-facing) powers a yellow warn strip at 80%+ and a disabled Draft button at 100% in the AI follow-up modal.
+- **Platform Settings AI panel**: per-tenant plan dropdown (Starter/Pro/Unlimited) + month-to-date quota bar (teal → amber at 80% → red BLOCKED at 100%). `PUT /api/admin/ai/company/:id` now accepts `{ai_plan, ai_custom_cap}` alongside `ai_enabled`.
+- **Avalon default**: `avalon:ai_enabled` is seeded to `1` on first schema run (INSERT OR IGNORE — an explicit owner OFF is respected). Schema flag bumped to `_schema_ai_v2` so prod re-runs the idempotent DDL + seed once.
+
+## AI Phase 3 — Smarter Calendar Automation (added 2026-07-18)
+
+Post-meeting task automation in `POST /api/calendar/sync` is now meeting-type aware:
+
+| Meeting title matches | Task created | Priority |
+|---|---|---|
+| estimate / quote / bid / proposal | "Send estimate follow-up email" | high |
+| site visit / walkthrough / assessment / consult, or booking-page events | "Send post-site-visit follow-up email" | high |
+| kickoff / project start / onboard | "Send project kickoff recap email" | high |
+| check-in / review / status | "Send check-in recap email" | normal |
+| anything else | "Send post-meeting follow-up email" | high |
+
+Each task's description carries a type-specific hint the rep (and the AI drafter) can lean on. **Due dates** moved from "4h after the meeting" to **next business morning 9:00** (skips Sat/Sun) — follow-ups land at the top of the next workday instead of overdue at dinnertime.
+
 ## Platform AI — Master Key, Entitlements & Usage Metering (added 2026-07-18)
 
 - **Master key**: the platform owner saves ONE OpenAI key on the platform side (Platform Admin → Platform Settings → "AI — Platform Master Key & Tenant Access"). Stored as `groundwork_platform:openai_api_key` in settings.

@@ -1112,14 +1112,32 @@
         : `<span style="color:#C97B6A;font-weight:700">No master key saved yet.</span> Paste your OpenAI key below.`;
       const rows = (d.companies || []).map(co => {
         const u = co.usage_30d || {};
+        // Month-to-date quota bar (platform-key usage vs plan cap)
+        const cap = Number(co.ai_cap) || 0;
+        const used = Number(co.ai_used_mtd) || 0;
+        const pct = cap > 0 ? Math.min(100, Math.round(used / cap * 100)) : 0;
+        const barColor = cap > 0 && used >= cap ? '#C9564A' : (cap > 0 && pct >= 80 ? '#C9A24A' : '#4D8A86');
+        const quotaBar = cap > 0
+          ? `<div style="min-width:110px">
+               <div style="font-size:11px;color:#E8E4D9;margin-bottom:3px">${fmt(used)} / ${fmt(cap)} <span style="color:#5C6B58">this mo</span>${used >= cap ? ' <span style="color:#C9564A;font-weight:700">BLOCKED</span>' : (pct >= 80 ? ' <span style="color:#C9A24A;font-weight:700">80%+</span>' : '')}</div>
+               <div style="height:5px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div></div>
+             </div>`
+          : `<div style="font-size:11px;color:#6F7E6A">${fmt(used)} this mo · <span style="color:#4D8A86;font-weight:700">unlimited</span></div>`;
         return `
         <tr style="border-bottom:1px solid var(--line,#2A3A38)">
           <td style="padding:10px 8px">
             <div style="font-weight:700;color:#E8E4D9">${esc(co.name)}</div>
-            <div style="font-size:11px;color:#6F7E6A">${esc(co.id)}${co.has_byok ? ' · <span style="color:#4D8A86">own key (BYOK)</span>' : ''}</div>
+            <div style="font-size:11px;color:#6F7E6A">${esc(co.id)}${co.has_byok ? ' · <span style="color:#4D8A86">own key (BYOK — never capped)</span>' : ''}</div>
           </td>
-          <td style="padding:10px 8px;text-align:center;font-size:12px;color:#E8E4D9">${fmt(u.platform_actions||0)} <span style="color:#5C6B58">actions</span></td>
-          <td style="padding:10px 8px;text-align:center;font-size:12px;color:#E8E4D9">${fmt(u.platform_tokens||0)} <span style="color:#5C6B58">tokens</span></td>
+          <td style="padding:10px 8px;text-align:center;font-size:12px;color:#E8E4D9">${fmt(u.platform_actions||0)} <span style="color:#5C6B58">actions</span><div style="font-size:10px;color:#5C6B58">${fmt(u.platform_tokens||0)} tokens</div></td>
+          <td style="padding:10px 8px;text-align:center">
+            <select onchange="window._gwSetAiPlan('${esc(co.id)}', this.value, this)" style="padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--line,#2A3A38);border-radius:8px;color:#E8E4D9;font-size:12px;cursor:pointer">
+              <option value="starter" ${co.ai_plan==='starter'?'selected':''}>Starter · 200/mo</option>
+              <option value="pro" ${co.ai_plan==='pro'?'selected':''}>Pro · 1,000/mo</option>
+              <option value="unlimited" ${co.ai_plan==='unlimited'?'selected':''}>Unlimited</option>
+            </select>
+          </td>
+          <td style="padding:10px 8px;text-align:center">${quotaBar}</td>
           <td style="padding:10px 8px;text-align:right">
             <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:700;color:${co.ai_enabled?'#2D7A55':'#6F7E6A'}">
               <input type="checkbox" ${co.ai_enabled?'checked':''} onchange="window._gwToggleAi('${esc(co.id)}', this.checked, this)" style="width:16px;height:16px;accent-color:#2D7A55;cursor:pointer">
@@ -1152,13 +1170,22 @@
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="border-bottom:1px solid var(--line,#2A3A38)">
               <th style="text-align:left;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Company</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">AI Actions</th>
-              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Tokens</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">30-Day Usage</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">AI Plan</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Month Quota</th>
               <th style="text-align:right;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Platform Key Access</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>` : '<div style="font-size:13px;color:#6F7E6A">No tenant companies yet.</div>'}
         </div>`;
+    };
+    window._gwSetAiPlan = async function(companyId, plan, el) {
+      if (el) el.disabled = true;
+      try {
+        await apiPut('/api/admin/ai/company/' + companyId, { ai_plan: plan });
+        toast('AI plan for ' + companyId + ' → ' + plan);
+        window._gwLoadAiPanel();
+      } catch(e) { toast('Error: ' + e.message); if (el) el.disabled = false; }
     };
     window._gwSaveAiKey = async function() {
       const key = document.getElementById('gwPS-ai-key')?.value?.trim();
