@@ -257,6 +257,14 @@ you're editing what the **customer sees** vs. **internal pricing**:
 
 ---
 
+## Platform AI — Master Key, Entitlements & Usage Metering (added 2026-07-18)
+
+- **Master key**: the platform owner saves ONE OpenAI key on the platform side (Platform Admin → Platform Settings → "AI — Platform Master Key & Tenant Access"). Stored as `groundwork_platform:openai_api_key` in settings.
+- **Key resolution order** (`_aiCreds` in src/index.tsx): tenant BYOK `{companyId}:openai_api_key` → platform master key (only if `{companyId}:ai_enabled = '1'`) → legacy unprefixed key → env `OPENAI_API_KEY`.
+- **Entitlements**: per-tenant AI ON/OFF toggles in the same Platform Settings panel (`PUT /api/admin/ai/company/:id`). Tenants without access get a clear "ask your Groundwork rep" error.
+- **Metering**: every AI call inserts a row into `ai_usage` (migration 0036, auto-creates in prod via `ensureAiSchema`): company, rep, feature, model, prompt/completion/total tokens, key_source (`platform`/`byok`/`env`). 30-day platform-key usage shows per tenant in the panel; `GET /api/admin/ai/usage?company_id=&days=` returns detail rows for billing.
+- **Tenant-side key entry**: companies who bring their own key use Integrations → Admin Setup tab (visible whether or not Google is connected).
+
 ## Environment variables / secrets
 
 | Variable | Where to set | Purpose |
