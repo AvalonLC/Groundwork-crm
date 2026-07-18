@@ -390,3 +390,11 @@ Edit `public/js/gw_i18n.js`:
 - **Internal Pricing Breakdown** (estimate detail): Cost/Rate → Qty/Hr → Budgeted Hours (internal-only, amber-tinted) → Taxes → Total, plus a Budgeted Hours rollup in totals.
 - **Flat action bar**: "More ▾" dropdown dissolved — Edit / Email / Preview / Duplicate / Convert to Invoice / Delete all visible.
 - **Schedule to Job button**: always prominent. Before client acceptance it places a YELLOW "hold" on the chosen day (`work_orders.status='hold'`); when the client accepts (internal accept, portal approve, or proposal accept) all holds auto-flip GREEN to `scheduled`; decline releases them to `cancelled` (red). Traffic-light dots on schedule board week cards, month dots/chips, mobile cards; Holds counter in the stats bar.
+
+## Platform Admin Remodel (T20 — Phase A)
+- **Full-width premium layout**: `shell()` in platform_admin.js no longer caps at 1280px — pages stretch to the window with a gradient hero header band; stat cards (hover lift, gradient accents) and panels (accent-bar titles, row hover) restyled. New CSS section 63 in groundwork-design.css (`gw-pa-shell`, `gw-pa-stat-grid`, `gw-pa-panel`).
+- **Demo Requests** (`gwDemos` view + `/api/platform/demos` CRUD + `POST /api/platform/demos/:id/convert` → gw_leads): tracks demos from groundwork-crm.info (status: requested/scheduled/completed/no_show/converted/cancelled).
+- **Pricing Plans manager** (`gwPricing` view + `/api/platform/pricing-plans` CRUD): gw_pricing_plans table is now the MRR source of truth (Overview computes MRR from it; falls back to legacy map if empty). Seeded starter $99 / pro $249 / enterprise $499.
+- **Public demo intake**: `POST /api/public/demo-request` (no auth; honeypot `website_url` field; 3/email/day rate limit; email+name validation) — wire groundwork-crm.info forms to this. Payload: `{name, email, company?, phone?, message?, source_page?}`.
+- **Google Workspace card** in Platform Settings: connect tyler@groundwork-crm.com via existing OAuth flow (`window.gwGoogleOAuthConnect`), status/disconnect wired to `/api/google/status|disconnect`.
+- **Schema**: migration 0037 (gw_demos + gw_pricing_plans) with prod self-heal `ensureGwOpsSchema` (`_schema_gwops_v1` flag).

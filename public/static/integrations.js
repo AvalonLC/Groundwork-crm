@@ -3025,6 +3025,8 @@ window.integrations = integrations;
 // Exports for ai_followup.js (AI Phase 1 email send)
 window.gwAiGmailSend = gmailSendEmail;
 window.isGoogleConnected = isGoogleConnected;
+// Export for platform_admin.js (platform owner Google Workspace connect)
+window.gwGoogleOAuthConnect = googleOAuthConnect;
 window.intSaveClientIdAndConnect = intSaveClientIdAndConnect;
 window.intGoogleDisconnect = intGoogleDisconnect;
 window.intShowGmail = intShowGmail;

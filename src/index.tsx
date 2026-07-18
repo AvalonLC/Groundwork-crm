@@ -19,6 +19,7 @@ import mig0033 from '../migrations/0033_email_templates.sql?raw'
 import mig0034 from '../migrations/0034_price_book_estimate_merge.sql?raw'
 import mig0035 from '../migrations/0035_calendar_sync.sql?raw'
 import mig0036 from '../migrations/0036_ai_usage.sql?raw'
+import mig0037 from '../migrations/0037_platform_demos_pricing.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -3319,6 +3320,172 @@ app.put('/api/platform/announcements/:id', requireSuperAdmin, async (c) => {
 app.delete('/api/platform/announcements/:id', requireSuperAdmin, async (c) => {
   await c.env.DB.prepare(`DELETE FROM gw_announcements WHERE id = ?`).bind(c.req.param('id')).run()
   return json(c, { deleted: c.req.param('id') })
+})
+
+// ── GW Ops schema (migration 0037: gw_demos + gw_pricing_plans) ─────────────
+// Auto-creates in prod on first demos/pricing request (self-heal pattern).
+let _gwOps37Ok = false
+async function ensureGwOpsSchema(db: D1Database): Promise<void> {
+  if (_gwOps37Ok) return
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_gwops_v1' LIMIT 1").first<any>()
+  if (flag) { _gwOps37Ok = true; return }
+  const stmts = mig0037.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/already exists|duplicate/i.test(msg)) console.error('[ensureGwOpsSchema]', msg)
+    }
+  }
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_gwops_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  _gwOps37Ok = true
+}
+
+// Demo Requests  (/api/platform/demos)
+app.get('/api/platform/demos', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const limit  = parseInt(c.req.query('limit')||'200')
+  const status = c.req.query('status')
+  const rows = status
+    ? await c.env.DB.prepare(`SELECT * FROM gw_demos WHERE status = ? ORDER BY created_at DESC LIMIT ?`).bind(status, limit).all()
+    : await c.env.DB.prepare(`SELECT * FROM gw_demos ORDER BY created_at DESC LIMIT ?`).bind(limit).all()
+  return json(c, rows.results || [])
+})
+app.post('/api/platform/demos', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const b = await c.req.json()
+  const id = uid()
+  const { company_name, contact_name, email, phone, message, status, scheduled_at, source, notes, lead_id } = b as any
+  await c.env.DB.prepare(
+    `INSERT INTO gw_demos (id, lead_id, company_name, contact_name, email, phone, message, status, scheduled_at, source, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(id, lead_id||null, company_name||'', contact_name||'', email||'', phone||'', message||'', status||'requested', scheduled_at||null, source||'manual', notes||'').run()
+  return json(c, { id })
+})
+app.put('/api/platform/demos/:id', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const id = c.req.param('id')
+  const b  = await c.req.json()
+  const allowed = ['company_name','contact_name','email','phone','message','status','scheduled_at','source','notes','lead_id','assigned_to']
+  const updates = allowed.filter(f => (b as any)[f] !== undefined)
+  if (!updates.length) return err(c, 'Nothing to update')
+  const set  = updates.map(f => `${f} = ?`).join(', ')
+  const vals = updates.map(f => (b as any)[f])
+  await c.env.DB.prepare(
+    `UPDATE gw_demos SET ${set}, updated_at = datetime('now') WHERE id = ?`
+  ).bind(...vals, id).run()
+  return json(c, { updated: id })
+})
+app.delete('/api/platform/demos/:id', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  await c.env.DB.prepare(`DELETE FROM gw_demos WHERE id = ?`).bind(c.req.param('id')).run()
+  return json(c, { deleted: c.req.param('id') })
+})
+// Convert a demo request into a gw_leads pipeline entry
+app.post('/api/platform/demos/:id/convert', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const id = c.req.param('id')
+  const demo = await c.env.DB.prepare(`SELECT * FROM gw_demos WHERE id = ?`).bind(id).first<any>()
+  if (!demo) return err(c, 'Demo not found', 404)
+  if (demo.lead_id) return json(c, { leadId: demo.lead_id, existing: true })
+  const leadId = uid()
+  await c.env.DB.prepare(
+    `INSERT INTO gw_leads (id, company_name, contact_name, email, phone, stage, priority, deal_value, next_action, notes, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'demo', 'high', 0, 'Run demo & follow up', ?, 'demo_request', datetime('now'), datetime('now'))`
+  ).bind(leadId, demo.company_name||'', demo.contact_name||'', demo.email||'', demo.phone||'', demo.message ? ('Demo request message: ' + demo.message) : '').run()
+  await c.env.DB.prepare(`UPDATE gw_demos SET lead_id = ?, updated_at = datetime('now') WHERE id = ?`).bind(leadId, id).run()
+  return json(c, { leadId })
+})
+
+// Pricing Plans  (/api/platform/pricing-plans)
+app.get('/api/platform/pricing-plans', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const rows = await c.env.DB.prepare(`SELECT * FROM gw_pricing_plans ORDER BY sort ASC, monthly_price ASC`).all()
+  return json(c, rows.results || [])
+})
+app.post('/api/platform/pricing-plans', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const b = await c.req.json()
+  const { id, name, monthly_price, annual_price, ai_credits, max_reps, features, highlight, active, sort } = b as any
+  const planId = String(id || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  if (!planId || !name) return err(c, 'id and name required')
+  await c.env.DB.prepare(
+    `INSERT INTO gw_pricing_plans (id, name, monthly_price, annual_price, ai_credits, max_reps, features, highlight, active, sort, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+  ).bind(planId, name, monthly_price||0, annual_price||0, ai_credits||0, max_reps||0, typeof features === 'string' ? features : JSON.stringify(features||[]), highlight?1:0, active??1, sort||0).run()
+  return json(c, { id: planId })
+})
+app.put('/api/platform/pricing-plans/:id', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  const id = c.req.param('id')
+  const b  = await c.req.json()
+  const allowed = ['name','monthly_price','annual_price','ai_credits','max_reps','features','highlight','active','sort']
+  const updates = allowed.filter(f => (b as any)[f] !== undefined)
+  if (!updates.length) return err(c, 'Nothing to update')
+  const set  = updates.map(f => `${f} = ?`).join(', ')
+  const vals = updates.map(f => {
+    const v = (b as any)[f]
+    if (f === 'features' && typeof v !== 'string') return JSON.stringify(v||[])
+    return v
+  })
+  await c.env.DB.prepare(
+    `UPDATE gw_pricing_plans SET ${set}, updated_at = datetime('now') WHERE id = ?`
+  ).bind(...vals, id).run()
+  return json(c, { updated: id })
+})
+app.delete('/api/platform/pricing-plans/:id', requireSuperAdmin, async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  await c.env.DB.prepare(`DELETE FROM gw_pricing_plans WHERE id = ?`).bind(c.req.param('id')).run()
+  return json(c, { deleted: c.req.param('id') })
+})
+
+// ── PUBLIC: demo request intake from groundwork-crm.info ────────────────────
+// No auth — CORS-restricted to the marketing site (+ prod/local origins).
+// Includes a honeypot field and a light per-email rate limit.
+const DEMO_ALLOWED_ORIGINS = [
+  'https://groundwork-crm.info',
+  'https://www.groundwork-crm.info',
+  'https://groundwork-crm.com',
+  'https://www.groundwork-crm.com',
+]
+app.use('/api/public/demo-request', cors({
+  origin: (origin) => {
+    if (!origin) return undefined
+    if (DEMO_ALLOWED_ORIGINS.includes(origin)) return origin
+    if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin
+    return undefined
+  },
+  allowMethods: ['POST', 'OPTIONS'],
+}))
+app.post('/api/public/demo-request', async (c) => {
+  await ensureGwOpsSchema(c.env.DB)
+  let b: any
+  try { b = await c.req.json() } catch { return err(c, 'Invalid JSON body') }
+  // Honeypot: bots fill every field — silently accept but drop
+  if (b.website_url) return json(c, { received: true })
+  const email = String(b.email || '').trim().slice(0, 200)
+  const contact = String(b.name || b.contact_name || '').trim().slice(0, 200)
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return err(c, 'Valid email required')
+  if (!contact) return err(c, 'Name required')
+  // Rate limit: max 3 requests per email per day
+  const recent = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM gw_demos WHERE email = ? AND created_at > datetime('now','-1 day')`
+  ).bind(email).first<any>()
+  if ((recent?.n || 0) >= 3) return err(c, 'Too many requests — please try again tomorrow', 429)
+  const id = uid()
+  await c.env.DB.prepare(
+    `INSERT INTO gw_demos (id, company_name, contact_name, email, phone, message, status, source, source_page, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'requested', 'website', ?, datetime('now'), datetime('now'))`
+  ).bind(
+    id,
+    String(b.company || b.company_name || '').trim().slice(0, 200),
+    contact,
+    email,
+    String(b.phone || '').trim().slice(0, 50),
+    String(b.message || '').trim().slice(0, 2000),
+    String(b.source_page || '').trim().slice(0, 300)
+  ).run()
+  return json(c, { received: true, id })
 })
 
 // POST /api/admin/clear-sessions — revoke sessions for ONE company (default: caller's own).
@@ -8209,7 +8376,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b009">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8233,8 +8400,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b008"></script>
-  <script src="/js/client_portal.js?v=20260718b008"></script>
+  <script src="/js/platform_core.js?v=20260718b009"></script>
+  <script src="/js/client_portal.js?v=20260718b009"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8869,9 +9036,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b008">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b008">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b009">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b009">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b009">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9328,6 +9495,14 @@ function getHtml(): string {
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>
             Sales Pipeline
           </button>
+          <button class="nav-item" data-view="gwDemos" onclick="show('gwDemos')">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1.5v3M11 1.5v3M2 7h12"/><circle cx="8" cy="10.5" r="1.4"/></svg>
+            Demo Requests
+          </button>
+          <button class="nav-item" data-view="gwPricing" onclick="show('gwPricing')">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><path d="M8.7 1.5H14v5.3l-6.8 6.8a1.5 1.5 0 0 1-2.1 0L1.9 10.4a1.5 1.5 0 0 1 0-2.1L8.7 1.5z"/><circle cx="11" cy="4.8" r="1" fill="currentColor" stroke="none"/></svg>
+            Pricing Plans
+          </button>
           <button class="nav-item" data-view="gwSupport" onclick="show('gwSupport')">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:5px"><path d="M8 2C4.7 2 2 4.7 2 8s2.7 6 6 6 6-2.7 6-6-2.7-6-6-6z"/><path d="M6 6c0-1.1.9-2 2-2s2 .9 2 2c0 1.5-2 2-2 3"/><circle cx="8" cy="13" r=".5" fill="currentColor"/></svg>
             Support &amp; Tickets
@@ -9419,39 +9594,39 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b008"></script>
-<script src="/js/db.js?v=20260718b008"></script>
-<script src="/js/data.js?v=20260718b008"></script>
-<script src="/js/reps.js?v=20260718b008"></script>
-<script src="/js/record-page.js?v=20260718b008"></script>
-<script src="/js/academy.js?v=20260718b008"></script>
-<script src="/js/task_engine.js?v=20260718b008"></script>
-<script src="/js/gw_i18n.js?v=20260718b008"></script>
-<script src="/js/app_premium.js?v=20260718b008"></script>
-<script src="/js/estimates.js?v=20260718b008"></script>
-<script src="/js/proposals.js?v=20260718b008"></script>
-<script src="/js/pricing.js?v=20260718b008"></script>
-<script src="/js/invoices.js?v=20260718b008"></script>
-<script src="/js/csv_import.js?v=20260718b008"></script>
-<script src="/js/onboarding.js?v=20260718b008"></script>
-<script src="/js/recurring_plans.js?v=20260718b008"></script>
-<script src="/js/reviews.js?v=20260718b008"></script>
-<script src="/js/stripe.js?v=20260718b008"></script>
-<script src="/js/email.js?v=20260718b008"></script>
-<script src="/js/notifications.js?v=20260718b008"></script>
-<script src="/js/integrations.js?v=20260718b008"></script>
-<script src="/js/calendar_sync.js?v=20260718b008"></script>
-<script src="/js/ai_followup.js?v=20260718b008"></script>
-<script src="/js/user_management.js?v=20260718b008"></script>
-<script src="/js/platform_admin.js?v=20260718b008"></script>
-<script src="/js/time_tracker.js?v=20260718b008"></script>
-<script src="/js/field_workday.js?v=20260718b008"></script>
-<script src="/js/platform_core.js?v=20260718b008"></script>
-<script src="/js/approval_engine.js?v=20260718b008"></script>
-<script src="/js/automation_engine.js?v=20260718b008"></script>
-<script src="/js/client_portal.js?v=20260718b008"></script>
-<script src="/js/field_mode.js?v=20260718b008"></script>
-<script src="/js/assets_hub.js?v=20260718b008"></script>
+<script src="/js/gw-icons.js?v=20260718b009"></script>
+<script src="/js/db.js?v=20260718b009"></script>
+<script src="/js/data.js?v=20260718b009"></script>
+<script src="/js/reps.js?v=20260718b009"></script>
+<script src="/js/record-page.js?v=20260718b009"></script>
+<script src="/js/academy.js?v=20260718b009"></script>
+<script src="/js/task_engine.js?v=20260718b009"></script>
+<script src="/js/gw_i18n.js?v=20260718b009"></script>
+<script src="/js/app_premium.js?v=20260718b009"></script>
+<script src="/js/estimates.js?v=20260718b009"></script>
+<script src="/js/proposals.js?v=20260718b009"></script>
+<script src="/js/pricing.js?v=20260718b009"></script>
+<script src="/js/invoices.js?v=20260718b009"></script>
+<script src="/js/csv_import.js?v=20260718b009"></script>
+<script src="/js/onboarding.js?v=20260718b009"></script>
+<script src="/js/recurring_plans.js?v=20260718b009"></script>
+<script src="/js/reviews.js?v=20260718b009"></script>
+<script src="/js/stripe.js?v=20260718b009"></script>
+<script src="/js/email.js?v=20260718b009"></script>
+<script src="/js/notifications.js?v=20260718b009"></script>
+<script src="/js/integrations.js?v=20260718b009"></script>
+<script src="/js/calendar_sync.js?v=20260718b009"></script>
+<script src="/js/ai_followup.js?v=20260718b009"></script>
+<script src="/js/user_management.js?v=20260718b009"></script>
+<script src="/js/platform_admin.js?v=20260718b009"></script>
+<script src="/js/time_tracker.js?v=20260718b009"></script>
+<script src="/js/field_workday.js?v=20260718b009"></script>
+<script src="/js/platform_core.js?v=20260718b009"></script>
+<script src="/js/approval_engine.js?v=20260718b009"></script>
+<script src="/js/automation_engine.js?v=20260718b009"></script>
+<script src="/js/client_portal.js?v=20260718b009"></script>
+<script src="/js/field_mode.js?v=20260718b009"></script>
+<script src="/js/assets_hub.js?v=20260718b009"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

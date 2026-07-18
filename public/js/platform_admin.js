@@ -57,18 +57,24 @@
     return `<span style="display:inline-block;background:${c}22;color:${c};border:1px solid ${c}44;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase">${esc(label)}</span>`;
   };
 
-  // ── Shared page shell ────────────────────────────────────────────────────
+  // ── Shared page shell (full-width premium layout) ───────────────────────
   function shell(title, subtitle, breadcrumb, actionHtml, bodyHtml) {
     return `
-<div style="max-width:1280px;margin:0 auto;padding:28px 20px 60px">
-  <!-- Page header -->
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;gap:16px;flex-wrap:wrap">
-    <div>
-      <div style="font-size:11px;color:#5C6B58;font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">${esc(breadcrumb)}</div>
-      <h1 style="font-size:26px;font-weight:900;color:#E8E4D9;margin:0 0 4px;letter-spacing:-.02em">${title}</h1>
-      ${subtitle ? `<p style="color:#6F7E6A;margin:0;font-size:14px">${subtitle}</p>` : ''}
+<div class="gw-pa-shell" style="width:100%;box-sizing:border-box;padding:0 0 56px">
+  <!-- Premium page header band (full-width within view) -->
+  <div style="background:linear-gradient(135deg,#0E372F 0%,#1A4740 48%,#2A5D57 100%);border:1px solid rgba(77,138,134,.35);border-radius:20px;padding:26px clamp(20px,2.5vw,36px);margin-bottom:26px;position:relative;overflow:hidden;box-shadow:0 14px 40px -18px rgba(14,55,47,.55)">
+    <div style="position:absolute;inset:auto -80px -120px auto;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(77,138,134,.35),transparent 65%);pointer-events:none"></div>
+    <div style="position:absolute;top:0;left:0;width:100%;height:2px;background:linear-gradient(90deg,#4D8A86,transparent 70%)"></div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;position:relative;z-index:1">
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:#7FB5B0;font-weight:800;text-transform:uppercase;letter-spacing:.14em;margin-bottom:8px">
+          <span style="width:20px;height:2px;background:#4D8A86;border-radius:2px;display:inline-block"></span>${esc(breadcrumb)}
+        </div>
+        <h1 style="font-size:clamp(24px,2.4vw,32px);font-weight:900;color:#F2EFE6;margin:0 0 6px;letter-spacing:-.025em;line-height:1.1">${title}</h1>
+        ${subtitle ? `<p style="color:#A8BCB0;margin:0;font-size:14px;max-width:760px">${subtitle}</p>` : ''}
+      </div>
+      ${actionHtml ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${actionHtml}</div>` : ''}
     </div>
-    ${actionHtml ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${actionHtml}</div>` : ''}
   </div>
   ${bodyHtml}
 </div>`;
@@ -76,19 +82,20 @@
 
   function statCard(label, value, icon, color, sub) {
     return `
-<div style="background:var(--card,#fff);border:1px solid ${color}33;border-radius:14px;padding:20px;position:relative;overflow:hidden">
-  <div style="position:absolute;top:16px;right:16px;opacity:.15;font-size:40px">${icon}</div>
-  <div style="font-size:28px;font-weight:900;color:${color};margin-bottom:4px">${value}</div>
-  <div style="font-size:12px;color:#6F7E6A;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${esc(label)}</div>
-  ${sub ? `<div style="font-size:11px;color:#5C6B58;margin-top:6px">${sub}</div>` : ''}
+<div class="gw-pa-stat" style="background:linear-gradient(160deg,var(--card,#fff) 0%,var(--card,#fff) 60%,${color}0d 100%);border:1px solid ${color}30;border-radius:16px;padding:22px;position:relative;overflow:hidden;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 28px -12px ${color}55';this.style.borderColor='${color}66'" onmouseout="this.style.transform='';this.style.boxShadow='';this.style.borderColor='${color}30'">
+  <div style="position:absolute;top:-14px;right:-10px;opacity:.10;font-size:64px;pointer-events:none">${icon}</div>
+  <div style="position:absolute;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,${color},transparent)"></div>
+  <div style="font-size:clamp(26px,2vw,34px);font-weight:900;color:${color};margin-bottom:4px;letter-spacing:-.02em;font-variant-numeric:tabular-nums">${value}</div>
+  <div style="font-size:11px;color:#6F7E6A;font-weight:800;text-transform:uppercase;letter-spacing:.08em">${esc(label)}</div>
+  ${sub ? `<div style="font-size:11px;color:#5C6B58;margin-top:7px">${sub}</div>` : ''}
 </div>`;
   }
 
   function panel(title, rightHtml, bodyHtml, extra) {
     return `
-<div style="background:var(--card,#fff);border:1px solid var(--line,#e5e5e0);border-radius:16px;overflow:hidden;${extra||''}">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line,#e5e5e0);flex-wrap:wrap;gap:10px">
-    <h2 style="font-size:14px;font-weight:800;color:#E8E4D9;margin:0;text-transform:uppercase;letter-spacing:.06em">${title}</h2>
+<div class="gw-pa-panel" style="background:var(--card,#fff);border:1px solid var(--line,#e5e5e0);border-radius:18px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.18),0 8px 24px -18px rgba(0,0,0,.35);${extra||''}">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line,#e5e5e0);flex-wrap:wrap;gap:10px;background:linear-gradient(180deg,rgba(77,138,134,.05),transparent)">
+    <h2 style="font-size:13px;font-weight:800;color:#E8E4D9;margin:0;text-transform:uppercase;letter-spacing:.09em;display:flex;align-items:center;gap:8px"><span style="width:3px;height:14px;background:#4D8A86;border-radius:2px;display:inline-block"></span>${title}</h2>
     ${rightHtml ? `<div style="display:flex;gap:8px;align-items:center">${rightHtml}</div>` : ''}
   </div>
   ${bodyHtml}
@@ -96,10 +103,10 @@
   }
 
   function actionBtn(label, onclick, style) {
-    return `<button onclick="${onclick}" style="padding:8px 18px;background:rgba(77,138,134,.15);border:1px solid #4D8A8644;border-radius:10px;color:#4D8A86;font-size:13px;font-weight:700;cursor:pointer;${style||''}" onmouseover="this.style.background='rgba(77,138,134,.25)'" onmouseout="this.style.background='rgba(77,138,134,.15)'">${label}</button>`;
+    return `<button onclick="${onclick}" style="padding:9px 18px;background:rgba(77,138,134,.12);border:1px solid #4D8A8644;border-radius:10px;color:#4D8A86;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s ease;${style||''}" onmouseover="this.style.background='rgba(77,138,134,.24)';this.style.borderColor='#4D8A8688'" onmouseout="this.style.background='rgba(77,138,134,.12)';this.style.borderColor='#4D8A8644'">${label}</button>`;
   }
   function primaryBtn(label, onclick, style) {
-    return `<button onclick="${onclick}" style="padding:9px 20px;background:#4D8A86;border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;${style||''}" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">${label}</button>`;
+    return `<button onclick="${onclick}" style="padding:10px 22px;background:linear-gradient(135deg,#4D8A86,#1A4740);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.01em;box-shadow:0 4px 14px -6px rgba(77,138,134,.6);transition:all .15s ease;${style||''}" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px -6px rgba(77,138,134,.75)'" onmouseout="this.style.transform='';this.style.boxShadow='0 4px 14px -6px rgba(77,138,134,.6)'">${label}</button>`;
   }
   function dangerBtn(label, onclick) {
     return `<button onclick="${onclick}" style="padding:8px 16px;background:#C97B6A22;border:1px solid #C97B6A44;border-radius:10px;color:#C97B6A;font-size:12px;font-weight:700;cursor:pointer">${label}</button>`;
@@ -143,7 +150,7 @@
     const v = view(); if (!v) return;
     v.innerHTML = `<div style="padding:60px;text-align:center;color:#6F7E6A">Loading platform data…</div>`;
 
-    let stats = {}, companies = [], recentTickets = [], recentLeads = [];
+    let stats = {}, companies = [], recentTickets = [], recentLeads = [], pricingPlans = [], recentDemos = [];
     try {
       [stats, companies, recentTickets, recentLeads] = await Promise.all([
         apiGet('/api/admin/stats'),
@@ -151,9 +158,16 @@
         apiGet('/api/platform/tickets?limit=5&status=open'),
         apiGet('/api/platform/gw-leads?limit=5'),
       ]);
+      // Non-critical extras — don't fail the dashboard if these error
+      [pricingPlans, recentDemos] = await Promise.all([
+        apiGet('/api/platform/pricing-plans').catch(()=>[]),
+        apiGet('/api/platform/demos?limit=50').catch(()=>[]),
+      ]);
       if (!Array.isArray(companies)) companies = [];
       if (!Array.isArray(recentTickets)) recentTickets = [];
       if (!Array.isArray(recentLeads)) recentLeads = [];
+      if (!Array.isArray(pricingPlans)) pricingPlans = [];
+      if (!Array.isArray(recentDemos)) recentDemos = [];
     } catch(e) {
       v.innerHTML = `<div style="padding:60px;text-align:center"><p style="color:#C97B6A">Failed to load: ${esc(e.message)}</p>
         <button class="secondary-btn" style="margin-top:16px" onclick="show('superAdmin')">↺ Retry</button></div>`;
@@ -162,21 +176,28 @@
 
     const activeCompanies = companies.filter(c => c.active).length;
     const trialCompanies  = companies.filter(c => c.plan === 'trial').length;
+    // MRR from the live pricing plan table (falls back to legacy map if empty)
+    const priceMap = {};
+    pricingPlans.forEach(p => { priceMap[p.id] = p.monthly_price || 0; });
+    if (!Object.keys(priceMap).length) Object.assign(priceMap, {starter:99,pro:249,enterprise:499});
     const mrr = companies.filter(c=>c.active && c.plan !== 'trial')
-      .reduce((s,c) => s + ({starter:99,pro:249,enterprise:499}[c.plan]||0), 0);
+      .reduce((s,c) => s + (priceMap[c.plan]||0), 0);
+    const pendingDemos = recentDemos.filter(d => d.status === 'requested' || d.status === 'scheduled').length;
 
     v.innerHTML = shell(
       `${gwI('shield',22,'#7EC8A4')} Platform Overview`,
       `Groundwork CRM · ${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}`,
       'PLATFORM ADMIN',
       `${actionBtn('↺ Refresh','show(\'superAdmin\')')}
+       ${actionBtn('Demo Requests','show(\'gwDemos\')')}
        ${primaryBtn('+ New Lead','show(\'gwLeads\')')}`,
       `
       <!-- Stat Grid -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:28px">
+      <div class="gw-pa-stat-grid" style="margin-bottom:28px">
         ${statCard('Total Tenants',   fmt(companies.length),  gwIcon('building',40,'#1A4740'), '#1A4740', `${activeCompanies} active`)}
         ${statCard('On Trial',        fmt(trialCompanies),    gwIcon('clock',40,'#8B6914'), '#8B6914', 'Convert to paid')}
-        ${statCard('Monthly Revenue', fmtMoney(mrr),          gwIcon('revenue',40,'#2D7A55'), '#2D7A55', 'est. MRR')}
+        ${statCard('Monthly Revenue', fmtMoney(mrr),          gwIcon('revenue',40,'#2D7A55'), '#2D7A55', 'est. MRR (live pricing)')}
+        ${statCard('Pending Demos',   fmt(pendingDemos),      gwIcon('calendar',40,'#B8860B'), '#B8860B', 'from groundwork-crm.info')}
         ${statCard('Total Reps',      fmt(stats.reps),        gwIcon('users',40,'#4D8A86'), '#4D8A86', 'across all tenants')}
         ${statCard('Open Tickets',    fmt(recentTickets.length),gwIcon('tag',40,'#C97B6A'),'#C97B6A', 'need attention')}
         ${statCard('Active Opps',     fmt(stats.opportunities),gwIcon('reports',40,'#7B5EA7'),'#7B5EA7', 'in all pipelines')}
@@ -1059,6 +1080,14 @@
           </div>`
         )}
 
+        <!-- Google Workspace (platform owner: tyler@groundwork-crm.com) -->
+        ${panel('Google Workspace — Platform Account',
+          '',
+          `<div style="padding:24px" id="gwPS-gws-body">
+            <div style="color:#6F7E6A;font-size:13px">Checking connection…</div>
+          </div>`
+        )}
+
         <!-- AI (platform master key + tenant entitlements + usage) -->
         ${panel('AI — Platform Master Key & Tenant Access',
           '',
@@ -1097,6 +1126,59 @@
 
       </div>
     `);
+
+    // ── Google Workspace panel loader ───────────────────────────────────
+    window._gwLoadGwsPanel = async function() {
+      const body = document.getElementById('gwPS-gws-body');
+      if (!body) return;
+      let st = { connected:false, email:'' };
+      try {
+        const r = await fetch('/api/google/status', { credentials:'include' });
+        const j = await r.json();
+        st = (j.data ?? j) || st;
+      } catch(_) {}
+      if (st.connected) {
+        body.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,rgba(45,122,85,.2),rgba(77,138,134,.12));display:flex;align-items:center;justify-content:center;font-size:20px">✓</div>
+              <div>
+                <div style="font-weight:800;color:#2D7A55;font-size:14px">Google Workspace connected</div>
+                <div style="font-size:13px;color:#6F7E6A;margin-top:2px">${esc(st.email||'tyler@groundwork-crm.com')}${st.connected_at ? ' · since ' + dateStr(st.connected_at) : ''}</div>
+                <div style="font-size:12px;color:#5C6B58;margin-top:4px">Gmail send, Calendar sync, and Drive are live for the platform account. AI follow-up emails and demo scheduling can use this connection.</div>
+              </div>
+            </div>
+            ${dangerBtn('Disconnect','window._gwGwsDisconnect()')}
+          </div>`;
+      } else {
+        body.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+            <div style="min-width:0;flex:1">
+              <div style="font-weight:800;color:#E8E4D9;font-size:14px;margin-bottom:4px">Connect tyler@groundwork-crm.com</div>
+              <div style="font-size:13px;color:#6F7E6A;line-height:1.6">
+                Link the Groundwork Google Workspace account to send email from the platform (demo confirmations, follow-ups),
+                sync your calendar for demo scheduling, and access Drive — all from Platform Admin.
+              </div>
+            </div>
+            ${primaryBtn('Connect Google Workspace','window._gwGwsConnect()')}
+          </div>`;
+      }
+    };
+    window._gwGwsConnect = async function() {
+      if (typeof window.gwGoogleOAuthConnect !== 'function') { toast('Integrations module not loaded — refresh the page'); return; }
+      const ok = await window.gwGoogleOAuthConnect();
+      if (ok) toast('Google Workspace connected');
+      window._gwLoadGwsPanel();
+    };
+    window._gwGwsDisconnect = async function() {
+      if (!confirm('Disconnect the platform Google Workspace account?')) return;
+      try {
+        await apiDelete('/api/google/disconnect');
+        toast('Disconnected');
+      } catch(e) { toast('Error: ' + e.message); }
+      window._gwLoadGwsPanel();
+    };
+    window._gwLoadGwsPanel();
 
     // ── AI panel loader ─────────────────────────────────────────────────
     window._gwLoadAiPanel = async function() {
@@ -1298,12 +1380,375 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // 8. DEMO REQUESTS (intake from groundwork-crm.info + manual)
+  // ─────────────────────────────────────────────────────────────────────────
+  const DEMO_STATUSES = ['requested','scheduled','completed','no_show','converted','cancelled'];
+  const DEMO_STATUS_COLORS = { requested:'#8B6914', scheduled:'#4D8A86', completed:'#2D7A55', no_show:'#C97B6A', converted:'#7B5EA7', cancelled:'#6F7E6A' };
+  const demoStatusBadge = s => {
+    const c = DEMO_STATUS_COLORS[s] || '#6F7E6A';
+    const label = (s||'').replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
+    return `<span style="display:inline-block;background:${c}22;color:${c};border:1px solid ${c}44;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em">${esc(label)}</span>`;
+  };
+
+  async function demos() {
+    const v = view(); if (!v) return;
+    v.innerHTML = `<div style="padding:60px;text-align:center;color:#6F7E6A">Loading demo requests…</div>`;
+
+    let rows = [];
+    try { rows = await apiGet('/api/platform/demos'); if (!Array.isArray(rows)) rows = []; }
+    catch(e) { v.innerHTML = `<div style="padding:60px;text-align:center;color:#C97B6A">Error: ${esc(e.message)}</div>`; return; }
+
+    const byStatus = {};
+    DEMO_STATUSES.forEach(s => byStatus[s] = rows.filter(d=>d.status===s).length);
+    const fromSite = rows.filter(d => d.source === 'website').length;
+
+    v.innerHTML = shell(
+      'Demo Requests',
+      'Demo signups from groundwork-crm.info plus manually scheduled demos — convert winners into pipeline leads',
+      'PLATFORM ADMIN › DEMOS',
+      `${actionBtn('↺ Refresh','show(\'gwDemos\')')}
+       ${primaryBtn('+ Log Demo','window._gwDemoModal(null)')}`,
+      `
+      <div class="gw-pa-stat-grid" style="margin-bottom:24px">
+        ${statCard('Requested', fmt(byStatus.requested||0), gwI('clock',40,'#8B6914'), '#8B6914', 'awaiting scheduling')}
+        ${statCard('Scheduled', fmt(byStatus.scheduled||0), gwI('calendar',40,'#4D8A86'), '#4D8A86', 'on the calendar')}
+        ${statCard('Completed', fmt(byStatus.completed||0), gwI('check',40,'#2D7A55'), '#2D7A55', 'demo delivered')}
+        ${statCard('Converted', fmt(byStatus.converted||0), gwI('trophy',40,'#7B5EA7'), '#7B5EA7', 'became pipeline leads')}
+        ${statCard('From Website', fmt(fromSite), gwI('globe',40,'#1A4740'), '#1A4740', 'groundwork-crm.info')}
+      </div>
+
+      <!-- Status filter pills -->
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+        ${['all',...DEMO_STATUSES].map(s => `
+        <button onclick="window._gwFilterDemos('${s}')" id="gwDemoFilter_${s}"
+          style="padding:7px 14px;border-radius:20px;border:1px solid ${s==='all'?'#4D8A86':'var(--line,#e5e5e0)'};
+                 background:${s==='all'?'rgba(77,138,134,.15)':'transparent'};
+                 color:${s==='all'?'#4D8A86':'#6F7E6A'};font-size:12px;font-weight:700;cursor:pointer">
+          ${s==='all'?'All':s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}
+          <span style="margin-left:4px;opacity:.7">${s==='all'?rows.length:(byStatus[s]||0)}</span>
+        </button>`).join('')}
+      </div>
+
+      ${panel('Demo Requests',
+        `<span style="font-size:12px;color:#5C6B58" id="gwDemoCount">${rows.length} total</span>`,
+        `<div id="gwDemosList">
+          ${rows.length ? rows.map(_demoRow).join('') : `<div style="padding:60px;text-align:center;color:#5C6B58">
+            No demo requests yet.<br><br>
+            <span style="font-size:12px">Wire your marketing site to <code style="background:rgba(77,138,134,.12);padding:2px 8px;border-radius:6px;color:#4D8A86">POST /api/public/demo-request</code> — new signups will appear here automatically.</span>
+          </div>`}
+        </div>`
+      )}
+      <div id="gwDemoModalWrap"></div>
+    `);
+
+    window._gwAllDemos = rows;
+    window._gwFilterDemos = function(status) {
+      document.querySelectorAll('[id^="gwDemoFilter_"]').forEach(b => {
+        const active = b.id === 'gwDemoFilter_' + status;
+        b.style.background = active ? 'rgba(77,138,134,.15)' : 'transparent';
+        b.style.borderColor = active ? '#4D8A86' : 'var(--line,#e5e5e0)';
+        b.style.color = active ? '#4D8A86' : '#6F7E6A';
+      });
+      const filtered = status === 'all' ? rows : rows.filter(d => d.status === status);
+      document.getElementById('gwDemosList').innerHTML = filtered.length
+        ? filtered.map(_demoRow).join('')
+        : '<div style="padding:40px;text-align:center;color:#5C6B58">No demos in this status.</div>';
+      document.getElementById('gwDemoCount').textContent = filtered.length + ' total';
+    };
+    window._gwDemoModal = function(id) {
+      const demo = id ? (window._gwAllDemos||[]).find(d=>d.id===id) : null;
+      _demoModal(demo);
+    };
+    window._gwConvertDemo = async function(id) {
+      if (!confirm('Convert this demo request into a Sales Pipeline lead?')) return;
+      try {
+        const r = await apiPost(`/api/platform/demos/${id}/convert`, {});
+        await apiPut(`/api/platform/demos/${id}`, { status: 'converted' });
+        toast(r.existing ? 'Already linked to a lead' : 'Converted to pipeline lead');
+        show('gwLeads');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+  }
+
+  function _demoRow(d) {
+    return `
+<div onclick="window._gwDemoModal('${esc(d.id)}')"
+  style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--line,#e5e5e0);cursor:pointer;transition:background .12s"
+  onmouseover="this.style.background='rgba(77,138,134,.05)'" onmouseout="this.style.background=''">
+  <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,rgba(77,138,134,.2),rgba(26,71,64,.15));display:flex;align-items:center;justify-content:center;font-weight:800;color:#4D8A86;font-size:14px;flex-shrink:0">
+    ${esc((d.contact_name||d.company_name||'?').trim().charAt(0).toUpperCase())}
+  </div>
+  <div style="flex:1;min-width:0">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap">
+      <span style="font-weight:700;font-size:14px;color:#E8E4D9">${esc(d.company_name||d.contact_name||'Unknown')}</span>
+      ${d.source==='website' ? '<span style="font-size:10px;font-weight:700;color:#1A4740;background:rgba(26,71,64,.14);border:1px solid rgba(26,71,64,.3);padding:2px 7px;border-radius:8px;letter-spacing:.04em">WEBSITE</span>' : ''}
+    </div>
+    <div style="font-size:12px;color:#5C6B58">${esc(d.contact_name||'')}${d.email?' · '+esc(d.email):''}${d.phone?' · '+esc(d.phone):''} · ${ago(d.created_at)}</div>
+    ${d.message ? `<div style="font-size:12px;color:#6F7E6A;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:640px">"${esc(d.message.substring(0,140))}${d.message.length>140?'…':''}"</div>` : ''}
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+    ${demoStatusBadge(d.status)}
+    ${d.scheduled_at ? `<span style="font-size:11px;color:#4D8A86;font-weight:700">${dateStr(d.scheduled_at)}</span>` : `<span style="font-size:11px;color:#5C6B58">${ago(d.updated_at||d.created_at)}</span>`}
+  </div>
+</div>`;
+  }
+
+  function _demoModal(demo) {
+    const isEdit = !!demo;
+    const el = document.createElement('div');
+    el.id = 'gwDemoModalOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:#000c;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML = `
+<div style="background:var(--card,#1E2B29);border:1px solid var(--line,#2A3A38);border-radius:20px;width:min(640px,100%);max-height:92vh;overflow-y:auto;padding:28px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+    <h2 style="margin:0;font-size:18px;font-weight:800;color:#E8E4D9">${isEdit ? 'Demo Request' : 'Log Demo Request'}</h2>
+    <button onclick="document.getElementById('gwDemoModalOverlay').remove()" style="background:none;border:none;color:#6F7E6A;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  ${isEdit && demo.message ? `
+  <div style="background:rgba(77,138,134,.07);border:1px solid rgba(77,138,134,.2);border-radius:12px;padding:14px 16px;margin-bottom:18px">
+    <div style="font-size:11px;font-weight:800;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Their message${demo.source_page?` · from ${esc(demo.source_page)}`:''}</div>
+    <div style="font-size:13px;color:#6F7E6A;line-height:1.6;white-space:pre-wrap">${esc(demo.message)}</div>
+  </div>` : ''}
+  <div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Company</label>
+        <input id="gwD-company" class="um-input" value="${esc(demo?.company_name||'')}" placeholder="Prospect Inc."></div>
+      <div><label class="um-label">Contact Name *</label>
+        <input id="gwD-contact" class="um-input" value="${esc(demo?.contact_name||'')}" placeholder="Jane Smith"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Email</label>
+        <input id="gwD-email" class="um-input" type="email" value="${esc(demo?.email||'')}" placeholder="jane@prospect.com"></div>
+      <div><label class="um-label">Phone</label>
+        <input id="gwD-phone" class="um-input" type="tel" value="${esc(demo?.phone||'')}" placeholder="(555) 000-0000"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Status</label>
+        <select id="gwD-status" class="um-input">
+          ${DEMO_STATUSES.map(s=>`<option value="${s}" ${(demo?.status||'requested')===s?'selected':''}>${s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>`).join('')}
+        </select></div>
+      <div><label class="um-label">Scheduled Date/Time</label>
+        <input id="gwD-scheduled" class="um-input" type="datetime-local" value="${demo?.scheduled_at ? esc(String(demo.scheduled_at).slice(0,16)) : ''}"></div>
+    </div>
+    <div><label class="um-label">Notes</label>
+      <textarea id="gwD-notes" class="um-input" rows="3" placeholder="Prep notes, follow-up items…" style="resize:vertical">${esc(demo?.notes||'')}</textarea></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;gap:8px">
+      ${isEdit ? dangerBtn('Delete',`window._gwDeleteDemo('${esc(demo.id)}')`) : '<span></span>'}
+      ${isEdit && !demo.lead_id ? actionBtn('→ Convert to Lead',`window._gwConvertDemo('${esc(demo.id)}')`) : ''}
+      ${isEdit && demo.lead_id ? `<span style="font-size:12px;color:#2D7A55;font-weight:700;align-self:center">✓ Linked to pipeline lead</span>` : ''}
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="secondary-btn" onclick="document.getElementById('gwDemoModalOverlay').remove()">Cancel</button>
+      <button class="primary-btn" onclick="window._gwSaveDemo('${esc(demo?.id||'')}')">${isEdit ? 'Save' : 'Add Demo'}</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(el);
+
+    window._gwSaveDemo = async function(existingId) {
+      const payload = {
+        company_name: document.getElementById('gwD-company')?.value?.trim(),
+        contact_name: document.getElementById('gwD-contact')?.value?.trim(),
+        email:        document.getElementById('gwD-email')?.value?.trim(),
+        phone:        document.getElementById('gwD-phone')?.value?.trim(),
+        status:       document.getElementById('gwD-status')?.value,
+        scheduled_at: document.getElementById('gwD-scheduled')?.value || null,
+        notes:        document.getElementById('gwD-notes')?.value?.trim(),
+      };
+      if (!payload.contact_name && !payload.company_name) { toast('Contact or company name required'); return; }
+      try {
+        if (existingId) { await apiPut(`/api/platform/demos/${existingId}`, payload); toast('Demo updated'); }
+        else { await apiPost('/api/platform/demos', payload); toast('Demo logged'); }
+        document.getElementById('gwDemoModalOverlay')?.remove();
+        show('gwDemos');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwDeleteDemo = async function(id) {
+      if (!confirm('Delete this demo request? This cannot be undone.')) return;
+      try {
+        await apiDelete(`/api/platform/demos/${id}`);
+        document.getElementById('gwDemoModalOverlay')?.remove();
+        toast('Demo deleted');
+        show('gwDemos');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 9. PRICING PLANS MANAGER (source of truth for MRR + public pricing)
+  // ─────────────────────────────────────────────────────────────────────────
+  async function pricingPlans() {
+    const v = view(); if (!v) return;
+    v.innerHTML = `<div style="padding:60px;text-align:center;color:#6F7E6A">Loading pricing plans…</div>`;
+
+    let plans = [], companies = [];
+    try {
+      [plans, companies] = await Promise.all([
+        apiGet('/api/platform/pricing-plans'),
+        apiGet('/api/admin/companies').catch(()=>[]),
+      ]);
+      if (!Array.isArray(plans)) plans = [];
+      if (!Array.isArray(companies)) companies = [];
+    }
+    catch(e) { v.innerHTML = `<div style="padding:60px;text-align:center;color:#C97B6A">Error: ${esc(e.message)}</div>`; return; }
+
+    const tenantsByPlan = {};
+    companies.forEach(c => { tenantsByPlan[c.plan] = (tenantsByPlan[c.plan]||0) + (c.active?1:0); });
+    const totalMrr = plans.reduce((s,p) => s + (p.monthly_price||0) * (tenantsByPlan[p.id]||0), 0);
+
+    v.innerHTML = shell(
+      'Pricing Plans',
+      'Source of truth for subscription pricing — MRR on the Overview dashboard is computed from these numbers',
+      'PLATFORM ADMIN › PRICING',
+      `${actionBtn('↺ Refresh','show(\'gwPricing\')')}
+       ${primaryBtn('+ New Plan','window._gwPlanModal(null)')}`,
+      `
+      <div class="gw-pa-stat-grid" style="margin-bottom:26px">
+        ${statCard('Active Plans', fmt(plans.filter(p=>p.active).length), gwI('tag',40,'#4D8A86'), '#4D8A86')}
+        ${statCard('Est. MRR', fmtMoney(totalMrr), gwI('revenue',40,'#2D7A55'), '#2D7A55', 'active tenants × plan price')}
+        ${statCard('Paying Tenants', fmt(companies.filter(c=>c.active && c.plan!=='trial').length), gwI('building',40,'#1A4740'), '#1A4740')}
+      </div>
+
+      <!-- Plan cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:26px">
+        ${plans.map(p => {
+          const features = (() => { try { return JSON.parse(p.features||'[]'); } catch { return []; } })();
+          const nTenants = tenantsByPlan[p.id]||0;
+          return `
+        <div style="background:var(--card,#fff);border:1px solid ${p.highlight?'#4D8A86':'var(--line,#e5e5e0)'};border-radius:18px;padding:24px;position:relative;overflow:hidden;${p.active?'':'opacity:.55'};box-shadow:${p.highlight?'0 12px 32px -14px rgba(77,138,134,.45)':'0 1px 3px rgba(0,0,0,.12)'};transition:transform .15s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+          ${p.highlight ? '<div style="position:absolute;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,#4D8A86,#2D7A55)"></div><div style="position:absolute;top:14px;right:14px;background:linear-gradient(135deg,#4D8A86,#1A4740);color:#fff;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">MOST POPULAR</div>' : ''}
+          ${!p.active ? '<div style="position:absolute;top:14px;right:14px;background:#6F7E6A22;color:#6F7E6A;font-size:9px;font-weight:800;padding:3px 9px;border-radius:8px;letter-spacing:.08em">INACTIVE</div>' : ''}
+          <div style="font-size:13px;font-weight:800;color:#4D8A86;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">${esc(p.name)}</div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px">
+            <span style="font-size:34px;font-weight:900;color:#E8E4D9;letter-spacing:-.02em">${fmtMoney(p.monthly_price)}</span>
+            <span style="font-size:13px;color:#6F7E6A">/mo</span>
+          </div>
+          ${p.annual_price ? `<div style="font-size:12px;color:#2D7A55;font-weight:700;margin-bottom:12px">${fmtMoney(p.annual_price)}/mo billed annually</div>` : '<div style="margin-bottom:12px"></div>'}
+          <div style="display:flex;gap:14px;margin-bottom:14px;font-size:12px;color:#6F7E6A">
+            <span><strong style="color:#E8E4D9">${p.ai_credits ? fmt(p.ai_credits) : '∞'}</strong> AI actions/mo</span>
+            <span><strong style="color:#E8E4D9">${p.max_reps ? fmt(p.max_reps) : '∞'}</strong> team members</span>
+          </div>
+          ${features.length ? `<ul style="margin:0 0 16px;padding:0;list-style:none">${features.map(f=>`<li style="font-size:12px;color:#6F7E6A;padding:4px 0;display:flex;gap:8px;align-items:flex-start"><span style="color:#2D7A55;font-weight:800">✓</span>${esc(f)}</li>`).join('')}</ul>` : ''}
+          <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line,#e5e5e0);padding-top:14px">
+            <span style="font-size:12px;color:#5C6B58"><strong style="color:#4D8A86">${nTenants}</strong> tenant${nTenants===1?'':'s'} · ${fmtMoney((p.monthly_price||0)*nTenants)}/mo</span>
+            <button onclick="window._gwPlanModal('${esc(p.id)}')" style="padding:6px 14px;background:rgba(77,138,134,.12);border:1px solid #4D8A8644;border-radius:8px;color:#4D8A86;font-size:12px;font-weight:700;cursor:pointer">Edit</button>
+          </div>
+        </div>`;
+        }).join('')}
+        ${!plans.length ? '<div style="padding:60px;text-align:center;color:#5C6B58;grid-column:1/-1">No pricing plans found — click "+ New Plan" to create one.</div>' : ''}
+      </div>
+      <div id="gwPlanModalWrap"></div>
+    `);
+
+    window._gwAllPlans = plans;
+    window._gwPlanModal = function(id) {
+      const plan = id ? (window._gwAllPlans||[]).find(p=>p.id===id) : null;
+      _planModal(plan);
+    };
+  }
+
+  function _planModal(plan) {
+    const isEdit = !!plan;
+    const features = (() => { try { return JSON.parse(plan?.features||'[]'); } catch { return []; } })();
+    const el = document.createElement('div');
+    el.id = 'gwPlanModalOverlay';
+    el.style.cssText = 'position:fixed;inset:0;background:#000c;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML = `
+<div style="background:var(--card,#1E2B29);border:1px solid var(--line,#2A3A38);border-radius:20px;width:min(640px,100%);max-height:92vh;overflow-y:auto;padding:28px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+    <h2 style="margin:0;font-size:18px;font-weight:800;color:#E8E4D9">${isEdit ? 'Edit Plan — ' + esc(plan.name) : 'New Pricing Plan'}</h2>
+    <button onclick="document.getElementById('gwPlanModalOverlay').remove()" style="background:none;border:none;color:#6F7E6A;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <div style="display:grid;gap:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Plan ID ${isEdit?'(locked)':'*'}</label>
+        <input id="gwP-id" class="um-input" value="${esc(plan?.id||'')}" placeholder="starter" ${isEdit?'disabled style="opacity:.5"':''}></div>
+      <div><label class="um-label">Display Name *</label>
+        <input id="gwP-name" class="um-input" value="${esc(plan?.name||'')}" placeholder="Starter"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="um-label">Monthly Price ($)</label>
+        <input id="gwP-monthly" class="um-input" type="number" min="0" step="1" value="${esc(plan?.monthly_price??'')}" placeholder="99"></div>
+      <div><label class="um-label">Annual Price ($/mo equiv, 0 = n/a)</label>
+        <input id="gwP-annual" class="um-input" type="number" min="0" step="1" value="${esc(plan?.annual_price??'')}" placeholder="79"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div><label class="um-label">AI Actions/mo (0 = ∞)</label>
+        <input id="gwP-ai" class="um-input" type="number" min="0" value="${esc(plan?.ai_credits??'')}" placeholder="200"></div>
+      <div><label class="um-label">Max Reps (0 = ∞)</label>
+        <input id="gwP-reps" class="um-input" type="number" min="0" value="${esc(plan?.max_reps??'')}" placeholder="5"></div>
+      <div><label class="um-label">Sort Order</label>
+        <input id="gwP-sort" class="um-input" type="number" min="0" value="${esc(plan?.sort??'')}" placeholder="1"></div>
+    </div>
+    <div><label class="um-label">Features (one per line)</label>
+      <textarea id="gwP-features" class="um-input" rows="5" placeholder="Full CRM &amp; pipeline&#10;Estimates &amp; invoicing" style="resize:vertical">${esc(features.join('\n'))}</textarea></div>
+    <div style="display:flex;gap:24px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+        <input id="gwP-highlight" type="checkbox" ${plan?.highlight?'checked':''} style="width:16px;height:16px;accent-color:#4D8A86"> "Most Popular" badge
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6F7E6A;cursor:pointer">
+        <input id="gwP-active" type="checkbox" ${(plan?.active??1)?'checked':''} style="width:16px;height:16px;accent-color:#4D8A86"> Active
+      </label>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px">
+    ${isEdit ? dangerBtn('Delete Plan',`window._gwDeletePlan('${esc(plan.id)}')`) : '<span></span>'}
+    <div style="display:flex;gap:10px">
+      <button class="secondary-btn" onclick="document.getElementById('gwPlanModalOverlay').remove()">Cancel</button>
+      <button class="primary-btn" onclick="window._gwSavePlan('${esc(plan?.id||'')}')">${isEdit ? 'Save' : 'Create Plan'}</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(el);
+
+    window._gwSavePlan = async function(existingId) {
+      const featureLines = (document.getElementById('gwP-features')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+      const payload = {
+        name:          document.getElementById('gwP-name')?.value?.trim(),
+        monthly_price: parseFloat(document.getElementById('gwP-monthly')?.value)||0,
+        annual_price:  parseFloat(document.getElementById('gwP-annual')?.value)||0,
+        ai_credits:    parseInt(document.getElementById('gwP-ai')?.value)||0,
+        max_reps:      parseInt(document.getElementById('gwP-reps')?.value)||0,
+        sort:          parseInt(document.getElementById('gwP-sort')?.value)||0,
+        features:      featureLines,
+        highlight:     document.getElementById('gwP-highlight')?.checked ? 1 : 0,
+        active:        document.getElementById('gwP-active')?.checked ? 1 : 0,
+      };
+      if (!payload.name) { toast('Plan name required'); return; }
+      try {
+        if (existingId) { await apiPut(`/api/platform/pricing-plans/${existingId}`, payload); toast('Plan updated'); }
+        else {
+          const id = document.getElementById('gwP-id')?.value?.trim();
+          if (!id) { toast('Plan ID required'); return; }
+          await apiPost('/api/platform/pricing-plans', Object.assign({ id }, payload));
+          toast('Plan created');
+        }
+        document.getElementById('gwPlanModalOverlay')?.remove();
+        show('gwPricing');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwDeletePlan = async function(id) {
+      if (!confirm(`Delete the "${id}" plan? Tenants on this plan keep their plan label but MRR will show $0 for them.`)) return;
+      try {
+        await apiDelete(`/api/platform/pricing-plans/${id}`);
+        document.getElementById('gwPlanModalOverlay')?.remove();
+        toast('Plan deleted');
+        show('gwPricing');
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // REGISTER MODULE
   // ─────────────────────────────────────────────────────────────────────────
   window.gwPlatformAdmin = {
     overview,
     tenants,
     leads,
+    demos,
+    pricingPlans,
     support,
     announce,
     billing,

@@ -6445,3 +6445,34 @@ h1.ld-name {
   }
   .rp-left { display: none !important; }
 }
+
+/* ─── 63. PLATFORM ADMIN PREMIUM (gw-pa-*) ──────────────────────────────── */
+/* Full-width shell — pages stretch to the window (view is already fluid). */
+.gw-pa-shell { width: 100% !important; max-width: none !important; }
+
+/* Panel tables: refined header + hover rows */
+.gw-pa-panel table thead tr {
+  background: var(--gw-bg-surface) !important;
+}
+.gw-pa-panel table tbody tr {
+  transition: background .12s ease;
+}
+.gw-pa-panel table tbody tr:hover {
+  background: rgba(77,138,134,.06) !important;
+}
+.gw-pa-panel table tbody tr:last-child td { border-bottom: none !important; }
+
+/* Stat cards grid: responsive auto-fit so wide windows get more columns */
+.gw-pa-stat-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  gap: 14px !important;
+}
+@media (max-width: 700px) {
+  .gw-pa-stat-grid { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* Keep the dark hero header band's light text legible (exempt from rescues) */
+.gw-pa-shell [style*="color:#F2EFE6"]  { color: #F2EFE6 !important; }
+.gw-pa-shell [style*="color:#A8BCB0"]  { color: #A8BCB0 !important; }
+.gw-pa-shell [style*="color:#7FB5B0"]  { color: #7FB5B0 !important; }
