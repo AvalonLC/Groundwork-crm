@@ -3034,6 +3034,43 @@ app.get('/api/admin/ai', requireSuperAdmin, async (c) => {
   })
 })
 
+// POST /api/admin/ai/test — fires a real 1-shot completion with the platform
+// master key so the owner can verify the key + billing credits work end-to-end.
+app.post('/api/admin/ai/test', requireSuperAdmin, async (c) => {
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, 'groundwork_platform', c.env)
+  if (!apiKey) return c.json({ ok: false, error: 'no_key', message: 'No master key saved yet.' }, 400)
+  try {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: "Reply with exactly: GROUNDWORK AI ONLINE" }],
+      }),
+    })
+    const bodyText = await r.text().catch(() => '')
+    if (!r.ok) {
+      let hint = `OpenAI returned HTTP ${r.status}.`
+      if (r.status === 401) hint = 'OpenAI rejected the key (401). The key is wrong, revoked, or was pasted incompletely.'
+      else if (r.status === 429) hint = 'OpenAI says 429 — usually NO BILLING CREDITS on the account (or rate limit). Add credits at platform.openai.com → Settings → Billing.'
+      else if (r.status === 404) hint = `Model "${model}" not found (404) — the account may not have access to it.`
+      return c.json({ ok: false, error: 'upstream', status: r.status, message: hint, detail: bodyText.slice(0, 300) }, 502)
+    }
+    const j: any = JSON.parse(bodyText)
+    const reply = j?.choices?.[0]?.message?.content || ''
+    await _logAiUsage(db, 'groundwork_platform', c.var.repId as string, 'test', model, j?.usage, keySource)
+    return json(c, {
+      reply: String(reply).slice(0, 120),
+      model: j?.model || model,
+      tokens: j?.usage?.total_tokens || 0,
+      key_source: keySource,
+    })
+  } catch (e: any) {
+    return c.json({ ok: false, error: 'network', message: 'Could not reach OpenAI: ' + String(e?.message || e).slice(0, 200) }, 502)
+  }
+})
+
 // PUT /api/admin/ai/company/:id — { ai_enabled: true|false } toggle platform-key access
 app.put('/api/admin/ai/company/:id', requireSuperAdmin, async (c) => {
   const id = c.req.param('id')
@@ -7953,7 +7990,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b003">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b004">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7977,8 +8014,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b003"></script>
-  <script src="/js/client_portal.js?v=20260718b003"></script>
+  <script src="/js/platform_core.js?v=20260718b004"></script>
+  <script src="/js/client_portal.js?v=20260718b004"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8608,9 +8645,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b003">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b004">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b004">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b004">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9158,38 +9195,38 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b003"></script>
-<script src="/js/db.js?v=20260718b003"></script>
-<script src="/js/data.js?v=20260718b003"></script>
-<script src="/js/reps.js?v=20260718b003"></script>
-<script src="/js/record-page.js?v=20260718b003"></script>
-<script src="/js/academy.js?v=20260718b003"></script>
-<script src="/js/task_engine.js?v=20260718b003"></script>
-<script src="/js/gw_i18n.js?v=20260718b003"></script>
-<script src="/js/app_premium.js?v=20260718b003"></script>
-<script src="/js/estimates.js?v=20260718b003"></script>
-<script src="/js/proposals.js?v=20260718b003"></script>
-<script src="/js/pricing.js?v=20260718b003"></script>
-<script src="/js/invoices.js?v=20260718b003"></script>
-<script src="/js/csv_import.js?v=20260718b003"></script>
-<script src="/js/onboarding.js?v=20260718b003"></script>
-<script src="/js/recurring_plans.js?v=20260718b003"></script>
-<script src="/js/reviews.js?v=20260718b003"></script>
-<script src="/js/stripe.js?v=20260718b003"></script>
-<script src="/js/email.js?v=20260718b003"></script>
-<script src="/js/notifications.js?v=20260718b003"></script>
-<script src="/js/integrations.js?v=20260718b003"></script>
-<script src="/js/calendar_sync.js?v=20260718b003"></script>
-<script src="/js/user_management.js?v=20260718b003"></script>
-<script src="/js/platform_admin.js?v=20260718b003"></script>
-<script src="/js/time_tracker.js?v=20260718b003"></script>
-<script src="/js/field_workday.js?v=20260718b003"></script>
-<script src="/js/platform_core.js?v=20260718b003"></script>
-<script src="/js/approval_engine.js?v=20260718b003"></script>
-<script src="/js/automation_engine.js?v=20260718b003"></script>
-<script src="/js/client_portal.js?v=20260718b003"></script>
-<script src="/js/field_mode.js?v=20260718b003"></script>
-<script src="/js/assets_hub.js?v=20260718b003"></script>
+<script src="/js/gw-icons.js?v=20260718b004"></script>
+<script src="/js/db.js?v=20260718b004"></script>
+<script src="/js/data.js?v=20260718b004"></script>
+<script src="/js/reps.js?v=20260718b004"></script>
+<script src="/js/record-page.js?v=20260718b004"></script>
+<script src="/js/academy.js?v=20260718b004"></script>
+<script src="/js/task_engine.js?v=20260718b004"></script>
+<script src="/js/gw_i18n.js?v=20260718b004"></script>
+<script src="/js/app_premium.js?v=20260718b004"></script>
+<script src="/js/estimates.js?v=20260718b004"></script>
+<script src="/js/proposals.js?v=20260718b004"></script>
+<script src="/js/pricing.js?v=20260718b004"></script>
+<script src="/js/invoices.js?v=20260718b004"></script>
+<script src="/js/csv_import.js?v=20260718b004"></script>
+<script src="/js/onboarding.js?v=20260718b004"></script>
+<script src="/js/recurring_plans.js?v=20260718b004"></script>
+<script src="/js/reviews.js?v=20260718b004"></script>
+<script src="/js/stripe.js?v=20260718b004"></script>
+<script src="/js/email.js?v=20260718b004"></script>
+<script src="/js/notifications.js?v=20260718b004"></script>
+<script src="/js/integrations.js?v=20260718b004"></script>
+<script src="/js/calendar_sync.js?v=20260718b004"></script>
+<script src="/js/user_management.js?v=20260718b004"></script>
+<script src="/js/platform_admin.js?v=20260718b004"></script>
+<script src="/js/time_tracker.js?v=20260718b004"></script>
+<script src="/js/field_workday.js?v=20260718b004"></script>
+<script src="/js/platform_core.js?v=20260718b004"></script>
+<script src="/js/approval_engine.js?v=20260718b004"></script>
+<script src="/js/automation_engine.js?v=20260718b004"></script>
+<script src="/js/client_portal.js?v=20260718b004"></script>
+<script src="/js/field_mode.js?v=20260718b004"></script>
+<script src="/js/assets_hub.js?v=20260718b004"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

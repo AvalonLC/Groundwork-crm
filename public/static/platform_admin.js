@@ -1135,7 +1135,9 @@
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <input id="gwPS-ai-key" class="um-input" type="password" placeholder="sk-…" style="max-width:340px;font-family:monospace">
             <button onclick="window._gwSaveAiKey()" style="padding:10px 18px;background:#4D8A86;border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save Master Key</button>
+            <button id="gwPS-ai-test-btn" onclick="window._gwTestAiKey()" ${d.platform_key_set?'':'disabled'} style="padding:10px 18px;background:${d.platform_key_set?'#2D7A55':'#3a4a48'};border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:${d.platform_key_set?'pointer':'not-allowed'}">⚡ Test AI</button>
           </div>
+          <div id="gwPS-ai-test-result" style="margin-top:10px"></div>
           <div style="font-size:11px;color:#6F7E6A;margin-top:8px;line-height:1.6">
             This ONE key powers AI for every tenant you enable below. Their usage is metered per-company so you can bill it back.
             Companies can alternatively paste their own key (BYOK) in their Integrations → Admin Setup — BYOK usage never touches your key.
@@ -1166,6 +1168,30 @@
         toast('Master AI key saved');
         window._gwLoadAiPanel();
       } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwTestAiKey = async function() {
+      const out = document.getElementById('gwPS-ai-test-result');
+      const btn = document.getElementById('gwPS-ai-test-btn');
+      if (out) out.innerHTML = '<div style="font-size:12px;color:#8B9491">Testing — calling OpenAI with your master key…</div>';
+      if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
+      try {
+        const r = await fetch('/api/admin/ai/test', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:'{}' });
+        const j = await r.json();
+        const d2 = j.data || j;
+        if (r.ok && j.ok !== false) {
+          out.innerHTML = `<div style="padding:12px 14px;background:#2D7A5514;border:1px solid #2D7A5544;border-radius:10px;font-size:13px;color:#2D7A55">
+            <strong>✓ AI is LIVE.</strong> Model <span style="font-family:monospace">${esc(d2.model||'')}</span> replied:
+            <em style="color:#E8E4D9">"${esc(d2.reply||'')}"</em>
+            <span style="color:#6F7E6A"> · ${fmt(d2.tokens||0)} tokens (logged to usage ledger)</span></div>`;
+        } else {
+          out.innerHTML = `<div style="padding:12px 14px;background:#C97B6A14;border:1px solid #C97B6A44;border-radius:10px;font-size:13px;color:#C97B6A">
+            <strong>✗ Test failed.</strong> ${esc(j.message||d2.message||'Unknown error')}
+            ${j.detail?`<div style="font-size:11px;color:#8B9491;margin-top:6px;font-family:monospace;word-break:break-all">${esc(String(j.detail).slice(0,200))}</div>`:''}</div>`;
+        }
+      } catch(e) {
+        out.innerHTML = `<div style="font-size:13px;color:#C97B6A">✗ ${esc(e.message)}</div>`;
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ Test AI'; }
     };
     window._gwToggleAi = async function(companyId, enabled, el) {
       try {
