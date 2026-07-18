@@ -2200,7 +2200,7 @@
                 <div style="font-size:10.5px;color:#6F7E6A">Interactive demo — nothing is saved</div>
               </div>
               <div style="display:flex;gap:6px">
-                ${[['playbook','Playbook'],['wizard','Wizard'],['checklist','Checklist']].map(([id,l])=>`
+                ${[['playbook','Playbook'],['wizard','Wizard'],['checklist','Checklist'],['copilot','✨ Copilot']].map(([id,l])=>`
                 <button onclick="window._gwOnbPvMode('${id}')" id="gwPvTab_${id}" style="padding:6px 12px;border-radius:9px;border:1px solid var(--line,#e5e5e0);background:transparent;color:#6F7E6A;font-size:11.5px;font-weight:800;cursor:pointer">${l}</button>`).join('')}
               </div>
             </div>
@@ -2218,7 +2218,7 @@
 
     window._gwOnbPvMode = function(mode) {
       pvS.mode = mode;
-      ['playbook','wizard','checklist'].forEach(t => {
+      ['playbook','wizard','checklist','copilot'].forEach(t => {
         const b = document.getElementById('gwPvTab_'+t); if (!b) return;
         const on = t === mode;
         b.style.background = on ? 'rgba(77,138,134,.2)' : 'transparent';
@@ -2228,6 +2228,7 @@
       if (!pvBody()) return;
       if (mode === 'playbook') pvPlaybook();
       else if (mode === 'wizard') pvWizard();
+      else if (mode === 'copilot') pvCopilot();
       else pvChecklist();
     };
 
@@ -2373,6 +2374,109 @@
       </div>`;
     }
     window._gwOnbPvCl = function(id) { pvS.clDone[id] = !pvS.clDone[id]; pvChecklist(); };
+
+    /* ── Copilot preview: simulated spotlight tour + REAL AI chat test ───── */
+    function pvCopilot() {
+      const tours = (window.gwCopilot && window.gwCopilot.TOURS) || {};
+      const tourKeys = Object.keys(tours);
+      pvS.cpTour = pvS.cpTour || tourKeys[1] || tourKeys[0] || '';
+      pvS.cpIdx = pvS.cpIdx || 0;
+      const tour = tours[pvS.cpTour];
+      const steps = (tour && tour.steps) || [];
+      const idx = Math.min(pvS.cpIdx, Math.max(0, steps.length - 1));
+      const step = steps[idx] || {};
+      const isLast = idx >= steps.length - 1;
+
+      pvBody().innerHTML = `
+      <div style="font-size:11px;color:#4A5546;margin-bottom:10px;text-align:center;font-weight:600">The AI Setup Copilot — spotlight tours + AI chat a new tenant gets. Pick a tour, step through it, or ask the real AI below.</div>
+
+      <!-- Tour picker -->
+      <select onchange="window._gwOnbPvCpTour(this.value)" style="width:100%;padding:9px 10px;border:1.5px solid #B8B4A8;border-radius:10px;font-size:12.5px;font-weight:700;color:#374151;background:#fff;margin-bottom:12px">
+        ${tourKeys.map(k=>`<option value="${esc(k)}" ${k===pvS.cpTour?'selected':''}>✨ ${esc(tours[k].label||k)}</option>`).join('')}
+      </select>
+
+      <!-- Simulated dimmed app with spotlight -->
+      <div style="position:relative;background:#20261F;border-radius:14px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.18);margin-bottom:14px">
+        <div style="padding:12px;opacity:.35">
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <div style="width:70px;height:110px;background:#394237;border-radius:8px"></div>
+            <div style="flex:1">
+              <div style="height:14px;width:45%;background:#394237;border-radius:4px;margin-bottom:8px"></div>
+              <div style="height:9px;width:70%;background:#323A31;border-radius:4px;margin-bottom:14px"></div>
+              <div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;height:34px;background:#323A31;border-radius:6px"></div><div style="flex:1;height:34px;background:#323A31;border-radius:6px"></div></div>
+              <div style="height:9px;width:85%;background:#323A31;border-radius:4px;margin-bottom:6px"></div>
+              <div style="height:9px;width:60%;background:#323A31;border-radius:4px"></div>
+            </div>
+          </div>
+        </div>
+        ${step.find ? `
+        <div style="position:absolute;top:14px;right:14px">
+          <span class="gwcp-pulse" style="display:inline-block;background:#2D7A55;color:#fff;font-size:11.5px;font-weight:800;padding:8px 16px;border-radius:9px;border:3px solid #4ADE80">${esc((step.find[0]&&(step.find[0].text||step.find[0].sel))||'target button')}</span>
+        </div>` : ''}
+        <!-- Tour card -->
+        <div style="margin:0 12px 12px;background:#fff;border-radius:13px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.35)">
+          <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:10px 14px;display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">✨</span>
+            <span style="flex:1;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.04em">GROUNDWORK GUIDE · ${idx+1} OF ${steps.length||1}</span>
+            <span style="color:rgba(255,255,255,.75);font-size:13px">✕</span>
+          </div>
+          <div style="padding:12px 14px 4px">
+            <div style="font-size:13.5px;font-weight:800;color:#1F2937">${esc(step.title||'')}</div>
+            <div style="font-size:11.5px;color:#4B5563;margin-top:4px;line-height:1.5">${esc(step.body||'')}</div>
+            ${step.tip?`<div style="margin-top:8px;background:#F0FAF4;border:1px solid #2D7A5526;border-radius:8px;padding:7px 10px;font-size:10.5px;color:#1F5138;line-height:1.45"><b>💡 Pro tip:</b> ${esc(step.tip)}</div>`:''}
+            ${step.clickToAdvance?`<div style="margin-top:8px;font-size:10.5px;font-weight:700;color:#8B6914">👆 User clicks the highlighted button to do it for real — tour advances automatically.</div>`:''}
+            ${step.view?`<div style="margin-top:8px;font-size:10px;color:#9CA3AF">auto-navigates to <b>${esc(step.view)}</b></div>`:''}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px 12px">
+            <div style="display:flex;gap:4px">${steps.map((_,i)=>`<span style="width:6px;height:6px;border-radius:50%;background:${i===idx?'#2D7A55':'#D1D5DB'}"></span>`).join('')}</div>
+            <div style="display:flex;gap:6px">
+              ${idx>0?`<button onclick="window._gwOnbPvCpStep(${idx-1})" style="background:none;border:1.5px solid #E5E7EB;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:700;color:#6B7280;cursor:pointer">← Back</button>`:''}
+              <button onclick="window._gwOnbPvCpStep(${isLast?0:idx+1})" style="background:#2D7A55;border:none;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:800;color:#fff;cursor:pointer">${isLast?'↺ Restart':'Next →'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      ${window.gwCopilot?`<button onclick="window.gwCopilot.startTour('${esc(pvS.cpTour)}')" style="width:100%;background:none;border:1.5px dashed #8B6914;border-radius:10px;padding:9px;font-size:11.5px;font-weight:800;color:#8B6914;cursor:pointer;margin-bottom:14px">▶ Run this tour FOR REAL in your own account (navigates your app)</button>`:''}
+
+      <!-- Real AI chat test -->
+      <div style="background:#fff;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.14);overflow:hidden">
+        <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:11px 14px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:15px">✨</span>
+          <div style="flex:1"><div style="font-size:12.5px;font-weight:800;color:#fff">Groundwork AI — live test</div><div style="font-size:9.5px;color:rgba(255,255,255,.8)">Hits the real /api/ai/copilot endpoint (metered as your platform account)</div></div>
+        </div>
+        <div id="gwPvCpMsgs" style="max-height:200px;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:#FAFAF8;min-height:60px">
+          ${(pvS.cpMsgs||[]).map(m=>`<div style="max-width:88%;padding:8px 11px;border-radius:${m.role==='ai'?'4px 12px 12px 12px':'12px 4px 12px 12px'};font-size:11.5px;line-height:1.5;white-space:pre-wrap;${m.role==='ai'?'background:#fff;border:1px solid #EDEDE8;color:#1F2937;align-self:flex-start':'background:#2D7A55;color:#fff;align-self:flex-end'}">${esc(m.text)}${m.tour?`<div style="margin-top:6px;font-size:10.5px;font-weight:800;color:#2D7A55">↳ would offer tour: ✨ ${esc((tours[m.tour]&&tours[m.tour].label)||m.tour)}</div>`:''}</div>`).join('')
+          || '<div style="font-size:11px;color:#9CA3AF;text-align:center;padding:14px 6px">Ask what a new user might ask — e.g. "How do I import my clients?" or "How do I get paid faster?"</div>'}
+        </div>
+        <div style="display:flex;gap:6px;padding:10px 12px;border-top:1px solid #F3F4F6">
+          <input id="gwPvCpInput" placeholder="Test a question…" style="flex:1;padding:8px 10px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:12px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')window._gwOnbPvCpSend()">
+          <button onclick="window._gwOnbPvCpSend()" style="background:#2D7A55;border:none;border-radius:9px;padding:8px 14px;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Send</button>
+        </div>
+      </div>
+      <style>.gwcp-pulse{animation:gwcpPulse 1.6s ease-in-out infinite}@keyframes gwcpPulse{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}50%{box-shadow:0 0 0 10px rgba(74,222,128,0)}}</style>`;
+    }
+    window._gwOnbPvCpTour = function(k) { pvS.cpTour = k; pvS.cpIdx = 0; pvCopilot(); };
+    window._gwOnbPvCpStep = function(i) { pvS.cpIdx = i; pvCopilot(); };
+    window._gwOnbPvCpSend = async function() {
+      const inp = document.getElementById('gwPvCpInput');
+      const q = (inp && inp.value || '').trim();
+      if (!q || pvS.cpBusy) return;
+      pvS.cpMsgs = pvS.cpMsgs || [];
+      pvS.cpMsgs.push({ role: 'user', text: q });
+      pvS.cpBusy = true;
+      pvCopilot();
+      // Simulated new-tenant context: nothing done yet — mirrors a fresh signup
+      const checklist = checklistSteps.filter(s=>s.active).map(s=>({ id: s.id, title: s.title, done: false }));
+      try {
+        const d = await apiPost('/api/ai/copilot', { question: q, view: 'gwDashboard', checklist });
+        pvS.cpMsgs.push({ role: 'ai', text: d.answer || '(no answer)', tour: d.tour || null });
+      } catch(e) {
+        pvS.cpMsgs.push({ role: 'ai', text: '⚠ ' + (e.message || 'AI request failed') + ' — check the platform OpenAI key in Platform Settings.' });
+      }
+      pvS.cpBusy = false;
+      pvCopilot();
+      setTimeout(()=>{ const m = document.getElementById('gwPvCpMsgs'); if (m) m.scrollTop = m.scrollHeight; }, 50);
+    };
 
     function renderFunnel() {
       const respByCo = {};
