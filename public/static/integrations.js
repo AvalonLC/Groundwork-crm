@@ -742,7 +742,7 @@ async function integrations() {
 
 <!-- Tab bar -->
 <div style="display:flex;gap:0;border-bottom:2px solid var(--gw-line);margin-bottom:0">
-  ${[['gmail','Gmail'],['calendar','Calendar'],['drive','Drive']].map(([id,label])=>`
+  ${[['gmail','Gmail'],['calendar','Calendar'],['drive','Drive'],['admin','Admin Setup']].map(([id,label])=>`
   <button id="gw-tab-${id}" onclick="gwSwitchTab('${id}')"
     style="padding:10px 20px;font-size:13px;font-weight:600;background:none;border:none;cursor:pointer;border-bottom:2px solid ${_gwTab===id?'#4D8A86':'transparent'};color:${_gwTab===id?'#4D8A86':'#6F7E6A'};margin-bottom:-2px;transition:all .15s">
     ${label}
@@ -753,6 +753,7 @@ async function integrations() {
 <div id="gw-panel-gmail"  style="display:${_gwTab==='gmail'   ?'block':'none'};padding-top:20px"></div>
 <div id="gw-panel-calendar" style="display:${_gwTab==='calendar'?'block':'none'};padding-top:20px"></div>
 <div id="gw-panel-drive"  style="display:${_gwTab==='drive'   ?'block':'none'};padding-top:20px"></div>
+<div id="gw-panel-admin"  style="display:${_gwTab==='admin'   ?'block':'none'};padding-top:20px"></div>
 
 <!-- ── Compose Email Modal ────────────────────────────────────────────── -->
 ${_buildComposeModalHTML()}
@@ -813,7 +814,7 @@ ${_buildComposeModalHTML()}
 // ── Tab switching ─────────────────────────────────────────────────────────────
 window.gwSwitchTab = function(tab) {
   _gwTab = tab;
-  ['gmail','calendar','drive'].forEach(id => {
+  ['gmail','calendar','drive','admin'].forEach(id => {
     const panel = document.getElementById(`gw-panel-${id}`);
     const btn   = document.getElementById(`gw-tab-${id}`);
     if (panel) panel.style.display = id === tab ? 'block' : 'none';
@@ -827,7 +828,89 @@ function gwRenderActiveTab() {
   if (_gwTab === 'gmail')      gwRenderGmail();
   if (_gwTab === 'calendar')   gwRenderCalendar();
   if (_gwTab === 'drive')      gwRenderDrive();
+  if (_gwTab === 'admin')      gwRenderAdminSetup();
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ADMIN SETUP PANEL (connected view) — Google OAuth creds + AI API key
+// Reuses the exact same input ids + save handlers as the pre-connection panel.
+// ════════════════════════════════════════════════════════════════════════════════
+function gwRenderAdminSetup() {
+  const el = document.getElementById('gw-panel-admin');
+  if (!el) return;
+  el.innerHTML = `
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;align-items:start">
+
+  <!-- AI API Key -->
+  <section class="gw-int-panel" id="admin-ai-key-panel" style="border-radius:16px;padding:28px;min-width:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="font-size:18px">✨</span>
+      <div style="font-size:15px;font-weight:800;color:var(--gds-ink,#1F2A2B)">AI Setup</div>
+      <span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gds-muted,#5E6E6F);background:var(--gds-surface-3,#F2EFE9);border:1px solid var(--gds-line,#E0DDD5);border-radius:4px;padding:2px 7px">Admin only</span>
+    </div>
+    <p style="font-size:13px;color:var(--gds-muted,#5E6E6F);line-height:1.6;margin:0 0 16px">
+      Paste your OpenAI API key to enable AI features (proposal drafting, and upcoming email &amp; automation AI) for your whole team.
+    </p>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">AI API Key <span style="font-weight:500;text-transform:none;letter-spacing:0">(OpenAI)</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="int-admin-ai-key" type="password"
+        placeholder="sk-…"
+        style="flex:1;padding:9px 12px;background:var(--gds-surface,#FFFFFF);border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;color:var(--gds-ink,#1F2A2B);font-size:12px;font-family:monospace;box-sizing:border-box">
+      <button class="primary-btn" style="font-size:12px;padding:8px 14px;flex-shrink:0" onclick="intAdminSaveAiKey()">Save</button>
+    </div>
+    <div style="font-size:11px;color:var(--gds-muted,#5E6E6F);line-height:1.6">Create a key at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--gds-teal,#4D8A86)">platform.openai.com → API keys</a>. Stored server-side in company settings — never in the browser.</div>
+    <span id="int-admin-ai-status" style="font-size:11px;color:#2D7A55;display:block;margin-top:6px"></span>
+    <div id="int-admin-ai-current" style="font-size:11px;color:var(--gds-muted,#5E6E6F);margin-top:8px"></div>
+  </section>
+
+  <!-- Google OAuth creds -->
+  <section class="gw-int-panel" style="border-radius:16px;padding:28px;min-width:0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--gds-pine,#204A43)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+      <div style="font-size:15px;font-weight:800;color:var(--gds-ink,#1F2A2B)">Google OAuth</div>
+      <span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gds-muted,#5E6E6F);background:var(--gds-surface-3,#F2EFE9);border:1px solid var(--gds-line,#E0DDD5);border-radius:4px;padding:2px 7px">Admin only</span>
+    </div>
+    <p style="font-size:13px;color:var(--gds-muted,#5E6E6F);line-height:1.6;margin:0 0 16px">
+      Shared Google OAuth credentials for the whole team. Already configured — only change these if you rotate credentials in Google Cloud Console.
+    </p>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Google OAuth Client ID</label>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="int-admin-client-id" type="text"
+        value="${escapeHtml(getGoogleClientId())}"
+        placeholder="523041…apps.googleusercontent.com"
+        style="flex:1;padding:9px 12px;background:var(--gds-surface,#FFFFFF);border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;color:var(--gds-ink,#1F2A2B);font-size:12px;font-family:monospace;box-sizing:border-box">
+    </div>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Google OAuth Client Secret <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables stay-signed-in)</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="int-admin-client-secret" type="password"
+        placeholder="GOCSPX-…  (leave blank to keep current)"
+        style="flex:1;padding:9px 12px;background:var(--gds-surface,#FFFFFF);border:1px solid var(--gds-line-2,#CCC9C0);border-radius:8px;color:var(--gds-ink,#1F2A2B);font-size:12px;font-family:monospace;box-sizing:border-box">
+    </div>
+    <button class="primary-btn" style="font-size:12px;padding:8px 14px" onclick="intAdminSaveGoogleCreds()">Save Google Credentials</button>
+    <span id="int-admin-creds-status" style="font-size:11px;color:#2D7A55;margin-left:10px"></span>
+  </section>
+</div>`;
+
+  // Show whether an AI key is already saved (server-side check, never returns the key itself)
+  (async () => {
+    try {
+      const r = await fetch('/api/settings');
+      if (!r.ok) return;
+      const j = await r.json().catch(() => null);
+      const settings = (j && j.data) ? j.data : (j || {});
+      const k = settings.openai_api_key || '';
+      const cur = document.getElementById('int-admin-ai-current');
+      if (!cur) return;
+      if (k) {
+        const masked = k.length > 10 ? (k.slice(0,7) + '…' + k.slice(-4)) : 'sk-…';
+        cur.innerHTML = '<span style="color:#2D7A55;font-weight:600">✓ AI key saved</span> (' + masked.replace(/</g,'&lt;') + ') — saving a new one replaces it.';
+      } else {
+        cur.textContent = 'No AI key saved yet.';
+      }
+    } catch(e){}
+  })();
+}
+window.gwRenderAdminSetup = gwRenderAdminSetup;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // GMAIL PANEL
