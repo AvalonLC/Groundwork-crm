@@ -4970,6 +4970,100 @@ Rules:
   }
 })
 
+// POST /api/ai/draft-followup — AI Phase 1: meeting transcript → follow-up email.
+// { opp_id, transcript, instructions?, task_id? }
+// Pulls full lead context (profile + recent communications + company brand) so the
+// rep never has to re-explain the deal. Returns { subject, body_html }.
+app.post('/api/ai/draft-followup', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) {
+    return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
+  }
+  const b: any = await c.req.json().catch(() => ({}))
+  const transcript = String(b.transcript || '').trim()
+  if (!transcript) return err(c, 'transcript required')
+
+  // ── Lead context ──
+  let opp: any = null, comms = ''
+  if (b.opp_id) {
+    opp = await db.prepare('SELECT * FROM opportunities WHERE id=? AND company_id=? LIMIT 1').bind(b.opp_id, companyId).first().catch(() => null)
+    if (opp) {
+      const rows = await db.prepare(
+        "SELECT type, direction, subject, body, ts FROM communications WHERE opp_id=? AND company_id=? ORDER BY ts DESC LIMIT 8"
+      ).bind(b.opp_id, companyId).all().catch(() => ({ results: [] as any[] }))
+      comms = ((rows.results || []) as any[]).reverse().map((r: any) =>
+        `[${String(r.ts).slice(0, 10)} ${r.direction === 'out' ? 'us→client' : 'client→us'} ${r.type}] ${r.subject ? r.subject + ' — ' : ''}${String(r.body || '').slice(0, 400)}`
+      ).join('\n')
+    }
+  }
+  const brand: any = await db.prepare('SELECT name, tagline, phone, website FROM companies WHERE id=? LIMIT 1').bind(companyId).first().catch(() => null)
+  const rep: any = await db.prepare('SELECT name, title, email FROM reps WHERE id=? LIMIT 1').bind(c.var.repId as string).first().catch(() => null)
+
+  const context = [
+    `Our company: ${brand?.name || 'the company'}${brand?.tagline ? ' — ' + brand.tagline : ''}${brand?.phone ? ' · ' + brand.phone : ''}${brand?.website ? ' · ' + brand.website : ''}`,
+    rep ? `Sender (the rep writing this email): ${rep.name}${rep.title ? ', ' + rep.title : ''}` : '',
+    opp ? `Client: ${opp.client || 'Unknown'}${opp.email ? ' <' + opp.email + '>' : ''}` : '',
+    opp?.address ? `Property address: ${opp.address}` : '',
+    opp?.project ? `Project: ${opp.project}` : '',
+    opp?.stage ? `Pipeline stage: ${opp.stage}` : '',
+    opp?.value ? `Estimated deal value: $${opp.value}` : '',
+    comms ? `Recent communication history (oldest first):\n${comms.slice(0, 4000)}` : '',
+    `Meeting transcript / rep's meeting notes:\n${transcript.slice(0, 12000)}`,
+    b.instructions ? `Rep's specific instructions for this email:\n${String(b.instructions).slice(0, 1000)}` : '',
+  ].filter(Boolean).join('\n\n')
+
+  const sys = `You are an expert client-relations writer for a professional services business. Draft the post-meeting follow-up email the rep will send to the client.
+
+Rules:
+- Ground EVERYTHING in the transcript and context. Never invent commitments, prices, or dates that weren't discussed.
+- Warm, confident, concise. Sound like a real person, not a template. No corporate filler.
+- Structure: quick thanks referencing something specific from the meeting → clear recap of what was discussed/decided → concrete next steps (who does what, by when) → easy closing question or CTA.
+- Keep it scannable: short paragraphs; use a short bullet list for next steps if there are 2+.
+- Sign off with the rep's first name only (no full signature block — their Gmail signature is appended automatically).
+- Write in the same language the transcript is in.
+
+Return ONLY valid JSON (no markdown fences): { "subject": "string — specific, references the project/meeting", "body_html": "string — email body as simple HTML using <p>, <ul>, <li>, <strong> only" }`
+
+  try {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: context },
+        ],
+      }),
+    })
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '')
+      console.error('[ai/draft-followup] upstream', r.status, errText.slice(0, 300))
+      return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}).` }, 502)
+    }
+    const j: any = await r.json()
+    await _logAiUsage(db, companyId, c.var.repId as string, 'followup_email', model, j?.usage, keySource)
+    let raw = (j?.choices?.[0]?.message?.content || '').trim()
+      .replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+    const start = raw.indexOf('{'); const end = raw.lastIndexOf('}')
+    if (start === -1 || end === -1) throw new Error('No JSON in AI response')
+    const draft = JSON.parse(raw.slice(start, end + 1))
+    return json(c, {
+      subject: String(draft.subject || 'Following up on our meeting'),
+      body_html: String(draft.body_html || ''),
+      to_email: opp?.email || '',
+      client: opp?.client || '',
+      model: j?.model || model,
+      tokens: j?.usage?.total_tokens || 0,
+    })
+  } catch (e: any) {
+    console.error('[ai/draft-followup]', e?.message || e)
+    return c.json({ ok: false, error: 'ai_error', message: String(e?.message || e).slice(0, 200) }, 500)
+  }
+})
+
 // POST /api/ai/generate-quote — the AI Quote Generator.
 // Inputs: lead conversation history + the company's OWN price book + brand +
 // (optional) live market-rate search. Output: a tiered quote whose line items
@@ -7990,7 +8084,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b006">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8014,8 +8108,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b004"></script>
-  <script src="/js/client_portal.js?v=20260718b004"></script>
+  <script src="/js/platform_core.js?v=20260718b006"></script>
+  <script src="/js/client_portal.js?v=20260718b006"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8645,9 +8739,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b004">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b004">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b006">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9195,38 +9289,39 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b004"></script>
-<script src="/js/db.js?v=20260718b004"></script>
-<script src="/js/data.js?v=20260718b004"></script>
-<script src="/js/reps.js?v=20260718b004"></script>
-<script src="/js/record-page.js?v=20260718b004"></script>
-<script src="/js/academy.js?v=20260718b004"></script>
-<script src="/js/task_engine.js?v=20260718b004"></script>
-<script src="/js/gw_i18n.js?v=20260718b004"></script>
-<script src="/js/app_premium.js?v=20260718b004"></script>
-<script src="/js/estimates.js?v=20260718b004"></script>
-<script src="/js/proposals.js?v=20260718b004"></script>
-<script src="/js/pricing.js?v=20260718b004"></script>
-<script src="/js/invoices.js?v=20260718b004"></script>
-<script src="/js/csv_import.js?v=20260718b004"></script>
-<script src="/js/onboarding.js?v=20260718b004"></script>
-<script src="/js/recurring_plans.js?v=20260718b004"></script>
-<script src="/js/reviews.js?v=20260718b004"></script>
-<script src="/js/stripe.js?v=20260718b004"></script>
-<script src="/js/email.js?v=20260718b004"></script>
-<script src="/js/notifications.js?v=20260718b004"></script>
-<script src="/js/integrations.js?v=20260718b004"></script>
-<script src="/js/calendar_sync.js?v=20260718b004"></script>
-<script src="/js/user_management.js?v=20260718b004"></script>
-<script src="/js/platform_admin.js?v=20260718b004"></script>
-<script src="/js/time_tracker.js?v=20260718b004"></script>
-<script src="/js/field_workday.js?v=20260718b004"></script>
-<script src="/js/platform_core.js?v=20260718b004"></script>
-<script src="/js/approval_engine.js?v=20260718b004"></script>
-<script src="/js/automation_engine.js?v=20260718b004"></script>
-<script src="/js/client_portal.js?v=20260718b004"></script>
-<script src="/js/field_mode.js?v=20260718b004"></script>
-<script src="/js/assets_hub.js?v=20260718b004"></script>
+<script src="/js/gw-icons.js?v=20260718b006"></script>
+<script src="/js/db.js?v=20260718b006"></script>
+<script src="/js/data.js?v=20260718b006"></script>
+<script src="/js/reps.js?v=20260718b006"></script>
+<script src="/js/record-page.js?v=20260718b006"></script>
+<script src="/js/academy.js?v=20260718b006"></script>
+<script src="/js/task_engine.js?v=20260718b006"></script>
+<script src="/js/gw_i18n.js?v=20260718b006"></script>
+<script src="/js/app_premium.js?v=20260718b006"></script>
+<script src="/js/estimates.js?v=20260718b006"></script>
+<script src="/js/proposals.js?v=20260718b006"></script>
+<script src="/js/pricing.js?v=20260718b006"></script>
+<script src="/js/invoices.js?v=20260718b006"></script>
+<script src="/js/csv_import.js?v=20260718b006"></script>
+<script src="/js/onboarding.js?v=20260718b006"></script>
+<script src="/js/recurring_plans.js?v=20260718b006"></script>
+<script src="/js/reviews.js?v=20260718b006"></script>
+<script src="/js/stripe.js?v=20260718b006"></script>
+<script src="/js/email.js?v=20260718b006"></script>
+<script src="/js/notifications.js?v=20260718b006"></script>
+<script src="/js/integrations.js?v=20260718b006"></script>
+<script src="/js/calendar_sync.js?v=20260718b006"></script>
+<script src="/js/ai_followup.js?v=20260718b006"></script>
+<script src="/js/user_management.js?v=20260718b006"></script>
+<script src="/js/platform_admin.js?v=20260718b006"></script>
+<script src="/js/time_tracker.js?v=20260718b006"></script>
+<script src="/js/field_workday.js?v=20260718b006"></script>
+<script src="/js/platform_core.js?v=20260718b006"></script>
+<script src="/js/approval_engine.js?v=20260718b006"></script>
+<script src="/js/automation_engine.js?v=20260718b006"></script>
+<script src="/js/client_portal.js?v=20260718b006"></script>
+<script src="/js/field_mode.js?v=20260718b006"></script>
+<script src="/js/assets_hub.js?v=20260718b006"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

@@ -3022,6 +3022,9 @@ window.intEmailBookingLink  = intEmailBookingLink;
 
 // Expose integrations as a view route
 window.integrations = integrations;
+// Exports for ai_followup.js (AI Phase 1 email send)
+window.gwAiGmailSend = gmailSendEmail;
+window.isGoogleConnected = isGoogleConnected;
 window.intSaveClientIdAndConnect = intSaveClientIdAndConnect;
 window.intGoogleDisconnect = intGoogleDisconnect;
 window.intShowGmail = intShowGmail;

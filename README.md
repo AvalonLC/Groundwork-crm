@@ -257,6 +257,22 @@ you're editing what the **customer sees** vs. **internal pricing**:
 
 ---
 
+## AI Phase 1 — Post-Meeting Follow-Up Emails (added 2026-07-18)
+
+Turn a meeting transcript into a sent, logged follow-up email in under a minute:
+
+1. Calendar automation creates a "Send post-meeting follow-up email" task on the lead after a meeting.
+2. Open the task list → the ✨ button appears on open `follow_up`/`email` tasks linked to an opportunity/lead.
+3. Click ✨ → paste your meeting transcript or raw notes (+ optional instructions like "keep it short" or "Spanish").
+4. **Draft Email** → `POST /api/ai/draft-followup` assembles lead context (opportunity, last 8 comms, company brand, rep name) and returns `{subject, body_html}` — grounded, no invented commitments.
+5. Review/edit the draft (To / Subject / rich-text body), then **Send via Gmail** (requires connected Google account; Copy-to-clipboard always available).
+6. On send: email logs to the lead's communications timeline (`type=email, direction=out`) and the task auto-completes (checkbox, on by default).
+
+**Pieces:**
+- Backend: `POST /api/ai/draft-followup` (src/index.tsx) — requires `transcript`; metered in `ai_usage` as feature `followup_email`; uses the same `_aiCreds` resolution (tenant BYOK → platform master key if tenant AI enabled).
+- Frontend: `public/js/ai_followup.js` — 2-step modal (`window.gwAiFollowupOpen({taskId, oppId, oppLabel})`), Gmail send via `window.gwAiGmailSend` (exported from integrations.js), task completion via `window.gwTask.complete`.
+- Task rows: ✨ action button in `task_engine.js` `gwRenderTaskRow` for open, non-archived `follow_up`/`email` tasks with a linked opportunity/lead.
+
 ## Platform AI — Master Key, Entitlements & Usage Metering (added 2026-07-18)
 
 - **Master key**: the platform owner saves ONE OpenAI key on the platform side (Platform Admin → Platform Settings → "AI — Platform Master Key & Tenant Access"). Stored as `groundwork_platform:openai_api_key` in settings.

@@ -514,6 +514,17 @@ function gwRenderTaskRow(task, opts) {
     : task.priority === 'low' ? 'gw-task-prio--low'
     : '';
 
+  // ✨ AI follow-up: for open follow-up/email tasks linked to a lead, offer the
+  // transcript → AI-drafted email → Gmail send → auto-complete flow.
+  const aiBtn = (!isDone && !isArchived
+      && task.linked_record_id
+      && (task.linked_record_type === 'opportunity' || task.linked_record_type === 'lead')
+      && (task.task_type === 'follow_up' || task.task_type === 'email'))
+    ? `<button class="gw-task-action-btn gw-task-action-btn--ai" title="AI Follow-Up email"
+          style="color:#7B5EA7"
+          onclick="event.stopPropagation();window.gwAiFollowupOpen&&window.gwAiFollowupOpen({taskId:'${task.id}',oppId:'${task.linked_record_id}',oppLabel:'${_esc(task.linked_record_label||'').replace(/'/g,'')}'})">✨</button>`
+    : '';
+
   const completeBtn = (!isDone && !isArchived && opts.showCompleteBtn !== false)
     ? `<button class="gw-task-action-btn gw-task-action-btn--complete"
           title="Mark complete"
@@ -552,7 +563,7 @@ function gwRenderTaskRow(task, opts) {
       </div>
     </div>
     <div class="gw-task-row-actions">
-      ${editBtn}${archiveBtn}
+      ${aiBtn}${editBtn}${archiveBtn}
     </div>
   </div>`;
 }
