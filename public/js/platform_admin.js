@@ -2184,11 +2184,195 @@
       const tSales = templates.find(t=>t.id==='sales_default');
       const tWiz = templates.find(t=>t.id==='wizard_default');
       const tCl = templates.find(t=>t.id==='checklist_default');
-      paneEl().innerHTML =
+      const sections =
         (tSales ? tplSection(tSales, stepsFor('sales_default'), '#4D8A86', 'Internal checklist your team works through for every demo → live customer. Attached automatically to all demo requests in the Sales Playbook tab.') : '') +
         (tWiz ? tplSection(tWiz, wizardSteps, '#8B6914', 'The first-login wizard every new tenant admin sees. Built-in steps are locked. Add custom question steps — answers appear in the Tenant Funnel.') : '') +
         (tCl ? tplSection(tCl, checklistSteps, '#7B5EA7', 'The "Getting Started" panel inside every new tenant dashboard. Auto-detect items check themselves off when the tenant does the thing.') : '');
+
+      paneEl().innerHTML = `
+      <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:360px">${sections}</div>
+        <div style="width:430px;max-width:100%;flex-shrink:0;position:sticky;top:12px">
+          <div style="border:1px solid var(--line,#e5e5e0);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.02)">
+            <div style="padding:13px 18px;border-bottom:1px solid var(--line,#e5e5e0);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <div>
+                <div style="font-weight:800;font-size:14px;color:#E8E4D9">Live Preview</div>
+                <div style="font-size:10.5px;color:#6F7E6A">Interactive demo — nothing is saved</div>
+              </div>
+              <div style="display:flex;gap:6px">
+                ${[['playbook','Playbook'],['wizard','Wizard'],['checklist','Checklist']].map(([id,l])=>`
+                <button onclick="window._gwOnbPvMode('${id}')" id="gwPvTab_${id}" style="padding:6px 12px;border-radius:9px;border:1px solid var(--line,#e5e5e0);background:transparent;color:#6F7E6A;font-size:11.5px;font-weight:800;cursor:pointer">${l}</button>`).join('')}
+              </div>
+            </div>
+            <div id="gwOnbPvBody" style="padding:18px;background:#DDD9CE;max-height:calc(100vh - 230px);overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>`;
+      window._gwOnbPvMode((window._gwOnbPvState && window._gwOnbPvState.mode) || 'playbook');
     }
+
+    /* ── Live Preview renderers (Template Builder) ──────────────────────── */
+    const pvBody = () => document.getElementById('gwOnbPvBody');
+    window._gwOnbPvState = window._gwOnbPvState || { mode: 'playbook', wizIdx: 0, pbDone: {}, clDone: {} };
+    const pvS = window._gwOnbPvState;
+
+    window._gwOnbPvMode = function(mode) {
+      pvS.mode = mode;
+      ['playbook','wizard','checklist'].forEach(t => {
+        const b = document.getElementById('gwPvTab_'+t); if (!b) return;
+        const on = t === mode;
+        b.style.background = on ? 'rgba(77,138,134,.2)' : 'transparent';
+        b.style.borderColor = on ? '#4D8A86' : 'var(--line,#e5e5e0)';
+        b.style.color = on ? '#4D8A86' : '#6F7E6A';
+      });
+      if (!pvBody()) return;
+      if (mode === 'playbook') pvPlaybook();
+      else if (mode === 'wizard') pvWizard();
+      else pvChecklist();
+    };
+
+    function pvPlaybook() {
+      const act = salesSteps;
+      const doneCount = act.filter(s => pvS.pbDone[s.id]).length;
+      const pct = act.length ? Math.round(doneCount / act.length * 100) : 0;
+      const barCol = pct >= 100 ? '#2D7A55' : pct >= 50 ? '#4D8A86' : '#8B6914';
+      let lastPhase = null;
+      pvBody().innerHTML = `
+      <div style="font-size:11px;color:#4A5546;margin-bottom:10px;text-align:center;font-weight:600">What your team sees inside a demo request — check items off to try it</div>
+      <div style="background:#fff;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.14);overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid #EEE">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#4D8A8633,#1A474026);display:flex;align-items:center;justify-content:center;font-weight:800;color:#2D6763;flex-shrink:0">A</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:800;font-size:13.5px;color:#1F2937">Acme Landscaping <span style="font-size:9.5px;color:#8B6914;background:#FEF6E4;border:1px solid #EAD9AC;border-radius:8px;padding:1px 7px;margin-left:4px;vertical-align:middle">SAMPLE</span></div>
+              <div style="font-size:11px;color:#6B7280">Sarah Miller · sarah@acmelandscaping.com</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#6B7280;margin:10px 0 4px"><span style="font-weight:700;letter-spacing:.05em;text-transform:uppercase">Onboarding Playbook</span><span style="font-weight:800;color:${barCol}">${doneCount}/${act.length} · ${pct}%</span></div>
+          <div style="height:6px;background:#F3F4F6;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barCol};border-radius:4px;transition:width .3s"></div></div>
+        </div>
+        <div style="max-height:380px;overflow-y:auto;padding:4px 18px 12px">
+          ${act.map(s => {
+            let phase = ''; try { phase = JSON.parse(s.fields||'{}').phase || ''; } catch {}
+            const header = phase && phase !== lastPhase ? `<div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8B6914;padding:11px 0 3px">${esc(phase)}</div>` : '';
+            lastPhase = phase || lastPhase;
+            const done = !!pvS.pbDone[s.id];
+            return `${header}
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:6px 0;cursor:pointer">
+              <input type="checkbox" ${done?'checked':''} onchange="window._gwOnbPvPb('${esc(s.id)}',this.checked)" style="width:16px;height:16px;accent-color:#2D7A55;margin-top:1px;flex-shrink:0;cursor:pointer">
+              <span style="flex:1">
+                <span style="display:block;font-size:12.5px;font-weight:700;color:${done?'#9CA3AF':'#1F2937'};${done?'text-decoration:line-through':''}">${esc(s.title)}${s.required?' <span style="color:#C97B6A;font-size:11px">*</span>':''}</span>
+                ${s.description?`<span style="display:block;font-size:11px;color:#6B7280;margin-top:1px">${esc(s.description)}</span>`:''}
+              </span>
+            </label>`;
+          }).join('') || '<div style="padding:30px;text-align:center;color:#9CA3AF;font-size:12px">No active playbook steps.</div>'}
+        </div>
+      </div>`;
+    }
+    window._gwOnbPvPb = function(id, on) { pvS.pbDone[id] = on; pvPlaybook(); };
+
+    function pvWizMock(id) {
+      const inp = (label, val) => `<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;color:#374151;margin-bottom:4px">${label}</label><input value="${val}" disabled style="width:100%;padding:9px 10px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:12.5px;background:#F9FAFB;color:#6B7280;box-sizing:border-box"></div>`;
+      if (id === 'wz_welcome')  return `<div style="text-align:center;padding:10px 0"><div style="font-size:40px">👋</div><div style="font-size:12.5px;color:#6B7280;margin-top:8px;line-height:1.5">A quick setup gets your whole business into Groundwork — clients, pricing, and your first estimate. Takes about 2 minutes.</div></div>`;
+      if (id === 'wz_profile')  return inp('Company name','Acme Landscaping') + inp('Industry','Landscaping &amp; Lawn Care') + inp('Business phone','(555) 201-8890');
+      if (id === 'wz_client')   return inp('Client name','Riverside HOA') + inp('Client phone','(555) 318-2244');
+      if (id === 'wz_estimate') return inp('Estimate title','Spring Cleanup — Riverside HOA') + inp('Amount','$2,450.00');
+      if (id === 'wz_team')     return inp('Crew size','2–5 people') + inp('Divisions','Maintenance, Installs');
+      return `<div style="font-size:12px;color:#6B7280;padding:8px 0">Built-in step — the user sees its full form here.</div>`;
+    }
+
+    function pvWizard() {
+      const scr = wizardSteps.filter(s=>s.active).sort((a,b)=>(a.sort||0)-(b.sort||0));
+      const total = scr.length + 1; // + done screen
+      const idx = Math.min(pvS.wizIdx || 0, total - 1);
+      const step = scr[idx]; // undefined ⇒ done screen
+      const pct = total > 1 ? Math.round((idx / (total - 1)) * 100) : 100;
+
+      let title = '', sub = '', body = '';
+      if (!step) {
+        body = `
+        <div style="text-align:center;padding:8px 0 4px">
+          <div style="width:56px;height:56px;border-radius:50%;background:#2D7A55;color:#fff;font-size:26px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px">✓</div>
+          <div style="font-size:17px;font-weight:800;color:#1F2937">You're all set!</div>
+          <div style="font-size:12px;color:#6B7280;margin-top:6px">Acme Landscaping is live on Groundwork.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">
+            ${['View Estimates','View Clients','View Invoices','Dashboard'].map(l=>`<div style="border:1.5px solid #E5E7EB;border-radius:10px;padding:12px 8px;font-size:11.5px;font-weight:700;color:#374151;text-align:center">${l}</div>`).join('')}
+          </div>
+        </div>`;
+      } else {
+        title = step.title || ''; sub = step.description || '';
+        let qs = null;
+        if (!step.locked) { try { const p = JSON.parse(step.fields||'[]'); if (Array.isArray(p) && p.length) qs = p; } catch {} }
+        if (qs) {
+          body = qs.map(q=>`
+          <div style="margin-bottom:12px">
+            <label style="display:block;font-size:11.5px;font-weight:700;color:#374151;margin-bottom:4px">${esc(q.label||'')}</label>
+            ${q.type==='select'
+              ? `<select style="width:100%;padding:9px 10px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:12.5px;color:#374151;background:#fff"><option>Select…</option>${(q.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`
+              : `<input placeholder="Your answer…" style="width:100%;padding:9px 10px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:12.5px;box-sizing:border-box">`}
+          </div>`).join('');
+        } else {
+          body = pvWizMock(step.id);
+        }
+      }
+
+      pvBody().innerHTML = `
+      <div style="font-size:11px;color:#4A5546;margin-bottom:10px;text-align:center;font-weight:600">What a new company admin sees on first login — click Continue to walk through</div>
+      <div style="background:#fff;border-radius:16px;box-shadow:0 10px 32px rgba(0,0,0,.16);overflow:hidden">
+        <div style="height:6px;background:#F3F4F6"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#2D7A55,#4D8A86);transition:width .3s"></div></div>
+        <div style="padding:18px 22px 6px">
+          <div style="font-size:10.5px;font-weight:800;letter-spacing:.08em;color:#2D7A55;text-transform:uppercase">${step?`Step ${idx+1} of ${scr.length}`:'Setup complete'}</div>
+          ${title?`<div style="font-size:17px;font-weight:800;color:#1F2937;margin-top:5px">${esc(title)}</div>`:''}
+          ${sub?`<div style="font-size:12px;color:#6B7280;margin-top:4px;line-height:1.4">${esc(sub)}</div>`:''}
+        </div>
+        <div style="padding:14px 22px 4px">${body}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 22px 18px">
+          ${idx>0?`<button onclick="window._gwOnbPvWiz(${idx-1})" style="background:none;border:none;color:#6B7280;font-size:12.5px;font-weight:700;cursor:pointer;padding:0">← Back</button>`:'<span></span>'}
+          ${step
+            ?`<button onclick="window._gwOnbPvWiz(${idx+1})" style="background:#2D7A55;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:12.5px;font-weight:800;cursor:pointer">${idx===scr.length-1?'Finish':'Continue →'}</button>`
+            :`<button onclick="window._gwOnbPvWiz(0)" style="background:#2D7A55;color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:12.5px;font-weight:800;cursor:pointer">↺ Restart Preview</button>`}
+        </div>
+      </div>`;
+    }
+    window._gwOnbPvWiz = function(i) { pvS.wizIdx = i; pvWizard(); };
+
+    function pvChecklist() {
+      const items = checklistSteps.filter(s=>s.active).sort((a,b)=>(a.sort||0)-(b.sort||0));
+      const done = items.filter(s=>pvS.clDone[s.id]).length;
+      const pct = items.length ? Math.round(done/items.length*100) : 0;
+      pvBody().innerHTML = `
+      <div style="font-size:11px;color:#4A5546;margin-bottom:10px;text-align:center;font-weight:600">The Getting Started panel in every new tenant dashboard — click the circles to simulate progress</div>
+      <div style="background:#fff;border:1.5px solid #E5E7EB;border-radius:18px;box-shadow:0 16px 48px rgba(0,0,0,.18);overflow:hidden">
+        <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:16px 18px;color:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:14px;font-weight:800">Getting Started</div>
+            <div style="display:flex;gap:8px;align-items:center"><span style="background:rgba(255,255,255,.15);font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:8px">Hide</span><span style="font-size:16px;line-height:1">✕</span></div>
+          </div>
+          <div style="margin-top:10px;height:7px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#fff;border-radius:4px;transition:width .3s"></div></div>
+          <div style="font-size:11.5px;margin-top:6px;opacity:.9">${done} of ${items.length} complete — ${pct}%</div>
+        </div>
+        <div style="max-height:330px;overflow-y:auto">
+          ${items.map(it => {
+            let f = {}; try { f = JSON.parse(it.fields||'{}'); } catch {}
+            const dn = !!pvS.clDone[it.id];
+            return `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #F3F4F6;${dn?'opacity:.55':''}">
+            <div onclick="window._gwOnbPvCl('${esc(it.id)}')" title="Click to simulate" style="width:20px;height:20px;border-radius:50%;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;cursor:pointer;${dn?'background:#2D7A55;color:#fff':'border:2px solid #D1D5DB;color:transparent'}">✓</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:#1F2937;${dn?'text-decoration:line-through':''}">${esc(it.title)}</div>
+              <div style="font-size:11px;color:#6B7280;margin-top:2px">${esc(it.description||'')}${f.auto&&f.auto!=='manual'?` <span style="color:#7B5EA7;font-weight:700">· auto-detects</span>`:''}</div>
+            </div>
+            ${!dn&&f.view?`<span style="flex-shrink:0;background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11px;font-weight:800;padding:5px 11px;border-radius:9px">${esc(f.cta||'Open')}</span>`:''}
+          </div>`;
+          }).join('') || '<div style="padding:30px;text-align:center;color:#9CA3AF;font-size:12px">No active checklist items.</div>'}
+        </div>
+      </div>
+      <div style="text-align:right;margin-top:12px">
+        <span style="display:inline-flex;align-items:center;background:#2D7A55;color:#fff;border-radius:26px;padding:11px 18px;font-size:12.5px;font-weight:800;box-shadow:0 6px 24px rgba(29,58,43,.35)">🚀 Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${done}/${items.length}</span></span>
+        <div style="font-size:10.5px;color:#4A5546;margin-top:6px;font-weight:600">↑ the floating launcher pinned bottom-right of the tenant dashboard</div>
+      </div>`;
+    }
+    window._gwOnbPvCl = function(id) { pvS.clDone[id] = !pvS.clDone[id]; pvChecklist(); };
 
     function renderFunnel() {
       const respByCo = {};
