@@ -1059,6 +1059,14 @@
           </div>`
         )}
 
+        <!-- AI (platform master key + tenant entitlements + usage) -->
+        ${panel('AI — Platform Master Key & Tenant Access',
+          '',
+          `<div style="padding:24px;display:grid;gap:20px" id="gwPS-ai-body">
+            <div class="spinner-wrap"><div class="spinner"></div></div>
+          </div>`
+        )}
+
         <!-- Impersonation log -->
         ${panel('Impersonation & Access Log',
           '',
@@ -1089,6 +1097,84 @@
 
       </div>
     `);
+
+    // ── AI panel loader ─────────────────────────────────────────────────
+    window._gwLoadAiPanel = async function() {
+      const body = document.getElementById('gwPS-ai-body');
+      if (!body) return;
+      let d;
+      try { d = await apiGet('/api/admin/ai'); } catch(e) {
+        body.innerHTML = `<div style="color:#C97B6A;font-size:13px">Failed to load AI settings: ${esc(e.message)}</div>`;
+        return;
+      }
+      const keyLine = d.platform_key_set
+        ? `<span style="color:#2D7A55;font-weight:700">✓ Master key saved</span> <span style="font-family:monospace;color:#6F7E6A">(${esc(d.platform_key_masked)})</span> — saving a new one replaces it.`
+        : `<span style="color:#C97B6A;font-weight:700">No master key saved yet.</span> Paste your OpenAI key below.`;
+      const rows = (d.companies || []).map(co => {
+        const u = co.usage_30d || {};
+        return `
+        <tr style="border-bottom:1px solid var(--line,#2A3A38)">
+          <td style="padding:10px 8px">
+            <div style="font-weight:700;color:#E8E4D9">${esc(co.name)}</div>
+            <div style="font-size:11px;color:#6F7E6A">${esc(co.id)}${co.has_byok ? ' · <span style="color:#4D8A86">own key (BYOK)</span>' : ''}</div>
+          </td>
+          <td style="padding:10px 8px;text-align:center;font-size:12px;color:#E8E4D9">${fmt(u.platform_actions||0)} <span style="color:#5C6B58">actions</span></td>
+          <td style="padding:10px 8px;text-align:center;font-size:12px;color:#E8E4D9">${fmt(u.platform_tokens||0)} <span style="color:#5C6B58">tokens</span></td>
+          <td style="padding:10px 8px;text-align:right">
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:700;color:${co.ai_enabled?'#2D7A55':'#6F7E6A'}">
+              <input type="checkbox" ${co.ai_enabled?'checked':''} onchange="window._gwToggleAi('${esc(co.id)}', this.checked, this)" style="width:16px;height:16px;accent-color:#2D7A55;cursor:pointer">
+              ${co.ai_enabled ? 'AI ON' : 'AI OFF'}
+            </label>
+          </td>
+        </tr>`;
+      }).join('');
+      body.innerHTML = `
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Platform Master OpenAI Key</div>
+          <div style="font-size:13px;margin-bottom:10px">${keyLine}</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input id="gwPS-ai-key" class="um-input" type="password" placeholder="sk-…" style="max-width:340px;font-family:monospace">
+            <button onclick="window._gwSaveAiKey()" style="padding:10px 18px;background:#4D8A86;border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save Master Key</button>
+          </div>
+          <div style="font-size:11px;color:#6F7E6A;margin-top:8px;line-height:1.6">
+            This ONE key powers AI for every tenant you enable below. Their usage is metered per-company so you can bill it back.
+            Companies can alternatively paste their own key (BYOK) in their Integrations → Admin Setup — BYOK usage never touches your key.
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:11px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Tenant AI Access & 30-Day Usage (on your key)</div>
+            <button onclick="window._gwLoadAiPanel()" style="padding:5px 12px;background:rgba(255,255,255,.06);border:1px solid var(--line,#2A3A38);border-radius:8px;color:#6F7E6A;font-size:11px;font-weight:700;cursor:pointer">↻ Refresh</button>
+          </div>
+          ${(d.companies||[]).length ? `
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="border-bottom:1px solid var(--line,#2A3A38)">
+              <th style="text-align:left;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Company</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">AI Actions</th>
+              <th style="text-align:center;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Tokens</th>
+              <th style="text-align:right;padding:8px;font-size:10px;font-weight:700;color:#5C6B58;text-transform:uppercase;letter-spacing:.06em">Platform Key Access</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>` : '<div style="font-size:13px;color:#6F7E6A">No tenant companies yet.</div>'}
+        </div>`;
+    };
+    window._gwSaveAiKey = async function() {
+      const key = document.getElementById('gwPS-ai-key')?.value?.trim();
+      if (!key) { toast('Paste your OpenAI key first'); return; }
+      try {
+        await apiPut('/api/settings', { key: 'openai_api_key', value: key });
+        toast('Master AI key saved');
+        window._gwLoadAiPanel();
+      } catch(e) { toast('Error: ' + e.message); }
+    };
+    window._gwToggleAi = async function(companyId, enabled, el) {
+      try {
+        await apiPut('/api/admin/ai/company/' + companyId, { ai_enabled: enabled });
+        toast((enabled ? 'AI enabled for ' : 'AI disabled for ') + companyId);
+        window._gwLoadAiPanel();
+      } catch(e) { toast('Error: ' + e.message); if (el) el.checked = !enabled; }
+    };
+    window._gwLoadAiPanel();
 
     window._gwChangePlatformPw = async function() {
       const pw = document.getElementById('gwPS-newPw')?.value;

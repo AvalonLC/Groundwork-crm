@@ -18,6 +18,7 @@ import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 import mig0033 from '../migrations/0033_email_templates.sql?raw'
 import mig0034 from '../migrations/0034_price_book_estimate_merge.sql?raw'
 import mig0035 from '../migrations/0035_calendar_sync.sql?raw'
+import mig0036 from '../migrations/0036_ai_usage.sql?raw'
 
 
 type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -2991,6 +2992,76 @@ app.get('/api/company/export', requireAuth, async (c) => {
   return c.json({ company: co, exported_at: new Date().toISOString(), tables })
 })
 
+// ── PLATFORM AI ADMINISTRATION ────────────────────────────────────────────────
+// The platform owner stores ONE master OpenAI key under groundwork_platform:openai_api_key
+// (saved via the normal PUT /api/settings while signed in on the platform side).
+// Tenants only get access when ai_enabled is switched on for them here, and every
+// call is metered in ai_usage so usage can be billed back.
+
+// GET /api/admin/ai — platform key status + per-tenant AI state + 30-day usage
+app.get('/api/admin/ai', requireSuperAdmin, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureAiSchema(db)
+  const platKey = await db.prepare("SELECT value FROM settings WHERE key = 'groundwork_platform:openai_api_key' LIMIT 1").first<any>()
+  const platModel = await db.prepare("SELECT value FROM settings WHERE key = 'groundwork_platform:openai_model' LIMIT 1").first<any>()
+  const companies = await db.prepare(`
+    SELECT c.id, c.name, c.plan, c.active,
+           (SELECT value FROM settings WHERE key = c.id || ':ai_enabled' LIMIT 1) AS ai_enabled,
+           (SELECT CASE WHEN EXISTS (SELECT 1 FROM settings WHERE key = c.id || ':openai_api_key' AND value != '') THEN 1 ELSE 0 END) AS has_byok
+    FROM companies c WHERE c.id != 'groundwork_platform' ORDER BY c.name
+  `).all()
+  const usage = await db.prepare(`
+    SELECT company_id, key_source, COUNT(*) AS actions, SUM(total_tokens) AS tokens
+    FROM ai_usage WHERE created_at >= datetime('now','-30 days')
+    GROUP BY company_id, key_source
+  `).all()
+  const usageMap: Record<string, any> = {}
+  for (const u of (usage.results as any[])) {
+    const m = usageMap[u.company_id] || (usageMap[u.company_id] = { actions: 0, tokens: 0, platform_actions: 0, platform_tokens: 0 })
+    m.actions += u.actions; m.tokens += u.tokens || 0
+    if (u.key_source === 'platform') { m.platform_actions += u.actions; m.platform_tokens += u.tokens || 0 }
+  }
+  const platKeyVal = String(platKey?.value || '')
+  return json(c, {
+    platform_key_set: !!platKeyVal,
+    platform_key_masked: platKeyVal ? (platKeyVal.length > 10 ? platKeyVal.slice(0, 7) + '…' + platKeyVal.slice(-4) : 'sk-…') : '',
+    platform_model: String(platModel?.value || 'gpt-5-mini'),
+    companies: (companies.results as any[]).map((co: any) => ({
+      id: co.id, name: co.name, plan: co.plan, active: co.active,
+      ai_enabled: co.ai_enabled === '1', has_byok: !!co.has_byok,
+      usage_30d: usageMap[co.id] || { actions: 0, tokens: 0, platform_actions: 0, platform_tokens: 0 },
+    })),
+  })
+})
+
+// PUT /api/admin/ai/company/:id — { ai_enabled: true|false } toggle platform-key access
+app.put('/api/admin/ai/company/:id', requireSuperAdmin, async (c) => {
+  const id = c.req.param('id')
+  const b: any = await c.req.json().catch(() => ({}))
+  const co = await c.env.DB.prepare('SELECT id FROM companies WHERE id = ? LIMIT 1').bind(id).first()
+  if (!co) return err(c, 'Company not found', 404)
+  await c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+    .bind(`${id}:ai_enabled`, b.ai_enabled ? '1' : '0').run()
+  return json(c, { id, ai_enabled: !!b.ai_enabled })
+})
+
+// GET /api/admin/ai/usage?company_id=&days=30 — detailed usage rows for billing
+app.get('/api/admin/ai/usage', requireSuperAdmin, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureAiSchema(db)
+  const days = Math.min(Number(c.req.query('days')) || 30, 365)
+  const companyId = c.req.query('company_id') || ''
+  const rows = companyId
+    ? await db.prepare(`SELECT * FROM ai_usage WHERE company_id = ? AND created_at >= datetime('now', ?) ORDER BY created_at DESC LIMIT 500`)
+        .bind(companyId, `-${days} days`).all()
+    : await db.prepare(`SELECT company_id, feature, key_source, COUNT(*) AS actions, SUM(total_tokens) AS tokens,
+                               MIN(created_at) AS first_at, MAX(created_at) AS last_at
+                        FROM ai_usage WHERE created_at >= datetime('now', ?)
+                        GROUP BY company_id, feature, key_source ORDER BY tokens DESC`)
+        .bind(`-${days} days`).all()
+  return json(c, rows.results)
+})
+
 // GET /api/admin/stats  — platform-wide totals (excludes platform owner anchor records)
 app.get('/api/admin/stats', requireSuperAdmin, async (c) => {
   const [companies, reps, opps] = await c.env.DB.batch([
@@ -4656,31 +4727,83 @@ app.delete('/api/proposal-templates/:id', requireAuth, async (c) => {
 // Base URL: company setting `openai_base_url` → env OPENAI_BASE_URL → api.openai.com.
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function _aiCreds(db: D1Database, companyId: string, env: any): Promise<{ apiKey: string; baseUrl: string; model: string }> {
-  const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?)`)
-    .bind(`${companyId}:openai_api_key`, `${companyId}:openai_base_url`, `${companyId}:openai_model`,
-          'openai_api_key', 'openai_base_url', 'openai_model').all()
-  let apiKey = '', baseUrl = '', model = ''
-  for (const r of (rows.results as any[])) {
-    const k = r.key.includes(':') ? r.key.split(':').pop() : r.key
-    const scoped = r.key.includes(':')
-    if (k === 'openai_api_key'  && (!apiKey  || scoped)) apiKey  = r.value
-    if (k === 'openai_base_url' && (!baseUrl || scoped)) baseUrl = r.value
-    if (k === 'openai_model'    && (!model   || scoped)) model   = r.value
+// ── AI usage schema (migration 0036) — auto-creates in prod on first AI request ──
+let _ai36SchemaOk = false
+async function ensureAiSchema(db: D1Database): Promise<void> {
+  if (_ai36SchemaOk) return
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_ai_v1' LIMIT 1").first<any>()
+  if (flag) { _ai36SchemaOk = true; return }
+  const stmts = mig0036.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/already exists|duplicate/i.test(msg)) console.error('[ensureAiSchema]', msg)
+    }
   }
-  apiKey  = apiKey  || env.OPENAI_API_KEY  || ''
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_ai_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  _ai36SchemaOk = true
+}
+
+// Key resolution, in priority order:
+//   1. Tenant BYOK      — `{companyId}:openai_api_key` (company pastes their own key)
+//   2. Platform master  — `groundwork_platform:openai_api_key`, ONLY if the tenant
+//      has been enabled by the platform owner (`{companyId}:ai_enabled` = '1').
+//      Usage on the platform key is metered in ai_usage for billing.
+//   3. Legacy unprefixed `openai_api_key` (Avalon-era)
+//   4. env OPENAI_API_KEY
+async function _aiCreds(db: D1Database, companyId: string, env: any): Promise<{ apiKey: string; baseUrl: string; model: string; keySource: string; aiEnabled: boolean }> {
+  const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?,?,?,?,?)`)
+    .bind(`${companyId}:openai_api_key`, `${companyId}:openai_base_url`, `${companyId}:openai_model`, `${companyId}:ai_enabled`,
+          'groundwork_platform:openai_api_key', 'groundwork_platform:openai_base_url', 'groundwork_platform:openai_model',
+          'openai_api_key', 'openai_base_url', 'openai_model').all()
+  let byokKey = '', platKey = '', legacyKey = ''
+  let baseUrl = '', model = '', platBase = '', platModel = ''
+  let aiEnabledSetting = ''
+  for (const r of (rows.results as any[])) {
+    if (r.key === `${companyId}:openai_api_key`)  byokKey = r.value
+    else if (r.key === `${companyId}:openai_base_url`) baseUrl = r.value
+    else if (r.key === `${companyId}:openai_model`)    model = r.value
+    else if (r.key === `${companyId}:ai_enabled`)      aiEnabledSetting = r.value
+    else if (r.key === 'groundwork_platform:openai_api_key')  platKey = r.value
+    else if (r.key === 'groundwork_platform:openai_base_url') platBase = r.value
+    else if (r.key === 'groundwork_platform:openai_model')    platModel = r.value
+    else if (r.key === 'openai_api_key'  && !legacyKey) legacyKey = r.value
+    else if (r.key === 'openai_base_url' && !baseUrl)   baseUrl = r.value
+    else if (r.key === 'openai_model'    && !model)     model = r.value
+  }
+  // The platform owner's own company always has AI on with its own key
+  if (companyId === 'groundwork_platform' && !byokKey) byokKey = platKey
+  const aiEnabled = aiEnabledSetting === '1'
+  let apiKey = '', keySource = ''
+  if (byokKey) { apiKey = byokKey; keySource = 'byok' }
+  else if (platKey && aiEnabled) { apiKey = platKey; keySource = 'platform'; baseUrl = baseUrl || platBase; model = model || platModel }
+  else if (legacyKey) { apiKey = legacyKey; keySource = 'byok' }
+  else if (env.OPENAI_API_KEY) { apiKey = env.OPENAI_API_KEY; keySource = 'env' }
   baseUrl = (baseUrl || env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
   model   = model || 'gpt-5-mini'
-  return { apiKey, baseUrl, model }
+  return { apiKey, baseUrl, model, keySource, aiEnabled }
+}
+
+// Record one metered AI action. Never throws — metering must not break the feature.
+async function _logAiUsage(db: D1Database, companyId: string, repId: string, feature: string, model: string, usage: any, keySource: string): Promise<void> {
+  try {
+    await ensureAiSchema(db)
+    await db.prepare(`INSERT INTO ai_usage (company_id, rep_id, feature, model, prompt_tokens, completion_tokens, total_tokens, key_source)
+                      VALUES (?,?,?,?,?,?,?,?)`)
+      .bind(companyId, repId || '', feature, model || '',
+            Number(usage?.prompt_tokens) || 0, Number(usage?.completion_tokens) || 0,
+            Number(usage?.total_tokens) || 0, keySource || 'platform').run()
+  } catch (e: any) { console.error('[ai_usage]', e?.message || e) }
 }
 
 // POST /api/ai/generate-proposal — { lead:{...}, notes, instructions, estimate:{...}? }
 app.post('/api/ai/generate-proposal', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const { apiKey, baseUrl, model } = await _aiCreds(db, companyId, c.env)
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
   if (!apiKey) {
-    return c.json({ ok: false, error: 'no_api_key', message: 'No AI API key configured. An admin can add one under Integrations → Admin Setup (OpenAI API key).' }, 400)
+    return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
   }
 
   const b: any = await c.req.json().catch(() => ({}))
@@ -4748,6 +4871,7 @@ Rules:
       return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}). Check the API key/model in Admin Setup.` }, 502)
     }
     const j: any = await r.json()
+    await _logAiUsage(db, companyId, c.var.repId as string, 'proposal', model, j?.usage, keySource)
     let raw = j?.choices?.[0]?.message?.content || ''
     // Strip accidental markdown fences and extract the JSON object
     raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
@@ -4819,9 +4943,9 @@ app.post('/api/ai/generate-quote', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   await ensurePriceBookSchema(db)
-  const { apiKey, baseUrl, model } = await _aiCreds(db, companyId, c.env)
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
   if (!apiKey) {
-    return c.json({ ok: false, error: 'no_api_key', message: 'No AI API key configured. An admin can add one under Integrations → Admin Setup (OpenAI API key).' }, 400)
+    return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
   }
   const b: any = await c.req.json().catch(() => ({}))
 
@@ -4922,6 +5046,7 @@ Rules:
       return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}). Check the API key/model in Admin Setup.` }, 502)
     }
     const j: any = await r.json()
+    await _logAiUsage(db, companyId, c.var.repId as string, 'quote', model, j?.usage, keySource)
     let raw = j?.choices?.[0]?.message?.content || ''
     raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
     const start = raw.indexOf('{'); const end = raw.lastIndexOf('}')
@@ -7828,7 +7953,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b003">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -7852,8 +7977,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260718b002"></script>
-  <script src="/js/client_portal.js?v=20260718b002"></script>
+  <script src="/js/platform_core.js?v=20260718b003"></script>
+  <script src="/js/client_portal.js?v=20260718b003"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -8483,9 +8608,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260718b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260718b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260718b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260718b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260718b003">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9033,38 +9158,38 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260718b002"></script>
-<script src="/js/db.js?v=20260718b002"></script>
-<script src="/js/data.js?v=20260718b002"></script>
-<script src="/js/reps.js?v=20260718b002"></script>
-<script src="/js/record-page.js?v=20260718b002"></script>
-<script src="/js/academy.js?v=20260718b002"></script>
-<script src="/js/task_engine.js?v=20260718b002"></script>
-<script src="/js/gw_i18n.js?v=20260718b002"></script>
-<script src="/js/app_premium.js?v=20260718b002"></script>
-<script src="/js/estimates.js?v=20260718b002"></script>
-<script src="/js/proposals.js?v=20260718b002"></script>
-<script src="/js/pricing.js?v=20260718b002"></script>
-<script src="/js/invoices.js?v=20260718b002"></script>
-<script src="/js/csv_import.js?v=20260718b002"></script>
-<script src="/js/onboarding.js?v=20260718b002"></script>
-<script src="/js/recurring_plans.js?v=20260718b002"></script>
-<script src="/js/reviews.js?v=20260718b002"></script>
-<script src="/js/stripe.js?v=20260718b002"></script>
-<script src="/js/email.js?v=20260718b002"></script>
-<script src="/js/notifications.js?v=20260718b002"></script>
-<script src="/js/integrations.js?v=20260718b002"></script>
-<script src="/js/calendar_sync.js?v=20260718b002"></script>
-<script src="/js/user_management.js?v=20260718b002"></script>
-<script src="/js/platform_admin.js?v=20260718b002"></script>
-<script src="/js/time_tracker.js?v=20260718b002"></script>
-<script src="/js/field_workday.js?v=20260718b002"></script>
-<script src="/js/platform_core.js?v=20260718b002"></script>
-<script src="/js/approval_engine.js?v=20260718b002"></script>
-<script src="/js/automation_engine.js?v=20260718b002"></script>
-<script src="/js/client_portal.js?v=20260718b002"></script>
-<script src="/js/field_mode.js?v=20260718b002"></script>
-<script src="/js/assets_hub.js?v=20260718b002"></script>
+<script src="/js/gw-icons.js?v=20260718b003"></script>
+<script src="/js/db.js?v=20260718b003"></script>
+<script src="/js/data.js?v=20260718b003"></script>
+<script src="/js/reps.js?v=20260718b003"></script>
+<script src="/js/record-page.js?v=20260718b003"></script>
+<script src="/js/academy.js?v=20260718b003"></script>
+<script src="/js/task_engine.js?v=20260718b003"></script>
+<script src="/js/gw_i18n.js?v=20260718b003"></script>
+<script src="/js/app_premium.js?v=20260718b003"></script>
+<script src="/js/estimates.js?v=20260718b003"></script>
+<script src="/js/proposals.js?v=20260718b003"></script>
+<script src="/js/pricing.js?v=20260718b003"></script>
+<script src="/js/invoices.js?v=20260718b003"></script>
+<script src="/js/csv_import.js?v=20260718b003"></script>
+<script src="/js/onboarding.js?v=20260718b003"></script>
+<script src="/js/recurring_plans.js?v=20260718b003"></script>
+<script src="/js/reviews.js?v=20260718b003"></script>
+<script src="/js/stripe.js?v=20260718b003"></script>
+<script src="/js/email.js?v=20260718b003"></script>
+<script src="/js/notifications.js?v=20260718b003"></script>
+<script src="/js/integrations.js?v=20260718b003"></script>
+<script src="/js/calendar_sync.js?v=20260718b003"></script>
+<script src="/js/user_management.js?v=20260718b003"></script>
+<script src="/js/platform_admin.js?v=20260718b003"></script>
+<script src="/js/time_tracker.js?v=20260718b003"></script>
+<script src="/js/field_workday.js?v=20260718b003"></script>
+<script src="/js/platform_core.js?v=20260718b003"></script>
+<script src="/js/approval_engine.js?v=20260718b003"></script>
+<script src="/js/automation_engine.js?v=20260718b003"></script>
+<script src="/js/client_portal.js?v=20260718b003"></script>
+<script src="/js/field_mode.js?v=20260718b003"></script>
+<script src="/js/assets_hub.js?v=20260718b003"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
