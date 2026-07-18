@@ -399,6 +399,12 @@ Edit `public/js/gw_i18n.js`:
 - **Self-heal**: `_schema_gwops_v4` (0037+0038+0039+0040).
 - E2E-verified via Playwright: phase headers render, demo-modal playbook loads 17 steps, toggle round-trips 0/17→1/17, builder shows new items, no page errors.
 
+## Prod Template Seed Fix (T24)
+- **Bug**: Template Builder tab rendered blank in production — `gw_onboarding_templates` was empty. The self-heal SQL runner splits statements on `;`, and 0039's template seed contained inline semicolons *inside string literals* (e.g. `'…steps are locked; add custom questions below.'`), which chopped the INSERT mid-statement. Steps survived (0040's INSERT OR REPLACE strings were semicolon-free), so stats showed 17/11 while the builder had no template sections to render.
+- **Fix**: replaced 3 inline semicolons in 0039 seed strings with em-dashes; verified all 4 gwops migrations (0037–0040) contain zero semicolons inside string literals; bumped self-heal flag to `_schema_gwops_v5` so prod re-ran the corrected seed (INSERT OR IGNORE — idempotent, preserves any existing data).
+- **Rule going forward**: migration files bundled into the self-heal runner must never contain `;` inside string literals — use em-dashes or periods.
+- Deployed `cf3288b`; heal triggered and confirmed in prod.
+
 ## Onboarding System (T22)
 - **Migration 0039** (`0039_onboarding_system.sql`): `gw_onboarding_templates` (types: `sales` | `customer_wizard` | `tenant_checklist`), `gw_onboarding_steps` (JSON `fields` for wizard questions / checklist auto-detect meta), `gw_onboarding_progress` (per demo or company). Seeded: 11-step sales playbook, 6 wizard steps (5 built-in locked + 1 custom-questions), 8-item Getting Started checklist.
 - **Platform Admin → Onboarding** (`gwOnboarding`), three tabs:
