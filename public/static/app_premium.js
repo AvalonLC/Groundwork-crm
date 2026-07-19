@@ -2073,17 +2073,17 @@ const _GW_MYDAY_WIDGETS = [
    user's own custom layout ("My Layout") is stored separately and never
    touched by switching modes. */
 const _GW_MYDAY_MODES = [
-  { id:'custom', label:'My Layout', icon:'\u2B50',
+  { id:'custom', label:'My Layout', icon:'star',
     desc:'Your own saved widget layout' },
-  { id:'field',  label:'Field Day', icon:'\uD83D\uDEE0\uFE0F',
+  { id:'field',  label:'Field Day', icon:'wrench',
     desc:'On the tools today — time clock, job lineup, tasks and crew hours',
     order:['clock','jobsToday','tasks','crewHours'],
     spans:{ clock:2, jobsToday:4, tasks:4, crewHours:2 } },
-  { id:'office', label:'Office Day', icon:'\uD83D\uDCCA',
+  { id:'office', label:'Office Day', icon:'reports',
     desc:'Running the business — financial pulse, money owed, follow-ups and wins',
     order:['pipeStrip','finance','arSnapshot','tasks','staleLeads','recentWins'],
     spans:{ pipeStrip:6, finance:3, arSnapshot:3, tasks:4, staleLeads:2, recentWins:6 } },
-  { id:'sales',  label:'Sales Day', icon:'\uD83D\uDCDE',
+  { id:'sales',  label:'Sales Day', icon:'call',
     desc:'Filling the pipeline — leads, proposals, daily start-up and activity targets',
     order:['pipeStrip','tasks','checklist','recent','staleLeads','activity'],
     spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 } },
@@ -2664,7 +2664,7 @@ function _gwTodayRender() {
         <button class="gw-myday-mode-pill${_curMode === m.id ? ' gw-myday-mode-pill--on' : ''}"
           role="tab" aria-selected="${_curMode === m.id}"
           onclick="gwMyDaySetMode('${m.id}')" title="${escapeHtml(m.desc || '')}">
-          <span class="gw-myday-mode-ic">${m.icon}</span>${m.label}
+          <span class="gw-myday-mode-ic">${(typeof gwIcon==='function') ? gwIcon(m.icon, 13, 'currentColor') : ''}</span>${m.label}
         </button>`).join('')}
     </div>`;
 

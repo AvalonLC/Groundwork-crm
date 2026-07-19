@@ -14749,7 +14749,8 @@ h1.pl-title,
   border-color: rgba(77,138,134,.35);
   box-shadow: 0 1px 3px rgba(15,36,25,.08);
 }
-.gw-myday-mode-ic { font-size: 13px; line-height: 1; }
+.gw-myday-mode-ic { font-size: 13px; line-height: 1; display: inline-flex; align-items: center; }
+.gw-myday-mode-ic svg { display: block; }
 @media (max-width: 1100px) {
   .gw-myday-modes { flex-wrap: wrap; }
 }
