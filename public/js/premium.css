@@ -14502,15 +14502,23 @@ h1.pl-title,
    2) My Day widget grid: 6-col span system, customize mode, drag reorder
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── My Day widget grid ── */
+/* ── My Day widget grid — PACKED MASONRY ──
+   grid-auto-rows: 4px gives fine-grained rows; JS measures each widget's
+   content and sets grid-row span so every widget occupies exactly the rows
+   it needs. grid-auto-flow dense lets later widgets slot into gaps — tight,
+   Squarespace-style packing with no dead vertical space. */
 .gw-myday-grid {
   display: grid;
   /* minmax(0,1fr): allow tracks to shrink below content's natural width —
      plain 1fr has an implicit auto minimum that blocks widget shrinking */
   grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: 4px;
+  grid-auto-flow: row dense;
   gap: 18px;
   align-items: start;
 }
+/* edit mode: keep source order (no dense back-fill) so drag-reorder is predictable */
+.gw-myday-grid--edit { grid-auto-flow: row; }
 .gw-myday-widget { min-width: 0; }
 .gw-myday-widget-body { min-width: 0; overflow-x: auto; }
 .gw-myday-widget-body > .card,
@@ -14521,8 +14529,8 @@ h1.pl-title,
    sizes; forcing spans with !important at <=1100px silently broke resizing.
    Below 768px the JS mobile renderer takes over, this is just a fallback. */
 @media (max-width: 768px) {
-  .gw-myday-grid { grid-template-columns: minmax(0, 1fr); }
-  .gw-myday-widget { grid-column: span 1 !important; }
+  .gw-myday-grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; row-gap: 18px !important; }
+  .gw-myday-widget { grid-column: span 1 !important; grid-row: auto !important; }
 }
 
 /* ── Customize (edit) mode ── */
@@ -14612,8 +14620,9 @@ h1.pl-title,
    4) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── 1. Spacing: comfortable gap in both directions ── */
-.gw-myday-grid { gap: 28px !important; row-gap: 32px !important; }
+/* ── 1. Spacing: column gap real; row gap 0 — the vertical gap is baked into
+   each widget's masonry row-span by JS (content height + 28px breathing room) ── */
+.gw-myday-grid { gap: 28px !important; row-gap: 0 !important; }
 .gw-myday-widget { position: relative; }
 /* cards inside widgets: kill stray top margins so gap is the only spacing */
 .gw-myday-widget-body > .card,

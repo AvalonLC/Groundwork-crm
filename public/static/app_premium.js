@@ -2266,6 +2266,48 @@ function _gwMyDayScratchLoad(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
   try { return localStorage.getItem('gw-myday-scratch-' + ((r && r.id) || 'anon')) || ''; } catch(e) { return ''; }
 }
+/* ── Masonry packing: measure each widget, set grid-row span so the packed
+   grid (grid-auto-rows:4px + dense flow) fits everything tightly with no
+   dead vertical space. Re-packs automatically when async widgets load. ── */
+function _gwMyDayMasonry(){
+  const grid = document.getElementById('gw-myday-grid');
+  if (!grid || window.innerWidth <= 768) return;
+  const ROW = 4, GAP = 28; // ROW must match grid-auto-rows; GAP = vertical breathing room
+  grid.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
+    const body = el.querySelector('.gw-myday-widget-body');
+    if (!body) return;
+    // measure natural content height (bar + body + grips)
+    el.style.gridRow = 'auto';
+    const h = el.getBoundingClientRect().height;
+    if (h > 0) el.style.gridRow = 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW));
+  });
+  // watch for async content arriving (calendar, reviews, jobs, AR…) → re-pack
+  if (window._gwMyDayRO) { try { window._gwMyDayRO.disconnect(); } catch(e) {} }
+  if (typeof ResizeObserver !== 'undefined') {
+    let pending = null;
+    window._gwMyDayRO = new ResizeObserver(() => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        const g = document.getElementById('gw-myday-grid');
+        if (!g) { try { window._gwMyDayRO.disconnect(); } catch(e) {} return; }
+        g.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
+          const cur = el.style.gridRow;
+          el.style.gridRow = 'auto';
+          const h = el.getBoundingClientRect().height;
+          const next = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : cur;
+          el.style.gridRow = next;
+        });
+      }, 120);
+    });
+    grid.querySelectorAll(':scope > .gw-myday-widget .gw-myday-widget-body').forEach(b => window._gwMyDayRO.observe(b));
+  }
+}
+window.addEventListener('resize', () => {
+  clearTimeout(window._gwMyDayResizeT);
+  window._gwMyDayResizeT = setTimeout(_gwMyDayMasonry, 180);
+});
+
 function _gwMyDayBindDnD(){
   const grid = document.getElementById('gw-myday-grid'); if (!grid) return;
   let dragId = null;
@@ -2700,6 +2742,8 @@ function _gwTodayRender() {
   `;
   wireChecks();
   if (_editing) _gwMyDayBindDnD();
+  // Masonry pack: measure widgets → tight grid with no dead vertical space
+  requestAnimationFrame(_gwMyDayMasonry);
   // Async: load reviews widget for admin/OM
   if ((_isAdmin || _isOM) && typeof window.gwReviewsWidget === 'function') {
     setTimeout(() => window.gwReviewsWidget('gw-reviews-widget-mount'), 400);
