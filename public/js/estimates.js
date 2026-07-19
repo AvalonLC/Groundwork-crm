@@ -1080,7 +1080,7 @@ function _estRenderBuilder() {
             <button type="button" onclick="_estSetDocType('onetime')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.doc_type!=='recurring'?'var(--gw-ink,#2F3B33)':'transparent'};color:${est.doc_type!=='recurring'?'#fff':'var(--gw-text,#2F3B33)'}">One-Time</button>
             <button type="button" onclick="_estSetDocType('recurring')" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:${est.doc_type==='recurring'?'var(--gw-ink,#2F3B33)':'transparent'};color:${est.doc_type==='recurring'?'#fff':'var(--gw-text,#2F3B33)'}">Recurring</button>
           </div>
-          <button type="button" class="est-btn-secondary" style="font-size:12px;padding:6px 12px" onclick="_estOpenAiGen()">✨ Generate with AI</button>
+          <button type="button" class="est-btn-secondary" style="font-size:12px;padding:6px 12px" onclick="_estOpenAiGen()">${(typeof gwIcon==='function')?gwIcon('sparkle',12,'currentColor'):''} Generate with AI</button>
           <div class="est-builder-save-state" id="est-save-state"></div>
         </div>
       </div>
@@ -1088,22 +1088,22 @@ function _estRenderBuilder() {
       <!-- Builder Tabs: customer document vs internal pricing workbench -->
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div style="display:flex;gap:4px;background:var(--gw-bg,#EDEAE2);border:1px solid var(--gw-border,#E4E0D6);border-radius:11px;padding:4px" role="tablist">
-          <button type="button" class="est-btab ${tab==='document'?'est-btab--active':''}" id="est-btab-document" onclick="_estSetBuilderTab('document')" role="tab">📄 ${est.mode==='advanced' ? 'Proposal' : 'Estimate'} <span style="font-weight:600;opacity:.7">· what the customer sees</span></button>
-          <button type="button" class="est-btab ${tab==='workbench'?'est-btab--active':''}" id="est-btab-workbench" onclick="_estSetBuilderTab('workbench')" role="tab">🔒 Pricing Workbench ${engineSelling ? `<span class="est-btab-badge">${_estFmt(engineSelling)}</span>` : `<span style="font-weight:600;opacity:.7">· internal</span>`}</button>
+          <button type="button" class="est-btab ${tab==='document'?'est-btab--active':''}" id="est-btab-document" onclick="_estSetBuilderTab('document')" role="tab">${(typeof gwIcon==='function')?gwIcon('document',13):''} ${est.mode==='advanced' ? 'Proposal' : 'Estimate'} <span style="font-weight:600;opacity:.7">· what the customer sees</span></button>
+          <button type="button" class="est-btab ${tab==='workbench'?'est-btab--active':''}" id="est-btab-workbench" onclick="_estSetBuilderTab('workbench')" role="tab">${(typeof gwIcon==='function')?gwIcon('lock',13):''} Pricing Workbench ${engineSelling ? `<span class="est-btab-badge">${_estFmt(engineSelling)}</span>` : `<span style="font-weight:600;opacity:.7">· internal</span>`}</button>
         </div>
         ${tab === 'document' ? `
-        <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 13px;margin-left:auto${pvOn ? ';background:var(--gw-action,#2D7A55);color:#fff;border-color:transparent' : ''}" onclick="_estTogglePv()" title="Show the branded customer document side-by-side, updating live as you type">${pvOn ? '✓ Live Preview' : '👁 Live Preview'}</button>` : ''}
+        <button type="button" class="est-btn-secondary" style="font-size:12px;padding:7px 13px;margin-left:auto${pvOn ? ';background:var(--gw-action,#2D7A55);color:#fff;border-color:transparent' : ''}" onclick="_estTogglePv()" title="Show the branded customer document side-by-side, updating live as you type">${pvOn ? '✓ Live Preview' : `${(typeof gwIcon==='function')?gwIcon('eye',13,'currentColor'):''} Live Preview`}</button>` : ''}
       </div>
 
       ${tab === 'document' ? `
       <!-- Context banner -->
       <div style="display:flex;gap:10px;align-items:center;background:rgba(45,122,85,.07);border:1px solid rgba(45,122,85,.22);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--gw-text,#2F3B33)">
-        <span style="font-size:15px">📄</span>
+        <span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('document',15,'currentColor'):''}</span>
         <span><b>Customer-facing.</b> Everything on this tab appears on the customer's document${pvOn ? ' — watch it update live on the right' : ' — turn on Live Preview to see it exactly as they will'}. Build your costs & margin in the <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:800">Pricing Workbench</a>.</span>
       </div>
       ${est.mode === 'advanced'
-        ? `<div style="display:flex;gap:10px;align-items:center;background:rgba(77,138,134,.08);border:1px solid rgba(77,138,134,.3);border-radius:10px;padding:9px 14px;margin:-8px 0 16px;font-size:12px;color:var(--gw-text,#2F3B33)"><span style="font-size:14px">✨</span><span><b>Proposal mode</b> — the customer gets a <b>branded cover page</b>, an <b>Overview</b> section, and <b>Good / Better / Best option tiers</b> they can pick from. Switch to Simple for a quick single-price quote.</span></div>`
-        : `<div style="display:flex;gap:10px;align-items:center;background:rgba(140,140,140,.06);border:1px dashed var(--gw-border,#DDD8CE);border-radius:10px;padding:9px 14px;margin:-8px 0 16px;font-size:12px;color:var(--gw-text-subtle,#5A675F)"><span style="font-size:14px">⚡</span><span><b>Simple mode</b> — a clean, single-price quote. Switch to <a href="javascript:void(0)" onclick="_estSetMode('advanced')" style="color:var(--gw-action,#2D7A55);font-weight:800">Proposal</a> for a branded cover page, overview, and Good / Better / Best options.</span></div>`}
+        ? `<div style="display:flex;gap:10px;align-items:center;background:rgba(77,138,134,.08);border:1px solid rgba(77,138,134,.3);border-radius:10px;padding:9px 14px;margin:-8px 0 16px;font-size:12px;color:var(--gw-text,#2F3B33)"><span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('sparkle',14,'#4D8A86'):''}</span><span><b>Proposal mode</b> — the customer gets a <b>branded cover page</b>, an <b>Overview</b> section, and <b>Good / Better / Best option tiers</b> they can pick from. Switch to Simple for a quick single-price quote.</span></div>`
+        : `<div style="display:flex;gap:10px;align-items:center;background:rgba(140,140,140,.06);border:1px dashed var(--gw-border,#DDD8CE);border-radius:10px;padding:9px 14px;margin:-8px 0 16px;font-size:12px;color:var(--gw-text-subtle,#5A675F)"><span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('lightning',14,'currentColor'):''}</span><span><b>Simple mode</b> — a clean, single-price quote. Switch to <a href="javascript:void(0)" onclick="_estSetMode('advanced')" style="color:var(--gw-action,#2D7A55);font-weight:800">Proposal</a> for a branded cover page, overview, and Good / Better / Best options.</span></div>`}
 
       <!-- Section: Templates -->
       <section class="est-builder-section" style="padding:14px 18px">
@@ -1232,7 +1232,7 @@ function _estRenderBuilder() {
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
           Add line item
         </button>
-        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">💡 Start typing an item name to pull it from your <b>price book</b> — cost and man-hours auto-fill into the Pricing Workbench. Use <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:700">the workbench</a> to price this job, then push the total back here.</div>
+        <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">${(typeof gwIcon==='function')?gwIcon('idea',12,'currentColor'):''} Start typing an item name to pull it from your <b>price book</b> — cost and man-hours auto-fill into the Pricing Workbench. Use <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:700">the workbench</a> to price this job, then push the total back here.</div>
       </section>
 
       ${est.mode === 'advanced' ? `
@@ -1318,7 +1318,7 @@ function _estRenderBuilder() {
       ` : `
       <!-- ══════════════ PRICING WORKBENCH TAB (internal) ══════════════ -->
       <div style="display:flex;gap:10px;align-items:center;background:rgba(47,59,51,.05);border:1px solid var(--gw-border,#DDD8CE);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--gw-text,#2F3B33)">
-        <span style="font-size:15px">🔒</span>
+        <span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('lock',15,'currentColor'):''}</span>
         <span><b>Internal only — the customer never sees this tab.</b> This is your spreadsheet replacement: build the true job cost here, then push the recommended price to the <a href="javascript:void(0)" onclick="_estSetBuilderTab('document')" style="color:var(--gw-action,#2D7A55);font-weight:800">${est.mode==='advanced' ? 'Proposal' : 'Estimate'} tab</a>.</span>
       </div>
 
@@ -1459,7 +1459,7 @@ function _estRenderLineRows() {
       <input class="est-line-input est-line-input--name" type="text" placeholder="Item or service name — type to search price book" value="${_estEsc(li.name || li.description || '')}" autocomplete="off" oninput="_estUpdateLine(${i},'name',this.value);_estPBSuggest(${i},this.value)" onblur="setTimeout(()=>{const s=document.getElementById('est-pb-suggest-${i}');if(s)s.innerHTML='';},250)">
       <div class="est-pb-suggest" id="est-pb-suggest-${i}" style="position:absolute;top:100%;left:0;right:0;z-index:50"></div>
       <input class="est-line-input est-line-input--desc" type="text" placeholder="Description (optional)" value="${_estEsc(li.desc || li.description2 || '')}" oninput="_estUpdateLine(${i},'desc',this.value)">
-      ${li.price_item_id ? `<div style="font-size:10.5px;color:var(--gw-action,#2D7A55);font-weight:700;margin-top:2px">📘 ${_estEsc(li.unit || '')} · cost ${_estFmt(li.unit_cost || 0)} · ${li.unit_time || 0}h/unit</div>` : ''}
+      ${li.price_item_id ? `<div style="font-size:10.5px;color:var(--gw-action,#2D7A55);font-weight:700;margin-top:2px">${(typeof gwIcon==='function')?gwIcon('book',11,'currentColor'):''} ${_estEsc(li.unit || '')} · cost ${_estFmt(li.unit_cost || 0)} · ${li.unit_time || 0}h/unit</div>` : ''}
     </div>
     <div class="est-line-col est-line-col--qty">
       <input class="est-line-input est-line-input--num" type="number" min="0" step="0.1" value="${li.qty || 1}" oninput="_estUpdateLine(${i},'qty',this.value)">
@@ -2638,7 +2638,7 @@ function _estEngineCalc() {
       ${row(`Profit (${profitPct}%)`, _estFmt(profit))}
       ${row('RECOMMENDED SELLING PRICE', _estFmt(selling), true)}
       <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap">
-        <span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:${revOk ? '#E7F2EA' : '#FBEDEA'};color:${revOk ? '#1E5E3E' : '#A6543F'};font-weight:800">${_estFmt(revHr)}/man-hr ${revOk ? '≥' : '<'} ${_estFmt(goal)} goal ${revOk ? '✓' : '⚠'}</span>
+        <span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:${revOk ? '#E7F2EA' : '#FBEDEA'};color:${revOk ? '#1E5E3E' : '#A6543F'};font-weight:800">${_estFmt(revHr)}/man-hr ${revOk ? '≥' : '<'} ${_estFmt(goal)} goal ${revOk ? '✓' : '!'}</span>
         <span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:var(--gw-bg,#F4F1EA);font-weight:700">${crew}-person crew · ~${days} day${days !== 1 ? 's' : ''}</span>
         ${_estDraft.total > 0 ? `<span style="font-size:11.5px;padding:4px 10px;border-radius:99px;background:${gap >= 0 ? '#E7F2EA' : '#FBEDEA'};color:${gap >= 0 ? '#1E5E3E' : '#A6543F'};font-weight:700">Quoted ${_estFmt(_estDraft.total)} (${gap >= 0 ? '+' : ''}${_estFmt(gap)} vs recommended)</span>` : ''}
       </div>
@@ -2977,7 +2977,7 @@ window._estRecurField = _estRecurField; window._estRecurYears = _estRecurYears;
 window._estRecurApply = _estRecurApply;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✨ AI QUOTE GENERATOR — reads the lead's conversations + the price book and
+// AI QUOTE GENERATOR — reads the lead's conversations + the price book and
 // drafts a tiered quote. Review-before-apply: nothing touches the draft until
 // the user clicks Apply.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2994,7 +2994,7 @@ function _estOpenAiGen() {
   div.innerHTML = `
     <div style="background:var(--gw-surface,#fff);border-radius:14px;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <h2 style="font-size:17px;font-weight:800;margin:0">✨ AI Quote Generator</h2>
+        <h2 style="font-size:17px;font-weight:800;margin:0;display:flex;align-items:center;gap:8px">${(typeof gwIcon==='function')?gwIcon('sparkle',17,'currentColor'):''} AI Quote Generator</h2>
         <button onclick="document.getElementById('est-ai-modal').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--gw-text-subtle,#8A948C)">✕</button>
       </div>
       <div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">
@@ -3061,7 +3061,7 @@ function _estAiRenderResult() {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
         ${tiers.map(t => `
         <div style="border:1.5px solid ${t.recommended ? 'var(--gw-action,#2D7A55)' : 'var(--gw-border,#DDD8CE)'};border-radius:10px;padding:11px">
-          <div style="font-size:12.5px;font-weight:800">${_estEsc(t.name)}${t.recommended ? ' ⭐' : ''}</div>
+          <div style="font-size:12.5px;font-weight:800">${_estEsc(t.name)}${t.recommended ? ' ' + ((typeof gwIcon==='function')?gwIcon('star',11,'#8B6914'):'') : ''}</div>
           <div style="font-size:16px;font-weight:800;margin:3px 0">${_estFmt(t.total)}</div>
           <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C)">${(t.line_items || []).length} items · ${Number(t.man_hours || 0).toFixed(1)} man-hrs</div>
           <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-top:3px">${_estEsc((t.desc || '').slice(0, 90))}</div>

@@ -15,6 +15,7 @@
 
   const Z_TOUR = 9400, Z_CHAT = 8600, Z_CONFETTI = 9900;
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const ic = (n, sz, col) => (typeof window.gwIcon === 'function') ? window.gwIcon(n, sz || 14, col || 'currentColor') : '';
 
   /* ── Element finder: try CSS selector, then visible text match ─────────── */
   function findEl(candidates) {
@@ -158,7 +159,7 @@
 
     // Navigate if needed
     if (step.view && typeof window.show === 'function') {
-      root.innerHTML = `<div style="position:fixed;inset:0;z-index:${Z_TOUR};background:rgba(13,35,24,.35);display:flex;align-items:center;justify-content:center"><div style="background:#fff;border-radius:14px;padding:18px 26px;font-weight:800;color:#1F2937;box-shadow:0 12px 40px rgba(0,0,0,.25)">✨ Taking you there…</div></div>`;
+      root.innerHTML = `<div style="position:fixed;inset:0;z-index:${Z_TOUR};background:rgba(13,35,24,.35);display:flex;align-items:center;justify-content:center"><div style="background:#fff;border-radius:14px;padding:18px 26px;font-weight:800;color:#1F2937;box-shadow:0 12px 40px rgba(0,0,0,.25);display:flex;align-items:center;gap:9px">${ic('sparkle',17,'#2D7A55')} Taking you there…</div></div>`;
       try { window.show(step.view); } catch (e) {}
       await new Promise(r => setTimeout(r, 900));
     }
@@ -195,15 +196,15 @@
     root.innerHTML = hole + `
     <div id="gwCpCard" style="position:fixed;${cardPos};z-index:${Z_TOUR + 2};width:360px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;font-family:inherit;animation:gwcpIn .25s ease">
       <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:13px 18px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:18px">✨</span>
+        <span style="display:inline-flex">${ic('sparkle',17,'#fff')}</span>
         <span style="flex:1;color:#fff;font-size:12px;font-weight:800;letter-spacing:.04em">GROUNDWORK GUIDE · ${T.idx + 1} OF ${steps.length}</span>
         <button onclick="gwCopilot.endTour()" style="background:none;border:none;color:rgba(255,255,255,.8);font-size:16px;cursor:pointer;line-height:1;padding:0">✕</button>
       </div>
       <div style="padding:16px 18px 6px">
         <div style="font-size:15.5px;font-weight:800;color:#1F2937">${esc(step.title)}</div>
         <div style="font-size:13px;color:#4B5563;margin-top:6px;line-height:1.55">${esc(step.body)}</div>
-        ${step.tip ? `<div style="margin-top:10px;background:#F0FAF4;border:1px solid #2D7A5526;border-radius:10px;padding:9px 12px;font-size:12px;color:#1F5138;line-height:1.5"><b>💡 Pro tip:</b> ${esc(step.tip)}</div>` : ''}
-        ${step.clickToAdvance && target ? `<div style="margin-top:10px;font-size:12px;font-weight:700;color:#8B6914">👆 Click the highlighted button to do it now — or press Next to keep touring.</div>` : ''}
+        ${step.tip ? `<div style="margin-top:10px;background:#F0FAF4;border:1px solid #2D7A5526;border-radius:10px;padding:9px 12px;font-size:12px;color:#1F5138;line-height:1.5"><b style="display:inline-flex;align-items:center;gap:5px">${ic('idea',13)} Pro tip:</b> ${esc(step.tip)}</div>` : ''}
+        ${step.clickToAdvance && target ? `<div style="margin-top:10px;font-size:12px;font-weight:700;color:#8B6914">${ic('pointer',12)} Click the highlighted button to do it now — or press Next to keep touring.</div>` : ''}
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px 15px">
         <div style="display:flex;gap:5px">${steps.map((_, i) => `<span style="width:7px;height:7px;border-radius:50%;background:${i === T.idx ? '#2D7A55' : '#D1D5DB'}"></span>`).join('')}</div>
@@ -235,7 +236,7 @@
     const key = T.active && T.active.key;
     endTour(true);
     confetti(28);
-    toast('Nice! You know your way around this one. 🎉');
+    toast('Nice! You know your way around this one.');
     // Refresh the Getting Started state and celebrate real completions
     setTimeout(checkCelebrate, 1200);
   }
@@ -256,7 +257,7 @@
     p.style.cssText = `position:fixed;bottom:80px;right:22px;z-index:${Z_CHAT};width:min(400px,calc(100vw - 44px));height:min(540px,calc(100vh - 120px));background:#fff;border:1.5px solid #E5E7EB;border-radius:18px;box-shadow:0 16px 48px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden;font-family:inherit`;
     p.innerHTML = `
     <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:15px 18px;color:#fff;display:flex;align-items:center;gap:10px">
-      <span style="font-size:20px">✨</span>
+      <span style="display:inline-flex">${ic('sparkle',20,'#fff')}</span>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:800">Groundwork AI</div>
         <div style="font-size:11px;opacity:.85">Your setup copilot — ask me anything</div>
@@ -272,7 +273,7 @@
     document.body.appendChild(p);
 
     if (!C.msgs.length) {
-      addMsg('ai', "Hi! I'm your Groundwork setup copilot. 👋\n\nI can answer questions, or literally walk you to the right screen and point at what to click. What would you like to do?");
+      addMsg('ai', "Hi! I'm your Groundwork setup copilot.\n\nI can answer questions, or literally walk you to the right screen and point at what to click. What would you like to do?");
       renderChips([
         ['Show me how to add a client', 'tour:cl_client'],
         ['Set up my price book', 'tour:cl_pricebook'],
@@ -313,7 +314,7 @@
     div.textContent = m.text;
     if (isAi && m.tourKey && TOURS[m.tourKey]) {
       const btn = document.createElement('button');
-      btn.textContent = '✨ Show me — walk me through it';
+      btn.innerHTML = ic('sparkle',13) + ' Show me — walk me through it';
       btn.style.cssText = 'display:block;margin-top:9px;background:#2D7A55;border:none;border-radius:9px;padding:8px 14px;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit';
       btn.onclick = () => { document.getElementById('gwCpChat')?.remove(); startTour(m.tourKey); };
       div.appendChild(btn);
@@ -333,7 +334,7 @@
     const thinking = document.createElement('div');
     thinking.id = 'gwCpThink';
     thinking.style.cssText = 'align-self:flex-start;padding:10px 14px;background:#fff;border:1px solid #EDEDE8;border-radius:4px 14px 14px 14px;font-size:13px;color:#9CA3AF';
-    thinking.textContent = '✨ thinking…';
+    thinking.textContent = 'thinking…';
     document.getElementById('gwCpMsgs')?.appendChild(thinking);
 
     let checklist = [];
@@ -409,7 +410,7 @@
         localStorage.setItem('gwCpAllDone', '1');
         bigCelebration();
       } else {
-        toast(`🎉 ${d.done} of ${d.total} setup tasks done — you're on a roll!`);
+        toast(`${d.done} of ${d.total} setup tasks done — you're on a roll!`);
       }
     }
     // Refresh GS launcher badge if present
@@ -423,9 +424,9 @@
     o.id = 'gwCpGrad';
     o.style.cssText = `position:fixed;inset:0;z-index:${Z_CONFETTI - 1};background:rgba(13,35,24,.7);display:flex;align-items:center;justify-content:center;padding:20px`;
     o.innerHTML = `<div style="background:#fff;border-radius:22px;max-width:430px;width:100%;padding:36px 32px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit">
-      <div style="font-size:52px">🏆</div>
+      <div style="display:flex;justify-content:center">${ic('trophy',52,'#8B6914')}</div>
       <div style="font-size:22px;font-weight:900;color:#1F2937;margin-top:10px">Setup Complete!</div>
-      <div style="font-size:14px;color:#4B5563;margin-top:10px;line-height:1.6">You've knocked out every Getting Started task. Your account is fully armed — clients, pricing, estimates, payments, the works. Time to go win some business. 💪</div>
+      <div style="font-size:14px;color:#4B5563;margin-top:10px;line-height:1.6">You've knocked out every Getting Started task. Your account is fully armed — clients, pricing, estimates, payments, the works. Time to go win some business.</div>
       <button onclick="document.getElementById('gwCpGrad').remove()" style="margin-top:22px;background:#2D7A55;border:none;border-radius:12px;padding:13px 30px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">Let's Go →</button>
     </div>`;
     document.body.appendChild(o);

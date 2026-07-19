@@ -242,7 +242,7 @@
                   : st.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}) + ' · ' + _fmtTime(st) + ' – ' + _fmtTime(en)) +
       '</div></div>' +
       '<button onclick="document.getElementById(\'gw-cal-ev-modal\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--gw-text-muted,#64748b);padding:0">✕</button></div>' +
-      (ev.location ? '<div style="font-size:12.5px;color:var(--gw-ink,#2F3B33);margin-bottom:8px">📍 ' + _esc(ev.location) + '</div>' : '') +
+      (ev.location ? '<div style="font-size:12.5px;color:var(--gw-ink,#2F3B33);margin-bottom:8px">' + ((typeof gwIcon==='function')?gwIcon('location',12):'') + ' ' + _esc(ev.location) + '</div>' : '') +
       (opp
         ? '<div style="background:var(--gw-bark-25,#f9f8f6);border:1px solid var(--gw-line,#E5E7EB);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">' +
           '<div><div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;color:var(--gw-text-muted,#64748b);text-transform:uppercase">Linked lead</div>' +

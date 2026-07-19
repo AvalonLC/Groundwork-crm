@@ -2701,7 +2701,7 @@ function _gwTodayRender() {
   const _staleLeads = _open.filter(o => (o.updatedAt || o.createdAt || '') < _staleCutoff)
     .sort((a,b) => (a.updatedAt||'').localeCompare(b.updatedAt||'')).slice(0,6);
   const _staleLeadsHtml = `<section class="card"><div class="section-head"><h2>Needs Follow-Up</h2>${_staleLeads.length ? `<span class="badge warn-badge">${_staleLeads.length}</span>` : ''}</div>
-    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No stale leads — everything has recent activity. 🎉</div>`}</section>`;
+    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No stale leads — everything has recent activity.</div>`}</section>`;
   const _recentWins = _won.slice().sort((a,b)=>(b.closedDate||b.updatedAt||'').localeCompare(a.closedDate||a.updatedAt||'')).slice(0,5);
   const _recentWinsHtml = `<section class="card"><div class="section-head"><h2>Recent Wins</h2></div>
     ${_recentWins.length ? _recentWins.map(oppMini).join('') : `<div class="gw-myday-placeholder">No wins yet — go close one!</div>`}</section>`;

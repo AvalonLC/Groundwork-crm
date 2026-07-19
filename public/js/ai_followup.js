@@ -2,7 +2,7 @@
  * ai_followup.js — AI Phase 1: meeting transcript → AI-drafted follow-up email
  * ════════════════════════════════════════════════════════════════════════════
  * Flow: rep opens a follow-up task (usually auto-created by calendar automation)
- *   → clicks "✨ AI Follow-Up" → pastes transcript/notes → AI drafts the email
+ *   → clicks "AI Follow-Up" → pastes transcript/notes → AI drafts the email
  *   with full lead context → rep edits → sends via their connected Gmail →
  *   email logs to the lead's Communications → task auto-completes.
  *
@@ -28,7 +28,7 @@
   <div class="gw-modal-card" style="border-radius:16px;width:100%;max-width:720px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 64px #000a;background:var(--gw-surface,#fff)">
     <header style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 14px;border-bottom:1px solid var(--gw-line,#E0DDD5)">
       <div>
-        <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B)">✨ AI Follow-Up Email</h3>
+        <h3 style="margin:0;font-size:17px;font-weight:800;color:var(--gds-ink,#1F2A2B);display:flex;align-items:center;gap:8px">${(typeof gwIcon==='function')?gwIcon('sparkle',17,'currentColor'):''} AI Follow-Up Email</h3>
         <div id="gw-aifu-sub" style="font-size:12px;color:var(--gds-muted,#5E6E6F);margin-top:2px"></div>
       </div>
       <button onclick="window.gwAiFollowupClose()" style="background:none;border:none;color:#6F7E6A;font-size:22px;cursor:pointer;line-height:1">×</button>
@@ -61,7 +61,7 @@
   </div>
   <div style="display:flex;justify-content:flex-end;gap:8px">
     <button onclick="window.gwAiFollowupClose()" class="secondary-btn">Cancel</button>
-    <button id="gw-aifu-draft-btn" onclick="window.gwAiFollowupDraft()" class="primary-btn">✨ Draft Email</button>
+    <button id="gw-aifu-draft-btn" onclick="window.gwAiFollowupDraft()" class="primary-btn">${(typeof gwIcon==='function')?gwIcon('sparkle',13,'currentColor'):''} Draft Email</button>
   </div>
   <div id="gw-aifu-error" style="display:none;padding:10px 14px;background:rgba(191,73,52,.08);border:1px solid rgba(191,73,52,.3);border-radius:10px;font-size:12.5px;color:#8C3A2B;line-height:1.5"></div>
 </div>`;
@@ -178,7 +178,7 @@
       toast('✗ ' + e.message, 4500);
       const errEl = document.getElementById('gw-aifu-error');
       if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
-      if (btn) { btn.disabled = false; btn.textContent = '✨ Draft Email'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = ((typeof gwIcon==='function')?gwIcon('sparkle',13):'') + ' Draft Email'; }
     }
   };
 

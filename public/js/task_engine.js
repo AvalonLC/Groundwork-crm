@@ -514,7 +514,7 @@ function gwRenderTaskRow(task, opts) {
     : task.priority === 'low' ? 'gw-task-prio--low'
     : '';
 
-  // ✨ AI follow-up: for open follow-up/email tasks linked to a lead, offer the
+  // AI follow-up: for open follow-up/email tasks linked to a lead, offer the
   // transcript → AI-drafted email → Gmail send → auto-complete flow.
   const aiBtn = (!isDone && !isArchived
       && task.linked_record_id
@@ -522,7 +522,7 @@ function gwRenderTaskRow(task, opts) {
       && (task.task_type === 'follow_up' || task.task_type === 'email'))
     ? `<button class="gw-task-action-btn gw-task-action-btn--ai" title="AI Follow-Up email"
           style="color:#7B5EA7"
-          onclick="event.stopPropagation();window.gwAiFollowupOpen&&window.gwAiFollowupOpen({taskId:'${task.id}',oppId:'${task.linked_record_id}',oppLabel:'${_esc(task.linked_record_label||'').replace(/'/g,'')}'})">✨</button>`
+          onclick="event.stopPropagation();window.gwAiFollowupOpen&&window.gwAiFollowupOpen({taskId:'${task.id}',oppId:'${task.linked_record_id}',oppLabel:'${_esc(task.linked_record_label||'').replace(/'/g,'')}'})">${(typeof gwIcon==='function')?gwIcon('sparkle',13,'currentColor'):''}</button>`
     : '';
 
   const completeBtn = (!isDone && !isArchived && opts.showCompleteBtn !== false)

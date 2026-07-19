@@ -786,7 +786,7 @@ async function _gwGettingStartedInit() {
 
   const btn = document.createElement('button');
   btn.id = 'gwGSLauncher';
-  btn.innerHTML = `🚀 Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${data.done}/${data.total}</span>`;
+  btn.innerHTML = `${(typeof gwIcon==='function')?gwIcon('rocket',13,'currentColor'):''} Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${data.done}/${data.total}</span>`;
   btn.style.cssText = 'position:fixed;bottom:22px;right:22px;z-index:8000;background:#2D7A55;color:#fff;border:none;border-radius:26px;padding:12px 20px;font-size:13.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 24px rgba(29,58,43,.35);font-family:inherit;display:flex;align-items:center;transition:transform .15s';
   btn.onmouseover = () => btn.style.transform = 'translateY(-2px)';
   btn.onmouseout = () => btn.style.transform = '';
@@ -831,13 +831,13 @@ async function _gwGSOpenPanel() {
         <div style="font-size:11.5px;color:#6B7280;margin-top:2px">${_escOnb(it.description||'')}</div>
       </div>
       ${!it.done ? `<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-items:stretch">
-        ${hasTour ? `<button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.startTour('${_escOnb(it.id)}')" style="background:#2D7A55;border:none;color:#fff;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✨ Show me</button>` : ''}
+        ${hasTour ? `<button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.startTour('${_escOnb(it.id)}')" style="background:#2D7A55;border:none;color:#fff;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${(typeof gwIcon==='function')?gwIcon('sparkle',12,'currentColor'):''} Show me</button>` : ''}
         ${it.view ? `<button onclick="document.getElementById('gwGSPanel').remove();if(typeof show==='function')show('${_escOnb(it.view)}')" style="background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${_escOnb(it.cta||'Open')}</button>` : ''}
       </div>` : ''}
     </div>`;}).join('')}
   </div>
   ${window.gwCopilot ? `<div style="padding:11px 16px;background:#F7F9F7;border-top:1px solid #EDEDE8">
-    <button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.openChat()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1C3A2B,#2D7A55);border:none;color:#fff;font-size:12.5px;font-weight:800;padding:11px;border-radius:11px;cursor:pointer;font-family:inherit">✨ Ask Groundwork AI — I'll walk you through it</button>
+    <button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.openChat()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1C3A2B,#2D7A55);border:none;color:#fff;font-size:12.5px;font-weight:800;padding:11px;border-radius:11px;cursor:pointer;font-family:inherit">${(typeof gwIcon==='function')?gwIcon('sparkle',14,'currentColor'):''} Ask Groundwork AI — I'll walk you through it</button>
   </div>` : ''}`;
   document.body.appendChild(panel);
 }

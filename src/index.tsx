@@ -8723,7 +8723,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260719b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260719b003">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8747,8 +8747,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260719b002"></script>
-  <script src="/js/client_portal.js?v=20260719b002"></script>
+  <script src="/js/platform_core.js?v=20260719b003"></script>
+  <script src="/js/client_portal.js?v=20260719b003"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9383,9 +9383,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260719b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260719b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260719b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260719b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260719b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260719b003">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9945,40 +9945,40 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260719b002"></script>
-<script src="/js/db.js?v=20260719b002"></script>
-<script src="/js/data.js?v=20260719b002"></script>
-<script src="/js/reps.js?v=20260719b002"></script>
-<script src="/js/record-page.js?v=20260719b002"></script>
-<script src="/js/academy.js?v=20260719b002"></script>
-<script src="/js/task_engine.js?v=20260719b002"></script>
-<script src="/js/gw_i18n.js?v=20260719b002"></script>
-<script src="/js/app_premium.js?v=20260719b002"></script>
-<script src="/js/estimates.js?v=20260719b002"></script>
-<script src="/js/proposals.js?v=20260719b002"></script>
-<script src="/js/pricing.js?v=20260719b002"></script>
-<script src="/js/invoices.js?v=20260719b002"></script>
-<script src="/js/csv_import.js?v=20260719b002"></script>
-<script src="/js/onboarding.js?v=20260719b002"></script>
-<script src="/js/gw_copilot.js?v=20260719b002"></script>
-<script src="/js/recurring_plans.js?v=20260719b002"></script>
-<script src="/js/reviews.js?v=20260719b002"></script>
-<script src="/js/stripe.js?v=20260719b002"></script>
-<script src="/js/email.js?v=20260719b002"></script>
-<script src="/js/notifications.js?v=20260719b002"></script>
-<script src="/js/integrations.js?v=20260719b002"></script>
-<script src="/js/calendar_sync.js?v=20260719b002"></script>
-<script src="/js/ai_followup.js?v=20260719b002"></script>
-<script src="/js/user_management.js?v=20260719b002"></script>
-<script src="/js/platform_admin.js?v=20260719b002"></script>
-<script src="/js/time_tracker.js?v=20260719b002"></script>
-<script src="/js/field_workday.js?v=20260719b002"></script>
-<script src="/js/platform_core.js?v=20260719b002"></script>
-<script src="/js/approval_engine.js?v=20260719b002"></script>
-<script src="/js/automation_engine.js?v=20260719b002"></script>
-<script src="/js/client_portal.js?v=20260719b002"></script>
-<script src="/js/field_mode.js?v=20260719b002"></script>
-<script src="/js/assets_hub.js?v=20260719b002"></script>
+<script src="/js/gw-icons.js?v=20260719b003"></script>
+<script src="/js/db.js?v=20260719b003"></script>
+<script src="/js/data.js?v=20260719b003"></script>
+<script src="/js/reps.js?v=20260719b003"></script>
+<script src="/js/record-page.js?v=20260719b003"></script>
+<script src="/js/academy.js?v=20260719b003"></script>
+<script src="/js/task_engine.js?v=20260719b003"></script>
+<script src="/js/gw_i18n.js?v=20260719b003"></script>
+<script src="/js/app_premium.js?v=20260719b003"></script>
+<script src="/js/estimates.js?v=20260719b003"></script>
+<script src="/js/proposals.js?v=20260719b003"></script>
+<script src="/js/pricing.js?v=20260719b003"></script>
+<script src="/js/invoices.js?v=20260719b003"></script>
+<script src="/js/csv_import.js?v=20260719b003"></script>
+<script src="/js/onboarding.js?v=20260719b003"></script>
+<script src="/js/gw_copilot.js?v=20260719b003"></script>
+<script src="/js/recurring_plans.js?v=20260719b003"></script>
+<script src="/js/reviews.js?v=20260719b003"></script>
+<script src="/js/stripe.js?v=20260719b003"></script>
+<script src="/js/email.js?v=20260719b003"></script>
+<script src="/js/notifications.js?v=20260719b003"></script>
+<script src="/js/integrations.js?v=20260719b003"></script>
+<script src="/js/calendar_sync.js?v=20260719b003"></script>
+<script src="/js/ai_followup.js?v=20260719b003"></script>
+<script src="/js/user_management.js?v=20260719b003"></script>
+<script src="/js/platform_admin.js?v=20260719b003"></script>
+<script src="/js/time_tracker.js?v=20260719b003"></script>
+<script src="/js/field_workday.js?v=20260719b003"></script>
+<script src="/js/platform_core.js?v=20260719b003"></script>
+<script src="/js/approval_engine.js?v=20260719b003"></script>
+<script src="/js/automation_engine.js?v=20260719b003"></script>
+<script src="/js/client_portal.js?v=20260719b003"></script>
+<script src="/js/field_mode.js?v=20260719b003"></script>
+<script src="/js/assets_hub.js?v=20260719b003"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -10150,7 +10150,7 @@ function getHtml(): string {
                   const vb = document.createElement('div');
                   vb.id = 'gw-verify-banner';
                   vb.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9000;background:#0E372F;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,.3)';
-                  vb.innerHTML = '<span>📧 Please verify your email address to secure your account.</span>' +
+                  vb.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px">' + ((typeof gwIcon==='function')?gwIcon('email',15,'#fff'):'') + ' Please verify your email address to secure your account.</span>' +
                     '<button id="gw-verify-resend" style="background:#2D7A55;border:none;color:#fff;font-weight:700;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer">Resend link</button>' +
                     '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:16px;cursor:pointer;padding:0 2px">×</button>';
                   document.body.appendChild(vb);

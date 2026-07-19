@@ -195,14 +195,14 @@ function _prRenderBuilder() {
         <div style="font-size:17px;font-weight:800">${isEdit ? `Edit ${_prEsc(p.prop_number || 'Proposal')}` : 'New Proposal'}</div>
         ${_prStatusPill(p.status)}
         <span id="pr-save-state" style="margin-left:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
-        <button class="est-btn-secondary" style="font-size:12px;padding:7px 12px;white-space:nowrap${pvOn ? ';background:var(--gw-teal,#4D8A86);color:#fff;border-color:transparent' : ''}" onclick="_prTogglePreview()" title="Show the client-facing document side-by-side, updating live as you type">${pvOn ? '✓ Live preview' : '👁 Live preview'}</button>
+        <button class="est-btn-secondary" style="font-size:12px;padding:7px 12px;white-space:nowrap${pvOn ? ';background:var(--gw-teal,#4D8A86);color:#fff;border-color:transparent' : ''}" onclick="_prTogglePreview()" title="Show the client-facing document side-by-side, updating live as you type">${pvOn ? '✓ Live preview' : `${(typeof gwIcon==='function')?gwIcon('eye',13,'currentColor'):''} Live preview`}</button>
       </div>
 
       <!-- AI draft -->
       <section style="background:linear-gradient(135deg,#113931 0%,#1E5E52 100%);border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#fff">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div>
-            <div style="font-size:13px;font-weight:800">✨ Draft with AI</div>
+            <div style="font-size:13px;font-weight:800">${(typeof gwIcon==='function')?gwIcon('sparkle',13,'currentColor'):''} Draft with AI</div>
             <div style="font-size:11.5px;opacity:.85">Writes the whole document — from priced option quotes to formal bids or planning frameworks with investment ranges — using ${p.opp_id ? "this lead's notes and history" : 'your instructions'}. You review and edit everything before sending.</div>
           </div>
           <button id="pr-ai-btn" style="background:#fff;color:#113931;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap" onclick="_prAiModal()">Draft it for me</button>
@@ -1360,13 +1360,13 @@ function _prAiModal() {
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,26,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.innerHTML = `
   <div style="background:#fff;border-radius:14px;max-width:540px;width:100%;padding:24px;box-shadow:0 24px 64px rgba(0,0,0,.3)" onclick="event.stopPropagation()">
-    <div style="font-size:17px;font-weight:800;margin-bottom:4px">✨ Draft this proposal with AI</div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:4px">${(typeof gwIcon==='function')?gwIcon('sparkle',15,'currentColor'):''} Draft this proposal with AI</div>
     <div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">
       The AI will use ${hasLead ? '<strong>this lead\u2019s details, notes and recent communications</strong>' : 'the client info entered above'}${hasEst ? ' plus the <strong>linked estimate\u2019s services and pricing</strong>' : ''} to write a complete draft. Nothing is sent to the client — you review and edit first.
     </div>
     <label class="est-label">Tell the AI what you want (optional but recommended)</label>
     <textarea class="est-input" id="pr-ai-instructions" rows="5" style="resize:vertical;margin-bottom:8px" placeholder="Describe the document you want — a priced quote with 2 option tiers, a formal bid with project details and signature lines, a planning framework with investment ranges, an options menu with price ranges… e.g. 'Preliminary planning framework: patio, drainage and lighting areas with investment ranges, total range callout, no fixed pricing.'"></textarea>
-    <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-bottom:16px">⚠️ Applying the draft replaces the title, overview, sections, payment schedule and terms currently in the builder. Client info is kept.</div>
+    <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-bottom:16px">${(typeof gwIcon==='function')?gwIcon('warning',12,'currentColor'):''} Applying the draft replaces the title, overview, sections, payment schedule and terms currently in the builder. Client info is kept.</div>
     <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
       <span id="pr-ai-status" style="margin-right:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
       <button class="est-btn-secondary" onclick="document.getElementById('pr-ai-modal').remove()">Cancel</button>
@@ -1406,7 +1406,7 @@ async function _prAiGenerate() {
     if (d.terms) _prDraft.terms = d.terms;
     document.getElementById('pr-ai-modal')?.remove();
     _prRenderBuilder();
-    _prToast('AI draft ready ✨ — review the options and prices, then save & send', 'success');
+    _prToast('AI draft ready — review the options and prices, then save & send', 'success');
     // Scroll to overview so the user starts reviewing at the top of the content
     setTimeout(() => document.getElementById('pr-overview')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
   } catch (e) {

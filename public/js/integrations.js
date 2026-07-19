@@ -711,7 +711,7 @@ async function integrations() {
     <span id="int-admin-creds-status" style="font-size:11px;color:#2D7A55;margin-left:10px"></span>
 
     <div style="border-top:1px solid var(--gds-line,#E0DDD5);margin:18px 0 14px"></div>
-    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">AI API Key <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables ✨ AI proposal drafting)</span></label>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">AI API Key <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables AI proposal drafting)</span></label>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <input id="int-admin-ai-key" type="password"
         placeholder="sk-…"
@@ -844,7 +844,7 @@ function gwRenderAdminSetup() {
   <!-- AI API Key -->
   <section class="gw-int-panel" id="admin-ai-key-panel" style="border-radius:16px;padding:28px;min-width:0;overflow:hidden">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <span style="font-size:18px">✨</span>
+      <span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('sparkle',18,'currentColor'):''}</span>
       <div style="font-size:15px;font-weight:800;color:var(--gds-ink,#1F2A2B)">AI Setup</div>
       <span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gds-muted,#5E6E6F);background:var(--gds-surface-3,#F2EFE9);border:1px solid var(--gds-line,#E0DDD5);border-radius:4px;padding:2px 7px">Admin only</span>
     </div>
@@ -2742,7 +2742,7 @@ async function intAdminSaveGoogleCreds() {
 }
 window.intAdminSaveGoogleCreds = intAdminSaveGoogleCreds;
 
-// ── intAdminSaveAiKey — save OpenAI API key for ✨ AI proposal drafting ────────
+// ── intAdminSaveAiKey — save OpenAI API key for AI proposal drafting ────────
 async function intAdminSaveAiKey() {
   const key = document.getElementById('int-admin-ai-key')?.value?.trim();
   if (!key) { showIntToast('Paste your AI API key first', 'warn'); return; }
