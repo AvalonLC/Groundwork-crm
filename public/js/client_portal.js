@@ -512,13 +512,16 @@ window._gwPortalUpdatesPanel = async function(woId, el) {
         </div>
         <textarea class="rp-input" id="gw-pu-body" rows="3" placeholder="What happened on site today? The client will see this in their portal."></textarea>
         <div id="gw-pu-pending" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${pendHtml}</div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
           <label class="rp-btn-sm" style="cursor:pointer">
             Add Photos
             <input type="file" accept="image/*" multiple style="display:none" onchange="_gwPortalUploadPhotos(event,'${esc(woId)}')">
           </label>
           <span id="gw-pu-upstatus" style="font-size:11.5px;color:var(--gw-text-muted,#7a857f)"></span>
-          <button class="rp-btn rp-btn--primary" style="margin-left:auto" onclick="_gwPortalPublishUpdate('${esc(woId)}')">Publish to Portal</button>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--gw-text-muted,#7a857f);cursor:pointer;margin-left:auto">
+            <input type="checkbox" id="gw-pu-notify" checked> Email client
+          </label>
+          <button class="rp-btn rp-btn--primary" onclick="_gwPortalPublishUpdate('${esc(woId)}')">Publish to Portal</button>
         </div>
         <div id="gw-pu-err" style="display:none;color:#B4423A;font-size:12px;margin-top:6px"></div>
       </div>
@@ -577,14 +580,15 @@ window._gwPortalUpdatesPanel = async function(woId, el) {
     const errEl = document.getElementById('gw-pu-err');
     if (!body) { if (errEl) { errEl.textContent = 'Update text is required.'; errEl.style.display = 'block'; } return; }
     try {
-      await _portalApi('/api/admin/portal/projects/' + wid + '/updates', { method:'POST', body:{
+      const res = await _portalApi('/api/admin/portal/projects/' + wid + '/updates', { method:'POST', body:{
         body,
         title: document.getElementById('gw-pu-title')?.value || '',
         update_date: document.getElementById('gw-pu-date')?.value || '',
         media_ids: pendingMedia.map(m => m.id),
+        notify_client: !!document.getElementById('gw-pu-notify')?.checked,
       }});
       pendingMedia = [];
-      if (window.showToast) showToast('Update published to client portal', 'success');
+      if (window.showToast) showToast('Update published to client portal' + (res.emailed ? ' — ' + res.emailed + ' client email' + (res.emailed === 1 ? '' : 's') + ' sent' : ''), 'success');
       load();
     } catch (e) {
       if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }

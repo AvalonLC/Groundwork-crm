@@ -169,6 +169,26 @@ async function resolveScope(db: D1Database, portalUserId: string): Promise<Porta
 // ── requirePortalAuth middleware ─────────────────────────────────────────────
 const PORTAL_COOKIE = 'gw_portal_session'
 const SESSION_MAX_AGE_DAYS = 30
+const SESSION_IDLE_DAYS = 7
+const MAX_SESSIONS_PER_USER = 10
+
+// D1-backed sliding-window rate limiter (keyed via settings table).
+// Returns true when the request is allowed.
+async function rateLimit(db: D1Database, key: string, max: number, windowSec: number): Promise<boolean> {
+  try {
+    const now = Date.now()
+    const skey = 'rl_' + key
+    const row: any = await db.prepare(`SELECT value FROM settings WHERE key=? LIMIT 1`).bind(skey).first()
+    let n = 0, exp = now + windowSec * 1000
+    if (row?.value) {
+      try { const v = JSON.parse(row.value); if (v && v.exp > now) { n = v.n || 0; exp = v.exp } } catch (_) {}
+    }
+    n++
+    await db.prepare(`INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES (?,?,datetime('now'))`)
+      .bind(skey, JSON.stringify({ n, exp })).run()
+    return n <= max
+  } catch (_) { return true } // fail-open: never block auth because the limiter itself failed
+}
 
 export async function requirePortalAuth(c: any, next: any) {
   const token = getCookie(c, PORTAL_COOKIE)
@@ -178,6 +198,12 @@ export async function requirePortalAuth(c: any, next: any) {
   if (!sess) return c.json({ error: 'Session expired' }, 401)
   const ageMs = Date.now() - new Date(sess.created_at.replace(' ', 'T') + 'Z').getTime()
   if (isFinite(ageMs) && ageMs > SESSION_MAX_AGE_DAYS * 864e5) {
+    await db.prepare(`DELETE FROM portal_sessions WHERE token=?`).bind(token).run()
+    return c.json({ error: 'Session expired' }, 401)
+  }
+  // Idle timeout: sessions unused for SESSION_IDLE_DAYS expire early.
+  const idleMs = Date.now() - new Date(String(sess.last_seen_at || sess.created_at).replace(' ', 'T') + 'Z').getTime()
+  if (isFinite(idleMs) && idleMs > SESSION_IDLE_DAYS * 864e5) {
     await db.prepare(`DELETE FROM portal_sessions WHERE token=?`).bind(token).run()
     return c.json({ error: 'Session expired' }, 401)
   }
@@ -214,6 +240,21 @@ export function registerPortal(app: Hono<any>, deps: {
   app.use('/api/portal/*', async (c, next) => { await ensurePortalSchema(c.env.DB as D1Database); await next() })
   app.use('/api/admin/portal/*', async (c, next) => { await ensurePortalSchema(c.env.DB as D1Database); await next() })
 
+  // Security headers on portal pages + no-store on portal APIs (except media, which
+  // sets its own private cache policy).
+  app.use('/portal/*', async (c, next) => {
+    await next()
+    c.header('X-Frame-Options', 'DENY')
+    c.header('X-Content-Type-Options', 'nosniff')
+    c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+    c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  })
+  app.use('/api/portal/*', async (c, next) => {
+    await next()
+    c.header('X-Content-Type-Options', 'nosniff')
+    if (!c.req.path.startsWith('/api/portal/media/')) c.header('Cache-Control', 'no-store')
+  })
+
   // ══ PORTAL AUTH APIS ══════════════════════════════════════════════════════
 
   // POST /api/portal/auth/login
@@ -221,6 +262,11 @@ export function registerPortal(app: Hono<any>, deps: {
     const db = c.env.DB as D1Database
     const { email, password } = await c.req.json().catch(() => ({} as any))
     if (!email || !password) return c.json({ error: 'Email and password required' }, 400)
+    // Rate limits: 10 attempts / 5 min per IP, 8 / 5 min per email.
+    const ip = clientIp(c) || 'noip'
+    const ipOk = await rateLimit(db, 'plogin_ip_' + ip.slice(0, 60), 10, 300)
+    const emOk = await rateLimit(db, 'plogin_em_' + String(email).trim().toLowerCase().slice(0, 80), 8, 300)
+    if (!ipOk || !emOk) return c.json({ error: 'Too many attempts. Please wait a few minutes and try again.' }, 429)
 
     const user: any = await db.prepare(
       `SELECT * FROM portal_users WHERE lower(email)=lower(?) AND status='active' LIMIT 1`
@@ -248,10 +294,22 @@ export function registerPortal(app: Hono<any>, deps: {
     await db.batch([
       db.prepare(`INSERT INTO portal_sessions (token, portal_user_id, ip, user_agent) VALUES (?,?,?,?)`)
         .bind(token, user.id, clientIp(c), (c.req.header('user-agent') || '').slice(0, 300)),
-      db.prepare(`UPDATE portal_users SET last_login_at=datetime('now'), failed_logins=0, locked_until='' WHERE id=?`).bind(user.id)
+      db.prepare(`UPDATE portal_users SET last_login_at=datetime('now'), failed_logins=0, locked_until='' WHERE id=?`).bind(user.id),
+      // Cap concurrent sessions per user: keep the most recent MAX_SESSIONS_PER_USER.
+      db.prepare(`DELETE FROM portal_sessions WHERE portal_user_id=? AND token NOT IN (
+        SELECT token FROM portal_sessions WHERE portal_user_id=? ORDER BY created_at DESC LIMIT ${MAX_SESSIONS_PER_USER})`).bind(user.id, user.id)
     ])
     setCookie(c, PORTAL_COOKIE, token, { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: SESSION_MAX_AGE_DAYS * 86400 })
     await portalAudit(db, { companyId: user.company_id, actorType: 'portal', portalUserId: user.id, eventType: 'portal_login', ip: clientIp(c) })
+    // Opportunistic housekeeping (~5% of logins): purge expired sessions + stale rate-limit keys.
+    if (Math.random() < 0.05) {
+      try {
+        await db.batch([
+          db.prepare(`DELETE FROM portal_sessions WHERE created_at < datetime('now','-${SESSION_MAX_AGE_DAYS} days')`),
+          db.prepare(`DELETE FROM settings WHERE key LIKE 'rl_%' AND updated_at < datetime('now','-1 day')`)
+        ])
+      } catch (_) {}
+    }
     return c.json({ ok: true })
   })
 
@@ -294,6 +352,9 @@ export function registerPortal(app: Hono<any>, deps: {
     const db = c.env.DB as D1Database
     const { token, password } = await c.req.json().catch(() => ({} as any))
     if (!token || !password) return c.json({ error: 'Token and password required' }, 400)
+    if (!(await rateLimit(db, 'paccept_ip_' + (clientIp(c) || 'noip').slice(0, 60), 10, 900))) {
+      return c.json({ error: 'Too many attempts. Please wait a few minutes and try again.' }, 429)
+    }
     if (String(password).length < 8) return c.json({ error: 'Password must be at least 8 characters' }, 400)
     const user: any = await db.prepare(`SELECT * FROM portal_users WHERE invite_token=? AND invite_token!='' LIMIT 1`).bind(token).first()
     if (!user) return c.json({ error: 'This invitation link is invalid or has already been used.' }, 404)
@@ -324,6 +385,11 @@ export function registerPortal(app: Hono<any>, deps: {
     const db = c.env.DB as D1Database
     const { email } = await c.req.json().catch(() => ({} as any))
     if (!email) return c.json({ ok: true })
+    // Rate limits: 5 / 15 min per IP, 3 / 15 min per email — prevents reset-email spam.
+    const rip = clientIp(c) || 'noip'
+    const ripOk = await rateLimit(db, 'preset_ip_' + rip.slice(0, 60), 5, 900)
+    const remOk = await rateLimit(db, 'preset_em_' + String(email).trim().toLowerCase().slice(0, 80), 3, 900)
+    if (!ripOk || !remOk) return c.json({ ok: true }) // still uniform response — silently drop
     const user: any = await db.prepare(`SELECT * FROM portal_users WHERE lower(email)=lower(?) AND status='active' LIMIT 1`).bind(String(email).trim()).first()
     if (user) {
       const token = pUid() + pUid()
@@ -350,6 +416,9 @@ export function registerPortal(app: Hono<any>, deps: {
     const db = c.env.DB as D1Database
     const { token, password } = await c.req.json().catch(() => ({} as any))
     if (!token || !password) return c.json({ error: 'Token and password required' }, 400)
+    if (!(await rateLimit(db, 'preset2_ip_' + (clientIp(c) || 'noip').slice(0, 60), 10, 900))) {
+      return c.json({ error: 'Too many attempts. Please wait a few minutes and try again.' }, 429)
+    }
     if (String(password).length < 8) return c.json({ error: 'Password must be at least 8 characters' }, 400)
     const user: any = await db.prepare(`SELECT * FROM portal_users WHERE reset_token=? AND reset_token!='' LIMIT 1`).bind(token).first()
     if (!user || !user.reset_expires_at || new Date(user.reset_expires_at.replace(' ', 'T') + 'Z').getTime() < Date.now()) {
@@ -382,6 +451,11 @@ export function registerPortal(app: Hono<any>, deps: {
     if (!updates.length) return c.json({ error: 'Nothing to update' }, 400)
     updates.push(`updated_at=datetime('now')`)
     await db.prepare(`UPDATE portal_users SET ${updates.join(',')} WHERE id=?`).bind(...vals, s.user.id).run()
+    // Password changed: revoke every other session for this user (keep current one).
+    if (b.new_password) {
+      const curTok = getCookie(c, PORTAL_COOKIE) || ''
+      await db.prepare(`DELETE FROM portal_sessions WHERE portal_user_id=? AND token!=?`).bind(s.user.id, curTok).run()
+    }
     await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, eventType: 'portal_account_updated', meta: { fields: Object.keys(b).filter(k => k !== 'current_password' && k !== 'new_password') }, ip: clientIp(c) })
     return c.json({ ok: true })
   })
@@ -391,8 +465,15 @@ export function registerPortal(app: Hono<any>, deps: {
     const db = c.env.DB as D1Database
     const s: PortalScope = c.var.portalScope
     const cin = s.clientIds.map(() => '?').join(',')
-    const canEst = s.can('view_estimates'); const canBill = s.can('view_billing')
-    let estAwaiting = 0, openBalance = 0, overdueBalance = 0, lastPayment: any = null
+    const canEst = s.can('view_estimates'); const canBill = s.can('view_billing'); const canProj = s.can('view_projects')
+    let estAwaiting = 0, openBalance = 0, overdueBalance = 0, lastPayment: any = null, activeProjects = 0
+    if (canProj) {
+      try {
+        const r: any = await db.prepare(`SELECT COUNT(*) as n FROM work_orders WHERE company_id=? AND client_id IN (${cin})
+          AND portal_visible=1 AND status IN ('scheduled','in_progress','started','paused')`).bind(s.companyId, ...s.clientIds).first()
+        activeProjects = r?.n || 0
+      } catch (_) {}
+    }
     if (canEst) {
       const r: any = await db.prepare(`SELECT COUNT(*) as n FROM estimates WHERE company_id=? AND client_id IN (${cin}) AND status IN ('sent','viewed')`).bind(s.companyId, ...s.clientIds).first()
       estAwaiting = r?.n || 0
@@ -413,7 +494,7 @@ export function registerPortal(app: Hono<any>, deps: {
         open_balance: canBill ? openBalance : null,
         overdue_balance: canBill ? overdueBalance : null,
         last_payment: canBill && lastPayment ? { amount: lastPayment.amount, date: lastPayment.created_at, method: lastPayment.payment_method } : null,
-        active_projects: null   // populated in Phase 1C
+        active_projects: canProj ? activeProjects : null
       }
     })
   })
@@ -751,7 +832,38 @@ export function registerPortal(app: Hono<any>, deps: {
       }
     }
     await portalAudit(db, { companyId, actorType: 'staff', repId: c.var.repId as string, clientId: wo.client_id || '', eventType: 'portal_update_published', entityType: 'project_update', entityId: id, entityLabel: `${wo.wo_number || wo.id} ${updateDate}`, ip: clientIp(c) })
-    return c.json({ ok: true, id })
+    // Email active portal users on this client who can view projects (unless suppressed).
+    let emailed = 0
+    if (b.notify_client !== false && wo.client_id && c.env.SENDGRID_API_KEY) {
+      try {
+        const pus = (await db.prepare(
+          `SELECT DISTINCT pu.id, pu.email, pu.name, pm.role, pm.permissions FROM portal_users pu
+           JOIN portal_memberships pm ON pm.portal_user_id=pu.id AND pm.active=1
+           WHERE pm.client_id=? AND pu.company_id=? AND pu.status='active' LIMIT 20`
+        ).bind(wo.client_id, companyId).all()).results as any[] || []
+        const co: any = await db.prepare(`SELECT name, brand_color FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
+        const origin = new URL(c.req.url).origin
+        const brand = (co?.brand_color || '#2D7A55').replace(/[^#0-9A-Fa-f]/g, '') || '#2D7A55'
+        const mediaCount = Array.isArray(b.media_ids) ? Math.min(b.media_ids.length, 30) : 0
+        for (const pu of pus) {
+          let perms: any = {}
+          try { perms = { ...(PORTAL_ROLE_PRESETS[pu.role] || {}), ...JSON.parse(pu.permissions || '{}') } } catch (_) { perms = PORTAL_ROLE_PRESETS[pu.role] || {} }
+          if (!perms.view_projects) continue
+          const ok = await deps.sendEmail(c.env.SENDGRID_API_KEY, pu.email,
+            `Project update: ${wo.title || wo.wo_number || 'your project'}`,
+            `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+              <h2 style="color:#1F2A2B;margin:0 0 4px">${escH(b.title || 'New project update')}</h2>
+              <p style="font-size:12px;color:#6B7280;margin:0 0 16px">${escH(wo.title || '')} &middot; ${escH(updateDate)}${mediaCount ? ` &middot; ${mediaCount} photo${mediaCount === 1 ? '' : 's'}` : ''}</p>
+              <p style="font-size:14px;line-height:1.6;color:#1F2A2B;white-space:pre-wrap">${escH(body.slice(0, 600))}${body.length > 600 ? '&hellip;' : ''}</p>
+              <p style="margin:20px 0"><a href="${origin}/portal/home#projects" style="display:inline-block;background:${brand};color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px">View in Your Portal</a></p>
+              <p style="font-size:11px;color:#9CA3AF">Sent by ${escH(co?.name || 'your contractor')} via their client portal.</p>
+            </div>`,
+            { fromName: co?.name || undefined })
+          if (ok) emailed++
+        }
+      } catch (_) { /* email failures never block the publish */ }
+    }
+    return c.json({ ok: true, id, emailed })
   })
 
   // DELETE /api/admin/portal/updates/:id
@@ -1157,6 +1269,21 @@ function portalShellPage(): string {
   .gwp-lightbox .cap{position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#fff;font-size:13px;padding:0 24px}
   .gwp-proj-meta{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin-top:10px}
   .gwp-proj-meta strong{color:var(--ink);font-weight:700}
+  .gwp-tabbar{padding-bottom:env(safe-area-inset-bottom,0)}
+  .gwp-item>div:first-child{min-width:0}
+  .gwp-item .it,.gwp-item .is{overflow:hidden;text-overflow:ellipsis}
+  .gwp-lines-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  @media(max-width:640px){
+    .gwp-main{padding:20px 14px 96px}
+    .gwp-detail{padding:18px 16px}
+    .gwp-cards{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+    .gwp-card{padding:14px 15px}
+    .gwp-card .v{font-size:20px}
+    .gwp-item{padding:13px 14px;gap:10px}
+    .gwp-actions .gwp-btn,.gwp-actions .gwp-btn-ghost{flex:1;min-width:0}
+    .gwp-gallery{grid-template-columns:repeat(auto-fill,minmax(88px,1fr))}
+    h2.gwp-h{font-size:19px}
+  }
   .gwp-back{display:inline-flex;align-items:center;gap:7px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;margin-bottom:16px}
   .gwp-back:hover{color:var(--brand)}
   .gwp-detail{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;max-width:760px}
@@ -1225,6 +1352,7 @@ function portalShellPage(): string {
   function renderHome(){
     api('/api/portal/dashboard').then(function(d){
       var cds=d.cards||{};var cards='';
+      if(cds.active_projects!==null&&cds.active_projects!==undefined)cards+='<div class="gwp-card" data-goto="projects" style="cursor:pointer"><div class="k">Active Projects</div><div class="v">'+cds.active_projects+'</div></div>';
       if(cds.estimates_awaiting!==null&&cds.estimates_awaiting!==undefined)cards+='<div class="gwp-card"><div class="k">Estimates Awaiting Review</div><div class="v">'+cds.estimates_awaiting+'</div></div>';
       if(cds.open_balance!==null&&cds.open_balance!==undefined)cards+='<div class="gwp-card"><div class="k">Open Balance</div><div class="v">'+money(cds.open_balance)+'</div></div>';
       if(cds.overdue_balance)cards+='<div class="gwp-card"><div class="k">Overdue</div><div class="v warn">'+money(cds.overdue_balance)+'</div></div>';
@@ -1237,6 +1365,7 @@ function portalShellPage(): string {
         '<div class="gwp-cards">'+cards+'</div>'+
         (props?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:16px">Your Properties</h2><p class="gwp-hs">Service locations on your account.</p><div class="gwp-props">'+props+'</div></section>':''));
       bindNav();
+      Array.prototype.forEach.call(document.querySelectorAll('[data-goto]'),function(el){el.onclick=function(){VIEW=el.getAttribute('data-goto');history.replaceState(null,'','#'+VIEW);render()}});
     })
   }
   function renderAccount(){
@@ -1299,7 +1428,7 @@ function portalShellPage(): string {
       shell('<button class="gwp-back" id="est-back">&larr; Back to estimates</button>'+banner+
         '<div class="gwp-detail"><div class="gwp-detail-head"><div><h3>'+esc(r.title||'Estimate')+'</h3><div class="dnum">'+esc(r.est_number||'')+' &middot; '+fmtD(r.estimate_date||r.created_at)+(r.expiry_date?' &middot; Valid through '+fmtD(r.expiry_date):'')+'</div></div>'+stPill(r.status)+'</div>'+
         (r.scope_of_work?'<div class="gwp-note">'+esc(r.scope_of_work)+'</div>':'')+
-        (lineRows?'<table class="gwp-lines"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>'+lineRows+'</tbody></table>':'')+
+        (lineRows?'<div class="gwp-lines-wrap"><table class="gwp-lines"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>'+lineRows+'</tbody></table></div>':'')+
         '<div class="gwp-totals">'+
         (r.subtotal&&r.subtotal!==r.total?'<div><span>Subtotal</span><span>'+money(r.subtotal)+'</span></div>':'')+
         (r.discount_amt?'<div><span>Discount</span><span>-'+money(r.discount_amt)+'</span></div>':'')+
@@ -1372,7 +1501,7 @@ function portalShellPage(): string {
         (r.status==='paid'?'<div class="gwp-banner-ok">This invoice is paid in full. Thank you.</div>':'')+
         (r.status==='overdue'?'<div class="gwp-banner-warn">This invoice is past due. Balance: '+money(r.balance_due)+'</div>':'')+
         '<div class="gwp-detail"><div class="gwp-detail-head"><div><h3>'+esc(r.title||'Invoice')+'</h3><div class="dnum">'+esc(r.invoice_number||'')+(r.due_date?' &middot; Due '+fmtD(r.due_date):'')+'</div></div>'+stPill(r.status)+'</div>'+
-        (lineRows?'<table class="gwp-lines"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>'+lineRows+'</tbody></table>':'')+
+        (lineRows?'<div class="gwp-lines-wrap"><table class="gwp-lines"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>'+lineRows+'</tbody></table></div>':'')+
         '<div class="gwp-totals">'+
         (r.subtotal&&r.subtotal!==r.total?'<div><span>Subtotal</span><span>'+money(r.subtotal)+'</span></div>':'')+
         (r.discount_amount?'<div><span>Discount</span><span>-'+money(r.discount_amount)+'</span></div>':'')+
