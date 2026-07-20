@@ -130,62 +130,118 @@ const gwPortal = {
 window.gwPortal = gwPortal;
 
 // ══════════════════════════════════════════════════════════════════════════════
-// INTERNAL: Portal Admin View
-// Accessible at show('portalAdmin') — manage access per client
+// INTERNAL: Portal Admin View (D1-backed)
+// Accessible at show('portalAdmin') — invite portal users, manage roles,
+// property scope, disable/reactivate, and review the portal audit trail.
+// Data lives in D1 via /api/admin/portal/* (see src/portal.tsx).
 // ══════════════════════════════════════════════════════════════════════════════
-function portalAdmin() {
+
+const GW_PORTAL_ROLES = {
+  account_admin: { label: 'Account Admin', desc: 'Full access: estimates, approvals, billing, payments, documents, contacts' },
+  billing:       { label: 'Billing',       desc: 'Invoices, payments, payment methods, autopay, documents' },
+  project:       { label: 'Project',       desc: 'Projects, schedules, daily updates, documents. No financials' },
+  approver:      { label: 'Approver',      desc: 'View and approve estimates, view projects and documents' },
+  read_only:     { label: 'Read Only',     desc: 'View everything permitted, take no actions' },
+};
+
+async function _portalApi(url, opts = {}) {
+  opts.credentials = 'same-origin';
+  if (opts.body && typeof opts.body !== 'string') {
+    opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    opts.body = JSON.stringify(opts.body);
+  }
+  const r = await fetch(url, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+
+function _portalStatusPill(u) {
+  if (u.status === 'active')   return '<span class="portal-pill portal-pill--green">Active</span>';
+  if (u.status === 'disabled') return '<span class="portal-pill portal-pill--red">Disabled</span>';
+  const expired = u.invite_expires_at && new Date(u.invite_expires_at.replace(' ', 'T') + 'Z').getTime() < Date.now();
+  return expired
+    ? '<span class="portal-pill portal-pill--amber">Invite Expired</span>'
+    : '<span class="portal-pill portal-pill--blue">Invited</span>';
+}
+
+async function portalAdmin() {
   const view = document.getElementById('view');
   if (!view) return;
 
-  const canManage = window.gwCan ? gwCan('can_manage_portal_access') : false;
-  const allAccess = gwPortal.list();
-  const active    = allAccess.filter(r => r.active);
-  const inactive  = allAccess.filter(r => !r.active);
-  const actions   = _portalActionsLoad().slice(0, 20);
+  view.innerHTML = '<div class="gwp-shell gwp-shell--narrow" style="padding-top:40px;text-align:center;color:var(--gw-text-muted,#9aa5a0);font-size:13px">Loading portal users...</div>';
 
-  const typeBadge = t => `<span class="portal-type-chip">${(window.GW_PORTAL_RECORD_TYPES && GW_PORTAL_RECORD_TYPES[t]?.label) || t}</span>`;
+  let users = [], audit = [];
+  try {
+    const [uRes, aRes] = await Promise.all([
+      _portalApi('/api/admin/portal/users'),
+      _portalApi('/api/admin/portal/audit'),
+    ]);
+    users = uRes.data || [];
+    audit = (aRes.data || []).slice(0, 20);
+  } catch (e) {
+    view.innerHTML = '<div class="gwp-shell gwp-shell--narrow" style="padding-top:40px"><div class="gwp-empty"><div class="gwp-empty-title">Could not load portal data</div><div class="gwp-empty-sub">' + _escH(e.message) + '</div></div></div>';
+    return;
+  }
 
-  function accessRow(r) {
-    const link = gwPortal.portalLink(r.clientId);
+  const activeUsers   = users.filter(u => u.status === 'active');
+  const invitedUsers  = users.filter(u => u.status === 'invited');
+  const disabledUsers = users.filter(u => u.status === 'disabled');
+
+  const fmtEvent = t => (t || '').replace(/^portal_/, '').replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+
+  function userRow(u) {
+    const mems = (u.memberships || []).map(m =>
+      `<span class="portal-type-chip">${_escH(m.client_name)} &middot; ${_escH((GW_PORTAL_ROLES[m.role] || {}).label || m.role)}${m.all_properties ? '' : ' &middot; limited properties'}</span>`
+    ).join('');
+    const lastLogin = u.last_login_at ? _relTime(u.last_login_at.replace(' ', 'T') + 'Z') : 'Never';
+    const actions = [];
+    if (u.status !== 'disabled' && u.status !== 'active') {
+      actions.push(`<button class="secondary-btn" onclick="_portalResend('${_escH(u.id)}')">Resend Invite</button>`);
+    }
+    if (u.status === 'disabled') {
+      actions.push(`<button class="secondary-btn" onclick="_portalReactivate('${_escH(u.id)}')">Reactivate</button>`);
+    } else {
+      actions.push(`<button class="secondary-btn portal-revoke-btn" onclick="_portalDisable('${_escH(u.id)}','${_escH(u.email)}')">Disable</button>`);
+    }
     return `
       <div class="portal-row">
         <div class="portal-row-left">
-          <div class="portal-client-name">${_escH(r.clientName)}</div>
-          <div class="portal-client-email">${_escH(r.clientEmail)}</div>
-          <div class="portal-row-meta">
-            Granted by ${_escH(r.grantedBy)} &middot; ${_relTime(r.grantedAt)}
-          </div>
-          <div class="portal-type-chips">${(r.visibleTypes||[]).map(typeBadge).join('')}</div>
+          <div class="portal-client-name">${_escH(u.name)} ${_portalStatusPill(u)}</div>
+          <div class="portal-client-email">${_escH(u.email)}</div>
+          <div class="portal-row-meta">Last login: ${_escH(lastLogin)}${u.phone ? ' &middot; ' + _escH(u.phone) : ''}</div>
+          <div class="portal-type-chips">${mems}</div>
         </div>
-        <div class="portal-row-right">
-          ${r.active ? `
-            <button class="secondary-btn portal-link-btn" onclick="_portalCopyLink('${r.token}')">Copy Link</button>
-            <button class="secondary-btn" onclick="_portalRegenToken('${r.clientId}')">Regenerate Token</button>
-            ${canManage ? `<button class="secondary-btn portal-revoke-btn" onclick="_portalRevoke('${r.clientId}')">Revoke Access</button>` : ''}
-          ` : `<span class="portal-revoked-label">Access Revoked</span>`}
-        </div>
+        <div class="portal-row-right">${actions.join('')}</div>
       </div>`;
   }
 
-  function actionRow(a) {
+  function auditRow(a) {
     return `
       <div class="portal-action-row">
-        <span class="portal-action-label">${_escH(a.action)}</span>
-        <span class="portal-action-client">${_escH(a.clientName||a.clientId||'')}</span>
-        <span class="portal-action-entity">${_escH(a.entityLabel||a.entityId||'')}</span>
-        <span class="portal-action-time">${_relTime(a.ts)}</span>
+        <span class="portal-action-label">${_escH(fmtEvent(a.event_type))}</span>
+        <span class="portal-action-client">${_escH(a.actor_type || '')}</span>
+        <span class="portal-action-entity">${_escH(a.entity_label || a.entity_id || '')}</span>
+        <span class="portal-action-time">${_relTime((a.created_at || '').replace(' ', 'T') + 'Z')}</span>
       </div>`;
   }
 
   view.innerHTML = `
+    <style>
+      .portal-pill{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 9px;margin-left:8px;vertical-align:middle}
+      .portal-pill--green{background:rgba(61,169,116,.15);color:#3DA974}
+      .portal-pill--blue{background:rgba(77,138,186,.15);color:#5B9BD1}
+      .portal-pill--amber{background:rgba(216,158,58,.15);color:#D89E3A}
+      .portal-pill--red{background:rgba(200,90,80,.15);color:#D07A72}
+    </style>
     <div class="gwp-shell gwp-shell--narrow" style="padding-top:20px">
       <header class="gwp-header" style="margin-bottom:16px">
         <div class="gwp-header-left">
-          <h1 class="gwp-title">Client Portal Access</h1>
-          <span class="gwp-subtitle">Control which clients have portal access and what they can see.</span>
+          <h1 class="gwp-title">Client Portal</h1>
+          <span class="gwp-subtitle">Invite clients to their secure portal and control what each person can see and do.</span>
         </div>
         <div class="gwp-header-actions">
-          ${canManage ? `<button class="gwp-btn-primary" onclick="_portalGrantModal()">+ Grant Portal Access</button>` : ''}
+          <button class="gwp-btn-primary" onclick="_portalInviteModal()">+ Invite Portal User</button>
         </div>
       </header>
 
@@ -193,146 +249,209 @@ function portalAdmin() {
         <div class="gwp-kpi-card gwp-kpi-card--green">
           <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg></div>
           <div class="gwp-kpi-body">
-            <div class="gwp-kpi-value">${active.length}</div>
-            <div class="gwp-kpi-label">Active Access</div>
-            <div class="gwp-kpi-sub">clients with live portal links</div>
-          </div>
-        </div>
-        <div class="gwp-kpi-card ${inactive.length > 0 ? 'gwp-kpi-card--red' : 'gwp-kpi-card--muted'}">
-          <div class="gwp-kpi-icon ${inactive.length > 0 ? 'gwp-kpi-icon--red' : 'gwp-kpi-icon--muted'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="23" y2="14"/><line x1="23" y1="8" x2="17" y2="14"/></svg></div>
-          <div class="gwp-kpi-body">
-            <div class="gwp-kpi-value">${inactive.length}</div>
-            <div class="gwp-kpi-label">Revoked</div>
-            <div class="gwp-kpi-sub">access removed</div>
+            <div class="gwp-kpi-value">${activeUsers.length}</div>
+            <div class="gwp-kpi-label">Active Users</div>
+            <div class="gwp-kpi-sub">signed up and able to log in</div>
           </div>
         </div>
         <div class="gwp-kpi-card gwp-kpi-card--blue">
-          <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
           <div class="gwp-kpi-body">
-            <div class="gwp-kpi-value">${actions.length}</div>
-            <div class="gwp-kpi-label">Recent Actions</div>
-            <div class="gwp-kpi-sub">last 20 portal events</div>
+            <div class="gwp-kpi-value">${invitedUsers.length}</div>
+            <div class="gwp-kpi-label">Pending Invites</div>
+            <div class="gwp-kpi-sub">waiting on activation</div>
+          </div>
+        </div>
+        <div class="gwp-kpi-card ${disabledUsers.length ? 'gwp-kpi-card--red' : 'gwp-kpi-card--muted'}">
+          <div class="gwp-kpi-icon ${disabledUsers.length ? 'gwp-kpi-icon--red' : 'gwp-kpi-icon--muted'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="23" y2="14"/><line x1="23" y1="8" x2="17" y2="14"/></svg></div>
+          <div class="gwp-kpi-body">
+            <div class="gwp-kpi-value">${disabledUsers.length}</div>
+            <div class="gwp-kpi-label">Disabled</div>
+            <div class="gwp-kpi-sub">access removed</div>
           </div>
         </div>
       </div>
 
       <div class="gwp-banner">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="7" x2="8" y2="11"/><circle cx="8" cy="5" r=".5" fill="currentColor" stroke="none"/></svg>
-        Clients access the portal via a secure link. They can view estimates, invoices, and job status. No internal CRM data is exposed.
+        Portal users sign in with their own email and password at <strong style="margin:0 4px">/portal/login</strong>. Each user only sees the clients and properties you grant.
       </div>
 
       <div class="portal-section" style="margin-top:20px">
-        <div class="gwp-sect-label">Active Access (${active.length})</div>
-        ${active.length === 0 ? '<div class="gwp-empty" style="padding:28px 20px"><div class="gwp-empty-title">No active portal access</div><div class="gwp-empty-sub">No clients currently have portal access.' + (canManage ? '</div><div class="gwp-empty-actions"><button class="gwp-btn-primary" onclick="_portalGrantModal()">+ Grant Portal Access</button></div>' : '</div>') + '</div>' : active.map(accessRow).join('')}
+        <div class="gwp-sect-label">Portal Users (${users.length})</div>
+        ${users.length === 0
+          ? '<div class="gwp-empty" style="padding:28px 20px"><div class="gwp-empty-title">No portal users yet</div><div class="gwp-empty-sub">Invite a client contact to give them secure portal access.</div><div class="gwp-empty-actions"><button class="gwp-btn-primary" onclick="_portalInviteModal()">+ Invite Portal User</button></div></div>'
+          : users.map(userRow).join('')}
       </div>
-
-      ${inactive.length > 0 ? `
-      <div class="portal-section" style="margin-top:24px">
-        <div class="gwp-sect-label">Revoked Access (${inactive.length})</div>
-        ${inactive.map(accessRow).join('')}
-      </div>` : ''}
 
       <div class="portal-section" style="margin-top:28px">
         <div class="gwp-sect-label">Recent Portal Activity</div>
-        ${actions.length === 0
-          ? '<div class="gwp-empty" style="padding:28px 20px"><div class="gwp-empty-title">No activity yet</div><div class="gwp-empty-sub">No portal actions recorded yet.</div></div>'
-          : `<div class="portal-action-header"><span>Action</span><span>Client</span><span>Record</span><span>Date</span></div>` + actions.map(actionRow).join('')}
+        ${audit.length === 0
+          ? '<div class="gwp-empty" style="padding:28px 20px"><div class="gwp-empty-title">No activity yet</div><div class="gwp-empty-sub">Logins, invites, and access changes will appear here.</div></div>'
+          : '<div class="portal-action-header"><span>Event</span><span>Actor</span><span>Detail</span><span>Date</span></div>' + audit.map(auditRow).join('')}
       </div>
     </div>`;
 }
 
 window.portalAdmin = portalAdmin;
 
-// ── Internal helpers wired to HTML ────────────────────────────────────────────
-window._portalCopyLink = function(token) {
-  const url = window.location.origin + '/portal?token=' + token;
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => { showToast && showToast('Portal link copied to clipboard.', 'success'); });
-  } else {
-    showToast && showToast(url, 'info');
-  }
+// ── Admin actions ─────────────────────────────────────────────────────────────
+window._portalResend = async function(id) {
+  try {
+    const d = await _portalApi('/api/admin/portal/users/' + id + '/resend', { method: 'POST' });
+    showToast && showToast(d.email_sent ? 'Invitation email sent.' : 'New invite link created (email not sent — copy it from the invite dialog).', 'success');
+    portalAdmin();
+  } catch (e) { showToast && showToast(e.message, 'error'); }
 };
 
-window._portalRevoke = function(clientId) {
-  if (!confirm('Revoke portal access for this client? Their link will stop working immediately.')) return;
-  gwPortal.revoke(clientId);
-  showToast && showToast('Portal access revoked.', 'success');
-  portalAdmin();
+window._portalDisable = async function(id, email) {
+  if (!confirm('Disable portal access for ' + email + '? They will be signed out immediately.')) return;
+  try {
+    await _portalApi('/api/admin/portal/users/' + id + '/disable', { method: 'POST' });
+    showToast && showToast('Portal access disabled.', 'success');
+    portalAdmin();
+  } catch (e) { showToast && showToast(e.message, 'error'); }
 };
 
-window._portalRegenToken = function(clientId) {
-  if (!confirm('Regenerate token? The old portal link will stop working.')) return;
-  const token = gwPortal.regenerateToken(clientId);
-  if (token) { showToast && showToast('Token regenerated. Share the new link with your client.', 'success'); portalAdmin(); }
+window._portalReactivate = async function(id) {
+  try {
+    const d = await _portalApi('/api/admin/portal/users/' + id + '/reactivate', { method: 'POST' });
+    showToast && showToast(d.status === 'active' ? 'User reactivated.' : 'User set back to invited — resend the invite so they can activate.', 'success');
+    portalAdmin();
+  } catch (e) { showToast && showToast(e.message, 'error'); }
 };
 
-window._portalGrantModal = function() {
-  // Build client list from state
-  const state = window._avalonState || {};
-  const clients = (state.clients || []).filter(c => c && c.name);
-  const types = window.GW_PORTAL_RECORD_TYPES || {};
-  const clientOpts = clients.length
-    ? clients.map(c => `<option value="${_escH(c.id)}" data-name="${_escH(c.name)}" data-email="${_escH(c.email||'')}">${_escH(c.name)}</option>`).join('')
-    : '<option value="">— No clients found —</option>';
-  const typeCheckboxes = Object.entries(types).map(([k,v]) =>
-    `<label class="portal-modal-type-row"><input type="checkbox" value="${k}" checked> ${_escH(v.label)}</label>`
+// ── Invite modal ──────────────────────────────────────────────────────────────
+window._portalInviteModal = async function() {
+  let clients = [];
+  try {
+    const d = await _portalApi('/api/clients');
+    clients = (d.data || []).filter(c => c && c.name);
+  } catch (_) {}
+
+  const clientOpts = clients.map(c =>
+    `<option value="${_escH(c.id)}" data-email="${_escH(c.email || '')}">${_escH(c.name)}</option>`
+  ).join('');
+  const roleOpts = Object.entries(GW_PORTAL_ROLES).map(([k, v], i) =>
+    `<option value="${k}"${k === 'account_admin' ? ' selected' : ''}>${_escH(v.label)}</option>`
   ).join('');
 
   let overlay = document.getElementById('gw-portal-overlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id = 'gw-portal-overlay'; overlay.className = 'gw-modal-overlay'; document.body.appendChild(overlay); }
   overlay.innerHTML = `
-    <div class="gw-modal" style="max-width:480px">
+    <div class="gw-modal" style="max-width:500px">
       <div class="gw-modal-header">
-        <h3 class="gw-modal-title">Grant Portal Access</h3>
+        <h3 class="gw-modal-title">Invite Portal User</h3>
         <button class="gw-modal-close" onclick="_portalCloseModal()">&#x2715;</button>
       </div>
       <div class="gw-modal-body">
         <div class="auto-modal-field">
-          <label>Client</label>
-          ${clients.length
-            ? `<select id="portal-m-client">${clientOpts}</select>`
-            : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                <input id="portal-m-cid"   placeholder="Client ID" style="padding:8px;border:1px solid var(--gw-line);border-radius:6px;font-size:13px">
-                <input id="portal-m-cname" placeholder="Client Name" style="padding:8px;border:1px solid var(--gw-line);border-radius:6px;font-size:13px">
-               </div>`}
+          <label>Client Account</label>
+          <select id="portal-m-client">${clientOpts || '<option value="">No clients found</option>'}</select>
         </div>
         <div class="auto-modal-field">
-          <label>Client Email (for link delivery)</label>
+          <label>Contact Name</label>
+          <input id="portal-m-name" placeholder="Jane Smith">
+        </div>
+        <div class="auto-modal-field">
+          <label>Email (their portal login)</label>
           <input id="portal-m-email" type="email" placeholder="client@example.com">
         </div>
         <div class="auto-modal-field">
-          <label>Visible Record Types</label>
-          <div class="auto-modal-actions-list">${typeCheckboxes}</div>
+          <label>Phone (optional)</label>
+          <input id="portal-m-phone" placeholder="(555) 555-5555">
         </div>
+        <div class="auto-modal-field">
+          <label>Role</label>
+          <select id="portal-m-role">${roleOpts}</select>
+          <div id="portal-m-roledesc" style="font-size:11.5px;color:var(--gw-text-muted,#9aa5a0);margin-top:5px">${_escH(GW_PORTAL_ROLES.account_admin.desc)}</div>
+        </div>
+        <div class="auto-modal-field">
+          <label>Property Access</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="portal-m-allprops" checked> All properties on this account</label>
+          <div id="portal-m-props" style="display:none;margin-top:8px;max-height:150px;overflow:auto;border:1px solid var(--gw-line,#2e4040);border-radius:8px;padding:8px"></div>
+        </div>
+        <div id="portal-m-result" style="display:none;margin-top:10px;font-size:12.5px;padding:10px 12px;border-radius:8px;background:rgba(61,169,116,.1);color:#3DA974;word-break:break-all"></div>
       </div>
       <div class="gw-modal-footer">
         <button class="secondary-btn" onclick="_portalCloseModal()">Cancel</button>
-        <button class="primary-btn" id="portal-m-save">Grant Access</button>
+        <button class="primary-btn" id="portal-m-save">Send Invitation</button>
       </div>
     </div>`;
   overlay.style.display = 'flex';
   overlay.onclick = e => { if (e.target === overlay) _portalCloseModal(); };
 
-  document.getElementById('portal-m-save').onclick = () => {
-    let clientId, clientName, clientEmail;
-    if (clients.length) {
-      const sel = document.getElementById('portal-m-client');
-      const opt = sel?.selectedOptions[0];
-      clientId   = sel?.value;
-      clientName = opt?.dataset.name || clientId;
-      clientEmail = opt?.dataset.email || document.getElementById('portal-m-email')?.value?.trim() || '';
-    } else {
-      clientId   = document.getElementById('portal-m-cid')?.value?.trim();
-      clientName = document.getElementById('portal-m-cname')?.value?.trim();
-      clientEmail= document.getElementById('portal-m-email')?.value?.trim() || '';
+  const clientSel = document.getElementById('portal-m-client');
+  const emailInp  = document.getElementById('portal-m-email');
+  const roleSel   = document.getElementById('portal-m-role');
+  const allProps  = document.getElementById('portal-m-allprops');
+  const propsBox  = document.getElementById('portal-m-props');
+
+  function prefillEmail() {
+    const opt = clientSel.selectedOptions[0];
+    if (opt && opt.dataset.email && !emailInp.value) emailInp.value = opt.dataset.email;
+  }
+  prefillEmail();
+  clientSel.onchange = () => { prefillEmail(); if (!allProps.checked) loadProps(); };
+  roleSel.onchange = () => { document.getElementById('portal-m-roledesc').textContent = (GW_PORTAL_ROLES[roleSel.value] || {}).desc || ''; };
+
+  async function loadProps() {
+    propsBox.innerHTML = '<div style="font-size:12px;color:var(--gw-text-muted,#9aa5a0)">Loading properties...</div>';
+    try {
+      const d = await _portalApi('/api/admin/portal/clients/' + clientSel.value + '/properties');
+      const rows = d.data || [];
+      propsBox.innerHTML = rows.length
+        ? rows.map(p => {
+            const addr = [p.street, p.city, p.state].filter(Boolean).join(', ');
+            return `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;cursor:pointer"><input type="checkbox" class="portal-m-prop" value="${_escH(p.id)}" checked> ${_escH(p.label || addr || p.id)}${addr && p.label ? ' <span style="color:var(--gw-text-muted,#9aa5a0)">' + _escH(addr) + '</span>' : ''}</label>`;
+          }).join('')
+        : '<div style="font-size:12px;color:var(--gw-text-muted,#9aa5a0)">No properties on this client.</div>';
+    } catch (e) { propsBox.innerHTML = '<div style="font-size:12px;color:#D07A72">' + _escH(e.message) + '</div>'; }
+  }
+  allProps.onchange = () => {
+    propsBox.style.display = allProps.checked ? 'none' : 'block';
+    if (!allProps.checked) loadProps();
+  };
+
+  document.getElementById('portal-m-save').onclick = async () => {
+    const btn = document.getElementById('portal-m-save');
+    const body = {
+      client_id: clientSel.value,
+      name: document.getElementById('portal-m-name').value.trim(),
+      email: emailInp.value.trim(),
+      phone: document.getElementById('portal-m-phone').value.trim(),
+      role: roleSel.value,
+      all_properties: allProps.checked,
+    };
+    if (!allProps.checked) {
+      body.property_ids = [...document.querySelectorAll('.portal-m-prop:checked')].map(cb => cb.value);
     }
-    if (!clientId) { showToast && showToast('Please select or enter a client.', 'error'); return; }
-    const visibleTypes = [...document.querySelectorAll('.portal-modal-type-row input:checked')].map(cb => cb.value);
-    const record = gwPortal.grant({ clientId, clientName, clientEmail, visibleTypes });
-    if (record) {
-      _portalCloseModal();
-      showToast && showToast('Portal access granted. Copy the link to share.', 'success');
-      portalAdmin();
+    if (!body.client_id || !body.name || !body.email) {
+      showToast && showToast('Client, name, and email are required.', 'error');
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Sending...';
+    try {
+      const d = await _portalApi('/api/admin/portal/users', { method: 'POST', body });
+      const res = document.getElementById('portal-m-result');
+      if (d.email_sent) {
+        showToast && showToast('Invitation sent to ' + body.email + '.', 'success');
+        _portalCloseModal();
+        portalAdmin();
+      } else if (d.invite_link) {
+        res.style.display = 'block';
+        res.innerHTML = 'Invite created but email delivery is not configured. Share this link directly:<br><strong>' + _escH(d.invite_link) + '</strong>';
+        btn.textContent = 'Done';
+        btn.disabled = false;
+        btn.onclick = () => { _portalCloseModal(); portalAdmin(); };
+      } else {
+        showToast && showToast('Access updated for existing user.', 'success');
+        _portalCloseModal();
+        portalAdmin();
+      }
+    } catch (e) {
+      showToast && showToast(e.message, 'error');
+      btn.disabled = false; btn.textContent = 'Send Invitation';
     }
   };
 };
