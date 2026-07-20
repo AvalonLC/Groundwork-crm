@@ -15933,6 +15933,12 @@ window._sbOpenVisitModal = async function(woId) {
             </div>
             <div id="sbm-checklist">${checklistHtml||'<p class="sb-empty-note">No items. Add checklist items above.</p>'}</div>
           </section>
+
+          <!-- Client Portal Updates -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Client Portal Updates</h3>
+            <div id="gw-wo-portal-panel"><p class="sb-empty-note">Loading updates…</p></div>
+          </section>
         </div>
 
         <!-- Right Col -->
@@ -16104,6 +16110,14 @@ window._sbOpenVisitModal = async function(woId) {
   // Store current WO for handlers
   window._sbCurrentWO = JSON.parse(JSON.stringify(wo));
   window._sbCurrentWOId = wo.id;
+
+  // Mount Client Portal Updates panel (daily updates + photo publish)
+  if (typeof window._gwPortalUpdatesPanel === 'function') {
+    window._gwPortalUpdatesPanel(wo.id, document.getElementById('gw-wo-portal-panel'));
+  } else {
+    const _pp = document.getElementById('gw-wo-portal-panel');
+    if (_pp) _pp.innerHTML = '<p class="sb-empty-note">Portal module not loaded.</p>';
+  }
 };
 
 window._sbCloseModal = function() {
@@ -17328,6 +17342,10 @@ function workOrderDetail(id) {
       <div id="wo-approval-panel-${id}"></div>
     </section>
     <section class="rp-section">
+      <div class="rp-section-head"><span class="rp-section-title">Client Portal Updates</span></div>
+      <div id="wo-portal-panel-${id}"><p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">Loading updates…</p></div>
+    </section>
+    <section class="rp-section">
       <div class="rp-section-head"><span class="rp-section-title">Timeline</span></div>
       ${tlHtml || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No activity yet.</p>'}
     </section>`;
@@ -17351,6 +17369,12 @@ function workOrderDetail(id) {
   if (typeof window.gwApproval === 'object') {
     const apEl = document.getElementById(`wo-approval-panel-${id}`);
     if (apEl) window.gwApproval.renderPanel(apEl, 'work_order', id, _p6WONum(wo) + (wo.clientName ? ` — ${wo.clientName}` : ''));
+  }
+
+  // Mount client portal updates panel
+  if (typeof window._gwPortalUpdatesPanel === 'function') {
+    const ppEl = document.getElementById(`wo-portal-panel-${id}`);
+    if (ppEl) window._gwPortalUpdatesPanel(id, ppEl);
   }
 }
 window.workOrderDetail = workOrderDetail;

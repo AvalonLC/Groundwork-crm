@@ -16,6 +16,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import mig0041 from '../migrations/0041_properties.sql?raw'
 import mig0042 from '../migrations/0042_portal_identity.sql?raw'
+import mig0043 from '../migrations/0043_project_updates.sql?raw'
 
 type Env = { Bindings: { DB: D1Database; MEDIA: R2Bucket; SENDGRID_API_KEY?: string } }
 
@@ -26,10 +27,10 @@ let _portalSchemaOk = false
 async function ensurePortalSchema(db: D1Database): Promise<void> {
   if (_portalSchemaOk) return
   try {
-    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v2' LIMIT 1").first<any>()
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v3' LIMIT 1").first<any>()
     if (flag) { _portalSchemaOk = true; return }
   } catch (_) {}
-  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042]]
+  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043]]
   for (const [name, sql] of migs) {
     // Strip inline "--" comments too: 0042 has comments containing ';' which
     // would otherwise break statement splitting (no '--' inside literals here).
@@ -49,7 +50,7 @@ async function ensurePortalSchema(db: D1Database): Promise<void> {
     } catch (_) {}
   }
   try {
-    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v3', ?, datetime('now'))").bind(new Date().toISOString()).run()
   } catch (_) {}
   _portalSchemaOk = true
 }
@@ -589,6 +590,183 @@ export function registerPortal(app: Hono<any>, deps: {
     return c.json({ ok: true, data: { proposals } })
   })
 
+  // ══ PHASE 1C: PROJECTS — work orders, daily updates, R2 photos ════════════
+
+  const WO_PORTAL_STATUSES = ['scheduled', 'in_progress', 'started', 'paused', 'completed', 'done']
+  const woPhase = (st: string) => (['completed', 'done'].includes(st) ? 'completed' : ['in_progress', 'started', 'paused'].includes(st) ? 'in_progress' : 'scheduled')
+
+  // GET /api/portal/projects — visible work orders for the account
+  app.get('/api/portal/projects', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_projects')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const rows = ((await db.prepare(
+      `SELECT id, wo_number, title, type, status, scheduled_date, scheduled_time, scheduled_end_time,
+              property_addr, client_id, property_id, created_at
+       FROM work_orders
+       WHERE company_id=? AND client_id IN (${cin}) AND portal_visible=1
+         AND status IN (${WO_PORTAL_STATUSES.map(() => '?').join(',')})
+       ORDER BY CASE WHEN status IN ('completed','done') THEN 1 ELSE 0 END, scheduled_date DESC LIMIT 100`
+    ).bind(s.companyId, ...s.clientIds, ...WO_PORTAL_STATUSES).all()).results as any[] || []).filter(r => propOk(s, r))
+    // Latest update snippet + photo count per project
+    for (const r of rows) {
+      r.phase = woPhase(r.status)
+      const u: any = await db.prepare(`SELECT update_date, title, body FROM project_updates
+        WHERE work_order_id=? AND status='published' ORDER BY update_date DESC, created_at DESC LIMIT 1`).bind(r.id).first()
+      r.latest_update = u || null
+      const m: any = await db.prepare(`SELECT COUNT(*) n FROM project_media WHERE work_order_id=? AND visibility='client' AND kind='photo'`).bind(r.id).first()
+      r.photo_count = m?.n || 0
+    }
+    return c.json({ ok: true, data: rows })
+  })
+
+  // GET /api/portal/projects/:id — detail with published updates + photos
+  app.get('/api/portal/projects/:id', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_projects')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const row: any = await db.prepare(
+      `SELECT id, wo_number, title, type, status, scheduled_date, scheduled_time, scheduled_end_time,
+              duration_hours, property_addr, completion_notes, client_id, property_id, created_at
+       FROM work_orders WHERE id=? AND company_id=? AND client_id IN (${cin}) AND portal_visible=1 LIMIT 1`
+    ).bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
+    if (!row || !propOk(s, row)) return c.json({ error: 'Not found' }, 404)
+    row.phase = woPhase(row.status)
+    const updates = (await db.prepare(
+      `SELECT id, update_date, title, body, published_at FROM project_updates
+       WHERE work_order_id=? AND status='published' ORDER BY update_date DESC, created_at DESC LIMIT 60`
+    ).bind(row.id).all()).results as any[] || []
+    const media = (await db.prepare(
+      `SELECT id, update_id, file_name, content_type, kind, caption, created_at FROM project_media
+       WHERE work_order_id=? AND visibility='client' ORDER BY created_at DESC LIMIT 300`
+    ).bind(row.id).all()).results as any[] || []
+    for (const u of updates) u.media = media.filter(m => m.update_id === u.id)
+    const unattached = media.filter(m => !m.update_id)
+    return c.json({ ok: true, data: { project: row, updates, photos: unattached } })
+  })
+
+  // GET /api/portal/media/:id — stream an R2 object (portal-scoped)
+  app.get('/api/portal/media/:id', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const m: any = await db.prepare(
+      `SELECT r2_key, content_type, file_name, client_id, company_id, visibility FROM project_media WHERE id=? LIMIT 1`
+    ).bind(c.req.param('id')).first()
+    if (!m || m.company_id !== s.companyId || m.visibility !== 'client' || !s.clientIds.includes(m.client_id)) {
+      return c.json({ error: 'Not found' }, 404)
+    }
+    const obj = await (c.env.MEDIA as R2Bucket).get(m.r2_key)
+    if (!obj) return c.json({ error: 'Not found' }, 404)
+    return new Response(obj.body as any, {
+      headers: {
+        'Content-Type': m.content_type || 'application/octet-stream',
+        'Cache-Control': 'private, max-age=3600',
+        'Content-Disposition': `inline; filename="${(m.file_name || 'file').replace(/[^\w.\- ]/g, '')}"`
+      }
+    })
+  })
+
+  // ── Staff: media upload + daily updates ────────────────────────────────────
+
+  // POST /api/admin/portal/projects/:woId/media — multipart photo upload to R2
+  app.post('/api/admin/portal/projects/:woId/media', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const companyId = c.var.companyId as string
+    const wo: any = await db.prepare(`SELECT id, client_id FROM work_orders WHERE id=? AND company_id=?`).bind(c.req.param('woId'), companyId).first()
+    if (!wo) return c.json({ error: 'Work order not found' }, 404)
+    const form = await c.req.formData().catch(() => null)
+    if (!form) return c.json({ error: 'multipart/form-data required' }, 400)
+    const file = form.get('file') as unknown as File | null
+    if (!file || typeof (file as any).arrayBuffer !== 'function') return c.json({ error: 'file field required' }, 400)
+    const MAX = 15 * 1024 * 1024
+    if ((file as any).size > MAX) return c.json({ error: 'File too large (max 15 MB)' }, 413)
+    const ct = (file as any).type || 'application/octet-stream'
+    const kind = ct.startsWith('image/') ? 'photo' : 'document'
+    const caption = String(form.get('caption') || '').slice(0, 300)
+    const updateId = String(form.get('update_id') || '')
+    const id = 'med_' + pUid()
+    const safeName = String((file as any).name || 'upload').replace(/[^\w.\- ]/g, '_').slice(0, 120)
+    const key = `projects/${companyId}/${wo.id}/${id}_${safeName}`
+    await (c.env.MEDIA as R2Bucket).put(key, await (file as any).arrayBuffer(), { httpMetadata: { contentType: ct } })
+    await db.prepare(`INSERT INTO project_media (id, company_id, work_order_id, update_id, client_id, r2_key, file_name, content_type, size_bytes, kind, caption, visibility, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'client',?)`)
+      .bind(id, companyId, wo.id, updateId, wo.client_id || '', key, safeName, ct, (file as any).size || 0, kind, caption, c.var.repId as string).run()
+    return c.json({ ok: true, id, file_name: safeName, kind })
+  })
+
+  // GET /api/admin/portal/media/:id — staff view of any media in their company
+  app.get('/api/admin/portal/media/:id', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const m: any = await db.prepare(`SELECT r2_key, content_type, file_name, company_id FROM project_media WHERE id=? LIMIT 1`).bind(c.req.param('id')).first()
+    if (!m || m.company_id !== (c.var.companyId as string)) return c.json({ error: 'Not found' }, 404)
+    const obj = await (c.env.MEDIA as R2Bucket).get(m.r2_key)
+    if (!obj) return c.json({ error: 'Not found' }, 404)
+    return new Response(obj.body as any, { headers: { 'Content-Type': m.content_type || 'application/octet-stream', 'Cache-Control': 'private, max-age=3600' } })
+  })
+
+  // DELETE /api/admin/portal/media/:id
+  app.delete('/api/admin/portal/media/:id', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const m: any = await db.prepare(`SELECT id, r2_key, company_id FROM project_media WHERE id=? LIMIT 1`).bind(c.req.param('id')).first()
+    if (!m || m.company_id !== (c.var.companyId as string)) return c.json({ error: 'Not found' }, 404)
+    await (c.env.MEDIA as R2Bucket).delete(m.r2_key).catch(() => {})
+    await db.prepare(`DELETE FROM project_media WHERE id=?`).bind(m.id).run()
+    return c.json({ ok: true })
+  })
+
+  // GET /api/admin/portal/projects/:woId/updates — staff list (all statuses)
+  app.get('/api/admin/portal/projects/:woId/updates', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const companyId = c.var.companyId as string
+    const rows = (await db.prepare(
+      `SELECT id, update_date, title, body, status, published_at, created_by, created_at FROM project_updates
+       WHERE work_order_id=? AND company_id=? ORDER BY update_date DESC, created_at DESC LIMIT 100`
+    ).bind(c.req.param('woId'), companyId).all()).results as any[] || []
+    for (const u of rows) {
+      u.media = (await db.prepare(`SELECT id, file_name, kind, caption FROM project_media WHERE update_id=?`).bind(u.id).all()).results || []
+    }
+    return c.json({ ok: true, data: rows })
+  })
+
+  // POST /api/admin/portal/projects/:woId/updates — publish a daily update
+  app.post('/api/admin/portal/projects/:woId/updates', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const companyId = c.var.companyId as string
+    const wo: any = await db.prepare(`SELECT id, client_id, property_id, title, wo_number FROM work_orders WHERE id=? AND company_id=?`).bind(c.req.param('woId'), companyId).first()
+    if (!wo) return c.json({ error: 'Work order not found' }, 404)
+    const b: any = await c.req.json().catch(() => ({}))
+    const body = String(b.body || '').trim().slice(0, 4000)
+    if (!body) return c.json({ error: 'Update text is required' }, 400)
+    const id = 'upd_' + pUid()
+    const updateDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.update_date || '')) ? b.update_date : new Date().toISOString().slice(0, 10)
+    await db.prepare(`INSERT INTO project_updates (id, company_id, work_order_id, client_id, property_id, update_date, title, body, status, published_at, created_by)
+      VALUES (?,?,?,?,?,?,?,?,'published',datetime('now'),?)`)
+      .bind(id, companyId, wo.id, wo.client_id || '', wo.property_id || '', updateDate, String(b.title || '').slice(0, 160), body, c.var.repId as string).run()
+    // Attach previously-uploaded media ids
+    if (Array.isArray(b.media_ids) && b.media_ids.length) {
+      for (const mid of b.media_ids.slice(0, 30)) {
+        await db.prepare(`UPDATE project_media SET update_id=? WHERE id=? AND company_id=? AND work_order_id=?`).bind(id, mid, companyId, wo.id).run()
+      }
+    }
+    await portalAudit(db, { companyId, actorType: 'staff', repId: c.var.repId as string, clientId: wo.client_id || '', eventType: 'portal_update_published', entityType: 'project_update', entityId: id, entityLabel: `${wo.wo_number || wo.id} ${updateDate}`, ip: clientIp(c) })
+    return c.json({ ok: true, id })
+  })
+
+  // DELETE /api/admin/portal/updates/:id
+  app.delete('/api/admin/portal/updates/:id', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const companyId = c.var.companyId as string
+    const u: any = await db.prepare(`SELECT id FROM project_updates WHERE id=? AND company_id=?`).bind(c.req.param('id'), companyId).first()
+    if (!u) return c.json({ error: 'Not found' }, 404)
+    await db.batch([
+      db.prepare(`UPDATE project_media SET update_id='' WHERE update_id=?`).bind(u.id),
+      db.prepare(`DELETE FROM project_updates WHERE id=?`).bind(u.id)
+    ])
+    return c.json({ ok: true })
+  })
+
   // ══ INTERNAL ADMIN APIS (staff auth) ══════════════════════════════════════
 
   // GET /api/admin/portal/users — all portal users for the company
@@ -964,6 +1142,21 @@ function portalShellPage(): string {
   .st-approved,.st-accepted,.st-paid{background:rgba(45,122,85,.12);color:var(--brand)}
   .st-declined,.st-overdue{background:rgba(180,66,58,.1);color:var(--danger)}
   .st-partial{background:rgba(216,158,58,.14);color:#9A6D1D}
+  .st-scheduled{background:rgba(77,138,186,.12);color:#3B72A0}
+  .st-in_progress{background:rgba(216,158,58,.14);color:#9A6D1D}
+  .st-completed{background:rgba(45,122,85,.12);color:var(--brand)}
+  .gwp-update{border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px;background:#fff}
+  .gwp-update .ud{font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--brand);margin-bottom:5px}
+  .gwp-update .ut{font-size:14.5px;font-weight:700;margin-bottom:5px}
+  .gwp-update .ub{font-size:13.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap}
+  .gwp-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px}
+  .gwp-gallery a{display:block;border-radius:9px;overflow:hidden;border:1px solid var(--line);aspect-ratio:1;background:var(--bg)}
+  .gwp-gallery img{width:100%;height:100%;object-fit:cover;display:block}
+  .gwp-lightbox{position:fixed;inset:0;background:rgba(15,23,20,.92);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out}
+  .gwp-lightbox img{max-width:100%;max-height:88vh;border-radius:10px}
+  .gwp-lightbox .cap{position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#fff;font-size:13px;padding:0 24px}
+  .gwp-proj-meta{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin-top:10px}
+  .gwp-proj-meta strong{color:var(--ink);font-weight:700}
   .gwp-back{display:inline-flex;align-items:center;gap:7px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;margin-bottom:16px}
   .gwp-back:hover{color:var(--brand)}
   .gwp-detail{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;max-width:760px}
@@ -1198,6 +1391,70 @@ function portalShellPage(): string {
     })
   }
 
+  // ── Projects ───────────────────────────────────────────────────────────
+  var phasePill=function(ph){var lbl={scheduled:'Scheduled',in_progress:'In Progress',completed:'Completed'}[ph]||ph;return '<span class="gwp-status st-'+esc(ph)+'">'+esc(lbl)+'</span>'};
+  function lightbox(src,cap){
+    var lb=document.createElement('div');lb.className='gwp-lightbox';
+    lb.innerHTML='<img src="'+esc(src)+'" alt="">'+(cap?'<div class="cap">'+esc(cap)+'</div>':'');
+    lb.onclick=function(){document.body.removeChild(lb)};
+    document.body.appendChild(lb);
+  }
+  function galleryHtml(media){
+    var photos=(media||[]).filter(function(m){return m.kind==='photo'});
+    if(!photos.length)return '';
+    return '<div class="gwp-gallery">'+photos.map(function(m){
+      return '<a href="/api/portal/media/'+esc(m.id)+'" data-photo="'+esc(m.id)+'" data-cap="'+esc(m.caption||'')+'"><img src="/api/portal/media/'+esc(m.id)+'" alt="'+esc(m.caption||m.file_name||'Project photo')+'" loading="lazy"></a>'}).join('')+'</div>';
+  }
+  function bindGallery(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-photo]'),function(a){
+      a.onclick=function(e){e.preventDefault();lightbox('/api/portal/media/'+a.getAttribute('data-photo'),a.getAttribute('data-cap'))}});
+  }
+  function renderProjects(){
+    if(!can('view_projects')){shell('<h2 class="gwp-h">Projects</h2><div class="gwp-empty">Your account does not include access to projects.</div>');bindNav();return}
+    api('/api/portal/projects').then(function(d){
+      var rows=d.data||[];
+      var active=rows.filter(function(r){return r.phase!=='completed'});
+      var done=rows.filter(function(r){return r.phase==='completed'});
+      function itemHtml(r){
+        var pl=propLabel(r.property_id)||r.property_addr||'';
+        var snip=r.latest_update?('Latest update '+fmtD(r.latest_update.update_date)+(r.latest_update.title?' — '+r.latest_update.title:'')):'No updates posted yet';
+        return '<div class="gwp-item" data-proj="'+esc(r.id)+'"><div><div class="it">'+esc(r.title||('Project '+(r.wo_number||'')))+'</div>'+
+          '<div class="is">'+esc(r.wo_number||'')+(pl?' &middot; '+esc(pl):'')+(r.scheduled_date?' &middot; '+fmtD(r.scheduled_date):'')+'</div>'+
+          '<div class="is" style="margin-top:3px">'+esc(snip)+(r.photo_count?' &middot; '+r.photo_count+' photo'+(r.photo_count===1?'':'s'):'')+'</div></div>'+
+          '<div class="ir"><div style="margin-top:5px">'+phasePill(r.phase)+'</div></div></div>'}
+      shell('<h2 class="gwp-h">Projects</h2><p class="gwp-hs">Track active work, schedules, and daily updates from your crew.</p>'+
+        (active.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">Active ('+active.length+')</h2><div style="height:10px"></div><div class="gwp-list">'+active.map(itemHtml).join('')+'</div></section>':'')+
+        (done.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">Completed</h2><div style="height:10px"></div><div class="gwp-list">'+done.map(itemHtml).join('')+'</div></section>':'')+
+        (!rows.length?'<div class="gwp-empty">No projects yet. When work is scheduled on your account, it will appear here with daily progress updates.</div>':''));
+      bindNav();
+      Array.prototype.forEach.call(document.querySelectorAll('[data-proj]'),function(el){el.onclick=function(){renderProjectDetail(el.getAttribute('data-proj'))}});
+    })
+  }
+  function renderProjectDetail(id){
+    api('/api/portal/projects/'+id).then(function(d){
+      if(d.error){renderProjects();return}
+      var p=d.data.project,updates=d.data.updates||[],photos=d.data.photos||[];
+      var pl=propLabel(p.property_id)||p.property_addr||'';
+      var meta='<div class="gwp-proj-meta">'+
+        (pl?'<span>Location: <strong>'+esc(pl)+'</strong></span>':'')+
+        (p.scheduled_date?'<span>Scheduled: <strong>'+fmtD(p.scheduled_date)+(p.scheduled_time?' at '+esc(p.scheduled_time):'')+'</strong></span>':'')+
+        (p.type?'<span>Type: <strong>'+esc(p.type)+'</strong></span>':'')+
+        '</div>';
+      var updHtml=updates.map(function(u){
+        return '<div class="gwp-update"><div class="ud">'+fmtD(u.update_date)+'</div>'+
+          (u.title?'<div class="ut">'+esc(u.title)+'</div>':'')+
+          '<div class="ub">'+esc(u.body)+'</div>'+galleryHtml(u.media)+'</div>'}).join('');
+      shell('<button class="gwp-back" id="proj-back">&larr; Back to projects</button>'+
+        (p.phase==='completed'?'<div class="gwp-banner-ok">This project is complete.'+(p.completion_notes?' '+esc(p.completion_notes):'')+'</div>':'')+
+        '<div class="gwp-detail"><div class="gwp-detail-head"><div><h3>'+esc(p.title||'Project')+'</h3><div class="dnum">'+esc(p.wo_number||'')+'</div></div>'+phasePill(p.phase)+'</div>'+meta+'</div>'+
+        '<section class="gwp-section"><h2 class="gwp-h" style="font-size:16px">Daily Updates</h2><p class="gwp-hs">Progress notes and photos posted by your crew.</p>'+
+        (updHtml||'<div class="gwp-empty">No updates posted yet. Check back once work begins.</div>')+'</section>'+
+        (photos.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:16px">Photo Gallery</h2><p class="gwp-hs">Additional project photos.</p>'+galleryHtml(photos)+'</section>':''));
+      bindNav();bindGallery();
+      document.getElementById('proj-back').onclick=function(){renderProjects()};
+    })
+  }
+
   // ── Documents ──────────────────────────────────────────────────────────
   function renderDocuments(){
     if(!can('view_documents')){shell('<h2 class="gwp-h">Documents</h2><div class="gwp-empty">Your account does not include access to documents.</div>');bindNav();return}
@@ -1220,7 +1477,8 @@ function portalShellPage(): string {
     if(VIEW==='estimates')return renderEstimates();
     if(VIEW==='billing')return renderBilling();
     if(VIEW==='documents')return renderDocuments();
-    shell(comingSoon('Projects','Track active work, schedules, and daily updates.'));bindNav();
+    if(VIEW==='projects')return renderProjects();
+    return renderHome();
   }
   function bindNav(){
     Array.prototype.forEach.call(document.querySelectorAll('[data-v]'),function(a){

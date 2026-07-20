@@ -462,6 +462,145 @@ window._portalCloseModal = function() {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CLIENT PORTAL UPDATES PANEL (staff-side, mounted inside work order modal)
+// Publish daily updates + photos that clients see in their portal.
+// ══════════════════════════════════════════════════════════════════════════════
+window._gwPortalUpdatesPanel = async function(woId, el) {
+  if (!el) return;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const fmtD = s => { if (!s) return ''; const d = new Date(String(s).replace(' ','T')); return isNaN(d) ? String(s).slice(0,10) : d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+  let pendingMedia = []; // {id, file_name} uploaded but not yet attached to an update
+
+  async function load() {
+    let updates = [];
+    try {
+      const d = await _portalApi('/api/admin/portal/projects/' + woId + '/updates');
+      updates = d.data || [];
+    } catch (e) {
+      el.innerHTML = '<p class="sb-empty-note">Could not load portal updates: ' + esc(e.message) + '</p>';
+      return;
+    }
+    render(updates);
+  }
+
+  function render(updates) {
+    const updHtml = updates.map(u => `
+      <div style="border:1px solid var(--gw-border,#e3e8e5);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--gw-surface-2,#fff)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="min-width:0">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--gw-green,#2D7A55)">${fmtD(u.update_date)}</div>
+            ${u.title ? `<div style="font-size:13px;font-weight:700;margin-top:2px">${esc(u.title)}</div>` : ''}
+            <div style="font-size:12.5px;line-height:1.5;margin-top:3px;white-space:pre-wrap">${esc(u.body)}</div>
+          </div>
+          <button class="sb-check-del" title="Delete update" onclick="_gwPortalDeleteUpdate('${esc(u.id)}','${esc(woId)}')">&#x2715;</button>
+        </div>
+        ${(u.media||[]).length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${u.media.map(m =>
+          m.kind === 'photo'
+            ? `<a href="/api/admin/portal/media/${esc(m.id)}" target="_blank" rel="noopener" style="display:block;width:54px;height:54px;border-radius:6px;overflow:hidden;border:1px solid var(--gw-border,#e3e8e5)"><img src="/api/admin/portal/media/${esc(m.id)}" alt="${esc(m.caption||m.file_name||'')}" style="width:100%;height:100%;object-fit:cover" loading="lazy"></a>`
+            : `<a href="/api/admin/portal/media/${esc(m.id)}" target="_blank" rel="noopener" style="font-size:11px">${esc(m.file_name||'file')}</a>`
+        ).join('')}</div>` : ''}
+      </div>`).join('');
+
+    const pendHtml = pendingHtml();
+
+    el.innerHTML = `
+      <div style="border:1px solid var(--gw-border,#e3e8e5);border-radius:8px;padding:12px;background:var(--gw-surface-3,#f7faf8);margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--gw-text-muted,#7a857f);margin-bottom:8px">Publish Daily Update</div>
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <input class="rp-input" type="date" id="gw-pu-date" value="${new Date().toISOString().slice(0,10)}" style="width:150px">
+          <input class="rp-input" id="gw-pu-title" placeholder="Headline (optional)" style="flex:1">
+        </div>
+        <textarea class="rp-input" id="gw-pu-body" rows="3" placeholder="What happened on site today? The client will see this in their portal."></textarea>
+        <div id="gw-pu-pending" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${pendHtml}</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <label class="rp-btn-sm" style="cursor:pointer">
+            Add Photos
+            <input type="file" accept="image/*" multiple style="display:none" onchange="_gwPortalUploadPhotos(event,'${esc(woId)}')">
+          </label>
+          <span id="gw-pu-upstatus" style="font-size:11.5px;color:var(--gw-text-muted,#7a857f)"></span>
+          <button class="rp-btn rp-btn--primary" style="margin-left:auto" onclick="_gwPortalPublishUpdate('${esc(woId)}')">Publish to Portal</button>
+        </div>
+        <div id="gw-pu-err" style="display:none;color:#B4423A;font-size:12px;margin-top:6px"></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--gw-text-muted,#7a857f);margin-bottom:6px">Published Updates (${updates.length})</div>
+      ${updHtml || '<p class="sb-empty-note">No portal updates published for this job yet.</p>'}`;
+  }
+
+  function pendingHtml() {
+    return pendingMedia.map((m, i) => `
+      <span style="display:inline-flex;align-items:center;gap:5px;background:var(--gw-surface-3,#f0f4f2);border-radius:6px;padding:3px 8px;font-size:11.5px">
+        <img src="/api/admin/portal/media/${esc(m.id)}" alt="" style="width:20px;height:20px;object-fit:cover;border-radius:4px">
+        ${esc(m.file_name)}
+        <button class="sb-check-del" style="font-size:12px" onclick="_gwPortalRemovePending(${i})">&#x2715;</button>
+      </span>`).join('');
+  }
+  function refreshPending() {
+    const p = document.getElementById('gw-pu-pending');
+    if (p) p.innerHTML = pendingHtml();
+  }
+
+  window._gwPortalUploadPhotos = async function(ev, wid) {
+    const files = [...(ev.target.files || [])];
+    ev.target.value = '';
+    if (!files.length) return;
+    const st = document.getElementById('gw-pu-upstatus');
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (st) st.textContent = 'Uploading ' + (i+1) + ' of ' + files.length + '…';
+      if (f.size > 15 * 1024 * 1024) { if (st) st.textContent = f.name + ' skipped (over 15 MB)'; continue; }
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        const r = await fetch('/api/admin/portal/projects/' + wid + '/media', { method:'POST', credentials:'same-origin', body: fd });
+        const d = await r.json();
+        if (!r.ok || d.error) throw new Error(d.error || 'Upload failed');
+        pendingMedia.push({ id: d.id, file_name: d.file_name });
+      } catch (e) {
+        if (st) st.textContent = 'Upload failed: ' + e.message;
+        continue;
+      }
+    }
+    if (st) st.textContent = '';
+    refreshPending();
+  };
+
+  window._gwPortalRemovePending = async function(i) {
+    const m = pendingMedia[i];
+    if (!m) return;
+    try { await _portalApi('/api/admin/portal/media/' + m.id, { method: 'DELETE' }); } catch (e) {}
+    pendingMedia.splice(i, 1);
+    refreshPending();
+  };
+
+  window._gwPortalPublishUpdate = async function(wid) {
+    const body = (document.getElementById('gw-pu-body')?.value || '').trim();
+    const errEl = document.getElementById('gw-pu-err');
+    if (!body) { if (errEl) { errEl.textContent = 'Update text is required.'; errEl.style.display = 'block'; } return; }
+    try {
+      await _portalApi('/api/admin/portal/projects/' + wid + '/updates', { method:'POST', body:{
+        body,
+        title: document.getElementById('gw-pu-title')?.value || '',
+        update_date: document.getElementById('gw-pu-date')?.value || '',
+        media_ids: pendingMedia.map(m => m.id),
+      }});
+      pendingMedia = [];
+      if (window.showToast) showToast('Update published to client portal', 'success');
+      load();
+    } catch (e) {
+      if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+    }
+  };
+
+  window._gwPortalDeleteUpdate = async function(uid, wid) {
+    if (!confirm('Delete this portal update? The client will no longer see it.')) return;
+    try { await _portalApi('/api/admin/portal/updates/' + uid, { method: 'DELETE' }); } catch (e) {}
+    load();
+  };
+
+  load();
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PORTAL SHELL (rendered when URL contains /portal or ?gwportal=1)
 // Checks token, shows limited external-facing view.
 // Called automatically on page load if the URL matches.
