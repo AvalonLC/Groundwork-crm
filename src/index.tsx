@@ -5642,7 +5642,7 @@ app.get('/portal/proposal/:token', async (c) => {
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Inter',-apple-system,sans-serif;background:#F5F3EE;color:#1F2A2B;line-height:1.6}
   .pp-hero{background:${brandColor};color:#fff;padding:44px 24px 36px;text-align:center}
-  ${brand?.logo_url ? '.pp-logo{height:52px;margin-bottom:14px}' : ''}
+  ${brand?.logo_url ? '.pp-logo{height:52px;max-width:280px;object-fit:contain;margin-bottom:14px;background:#fff;padding:9px 16px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}' : ''}
   .pp-hero .pp-co{font-size:13px;letter-spacing:.24em;text-transform:uppercase;opacity:.85;font-weight:600}
   .pp-hero h1{font-size:26px;font-weight:800;margin-top:10px;letter-spacing:.02em}
   .pp-hero .pp-sub{font-size:14px;opacity:.8;margin-top:6px}
@@ -8034,7 +8034,7 @@ app.post('/api/email/send', requireAuth, async (c) => {
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)">
       <tr><td style="background:${bc};padding:26px 32px" align="left">
         ${logo
-          ? `<img src="${esc(logo)}" alt="${esc(coName)}" height="44" style="display:block;max-height:44px;width:auto;border:0">`
+          ? `<img src="${esc(logo)}" alt="${esc(coName)}" height="44" style="display:inline-block;max-height:44px;width:auto;border:0;background:#ffffff;padding:8px 14px;border-radius:10px">`
           : `<span style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:.3px">${esc(coName)}</span>`}
       </td></tr>
       <tr><td style="padding:32px 32px 8px">
@@ -8384,11 +8384,19 @@ app.patch('/api/me/language', requireAuth, async (c) => {
 app.get('/estimates/portal/:token', async (c) => {
   const token = c.req.param('token')
   const db = c.env.DB as D1Database
-  // Look up token
-  const pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
+  // Look up token — supports two token types:
+  //  1) estimate_portal_tokens rows (ept_...) created via /api/estimates/:id/portal-token
+  //  2) the estimate row's own portal_token column (used by "Copy portal link" and email links)
+  let pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
+  let est: any = null
+  if (pt) {
+    est = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=?`).bind(pt.estimate_id, pt.company_id).first() as any
+  } else {
+    est = await db.prepare(`SELECT * FROM estimates WHERE portal_token=? LIMIT 1`).bind(token).first() as any
+    if (est) pt = { estimate_id: est.id, company_id: est.company_id }
+  }
   if (!pt) return c.html(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
     <h2>Link not found</h2><p>This estimate link is invalid or has expired.</p></body></html>`, 404)
-  const est = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=?`).bind(pt.estimate_id, pt.company_id).first() as any
   if (!est) return c.html(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
     <h2>Estimate not found</h2></body></html>`, 404)
   const company = await db.prepare(`SELECT * FROM companies WHERE id=?`).bind(pt.company_id).first() as any
@@ -8444,7 +8452,7 @@ app.get('/estimates/portal/:token', async (c) => {
 </head>
 <body>
 <div class="portal-header">
-  <div class="portal-logo">${company?.logo_url ? `<img src="${company.logo_url}" alt="" style="height:40px;object-fit:contain;border-radius:8px;margin-right:4px">` : ''}${company?.name || 'Groundwork'}</div>
+  <div class="portal-logo">${company?.logo_url ? `<img src="${company.logo_url}" alt="" style="height:40px;object-fit:contain;border-radius:8px;margin-right:4px;background:#fff;padding:5px 10px">` : ''}${company?.name || 'Groundwork'}</div>
 </div>
 <div class="portal-wrap">
   <div class="portal-card">
@@ -8545,15 +8553,209 @@ async function _portalDecline(token) {
 </body></html>`)
 })
 
+// GET /portal/estimate/:token — alias for the estimate portal (this is the URL
+// format that the "Copy portal link" button and emailed links use)
+app.get('/portal/estimate/:token', (c) => {
+  return c.redirect(`/estimates/portal/${c.req.param('token')}`, 302)
+})
+
+// GET /invoices/portal/:token — public client-facing invoice page (no auth)
+app.get('/invoices/portal/:token', async (c) => {
+  const token = c.req.param('token')
+  const db = c.env.DB as D1Database
+  const inv: any = await db.prepare(`SELECT * FROM invoices WHERE portal_token=? LIMIT 1`).bind(token).first()
+  if (!inv) return c.html(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+    <h2>Link not found</h2><p>This invoice link is invalid or has expired.</p></body></html>`, 404)
+  // Mark viewed
+  if (inv.status === 'sent') {
+    await db.prepare(`UPDATE invoices SET status='viewed', viewed_at=datetime('now') WHERE portal_token=?`).bind(token).run()
+    inv.status = 'viewed'
+  }
+  let lineItems: any[] = []
+  try { lineItems = JSON.parse(inv.line_items || '[]') } catch {}
+  const company: any = await db.prepare(`SELECT name, logo_url, brand_color, phone, website FROM companies WHERE id=? LIMIT 1`).bind(inv.company_id).first().catch(() => null)
+  const stripeReady: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded FROM companies WHERE id=? LIMIT 1`).bind(inv.company_id).first().catch(() => null)
+  const canPayOnline = !!(stripeReady?.stripe_account_id && stripeReady?.stripe_onboarded && (c.env as any).STRIPE_SECRET_KEY)
+  const esc2 = (v: any) => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const bc = (company && /^#[0-9a-fA-F]{3,8}$/.test(company.brand_color || '') ? company.brand_color : '#2D7A55')
+  const total = Number(inv.total || 0)
+  const paid = Number(inv.amount_paid || 0)
+  const owed = Math.max(0, total - paid)
+  const isPaid = inv.status === 'paid' || (total > 0 && owed <= 0)
+  const statusLabel = isPaid ? 'Paid' : inv.status === 'partial' ? 'Partially Paid' : inv.status === 'overdue' ? 'Overdue' : 'Due'
+  const fmt = (n: number) => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return c.html(`<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Invoice ${esc2(inv.invoice_number)} — ${esc2(company?.name || 'Groundwork')}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F9FAFB;color:#111827}
+    .portal-header{background:#111827;padding:20px 24px;display:flex;align-items:center;gap:12px}
+    .portal-logo{font-size:18px;font-weight:800;color:#fff;display:flex;align-items:center;gap:10px}
+    .portal-wrap{max-width:680px;margin:32px auto;padding:0 16px 60px}
+    .portal-card{background:#fff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;margin-bottom:20px}
+    .portal-card-header{background:${bc};padding:20px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+    .portal-card-title{font-size:20px;font-weight:700;color:#fff}
+    .portal-card-sub{font-size:13px;color:rgba(255,255,255,.78);margin-top:4px}
+    .status-badge{display:inline-flex;padding:5px 16px;border-radius:99px;font-size:12px;font-weight:700;background:rgba(255,255,255,.92)}
+    .status-paid{color:#1E5E3E}.status-due{color:#B45309}.status-overdue{color:#DC2626}
+    .portal-section{padding:20px 24px;border-bottom:1px solid #F3F4F6}
+    .portal-section:last-child{border-bottom:none}
+    .portal-label{font-size:11px;font-weight:600;color:#9CA3AF;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+    .portal-value{font-size:15px;color:#111827}
+    .portal-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    table{width:100%;border-collapse:collapse}
+    th{text-align:left;font-size:12px;font-weight:600;color:#6B7280;padding:8px 0;border-bottom:1px solid #E5E7EB}
+    td{padding:10px 0;font-size:14px;color:#374151;border-bottom:1px solid #F3F4F6}
+    tr:last-child td{border-bottom:none}
+    .amount-summary{background:#FAFBFA;border-radius:10px;padding:16px 20px;margin-top:8px}
+    .amount-row{display:flex;justify-content:space-between;font-size:14px;color:#4B5563;padding:4px 0}
+    .amount-row.owed{font-size:19px;font-weight:800;color:#111827;border-top:1px solid #E5E7EB;margin-top:8px;padding-top:12px}
+    .action-section{padding:24px;text-align:center}
+    .btn-pay{background:${bc};color:#fff;border:none;border-radius:10px;padding:15px 40px;font-size:16px;font-weight:700;cursor:pointer;transition:.15s}
+    .btn-pay:hover{opacity:.9}
+    .btn-pay:disabled{opacity:.6;cursor:default}
+    .pay-note{font-size:12px;color:#9CA3AF;margin-top:10px}
+    .paid-banner{background:#E5F2E9;color:#1E5E3E;border:1px solid #BFDCC8;border-radius:10px;padding:16px;text-align:center;font-weight:700;font-size:15px}
+    @media(max-width:480px){.portal-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="portal-header">
+  <div class="portal-logo">${company?.logo_url ? `<img src="${esc2(company.logo_url)}" alt="" style="height:40px;object-fit:contain;border-radius:8px;background:#fff;padding:5px 10px">` : ''}${esc2(company?.name || 'Groundwork')}</div>
+</div>
+<div class="portal-wrap">
+  <div class="portal-card">
+    <div class="portal-card-header">
+      <div>
+        <div class="portal-card-title">Invoice ${esc2(inv.invoice_number)}</div>
+        <div class="portal-card-sub">${esc2(inv.title || '')}</div>
+      </div>
+      <span class="status-badge ${isPaid ? 'status-paid' : inv.status==='overdue' ? 'status-overdue' : 'status-due'}">${statusLabel}</span>
+    </div>
+    <div class="portal-section portal-grid">
+      <div><div class="portal-label">Billed To</div><div class="portal-value">${esc2(inv.client_name || '—')}</div></div>
+      <div><div class="portal-label">Due Date</div><div class="portal-value">${inv.due_date ? esc2(new Date(inv.due_date).toLocaleDateString()) : '—'}</div></div>
+    </div>
+    ${lineItems.length ? `
+    <div class="portal-section">
+      <div class="portal-label" style="margin-bottom:12px">Details</div>
+      <table>
+        <thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${lineItems.map((li: any) => {
+            const qty = Number(li.qty || li.quantity || 1)
+            const rate = Number(li.rate ?? li.unit_price ?? li.price ?? 0)
+            const amt = li.amount != null ? Number(li.amount) : qty * rate
+            return `<tr><td>${esc2(li.name || li.description || 'Service')}</td><td>${qty}</td><td style="text-align:right">${fmt(amt)}</td></tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
+    <div class="portal-section">
+      <div class="amount-summary">
+        <div class="amount-row"><span>Subtotal</span><span>${fmt(Number(inv.subtotal || total))}</span></div>
+        ${Number(inv.tax_amount||0) ? `<div class="amount-row"><span>Tax</span><span>${fmt(Number(inv.tax_amount))}</span></div>` : ''}
+        ${Number(inv.discount_amount||0) ? `<div class="amount-row"><span>Discount</span><span>-${fmt(Number(inv.discount_amount))}</span></div>` : ''}
+        <div class="amount-row"><span>Total</span><span>${fmt(total)}</span></div>
+        ${paid > 0 ? `<div class="amount-row"><span>Paid</span><span>-${fmt(paid)}</span></div>` : ''}
+        <div class="amount-row owed"><span>${isPaid ? 'Balance' : 'Amount Due'}</span><span>${fmt(owed)}</span></div>
+      </div>
+    </div>
+    ${inv.notes ? `<div class="portal-section"><div class="portal-label">Notes</div><div class="portal-value" style="line-height:1.6;white-space:pre-wrap">${esc2(inv.notes)}</div></div>` : ''}
+    <div class="action-section">
+      ${isPaid
+        ? `<div class="paid-banner">This invoice has been paid in full. Thank you!</div>`
+        : canPayOnline && owed >= 0.5
+          ? `<button class="btn-pay" id="payBtn" onclick="_payNow()">Pay ${fmt(owed)} Now</button>
+             <div class="pay-note">Secured by Stripe — no card data is stored by ${esc2(company?.name || 'us')}</div>`
+          : `<div class="pay-note" style="font-size:14px;color:#4B5563">To pay this invoice, please contact ${esc2(company?.phone || company?.name || 'your contractor')}.</div>`}
+      <div id="payError" style="color:#DC2626;font-size:13px;margin-top:10px"></div>
+    </div>
+  </div>
+  <p style="text-align:center;font-size:12px;color:#9CA3AF">
+    Questions? Contact ${esc2(company?.phone || company?.name || 'your contractor')} · Powered by Groundwork CRM
+  </p>
+</div>
+<script>
+async function _payNow() {
+  const btn = document.getElementById('payBtn');
+  const errEl = document.getElementById('payError');
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening secure checkout…'; }
+  if (errEl) errEl.textContent = '';
+  try {
+    const res = await fetch('/api/invoices/portal/${esc2(token)}/pay', { method: 'POST' });
+    const d = await res.json();
+    if (d.url) { window.location.href = d.url; return; }
+    throw new Error(d.error || 'Could not start checkout');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Pay Now'; }
+    if (errEl) errEl.textContent = e.message || 'Payment failed to start. Please try again.';
+  }
+}
+</script>
+</body></html>`)
+})
+
+// POST /api/invoices/portal/:token/pay — public: start a Stripe Checkout session
+// for this invoice. Token-scoped (no auth) — amount comes from the DB, never the client.
+app.post('/api/invoices/portal/:token/pay', async (c) => {
+  const token = c.req.param('token')
+  const db = c.env.DB as D1Database
+  const stripeKey = (c.env as any).STRIPE_SECRET_KEY as string | undefined
+  if (!stripeKey) return c.json({ error: 'Online payment is not available' }, 503)
+  const inv: any = await db.prepare(`SELECT * FROM invoices WHERE portal_token=? LIMIT 1`).bind(token).first()
+  if (!inv) return c.json({ error: 'Invalid link' }, 404)
+  const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(inv.company_id).first()
+  if (!company?.stripe_account_id || !company.stripe_onboarded) return c.json({ error: 'Online payment is not available' }, 400)
+  const owedCents = Math.round(Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0)) * 100)
+  if (owedCents < 50) return c.json({ error: 'Nothing due on this invoice' }, 400)
+  try {
+    const origin = new URL(c.req.url).origin
+    const feePct = company.stripe_platform_fee_pct || 2.9
+    const form = new URLSearchParams({
+      'payment_method_types[]': 'card',
+      'line_items[0][price_data][currency]': 'usd',
+      'line_items[0][price_data][unit_amount]': String(owedCents),
+      'line_items[0][price_data][product_data][name]': `Invoice ${inv.invoice_number || inv.id}`,
+      'line_items[0][quantity]': '1',
+      mode: 'payment',
+      'success_url': `${origin}/invoices/portal/${token}?paid=1`,
+      'cancel_url': `${origin}/invoices/portal/${token}`,
+      'payment_intent_data[application_fee_amount]': String(Math.round(owedCents * feePct / 100)),
+      'payment_intent_data[metadata][invoice_id]': inv.id,
+      'payment_intent_data[metadata][company_id]': inv.company_id,
+    })
+    if (inv.client_email) form.set('customer_email', inv.client_email)
+    const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded',
+        'Stripe-Account': company.stripe_account_id },
+      body: form.toString()
+    })
+    const session = await res.json() as any
+    if (!res.ok) throw new Error(session.error?.message || 'Checkout creation failed')
+    return c.json({ url: session.url })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
 // POST /api/estimates/portal/:token/approve — client approves estimate
 app.post('/api/estimates/portal/:token/approve', async (c) => {
   const token = c.req.param('token')
   const db = c.env.DB as D1Database
-  const pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
+  let pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
+  if (!pt) {
+    const estRow = await db.prepare(`SELECT id, company_id FROM estimates WHERE portal_token=? LIMIT 1`).bind(token).first() as any
+    if (estRow) pt = { estimate_id: estRow.id, company_id: estRow.company_id, token }
+  }
   if (!pt) return c.json({ error: 'Invalid token' }, 404)
   await db.prepare(`UPDATE estimates SET status='approved' WHERE id=? AND company_id=?`).bind(pt.estimate_id, pt.company_id).run()
   await _woFlipHolds(db, pt.estimate_id, pt.company_id, 'scheduled')
-  await db.prepare(`UPDATE estimate_portal_tokens SET used_at=? WHERE token=?`).bind(new Date().toISOString(), token).run()
+  await db.prepare(`UPDATE estimate_portal_tokens SET used_at=? WHERE token=?`).bind(new Date().toISOString(), token).run().catch(() => {})
   // Create notification for the company
   const est = await db.prepare(`SELECT estimate_number, client_name FROM estimates WHERE id=?`).bind(pt.estimate_id).first() as any
   const notifId = `notif_${Date.now()}`
@@ -8570,7 +8772,11 @@ app.post('/api/estimates/portal/:token/approve', async (c) => {
 app.post('/api/estimates/portal/:token/decline', async (c) => {
   const token = c.req.param('token')
   const db = c.env.DB as D1Database
-  const pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
+  let pt = await db.prepare(`SELECT * FROM estimate_portal_tokens WHERE token=?`).bind(token).first() as any
+  if (!pt) {
+    const estRow = await db.prepare(`SELECT id, company_id FROM estimates WHERE portal_token=? LIMIT 1`).bind(token).first() as any
+    if (estRow) pt = { estimate_id: estRow.id, company_id: estRow.company_id, token }
+  }
   if (!pt) return c.json({ error: 'Invalid token' }, 404)
   const body = await c.req.json().catch(() => ({})) as any
   await db.prepare(`UPDATE estimates SET status='declined', notes=COALESCE(notes||' | Client feedback: '||?,'') WHERE id=? AND company_id=?`)
@@ -9197,7 +9403,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b006">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b007">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9221,8 +9427,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b006"></script>
-  <script src="/js/client_portal.js?v=20260720b006"></script>
+  <script src="/js/platform_core.js?v=20260720b007"></script>
+  <script src="/js/client_portal.js?v=20260720b007"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9857,9 +10063,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b006">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b006">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b006">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b007">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b007">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b007">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -10419,41 +10625,41 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b006"></script>
-<script src="/js/db.js?v=20260720b006"></script>
-<script src="/js/data.js?v=20260720b006"></script>
-<script src="/js/reps.js?v=20260720b006"></script>
-<script src="/js/record-page.js?v=20260720b006"></script>
-<script src="/js/academy.js?v=20260720b006"></script>
-<script src="/js/task_engine.js?v=20260720b006"></script>
-<script src="/js/gw_i18n.js?v=20260720b006"></script>
-<script src="/js/app_premium.js?v=20260720b006"></script>
-<script src="/js/estimates.js?v=20260720b006"></script>
-<script src="/js/proposals.js?v=20260720b006"></script>
-<script src="/js/pricing.js?v=20260720b006"></script>
-<script src="/js/invoices.js?v=20260720b006"></script>
-<script src="/js/csv_import.js?v=20260720b006"></script>
-<script src="/js/onboarding.js?v=20260720b006"></script>
-<script src="/js/gw_copilot.js?v=20260720b006"></script>
-<script src="/js/groundwork_ai.js?v=20260720b006"></script>
-<script src="/js/recurring_plans.js?v=20260720b006"></script>
-<script src="/js/reviews.js?v=20260720b006"></script>
-<script src="/js/stripe.js?v=20260720b006"></script>
-<script src="/js/email.js?v=20260720b006"></script>
-<script src="/js/notifications.js?v=20260720b006"></script>
-<script src="/js/integrations.js?v=20260720b006"></script>
-<script src="/js/calendar_sync.js?v=20260720b006"></script>
-<script src="/js/ai_followup.js?v=20260720b006"></script>
-<script src="/js/user_management.js?v=20260720b006"></script>
-<script src="/js/platform_admin.js?v=20260720b006"></script>
-<script src="/js/time_tracker.js?v=20260720b006"></script>
-<script src="/js/field_workday.js?v=20260720b006"></script>
-<script src="/js/platform_core.js?v=20260720b006"></script>
-<script src="/js/approval_engine.js?v=20260720b006"></script>
-<script src="/js/automation_engine.js?v=20260720b006"></script>
-<script src="/js/client_portal.js?v=20260720b006"></script>
-<script src="/js/field_mode.js?v=20260720b006"></script>
-<script src="/js/assets_hub.js?v=20260720b006"></script>
+<script src="/js/gw-icons.js?v=20260720b007"></script>
+<script src="/js/db.js?v=20260720b007"></script>
+<script src="/js/data.js?v=20260720b007"></script>
+<script src="/js/reps.js?v=20260720b007"></script>
+<script src="/js/record-page.js?v=20260720b007"></script>
+<script src="/js/academy.js?v=20260720b007"></script>
+<script src="/js/task_engine.js?v=20260720b007"></script>
+<script src="/js/gw_i18n.js?v=20260720b007"></script>
+<script src="/js/app_premium.js?v=20260720b007"></script>
+<script src="/js/estimates.js?v=20260720b007"></script>
+<script src="/js/proposals.js?v=20260720b007"></script>
+<script src="/js/pricing.js?v=20260720b007"></script>
+<script src="/js/invoices.js?v=20260720b007"></script>
+<script src="/js/csv_import.js?v=20260720b007"></script>
+<script src="/js/onboarding.js?v=20260720b007"></script>
+<script src="/js/gw_copilot.js?v=20260720b007"></script>
+<script src="/js/groundwork_ai.js?v=20260720b007"></script>
+<script src="/js/recurring_plans.js?v=20260720b007"></script>
+<script src="/js/reviews.js?v=20260720b007"></script>
+<script src="/js/stripe.js?v=20260720b007"></script>
+<script src="/js/email.js?v=20260720b007"></script>
+<script src="/js/notifications.js?v=20260720b007"></script>
+<script src="/js/integrations.js?v=20260720b007"></script>
+<script src="/js/calendar_sync.js?v=20260720b007"></script>
+<script src="/js/ai_followup.js?v=20260720b007"></script>
+<script src="/js/user_management.js?v=20260720b007"></script>
+<script src="/js/platform_admin.js?v=20260720b007"></script>
+<script src="/js/time_tracker.js?v=20260720b007"></script>
+<script src="/js/field_workday.js?v=20260720b007"></script>
+<script src="/js/platform_core.js?v=20260720b007"></script>
+<script src="/js/approval_engine.js?v=20260720b007"></script>
+<script src="/js/automation_engine.js?v=20260720b007"></script>
+<script src="/js/client_portal.js?v=20260720b007"></script>
+<script src="/js/field_mode.js?v=20260720b007"></script>
+<script src="/js/assets_hub.js?v=20260720b007"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

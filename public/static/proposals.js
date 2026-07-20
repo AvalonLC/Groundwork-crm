@@ -921,7 +921,7 @@ function _prPvRender() {
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Inter',-apple-system,sans-serif;background:#F5F3EE;color:#1F2A2B;line-height:1.6}
   .pp-hero{background:${bc};color:#fff;padding:34px 20px 30px;text-align:center}
-  .pp-logo{height:44px;margin-bottom:12px}
+  .pp-logo{height:44px;max-width:240px;object-fit:contain;margin-bottom:12px;background:#fff;padding:8px 14px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
   .pp-hero .pp-co{font-size:11px;letter-spacing:.24em;text-transform:uppercase;opacity:.85;font-weight:600}
   .pp-hero h1{font-size:22px;font-weight:800;margin-top:8px;letter-spacing:.02em}
   .pp-hero .pp-sub{font-size:13px;opacity:.8;margin-top:5px}
