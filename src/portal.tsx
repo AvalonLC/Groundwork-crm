@@ -26,12 +26,14 @@ let _portalSchemaOk = false
 async function ensurePortalSchema(db: D1Database): Promise<void> {
   if (_portalSchemaOk) return
   try {
-    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v1' LIMIT 1").first<any>()
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v2' LIMIT 1").first<any>()
     if (flag) { _portalSchemaOk = true; return }
   } catch (_) {}
   const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042]]
   for (const [name, sql] of migs) {
-    const stmts = sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    // Strip inline "--" comments too: 0042 has comments containing ';' which
+    // would otherwise break statement splitting (no '--' inside literals here).
+    const stmts = sql.split('\n').map(l => l.replace(/--.*$/, '')).join('\n')
       .split(';').map(s => s.trim()).filter(s => s.length > 0)
     for (const stmt of stmts) {
       try { await db.prepare(stmt).run() } catch (e: any) {
