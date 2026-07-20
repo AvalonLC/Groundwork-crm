@@ -1884,31 +1884,48 @@ function _estSendModal(estId, clientEmail, clientName) {
 
 async function _estDoSend(estId) {
   const to      = document.getElementById('est-send-to')?.value?.trim();
+  const subject = document.getElementById('est-send-subject')?.value?.trim();
   const message = document.getElementById('est-send-message')?.value?.trim();
   const sendSms = document.getElementById('est-send-sms')?.checked;
 
   if (!to) { showToast('Please enter recipient email', 'error'); return; }
+  const btn = document.querySelector('#est-send-modal .est-btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
 
   try {
-    // If Gmail connected, send via Gmail
-    if (typeof gmailSendEmail === 'function' && typeof isGoogleConnected === 'function' && isGoogleConnected()) {
-      const subject = document.getElementById('est-send-subject')?.value || 'Your Estimate is ready';
-      await gmailSendEmail(to, subject, message);
-    }
-
-    await fetch(`/api/estimates/${estId}/send`, {
+    // Server composes the fully personalized branded email (client name,
+    // estimate number, total, and portal link) and delivers via SendGrid.
+    const res = await fetch(`/api/estimates/${estId}/send`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ method: sendSms ? 'both' : 'email' }),
+      body: JSON.stringify({
+        to_email: to,
+        subject: subject || undefined,
+        message: message || undefined,
+        method: sendSms ? 'both' : 'email',
+      }),
     });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.ok === false) throw new Error(d.error || 'Send failed');
 
     document.getElementById('est-send-modal')?.remove();
-    showToast('Estimate sent successfully', 'success');
+    if (d.emailed) {
+      showToast('Estimate emailed to ' + to, 'success');
+    } else if (d.fallback) {
+      showToast('Estimate marked sent — email delivery is not configured. Share the portal link directly.', 'info');
+      if (d.portal_link && navigator.clipboard) {
+        try { await navigator.clipboard.writeText(d.portal_link); showToast('Portal link copied to clipboard', 'info'); } catch (_) {}
+      }
+    } else {
+      showToast('Estimate marked as sent', 'success');
+    }
+    if (sendSms) showToast('SMS delivery is not set up yet — sent by email only', 'info');
     // Refresh current view
     setTimeout(() => estimateDetail(estId), 300);
   } catch (e) {
-    showToast('Failed to send estimate', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Send Estimate'; }
+    showToast('Failed to send estimate: ' + (e.message || 'unknown error'), 'error');
   }
 }
 

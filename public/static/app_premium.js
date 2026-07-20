@@ -12129,12 +12129,25 @@ const DIV_ACTUALS_KEY      = 'avalonDivisionActuals';     // { landscape:{ Jan:{
 const ANNUAL_OVERRIDES_KEY = 'avalonAnnualOverrides';     // { grossMarginPct, trueNetIncome, loanMonthly, cogs, grossProfit, ... }
 const PNL_FILES_KEY        = 'avalonPnlFiles';            // [{ id, name, date, type, size, data(base64 or csv-text) }]
 
+// Persist a financial localStorage key to D1 settings so edits survive
+// browser/localStorage resets. Fire-and-forget; localStorage stays the
+// synchronous read path and D1 hydrates it at bootstrap.
+function _finSyncToD1(settingKey, value) {
+  try {
+    fetch('/api/settings', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: settingKey, value: JSON.stringify(value) }),
+    }).catch(() => {});
+  } catch (e) {}
+}
 function loadRevenueActuals() {
   try { return JSON.parse(localStorage.getItem(REV_ACTUALS_KEY)) || {}; }
   catch(e) { return {}; }
 }
 function saveRevenueActuals(actuals) {
   localStorage.setItem(REV_ACTUALS_KEY, JSON.stringify(actuals));
+  _finSyncToD1('fin_revenue_actuals', actuals);
 }
 function loadDivisionActuals() {
   try { return JSON.parse(localStorage.getItem(DIV_ACTUALS_KEY)) || {}; }
@@ -12142,6 +12155,7 @@ function loadDivisionActuals() {
 }
 function saveDivisionActuals(d) {
   localStorage.setItem(DIV_ACTUALS_KEY, JSON.stringify(d));
+  _finSyncToD1('fin_division_actuals', d);
 }
 function loadAnnualOverrides() {
   try { return JSON.parse(localStorage.getItem(ANNUAL_OVERRIDES_KEY)) || {}; }
@@ -12149,6 +12163,7 @@ function loadAnnualOverrides() {
 }
 function saveAnnualOverrides(o) {
   localStorage.setItem(ANNUAL_OVERRIDES_KEY, JSON.stringify(o));
+  _finSyncToD1('fin_annual_overrides', o);
 }
 function loadPnlFiles() {
   try { return JSON.parse(localStorage.getItem(PNL_FILES_KEY)) || []; }
@@ -15082,10 +15097,12 @@ async function _sbLoadData() {
     const _woUrl = _sbIsField
       ? `/api/work-orders?limit=500&rep_id=${encodeURIComponent(_sbRep.id)}`
       : '/api/work-orders?limit=500';
-    const [cr, wo] = await Promise.all([
+    const [cr, wo, rr] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
+      fetch('/api/reps', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
     ]);
+    if (rr && rr.ok) window._gwAllReps = rr.data || rr.reps || [];
     if (cr.ok) {
       // Field roles: only show their own crew(s) in the crew filter bar
       if (_sbIsField && _sbRep) {
@@ -15778,6 +15795,20 @@ window._sbOpenVisitModal = async function(woId) {
   // Remove any stale modal first
   const _existing = document.getElementById('sb-visit-modal');
   if (_existing) _existing.remove();
+
+  // Ensure crews + employees are loaded — the modal can be opened from views
+  // (client detail, estimates, My Day) before the schedule board has run.
+  if (!(window._gwAllReps||[]).length || !(window._sbState?.crews||[]).length) {
+    try {
+      const [cr, rr] = await Promise.all([
+        fetch('/api/crews', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+        fetch('/api/reps',  {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      ]);
+      window._sbState = window._sbState || {};
+      if (cr && cr.ok && !(window._sbState.crews||[]).length) window._sbState.crews = cr.data || [];
+      if (rr && rr.ok && !(window._gwAllReps||[]).length) window._gwAllReps = rr.data || rr.reps || [];
+    } catch(e) {}
+  }
 
   let wo = null;
   try {
@@ -17183,14 +17214,28 @@ function workOrderDetail(id) {
   const R   = window.GW && window.GW.record;
   const wos = state.workOrders || [];
   let wo    = wos.find(w => w.id === id);
+  if (!wo && id) {
+    // Not in localStorage — this is a D1-backed work order (created from an
+    // estimate or the schedule board). Open it in the schedule visit modal,
+    // which fetches from D1, instead of fabricating a broken WO-NEW stub.
+    if (typeof window._sbOpenVisitModal === 'function') {
+      show('scheduleBoard');
+      // Give the schedule board a beat to mount, then open the visit modal.
+      setTimeout(() => window._sbOpenVisitModal(id), 150);
+      return;
+    }
+    show('scheduleBoard');
+    return;
+  }
   if (!wo) {
-    // Create stub if not found
-    wo = { id: id||('wo-'+Date.now()), woNumber:'WO-NEW', status:'scheduled', crew:'', date:'', type:'Service',
+    // No id — explicit "new work order" flow: create a fresh local stub
+    wo = { id: 'wo-'+Date.now(), woNumber:'WO-NEW', status:'scheduled', crew:'', date:'', type:'Service',
       clientName:'', notes:'', checklist:[], materials:[], assets:[], readiness:'ready',
       createdAt: new Date().toISOString() };
     state.workOrders = [...(state.workOrders||[]), wo];
     saveState();
   }
+  const id_ = wo.id; id = id_; // ensure downstream save() targets the real id
 
   const _woPrevStatus = wo.status;
   function save() {

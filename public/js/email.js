@@ -72,7 +72,7 @@
       amount:       opts.amount    || '',
       due_date:     opts.dueDate   || '',
       project:      opts.project   || 'your project',
-      link:         opts.portalLink || window.location.origin,
+      link:         opts.portalLink || '',   // never fall back to the bare domain
     };
 
     const subject = _emFill(opts.subject || tmpl.subject, vars);
@@ -296,9 +296,11 @@
   }
 
   function _emGetCompany() {
-    // Try to get company name from branding or DOM
-    const sub = document.querySelector('.brand-subtitle');
-    if (sub && sub.textContent) return sub.textContent.trim();
+    // Real company name, set by the bootstrap from D1 (window._companyName).
+    if (window._companyName) return window._companyName;
+    // Fall back to the header company chip (top bar shows the tenant name).
+    const kicker = document.getElementById('brandKicker');
+    if (kicker && kicker.textContent && kicker.textContent.trim()) return kicker.textContent.trim();
     return 'Groundwork Services';
   }
 
