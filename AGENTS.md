@@ -65,7 +65,11 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
 - Local dev uses `--local` (SQLite under `.wrangler/state/`), no credentials needed.
 - Schema changes: add a new numbered file in `migrations/` (never edit old ones).
   - Local:  `npx wrangler d1 migrations apply avalon-sales-hub-production --local`
-  - Prod migrations require a Cloudflare API token; coordinate with the owner.
+  - Production: applied AUTOMATICALLY by the deploy workflow on push to main
+    (the "Apply D1 migrations" step runs before the Pages deploy). No manual
+    step needed — just make sure new migrations are additive and safe to run
+    against live data (use IF NOT EXISTS, never drop or rewrite existing
+    columns without a data-preserving path).
 - Local console:
   `npx wrangler d1 execute avalon-sales-hub-production --local --command="..."`
 
