@@ -14,8 +14,43 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
+import mig0041 from '../migrations/0041_properties.sql?raw'
+import mig0042 from '../migrations/0042_portal_identity.sql?raw'
 
 type Env = { Bindings: { DB: D1Database; MEDIA: R2Bucket; SENDGRID_API_KEY?: string } }
+
+// ── Portal schema self-heal ──────────────────────────────────────────────────
+// Applies migrations 0041 + 0042 idempotently at runtime (same pattern as
+// ensureFullSchema in index.tsx). Guarded by a settings flag + module memo.
+let _portalSchemaOk = false
+async function ensurePortalSchema(db: D1Database): Promise<void> {
+  if (_portalSchemaOk) return
+  try {
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v1' LIMIT 1").first<any>()
+    if (flag) { _portalSchemaOk = true; return }
+  } catch (_) {}
+  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042]]
+  for (const [name, sql] of migs) {
+    const stmts = sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+      .split(';').map(s => s.trim()).filter(s => s.length > 0)
+    for (const stmt of stmts) {
+      try { await db.prepare(stmt).run() } catch (e: any) {
+        const msg = String(e?.message || e)
+        if (!/duplicate column|already exists|UNIQUE constraint/i.test(msg)) {
+          console.log('ensurePortalSchema skip-error', name, msg.slice(0, 120))
+        }
+      }
+    }
+    // Keep wrangler migration bookkeeping consistent
+    try {
+      await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind(name, name).run()
+    } catch (_) {}
+  }
+  try {
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  } catch (_) {}
+  _portalSchemaOk = true
+}
 
 // ── Small local helpers (self-contained to avoid circular imports) ──────────
 const pUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
@@ -167,6 +202,11 @@ export function registerPortal(app: Hono<any>, deps: {
   requireStaffAuth: (c: any, next: any) => Promise<any>
   sendEmail: (apiKey: string, to: string, subject: string, html: string, opts?: any) => Promise<boolean>
 }) {
+
+  // Schema self-heal: guarantees portal tables exist in prod even before
+  // wrangler-driven migrations are applied (runs once, then memoized).
+  app.use('/api/portal/*', async (c, next) => { await ensurePortalSchema(c.env.DB as D1Database); await next() })
+  app.use('/api/admin/portal/*', async (c, next) => { await ensurePortalSchema(c.env.DB as D1Database); await next() })
 
   // ══ PORTAL AUTH APIS ══════════════════════════════════════════════════════
 
