@@ -4758,6 +4758,9 @@ app.post('/api/stock/import-bulk', requireAuth, async (c) => {
 app.get('/api/estimates', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  // Backfill portal tokens for rows created before tokens were introduced —
+  // empty tokens produce dead /portal links, so heal them on read.
+  await db.prepare(`UPDATE estimates SET portal_token = lower(hex(randomblob(16))) WHERE company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(companyId).run().catch(() => {})
   const status  = c.req.query('status')
   const repId   = c.req.query('rep_id')
   const search  = c.req.query('q')
@@ -4797,6 +4800,7 @@ app.get('/api/estimates/kpis', requireAuth, async (c) => {
 app.get('/api/estimates/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await db.prepare(`UPDATE estimates SET portal_token = lower(hex(randomblob(16))) WHERE id=? AND company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(c.req.param('id'), companyId).run().catch(() => {})
   const row: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=?`)
     .bind(c.req.param('id'), companyId).first()
   if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
@@ -5349,6 +5353,7 @@ app.get('/api/proposals', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   await ensureProposalsSchema(db)
+  await db.prepare(`UPDATE proposals SET portal_token = lower(hex(randomblob(16))) WHERE company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(companyId).run().catch(() => {})
   const oppId  = c.req.query('opp_id')
   const status = c.req.query('status')
   const search = c.req.query('q')
@@ -6749,6 +6754,7 @@ app.put('/api/calendar/events/:id/link', requireAuth, async (c) => {
 app.get('/api/invoices', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await db.prepare(`UPDATE invoices SET portal_token = lower(hex(randomblob(16))) WHERE company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(companyId).run().catch(() => {})
   const status   = c.req.query('status')
   const clientId = c.req.query('client_id')
   const search   = c.req.query('q')
@@ -6775,6 +6781,7 @@ app.get('/api/invoices', requireAuth, async (c) => {
 app.get('/api/invoices/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await db.prepare(`UPDATE invoices SET portal_token = lower(hex(randomblob(16))) WHERE id=? AND company_id=? AND (portal_token IS NULL OR portal_token='')`).bind(c.req.param('id'), companyId).run().catch(() => {})
   const row: any = await db.prepare(
     `SELECT * FROM invoices WHERE id = ? AND company_id = ? LIMIT 1`
   ).bind(c.req.param('id'), companyId).first()
@@ -9403,7 +9410,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b008">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9427,8 +9434,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b007"></script>
-  <script src="/js/client_portal.js?v=20260720b007"></script>
+  <script src="/js/platform_core.js?v=20260720b008"></script>
+  <script src="/js/client_portal.js?v=20260720b008"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10063,9 +10070,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b008">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -10625,41 +10632,41 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b007"></script>
-<script src="/js/db.js?v=20260720b007"></script>
-<script src="/js/data.js?v=20260720b007"></script>
-<script src="/js/reps.js?v=20260720b007"></script>
-<script src="/js/record-page.js?v=20260720b007"></script>
-<script src="/js/academy.js?v=20260720b007"></script>
-<script src="/js/task_engine.js?v=20260720b007"></script>
-<script src="/js/gw_i18n.js?v=20260720b007"></script>
-<script src="/js/app_premium.js?v=20260720b007"></script>
-<script src="/js/estimates.js?v=20260720b007"></script>
-<script src="/js/proposals.js?v=20260720b007"></script>
-<script src="/js/pricing.js?v=20260720b007"></script>
-<script src="/js/invoices.js?v=20260720b007"></script>
-<script src="/js/csv_import.js?v=20260720b007"></script>
-<script src="/js/onboarding.js?v=20260720b007"></script>
-<script src="/js/gw_copilot.js?v=20260720b007"></script>
-<script src="/js/groundwork_ai.js?v=20260720b007"></script>
-<script src="/js/recurring_plans.js?v=20260720b007"></script>
-<script src="/js/reviews.js?v=20260720b007"></script>
-<script src="/js/stripe.js?v=20260720b007"></script>
-<script src="/js/email.js?v=20260720b007"></script>
-<script src="/js/notifications.js?v=20260720b007"></script>
-<script src="/js/integrations.js?v=20260720b007"></script>
-<script src="/js/calendar_sync.js?v=20260720b007"></script>
-<script src="/js/ai_followup.js?v=20260720b007"></script>
-<script src="/js/user_management.js?v=20260720b007"></script>
-<script src="/js/platform_admin.js?v=20260720b007"></script>
-<script src="/js/time_tracker.js?v=20260720b007"></script>
-<script src="/js/field_workday.js?v=20260720b007"></script>
-<script src="/js/platform_core.js?v=20260720b007"></script>
-<script src="/js/approval_engine.js?v=20260720b007"></script>
-<script src="/js/automation_engine.js?v=20260720b007"></script>
-<script src="/js/client_portal.js?v=20260720b007"></script>
-<script src="/js/field_mode.js?v=20260720b007"></script>
-<script src="/js/assets_hub.js?v=20260720b007"></script>
+<script src="/js/gw-icons.js?v=20260720b008"></script>
+<script src="/js/db.js?v=20260720b008"></script>
+<script src="/js/data.js?v=20260720b008"></script>
+<script src="/js/reps.js?v=20260720b008"></script>
+<script src="/js/record-page.js?v=20260720b008"></script>
+<script src="/js/academy.js?v=20260720b008"></script>
+<script src="/js/task_engine.js?v=20260720b008"></script>
+<script src="/js/gw_i18n.js?v=20260720b008"></script>
+<script src="/js/app_premium.js?v=20260720b008"></script>
+<script src="/js/estimates.js?v=20260720b008"></script>
+<script src="/js/proposals.js?v=20260720b008"></script>
+<script src="/js/pricing.js?v=20260720b008"></script>
+<script src="/js/invoices.js?v=20260720b008"></script>
+<script src="/js/csv_import.js?v=20260720b008"></script>
+<script src="/js/onboarding.js?v=20260720b008"></script>
+<script src="/js/gw_copilot.js?v=20260720b008"></script>
+<script src="/js/groundwork_ai.js?v=20260720b008"></script>
+<script src="/js/recurring_plans.js?v=20260720b008"></script>
+<script src="/js/reviews.js?v=20260720b008"></script>
+<script src="/js/stripe.js?v=20260720b008"></script>
+<script src="/js/email.js?v=20260720b008"></script>
+<script src="/js/notifications.js?v=20260720b008"></script>
+<script src="/js/integrations.js?v=20260720b008"></script>
+<script src="/js/calendar_sync.js?v=20260720b008"></script>
+<script src="/js/ai_followup.js?v=20260720b008"></script>
+<script src="/js/user_management.js?v=20260720b008"></script>
+<script src="/js/platform_admin.js?v=20260720b008"></script>
+<script src="/js/time_tracker.js?v=20260720b008"></script>
+<script src="/js/field_workday.js?v=20260720b008"></script>
+<script src="/js/platform_core.js?v=20260720b008"></script>
+<script src="/js/approval_engine.js?v=20260720b008"></script>
+<script src="/js/automation_engine.js?v=20260720b008"></script>
+<script src="/js/client_portal.js?v=20260720b008"></script>
+<script src="/js/field_mode.js?v=20260720b008"></script>
+<script src="/js/assets_hub.js?v=20260720b008"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -11058,5 +11065,35 @@ function getHtml(): string {
 </body>
 </html>`
 }
+
+// ── Branded 404 — replaces Hono's bare "404 Not Found" text response ─────────
+app.notFound((c) => {
+  // API routes still get JSON
+  if (c.req.path.startsWith('/api/')) {
+    return c.json({ error: 'Not found' }, 404)
+  }
+  return c.html(`<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Page Not Found — Groundwork CRM</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0F1F1E;color:#E8EDE8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .nf-card{max-width:440px;width:100%;text-align:center;background:#162927;border:1px solid #2e4040;border-radius:16px;padding:44px 32px}
+    .nf-mark{font-size:15px;font-weight:800;letter-spacing:.4px;color:#5CC8A8;margin-bottom:22px}
+    h1{font-size:22px;font-weight:800;margin-bottom:10px}
+    p{font-size:14px;line-height:1.6;color:rgba(232,237,232,.65);margin-bottom:22px}
+    a.nf-btn{display:inline-block;background:#2D7A55;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 26px;border-radius:9px}
+  </style>
+</head><body>
+  <div class="nf-card">
+    <div class="nf-mark">GROUNDWORK CRM</div>
+    <h1>Page not found</h1>
+    <p>This link is invalid or has expired. If you followed a link from an email, please contact your service provider for an updated link.</p>
+    <a class="nf-btn" href="/">Go to homepage</a>
+  </div>
+</body></html>`, 404)
+})
 
 export default app

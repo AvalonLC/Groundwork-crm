@@ -229,15 +229,17 @@
     // Fetch estimate data then open composer
     try {
       const res = await fetch(`/api/estimates/${estimateId}`, { credentials: 'include' });
-      const est = await res.json();
+      const raw = await res.json();
+      const est = raw.data || raw;   // API returns { ok, data } — unwrap
       const client = est.client_name || est.clientName || '';
       const email  = est.client_email || est.clientEmail || '';
-      const num    = est.estimate_number || est.number || estimateId;
-      const amount = est.total_price != null ? '$' + Number(est.total_price).toLocaleString() : '';
-      const project = est.project_name || est.projectName || est.service_type || '';
+      const num    = est.est_number || est.estimate_number || est.number || estimateId;
+      const totalVal = est.total != null ? est.total : est.total_price;
+      const amount = totalVal != null ? '$' + Number(totalVal).toLocaleString() : '';
+      const project = est.title || est.project_name || est.projectName || est.service_type || '';
       const portalLink = est.portal_token
         ? `${window.location.origin}/estimates/portal/${est.portal_token}`
-        : `${window.location.origin}`;
+        : '';
       window.gwEmailComposer({
         type: 'estimate', toEmail: email, toName: client,
         entityId: estimateId, entityNumber: num,
@@ -256,12 +258,12 @@
       const client   = inv.client_name || '';
       const email    = inv.client_email || '';
       const num      = inv.invoice_number || invoiceId;
-      const amount   = inv.amount_total != null ? '$' + Number(inv.amount_total).toLocaleString() : '';
+      const amount   = (inv.total != null ? '$' + Number(inv.total).toLocaleString() : (inv.amount_total != null ? '$' + Number(inv.amount_total).toLocaleString() : ''));
       const dueDate  = inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '';
       const project  = inv.description || inv.line_items?.[0]?.name || '';
       const portalLink = inv.portal_token
         ? `${window.location.origin}/invoices/portal/${inv.portal_token}`
-        : `${window.location.origin}`;
+        : '';
       window.gwEmailComposer({
         type: 'invoice', toEmail: email, toName: client,
         entityId: invoiceId, entityNumber: num,
