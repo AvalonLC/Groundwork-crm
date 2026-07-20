@@ -22,6 +22,142 @@ function getPipelineStages() {
   ];
 }
 window.getPipelineStages = getPipelineStages;
+
+// ── Company-Configurable Divisions ───────────────────────────────────────────
+// Each company names and creates its own divisions (any number).
+// Stored in D1 setting `company_divisions` (JSON array of {key,label,color}),
+// hydrated into localStorage `gwCompanyDivisions` on login (bootstrap in index.tsx).
+// gwDivisions() is the single source of truth — no view should hardcode
+// landscape/maintenance/snow lists.
+const GW_DEFAULT_DIVISIONS = [
+  { key: 'landscape',   label: 'Landscape',   color: '#2D7A55' },
+  { key: 'maintenance', label: 'Maintenance', color: '#4D8A86' },
+  { key: 'snow',        label: 'Snow & Ice',  color: '#5B7A9D' }
+];
+function gwDivisions() {
+  try {
+    const raw = localStorage.getItem('gwCompanyDivisions');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const cleaned = arr
+          .filter(d => d && d.key && d.label)
+          .map(d => ({
+            key: String(d.key),
+            label: String(d.label),
+            color: d.color || '#2D7A55'
+          }));
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+  } catch (e) { /* fall through to default */ }
+  return GW_DEFAULT_DIVISIONS.map(d => ({ ...d }));
+}
+function gwDivisionKeys()   { return gwDivisions().map(d => d.key); }
+function gwDivisionLabels() { const m = {}; gwDivisions().forEach(d => m[d.key] = d.label); return m; }
+function gwDivisionColors() { const m = {}; gwDivisions().forEach(d => m[d.key] = d.color); return m; }
+function gwDivisionLabel(key) {
+  const d = gwDivisions().find(x => x.key === key);
+  if (d) return d.label;
+  return key ? String(key).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+}
+// Generic division icon (SVG path) used where per-division icons are needed
+function gwDivisionIcon(color) {
+  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="' + (color || '#2D7A55') + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+}
+// Classify a lead/opportunity into one of the company's divisions.
+// 1) explicit o.division match  2) keyword match on category/workType/serviceLine
+// against each division's key + label words  3) fallback to first division.
+function gwClassifyDivision(o) {
+  const divs = gwDivisions();
+  if (!o) return divs[0].key;
+  const explicit = (o.division || '').toLowerCase();
+  if (explicit) {
+    const hit = divs.find(d => d.key.toLowerCase() === explicit || d.label.toLowerCase() === explicit);
+    if (hit) return hit.key;
+  }
+  const hay = ((o.projectCategory || '') + ' ' + (o.workType || '') + ' ' + (o.serviceLine || '')).toLowerCase();
+  if (hay.trim()) {
+    for (const d of divs) {
+      const words = (d.key + ' ' + d.label).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);
+      if (words.some(w => hay.includes(w))) return d.key;
+    }
+    // legacy keyword bridges (existing tenant data uses these categories)
+    const bridges = { snow: ['snow', 'ice', 'plow'], maintenance: ['mainten', 'mowing', 'recurring'],
+      landscape: ['landscape', 'hardscape', 'drainage', 'design', 'irrigat', 'lighting', 'enhancement'] };
+    for (const d of divs) {
+      const b = bridges[d.key];
+      if (b && b.some(w => hay.includes(w))) return d.key;
+    }
+  }
+  return divs[0].key;
+}
+window.gwClassifyDivision = gwClassifyDivision;
+window.gwDivisions = gwDivisions;
+window.gwDivisionKeys = gwDivisionKeys;
+
+// ── Company-Configurable Lead Intake Form ────────────────────────────────────
+// Each company tailors the lead intake form to its business model.
+// Stored in D1 setting `company_intake_config` (JSON), hydrated into
+// localStorage `gwIntakeConfig` on login.
+// Shape: { categories: [{v, short}], workTypes: [{v, label}],
+//          leadSources: [string], serviceLines: [string] }
+const GW_DEFAULT_INTAKE = {
+  categories: [
+    { v: 'Landscape / Enhancement', short: 'Landscape' },
+    { v: 'Maintenance - Recurring',  short: 'Recurring Maint.' },
+    { v: 'Maintenance - One Time',   short: 'One-Time Maint.' },
+    { v: 'Hardscape',                short: 'Hardscape' },
+    { v: 'Drainage',                 short: 'Drainage' },
+    { v: 'Design / Build',           short: 'Design / Build' },
+    { v: 'Irrigation',               short: 'Irrigation' },
+    { v: 'Outdoor Lighting',         short: 'Lighting' },
+    { v: 'Other',                    short: 'Other' }
+  ],
+  workTypes: [
+    { v: 'landscape',             label: 'Landscape' },
+    { v: 'maintenance_onetime',   label: 'Maintenance - One Time' },
+    { v: 'maintenance_recurring', label: 'Maintenance - Recurring' },
+    { v: 'maintenance_upsell',    label: 'Maintenance - Upsell' },
+    { v: 'hardscape',             label: 'Hardscape' },
+    { v: 'drainage',              label: 'Drainage' },
+    { v: 'design_build',          label: 'Design / Build' }
+  ],
+  leadSources: null,   // null = use data.leadSources defaults
+  serviceLines: null   // null = use data.serviceLines defaults
+};
+function gwIntakeConfig() {
+  let cfg = null;
+  try {
+    const raw = localStorage.getItem('gwIntakeConfig');
+    if (raw) cfg = JSON.parse(raw);
+  } catch (e) { cfg = null; }
+  const out = {
+    categories: GW_DEFAULT_INTAKE.categories.map(c => ({ ...c })),
+    workTypes: GW_DEFAULT_INTAKE.workTypes.map(w => ({ ...w })),
+    leadSources: (window.AVALON_DATA && window.AVALON_DATA.leadSources) ? window.AVALON_DATA.leadSources.slice() : [],
+    serviceLines: (window.AVALON_DATA && window.AVALON_DATA.serviceLines) ? window.AVALON_DATA.serviceLines.slice() : []
+  };
+  if (cfg && typeof cfg === 'object') {
+    if (Array.isArray(cfg.categories) && cfg.categories.length > 0) {
+      out.categories = cfg.categories.filter(c => c && c.v).map(c => ({ v: String(c.v), short: String(c.short || c.v) }));
+    }
+    if (Array.isArray(cfg.workTypes) && cfg.workTypes.length > 0) {
+      out.workTypes = cfg.workTypes.filter(w => w && w.v).map(w => ({ v: String(w.v), label: String(w.label || w.v) }));
+    }
+    if (Array.isArray(cfg.leadSources) && cfg.leadSources.length > 0) {
+      out.leadSources = cfg.leadSources.map(String);
+    }
+    if (Array.isArray(cfg.serviceLines) && cfg.serviceLines.length > 0) {
+      out.serviceLines = cfg.serviceLines.map(String);
+    }
+  }
+  return out;
+}
+window.gwIntakeConfig = gwIntakeConfig;
+window.gwDivisionLabels = gwDivisionLabels;
+window.gwDivisionColors = gwDivisionColors;
+window.gwDivisionLabel = gwDivisionLabel;
 // navItems re-queried each call so dynamically added platform nav buttons are included
 // Map legacy/alias view names to their parent workspace for nav highlighting
 const _VIEW_WORKSPACE_MAP = {
@@ -141,7 +277,16 @@ const DEFAULT_STATE = {
 let state = loadState();
 
 function loadState(){
-  try { return {...DEFAULT_STATE, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) || {})}; }
+  try {
+    const s = {...DEFAULT_STATE, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) || {})};
+    // Purge stale WO-NEW stubs the retired legacy detail page used to create —
+    // they were never real jobs and shadow D1-backed work orders.
+    if (Array.isArray(s.workOrders)) {
+      const cleaned = s.workOrders.filter(w => !(w && w.woNumber === 'WO-NEW' && !w.clientName && !w.date));
+      if (cleaned.length !== s.workOrders.length) s.workOrders = cleaned;
+    }
+    return s;
+  }
   catch(e){ return structuredClone(DEFAULT_STATE); }
 }
 function saveState(){
@@ -2933,19 +3078,9 @@ function pipeline(selectedId){
     (o.assignedToRepId && o.assignedToRepId !== o.repId && o.assignedToRepId === activeRepFilter)
   );
   if (activeTypeFilter !== 'all') opps = opps.filter(o => o.clientType === activeTypeFilter);
-  if (activeCatFilter === 'landscape') opps = opps.filter(o => {
-    const cat = (o.projectCategory||'').toLowerCase();
-    return cat.includes('landscape') || cat.includes('hardscape') || cat.includes('drainage') || cat.includes('design') || cat.includes('irrigation') || cat.includes('lighting') || cat.includes('enhancement');
-  });
-  if (activeCatFilter === 'maintenance') opps = opps.filter(o => {
-    const cat = (o.projectCategory||'').toLowerCase();
-    return cat.includes('maintenance');
-  });
-  if (activeCatFilter === 'snow') opps = opps.filter(o => {
-    const cat = (o.projectCategory||'').toLowerCase();
-    const div = (data.projectCategories||[]).find(pc => pc.name === o.projectCategory);
-    return cat.includes('snow') || (div && div.division === 'snow');
-  });
+  if (activeCatFilter !== 'all') {
+    opps = opps.filter(o => gwClassifyDivision(o) === activeCatFilter);
+  }
 
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
@@ -3035,9 +3170,7 @@ function pipeline(selectedId){
       <div class="pl-filter-group">
         <span class="pl-filter-label">Division</span>
         <button class="pl-filter-btn ${activeCatFilter==='all'?'pl-active':''}" onclick="window._pipelineCatFilter='all';show('pipeline')">All</button>
-        <button class="pl-filter-btn ${activeCatFilter==='landscape'?'pl-active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">Landscape</button>
-        <button class="pl-filter-btn ${activeCatFilter==='maintenance'?'pl-active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">Maintenance</button>
-        <button class="pl-filter-btn ${activeCatFilter==='snow'?'pl-active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">Snow & Ice</button>
+        ${gwDivisions().map(d => `<button class="pl-filter-btn ${activeCatFilter===d.key?'pl-active':''}" onclick="window._pipelineCatFilter='${d.key}';show('pipeline')">${escapeHtml(d.label)}</button>`).join('')}
       </div>
       <div class="pl-filter-divider"></div>
       <div class="pl-filter-group">
@@ -3221,17 +3354,7 @@ function buildDivisionPipeline() {
 
   // Map an opportunity to a division key
   function getDiv(o) {
-    const cat = (o.projectCategory || '').toLowerCase();
-    const wt  = (o.workType || '').toLowerCase();
-    const sl  = (o.serviceLine || '').toLowerCase();
-    if (cat.includes('snow') || wt.includes('snow') || sl.includes('snow')) return 'snow';
-    if (cat.includes('mainten') || wt.includes('mainten') || sl.includes('mainten')) return 'maintenance';
-    if (cat.includes('landscape') || cat.includes('design') || cat.includes('hardscape') ||
-        cat.includes('drainage') || wt.includes('landscape') || wt.includes('hardscape') ||
-        wt.includes('drainage') || wt.includes('design')) return 'landscape';
-    // fallback by service line
-    if (sl.includes('landscape') || sl.includes('hardscape') || sl.includes('drainage')) return 'landscape';
-    return 'landscape'; // default
+    return gwClassifyDivision(o);
   }
 
   // Win probability by stage (mirrors HubSpot pipeline)
@@ -3259,9 +3382,9 @@ function buildDivisionPipeline() {
 
   const OPEN_STAGES_EXCL = ['Sold / Activation','Closed Lost'];
 
-  const divKeys = ['landscape','maintenance','snow'];
-  const divLabels = { landscape:'Landscape', maintenance:'Maintenance', snow:'Snow & Ice' };
-  const divColors = { landscape:'#4D8A86', maintenance:'#2D7A55', snow:'#4D8A86' };
+  const divKeys = gwDivisionKeys();
+  const divLabels = gwDivisionLabels();
+  const divColors = gwDivisionColors();
 
   const result = {};
   divKeys.forEach(k => {
@@ -4772,18 +4895,9 @@ function lead(){
         + '</select></label>'
     : '<input type="hidden" name="repId" value="' + (_cr ? _cr.id : '') + '">';
 
-  // Project category tile data
-  const _cats = [
-    {v:'Landscape / Enhancement', icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 17V10M10 10C10 10 5 10 3 5c3.5 0 7 2 7 5zm0 0c0 0 5 0 7-5-3.5 0-7 2-7 5z" stroke="#2D7A55" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 17c-2 0-3.5-.5-4-1" stroke="#2D7A55" stroke-width="1.4" stroke-linecap="round" opacity=".5"/></svg>', short:'Landscape'},
-    {v:'Maintenance - Recurring',  icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 4a3.5 3.5 0 00-3 5.2L4.6 15.6a1 1 0 001.4 1.4l6.4-6.4A3.5 3.5 0 0016 7.5a3.5 3.5 0 00-.5-1.8l-2 2-1.5-1.5 2-2A3.5 3.5 0 0014 4z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', short:'Recurring Maint.'},
-    {v:'Maintenance - One Time',   icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 4a3.5 3.5 0 00-3 5.2L4.6 15.6a1 1 0 001.4 1.4l6.4-6.4A3.5 3.5 0 0016 7.5a3.5 3.5 0 00-.5-1.8l-2 2-1.5-1.5 2-2A3.5 3.5 0 0014 4z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', short:'One-Time Maint.'},
-    {v:'Hardscape',                icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="6" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4"/><rect x="11" y="4" width="6" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4"/><rect x="6.5" y="9" width="7" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4"/><rect x="3" y="14" width="4" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4" opacity=".7"/><rect x="9" y="14" width="5" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4" opacity=".7"/></svg>', short:'Hardscape'},
-    {v:'Drainage',                 icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3L13 8a3.5 3.5 0 11-6 0L10 3z" stroke="#4D8A86" stroke-width="1.5" stroke-linejoin="round"/><path d="M4 16h12" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round"/><path d="M7 16l1.5-3M13 16l-1.5-3" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".6"/></svg>', short:'Drainage'},
-    {v:'Design / Build',           icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16L15 5" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round"/><path d="M13 3l4 4-2 2-4-4 2-2z" stroke="#4D8A86" stroke-width="1.3" stroke-linejoin="round"/><path d="M4 16l-1 1 1-1zm0 0l2-1-1 1z" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round"/><rect x="3" y="12" width="8" height="2.5" rx=".5" transform="rotate(-45 3 12)" stroke="#4D8A86" stroke-width="1.3" opacity=".5"/></svg>', short:'Design / Build'},
-    {v:'Irrigation',               icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 15 Q8 8 14 6" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="6" r="1.3" fill="#4D8A86"/><path d="M10 4 Q12 3 14 4" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".6"/><path d="M12 7 Q15 5 17 6" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".6"/><path d="M11 10 Q14 9 16 10" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".4"/><path d="M3 16 Q4 14 5 15" stroke="#4D8A86" stroke-width="1.4" stroke-linecap="round"/></svg>', short:'Irrigation'},
-    {v:'Outdoor Lighting',         icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3a5 5 0 014 8l-1 1v1H7v-1L6 11a5 5 0 014-8z" stroke="#8B6914" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 16h4" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round"/><path d="M8.5 16.5 Q10 18 11.5 16.5" stroke="#8B6914" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5" r="1" fill="#8B6914" opacity=".4"/><circle cx="17" cy="5" r="1" fill="#8B6914" opacity=".4"/><circle cx="10" cy="1.5" r="1" fill="#8B6914" opacity=".4"/></svg>', short:'Lighting'},
-    {v:'Other',                    icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="7" stroke="#6F7E6A" stroke-width="1.4"/><circle cx="7" cy="10" r="1.2" fill="#6F7E6A"/><circle cx="10" cy="10" r="1.2" fill="#6F7E6A"/><circle cx="13" cy="10" r="1.2" fill="#6F7E6A"/></svg>', short:'Other'},
-  ];
+  // Project category tiles come from the company's intake form config
+  const _intakeCfg = gwIntakeConfig();
+  const _cats = _intakeCfg.categories;
   const catTilesHtml = _cats.map(c =>
     '<button type="button" class="cat-tile" data-cat="' + c.v + '">'
     + '<span class="cat-tile-label">' + c.short + '</span>'
@@ -4791,14 +4905,14 @@ function lead(){
   ).join('');
 
   // Service line options
-  const slOptions = (data.serviceLines||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
+  const slOptions = (_intakeCfg.serviceLines||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
 
   // Status options
   const _stages = getPipelineStages();
   const stOptions = _stages.map(o => '<option' + (o===(_stages[0]||'')?' selected':'') + '>' + escapeHtml(o) + '</option>').join('');
 
   // Lead source options
-  const lsOptions = (data.leadSources||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
+  const lsOptions = (_intakeCfg.leadSources||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
 
   view.innerHTML =
     '<div class="lf-hero">'
@@ -4886,13 +5000,7 @@ function lead(){
           + '<label class="lf-field">'
             + '<span class="lf-label">Work Type <span class="lf-hint">(for commission)</span></span>'
             + '<select name="workType" class="lf-select">'
-              + '<option value="landscape" selected>Landscape</option>'
-              + '<option value="maintenance_onetime">Maintenance – One Time</option>'
-              + '<option value="maintenance_recurring">Maintenance – Recurring</option>'
-              + '<option value="maintenance_upsell">Maintenance – Upsell</option>'
-              + '<option value="hardscape">Hardscape</option>'
-              + '<option value="drainage">Drainage</option>'
-              + '<option value="design_build">Design / Build</option>'
+              + _intakeCfg.workTypes.map((w, i) => '<option value="' + escapeHtml(w.v) + '"' + (i === 0 ? ' selected' : '') + '>' + escapeHtml(w.label) + '</option>').join('')
             + '</select>'
           + '</label>'
         + '</div>'
@@ -5484,8 +5592,8 @@ function opportunityDetail(id){
             ${inputEdit('phone','Phone',o.phone)}
             ${inputEdit('email','Email',o.email,'email')}
             ${inputEdit('address','Property Address',o.address)}
-            ${selectEdit('serviceLine','Service Line',data.serviceLines,o.serviceLine)}
-            ${selectEdit('source','Lead Source',data.leadSources,o.source)}
+            ${selectEdit('serviceLine','Service Line',gwIntakeConfig().serviceLines,o.serviceLine)}
+            ${selectEdit('source','Lead Source',gwIntakeConfig().leadSources,o.source)}
             ${inputEdit('project','Project / Opportunity',o.project)}
             ${inputEdit('urgency','Urgency / Timing',o.urgency)}
             ${inputEdit('decisionMaker','Decision-Maker(s)',o.decisionMaker)}
@@ -10410,7 +10518,7 @@ function manager(){
     const abovePlan = div.remaining <= 0;
     const gmOk = div.grossMarginPct >= div.grossMarginFloor;
     const divKey = div.name ? div.name.toLowerCase().replace(/[^a-z]/g,'') : '';
-    const divSvg = divKey.includes('landscape') ? DIV_SVG.landscape : divKey.includes('snow') ? DIV_SVG.snow : divKey.includes('maint') ? DIV_SVG.maintenance : '';
+    const divSvg = divKey.includes('landscape') ? DIV_SVG.landscape : divKey.includes('snow') ? DIV_SVG.snow : divKey.includes('maint') ? DIV_SVG.maintenance : gwDivisionIcon('#2D7A55');
     return `<article class="gw-div-tile${abovePlan?' above-plan':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;margin-top:4px">${divSvg} <span style="font-weight:700;font-size:1rem">${div.name}</span>
         ${abovePlan ? '<span style="background:var(--gw-emerald);color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:8px">\u2713 ABOVE PLAN</span>' : ''}
@@ -10494,12 +10602,10 @@ function manager(){
       <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,var(--gw-pine),var(--gw-pine-light))">Edit Monthly Revenue</button>
     </div>
     <div class="grid grid-3 mt" style="gap:16px">
-      ${divTile(divs.landscape)}
-      ${divTile(divs.maintenance)}
-      ${divTile(divs.snow)}
+      ${Object.keys(divs).map(dk => divTile(divs[dk])).join('')}
     </div>
 
-    <div class="card mt">
+    ${(divs.maintenance && divs.maintenance.growthTarget) ? `<div class="card mt">
       <h2>\u2702\ufe0f Maintenance Growth Pipeline \u2014 Ryan\u2019s ${fmtM(divs.maintenance.growthTarget)} Target</h2>
       <p class="muted small-text">Contracted base entering 2026: ${fmtM(divs.maintenance.contractedBase)} (${divs.maintenance.contractedCommercialAccounts} comm + ${divs.maintenance.contractedResidentialAccounts} res accounts). Additional ${fmtM(divs.maintenance.growthTarget)} to sell.</p>
       <div style="overflow-x:auto;margin-top:12px">
@@ -10508,7 +10614,7 @@ function manager(){
           <tbody>${(divs.maintenance.growthPipeline||[]).map(b=>`<tr><td style="padding:8px 12px">${escapeHtml(b.bucket)}</td><td style="padding:8px 12px;text-align:center">${escapeHtml(b.segment)}</td><td style="padding:8px 12px;text-align:right;font-weight:700;color:var(--gw-emerald)">${fmtM(b.target)}</td></tr>`).join('')}</tbody>
         </table>
       </div>
-    </div>
+    </div>` : ''}
 
     ${missingPastMonths.length > 0 ? `<div class="missing-data-alert"><strong>${missingPastMonths.length} past month${missingPastMonths.length>1?'s':''} missing actuals:</strong> ${missingPastMonths.map(m=>m.month).join(', ')} — <button onclick="show('revenueAdmin','division')" style="background:none;border:none;color:#4D8A86;cursor:pointer;font-size:inherit;text-decoration:underline;padding:0">Enter data →</button></div>` : ''}
     <div class="card mt">
@@ -10661,12 +10767,7 @@ window._renderDpTable = function() {
     const POTS_STAGES   = ['Estimate Sent','Proposal Under Review','Negotiating','Decision Pending','Follow-Up'];
 
     function getDiv(o) {
-      const cat = (o.projectCategory||'').toLowerCase();
-      const wt  = (o.workType||'').toLowerCase();
-      const sl  = (o.serviceLine||'').toLowerCase();
-      if (cat.includes('snow')||wt.includes('snow')||sl.includes('snow')) return 'snow';
-      if (cat.includes('mainten')||wt.includes('mainten')||sl.includes('mainten')) return 'maintenance';
-      return 'landscape';
+      return gwClassifyDivision(o);
     }
 
     const now = new Date();
@@ -10675,9 +10776,9 @@ window._renderDpTable = function() {
       'Estimating':.45,'Estimate Sent':.55,'Proposal Under Review':.65,'Negotiating':.75,
       'Follow-Up':.50,'Decision Pending':.70,'Sold / Activation':1.0,'Closed Lost':0.0};
 
-    const KEYS = ['landscape','maintenance','snow'];
-    const LABELS = {landscape:'Landscape',maintenance:'Maintenance',snow:'Snow & Ice'};
-    const COLORS = {landscape:'#4D8A86',maintenance:'#2D7A55',snow:'#4D8A86'};
+    const KEYS = gwDivisionKeys();
+    const LABELS = gwDivisionLabels();
+    const COLORS = gwDivisionColors();
 
     const stats = {};
     KEYS.forEach(k => { stats[k] = {openVal:0,estVal:0,pots:0,weighted:0,openCt:0,estCt:0,ageDays:[],risk7:0,soldMo:0,soldMoCt:0,sold:0,soldCt:0,lost:0,lostCt:0}; });
@@ -11529,7 +11630,7 @@ function openMarkSoldModal(oppId) {
           <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Division / Service Line</span>
           <select id="sm_division" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
             <option value="">— Select —</option>
-            ${(window.AVALON_DATA?.serviceLines || ['Landscape','Maintenance','Snow & Ice']).map(s => `<option value="${escapeHtml(s)}" ${o.serviceLine===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+            ${gwIntakeConfig().serviceLines.map(s => `<option value="${escapeHtml(s)}" ${o.serviceLine===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
           </select>
         </label>
         <label style="display:grid;gap:6px">
@@ -12194,13 +12295,12 @@ function gwIsAvalonCompany() {
 }
 function gwBlankFY() {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const raw = window.AVALON_DATA.fy2026;
+  // Build divisions from the company's own configured divisions
   const divisions = {};
-  Object.keys(raw.divisions || {}).forEach(dk => {
-    const d = raw.divisions[dk];
-    divisions[dk] = { name: d.name, icon: d.icon, target: 0, actual: null, remaining: 0,
+  gwDivisions().forEach(dv => {
+    divisions[dv.key] = { name: dv.label, icon: 'div', target: 0, actual: null, remaining: 0,
       pctOfCompany: 0, operatingIncome: null, cogs: null, grossProfit: null,
-      grossMarginPct: null, grossMarginFloor: d.grossMarginFloor || 0.4 };
+      grossMarginPct: null, grossMarginFloor: 0.4 };
   });
   return {
     asOfDate: new Date().toLocaleDateString('en-US'),
@@ -12228,8 +12328,16 @@ function getResolvedFY() {
   const savedNotes     = loadRevenueActuals();   // ONLY note_* keys are used
   const savedAnnual    = loadAnnualOverrides();
 
-  const DIVKEYS   = ['landscape', 'maintenance', 'snow'];
+  const DIVKEYS   = gwDivisionKeys();
   const MONTH_ORD = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Ensure fy.divisions has an entry for every configured division
+  DIVKEYS.forEach(dk => {
+    if (!fy.divisions[dk]) {
+      fy.divisions[dk] = { name: gwDivisionLabel(dk), icon: 'div', target: 0, actual: null,
+        remaining: 0, pctOfCompany: 0, operatingIncome: null, cogs: null, grossProfit: null,
+        grossMarginPct: null, grossMarginFloor: 0.4 };
+    }
+  });
 
   // STEP 1: Per-division YTD totals — sum all months from avalonDivisionActuals
   DIVKEYS.forEach(dk => {
@@ -12327,11 +12435,7 @@ window.showMonthDrilldown = function(monthKey) {
   const divActuals = loadDivisionActuals();
   const monthBudget = (fy.monthlyBudget || []).find(m => m.month === monthKey) || {};
   const notes = (loadRevenueActuals() || {})['note_' + monthKey] || '';
-  const DIVISIONS = [
-    { key:'landscape',   label:'Landscape',   icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#2D7A55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color:'#2D7A55' },
-    { key:'maintenance', label:'Maintenance',  icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color:'#4D8A86' },
-    { key:'snow',        label:'Snow & Ice',   icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#B8C8C7" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#B8C8C7"/><circle cx="9" cy="15.5" r="1" fill="#B8C8C7"/><circle cx="2.5" cy="9" r="1" fill="#B8C8C7"/><circle cx="15.5" cy="9" r="1" fill="#B8C8C7"/></svg>', color:'#4D8A86' }
-  ];
+  const DIVISIONS = gwDivisions().map(d => ({ key: d.key, label: d.label, color: d.color, icon: gwDivisionIcon(d.color) }));
   function fmtM(n){ return n!=null ? n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
   const rows = DIVISIONS.map(d => {
     const entry = (divActuals[d.key]||{})[monthKey] || {};
@@ -12450,7 +12554,7 @@ function revenueAdmin(tab) {
       const varSign   = m.variance != null && m.variance > 0 ? '+' : '';
       // Determine which divisions contributed data for this month
       const divs = loadDivisionActuals();
-      const divBreakdown = ['landscape','maintenance','snow'].map(dk => {
+      const divBreakdown = gwDivisionKeys().map(dk => {
         const e = (divs[dk]||{})[m.month];
         return (e && e.revenue != null) ? e.revenue : null;
       });
@@ -12517,11 +12621,7 @@ function revenueAdmin(tab) {
 
 
   // ── Tab: Division Entry ──
-  const DIVISIONS_META = [
-    { key: 'landscape',   label: 'Landscape',    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#2D7A55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color: '#2D7A55' },
-    { key: 'maintenance', label: 'Maintenance',   icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color: '#4D8A86' },
-    { key: 'snow',        label: 'Snow & Ice',    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#B8C8C7" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#B8C8C7"/><circle cx="9" cy="15.5" r="1" fill="#B8C8C7"/><circle cx="2.5" cy="9" r="1" fill="#B8C8C7"/><circle cx="15.5" cy="9" r="1" fill="#B8C8C7"/></svg>', color: '#4D8A86' }
-  ];
+  const DIVISIONS_META = gwDivisions().map(d => ({ key: d.key, label: d.label, color: d.color, icon: gwDivisionIcon(d.color) }));
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   function renderDivisionTab() {
@@ -12730,7 +12830,7 @@ function revenueAdmin(tab) {
           Jan, Maintenance, 40000, 28400<br>
           Jan, Snow, 18000, 7200
         </code>
-        <p style="color:#6F7E6A;font-size:11px;margin-top:8px">Division values: Landscape / Maintenance / Snow (or Snow &amp; Ice)</p>
+        <p style="color:#6F7E6A;font-size:11px;margin-top:8px">Division values: ${gwDivisions().map(d => escapeHtml(d.label)).join(' / ')}</p>
       </div>`;
   }
 
@@ -12828,7 +12928,7 @@ window.buildMonthlyExportData = function() {
 // Data builder for division export
 window.buildDivisionExportData = function() {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const DIVS   = [{key:'landscape',label:'Landscape'},{key:'maintenance',label:'Maintenance'},{key:'snow',label:'Snow'}];
+  const DIVS   = gwDivisions().map(d => ({ key: d.key, label: d.label }));
   const all    = loadDivisionActuals();
   const headers = ['Month','Division','Revenue','COGS','GM%'];
   const rows = [];
@@ -12972,7 +13072,7 @@ window.gwSaveMonthBudget = function(month, val) {
 };
 
 window.divSaveAllDivisions = function() {
-  ['landscape','maintenance','snow'].forEach(dk => window.divSaveDivision(dk));
+  gwDivisionKeys().forEach(dk => window.divSaveDivision(dk));
   showToast('All division data saved — dashboards updated');
 };
 
@@ -12996,7 +13096,7 @@ window.annSaveAll = function() {
     }
   });
   // Division overrides
-  const DIVKEYS = ['landscape','maintenance','snow'];
+  const DIVKEYS = gwDivisionKeys();
   const divActuals = loadDivisionActuals();
   DIVKEYS.forEach(dk => {
     if (!divActuals[dk]) divActuals[dk] = {};
@@ -13076,7 +13176,13 @@ window.pnlImportCsv = function(fileId) {
   if (colIdx.month === -1 || colIdx.division === -1 || colIdx.revenue === -1) {
     showToast('CSV must have Month, Division, Revenue columns'); return;
   }
-  const DIVMAP = { landscape: 'landscape', maintenance: 'maintenance', 'snow & ice': 'snow', snow: 'snow' };
+  const DIVMAP = {};
+  gwDivisions().forEach(d => {
+    DIVMAP[d.key.toLowerCase()] = d.key;
+    DIVMAP[d.label.toLowerCase()] = d.key;
+  });
+  // legacy aliases so old Avalon CSVs still import
+  if (DIVMAP['snow'] || DIVMAP['snow & ice']) { DIVMAP['snow & ice'] = DIVMAP['snow & ice'] || DIVMAP['snow']; DIVMAP['snow'] = DIVMAP['snow'] || DIVMAP['snow & ice']; }
   const all = loadDivisionActuals();
   let imported = 0;
   lines.slice(1).forEach(line => {
@@ -17225,216 +17331,20 @@ window._p6DeleteWO = function(id) {
 
 // ── 6. Work Order Detail ──────────────────────────────────────────────────────
 function workOrderDetail(id) {
-  const R   = window.GW && window.GW.record;
-  const wos = state.workOrders || [];
-  let wo    = wos.find(w => w.id === id);
-  if (!wo && id) {
-    // Not in localStorage — this is a D1-backed work order (created from an
-    // estimate or the schedule board). Open it in the schedule visit modal,
-    // which fetches from D1, instead of fabricating a broken WO-NEW stub.
-    if (typeof window._sbOpenVisitModal === 'function') {
-      show('scheduleBoard');
-      // Give the schedule board a beat to mount, then open the visit modal.
-      setTimeout(() => window._sbOpenVisitModal(id), 150);
-      return;
-    }
+  // The legacy work-order detail page is retired. Every job click routes to
+  // the schedule board and opens the full visit modal (D1-backed), which is
+  // the single source of truth for job details, crew, checklist, multiday,
+  // portal updates and photos.
+  if (!id) {
+    // "New work order" flow — open the schedule board's new-visit modal
     show('scheduleBoard');
+    setTimeout(() => { if (typeof window._sbOpenNewVisit === 'function') window._sbOpenNewVisit(); }, 150);
     return;
   }
-  if (!wo) {
-    // No id — explicit "new work order" flow: create a fresh local stub
-    wo = { id: 'wo-'+Date.now(), woNumber:'WO-NEW', status:'scheduled', crew:'', date:'', type:'Service',
-      clientName:'', notes:'', checklist:[], materials:[], assets:[], readiness:'ready',
-      createdAt: new Date().toISOString() };
-    state.workOrders = [...(state.workOrders||[]), wo];
-    saveState();
-  }
-  const id_ = wo.id; id = id_; // ensure downstream save() targets the real id
-
-  const _woPrevStatus = wo.status;
-  function save() {
-    wo.clientName = document.getElementById('wo-client-name')?.value || wo.clientName;
-    wo.type       = document.getElementById('wo-type')?.value       || wo.type;
-    wo.date       = document.getElementById('wo-date')?.value       || wo.date;
-    wo.time       = document.getElementById('wo-time')?.value       || wo.time;
-    wo.crew       = document.getElementById('wo-crew')?.value       || wo.crew;
-    const newStatus = document.getElementById('wo-status')?.value || wo.status;
-    wo.readiness  = document.getElementById('wo-readiness')?.value  || wo.readiness;
-    wo.notes      = document.getElementById('wo-notes')?.value      || wo.notes;
-    wo.updatedAt  = new Date().toISOString();
-    // Audit status transitions
-    if (newStatus !== wo.status) {
-      wo.timeline = [...(wo.timeline||[]), { action: `Status changed to ${_p6WOStatusLabel(newStatus)}`, note: `from ${_p6WOStatusLabel(wo.status)}`, at: new Date().toISOString() }];
-      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'work_order_status_changed', entityType:'work_order', entityId:id, entityLabel:_p6WONum(wo), meta:{ from:wo.status, to:newStatus } });
-      // Fire workflow hook when WO is completed
-      if (newStatus === 'completed' && typeof window.gwWorkflow === 'object') {
-        window.gwWorkflow.workOrderCompleted({ entityId:id, entityLabel:_p6WONum(wo), clientName:wo.clientName, crew:wo.crew });
-      }
-      // Fire review request auto-trigger when WO completed
-      if (newStatus === 'completed' && typeof window.gwTriggerReviewRequest === 'function') {
-        const _woClient = wo.clientName || wo.client_name || '';
-        const _woEmail  = wo.client_email || wo.clientEmail || '';
-        window.gwTriggerReviewRequest(id, _woClient, _woEmail);
-      }
-    }
-    wo.status = newStatus;
-    state.workOrders = (state.workOrders||[]).map(w => w.id===id ? wo : w);
-    saveState();
-    showToast('Work order saved', 'success');
-    workOrderDetail(id);
-  }
-
-  // Checklist
-  const checklist = wo.checklist||[];
-  const checklistHtml = checklist.map((item,i) => `
-    <div class="wo-checklist-item">
-      <button class="wo-check-box${item.done?' checked':''}" onclick="_p6ToggleCheck('${id}',${i})">
-        ${item.done?'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-5"/></svg>':''}
-      </button>
-      <span class="wo-check-label${item.done?' checked':''}">${escapeHtml(item.text||'')}</span>
-      <button class="rp-btn-sm rp-btn-sm--danger" style="margin-left:auto" onclick="_p6RemoveCheck('${id}',${i})">✕</button>
-    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No checklist items.</p>';
-
-  // Materials
-  const mats = wo.materials||[];
-  const matsHtml = mats.map((m,i) => `
-    <div class="wo-material-item">
-      <span class="wo-mat-name">${escapeHtml(m.name||'Item')}</span>
-      <span class="wo-mat-qty">${m.qty||1} ${escapeHtml(m.unit||'ea')}</span>
-      <button class="rp-btn-sm rp-btn-sm--danger" onclick="_p6RemoveMat('${id}',${i})">✕</button>
-    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No materials allocated.</p>';
-
-  // TL events
-  const tlEvents = (wo.timeline||[]).map(e => ({
-    title: e.action, desc: e.note||'', time: e.at ? _p5FmtDate(e.at) : '—', variant: 'neutral'
-  }));
-  if (!tlEvents.length) tlEvents.push({ title: 'Work Order Created', desc: 'Initial creation', time: wo.createdAt ? _p5FmtDate(wo.createdAt) : '—', variant: 'positive' });
-  const tlHtml = R ? R.OpsTL(tlEvents) : '';
-
-  // Left rail
-  const leftRail = `
-    <section class="rp-section">
-      <div class="wo-scope-block">
-        <div class="wo-scope-label">Work Order #</div>
-        <div class="wo-scope-text" style="font-size:18px;font-weight:800;letter-spacing:.02em">${_p6WONum(wo)}</div>
-      </div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Details</span></div>
-      <div class="rp-field-grid">
-        <label class="rp-field">
-          <span class="rp-field-label">Client / Job Name</span>
-          <input class="rp-input" id="wo-client-name" value="${escapeHtml(wo.clientName||'')}" placeholder="Client or job name">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Type</span>
-          <input class="rp-input" id="wo-type" value="${escapeHtml(wo.type||'Service')}" placeholder="e.g. Lawn Care, Install">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Scheduled Date</span>
-          <input class="rp-input" id="wo-date" type="date" value="${wo.date||''}">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Time</span>
-          <input class="rp-input" id="wo-time" type="time" value="${wo.time||''}">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Crew / Assignee</span>
-          <input class="rp-input" id="wo-crew" value="${escapeHtml(wo.crew||'')}" placeholder="Crew name or lead">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Status</span>
-          <select class="rp-input" id="wo-status">
-            ${['hold','scheduled','in-progress','completed','on-hold','cancelled'].map(s=>`<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
-          </select>
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Readiness</span>
-          <select class="rp-input" id="wo-readiness">
-            ${['ready','not-ready','partial','loading','en-route','on-site','wrapping-up','completed','cancelled','delayed'].map(s=>`<option value="${s}"${wo.readiness===s?' selected':''}>${_p6ReadinessLabel(s)}</option>`).join('')}
-          </select>
-        </label>
-      </div>
-      <label class="rp-field" style="margin-top:8px">
-        <span class="rp-field-label">Notes / Scope</span>
-        <textarea class="rp-input" id="wo-notes" rows="4" placeholder="Job scope, special instructions…">${escapeHtml(wo.notes||'')}</textarea>
-      </label>
-      <div style="margin-top:12px;display:flex;gap:8px">
-        <button class="rp-btn rp-btn--primary" onclick="_p6WOSave()">Save Changes</button>
-        <button class="rp-btn" onclick="show('workOrderList')">← Back to WOs</button>
-      </div>
-    </section>
-
-    <section class="rp-section">
-      <div class="rp-section-head">
-        <span class="rp-section-title">Checklist</span>
-        <button class="rp-btn-sm" onclick="_p6AddCheck('${id}')">+ Item</button>
-      </div>
-      ${checklistHtml}
-    </section>
-
-    <section class="rp-section">
-      <div class="rp-section-head">
-        <span class="rp-section-title">Materials</span>
-        <button class="rp-btn-sm" onclick="show('materialAllocation','${id}')">Allocate</button>
-      </div>
-      ${matsHtml}
-    </section>`;
-
-  // Right rail
-  const rightRail = `
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Status</span></div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Readiness</span><br>
-          ${R ? R.ReadinessBadge(wo.readiness||'ready') : `<strong>${_p6ReadinessLabel(wo.readiness||'ready')}</strong>`}</div>
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Work Order Status</span><br>
-          <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></div>
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Crew</span><br>
-          <strong style="font-size:13px">${escapeHtml(wo.crew||'Unassigned')}</strong></div>
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Scheduled</span><br>
-          <strong style="font-size:13px">${wo.date ? _p5FmtDate(wo.date) : '—'}${wo.time?' at '+wo.time:''}</strong></div>
-      </div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Approvals</span></div>
-      <div id="wo-approval-panel-${id}"></div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Client Portal Updates</span></div>
-      <div id="wo-portal-panel-${id}"><p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">Loading updates…</p></div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Timeline</span></div>
-      ${tlHtml || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No activity yet.</p>'}
-    </section>`;
-
-  view.innerHTML = `
-  <div class="rp-shell">
-    <div class="rp-breadcrumb">
-      <button class="rp-crumb" onclick="show('workOrderList')">Work Orders</button>
-      <span class="rp-crumb-sep">›</span>
-      <span class="rp-crumb-current">${_p6WONum(wo)}</span>
-    </div>
-    <div class="rp-columns">
-      <div class="rp-col-main">${leftRail}</div>
-      <div class="rp-col-side">${rightRail}</div>
-    </div>
-  </div>`;
-
-  window._p6WOSave = save;
-
-  // Mount approval panel in right-rail after DOM renders
-  if (typeof window.gwApproval === 'object') {
-    const apEl = document.getElementById(`wo-approval-panel-${id}`);
-    if (apEl) window.gwApproval.renderPanel(apEl, 'work_order', id, _p6WONum(wo) + (wo.clientName ? ` — ${wo.clientName}` : ''));
-  }
-
-  // Mount client portal updates panel
-  if (typeof window._gwPortalUpdatesPanel === 'function') {
-    const ppEl = document.getElementById(`wo-portal-panel-${id}`);
-    if (ppEl) window._gwPortalUpdatesPanel(id, ppEl);
-  }
+  show('scheduleBoard');
+  setTimeout(() => {
+    if (typeof window._sbOpenVisitModal === 'function') window._sbOpenVisitModal(id);
+  }, 150);
 }
 window.workOrderDetail = workOrderDetail;
 
@@ -21544,6 +21454,65 @@ function systemConfig() {
       </div>
     </div>
 
+    <!-- ══ 5c. Divisions — company-defined business divisions ══════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('building', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Divisions</div>
+          <div class="sc-card-desc">Name and create your own divisions — they drive pipeline filters, financial dashboards, and reporting</div>
+        </div>
+      </div>
+      <div class="sc-card-body">
+        <div id="sc-div-list"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <button class="sc-btn" onclick="_scAddDivisionRow()" style="font-size:12px">+ Add Division</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--gw-line);padding-top:14px;margin-top:14px">
+          <span style="font-size:11px;color:var(--gw-muted);flex:1">Existing data is re-mapped by keyword — renaming a division keeps its historical numbers.</span>
+          <span id="sc-div-status" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
+          <button class="sc-btn sc-btn-primary" onclick="_scSaveDivisions()">${gwIcon('floppy', 13, '#fff')} Save Divisions</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 5d. Lead Intake Form — company-defined categories and options ═══════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('checklist', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Lead Intake Form</div>
+          <div class="sc-card-desc">Customize the Add Lead form to fit your business — project categories, work types, lead sources, and service lines</div>
+        </div>
+      </div>
+      <div class="sc-card-body">
+        <div class="sc-field" style="margin-bottom:14px">
+          <label class="sc-label">Project Categories <span style="text-transform:none;font-weight:400">(one per line — the tiles reps pick from)</span></label>
+          <textarea id="sc-intake-cats" class="sc-input" rows="6" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Landscape / Enhancement&#10;Maintenance - Recurring&#10;Hardscape"></textarea>
+          <span class="sc-hint">Optional short label after a pipe: <code>Landscape / Enhancement | Landscape</code></span>
+        </div>
+        <div class="sc-field" style="margin-bottom:14px">
+          <label class="sc-label">Work Types <span style="text-transform:none;font-weight:400">(one per line — used for commission rates)</span></label>
+          <textarea id="sc-intake-worktypes" class="sc-input" rows="5" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Landscape&#10;Maintenance - Recurring&#10;Design / Build"></textarea>
+        </div>
+        <div class="sc-g2">
+          <div class="sc-field" style="margin-bottom:14px">
+            <label class="sc-label">Lead Sources <span style="text-transform:none;font-weight:400">(one per line)</span></label>
+            <textarea id="sc-intake-sources" class="sc-input" rows="5" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Referral&#10;Google&#10;Door Hanger"></textarea>
+          </div>
+          <div class="sc-field" style="margin-bottom:14px">
+            <label class="sc-label">Service Lines <span style="text-transform:none;font-weight:400">(one per line)</span></label>
+            <textarea id="sc-intake-servicelines" class="sc-input" rows="5" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Landscape&#10;Maintenance&#10;Snow &amp; Ice"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--gw-line);padding-top:14px">
+          <span style="font-size:11px;color:var(--gw-muted);flex:1">Changes apply to new leads immediately — existing leads keep their values.</span>
+          <span id="sc-intake-status" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
+          <button class="sc-btn sc-btn-primary" onclick="_scSaveIntakeForm()">${gwIcon('floppy', 13, '#fff')} Save Intake Form</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ 6. Data Retention ═══════════════════════════════════════════════════ -->
     <div class="sc-card">
       <div class="sc-card-head">
@@ -21689,6 +21658,92 @@ function systemConfig() {
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = `${gwIcon('floppy', 13, '#fff')} Save Defaults`; }
     }
+  };
+
+  // ── Divisions editor ────────────────────────────────────────────────────────
+  window._scDivRowHtml = function(d) {
+    const key = d && d.key ? d.key : '';
+    const label = d && d.label ? d.label : '';
+    const color = d && d.color ? d.color : '#2D7A55';
+    return '<div class="sc-div-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px" data-key="' + escapeHtml(key) + '">'
+      + '<input type="color" class="sc-div-color" value="' + escapeHtml(color) + '" style="width:36px;height:32px;border:1px solid var(--gw-line);border-radius:6px;padding:2px;cursor:pointer;background:#fff">'
+      + '<input type="text" class="sc-input sc-div-label" value="' + escapeHtml(label) + '" placeholder="Division name" style="flex:1">'
+      + '<button type="button" class="sc-btn" onclick="this.closest(\'.sc-div-row\').remove()" style="font-size:12px;color:#C97B6A;border-color:#E5C4BC">Remove</button>'
+      + '</div>';
+  };
+  (function _scLoadDivisions() {
+    const wrap = document.getElementById('sc-div-list');
+    if (!wrap) return;
+    wrap.innerHTML = gwDivisions().map(d => window._scDivRowHtml(d)).join('');
+  })();
+  window._scAddDivisionRow = function() {
+    const wrap = document.getElementById('sc-div-list');
+    if (!wrap) return;
+    wrap.insertAdjacentHTML('beforeend', window._scDivRowHtml({ key: '', label: '', color: '#2D7A55' }));
+    const rows = wrap.querySelectorAll('.sc-div-row');
+    const last = rows[rows.length - 1];
+    const inp = last && last.querySelector('.sc-div-label');
+    if (inp) inp.focus();
+  };
+  window._scSaveDivisions = async function() {
+    const wrap = document.getElementById('sc-div-list');
+    if (!wrap) return;
+    const seen = {};
+    const divisions = [];
+    wrap.querySelectorAll('.sc-div-row').forEach(row => {
+      const label = (row.querySelector('.sc-div-label') || {}).value || '';
+      const color = (row.querySelector('.sc-div-color') || {}).value || '#2D7A55';
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      // Keep the original key if the row started with one (preserves historical data),
+      // otherwise derive a key from the name.
+      let key = row.getAttribute('data-key') || '';
+      if (!key) key = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('div_' + (divisions.length + 1));
+      if (seen[key]) { key = key + '_' + (divisions.length + 1); }
+      seen[key] = true;
+      divisions.push({ key, label: trimmed, color });
+    });
+    if (divisions.length === 0) { showToast('Add at least one division', 'error'); return; }
+    try { localStorage.setItem('gwCompanyDivisions', JSON.stringify(divisions)); } catch (e) {}
+    _finSyncToD1('company_divisions', divisions);
+    const st = document.getElementById('sc-div-status');
+    if (st) { st.style.opacity = '1'; setTimeout(() => { st.style.opacity = '0'; }, 2000); }
+    showToast('Divisions saved — dashboards, filters, and financials updated');
+  };
+
+  // ── Lead Intake Form editor ─────────────────────────────────────────────────
+  (function _scLoadIntakeForm() {
+    const catEl = document.getElementById('sc-intake-cats');
+    if (!catEl) return;
+    const cfg = gwIntakeConfig();
+    catEl.value = cfg.categories.map(c => c.short && c.short !== c.v ? (c.v + ' | ' + c.short) : c.v).join('\n');
+    const wtEl = document.getElementById('sc-intake-worktypes');
+    if (wtEl) wtEl.value = cfg.workTypes.map(w => w.label).join('\n');
+    const lsEl = document.getElementById('sc-intake-sources');
+    if (lsEl) lsEl.value = (cfg.leadSources || []).join('\n');
+    const slEl = document.getElementById('sc-intake-servicelines');
+    if (slEl) slEl.value = (cfg.serviceLines || []).join('\n');
+  })();
+  window._scSaveIntakeForm = async function() {
+    const lines = id => ((document.getElementById(id) || {}).value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const categories = lines('sc-intake-cats').map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return { v: parts[0], short: parts[1] || parts[0] };
+    });
+    const workTypes = lines('sc-intake-worktypes').map(l => ({
+      v: l.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+      label: l
+    }));
+    const leadSources = lines('sc-intake-sources');
+    const serviceLines = lines('sc-intake-servicelines');
+    if (categories.length === 0) { showToast('Add at least one project category', 'error'); return; }
+    if (workTypes.length === 0) { showToast('Add at least one work type', 'error'); return; }
+    const cfg = { categories, workTypes, leadSources, serviceLines };
+    try { localStorage.setItem('gwIntakeConfig', JSON.stringify(cfg)); } catch (e) {}
+    _finSyncToD1('company_intake_config', cfg);
+    const st = document.getElementById('sc-intake-status');
+    if (st) { st.style.opacity = '1'; setTimeout(() => { st.style.opacity = '0'; }, 2000); }
+    showToast('Lead intake form saved — the Add Lead form now uses your setup');
   };
 
   window._scSaveAll = async function(silent) {
