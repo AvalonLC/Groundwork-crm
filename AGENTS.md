@@ -1,0 +1,93 @@
+# AGENTS.md — Groundwork CRM
+
+Briefing for AI coding agents (Codex, Claude, etc.) working on this repo.
+Read this fully before editing anything.
+
+## What this is
+
+Groundwork CRM — a multi-tenant SaaS CRM for field-service companies
+(landscaping, HVAC, etc.), live at https://groundwork-crm.com.
+
+- **Stack**: Hono (TypeScript) on Cloudflare Pages + D1 (SQLite) + R2 (media)
+- **Backend**: `src/index.tsx` (single large Hono app), `src/portal.tsx` (client portal)
+- **Frontend**: vanilla JS bundles in `public/js/` (NO framework, NO bundler for
+  frontend code — files are served as-is). Main bundle: `public/js/app_premium.js`.
+  Icons: `public/js/gw-icons.js` (check an icon name exists before using `gwIcon()`).
+- **Build**: `npm run build` (Vite, builds `src/` into `dist/_worker.js`; also
+  auto-bumps `?v=` cache stamps referenced in `src/index.tsx`)
+
+## Hard rules
+
+1. **NO emojis** — not in code, UI strings, commit messages, or replies to the user.
+2. **NEVER modify `.github/workflows/deploy.yml`.**
+3. Frontend JS lives in `public/js/`. `public/static/` is a legacy mirror —
+   never edit `public/static/` directly; it is synced by copy (see workflow below).
+4. Production HTML loads scripts from the `/js/` path. When verifying production,
+   curl `https://groundwork-crm.com/js/<file>` — NOT `/static/` (stale mirror there
+   is expected).
+5. Multi-tenant: every D1 query must be scoped by company. Never leak data across
+   companies.
+6. Settings persist to D1 via `PUT /api/settings` (keys are prefixed per company);
+   selected keys hydrate to localStorage at login via the FIN_MAP bootstrap in
+   `src/index.tsx` (~line 11500). Do not store real data only in localStorage.
+
+## Standard edit-and-deploy workflow
+
+```bash
+# 1. Edit files in public/js/ and/or src/
+
+# 2. Sync legacy static mirror, then build
+cp -r public/js/. public/static/
+npm run build                # long-running; allow 300s
+
+# 3. Local test (PM2 app name: avalon-sales-hub, port 3000)
+fuser -k 3000/tcp 2>/dev/null; pm2 restart avalon-sales-hub; sleep 6
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000   # expect 200
+# Authenticated API test: cookie avalon_session=testtoken123
+
+# 4. Syntax check any edited JS
+node --check public/js/app_premium.js
+
+# 5. Commit and push — push to main IS the production deploy
+git add -A && git commit -m "message" && git push origin main
+
+# 6. GitHub Actions builds and deploys to Cloudflare Pages (~100 s).
+#    Verify: curl -s https://groundwork-crm.com/js/<file> | grep <new symbol>
+```
+
+If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
+`npm run build && npm run dev:local` (wrangler pages dev on port 3000, local D1).
+
+## Database (D1)
+
+- Binding: `DB`. Production DB name: `avalon-sales-hub-production`
+  (UUID in `wrangler.jsonc`, lives in the owner's Cloudflare account).
+- Local dev uses `--local` (SQLite under `.wrangler/state/`), no credentials needed.
+- Schema changes: add a new numbered file in `migrations/` (never edit old ones).
+  - Local:  `npx wrangler d1 migrations apply avalon-sales-hub-production --local`
+  - Prod migrations require a Cloudflare API token; coordinate with the owner.
+- Local console:
+  `npx wrangler d1 execute avalon-sales-hub-production --local --command="..."`
+
+## Deployment
+
+- GitHub repo: `AvalonLC/Groundwork-crm`, branch `main`.
+- `.github/workflows/deploy.yml` deploys `dist` to Cloudflare Pages project
+  `groundwork-crm` on every push to main, using repo secrets `CF_API_TOKEN`
+  and `CF_ACCOUNT_ID`. Do not add other deploy paths.
+
+## Gotchas learned the hard way
+
+- Some existing strings contain unicode (em/en dashes). If an exact-match edit
+  fails with "string not found", inspect the real bytes (grep/python) rather
+  than retrying with a guessed ASCII version.
+- `src/index.tsx` is very large (10k+ lines); grep for anchors before editing.
+- Frontend has no build step — a syntax error in `public/js/*.js` breaks the
+  live app directly. Always `node --check` after editing.
+- Divisions and lead-intake form are company-configurable: use `gwDivisions()`,
+  `gwClassifyDivision(o)`, `gwIntakeConfig()` in `app_premium.js` — never
+  hardcode division names/categories in new code.
+- The legacy work-order detail page is retired: job clicks must route to the
+  schedule board visit modal (`workOrderDetail()` is redirect-only; keep it so).
+- Onboarding wizard: `public/js/onboarding.js`, 9 steps, gated by
+  `onboarding_completed` / `onboarding_step >= 9` on the company record.
