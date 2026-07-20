@@ -140,16 +140,18 @@ async function resolveScope(db: D1Database, portalUserId: string): Promise<Porta
 
   const clientIds = mems.map(m => m.client_id)
   // Property scope: all client properties for all_properties memberships,
-  // explicit property_access rows otherwise.
+  // explicit property_access rows otherwise. Each membership also keeps its
+  // own granted list (m.property_ids) for per-record filtering.
   const propertyIds: string[] = []
   for (const m of mems) {
     if (m.all_properties) {
       const rows = (await db.prepare(`SELECT id FROM properties WHERE client_id=? AND active=1`).bind(m.client_id).all()).results as any[] || []
-      rows.forEach(r => propertyIds.push(r.id))
+      m.property_ids = rows.map(r => r.id)
     } else {
       const rows = (await db.prepare(`SELECT property_id FROM property_access WHERE membership_id=?`).bind(m.id).all()).results as any[] || []
-      rows.forEach(r => propertyIds.push(r.property_id))
+      m.property_ids = rows.map(r => r.property_id)
     }
+    m.property_ids.forEach((id: string) => propertyIds.push(id))
     m.resolved_permissions = resolvePermissions(m.role, m.permissions)
   }
 
@@ -203,6 +205,7 @@ function clientIp(c: any): string {
 export function registerPortal(app: Hono<any>, deps: {
   requireStaffAuth: (c: any, next: any) => Promise<any>
   sendEmail: (apiKey: string, to: string, subject: string, html: string, opts?: any) => Promise<boolean>
+  woFlipHolds?: (db: D1Database, estimateId: string, companyId: string, toStatus: 'scheduled' | 'cancelled') => Promise<void>
 }) {
 
   // Schema self-heal: guarantees portal tables exist in prod even before
@@ -412,6 +415,178 @@ export function registerPortal(app: Hono<any>, deps: {
         active_projects: null   // populated in Phase 1C
       }
     })
+  })
+
+  // ══ PHASE 1B: CORE RECORDS — estimates, billing, documents ════════════════
+  // All queries are company + client scoped; property scope is enforced with
+  // propOk(): records with no property assignment are visible to any member
+  // of that client, records with a property_id require that property grant.
+
+  const propOk = (s: PortalScope, rec: any): boolean => {
+    const mems = s.memberships.filter(m => m.client_id === rec.client_id)
+    if (!mems.length) return false
+    if (!rec.property_id) return true
+    return mems.some(m => m.all_properties || (m.property_ids || []).includes(rec.property_id))
+  }
+
+  const notify = async (db: D1Database, companyId: string, type: string, title: string, body: string, entityType: string, entityId: string, actionUrl: string) => {
+    try {
+      await db.prepare(`INSERT OR IGNORE INTO notifications (id,company_id,type,title,body,entity_type,entity_id,action_url)
+        VALUES (?,?,?,?,?,?,?,?)`)
+        .bind('notif_' + pUid(), companyId, type, title, body, entityType, entityId, actionUrl).run()
+    } catch (_) {}
+  }
+
+  // Client-safe estimate columns (never internal_notes / cost_data / ai_meta)
+  const EST_LIST_COLS = `id, est_number, title, status, total, subtotal, tax_amt, discount_amt,
+    deposit_amt, deposit_paid, estimate_date, expiry_date, sent_at, viewed_at, accepted_at,
+    declined_at, client_id, property_id, portal_token, created_at`
+  const EST_DETAIL_COLS = EST_LIST_COLS + `, line_items, scope_of_work, customer_notes, terms, payment_schedule, doc_type`
+
+  // GET /api/portal/estimates
+  app.get('/api/portal/estimates', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_estimates')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const rows = ((await db.prepare(
+      `SELECT ${EST_LIST_COLS} FROM estimates
+       WHERE company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted')
+       ORDER BY created_at DESC LIMIT 200`
+    ).bind(s.companyId, ...s.clientIds).all()).results as any[] || []).filter(r => propOk(s, r))
+    return c.json({ ok: true, data: rows })
+  })
+
+  // GET /api/portal/estimates/:id
+  app.get('/api/portal/estimates/:id', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_estimates')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const row: any = await db.prepare(
+      `SELECT ${EST_DETAIL_COLS} FROM estimates
+       WHERE id=? AND company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted') LIMIT 1`
+    ).bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
+    if (!row || !propOk(s, row)) return c.json({ error: 'Not found' }, 404)
+    // Mark viewed (first client view only)
+    if (row.status === 'sent') {
+      await db.prepare(`UPDATE estimates SET status='viewed', viewed_at=COALESCE(viewed_at, datetime('now')), updated_at=datetime('now') WHERE id=?`).bind(row.id).run()
+      row.status = 'viewed'
+      await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: row.client_id, eventType: 'portal_estimate_viewed', entityType: 'estimate', entityId: row.id, entityLabel: row.est_number || row.id, ip: clientIp(c) })
+    }
+    return c.json({ ok: true, data: row })
+  })
+
+  // POST /api/portal/estimates/:id/approve
+  app.post('/api/portal/estimates/:id/approve', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const cin = s.clientIds.map(() => '?').join(',')
+    const row: any = await db.prepare(`SELECT id, client_id, property_id, status, est_number, client_name FROM estimates
+      WHERE id=? AND company_id=? AND client_id IN (${cin}) LIMIT 1`).bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
+    if (!row || !propOk(s, row)) return c.json({ error: 'Not found' }, 404)
+    if (!s.can('approve_estimates', row.client_id)) return c.json({ error: 'You do not have permission to approve estimates' }, 403)
+    if (!['sent', 'viewed'].includes(row.status)) return c.json({ error: 'This estimate is no longer awaiting a response' }, 409)
+    await db.prepare(`UPDATE estimates SET status='approved', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).bind(row.id).run()
+    if (deps.woFlipHolds) await deps.woFlipHolds(db, row.id, s.companyId, 'scheduled')
+    await notify(db, s.companyId, 'estimate_approved',
+      `Estimate ${row.est_number || row.id} Approved`,
+      `${s.user.name} approved the estimate via the client portal. Ready to schedule.`,
+      'estimate', row.id, '#estimates')
+    await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: row.client_id, eventType: 'portal_estimate_approved', entityType: 'estimate', entityId: row.id, entityLabel: row.est_number || row.id, ip: clientIp(c) })
+    return c.json({ ok: true, status: 'approved' })
+  })
+
+  // POST /api/portal/estimates/:id/decline — decline or request changes
+  app.post('/api/portal/estimates/:id/decline', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const cin = s.clientIds.map(() => '?').join(',')
+    const row: any = await db.prepare(`SELECT id, client_id, property_id, status, est_number FROM estimates
+      WHERE id=? AND company_id=? AND client_id IN (${cin}) LIMIT 1`).bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
+    if (!row || !propOk(s, row)) return c.json({ error: 'Not found' }, 404)
+    if (!s.can('approve_estimates', row.client_id)) return c.json({ error: 'You do not have permission to respond to estimates' }, 403)
+    if (!['sent', 'viewed'].includes(row.status)) return c.json({ error: 'This estimate is no longer awaiting a response' }, 409)
+    const b: any = await c.req.json().catch(() => ({}))
+    const reason = String(b.reason || '').slice(0, 1000)
+    await db.prepare(`UPDATE estimates SET status='declined', declined_at=datetime('now'), decline_reason=?, updated_at=datetime('now') WHERE id=?`)
+      .bind(reason, row.id).run()
+    if (deps.woFlipHolds) await deps.woFlipHolds(db, row.id, s.companyId, 'cancelled')
+    await notify(db, s.companyId, 'estimate_declined',
+      `Estimate ${row.est_number || row.id} — Changes Requested`,
+      reason ? `${s.user.name}: "${reason}"` : `${s.user.name} declined the estimate via the client portal.`,
+      'estimate', row.id, '#estimates')
+    await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: row.client_id, eventType: 'portal_estimate_declined', entityType: 'estimate', entityId: row.id, entityLabel: row.est_number || row.id, meta: { reason }, ip: clientIp(c) })
+    return c.json({ ok: true, status: 'declined' })
+  })
+
+  // GET /api/portal/invoices
+  app.get('/api/portal/invoices', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_billing')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const rows = ((await db.prepare(
+      `SELECT id, invoice_number, title, status, total, amount_paid, balance_due, due_date,
+              sent_at, paid_at, client_id, property_id, portal_token, created_at
+       FROM invoices WHERE company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted')
+       ORDER BY created_at DESC LIMIT 200`
+    ).bind(s.companyId, ...s.clientIds).all()).results as any[] || []).filter(r => propOk(s, r))
+    return c.json({ ok: true, data: rows })
+  })
+
+  // GET /api/portal/invoices/:id
+  app.get('/api/portal/invoices/:id', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_billing')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const row: any = await db.prepare(
+      `SELECT id, invoice_number, title, status, subtotal, tax_amount, discount_amount, total,
+              amount_paid, balance_due, due_date, sent_at, viewed_at, paid_at, line_items,
+              terms, footer_note, notes, client_id, property_id, portal_token, created_at
+       FROM invoices WHERE id=? AND company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted') LIMIT 1`
+    ).bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
+    if (!row || !propOk(s, row)) return c.json({ error: 'Not found' }, 404)
+    if (row.status === 'sent') {
+      await db.prepare(`UPDATE invoices SET status='viewed', viewed_at=COALESCE(viewed_at, datetime('now')), updated_at=datetime('now') WHERE id=?`).bind(row.id).run()
+      row.status = 'viewed'
+    }
+    // Payments applied to this invoice
+    row.payments = (await db.prepare(
+      `SELECT amount, status, payment_method, created_at FROM payments
+       WHERE invoice_id=? AND company_id=? AND status IN ('succeeded','paid','completed') ORDER BY created_at DESC`
+    ).bind(row.id, s.companyId).all()).results || []
+    return c.json({ ok: true, data: row })
+  })
+
+  // GET /api/portal/payments — payment history across the account
+  app.get('/api/portal/payments', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_payment_history')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const rows = (await db.prepare(
+      `SELECT p.id, p.amount, p.status, p.payment_method, p.created_at, p.invoice_number, p.invoice_id, p.client_id
+       FROM payments p WHERE p.company_id=? AND p.client_id IN (${cin})
+       AND p.status IN ('succeeded','paid','completed')
+       ORDER BY p.created_at DESC LIMIT 100`
+    ).bind(s.companyId, ...s.clientIds).all()).results || []
+    return c.json({ ok: true, data: rows })
+  })
+
+  // GET /api/portal/documents — proposals + shared document links
+  app.get('/api/portal/documents', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('view_documents')) return c.json({ error: 'Not permitted' }, 403)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const proposals = ((await db.prepare(
+      `SELECT id, prop_number, title, status, total, portal_token, sent_at, accepted_at, proposal_date, created_at, client_id, property_id
+       FROM proposals WHERE company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted')
+       ORDER BY created_at DESC LIMIT 100`
+    ).bind(s.companyId, ...s.clientIds).all()).results as any[] || []).filter(r => propOk(s, r))
+    return c.json({ ok: true, data: { proposals } })
   })
 
   // ══ INTERNAL ADMIN APIS (staff auth) ══════════════════════════════════════
@@ -777,6 +952,41 @@ function portalShellPage(): string {
   .gwp-loading{display:flex;align-items:center;justify-content:center;min-height:60vh;color:var(--muted);font-size:13px;flex-direction:column;gap:14px}
   .gwp-spin{width:30px;height:30px;border:2.5px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:gsp .8s linear infinite}
   @keyframes gsp{to{transform:rotate(360deg)}}
+  .gwp-list{display:flex;flex-direction:column;gap:10px}
+  .gwp-item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px;display:flex;justify-content:space-between;align-items:center;gap:14px;cursor:pointer;transition:border-color .12s}
+  .gwp-item:hover{border-color:var(--brand)}
+  .gwp-item .it{font-size:14px;font-weight:700}
+  .gwp-item .is{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .gwp-item .ir{text-align:right;flex-shrink:0}
+  .gwp-item .iv{font-size:15px;font-weight:800}
+  .gwp-status{display:inline-block;font-size:10.5px;font-weight:700;border-radius:20px;padding:3px 10px;letter-spacing:.3px;text-transform:uppercase}
+  .st-sent,.st-viewed{background:rgba(77,138,186,.12);color:#3B72A0}
+  .st-approved,.st-accepted,.st-paid{background:rgba(45,122,85,.12);color:var(--brand)}
+  .st-declined,.st-overdue{background:rgba(180,66,58,.1);color:var(--danger)}
+  .st-partial{background:rgba(216,158,58,.14);color:#9A6D1D}
+  .gwp-back{display:inline-flex;align-items:center;gap:7px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;margin-bottom:16px}
+  .gwp-back:hover{color:var(--brand)}
+  .gwp-detail{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;max-width:760px}
+  .gwp-detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .gwp-detail h3{font-size:18px;font-weight:800}
+  .gwp-detail .dnum{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .gwp-lines{width:100%;border-collapse:collapse;margin:18px 0 8px;font-size:13.5px}
+  .gwp-lines th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line)}
+  .gwp-lines td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .gwp-lines .num{text-align:right;white-space:nowrap}
+  .gwp-totals{margin-left:auto;max-width:280px;font-size:13.5px;margin-top:12px}
+  .gwp-totals div{display:flex;justify-content:space-between;padding:5px 10px}
+  .gwp-totals .tt{font-weight:800;font-size:15px;border-top:2px solid var(--ink);margin-top:4px;padding-top:9px}
+  .gwp-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+  .gwp-btn-ghost{display:inline-flex;align-items:center;justify-content:center;background:#fff;color:var(--danger);border:1px solid var(--line);font-weight:700;font-size:14px;padding:12px 24px;border-radius:9px;cursor:pointer;font-family:inherit}
+  .gwp-btn-ghost:hover{border-color:var(--danger)}
+  .gwp-note{background:var(--bg);border-radius:9px;padding:12px 15px;font-size:13px;line-height:1.6;color:var(--ink);margin-top:14px;white-space:pre-wrap}
+  .gwp-banner-ok{background:rgba(45,122,85,.08);border:1px solid rgba(45,122,85,.25);color:var(--brand);font-size:13.5px;font-weight:600;padding:12px 16px;border-radius:10px;margin-bottom:18px}
+  .gwp-banner-warn{background:rgba(180,66,58,.06);border:1px solid rgba(180,66,58,.2);color:var(--danger);font-size:13.5px;font-weight:600;padding:12px 16px;border-radius:10px;margin-bottom:18px}
+  textarea.gwp-input{min-height:90px;resize:vertical}
+  .gwp-tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+  .gwp-tab{background:none;border:none;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--muted);padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .gwp-tab.active{color:var(--brand);border-bottom-color:var(--brand)}
 </style></head>
 <body>
 <div id="portal-root"><div class="gwp-loading"><div class="gwp-spin"></div>Loading your portal...</div></div>
@@ -858,12 +1068,159 @@ function portalShellPage(): string {
       api('/api/portal/account',{method:'PUT',body:{current_password:document.getElementById('pw-cur').value,new_password:document.getElementById('pw-new').value}})
         .then(function(d){if(d.error)return flash('pw-err',d.error);document.getElementById('pw-cur').value='';document.getElementById('pw-new').value='';flash('pw-ok','Password updated')})};
   }
+  var fmtD=function(s){if(!s)return '';var d=new Date(String(s).replace(' ','T'));return isNaN(d)?String(s).slice(0,10):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
+  var stPill=function(st){var lbl={sent:'Awaiting Review',viewed:'Awaiting Review',approved:'Approved',accepted:'Accepted',declined:'Declined',paid:'Paid',partial:'Partially Paid',overdue:'Overdue'}[st]||st;return '<span class="gwp-status st-'+esc(st)+'">'+esc(lbl)+'</span>'};
+  var propLabel=function(pid){var p=(ME.properties||[]).find(function(x){return x.id===pid});if(!p)return '';return p.label||[p.street,p.city].filter(Boolean).join(', ')};
+
+  // ── Estimates ──────────────────────────────────────────────────────────
+  function renderEstimates(){
+    if(!can('view_estimates')){shell('<h2 class="gwp-h">Estimates</h2><div class="gwp-empty">Your account does not include access to estimates.</div>');bindNav();return}
+    api('/api/portal/estimates').then(function(d){
+      var rows=d.data||[];
+      var awaiting=rows.filter(function(r){return r.status==='sent'||r.status==='viewed'});
+      var others=rows.filter(function(r){return r.status!=='sent'&&r.status!=='viewed'});
+      function itemHtml(r){
+        var pl=propLabel(r.property_id);
+        return '<div class="gwp-item" data-est="'+esc(r.id)+'"><div><div class="it">'+esc(r.title||('Estimate '+(r.est_number||'')))+'</div>'+
+          '<div class="is">'+esc(r.est_number||'')+(pl?' &middot; '+esc(pl):'')+' &middot; '+fmtD(r.estimate_date||r.created_at)+'</div></div>'+
+          '<div class="ir"><div class="iv">'+money(r.total)+'</div><div style="margin-top:5px">'+stPill(r.status)+'</div></div></div>'}
+      shell('<h2 class="gwp-h">Estimates</h2><p class="gwp-hs">Review and respond to estimates from your contractor.</p>'+
+        (awaiting.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">Awaiting Your Review ('+awaiting.length+')</h2><div style="height:10px"></div><div class="gwp-list">'+awaiting.map(itemHtml).join('')+'</div></section>':'')+
+        (others.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">History</h2><div style="height:10px"></div><div class="gwp-list">'+others.map(itemHtml).join('')+'</div></section>':'')+
+        (!rows.length?'<div class="gwp-empty">No estimates yet. When your contractor sends one, it will appear here.</div>':''));
+      bindNav();
+      Array.prototype.forEach.call(document.querySelectorAll('[data-est]'),function(el){el.onclick=function(){renderEstimateDetail(el.getAttribute('data-est'))}});
+    })
+  }
+  function renderEstimateDetail(id){
+    api('/api/portal/estimates/'+id).then(function(d){
+      if(d.error){renderEstimates();return}
+      var r=d.data;var lines=[];try{lines=JSON.parse(r.line_items||'[]')}catch(_){}
+      var canApprove=can('approve_estimates')&&(r.status==='sent'||r.status==='viewed');
+      var lineRows=lines.map(function(l){
+        var qty=l.qty||l.quantity||1,price=l.price||l.unit_price||l.rate||0,amt=l.amount!=null?l.amount:qty*price;
+        return '<tr><td>'+esc(l.name||l.description||l.item||'')+(l.description&&l.name?'<div style="font-size:12px;color:var(--muted);margin-top:2px">'+esc(l.description)+'</div>':'')+'</td><td class="num">'+esc(qty)+'</td><td class="num">'+money(price)+'</td><td class="num">'+money(amt)+'</td></tr>'}).join('');
+      var banner='';
+      if(r.status==='approved'||r.status==='accepted')banner='<div class="gwp-banner-ok">You approved this estimate'+(r.accepted_at?' on '+fmtD(r.accepted_at):'')+'. Your contractor will follow up on scheduling.</div>';
+      if(r.status==='declined')banner='<div class="gwp-banner-warn">You declined this estimate'+(r.declined_at?' on '+fmtD(r.declined_at):'')+'.</div>';
+      shell('<button class="gwp-back" id="est-back">&larr; Back to estimates</button>'+banner+
+        '<div class="gwp-detail"><div class="gwp-detail-head"><div><h3>'+esc(r.title||'Estimate')+'</h3><div class="dnum">'+esc(r.est_number||'')+' &middot; '+fmtD(r.estimate_date||r.created_at)+(r.expiry_date?' &middot; Valid through '+fmtD(r.expiry_date):'')+'</div></div>'+stPill(r.status)+'</div>'+
+        (r.scope_of_work?'<div class="gwp-note">'+esc(r.scope_of_work)+'</div>':'')+
+        (lineRows?'<table class="gwp-lines"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>'+lineRows+'</tbody></table>':'')+
+        '<div class="gwp-totals">'+
+        (r.subtotal&&r.subtotal!==r.total?'<div><span>Subtotal</span><span>'+money(r.subtotal)+'</span></div>':'')+
+        (r.discount_amt?'<div><span>Discount</span><span>-'+money(r.discount_amt)+'</span></div>':'')+
+        (r.tax_amt?'<div><span>Tax</span><span>'+money(r.tax_amt)+'</span></div>':'')+
+        '<div class="tt"><span>Total</span><span>'+money(r.total)+'</span></div>'+
+        (r.deposit_amt?'<div><span>Deposit due</span><span>'+money(r.deposit_amt)+(r.deposit_paid?' (paid)':'')+'</span></div>':'')+
+        '</div>'+
+        (r.customer_notes?'<div class="gwp-note">'+esc(r.customer_notes)+'</div>':'')+
+        (r.terms?'<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;white-space:pre-wrap">'+esc(r.terms)+'</div>':'')+
+        (canApprove?'<div class="gwp-actions"><button class="gwp-btn" id="est-approve" style="width:auto">Approve Estimate</button><button class="gwp-btn-ghost" id="est-decline">Decline / Request Changes</button></div><div id="est-decline-box" style="display:none;margin-top:14px"><label class="gwp-label">Tell us what you would like changed (optional)</label><textarea class="gwp-input" id="est-reason"></textarea><div style="height:10px"></div><button class="gwp-btn-ghost" id="est-decline-send">Send Response</button></div>':'')+
+        '<div class="gwp-err" id="est-err"></div></div>');
+      bindNav();
+      document.getElementById('est-back').onclick=function(){renderEstimates()};
+      if(canApprove){
+        var errEl=document.getElementById('est-err');
+        document.getElementById('est-approve').onclick=function(){
+          if(!confirm('Approve this estimate for '+money(r.total)+'?'))return;
+          this.disabled=true;
+          api('/api/portal/estimates/'+id+'/approve',{method:'POST'}).then(function(x){
+            if(x.error){errEl.textContent=x.error;errEl.style.display='block';return}
+            renderEstimateDetail(id)})};
+        document.getElementById('est-decline').onclick=function(){document.getElementById('est-decline-box').style.display='block';this.style.display='none'};
+        document.getElementById('est-decline-send').onclick=function(){
+          this.disabled=true;
+          api('/api/portal/estimates/'+id+'/decline',{method:'POST',body:{reason:document.getElementById('est-reason').value}}).then(function(x){
+            if(x.error){errEl.textContent=x.error;errEl.style.display='block';return}
+            renderEstimateDetail(id)})};
+      }
+    })
+  }
+
+  // ── Billing ────────────────────────────────────────────────────────────
+  function renderBilling(tab){
+    tab=tab||'invoices';
+    if(!can('view_billing')){shell('<h2 class="gwp-h">Billing</h2><div class="gwp-empty">Your account does not include access to billing.</div>');bindNav();return}
+    var loadHistory=tab==='history'&&can('view_payment_history');
+    api(loadHistory?'/api/portal/payments':'/api/portal/invoices').then(function(d){
+      var rows=d.data||[];var inner;
+      var tabs='<div class="gwp-tabs"><button class="gwp-tab'+(tab==='invoices'?' active':'')+'" data-tab="invoices">Invoices</button>'+(can('view_payment_history')?'<button class="gwp-tab'+(tab==='history'?' active':'')+'" data-tab="history">Payment History</button>':'')+'</div>';
+      if(loadHistory){
+        inner=rows.length?'<div class="gwp-list">'+rows.map(function(p){
+          return '<div class="gwp-item" style="cursor:default"><div><div class="it">'+money(p.amount)+'</div><div class="is">'+esc(p.invoice_number?('Invoice '+p.invoice_number+' · '):'')+esc(p.payment_method||'payment')+'</div></div><div class="ir"><div class="is">'+fmtD(p.created_at)+'</div></div></div>'}).join('')+'</div>'
+          :'<div class="gwp-empty">No payments recorded yet.</div>';
+      }else{
+        var open=rows.filter(function(r){return ['sent','viewed','partial','overdue'].indexOf(r.status)>=0});
+        var closed=rows.filter(function(r){return ['sent','viewed','partial','overdue'].indexOf(r.status)<0});
+        function invHtml(r){var pl=propLabel(r.property_id);
+          return '<div class="gwp-item" data-inv="'+esc(r.id)+'"><div><div class="it">'+esc(r.title||('Invoice '+(r.invoice_number||'')))+'</div><div class="is">'+esc(r.invoice_number||'')+(pl?' &middot; '+esc(pl):'')+(r.due_date?' &middot; Due '+fmtD(r.due_date):'')+'</div></div>'+
+          '<div class="ir"><div class="iv">'+money(r.balance_due!=null&&['sent','viewed','partial','overdue'].indexOf(r.status)>=0?r.balance_due:r.total)+'</div><div style="margin-top:5px">'+stPill(r.status)+'</div></div></div>'}
+        inner=(open.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">Open ('+open.length+')</h2><div style="height:10px"></div><div class="gwp-list">'+open.map(invHtml).join('')+'</div></section>':'')+
+          (closed.length?'<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">Paid &amp; Closed</h2><div style="height:10px"></div><div class="gwp-list">'+closed.map(invHtml).join('')+'</div></section>':'')+
+          (!rows.length?'<div class="gwp-empty">No invoices yet.</div>':'');
+      }
+      shell('<h2 class="gwp-h">Billing</h2><p class="gwp-hs">Invoices, balances, and payment history.</p>'+tabs+inner);
+      bindNav();
+      Array.prototype.forEach.call(document.querySelectorAll('[data-tab]'),function(b){b.onclick=function(){renderBilling(b.getAttribute('data-tab'))}});
+      Array.prototype.forEach.call(document.querySelectorAll('[data-inv]'),function(el){el.onclick=function(){renderInvoiceDetail(el.getAttribute('data-inv'))}});
+    })
+  }
+  function renderInvoiceDetail(id){
+    api('/api/portal/invoices/'+id).then(function(d){
+      if(d.error){renderBilling();return}
+      var r=d.data;var lines=[];try{lines=JSON.parse(r.line_items||'[]')}catch(_){}
+      var lineRows=lines.map(function(l){
+        var qty=l.qty||l.quantity||1,price=l.price||l.unit_price||l.rate||0,amt=l.amount!=null?l.amount:qty*price;
+        return '<tr><td>'+esc(l.name||l.description||l.item||'')+'</td><td class="num">'+esc(qty)+'</td><td class="num">'+money(price)+'</td><td class="num">'+money(amt)+'</td></tr>'}).join('');
+      var openBal=['sent','viewed','partial','overdue'].indexOf(r.status)>=0&&r.balance_due>0;
+      var pays=(r.payments||[]).map(function(p){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:7px 10px;border-bottom:1px solid var(--line)"><span>'+fmtD(p.created_at)+' &middot; '+esc(p.payment_method||'payment')+'</span><span style="font-weight:700">'+money(p.amount)+'</span></div>'}).join('');
+      shell('<button class="gwp-back" id="inv-back">&larr; Back to billing</button>'+
+        (r.status==='paid'?'<div class="gwp-banner-ok">This invoice is paid in full. Thank you.</div>':'')+
+        (r.status==='overdue'?'<div class="gwp-banner-warn">This invoice is past due. Balance: '+money(r.balance_due)+'</div>':'')+
+        '<div class="gwp-detail"><div class="gwp-detail-head"><div><h3>'+esc(r.title||'Invoice')+'</h3><div class="dnum">'+esc(r.invoice_number||'')+(r.due_date?' &middot; Due '+fmtD(r.due_date):'')+'</div></div>'+stPill(r.status)+'</div>'+
+        (lineRows?'<table class="gwp-lines"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>'+lineRows+'</tbody></table>':'')+
+        '<div class="gwp-totals">'+
+        (r.subtotal&&r.subtotal!==r.total?'<div><span>Subtotal</span><span>'+money(r.subtotal)+'</span></div>':'')+
+        (r.discount_amount?'<div><span>Discount</span><span>-'+money(r.discount_amount)+'</span></div>':'')+
+        (r.tax_amount?'<div><span>Tax</span><span>'+money(r.tax_amount)+'</span></div>':'')+
+        '<div class="tt"><span>Total</span><span>'+money(r.total)+'</span></div>'+
+        (r.amount_paid?'<div><span>Paid</span><span>-'+money(r.amount_paid)+'</span></div>':'')+
+        (openBal?'<div class="tt"><span>Balance Due</span><span>'+money(r.balance_due)+'</span></div>':'')+
+        '</div>'+
+        (pays?'<div style="margin-top:20px"><div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Payments</div>'+pays+'</div>':'')+
+        (openBal&&can('make_payments')&&r.portal_token?'<div class="gwp-actions"><a class="gwp-btn" style="width:auto;text-decoration:none" href="/invoices/portal/'+esc(r.portal_token)+'" target="_blank" rel="noopener">Pay '+money(r.balance_due)+'</a></div>':'')+
+        (r.notes?'<div class="gwp-note">'+esc(r.notes)+'</div>':'')+
+        (r.terms?'<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;white-space:pre-wrap">'+esc(r.terms)+'</div>':'')+
+        '</div>');
+      bindNav();
+      document.getElementById('inv-back').onclick=function(){renderBilling()};
+    })
+  }
+
+  // ── Documents ──────────────────────────────────────────────────────────
+  function renderDocuments(){
+    if(!can('view_documents')){shell('<h2 class="gwp-h">Documents</h2><div class="gwp-empty">Your account does not include access to documents.</div>');bindNav();return}
+    api('/api/portal/documents').then(function(d){
+      var props=(d.data&&d.data.proposals)||[];
+      var items=props.map(function(p){var pl=propLabel(p.property_id);
+        return '<div class="gwp-item" data-doc="'+esc(p.portal_token||'')+'"><div><div class="it">'+esc(p.title||('Proposal '+(p.prop_number||'')))+'</div><div class="is">Proposal'+(p.prop_number?' '+esc(p.prop_number):'')+(pl?' &middot; '+esc(pl):'')+' &middot; '+fmtD(p.proposal_date||p.created_at)+'</div></div>'+
+        '<div class="ir">'+(p.total?'<div class="iv">'+money(p.total)+'</div>':'')+'<div style="margin-top:5px">'+stPill(p.status)+'</div></div></div>'}).join('');
+      shell('<h2 class="gwp-h">Documents</h2><p class="gwp-hs">Proposals and documents shared with you.</p>'+
+        (items?'<div class="gwp-list">'+items+'</div>':'<div class="gwp-empty">No documents yet. Proposals and contracts shared by your contractor will appear here.</div>'));
+      bindNav();
+      Array.prototype.forEach.call(document.querySelectorAll('[data-doc]'),function(el){
+        el.onclick=function(){var t=el.getAttribute('data-doc');if(t)window.open('/portal/proposal/'+t,'_blank','noopener')}});
+    })
+  }
+
   function render(){
     if(VIEW==='home')return renderHome();
     if(VIEW==='account')return renderAccount();
-    var map={projects:['Projects','Track active work, schedules, and daily updates.'],estimates:['Estimates','Review and approve estimates.'],billing:['Billing','Invoices, payments, and balance.'],documents:['Documents','Contracts, proposals, and files shared with you.']};
-    var m=map[VIEW]||map.projects;
-    shell(comingSoon(m[0],m[1]));bindNav();
+    if(VIEW==='estimates')return renderEstimates();
+    if(VIEW==='billing')return renderBilling();
+    if(VIEW==='documents')return renderDocuments();
+    shell(comingSoon('Projects','Track active work, schedules, and daily updates.'));bindNav();
   }
   function bindNav(){
     Array.prototype.forEach.call(document.querySelectorAll('[data-v]'),function(a){
