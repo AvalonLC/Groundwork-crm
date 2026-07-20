@@ -636,17 +636,30 @@ function _onbStep5_Done() {
 }
 
 window._onbFinish = async function(view) {
-  // Mark onboarding complete
-  try {
-    await fetch('/api/company/branding', {
-      method: 'PUT', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ onboarding_completed: 1, onboarding_step: 6 })
-    });
-  } catch(e) {}
+  // Mark onboarding complete — MUST persist. Retry once on failure, verify
+  // response, and never let UI/AI side effects block or mask the save.
+  let saved = false;
+  for (let attempt = 0; attempt < 2 && !saved; attempt++) {
+    try {
+      const r = await fetch('/api/company/branding', {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboarding_completed: 1, onboarding_step: 6 })
+      });
+      saved = r.ok;
+    } catch(e) { saved = false; }
+    if (!saved && attempt === 0) await new Promise(res => setTimeout(res, 800));
+  }
+  if (!saved) {
+    // Last resort: fire-and-forget beacon-style retry after navigation, and
+    // tell the user rather than silently losing the completion.
+    try { setTimeout(() => { fetch('/api/company/branding', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ onboarding_completed: 1, onboarding_step: 6 }) }).catch(()=>{}); }, 3000); } catch(e) {}
+    try { _onbFlash('Saving your setup progress hit a network snag — retrying in the background.'); } catch(e) {}
+  }
   document.getElementById('onb-overlay')?.remove();
   if (typeof show === 'function') show(view);
-  // Hand off to the AI copilot: celebrate + surface the Getting Started launcher
+  // Side effects (celebration, launcher) are decorative — isolated so they can
+  // never block or throw into the save path above.
   try {
     if (window.gwCopilot) window.gwCopilot.confetti(36);
     setTimeout(() => { try { _gwGettingStartedInit(); } catch(e) {} }, 1500);
@@ -772,6 +785,9 @@ function _escOnb(s) {
 Shown to tenant admins after the wizard until every item is done (or dismissed
 for the session). Items auto-detect via /api/onboarding/checklist. ────────── */
 async function _gwGettingStartedInit() {
+  // Groundwork AI orb supersedes the old floating launcher — it owns the
+  // bottom-right corner and exposes the checklist in its Setup tab.
+  if (window.gwAI && typeof window.gwAI.open === 'function') { try { window.gwAI.noteSetupPending(); } catch(e) {} return; }
   if (window._gwGSDismissed || document.getElementById('gwGSLauncher')) return;
   if (sessionStorage.getItem('gwGSDismissed')) return;
   let data;
@@ -833,7 +849,8 @@ async function _gwGSOpenPanel() {
       ${!it.done ? `<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-items:stretch">
         ${hasTour ? `<button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.startTour('${_escOnb(it.id)}')" style="background:#2D7A55;border:none;color:#fff;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${(typeof gwIcon==='function')?gwIcon('sparkle',12,'currentColor'):''} Show me</button>` : ''}
         ${it.view ? `<button onclick="document.getElementById('gwGSPanel').remove();if(typeof show==='function')show('${_escOnb(it.view)}')" style="background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${_escOnb(it.cta||'Open')}</button>` : ''}
-      </div>` : ''}
+        <button data-gs-done="${_escOnb(it.id)}" onclick="window._gwGSMarkDone('${_escOnb(it.id)}',true,this)" style="background:#fff;border:1.5px solid #D1D5DB;color:#6B7280;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">Mark done</button>
+      </div>` : (it.manual_done && !it.auto_done ? `<button data-gs-done="${_escOnb(it.id)}" onclick="window._gwGSMarkDone('${_escOnb(it.id)}',false,this)" style="background:none;border:none;color:#9CA3AF;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;text-decoration:underline;flex-shrink:0">Undo</button>` : '')}
     </div>`;}).join('')}
   </div>
   ${window.gwCopilot ? `<div style="padding:11px 16px;background:#F7F9F7;border-top:1px solid #EDEDE8">
@@ -848,6 +865,53 @@ window._gwGSDismiss = function() {
   document.getElementById('gwGSPanel')?.remove();
   document.getElementById('gwGSLauncher')?.remove();
 };
-window.gwGettingStarted = _gwGSOpenPanel;
 
-console.log('[Groundwork] onboarding.js loaded v20260718t26');
+/* Shared checklist persistence — THE canonical "Done" saver.
+   Reliable by design: optimistic UI, disabled-while-saving, one automatic
+   retry, verified server response, revert + message on true failure. Used by
+   both the legacy GS panel and the Groundwork AI Setup tab. */
+window._gwGSPersistDone = async function(stepId, done) {
+  const send = () => fetch('/api/onboarding/checklist/' + encodeURIComponent(stepId), {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ done: !!done })
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await send();
+      if (r.ok) {
+        const raw = await r.json().catch(() => null);
+        const d = raw && raw.data ? raw.data : raw;
+        // Verify the server acknowledged the exact state we asked for
+        if (d && typeof d.done === 'boolean') return d.done === !!done;
+        return true;
+      }
+    } catch(e) {}
+    if (attempt === 0) await new Promise(res => setTimeout(res, 700));
+  }
+  return false;
+};
+
+window._gwGSMarkDone = async function(stepId, done, btn) {
+  if (btn && btn.dataset.saving === '1') return; // idempotent: ignore double clicks
+  const prevLabel = btn ? btn.textContent : '';
+  if (btn) { btn.dataset.saving = '1'; btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = done ? 'Saving…' : 'Undoing…'; }
+  const ok = await window._gwGSPersistDone(stepId, done);
+  if (ok) {
+    // Re-render panel from server truth so state is verified, not assumed
+    try { await _gwGSOpenPanel(); } catch(e) {}
+    try { if (window.gwCopilot && done) window.gwCopilot.checkCelebrate(); } catch(e) {}
+    try { if (window.gwAI && window.gwAI.refreshSetup) window.gwAI.refreshSetup(); } catch(e) {}
+  } else {
+    if (btn) { btn.dataset.saving = ''; btn.disabled = false; btn.style.opacity = ''; btn.textContent = prevLabel; }
+    try { alert("Couldn't save that just now — check your connection and try again."); } catch(e) {}
+  }
+};
+
+// The orb owns Getting Started when present; legacy panel is the fallback.
+window.gwGettingStarted = function() {
+  if (window.gwAI && typeof window.gwAI.open === 'function') { window.gwAI.open('setup'); return; }
+  return _gwGSOpenPanel();
+};
+
+console.log('[Groundwork] onboarding.js loaded v20260720t30');

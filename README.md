@@ -442,3 +442,20 @@ Edit `public/js/gw_i18n.js`:
 - **Getting Started panel** (onboarding.js): each undone item now has a green "✨ Show me" tour button above the existing CTA; footer button opens the AI chat. Version `v20260718t26`.
 - Script tag added after onboarding.js in index.tsx (`gw_copilot.js?v=20260718t26`).
 - E2E-verified: 10 tours registered, cl_client tour navigates + spotlights "+ Add Client" with pulse ring, chat opens with 4 chips, chip launches tour, GS panel shows Show-me/Ask-AI. Deployed `71d77e1`, prod-verified.
+
+## Groundwork AI Assistant + Done-Bug Fix (T30)
+- **Done bug fixed** (Getting Started checklist): root cause was an orphaned endpoint — `POST /api/onboarding/checklist/:stepId` existed but NO client ever called it; the GS panel rendered no "Mark done" control, so manual completion was impossible. Fixes:
+  - `onboarding.js`: "Mark done" button on every undone item + "Undo" on manually-done items, wired through `window._gwGSPersistDone` (optimistic UI, disabled-while-saving, auto-retry once, server-truth re-render, revert + message on real failure). `_onbFinish` wizard-completion save now retries (2 attempts + delayed background retry) and side effects (confetti, launcher) can no longer block/mask the save.
+  - `src/index.tsx` checklist GET: manual marks now ALWAYS count (`done = auto_done || manual_done`) — previously a manual mark on an auto-detected item was silently discarded. Response now includes `auto_done`/`manual_done` per item.
+- **Groundwork AI** (`public/js/groundwork_ai.js`, v20260720t30): persistent floating orb bottom-right (56px, brand gradient, sparkle icon, unread high-priority badge, thinking pulse, keyboard/ARIA accessible, z 8500 below tours) + 420px right-side panel with tabs:
+  - **Home** — What I see (company/view/pipeline pulse) · What I suggest (top 3 cards) · What I can do (quick actions)
+  - **Suggestions** — all recommendation cards (priority chip, "Why it matters" expand, action buttons)
+  - **Coach** — manager-level risk signals (invoices, stagnation, stale/estimates) + compounding-habit tips + "Ask the coach"
+  - **Setup** — Getting Started checklist lives here now (working Mark done/Undo, Show-me tours); admin-only tab
+  - **Chat** — context-aware (`{question, view, oppId}`); renders tour-offer buttons; graceful `no_api_key` state
+  - Action dispatcher: `open_lead` → `show('pipeline', id)`, `open_view`, `create_task` (POST /api/tasks, due tomorrow, toast), `draft_email` → `gwAiFollowupOpen`, `start_tour` → `gwCopilot.startTour`. Old `#gwGSLauncher` suppressed when orb present; `window.gwGettingStarted()` routes to orb Setup tab. Platform-account guard uses SERVER-resolved company (context endpoint) so impersonation works.
+- **Backend** (src/index.tsx, before demo-request block):
+  - `gwAssistSignals(db, companyId, repId, role)` — deterministic signal engine, 7 signals: overdue follow-ups, stale leads (14d), no-next-step, estimates sent/viewed 5d+ unanswered, overdue tasks, overdue invoices (mgr), stage stagnation (mgr). Every query binds server-derived companyId; non-managers get rep-scoped opp/task queries; bind counts trimmed to match placeholders (D1 rejects extras). Cards: `{id,type,priority,title,summary,why,action_kind,action_payload,actions[]}`, high→low, max 10.
+  - `GET /api/ai/assistant/context` — no-LLM snapshot `{company, company_id, business_type, role, ai_enabled, pipeline{open,value}, setup_total, recommendations}` — Suggestions/Coach/Home work with zero AI key.
+  - `POST /api/ai/assistant` — context-aware chat; oppId tenant-ownership validated before lead + last-6-comms context is included; deterministic signals embedded in prompt; `_aiCreds`/`_aiQuotaGate`/`_logAiUsage` (feature `assistant`); `{answer, tour}` with fence-strip + `^cl_[a-z_]+$` validation.
+- E2E-verified (Playwright, impersonated avalon): orb mounts + persists across views, 10 real recommendation cards, Done click persists server-side AND across full refresh, undo works, quick action navigates + closes panel, gwGettingStarted opens Setup tab, Escape closes, zero page errors. Tenant safety spot-checked (foreign oppId ignored; empty-tenant context clean).

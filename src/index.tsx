@@ -3676,8 +3676,13 @@ app.get('/api/onboarding/checklist', requireAuth, async (c) => {
   const items = (steps.results || []).map((s: any) => {
     let meta: any = {}; try { meta = JSON.parse(s.fields || '{}') } catch {}
     const autoKey = meta.auto || 'manual'
-    const done = autoKey !== 'manual' && auto[autoKey] !== undefined ? auto[autoKey] : manualDone.has(s.id)
-    return { id: s.id, title: s.title, description: s.description, view: meta.view || '', cta: meta.cta || 'Open', done }
+    const autoDone = autoKey !== 'manual' && auto[autoKey] !== undefined ? !!auto[autoKey] : false
+    const manualIsDone = manualDone.has(s.id)
+    // A manual "Mark done" ALWAYS counts — auto-detection can only add, never
+    // silently undo a user's explicit completion (this was the "Done doesn't
+    // stick" bug: manual marks on auto-detected items were discarded).
+    const done = autoDone || manualIsDone
+    return { id: s.id, title: s.title, description: s.description, view: meta.view || '', cta: meta.cta || 'Open', done, auto_done: autoDone, manual_done: manualIsDone }
   })
   return json(c, { items, done: items.filter((i: any) => i.done).length, total: items.length })
 })
@@ -3776,6 +3781,299 @@ Return ONLY valid JSON: {"answer":"string","tour":"cl_xxx or null"}`
     return json(c, { answer: String(parsed.answer).slice(0, 3000), tour: parsed.tour || null })
   } catch (e: any) {
     console.error('[ai/copilot]', e?.message || e)
+    return c.json({ ok: false, error: 'ai_error', message: 'AI request failed — try again.' }, 502)
+  }
+})
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GROUNDWORK AI ASSISTANT — persistent in-app copilot + business coach
+// ─────────────────────────────────────────────────────────────────────────────
+// Deterministic signal engine + structured recommendation cards + AI chat.
+// All queries are hard-scoped to the session company; non-admin reps only see
+// their own leads/tasks (rep_id OR assigned_to_rep_id), matching app rules.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const GW_ASSIST_CLOSED = "('Deal Closed / Won','Closed Lost','On Hold')"
+
+async function gwAssistSignals(db: D1Database, companyId: string, repId: string, role: string) {
+  const isMgr = role === 'admin' || role === 'office_manager'
+  // Rep scope clause for opportunities (admins/office managers see all)
+  const oppScope = isMgr ? '' : ' AND (rep_id = ?2 OR (assigned_to_rep_id != \'\' AND assigned_to_rep_id = ?2))'
+  const q = async (sql: string, ...binds: any[]) => {
+    // D1 rejects bind counts that don't match placeholders — trim unused binds
+    // (manager-scoped queries drop the ?2 rep clause but callers always pass repId).
+    const need = sql.includes('?2') ? binds.length : Math.min(binds.length, 1)
+    try { const r = await db.prepare(sql).bind(...binds.slice(0, need)).all(); return r.results || [] } catch (e: any) { console.error('[gwAssistSignals]', e?.message || e); return [] }
+  }
+  const recs: any[] = []
+  const push = (r: any) => recs.push(r)
+
+  // 1. OVERDUE FOLLOW-UPS — next_follow_up date in the past on open leads
+  const overdueFu = await q(
+    `SELECT id, client, status, job_value, next_follow_up FROM opportunities
+     WHERE company_id = ?1 AND status NOT IN ${GW_ASSIST_CLOSED}
+       AND next_follow_up != '' AND date(next_follow_up) < date('now')${oppScope}
+     ORDER BY date(next_follow_up) ASC LIMIT 5`, companyId, repId)
+  for (const o of overdueFu) {
+    const days = Math.floor((Date.now() - new Date(String(o.next_follow_up)).getTime()) / 86400000)
+    push({
+      id: 'fu_' + o.id, type: 'follow_up_overdue', priority: days > 7 ? 'high' : 'medium',
+      title: `Follow up with ${o.client}`,
+      summary: `Follow-up was due ${days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' ago'} — lead is in "${o.status}"${o.job_value ? ' worth $' + Number(o.job_value).toLocaleString() : ''}.`,
+      why: 'Leads contacted within a day of their follow-up date close at a much higher rate. Every day past due drops your odds.',
+      action_kind: 'open_lead', action_payload: { oppId: o.id },
+      actions: [
+        { kind: 'open_lead', label: 'Open lead', payload: { oppId: o.id } },
+        { kind: 'draft_email', label: 'Draft follow-up', payload: { oppId: o.id, oppLabel: o.client } },
+      ],
+    })
+  }
+
+  // 2. STALE LEADS — open, no activity (updated_at) in 14+ days
+  const stale = await q(
+    `SELECT id, client, status, job_value, updated_at FROM opportunities
+     WHERE company_id = ?1 AND status NOT IN ${GW_ASSIST_CLOSED}
+       AND julianday('now') - julianday(updated_at) >= 14${oppScope}
+     ORDER BY job_value DESC LIMIT 5`, companyId, repId)
+  for (const o of stale) {
+    const days = Math.floor((Date.now() - new Date(String(o.updated_at).replace(' ', 'T') + 'Z').getTime()) / 86400000)
+    push({
+      id: 'stale_' + o.id, type: 'stale_lead', priority: Number(o.job_value) > 5000 ? 'high' : 'medium',
+      title: `${o.client} has gone quiet`,
+      summary: `No activity in ${days} days. Stuck in "${o.status}"${o.job_value ? ' — $' + Number(o.job_value).toLocaleString() + ' at risk' : ''}.`,
+      why: 'Stalled deals rarely revive themselves. A quick check-in call or a fresh angle (new option, small discount, deadline) restarts the conversation.',
+      action_kind: 'open_lead', action_payload: { oppId: o.id },
+      actions: [
+        { kind: 'open_lead', label: 'Open lead', payload: { oppId: o.id } },
+        { kind: 'create_task', label: 'Schedule follow-up', payload: { title: 'Re-engage ' + o.client, linkedRecordType: 'opportunity', linkedRecordId: o.id, linkedRecordLabel: o.client } },
+      ],
+    })
+  }
+
+  // 3. NO NEXT STEP — open leads with no follow-up date scheduled at all
+  const noNext = await q(
+    `SELECT id, client, status, job_value FROM opportunities
+     WHERE company_id = ?1 AND status NOT IN ${GW_ASSIST_CLOSED}
+       AND (next_follow_up IS NULL OR next_follow_up = '')${oppScope}
+     ORDER BY job_value DESC LIMIT 3`, companyId, repId)
+  if (noNext.length) {
+    const names = noNext.map((o: any) => o.client).join(', ')
+    push({
+      id: 'nonext', type: 'no_next_step', priority: 'medium',
+      title: `${noNext.length} lead${noNext.length > 1 ? 's have' : ' has'} no next step scheduled`,
+      summary: `${names} — open deals with no follow-up date set.`,
+      why: 'A deal without a scheduled next step is a deal drifting. Always leave every touch with the next one on the calendar.',
+      action_kind: 'open_lead', action_payload: { oppId: noNext[0].id },
+      actions: noNext.slice(0, 3).map((o: any) => ({ kind: 'open_lead', label: 'Open ' + String(o.client).slice(0, 18), payload: { oppId: o.id } })),
+    })
+  }
+
+  // 4. ESTIMATES SENT, NO RESPONSE — sent/viewed 5+ days ago, still not accepted
+  const coldEst = await q(
+    `SELECT id, client_name, title, total, status, sent_at, opp_id FROM estimates
+     WHERE company_id = ?1 AND status IN ('sent','viewed') AND sent_at != ''
+       AND julianday('now') - julianday(sent_at) >= 5
+     ORDER BY total DESC LIMIT 4`, companyId)
+  for (const e of coldEst) {
+    const days = Math.floor((Date.now() - new Date(String(e.sent_at).replace(' ', 'T') + 'Z').getTime()) / 86400000)
+    push({
+      id: 'est_' + e.id, type: 'estimate_no_response', priority: Number(e.total) > 3000 ? 'high' : 'medium',
+      title: `Estimate for ${e.client_name} is sitting unanswered`,
+      summary: `"${String(e.title || 'Estimate').slice(0, 50)}" ($${Number(e.total).toLocaleString()}) was ${e.status === 'viewed' ? 'VIEWED but not accepted' : 'sent'} ${days} days ago.`,
+      why: e.status === 'viewed'
+        ? 'They opened it — something is holding them back. A quick "any questions?" call catches objections while the job is still top of mind.'
+        : 'Estimates go cold fast. Following up within a week can double acceptance rates.',
+      action_kind: 'open_view', action_payload: { view: 'estimates' },
+      actions: [
+        { kind: 'open_view', label: 'Open estimates', payload: { view: 'estimates' } },
+        ...(e.opp_id ? [{ kind: 'draft_email', label: 'Draft nudge', payload: { oppId: e.opp_id, oppLabel: e.client_name } }] : []),
+      ],
+    })
+  }
+
+  // 5. OVERDUE TASKS (assigned to this rep, or all for managers)
+  const taskScope = isMgr ? '' : ' AND assigned_user_id = ?2'
+  const lateTasks = await q(
+    `SELECT id, title, due_date, linked_record_label FROM tasks
+     WHERE company_id = ?1 AND status = 'open' AND due_date IS NOT NULL AND due_date != ''
+       AND date(due_date) < date('now')${taskScope}
+     ORDER BY due_date ASC LIMIT 5`, companyId, repId)
+  if (lateTasks.length) {
+    push({
+      id: 'tasks_overdue', type: 'overdue_tasks', priority: lateTasks.length >= 3 ? 'high' : 'medium',
+      title: `${lateTasks.length} overdue task${lateTasks.length > 1 ? 's' : ''}`,
+      summary: lateTasks.slice(0, 3).map((t: any) => `"${String(t.title).slice(0, 40)}"${t.linked_record_label ? ' (' + t.linked_record_label + ')' : ''}`).join(' · '),
+      why: 'Overdue tasks pile up and bury the important ones. Knock out or reschedule these to keep the system trustworthy.',
+      action_kind: 'open_view', action_payload: { view: 'tasks' },
+      actions: [{ kind: 'open_view', label: 'Open tasks', payload: { view: 'tasks' } }],
+    })
+  }
+
+  // 6. OVERDUE INVOICES — money you are owed (managers/admins only)
+  if (isMgr) {
+    const lateInv = await q(
+      `SELECT id, client_name, invoice_number, balance_due, due_date FROM invoices
+       WHERE company_id = ?1 AND status IN ('sent','viewed','partial','overdue')
+         AND balance_due > 0 AND due_date != '' AND date(due_date) < date('now')
+       ORDER BY balance_due DESC LIMIT 4`, companyId)
+    const owed = lateInv.reduce((s: number, i: any) => s + Number(i.balance_due || 0), 0)
+    if (lateInv.length) {
+      push({
+        id: 'inv_overdue', type: 'overdue_invoices', priority: owed > 2000 ? 'high' : 'medium',
+        title: `$${owed.toLocaleString()} in overdue invoices`,
+        summary: lateInv.slice(0, 3).map((i: any) => `${i.client_name} ($${Number(i.balance_due).toLocaleString()})`).join(' · '),
+        why: 'Cash flow is oxygen. The older an invoice gets, the harder it is to collect — a friendly reminder now beats an awkward call later.',
+        action_kind: 'open_view', action_payload: { view: 'invoices' },
+        actions: [{ kind: 'open_view', label: 'Open invoices', payload: { view: 'invoices' } }],
+      })
+    }
+  }
+
+  // 7. STAGE STAGNATION — pipeline concentration warning (managers only)
+  if (isMgr) {
+    const stuck = await q(
+      `SELECT status, COUNT(*) n, SUM(job_value) v FROM opportunities
+       WHERE company_id = ?1 AND status NOT IN ${GW_ASSIST_CLOSED}
+         AND julianday('now') - julianday(updated_at) >= 21
+       GROUP BY status ORDER BY n DESC LIMIT 1`, companyId)
+    const st: any = stuck[0]
+    if (st && Number(st.n) >= 3) {
+      push({
+        id: 'stage_stuck', type: 'stage_stagnation', priority: 'medium',
+        title: `${st.n} deals stuck in "${st.status}" for 3+ weeks`,
+        summary: `$${Number(st.v || 0).toLocaleString()} in combined value hasn't moved. This stage may be a process bottleneck.`,
+        why: 'When deals cluster in one stage, the issue is usually process (slow estimates, unclear next steps), not the customers. Fix the stage, not just the deals.',
+        action_kind: 'open_view', action_payload: { view: 'pipeline' },
+        actions: [{ kind: 'open_view', label: 'Open pipeline', payload: { view: 'pipeline' } }],
+      })
+    }
+  }
+
+  // Sort: high first, keep insertion order within a band
+  const rank: any = { high: 0, medium: 1, low: 2 }
+  recs.sort((a, b) => (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1))
+  return recs.slice(0, 10)
+}
+
+// GET /api/ai/assistant/context — deterministic snapshot + recommendations.
+// No LLM call: fast, free, always available (works even with no AI key).
+app.get('/api/ai/assistant/context', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const role      = c.var.role as string
+  const db = c.env.DB as D1Database
+
+  const co: any = await db.prepare('SELECT name, business_type FROM companies WHERE id = ? LIMIT 1').bind(companyId).first().catch(() => null)
+  const recs = await gwAssistSignals(db, companyId, repId, role)
+
+  // Pipeline pulse (tenant-scoped headline numbers)
+  const pulse: any = await db.prepare(
+    `SELECT COUNT(*) n, COALESCE(SUM(job_value),0) v FROM opportunities
+     WHERE company_id = ? AND status NOT IN ${GW_ASSIST_CLOSED}`
+  ).bind(companyId).first().catch(() => ({ n: 0, v: 0 }))
+
+  // Getting Started progress (reuse the checklist logic result shape cheaply)
+  let setup = { done: 0, total: 0 }
+  try {
+    const steps: any = await db.prepare(`SELECT COUNT(*) n FROM gw_onboarding_steps WHERE template_id = 'checklist_default' AND active = 1`).first()
+    setup.total = Number(steps?.n) || 0
+  } catch {}
+
+  const { apiKey } = await _aiCreds(db, companyId, c.env)
+
+  return json(c, {
+    company: co?.name || '',
+    company_id: companyId,
+    business_type: co?.business_type || '',
+    role,
+    ai_enabled: !!apiKey,
+    pipeline: { open: Number(pulse?.n) || 0, value: Number(pulse?.v) || 0 },
+    setup_total: setup.total,
+    recommendations: recs,
+  })
+})
+
+// POST /api/ai/assistant — context-aware chat for the Groundwork AI panel.
+// { question, view, oppId? } → { answer, tour?, actions? }
+app.post('/api/ai/assistant', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const role      = c.var.role as string
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) return c.json({ ok: false, error: 'no_api_key', message: 'AI chat is not enabled for your company yet — the Suggestions and Setup tabs work without it.' }, 400)
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
+
+  const b: any = await c.req.json().catch(() => ({}))
+  const question = String(b.question || '').slice(0, 1500)
+  if (!question) return err(c, 'question required')
+
+  const co: any = await db.prepare('SELECT name, business_type FROM companies WHERE id = ? LIMIT 1').bind(companyId).first().catch(() => null)
+  const recs = await gwAssistSignals(db, companyId, repId, role)
+
+  // Optional record context — validate tenant ownership before including
+  let recordCtx = ''
+  if (b.oppId) {
+    const opp: any = await db.prepare(
+      `SELECT id, client, status, job_value, next_follow_up, updated_at, service_line, project FROM opportunities
+       WHERE id = ? AND company_id = ? LIMIT 1`
+    ).bind(String(b.oppId), companyId).first().catch(() => null)
+    if (opp) {
+      const comms = await db.prepare(
+        `SELECT type, direction, subject, substr(body, 1, 200) body, ts FROM communications
+         WHERE opp_id = ? AND company_id = ? ORDER BY ts DESC LIMIT 6`
+      ).bind(opp.id, companyId).all().catch(() => ({ results: [] }))
+      recordCtx = `CURRENTLY VIEWING LEAD: ${opp.client} — status "${opp.status}", value $${Number(opp.job_value || 0).toLocaleString()}, next follow-up: ${opp.next_follow_up || 'none scheduled'}, service: ${opp.service_line || 'n/a'}${opp.project ? ', project: ' + String(opp.project).slice(0, 100) : ''}\nRecent activity:\n` +
+        ((comms.results || []) as any[]).map((m: any) => `- [${String(m.ts).slice(0, 10)}] ${m.type}/${m.direction}${m.subject ? ' "' + m.subject + '"' : ''}: ${String(m.body || '').replace(/\s+/g, ' ').slice(0, 120)}`).join('\n')
+    }
+  }
+
+  const sys = `You are Groundwork AI — the in-app copilot and business coach inside Groundwork CRM, a field-services CRM (clients, estimates, proposals, invoices, work orders/dispatch, price book, Stripe payments, Google Calendar/Gmail sync, review requests, team roles, mobile field mode).
+
+You help the user run their business: answer how-to questions, interpret their pipeline, prioritize follow-ups, coach on sales process, and point them at the right screen. Be direct, concise (2-6 short sentences or a tight list), and always ground advice in the CRM DATA provided below. Never invent data or features.
+
+App navigation: Clients (add/import), Services & Pricing (price book), Estimates (create → email → client accepts online → converts to invoice), Invoices (Pay Now via Stripe), Dispatch board (work orders, crews), Integrations (Stripe, Google), Employees (invites/roles), Settings (branding), Reviews (auto review requests), My Day (personal dashboard), Pipeline (leads by stage), Tasks.
+
+GUIDED TOURS available (return the id in "tour" ONLY if the question maps clearly to one setup task): cl_branding, cl_client, cl_pricebook, cl_estimate, cl_workorder, cl_invoice, cl_payments, cl_team, cl_google, cl_reviews.
+
+Return ONLY valid JSON: {"answer":"string","tour":"cl_xxx or null"}`
+
+  const ctx = [
+    `Company: ${co?.name || 'Unknown'}${co?.business_type ? ' (' + co.business_type + ')' : ''} · User role: ${role}`,
+    `User is on view: ${String(b.view || 'dashboard').slice(0, 60)}`,
+    recordCtx,
+    recs.length ? `CURRENT CRM SIGNALS (deterministic, real data):\n${recs.map((r: any) => `- [${r.priority}] ${r.title}: ${r.summary}`).join('\n')}` : 'No urgent CRM signals right now.',
+    `Question: ${question}`,
+  ].filter(Boolean).join('\n\n')
+
+  try {
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: sys }, { role: 'user', content: ctx }] }),
+    })
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '')
+      console.error('[ai/assistant] upstream', r.status, errText.slice(0, 300))
+      return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}).` }, 502)
+    }
+    const data: any = await r.json()
+    await _logAiUsage(db, companyId, repId, 'assistant', model, data?.usage, keySource)
+    let parsed: any = null
+    try {
+      const raw = String(data?.choices?.[0]?.message?.content || '').replace(/^```(json)?\s*/i, '').replace(/```\s*$/, '')
+      parsed = JSON.parse(raw)
+    } catch {}
+    if (!parsed || !parsed.answer) {
+      const plain = String(data?.choices?.[0]?.message?.content || '').trim()
+      parsed = { answer: plain || 'Sorry — I hit a snag. Try asking again.', tour: null }
+    }
+    if (parsed.tour && !/^cl_[a-z_]+$/.test(String(parsed.tour))) parsed.tour = null
+    return json(c, { answer: String(parsed.answer).slice(0, 3000), tour: parsed.tour || null })
+  } catch (e: any) {
+    console.error('[ai/assistant]', e?.message || e)
     return c.json({ ok: false, error: 'ai_error', message: 'AI request failed — try again.' }, 502)
   }
 })
@@ -8723,7 +9021,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260719b003">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b004">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -8747,8 +9045,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260719b003"></script>
-  <script src="/js/client_portal.js?v=20260719b003"></script>
+  <script src="/js/platform_core.js?v=20260720b004"></script>
+  <script src="/js/client_portal.js?v=20260720b004"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9383,9 +9681,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260719b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260719b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260719b003">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b004">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b004">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b004">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -9945,40 +10243,41 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260719b003"></script>
-<script src="/js/db.js?v=20260719b003"></script>
-<script src="/js/data.js?v=20260719b003"></script>
-<script src="/js/reps.js?v=20260719b003"></script>
-<script src="/js/record-page.js?v=20260719b003"></script>
-<script src="/js/academy.js?v=20260719b003"></script>
-<script src="/js/task_engine.js?v=20260719b003"></script>
-<script src="/js/gw_i18n.js?v=20260719b003"></script>
-<script src="/js/app_premium.js?v=20260719b003"></script>
-<script src="/js/estimates.js?v=20260719b003"></script>
-<script src="/js/proposals.js?v=20260719b003"></script>
-<script src="/js/pricing.js?v=20260719b003"></script>
-<script src="/js/invoices.js?v=20260719b003"></script>
-<script src="/js/csv_import.js?v=20260719b003"></script>
-<script src="/js/onboarding.js?v=20260719b003"></script>
-<script src="/js/gw_copilot.js?v=20260719b003"></script>
-<script src="/js/recurring_plans.js?v=20260719b003"></script>
-<script src="/js/reviews.js?v=20260719b003"></script>
-<script src="/js/stripe.js?v=20260719b003"></script>
-<script src="/js/email.js?v=20260719b003"></script>
-<script src="/js/notifications.js?v=20260719b003"></script>
-<script src="/js/integrations.js?v=20260719b003"></script>
-<script src="/js/calendar_sync.js?v=20260719b003"></script>
-<script src="/js/ai_followup.js?v=20260719b003"></script>
-<script src="/js/user_management.js?v=20260719b003"></script>
-<script src="/js/platform_admin.js?v=20260719b003"></script>
-<script src="/js/time_tracker.js?v=20260719b003"></script>
-<script src="/js/field_workday.js?v=20260719b003"></script>
-<script src="/js/platform_core.js?v=20260719b003"></script>
-<script src="/js/approval_engine.js?v=20260719b003"></script>
-<script src="/js/automation_engine.js?v=20260719b003"></script>
-<script src="/js/client_portal.js?v=20260719b003"></script>
-<script src="/js/field_mode.js?v=20260719b003"></script>
-<script src="/js/assets_hub.js?v=20260719b003"></script>
+<script src="/js/gw-icons.js?v=20260720b004"></script>
+<script src="/js/db.js?v=20260720b004"></script>
+<script src="/js/data.js?v=20260720b004"></script>
+<script src="/js/reps.js?v=20260720b004"></script>
+<script src="/js/record-page.js?v=20260720b004"></script>
+<script src="/js/academy.js?v=20260720b004"></script>
+<script src="/js/task_engine.js?v=20260720b004"></script>
+<script src="/js/gw_i18n.js?v=20260720b004"></script>
+<script src="/js/app_premium.js?v=20260720b004"></script>
+<script src="/js/estimates.js?v=20260720b004"></script>
+<script src="/js/proposals.js?v=20260720b004"></script>
+<script src="/js/pricing.js?v=20260720b004"></script>
+<script src="/js/invoices.js?v=20260720b004"></script>
+<script src="/js/csv_import.js?v=20260720b004"></script>
+<script src="/js/onboarding.js?v=20260720b004"></script>
+<script src="/js/gw_copilot.js?v=20260720b004"></script>
+<script src="/js/groundwork_ai.js?v=20260720b004"></script>
+<script src="/js/recurring_plans.js?v=20260720b004"></script>
+<script src="/js/reviews.js?v=20260720b004"></script>
+<script src="/js/stripe.js?v=20260720b004"></script>
+<script src="/js/email.js?v=20260720b004"></script>
+<script src="/js/notifications.js?v=20260720b004"></script>
+<script src="/js/integrations.js?v=20260720b004"></script>
+<script src="/js/calendar_sync.js?v=20260720b004"></script>
+<script src="/js/ai_followup.js?v=20260720b004"></script>
+<script src="/js/user_management.js?v=20260720b004"></script>
+<script src="/js/platform_admin.js?v=20260720b004"></script>
+<script src="/js/time_tracker.js?v=20260720b004"></script>
+<script src="/js/field_workday.js?v=20260720b004"></script>
+<script src="/js/platform_core.js?v=20260720b004"></script>
+<script src="/js/approval_engine.js?v=20260720b004"></script>
+<script src="/js/automation_engine.js?v=20260720b004"></script>
+<script src="/js/client_portal.js?v=20260720b004"></script>
+<script src="/js/field_mode.js?v=20260720b004"></script>
+<script src="/js/assets_hub.js?v=20260720b004"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
