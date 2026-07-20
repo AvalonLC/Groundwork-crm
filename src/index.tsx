@@ -5533,8 +5533,9 @@ app.get('/portal/proposal/:token', async (c) => {
 
   // Bullet items support a "bold lead-in:" pattern — text before the first
   // colon renders bold (matches the style of formal scope/exclusion lists).
+  // Also scrubs literal "Bold lead-in:" prompt leakage in older saved drafts.
   const bulletItem = (raw: string) => {
-    const t = String(raw || '')
+    const t = String(raw || '').replace(/^\s*bold\s+lead[- ]?in\s*:\s*/i, '')
     const ci = t.indexOf(':')
     if (ci > 0 && ci < 90) return `<strong>${esc(t.slice(0, ci))}:</strong>${esc(t.slice(ci + 1))}`
     return esc(t)
@@ -5955,7 +5956,7 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching exactly this
 
 Available section block shapes (choose the right ones for this document):
 1. { "type": "text", "title": "string", "body": "paragraphs, \\n between them" } — narrative sections (project understanding, approach, why us).
-2. { "type": "bullets", "title": "string", "intro": "optional lead-in sentence or ''", "items": ["string"] } — scope lists, inclusions/exclusions, assumptions. Start an item with 'Bold lead-in: rest' to bold the lead-in.
+2. { "type": "bullets", "title": "string", "intro": "optional lead-in sentence or ''", "items": ["string"] } — scope lists, inclusions/exclusions, assumptions. Items may follow the pattern "Short label: details" — anything before the first colon renders bold (e.g. "Site assessment: full visual review of drainage, grading and settlement"). The label must be real content words; NEVER write placeholder text like "Bold lead-in" in an item.
 3. { "type": "option", "title": "OPTION 1: <name>", "goal": "one-line goal", "col1": "first column header e.g. 'Visit'", "col2": "second header e.g. 'Included Services'", "col3": "price header e.g. 'Price'", "rows": [ { "app": "row label", "service": "what's included, specific", "price": 0 } ], "footnote": "fine print or ''" } — a priced, acceptable package. Every row needs a numeric price; the client can accept an option on the portal.
 4. { "type": "table", "title": "string", "columns": ["string"], "rows": [ { "cells": ["string"] } ], "footnote": "''" } — free-form data table (no math), e.g. project areas with preliminary investment ranges, schedules, spec matrices. Each row's cells array must match columns length.
 5. { "type": "cards", "title": "string", "intro": "''", "cards": [ { "head": "card name", "price": "free text e.g. '$4,500–$6,500'", "body": "short description" } ] } — an options menu with price ranges (planning frameworks, add-on menus).
@@ -6003,7 +6004,9 @@ Rules:
       const t = s?.type
       if (t === 'text') return { type: 'text', title: S(s.title), body: S(s.body) }
       if (t === 'bullets') return { type: 'bullets', title: S(s.title), intro: S(s.intro),
-        items: (Array.isArray(s.items) ? s.items : []).map((it: any) => S(it)).filter(Boolean) }
+        // Strip literal schema-instruction leakage ("Bold lead-in: ...") some
+        // models echo from the prompt's formatting example.
+        items: (Array.isArray(s.items) ? s.items : []).map((it: any) => S(it).replace(/^\s*bold\s+lead[- ]?in\s*:\s*/i, '')).filter(Boolean) }
       if (t === 'table') {
         const columns = (Array.isArray(s.columns) ? s.columns : []).map((cn: any) => S(cn))
         const cols = columns.length ? columns : ['Item', 'Description']
@@ -9194,7 +9197,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b005">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b006">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9218,8 +9221,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b005"></script>
-  <script src="/js/client_portal.js?v=20260720b005"></script>
+  <script src="/js/platform_core.js?v=20260720b006"></script>
+  <script src="/js/client_portal.js?v=20260720b006"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9854,9 +9857,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b005">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b005">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b005">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b006">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -10416,41 +10419,41 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b005"></script>
-<script src="/js/db.js?v=20260720b005"></script>
-<script src="/js/data.js?v=20260720b005"></script>
-<script src="/js/reps.js?v=20260720b005"></script>
-<script src="/js/record-page.js?v=20260720b005"></script>
-<script src="/js/academy.js?v=20260720b005"></script>
-<script src="/js/task_engine.js?v=20260720b005"></script>
-<script src="/js/gw_i18n.js?v=20260720b005"></script>
-<script src="/js/app_premium.js?v=20260720b005"></script>
-<script src="/js/estimates.js?v=20260720b005"></script>
-<script src="/js/proposals.js?v=20260720b005"></script>
-<script src="/js/pricing.js?v=20260720b005"></script>
-<script src="/js/invoices.js?v=20260720b005"></script>
-<script src="/js/csv_import.js?v=20260720b005"></script>
-<script src="/js/onboarding.js?v=20260720b005"></script>
-<script src="/js/gw_copilot.js?v=20260720b005"></script>
-<script src="/js/groundwork_ai.js?v=20260720b005"></script>
-<script src="/js/recurring_plans.js?v=20260720b005"></script>
-<script src="/js/reviews.js?v=20260720b005"></script>
-<script src="/js/stripe.js?v=20260720b005"></script>
-<script src="/js/email.js?v=20260720b005"></script>
-<script src="/js/notifications.js?v=20260720b005"></script>
-<script src="/js/integrations.js?v=20260720b005"></script>
-<script src="/js/calendar_sync.js?v=20260720b005"></script>
-<script src="/js/ai_followup.js?v=20260720b005"></script>
-<script src="/js/user_management.js?v=20260720b005"></script>
-<script src="/js/platform_admin.js?v=20260720b005"></script>
-<script src="/js/time_tracker.js?v=20260720b005"></script>
-<script src="/js/field_workday.js?v=20260720b005"></script>
-<script src="/js/platform_core.js?v=20260720b005"></script>
-<script src="/js/approval_engine.js?v=20260720b005"></script>
-<script src="/js/automation_engine.js?v=20260720b005"></script>
-<script src="/js/client_portal.js?v=20260720b005"></script>
-<script src="/js/field_mode.js?v=20260720b005"></script>
-<script src="/js/assets_hub.js?v=20260720b005"></script>
+<script src="/js/gw-icons.js?v=20260720b006"></script>
+<script src="/js/db.js?v=20260720b006"></script>
+<script src="/js/data.js?v=20260720b006"></script>
+<script src="/js/reps.js?v=20260720b006"></script>
+<script src="/js/record-page.js?v=20260720b006"></script>
+<script src="/js/academy.js?v=20260720b006"></script>
+<script src="/js/task_engine.js?v=20260720b006"></script>
+<script src="/js/gw_i18n.js?v=20260720b006"></script>
+<script src="/js/app_premium.js?v=20260720b006"></script>
+<script src="/js/estimates.js?v=20260720b006"></script>
+<script src="/js/proposals.js?v=20260720b006"></script>
+<script src="/js/pricing.js?v=20260720b006"></script>
+<script src="/js/invoices.js?v=20260720b006"></script>
+<script src="/js/csv_import.js?v=20260720b006"></script>
+<script src="/js/onboarding.js?v=20260720b006"></script>
+<script src="/js/gw_copilot.js?v=20260720b006"></script>
+<script src="/js/groundwork_ai.js?v=20260720b006"></script>
+<script src="/js/recurring_plans.js?v=20260720b006"></script>
+<script src="/js/reviews.js?v=20260720b006"></script>
+<script src="/js/stripe.js?v=20260720b006"></script>
+<script src="/js/email.js?v=20260720b006"></script>
+<script src="/js/notifications.js?v=20260720b006"></script>
+<script src="/js/integrations.js?v=20260720b006"></script>
+<script src="/js/calendar_sync.js?v=20260720b006"></script>
+<script src="/js/ai_followup.js?v=20260720b006"></script>
+<script src="/js/user_management.js?v=20260720b006"></script>
+<script src="/js/platform_admin.js?v=20260720b006"></script>
+<script src="/js/time_tracker.js?v=20260720b006"></script>
+<script src="/js/field_workday.js?v=20260720b006"></script>
+<script src="/js/platform_core.js?v=20260720b006"></script>
+<script src="/js/approval_engine.js?v=20260720b006"></script>
+<script src="/js/automation_engine.js?v=20260720b006"></script>
+<script src="/js/client_portal.js?v=20260720b006"></script>
+<script src="/js/field_mode.js?v=20260720b006"></script>
+<script src="/js/assets_hub.js?v=20260720b006"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

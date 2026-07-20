@@ -824,7 +824,9 @@ function _prPvFmtDate(d) {
 }
 
 function _prPvBullet(raw) {
-  const t = String(raw || '');
+  // Scrub literal "Bold lead-in:" prompt leakage from older AI drafts, then
+  // bold anything before the first colon (the intended lead-in style).
+  const t = String(raw || '').replace(/^\s*bold\s+lead[- ]?in\s*:\s*/i, '');
   const ci = t.indexOf(':');
   if (ci > 0 && ci < 90) return `<strong>${_prEsc(t.slice(0, ci))}:</strong>${_prEsc(t.slice(ci + 1))}`;
   return _prEsc(t);
