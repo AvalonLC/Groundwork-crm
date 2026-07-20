@@ -199,15 +199,39 @@
     var acts = (r.actions || []).slice(0, 3).map(function (a, j) {
       return '<button onclick="window.gwAI._act(' + i + ',' + j + ')" class="gw-ai-actbtn' + (j === 0 ? ' gw-ai-actbtn-pri' : '') + '">' + esc(a.label) + '</button>';
     }).join('');
-    return '<div class="gw-ai-card">' +
+    var snoozeBtn = '<button onclick="window.gwAI.snooze(\'' + esc(r.id) + '\',this)" title="Hide this suggestion for 7 days" style="margin-left:auto;background:none;border:none;color:#9CA3AF;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:underline;padding:0;align-self:center">Snooze 7d</button>';
+    return '<div class="gw-ai-card" data-gwai-rec="' + esc(r.id) + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
         '<div style="font-size:13.5px;font-weight:800;color:#1F2937;line-height:1.35">' + esc(r.title) + '</div>' +
         '<span style="flex-shrink:0;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:' + pc + ';background:' + pbg + ';padding:3px 8px;border-radius:8px">' + esc(r.priority) + '</span>' +
       '</div>' +
       '<div style="font-size:12.5px;color:#4B5563;margin-top:5px;line-height:1.5">' + esc(r.summary) + '</div>' +
       (r.why ? '<details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:#2D7A55;cursor:pointer;list-style:none">Why it matters</summary><div style="font-size:11.5px;color:#6B7280;margin-top:4px;line-height:1.5">' + esc(r.why) + '</div></details>' : '') +
-      (acts ? '<div style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap">' + acts + '</div>' : '') +
+      '<div style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap">' + acts + snoozeBtn + '</div>' +
     '</div>';
+  }
+
+  function snooze(recId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Snoozing…'; }
+    fetch('/api/ai/assistant/snooze', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recId: recId, days: 7 })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('snooze failed');
+      // Remove from local state + fade the card out
+      if (state.ctx && state.ctx.recommendations) {
+        state.ctx.recommendations = state.ctx.recommendations.filter(function (x) { return x.id !== recId; });
+      }
+      var el = document.querySelector('[data-gwai-rec="' + recId + '"]');
+      if (el) { el.style.transition = 'opacity .25s'; el.style.opacity = '0'; setTimeout(function () { if (state.open) renderTab(); }, 260); }
+      else if (state.open) renderTab();
+      updateBadge();
+      toast('Snoozed for 7 days.');
+    }).catch(function () {
+      if (btn) { btn.disabled = false; btn.textContent = 'Snooze 7d'; }
+      toast("Couldn't snooze — try again.", true);
+    });
   }
 
   function renderHome() {
@@ -239,10 +263,11 @@
     var c = state.ctx;
     if (!c) return loadingHTML();
     var recs = c.recommendations || [];
-    if (!recs.length) return '<div class="gw-ai-empty">' + ic('trophy', 22, '#2D7A55') + '<div>All clear. No overdue follow-ups, stale leads, or unanswered estimates right now.</div></div>';
+    if (!recs.length) return '<div class="gw-ai-empty">' + ic('trophy', 22, '#2D7A55') + '<div>All clear. No overdue follow-ups, stale leads, or unanswered estimates right now.' + (c.snoozed ? ' (' + c.snoozed + ' snoozed)' : '') + '</div></div>' + '<button class="gw-ai-refresh" onclick="window.gwAI.refresh()">Refresh suggestions</button>';
+    var snoozeNote = c.snoozed ? '<div style="font-size:10.5px;color:#9CA3AF;text-align:center;margin-top:8px">' + c.snoozed + ' suggestion' + (c.snoozed > 1 ? 's' : '') + ' snoozed — they return automatically after 7 days.</div>' : '';
     return '<div style="font-size:11.5px;color:#6B7280;margin-bottom:10px">Built from your live CRM data — follow-ups, lead activity, estimates, tasks' + (isMgr() ? ', invoices and pipeline flow' : '') + '.</div>' +
       recs.map(function (r, i) { return card(r, i); }).join('') +
-      '<button class="gw-ai-refresh" onclick="window.gwAI.refresh()">Refresh suggestions</button>';
+      '<button class="gw-ai-refresh" onclick="window.gwAI.refresh()">Refresh suggestions</button>' + snoozeNote;
   }
 
   function renderCoach() {
@@ -424,7 +449,8 @@
   function toast(msg, isErr) {
     var t = document.createElement('div');
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:96px;right:22px;z-index:9950;background:' + (isErr ? '#C0392B' : '#1C3A2B') + ';color:#fff;font-size:12.5px;font-weight:700;padding:11px 16px;border-radius:11px;box-shadow:0 8px 28px rgba(0,0,0,.25);max-width:300px;font-family:inherit';
+    var lift = window.innerWidth <= 768 ? '150px' : '96px'; // clear mobile nav + orb
+    t.style.cssText = 'position:fixed;bottom:' + lift + ';right:22px;z-index:9950;background:' + (isErr ? '#C0392B' : '#1C3A2B') + ';color:#fff;font-size:12.5px;font-weight:700;padding:11px 16px;border-radius:11px;box-shadow:0 8px 28px rgba(0,0,0,.25);max-width:300px;font-family:inherit';
     document.body.appendChild(t);
     setTimeout(function () { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(function () { t.remove(); }, 450); }, 3200);
   }
@@ -472,7 +498,10 @@
       '.gw-ai-chip:hover{border-color:#2D7A55;color:#2D7A55}' +
       '.gw-ai-spin{width:26px;height:26px;border-radius:50%;border:3px solid #E5E7EB;border-top-color:#2D7A55;animation:gwAiSpin .8s linear infinite}' +
       '@keyframes gwAiSpin{to{transform:rotate(360deg)}}' +
-      '@media (max-width:640px){#gwAiPanel{width:100vw}}';
+      '@media (max-width:640px){#gwAiPanel{width:100vw}}' +
+      /* Mobile / field mode: lift the orb above the fixed bottom nav bar
+         (#gw-mobile-nav: 68px + safe-area, shown at <=768px) */
+      '@media (max-width:768px){#gwAiOrb{bottom:calc(82px + env(safe-area-inset-bottom));right:14px;width:50px;height:50px}}';
     document.head.appendChild(s);
   }
 
@@ -480,7 +509,7 @@
   window.gwAI = {
     open: open, close: close, toggle: toggle,
     ask: ask, askCoach: askCoach,
-    markDone: markDone,
+    markDone: markDone, snooze: snooze,
     refresh: function () { loadCtx(true).then(function () { if (state.open) renderTab(); }); },
     refreshSetup: function () { loadChecklist(true).then(function () { if (state.open && state.tab === 'setup') renderTab(); }); },
     noteSetupPending: function () { state.setupPending = true; },

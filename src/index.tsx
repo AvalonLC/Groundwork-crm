@@ -3796,8 +3796,53 @@ Return ONLY valid JSON: {"answer":"string","tour":"cl_xxx or null"}`
 
 const GW_ASSIST_CLOSED = "('Deal Closed / Won','Closed Lost','On Hold')"
 
+// Tunable signal thresholds. Defaults chosen for field-services sales cycles;
+// per-company overrides live in settings key `gwai_thresholds_<companyId>`
+// (JSON, same keys) so tuning never needs a redeploy.
+const GW_ASSIST_DEFAULTS = {
+  fu_high_days: 7,      // overdue follow-up becomes HIGH after N days
+  stale_days: 14,       // no-activity threshold for stale leads
+  stale_high_value: 5000,   // stale lead is HIGH above this job value
+  est_days: 5,          // estimate sent/viewed with no response
+  est_high_total: 3000, // estimate signal is HIGH above this total
+  inv_high_owed: 2000,  // overdue invoices HIGH above this combined balance
+  stag_days: 21,        // stage stagnation window
+  stag_min_deals: 3,    // deals stuck in one stage to trigger stagnation
+}
+
+async function gwAssistThresholds(db: D1Database, companyId: string) {
+  const t: any = { ...GW_ASSIST_DEFAULTS }
+  try {
+    const row: any = await db.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
+      .bind('gwai_thresholds_' + companyId).first()
+    if (row?.value) {
+      const o = JSON.parse(row.value)
+      for (const k of Object.keys(GW_ASSIST_DEFAULTS)) {
+        if (o[k] !== undefined && Number.isFinite(Number(o[k]))) t[k] = Number(o[k])
+      }
+    }
+  } catch {}
+  return t
+}
+
+// Per-rep snoozes: settings key `gwai_snooze_<companyId>_<repId>` holds a JSON
+// map { recId: expiresAtISO }. Expired entries are pruned on read.
+async function gwAssistSnoozes(db: D1Database, companyId: string, repId: string): Promise<Record<string, string>> {
+  try {
+    const row: any = await db.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
+      .bind(`gwai_snooze_${companyId}_${repId}`).first()
+    if (!row?.value) return {}
+    const map = JSON.parse(row.value) || {}
+    const now = new Date().toISOString()
+    const live: Record<string, string> = {}
+    for (const k of Object.keys(map)) { if (String(map[k]) > now) live[k] = map[k] }
+    return live
+  } catch { return {} }
+}
+
 async function gwAssistSignals(db: D1Database, companyId: string, repId: string, role: string) {
   const isMgr = role === 'admin' || role === 'office_manager'
+  const T = await gwAssistThresholds(db, companyId)
   // Rep scope clause for opportunities (admins/office managers see all)
   const oppScope = isMgr ? '' : ' AND (rep_id = ?2 OR (assigned_to_rep_id != \'\' AND assigned_to_rep_id = ?2))'
   const q = async (sql: string, ...binds: any[]) => {
@@ -3818,7 +3863,7 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
   for (const o of overdueFu) {
     const days = Math.floor((Date.now() - new Date(String(o.next_follow_up)).getTime()) / 86400000)
     push({
-      id: 'fu_' + o.id, type: 'follow_up_overdue', priority: days > 7 ? 'high' : 'medium',
+      id: 'fu_' + o.id, type: 'follow_up_overdue', priority: days > T.fu_high_days ? 'high' : 'medium',
       title: `Follow up with ${o.client}`,
       summary: `Follow-up was due ${days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' ago'} — lead is in "${o.status}"${o.job_value ? ' worth $' + Number(o.job_value).toLocaleString() : ''}.`,
       why: 'Leads contacted within a day of their follow-up date close at a much higher rate. Every day past due drops your odds.',
@@ -3834,12 +3879,12 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
   const stale = await q(
     `SELECT id, client, status, job_value, updated_at FROM opportunities
      WHERE company_id = ?1 AND status NOT IN ${GW_ASSIST_CLOSED}
-       AND julianday('now') - julianday(updated_at) >= 14${oppScope}
+       AND julianday('now') - julianday(updated_at) >= ${Number(T.stale_days)}${oppScope}
      ORDER BY job_value DESC LIMIT 5`, companyId, repId)
   for (const o of stale) {
     const days = Math.floor((Date.now() - new Date(String(o.updated_at).replace(' ', 'T') + 'Z').getTime()) / 86400000)
     push({
-      id: 'stale_' + o.id, type: 'stale_lead', priority: Number(o.job_value) > 5000 ? 'high' : 'medium',
+      id: 'stale_' + o.id, type: 'stale_lead', priority: Number(o.job_value) > T.stale_high_value ? 'high' : 'medium',
       title: `${o.client} has gone quiet`,
       summary: `No activity in ${days} days. Stuck in "${o.status}"${o.job_value ? ' — $' + Number(o.job_value).toLocaleString() + ' at risk' : ''}.`,
       why: 'Stalled deals rarely revive themselves. A quick check-in call or a fresh angle (new option, small discount, deadline) restarts the conversation.',
@@ -3873,12 +3918,12 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
   const coldEst = await q(
     `SELECT id, client_name, title, total, status, sent_at, opp_id FROM estimates
      WHERE company_id = ?1 AND status IN ('sent','viewed') AND sent_at != ''
-       AND julianday('now') - julianday(sent_at) >= 5
+       AND julianday('now') - julianday(sent_at) >= ${Number(T.est_days)}
      ORDER BY total DESC LIMIT 4`, companyId)
   for (const e of coldEst) {
     const days = Math.floor((Date.now() - new Date(String(e.sent_at).replace(' ', 'T') + 'Z').getTime()) / 86400000)
     push({
-      id: 'est_' + e.id, type: 'estimate_no_response', priority: Number(e.total) > 3000 ? 'high' : 'medium',
+      id: 'est_' + e.id, type: 'estimate_no_response', priority: Number(e.total) > T.est_high_total ? 'high' : 'medium',
       title: `Estimate for ${e.client_name} is sitting unanswered`,
       summary: `"${String(e.title || 'Estimate').slice(0, 50)}" ($${Number(e.total).toLocaleString()}) was ${e.status === 'viewed' ? 'VIEWED but not accepted' : 'sent'} ${days} days ago.`,
       why: e.status === 'viewed'
@@ -3920,7 +3965,7 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
     const owed = lateInv.reduce((s: number, i: any) => s + Number(i.balance_due || 0), 0)
     if (lateInv.length) {
       push({
-        id: 'inv_overdue', type: 'overdue_invoices', priority: owed > 2000 ? 'high' : 'medium',
+        id: 'inv_overdue', type: 'overdue_invoices', priority: owed > T.inv_high_owed ? 'high' : 'medium',
         title: `$${owed.toLocaleString()} in overdue invoices`,
         summary: lateInv.slice(0, 3).map((i: any) => `${i.client_name} ($${Number(i.balance_due).toLocaleString()})`).join(' · '),
         why: 'Cash flow is oxygen. The older an invoice gets, the harder it is to collect — a friendly reminder now beats an awkward call later.',
@@ -3935,13 +3980,13 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
     const stuck = await q(
       `SELECT status, COUNT(*) n, SUM(job_value) v FROM opportunities
        WHERE company_id = ?1 AND status NOT IN ${GW_ASSIST_CLOSED}
-         AND julianday('now') - julianday(updated_at) >= 21
+         AND julianday('now') - julianday(updated_at) >= ${Number(T.stag_days)}
        GROUP BY status ORDER BY n DESC LIMIT 1`, companyId)
     const st: any = stuck[0]
-    if (st && Number(st.n) >= 3) {
+    if (st && Number(st.n) >= T.stag_min_deals) {
       push({
         id: 'stage_stuck', type: 'stage_stagnation', priority: 'medium',
-        title: `${st.n} deals stuck in "${st.status}" for 3+ weeks`,
+        title: `${st.n} deals stuck in "${st.status}" for ${Math.round(Number(T.stag_days) / 7)}+ weeks`,
         summary: `$${Number(st.v || 0).toLocaleString()} in combined value hasn't moved. This stage may be a process bottleneck.`,
         why: 'When deals cluster in one stage, the issue is usually process (slow estimates, unclear next steps), not the customers. Fix the stage, not just the deals.',
         action_kind: 'open_view', action_payload: { view: 'pipeline' },
@@ -3965,7 +4010,11 @@ app.get('/api/ai/assistant/context', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
 
   const co: any = await db.prepare('SELECT name, business_type FROM companies WHERE id = ? LIMIT 1').bind(companyId).first().catch(() => null)
-  const recs = await gwAssistSignals(db, companyId, repId, role)
+  const allRecs = await gwAssistSignals(db, companyId, repId, role)
+
+  // Filter out suggestions this rep snoozed (server-persisted, per-rep)
+  const snoozes = await gwAssistSnoozes(db, companyId, repId)
+  const recs = allRecs.filter((r: any) => !snoozes[r.id])
 
   // Pipeline pulse (tenant-scoped headline numbers)
   const pulse: any = await db.prepare(
@@ -3991,7 +4040,31 @@ app.get('/api/ai/assistant/context', requireAuth, async (c) => {
     pipeline: { open: Number(pulse?.n) || 0, value: Number(pulse?.v) || 0 },
     setup_total: setup.total,
     recommendations: recs,
+    snoozed: Object.keys(snoozes).length,
   })
+})
+
+// POST /api/ai/assistant/snooze — { recId, days? } snoozes a suggestion for
+// this rep (default 7 days); { recId, clear:true } un-snoozes. Per-rep,
+// per-company, server-persisted in the settings KV table.
+app.post('/api/ai/assistant/snooze', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId     = c.var.repId as string
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json().catch(() => ({}))
+  const recId = String(b.recId || '').slice(0, 80)
+  if (!recId || !/^[a-z0-9_-]+$/i.test(recId)) return err(c, 'recId required')
+  const key = `gwai_snooze_${companyId}_${repId}`
+  const map = await gwAssistSnoozes(db, companyId, repId) // already pruned
+  if (b.clear) {
+    delete map[recId]
+  } else {
+    const days = Math.min(90, Math.max(1, Number(b.days) || 7))
+    map[recId] = new Date(Date.now() + days * 86400000).toISOString()
+  }
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+    .bind(key, JSON.stringify(map)).run()
+  return json(c, { snoozed: !b.clear, recId, until: map[recId] || null })
 })
 
 // POST /api/ai/assistant — context-aware chat for the Groundwork AI panel.
@@ -4125,6 +4198,106 @@ app.post('/api/public/demo-request', async (c) => {
     String(b.source_page || '').trim().slice(0, 300)
   ).run()
   return json(c, { received: true, id })
+})
+
+// GET /demo-request — public branded demo-request form (no auth).
+// Link this from groundwork-crm.info ("Request a Demo" buttons) or embed via
+// iframe (?embed=1 hides the header/footer chrome). Posts to the existing
+// /api/public/demo-request intake (honeypot + rate limit already enforced).
+app.get('/demo-request', (c) => {
+  const embed = c.req.query('embed') === '1'
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Request a Demo — Groundwork CRM</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:${embed ? 'transparent' : 'linear-gradient(160deg,#0D2318,#1C3A2B 60%,#2D7A55)'}; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:${embed ? '0' : '24px'}; }
+  .dr-card { background:#fff; border-radius:20px; width:100%; max-width:480px; padding:34px 32px; ${embed ? '' : 'box-shadow:0 28px 90px rgba(0,0,0,.4);'} }
+  .dr-brand { display:flex; align-items:center; gap:11px; margin-bottom:20px; }
+  .dr-mark { width:40px; height:40px; border-radius:11px; background:#2D7A55; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:900; font-size:19px; }
+  .dr-title { font-size:20px; font-weight:800; color:#1C3A2B; letter-spacing:-.02em; }
+  .dr-sub { font-size:13px; color:#6B7280; margin-top:2px; }
+  label { display:block; font-size:12px; font-weight:800; color:#374151; margin:14px 0 5px; }
+  input, textarea { width:100%; border:1.5px solid #D1D5DB; border-radius:11px; padding:11px 13px; font-size:14px; font-family:inherit; outline:none; transition:border-color .15s; }
+  input:focus, textarea:focus { border-color:#2D7A55; }
+  textarea { resize:vertical; min-height:80px; }
+  .dr-req::after { content:' *'; color:#C0392B; }
+  .dr-hp { position:absolute; left:-9999px; opacity:0; height:0; overflow:hidden; }
+  button { width:100%; margin-top:20px; background:linear-gradient(135deg,#1C3A2B,#2D7A55); border:none; border-radius:12px; color:#fff; font-size:15px; font-weight:800; padding:14px; cursor:pointer; font-family:inherit; transition:transform .12s; }
+  button:hover { transform:translateY(-1px); }
+  button:disabled { opacity:.6; cursor:default; transform:none; }
+  .dr-msg { margin-top:14px; font-size:13px; font-weight:700; padding:11px 14px; border-radius:10px; display:none; }
+  .dr-msg.ok { display:block; background:#F0FAF4; color:#1C6B45; border:1.5px solid rgba(45,122,85,.3); }
+  .dr-msg.err { display:block; background:#FDF0EE; color:#A93226; border:1.5px solid rgba(192,57,43,.3); }
+  .dr-done { text-align:center; padding:26px 8px; display:none; }
+  .dr-done-icon { width:58px; height:58px; border-radius:50%; background:#F0FAF4; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; font-size:26px; color:#2D7A55; font-weight:900; }
+  .dr-foot { text-align:center; font-size:11px; color:${embed ? '#9CA3AF' : 'rgba(255,255,255,.7)'}; margin-top:16px; }
+</style>
+</head>
+<body>
+<main>
+<section class="dr-card" id="demo-request-card">
+  <form id="demoForm" novalidate>
+    <header class="dr-brand">
+      <div class="dr-mark">G</div>
+      <div><div class="dr-title">See Groundwork in action</div><div class="dr-sub">Tell us a little about your business — we'll reach out within one business day.</div></div>
+    </header>
+    <label class="dr-req" for="drName">Your name</label>
+    <input id="drName" name="name" autocomplete="name" maxlength="200" required>
+    <label class="dr-req" for="drEmail">Work email</label>
+    <input id="drEmail" name="email" type="email" autocomplete="email" maxlength="200" required>
+    <label for="drCompany">Company</label>
+    <input id="drCompany" name="company" autocomplete="organization" maxlength="200">
+    <label for="drPhone">Phone</label>
+    <input id="drPhone" name="phone" type="tel" autocomplete="tel" maxlength="50">
+    <label for="drMessage">What are you hoping to solve?</label>
+    <textarea id="drMessage" name="message" maxlength="2000" placeholder="Estimates, scheduling, invoicing, follow-ups…"></textarea>
+    <div class="dr-hp" aria-hidden="true"><label for="drWebsite">Website</label><input id="drWebsite" name="website_url" tabindex="-1" autocomplete="off"></div>
+    <button type="submit" id="drSubmit">Request my demo</button>
+    <div class="dr-msg" id="drMsg" role="alert"></div>
+  </form>
+  <div class="dr-done" id="drDone">
+    <div class="dr-done-icon">✓</div>
+    <div style="font-size:19px;font-weight:800;color:#1C3A2B">Request received!</div>
+    <div style="font-size:13.5px;color:#6B7280;margin-top:9px;line-height:1.6">Thanks — we'll reach out within one business day to schedule your walkthrough.</div>
+  </div>
+</section>
+</main>
+${embed ? '' : '<div class="dr-foot" style="position:fixed;bottom:14px;left:0;right:0">Groundwork CRM — built for field-services teams</div>'}
+<script>
+(function(){
+  var f = document.getElementById('demoForm');
+  f.addEventListener('submit', function(e){
+    e.preventDefault();
+    var btn = document.getElementById('drSubmit'), msg = document.getElementById('drMsg');
+    msg.className = 'dr-msg';
+    var body = {
+      name: document.getElementById('drName').value.trim(),
+      email: document.getElementById('drEmail').value.trim(),
+      company: document.getElementById('drCompany').value.trim(),
+      phone: document.getElementById('drPhone').value.trim(),
+      message: document.getElementById('drMessage').value.trim(),
+      website_url: document.getElementById('drWebsite').value,
+      source_page: document.referrer || location.href
+    };
+    if (!body.name) { msg.textContent = 'Please enter your name.'; msg.className = 'dr-msg err'; return; }
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(body.email)) { msg.textContent = 'Please enter a valid email.'; msg.className = 'dr-msg err'; return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    fetch('/api/public/demo-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(res){
+        if (res.ok) { f.style.display = 'none'; document.getElementById('drDone').style.display = 'block'; }
+        else { msg.textContent = (res.j && (res.j.error || res.j.message)) || 'Something went wrong — try again.'; msg.className = 'dr-msg err'; btn.disabled = false; btn.textContent = 'Request my demo'; }
+      })
+      .catch(function(){ msg.textContent = 'Network error — please try again.'; msg.className = 'dr-msg err'; btn.disabled = false; btn.textContent = 'Request my demo'; });
+  });
+})();
+</script>
+</body>
+</html>`)
 })
 
 // POST /api/admin/clear-sessions — revoke sessions for ONE company (default: caller's own).
@@ -9021,7 +9194,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b005">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9045,8 +9218,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b004"></script>
-  <script src="/js/client_portal.js?v=20260720b004"></script>
+  <script src="/js/platform_core.js?v=20260720b005"></script>
+  <script src="/js/client_portal.js?v=20260720b005"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -9681,9 +9854,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b004">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b004">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b005">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b005">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b005">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -10243,41 +10416,41 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b004"></script>
-<script src="/js/db.js?v=20260720b004"></script>
-<script src="/js/data.js?v=20260720b004"></script>
-<script src="/js/reps.js?v=20260720b004"></script>
-<script src="/js/record-page.js?v=20260720b004"></script>
-<script src="/js/academy.js?v=20260720b004"></script>
-<script src="/js/task_engine.js?v=20260720b004"></script>
-<script src="/js/gw_i18n.js?v=20260720b004"></script>
-<script src="/js/app_premium.js?v=20260720b004"></script>
-<script src="/js/estimates.js?v=20260720b004"></script>
-<script src="/js/proposals.js?v=20260720b004"></script>
-<script src="/js/pricing.js?v=20260720b004"></script>
-<script src="/js/invoices.js?v=20260720b004"></script>
-<script src="/js/csv_import.js?v=20260720b004"></script>
-<script src="/js/onboarding.js?v=20260720b004"></script>
-<script src="/js/gw_copilot.js?v=20260720b004"></script>
-<script src="/js/groundwork_ai.js?v=20260720b004"></script>
-<script src="/js/recurring_plans.js?v=20260720b004"></script>
-<script src="/js/reviews.js?v=20260720b004"></script>
-<script src="/js/stripe.js?v=20260720b004"></script>
-<script src="/js/email.js?v=20260720b004"></script>
-<script src="/js/notifications.js?v=20260720b004"></script>
-<script src="/js/integrations.js?v=20260720b004"></script>
-<script src="/js/calendar_sync.js?v=20260720b004"></script>
-<script src="/js/ai_followup.js?v=20260720b004"></script>
-<script src="/js/user_management.js?v=20260720b004"></script>
-<script src="/js/platform_admin.js?v=20260720b004"></script>
-<script src="/js/time_tracker.js?v=20260720b004"></script>
-<script src="/js/field_workday.js?v=20260720b004"></script>
-<script src="/js/platform_core.js?v=20260720b004"></script>
-<script src="/js/approval_engine.js?v=20260720b004"></script>
-<script src="/js/automation_engine.js?v=20260720b004"></script>
-<script src="/js/client_portal.js?v=20260720b004"></script>
-<script src="/js/field_mode.js?v=20260720b004"></script>
-<script src="/js/assets_hub.js?v=20260720b004"></script>
+<script src="/js/gw-icons.js?v=20260720b005"></script>
+<script src="/js/db.js?v=20260720b005"></script>
+<script src="/js/data.js?v=20260720b005"></script>
+<script src="/js/reps.js?v=20260720b005"></script>
+<script src="/js/record-page.js?v=20260720b005"></script>
+<script src="/js/academy.js?v=20260720b005"></script>
+<script src="/js/task_engine.js?v=20260720b005"></script>
+<script src="/js/gw_i18n.js?v=20260720b005"></script>
+<script src="/js/app_premium.js?v=20260720b005"></script>
+<script src="/js/estimates.js?v=20260720b005"></script>
+<script src="/js/proposals.js?v=20260720b005"></script>
+<script src="/js/pricing.js?v=20260720b005"></script>
+<script src="/js/invoices.js?v=20260720b005"></script>
+<script src="/js/csv_import.js?v=20260720b005"></script>
+<script src="/js/onboarding.js?v=20260720b005"></script>
+<script src="/js/gw_copilot.js?v=20260720b005"></script>
+<script src="/js/groundwork_ai.js?v=20260720b005"></script>
+<script src="/js/recurring_plans.js?v=20260720b005"></script>
+<script src="/js/reviews.js?v=20260720b005"></script>
+<script src="/js/stripe.js?v=20260720b005"></script>
+<script src="/js/email.js?v=20260720b005"></script>
+<script src="/js/notifications.js?v=20260720b005"></script>
+<script src="/js/integrations.js?v=20260720b005"></script>
+<script src="/js/calendar_sync.js?v=20260720b005"></script>
+<script src="/js/ai_followup.js?v=20260720b005"></script>
+<script src="/js/user_management.js?v=20260720b005"></script>
+<script src="/js/platform_admin.js?v=20260720b005"></script>
+<script src="/js/time_tracker.js?v=20260720b005"></script>
+<script src="/js/field_workday.js?v=20260720b005"></script>
+<script src="/js/platform_core.js?v=20260720b005"></script>
+<script src="/js/approval_engine.js?v=20260720b005"></script>
+<script src="/js/automation_engine.js?v=20260720b005"></script>
+<script src="/js/client_portal.js?v=20260720b005"></script>
+<script src="/js/field_mode.js?v=20260720b005"></script>
+<script src="/js/assets_hub.js?v=20260720b005"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
