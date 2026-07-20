@@ -466,3 +466,13 @@ Edit `public/js/gw_i18n.js`:
 - **Mobile/field positioning**: at <=768px the orb lifts to `bottom:calc(82px + safe-area)` (clear of `#gw-mobile-nav` 68px bar) and shrinks to 50px; toasts lift to 150px on mobile.
 - **Public demo-request page**: `GET /demo-request` — branded standalone form (name/email required, company/phone/message optional, honeypot `website_url`, client+server validation, success state). `?embed=1` strips chrome for iframe embedding on groundwork-crm.info. Posts to existing `/api/public/demo-request` (rate limit 3/email/day intact).
 - Verified: snooze persist/clear/injection-guard via curl + Playwright (card count 10→9, server context confirms, cleanup restores); threshold override (stale_days=9999 → 0 stale recs) applied and reverted; demo page 200 + live submit 200 (test row deleted); full T30 E2E regression suite still ALL PASSED.
+
+## Client Portal Release 1 (T36 — Sessions A/B/C, 2026-07-19/20)
+
+Client-facing portal at `/portal/*` with a fully separate auth world from staff sessions.
+
+- **Session A — Foundation**: portal user identity (`portal_users`, `portal_memberships`, `property_access`, `portal_sessions` via migrations 0041/0042), invite/accept/login/reset lifecycle, role presets (account_admin, billing, project, approver, read_only), staff admin UI (Portal Admin) for inviting/managing portal users, full audit trail (`actor_type='portal'`).
+- **Session B — Core Records**: estimates review/approve/decline (approve flips work-order holds to scheduled + notifies staff), billing (invoices with payments, payment history, Pay link), documents (proposals). Property-level scoping via `propOk`, explicit column allowlists.
+- **Session C — Projects**: work-order-backed project tracking (`portal_visible` flag, phase mapping scheduled/in_progress/completed), staff-published daily updates (`project_updates`), R2-backed photo galleries (`project_media`, bucket `groundwork-crm-media`, binding `MEDIA`). Staff publish updates + upload photos from the schedule-board visit modal or work order detail page; clients see a timeline with lightbox galleries. Migration 0043 (applied in prod via runtime schema self-heal v3 — wrangler remote D1 apply is blocked by token permissions).
+
+Key routes: `/portal/login`, `/portal/home` (SPA: Home/Projects/Estimates/Billing/Documents/Account), portal APIs under `/api/portal/*`, staff admin APIs under `/api/admin/portal/*`.
