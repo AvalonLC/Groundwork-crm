@@ -504,3 +504,10 @@ Builds on the existing Stripe Connect integration (platform-level Stripe Custome
 - **Contact management** (`manage_contacts`): Account view "Contacts" card — list/add/edit/remove (soft-delete) `client_contacts` rows scoped to manageable clients only. Contacts linked to an active portal login cannot be removed from the portal.
 - **Migration 0044** (`clients.stripe_customer_id` + `client_autopay`) ships via the runtime schema self-heal, flag bumped to `_schema_portal_v4` (wrangler remote D1 apply remains blocked by token permissions).
 - Everything degrades gracefully when `STRIPE_SECRET_KEY` is absent or the company is not Stripe-connected (503 / "not available" — no crashes).
+
+## Company Customization (July 2026)
+- **Custom Divisions**: Companies name and create any number of divisions (Settings > System Config > Divisions, with color pickers). All dashboards, pipeline analytics, financial planning, month drill-downs, CSV import/export and filters are driven by the configured divisions. Renaming preserves historical data; legacy Avalon data classifies via keyword bridges.
+- **Custom Lead Intake Form**: Categories (with optional `Value | Short` labels), work types, lead sources and service lines are editable in Settings > System Config > Lead Intake Form. The new-lead and edit-lead forms render from this config.
+- **Storage**: D1 settings keys `company_divisions` and `company_intake_config`, hydrated to localStorage (`gwCompanyDivisions` / `gwIntakeConfig`) at login.
+- **Onboarding (9 steps)**: Welcome > Business Profile (incl. logo upload) > Name Your Divisions > Lead Intake Setup > First Client > First Estimate > Team Setup > Preferences (commission opt-in, email signature, Google Workspace connect) > Done.
+- **Legacy Work Order Detail page retired**: every job click routes to the Schedule board and opens the visit modal (single source of truth for job details).
