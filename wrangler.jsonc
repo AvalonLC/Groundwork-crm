@@ -23,5 +23,15 @@
       "database_name": "avalon-sales-hub-production",
       "database_id": "a09eba8e-6c21-4ec3-a257-70a94b6e2aeb"
     }
+  ],
+
+  // ── R2 Object Storage ───────────────────────────────────────────────────────
+  // Media bucket for client portal project photos and documents.
+  // Created 2026-07-20 on Tyler's account. Local dev uses --local simulation.
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "groundwork-crm-media"
+    }
   ]
 }
