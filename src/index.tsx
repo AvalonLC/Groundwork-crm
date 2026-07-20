@@ -23,6 +23,7 @@ import mig0037 from '../migrations/0037_platform_demos_pricing.sql?raw'
 import mig0038 from '../migrations/0038_real_pricing_import.sql?raw'
 import mig0039 from '../migrations/0039_onboarding_system.sql?raw'
 import mig0040 from '../migrations/0040_onboarding_buildout.sql?raw'
+import mig0045 from '../migrations/0045_multiday_jobs.sql?raw'
 import { registerPortal } from './portal'
 
 
@@ -9408,6 +9409,335 @@ app.patch('/api/work-orders/:id/reschedule', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MULTI-DAY JOBS — per-day crew checklists that auto-publish portal updates
+// ══════════════════════════════════════════════════════════════════════════════
+// Flow: staff enable multi-day on a job (POST /multiday) → AI generates per-day
+// yes/no questions from the day scopes → crew answers each question with a
+// required photo (POST /days/:n/answer) → completing a day (POST /days/:n/complete)
+// has AI compose the client-facing message and publishes it to project_updates
+// (visible in the client portal) with the photos attached.
+
+let _multidaySchemaOk = false
+async function ensureMultidaySchema(db: D1Database): Promise<void> {
+  if (_multidaySchemaOk) return
+  try {
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_multiday_v1' LIMIT 1").first<any>()
+    if (flag) { _multidaySchemaOk = true; return }
+  } catch (_) {}
+  const stmts = mig0045.split('\n').map(l => l.replace(/--.*$/, '')).join('\n')
+    .split(';').map(s => s.trim()).filter(s => s.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensureMultidaySchema', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0045_multiday_jobs.sql', '0045_multiday_jobs.sql').run()
+  } catch (_) {}
+  try {
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_multiday_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  } catch (_) {}
+  _multidaySchemaOk = true
+}
+
+const _mdUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9)
+
+// Fallback questions when AI is unavailable — derived from the day scope.
+function _mdFallbackQuestions(scope: string, dayNumber: number, woTitle: string): string[] {
+  const base = scope || woTitle || 'the planned work'
+  return [
+    `Did the crew complete the planned work for day ${dayNumber} (${base.slice(0, 80)})?`,
+    'Was the work area cleaned up and left safe at the end of the day?',
+    'Were all materials and equipment secured or removed from the site?',
+    'Is the site ready for the next scheduled phase of work?',
+  ]
+}
+
+// POST /api/work-orders/:id/multiday — enable multi-day mode + generate day plan
+// Body: { total_days, start_date?, day_scopes?: [{day_number, scope, day_date?}] }
+// AI generates 3-6 yes/no completion questions per day from that day's scope.
+app.post('/api/work-orders/:id/multiday', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const woId = c.req.param('id')
+  await ensureMultidaySchema(db)
+  const wo: any = await db.prepare(`SELECT * FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
+  if (!wo) return c.json({ ok: false, error: 'Work order not found' }, 404)
+  const b: any = await c.req.json().catch(() => ({}))
+  const totalDays = Math.max(2, Math.min(30, Number(b.total_days) || 2))
+  const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.start_date || '')) ? b.start_date : (wo.scheduled_date || new Date().toISOString().slice(0, 10))
+  const scopes: any[] = Array.isArray(b.day_scopes) ? b.day_scopes : []
+
+  // Never wipe crew progress: existing completed/in-progress days are kept.
+  const existing = (await db.prepare(`SELECT day_number, status FROM wo_days WHERE work_order_id=? AND company_id=?`).bind(woId, companyId).all()).results as any[] || []
+  const protectedDays = new Set(existing.filter(d => d.status !== 'pending').map(d => Number(d.day_number)))
+
+  // AI question generation — one call for all days (cheaper + coherent).
+  const dayPlans: Array<{ day: number; scope: string; date: string; questions: string[] }> = []
+  const addDays = (iso: string, n: number) => {
+    const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n)
+    return d.toISOString().slice(0, 10)
+  }
+  for (let i = 1; i <= totalDays; i++) {
+    const sc = scopes.find(s => Number(s.day_number) === i)
+    dayPlans.push({
+      day: i,
+      scope: String(sc?.scope || '').slice(0, 500),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(sc?.day_date || '')) ? sc.day_date : addDays(startDate, i - 1),
+      questions: [],
+    })
+  }
+
+  let aiUsed = false
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (apiKey) {
+    const _qg = await _aiQuotaGate(db, companyId, keySource)
+    if (!_qg) {
+      try {
+        const jobCtx = [
+          `Job: ${wo.title || wo.wo_number || 'work order'}`,
+          wo.type ? `Type: ${wo.type}` : '',
+          wo.notes ? `Notes: ${String(wo.notes).slice(0, 800)}` : '',
+          `Total days: ${totalDays}`,
+          'Daily scopes:',
+          ...dayPlans.map(d => `Day ${d.day}: ${d.scope || '(no specific scope given — infer a sensible phase from the job and day number)'}`),
+        ].filter(Boolean).join('\n')
+        const sys = `You generate end-of-day completion checklists for field service crews (landscaping, construction, property services). For EACH day of a multi-day job, write 3 to 6 yes/no questions the crew foreman answers before closing out that day. Questions must:
+- Be specific to that day's scope of work (not generic filler)
+- Be answerable yes/no
+- Each be verifiable with a single photo
+- Cover: work completed per scope, site cleanliness/safety, materials/equipment status, readiness for the next day
+Return ONLY valid JSON: { "days": [ { "day": 1, "questions": ["...", "..."] }, ... ] } — one entry per day, no markdown fences.`
+        const r = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({ model, messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: jobCtx },
+          ]}),
+        })
+        if (r.ok) {
+          const j: any = await r.json()
+          await _logAiUsage(db, companyId, c.var.repId as string, 'multiday_questions', model, j?.usage, keySource)
+          let raw = String(j?.choices?.[0]?.message?.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+          const s = raw.indexOf('{'), e = raw.lastIndexOf('}')
+          if (s >= 0 && e > s) {
+            const parsed = JSON.parse(raw.slice(s, e + 1))
+            for (const dp of dayPlans) {
+              const aiDay = (parsed.days || []).find((x: any) => Number(x.day) === dp.day)
+              if (aiDay && Array.isArray(aiDay.questions) && aiDay.questions.length) {
+                dp.questions = aiDay.questions.slice(0, 6).map((q: any) => String(q).slice(0, 300))
+                aiUsed = true
+              }
+            }
+          }
+        }
+      } catch (e: any) { console.log('[multiday] AI question gen failed:', String(e?.message || e).slice(0, 120)) }
+    }
+  }
+  for (const dp of dayPlans) {
+    if (!dp.questions.length) dp.questions = _mdFallbackQuestions(dp.scope, dp.day, wo.title || '')
+  }
+
+  // Upsert wo_days — days with crew progress keep their questions/answers
+  for (const dp of dayPlans) {
+    if (protectedDays.has(dp.day)) {
+      await db.prepare(`UPDATE wo_days SET scope=?, day_date=?, updated_at=datetime('now') WHERE work_order_id=? AND company_id=? AND day_number=?`)
+        .bind(dp.scope, dp.date, woId, companyId, dp.day).run()
+      continue
+    }
+    const questions = dp.questions.map(q => ({ q, answer: null, photo_media_id: '', answered_at: '', answered_by: '' }))
+    await db.prepare(`INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, scope, questions, status)
+      VALUES (?,?,?,?,?,?,?,'pending')
+      ON CONFLICT(work_order_id, day_number) DO UPDATE SET day_date=excluded.day_date, scope=excluded.scope, questions=excluded.questions, updated_at=datetime('now')`)
+      .bind('wod_' + _mdUid(), companyId, woId, dp.day, dp.date, dp.scope, JSON.stringify(questions)).run()
+  }
+  // Drop pending days beyond the new total (never completed ones)
+  await db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=? AND day_number>? AND status='pending'`).bind(woId, companyId, totalDays).run()
+  await db.prepare(`UPDATE work_orders SET is_multiday=1, total_days=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(totalDays, woId, companyId).run()
+
+  const days = (await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? ORDER BY day_number`).bind(woId, companyId).all()).results as any[] || []
+  return c.json({ ok: true, ai_used: aiUsed, data: days.map(d => ({ ...d, questions: JSON.parse(d.questions || '[]') })) })
+})
+
+// GET /api/work-orders/:id/days — day list with progress
+app.get('/api/work-orders/:id/days', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureMultidaySchema(db)
+  const wo: any = await db.prepare(`SELECT id, is_multiday, total_days FROM work_orders WHERE id=? AND company_id=?`).bind(c.req.param('id'), companyId).first()
+  if (!wo) return c.json({ ok: false, error: 'Work order not found' }, 404)
+  const days = (await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? ORDER BY day_number`).bind(wo.id, companyId).all()).results as any[] || []
+  return c.json({ ok: true, is_multiday: !!wo.is_multiday, total_days: wo.total_days || 1,
+    data: days.map(d => ({ ...d, questions: JSON.parse(d.questions || '[]') })) })
+})
+
+// POST /api/work-orders/:id/days/:n/answer — crew answers one question
+// Body: { question_index, answer: true|false, photo_media_id }
+// A photo is REQUIRED with every answer; questions must be answered in order.
+app.post('/api/work-orders/:id/days/:n/answer', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureMultidaySchema(db)
+  const woId = c.req.param('id')
+  const dayN = parseInt(c.req.param('n'))
+  const b: any = await c.req.json().catch(() => ({}))
+  const qi = Number(b.question_index)
+  const day: any = await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? AND day_number=?`).bind(woId, companyId, dayN).first()
+  if (!day) return c.json({ ok: false, error: 'Day not found' }, 404)
+  if (day.status === 'completed') return c.json({ ok: false, error: 'This day is already completed and published' }, 409)
+  const questions: any[] = JSON.parse(day.questions || '[]')
+  if (!(qi >= 0 && qi < questions.length)) return c.json({ ok: false, error: 'Invalid question index' }, 400)
+  // Sequential enforcement: all earlier questions must be answered first
+  for (let i = 0; i < qi; i++) {
+    if (questions[i].answer === null || questions[i].answer === undefined) {
+      return c.json({ ok: false, error: `Answer question ${i + 1} first` }, 400)
+    }
+  }
+  const photoId = String(b.photo_media_id || '').trim()
+  if (!photoId) return c.json({ ok: false, error: 'A photo is required with every answer' }, 400)
+  const media: any = await db.prepare(`SELECT id FROM project_media WHERE id=? AND company_id=? AND work_order_id=?`).bind(photoId, companyId, woId).first()
+  if (!media) return c.json({ ok: false, error: 'Photo not found on this job — upload it first' }, 400)
+  questions[qi] = { ...questions[qi], answer: !!b.answer, photo_media_id: photoId,
+    answered_at: new Date().toISOString(), answered_by: c.var.repId as string }
+  const allAnswered = questions.every(q => q.answer !== null && q.answer !== undefined)
+  await db.prepare(`UPDATE wo_days SET questions=?, status=?, updated_at=datetime('now') WHERE id=?`)
+    .bind(JSON.stringify(questions), day.status === 'pending' ? 'in_progress' : day.status, day.id).run()
+  return c.json({ ok: true, all_answered: allAnswered, next_index: allAnswered ? null : qi + 1 })
+})
+
+// POST /api/work-orders/:id/days/:n/complete — close the day: AI composes the
+// client-facing message and it publishes automatically to the client portal.
+app.post('/api/work-orders/:id/days/:n/complete', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureMultidaySchema(db)
+  const woId = c.req.param('id')
+  const dayN = parseInt(c.req.param('n'))
+  const wo: any = await db.prepare(`SELECT * FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
+  if (!wo) return c.json({ ok: false, error: 'Work order not found' }, 404)
+  const day: any = await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? AND day_number=?`).bind(woId, companyId, dayN).first()
+  if (!day) return c.json({ ok: false, error: 'Day not found' }, 404)
+  if (day.status === 'completed') return c.json({ ok: false, error: 'Day already completed' }, 409)
+  const questions: any[] = JSON.parse(day.questions || '[]')
+  const unanswered = questions.filter(q => q.answer === null || q.answer === undefined).length
+  if (unanswered > 0) return c.json({ ok: false, error: `${unanswered} question${unanswered === 1 ? '' : 's'} still unanswered — every question needs an answer and photo before completing the day` }, 400)
+
+  const totalDays = wo.total_days || 1
+  const co: any = await db.prepare(`SELECT name FROM companies WHERE id=? LIMIT 1`).bind(companyId).first().catch(() => null)
+  const coName = (co && co.name) || 'Your contractor'
+
+  // AI composes the client-facing update from the checklist results
+  let title = `Day ${dayN} of ${totalDays} complete`
+  let bodyText = ''
+  const yesCount = questions.filter(q => q.answer === true).length
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (apiKey) {
+    const _qg = await _aiQuotaGate(db, companyId, keySource)
+    if (!_qg) {
+      try {
+        const ctx = [
+          `Company: ${coName}`,
+          `Job: ${wo.title || wo.wo_number}`,
+          `Client: ${wo.client_name || 'the client'}`,
+          `Day ${dayN} of ${totalDays}${day.scope ? ` — planned scope: ${day.scope}` : ''}`,
+          `Progress: ${Math.round((dayN / totalDays) * 100)}% of scheduled days done`,
+          'Crew end-of-day checklist results:',
+          ...questions.map((q, i) => `${i + 1}. ${q.q} — ${q.answer ? 'YES' : 'NO'}`),
+        ].join('\n')
+        const sys = `You write short, warm, professional daily progress updates that a contractor publishes to their client's portal after each work day of a multi-day job. Based on the crew's end-of-day checklist, write:
+- "title": a concise headline (max 70 chars) like "Day 2 complete: patio base graded and compacted"
+- "body": 2-3 short paragraphs, client-friendly (no jargon), covering what was accomplished today, honestly noting anything not finished (any NO answers) and what happens next. Mention that photos from today are attached. Never invent details not supported by the checklist. Plain text, \\n\\n between paragraphs.
+Return ONLY valid JSON: { "title": "...", "body": "..." } — no markdown fences.`
+        const r = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({ model, messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: ctx },
+          ]}),
+        })
+        if (r.ok) {
+          const j: any = await r.json()
+          await _logAiUsage(db, companyId, c.var.repId as string, 'multiday_update', model, j?.usage, keySource)
+          let raw = String(j?.choices?.[0]?.message?.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+          const s = raw.indexOf('{'), e = raw.lastIndexOf('}')
+          if (s >= 0 && e > s) {
+            const parsed = JSON.parse(raw.slice(s, e + 1))
+            if (parsed.title) title = String(parsed.title).slice(0, 160)
+            if (parsed.body) bodyText = String(parsed.body).slice(0, 4000)
+          }
+        }
+      } catch (e: any) { console.log('[multiday] AI compose failed:', String(e?.message || e).slice(0, 120)) }
+    }
+  }
+  if (!bodyText) {
+    // Deterministic fallback message
+    const notDone = questions.filter(q => q.answer === false).map(q => q.q.replace(/\?$/, ''))
+    bodyText = `Day ${dayN} of ${totalDays} is complete on ${wo.title || 'your project'}.` +
+      (day.scope ? `\n\nToday's focus: ${day.scope}.` : '') +
+      `\n\nThe crew completed ${yesCount} of ${questions.length} checklist items today.` +
+      (notDone.length ? ` Items to carry forward: ${notDone.join('; ')}.` : ' Everything on today\'s list was finished.') +
+      `\n\nPhotos from today's work are attached. ${dayN < totalDays ? `Next up: day ${dayN + 1} of ${totalDays}.` : 'This was the final scheduled day — thank you!'}`
+  }
+
+  // Publish to project_updates (client portal) with the day's photos attached
+  const updId = 'upd_' + _mdUid()
+  const updateDate = day.day_date || new Date().toISOString().slice(0, 10)
+  await db.prepare(`INSERT INTO project_updates (id, company_id, work_order_id, client_id, property_id, update_date, title, body, status, published_at, created_by)
+    VALUES (?,?,?,?,?,?,?,?,'published',datetime('now'),?)`)
+    .bind(updId, companyId, woId, wo.client_id || '', wo.property_id || '', updateDate, title, bodyText, c.var.repId as string).run()
+  const photoIds = [...new Set(questions.map(q => q.photo_media_id).filter(Boolean))] as string[]
+  for (const pid of photoIds.slice(0, 30)) {
+    await db.prepare(`UPDATE project_media SET update_id=? WHERE id=? AND company_id=? AND work_order_id=?`).bind(updId, pid, companyId, woId).run()
+  }
+
+  // Mark the day completed + link the published update
+  await db.prepare(`UPDATE wo_days SET status='completed', completed_at=datetime('now'), completed_by=?, update_id=?, updated_at=datetime('now') WHERE id=?`)
+    .bind(c.var.repId as string, updId, day.id).run()
+
+  // Progress on the WO timeline; final day flips the WO to completed
+  let tl: any[] = []
+  try { tl = JSON.parse(wo.timeline || '[]') } catch {}
+  tl.push({ at: new Date().toISOString(), event: `Day ${dayN} of ${totalDays} completed — client update published to portal` })
+  const remaining = (await db.prepare(`SELECT COUNT(*) AS n FROM wo_days WHERE work_order_id=? AND company_id=? AND status!='completed'`).bind(woId, companyId).first<any>())?.n || 0
+  const allDone = remaining === 0
+  await db.prepare(`UPDATE work_orders SET timeline=?, ${allDone ? "status='completed'," : ''} updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(JSON.stringify(tl), woId, companyId).run()
+
+  // Email portal users (same notification style as manual updates)
+  let emailed = 0
+  if (wo.client_id && (c.env as any).SENDGRID_API_KEY) {
+    try {
+      const pus = (await db.prepare(
+        `SELECT DISTINCT pu.email, pu.name FROM portal_users pu
+         JOIN portal_memberships pm ON pm.portal_user_id=pu.id AND pm.active=1
+         WHERE pm.client_id=? AND pu.company_id=? AND pu.status='active' LIMIT 20`
+      ).bind(wo.client_id, companyId).all()).results as any[] || []
+      const origin = new URL(c.req.url).origin
+      const escM = (s: string) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      for (const pu of pus) {
+        const ok = await sendEmail((c.env as any).SENDGRID_API_KEY, pu.email,
+          `Project update: ${wo.title || wo.wo_number || 'your project'} — day ${dayN} of ${totalDays}`,
+          `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+            <h2 style="color:#1F2A2B;margin:0 0 4px">${escM(title)}</h2>
+            <p style="font-size:12px;color:#6B7280;margin:0 0 16px">${escM(wo.title || '')} &middot; ${escM(updateDate)}${photoIds.length ? ` &middot; ${photoIds.length} photo${photoIds.length === 1 ? '' : 's'}` : ''}</p>
+            <p style="font-size:14px;line-height:1.6;color:#1F2A2B;white-space:pre-wrap">${escM(bodyText.slice(0, 600))}${bodyText.length > 600 ? '&hellip;' : ''}</p>
+            <p style="margin:20px 0"><a href="${origin}/portal/home#projects" style="display:inline-block;background:#2D7A55;color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px">View in Your Portal</a></p>
+            <p style="font-size:11px;color:#9CA3AF">Sent by ${escM(coName)} via their client portal.</p>
+          </div>`,
+          { fromName: coName })
+        if (ok) emailed++
+      }
+    } catch (_) { /* email failures never block completion */ }
+  }
+
+  return c.json({ ok: true, update_id: updId, title, body: bodyText, emailed,
+    day_completed: dayN, total_days: totalDays, job_completed: allDone })
+})
+
 // GET /api/my-schedule — jobs assigned to the current rep today
 app.get('/api/my-schedule', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
@@ -9534,7 +9864,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b018">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b020">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9558,8 +9888,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b018"></script>
-  <script src="/js/client_portal.js?v=20260720b018"></script>
+  <script src="/js/platform_core.js?v=20260720b020"></script>
+  <script src="/js/client_portal.js?v=20260720b020"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10194,9 +10524,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b018">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b018">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b018">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b020">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b020">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b020">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -10756,41 +11086,42 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b018"></script>
-<script src="/js/db.js?v=20260720b018"></script>
-<script src="/js/data.js?v=20260720b018"></script>
-<script src="/js/reps.js?v=20260720b018"></script>
-<script src="/js/record-page.js?v=20260720b018"></script>
-<script src="/js/academy.js?v=20260720b018"></script>
-<script src="/js/task_engine.js?v=20260720b018"></script>
-<script src="/js/gw_i18n.js?v=20260720b018"></script>
-<script src="/js/app_premium.js?v=20260720b018"></script>
-<script src="/js/estimates.js?v=20260720b018"></script>
-<script src="/js/proposals.js?v=20260720b018"></script>
-<script src="/js/pricing.js?v=20260720b018"></script>
-<script src="/js/invoices.js?v=20260720b018"></script>
-<script src="/js/csv_import.js?v=20260720b018"></script>
-<script src="/js/onboarding.js?v=20260720b018"></script>
-<script src="/js/gw_copilot.js?v=20260720b018"></script>
-<script src="/js/groundwork_ai.js?v=20260720b018"></script>
-<script src="/js/recurring_plans.js?v=20260720b018"></script>
-<script src="/js/reviews.js?v=20260720b018"></script>
-<script src="/js/stripe.js?v=20260720b018"></script>
-<script src="/js/email.js?v=20260720b018"></script>
-<script src="/js/notifications.js?v=20260720b018"></script>
-<script src="/js/integrations.js?v=20260720b018"></script>
-<script src="/js/calendar_sync.js?v=20260720b018"></script>
-<script src="/js/ai_followup.js?v=20260720b018"></script>
-<script src="/js/user_management.js?v=20260720b018"></script>
-<script src="/js/platform_admin.js?v=20260720b018"></script>
-<script src="/js/time_tracker.js?v=20260720b018"></script>
-<script src="/js/field_workday.js?v=20260720b018"></script>
-<script src="/js/platform_core.js?v=20260720b018"></script>
-<script src="/js/approval_engine.js?v=20260720b018"></script>
-<script src="/js/automation_engine.js?v=20260720b018"></script>
-<script src="/js/client_portal.js?v=20260720b018"></script>
-<script src="/js/field_mode.js?v=20260720b018"></script>
-<script src="/js/assets_hub.js?v=20260720b018"></script>
+<script src="/js/gw-icons.js?v=20260720b020"></script>
+<script src="/js/db.js?v=20260720b020"></script>
+<script src="/js/data.js?v=20260720b020"></script>
+<script src="/js/reps.js?v=20260720b020"></script>
+<script src="/js/record-page.js?v=20260720b020"></script>
+<script src="/js/academy.js?v=20260720b020"></script>
+<script src="/js/task_engine.js?v=20260720b020"></script>
+<script src="/js/gw_i18n.js?v=20260720b020"></script>
+<script src="/js/app_premium.js?v=20260720b020"></script>
+<script src="/js/estimates.js?v=20260720b020"></script>
+<script src="/js/multiday.js?v=20260720b020"></script>
+<script src="/js/proposals.js?v=20260720b020"></script>
+<script src="/js/pricing.js?v=20260720b020"></script>
+<script src="/js/invoices.js?v=20260720b020"></script>
+<script src="/js/csv_import.js?v=20260720b020"></script>
+<script src="/js/onboarding.js?v=20260720b020"></script>
+<script src="/js/gw_copilot.js?v=20260720b020"></script>
+<script src="/js/groundwork_ai.js?v=20260720b020"></script>
+<script src="/js/recurring_plans.js?v=20260720b020"></script>
+<script src="/js/reviews.js?v=20260720b020"></script>
+<script src="/js/stripe.js?v=20260720b020"></script>
+<script src="/js/email.js?v=20260720b020"></script>
+<script src="/js/notifications.js?v=20260720b020"></script>
+<script src="/js/integrations.js?v=20260720b020"></script>
+<script src="/js/calendar_sync.js?v=20260720b020"></script>
+<script src="/js/ai_followup.js?v=20260720b020"></script>
+<script src="/js/user_management.js?v=20260720b020"></script>
+<script src="/js/platform_admin.js?v=20260720b020"></script>
+<script src="/js/time_tracker.js?v=20260720b020"></script>
+<script src="/js/field_workday.js?v=20260720b020"></script>
+<script src="/js/platform_core.js?v=20260720b020"></script>
+<script src="/js/approval_engine.js?v=20260720b020"></script>
+<script src="/js/automation_engine.js?v=20260720b020"></script>
+<script src="/js/client_portal.js?v=20260720b020"></script>
+<script src="/js/field_mode.js?v=20260720b020"></script>
+<script src="/js/assets_hub.js?v=20260720b020"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

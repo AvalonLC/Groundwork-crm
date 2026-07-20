@@ -18,6 +18,7 @@ import mig0041 from '../migrations/0041_properties.sql?raw'
 import mig0042 from '../migrations/0042_portal_identity.sql?raw'
 import mig0043 from '../migrations/0043_project_updates.sql?raw'
 import mig0044 from '../migrations/0044_portal_payments.sql?raw'
+import mig0045 from '../migrations/0045_multiday_jobs.sql?raw'
 
 type Env = { Bindings: { DB: D1Database; MEDIA: R2Bucket; SENDGRID_API_KEY?: string } }
 
@@ -28,10 +29,10 @@ let _portalSchemaOk = false
 async function ensurePortalSchema(db: D1Database): Promise<void> {
   if (_portalSchemaOk) return
   try {
-    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v4' LIMIT 1").first<any>()
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v5' LIMIT 1").first<any>()
     if (flag) { _portalSchemaOk = true; return }
   } catch (_) {}
-  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043], ['0044_portal_payments.sql', mig0044]]
+  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043], ['0044_portal_payments.sql', mig0044], ['0045_multiday_jobs.sql', mig0045]]
   for (const [name, sql] of migs) {
     // Strip inline "--" comments too: 0042 has comments containing ';' which
     // would otherwise break statement splitting (no '--' inside literals here).
@@ -51,7 +52,7 @@ async function ensurePortalSchema(db: D1Database): Promise<void> {
     } catch (_) {}
   }
   try {
-    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v4', ?, datetime('now'))").bind(new Date().toISOString()).run()
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v5', ?, datetime('now'))").bind(new Date().toISOString()).run()
   } catch (_) {}
   _portalSchemaOk = true
 }

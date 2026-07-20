@@ -15965,6 +15965,12 @@ window._sbOpenVisitModal = async function(woId) {
             <div id="sbm-checklist">${checklistHtml||'<p class="sb-empty-note">No items. Add checklist items above.</p>'}</div>
           </section>
 
+          <!-- Multi-Day Job -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Multi-Day Job</h3>
+            <div id="gw-wo-multiday-panel"><p class="sb-empty-note">Loading…</p></div>
+          </section>
+
           <!-- Client Portal Updates -->
           <section class="sb-modal-section">
             <h3 class="sb-modal-section-title">Client Portal Updates</h3>
@@ -16148,6 +16154,14 @@ window._sbOpenVisitModal = async function(woId) {
   } else {
     const _pp = document.getElementById('gw-wo-portal-panel');
     if (_pp) _pp.innerHTML = '<p class="sb-empty-note">Portal module not loaded.</p>';
+  }
+
+  // Mount Multi-Day Job panel (daily AI checklist + auto-publish)
+  if (typeof window._gwMultidayPanel === 'function') {
+    window._gwMultidayPanel(wo.id, document.getElementById('gw-wo-multiday-panel'));
+  } else {
+    const _mp = document.getElementById('gw-wo-multiday-panel');
+    if (_mp) _mp.innerHTML = '<p class="sb-empty-note">Multi-day module not loaded.</p>';
   }
 };
 

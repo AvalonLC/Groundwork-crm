@@ -310,6 +310,21 @@ Each task's description carries a type-specific hint the rep (and the AI drafter
 - **Metering**: every AI call inserts a row into `ai_usage` (migration 0036, auto-creates in prod via `ensureAiSchema`): company, rep, feature, model, prompt/completion/total tokens, key_source (`platform`/`byok`/`env`). 30-day platform-key usage shows per tenant in the panel; `GET /api/admin/ai/usage?company_id=&days=` returns detail rows for billing.
 - **Tenant-side key entry**: companies who bring their own key use Integrations → Admin Setup tab (visible whether or not Google is connected).
 
+## Multi-Day Jobs — Daily AI Checklists + Auto-Published Portal Updates (added 2026-07-20)
+
+Jobs (work orders) can be marked multi-day. Each internal "day" gets an AI-generated end-of-day yes/no checklist; crews must attach a photo to every answer, and completing a day auto-publishes a client portal update composed by Groundwork AI with all the day's photos.
+
+- **Schema**: migration `0045_multiday_jobs.sql` — `work_orders.is_multiday` / `total_days` columns + `wo_days` table (per-day scope, questions JSON, status, `update_id` link to the published portal update). Self-heals in prod via `_schema_multiday_v1` flag (index.tsx) and `_schema_portal_v5` (portal.tsx) — no remote wrangler migration needed.
+- **API** (src/index.tsx):
+  - `POST /api/work-orders/:id/multiday` — body `{total_days (2-30), start_date?, day_scopes?}`. One AI call generates 3-6 photo-verifiable yes/no questions per day (feature `multiday_questions`); graceful fallback questions when AI unavailable. Re-running setup never overwrites days that are in progress or completed.
+  - `GET /api/work-orders/:id/days` — day list with parsed questions.
+  - `POST /api/work-orders/:id/days/:n/answer` — `{question_index, answer, photo_media_id}`. Photo is REQUIRED and must exist in `project_media` for that job; questions must be answered strictly in order; completed days reject changes (409).
+  - `POST /api/work-orders/:id/days/:n/complete` — rejects if any question unanswered; AI composes the client update title/body (feature `multiday_update`, deterministic fallback); INSERTs a published `project_updates` row, attaches all answered-question photos, marks the day completed, appends a WO timeline event, emails active portal users, and flips the WO to `completed` when the last day finishes.
+- **Frontend** (`public/js/multiday.js`, mounted in the visit modal in app_premium.js):
+  - Staff: "Multi-Day Job" section in the scheduled-job modal — enable multi-day, set day count + per-day scopes, see per-day progress badges (PENDING / n-of-m ANSWERED / PUBLISHED).
+  - Crew: "Start Day" opens a fullscreen popup — one question at a time; the YES/NO buttons stay disabled until a photo is uploaded (camera capture supported); finishing all questions shows a Complete Day screen that triggers the AI publish.
+- Photos reuse the Release 1 portal media pipeline (`POST /api/admin/portal/projects/:woId/media`, R2-backed, 15 MB limit).
+
 ## Environment variables / secrets
 
 | Variable | Where to set | Purpose |
