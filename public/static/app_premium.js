@@ -21611,11 +21611,16 @@ function systemConfig() {
     const t = document.getElementById('sc-est-terms');
     const n = document.getElementById('sc-est-notes');
     if (!t) return;
+    // Rich-text editor: keeps bold / bullets / headings when pasting from Word or Docs
+    if (typeof window._gwRichAttach === 'function') {
+      window._gwRichAttach('sc-est-terms', { minHeight: '150px' });
+    }
     fetch('/api/estimate-defaults', { credentials: 'include' })
       .then(r => r.json())
       .then(j => {
         const d = (j && j.data) || {};
-        t.value = d.terms || '';
+        if (typeof window._gwRichSet === 'function') window._gwRichSet('sc-est-terms', d.terms || '');
+        else t.value = d.terms || '';
         if (n) n.value = d.customer_notes || '';
         window._scEstDefaultsLoaded = true;
       })

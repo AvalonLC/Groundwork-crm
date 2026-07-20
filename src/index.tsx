@@ -280,6 +280,29 @@ async function sendEmail(apiKey: string, to: string, subject: string, html: stri
   } catch { return false }
 }
 
+// ── Rich text render (server-side) ───────────────────────────────────────────
+// Terms & notes may be stored as legacy plain text OR sanitized HTML from the
+// rich editor (richtext.js). This renders either safely: plain text is escaped
+// with \n→<br>; HTML is re-sanitized to a strict whitelist with all attributes
+// stripped (no DOMParser in Workers, so a conservative regex pass is used).
+function richTextHtml(v: any): string {
+  const s = String(v ?? '')
+  if (!s) return ''
+  const esc = (x: string) => x.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  if (!/<[a-z][^>]*>/i.test(s)) return esc(s).replace(/\n/g,'<br>')
+  const ALLOWED = ['p','div','br','b','strong','i','em','u','s','strike','ul','ol','li','h1','h2','h3','h4','blockquote']
+  // Remove script/style blocks entirely, then whitelist tags & strip attributes
+  let out = s.replace(/<(script|style|iframe|object|embed|form)[\s\S]*?<\/\1\s*>/gi, '')
+  out = out.replace(/<\/?([a-zA-Z0-9]+)[^>]*>/g, (m, tag) => {
+    const t = String(tag).toLowerCase()
+    if (!ALLOWED.includes(t)) return ''
+    const close = m.startsWith('</')
+    if (t === 'br') return '<br>'
+    return close ? `</${t}>` : `<${t}>`
+  })
+  return out
+}
+
 // ── Secure random hex token ───────────────────────────────────────────────────
 // ── Full schema self-heal ─────────────────────────────────────────────────────
 // Applies embedded migrations 0022-0030 statement-by-statement, idempotently.
@@ -5718,6 +5741,7 @@ app.get('/portal/proposal/:token', async (c) => {
   .pp-section{background:#fff;border:1px solid #E4E0D6;border-radius:12px;padding:26px 28px;margin-bottom:20px}
   .pp-section h2{font-size:15px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${brandColor};border-bottom:2px solid ${brandColor}22;padding-bottom:9px;margin-bottom:14px}
   .pp-body-text{font-size:14px;color:#3D4A46}
+  .gw-rt-view p{margin:0 0 8px}.gw-rt-view ul,.gw-rt-view ol{margin:4px 0 10px;padding-left:22px}.gw-rt-view li{margin:2px 0}.gw-rt-view h1,.gw-rt-view h2,.gw-rt-view h3,.gw-rt-view h4{margin:10px 0 6px;line-height:1.3;font-size:1.05em}
   .pp-goal{font-size:13px;color:#5A675F;margin-bottom:14px}
   .pp-table{width:100%;border-collapse:collapse;font-size:13.5px}
   .pp-table th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:${brandColor};padding:9px 12px}
@@ -5784,7 +5808,7 @@ app.get('/portal/proposal/:token', async (c) => {
     ${sectionHtml}
     ${sched.length ? `<div class="pp-section"><h2>Payment Schedule</h2>${sched.map((p:any) =>
       `<div class="pp-sched-row"><span>${esc(p.label||'Payment')}</span><strong>${Number(p.pct||0)}%${row.total ? ' — ' + money(Number(row.total) * Number(p.pct||0) / 100) : ''}</strong></div>`).join('')}</div>` : ''}
-    ${row.terms ? `<div class="pp-section"><h2>Terms</h2><p class="pp-body-text" style="font-size:12.5px">${esc(row.terms).replace(/\n/g,'<br>')}</p></div>` : ''}
+    ${row.terms ? `<div class="pp-section"><h2>Terms</h2><div class="pp-body-text gw-rt-view" style="font-size:12.5px">${richTextHtml(row.terms)}</div></div>` : ''}
     ${!isDone ? `<div class="pp-actions">
       <div style="font-size:14px;font-weight:600;margin-bottom:8px">Ready to move forward?</div>
       ${optionSections.length <= 1 ? `<button class="pp-accept-btn" onclick="ppRespond('accept','')">Accept Proposal</button>` : `<div style="font-size:12.5px;color:#6F7E6A;margin-bottom:4px">Choose an option above, or accept as-is:</div><button class="pp-accept-btn" onclick="ppRespond('accept','')">Accept Proposal</button>`}
@@ -9864,7 +9888,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b020">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b024">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9888,8 +9912,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b020"></script>
-  <script src="/js/client_portal.js?v=20260720b020"></script>
+  <script src="/js/platform_core.js?v=20260720b024"></script>
+  <script src="/js/client_portal.js?v=20260720b024"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10524,9 +10548,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b020">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b020">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b020">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b024">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b024">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b024">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -11086,42 +11110,43 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b020"></script>
-<script src="/js/db.js?v=20260720b020"></script>
-<script src="/js/data.js?v=20260720b020"></script>
-<script src="/js/reps.js?v=20260720b020"></script>
-<script src="/js/record-page.js?v=20260720b020"></script>
-<script src="/js/academy.js?v=20260720b020"></script>
-<script src="/js/task_engine.js?v=20260720b020"></script>
-<script src="/js/gw_i18n.js?v=20260720b020"></script>
-<script src="/js/app_premium.js?v=20260720b020"></script>
-<script src="/js/estimates.js?v=20260720b020"></script>
-<script src="/js/multiday.js?v=20260720b020"></script>
-<script src="/js/proposals.js?v=20260720b020"></script>
-<script src="/js/pricing.js?v=20260720b020"></script>
-<script src="/js/invoices.js?v=20260720b020"></script>
-<script src="/js/csv_import.js?v=20260720b020"></script>
-<script src="/js/onboarding.js?v=20260720b020"></script>
-<script src="/js/gw_copilot.js?v=20260720b020"></script>
-<script src="/js/groundwork_ai.js?v=20260720b020"></script>
-<script src="/js/recurring_plans.js?v=20260720b020"></script>
-<script src="/js/reviews.js?v=20260720b020"></script>
-<script src="/js/stripe.js?v=20260720b020"></script>
-<script src="/js/email.js?v=20260720b020"></script>
-<script src="/js/notifications.js?v=20260720b020"></script>
-<script src="/js/integrations.js?v=20260720b020"></script>
-<script src="/js/calendar_sync.js?v=20260720b020"></script>
-<script src="/js/ai_followup.js?v=20260720b020"></script>
-<script src="/js/user_management.js?v=20260720b020"></script>
-<script src="/js/platform_admin.js?v=20260720b020"></script>
-<script src="/js/time_tracker.js?v=20260720b020"></script>
-<script src="/js/field_workday.js?v=20260720b020"></script>
-<script src="/js/platform_core.js?v=20260720b020"></script>
-<script src="/js/approval_engine.js?v=20260720b020"></script>
-<script src="/js/automation_engine.js?v=20260720b020"></script>
-<script src="/js/client_portal.js?v=20260720b020"></script>
-<script src="/js/field_mode.js?v=20260720b020"></script>
-<script src="/js/assets_hub.js?v=20260720b020"></script>
+<script src="/js/gw-icons.js?v=20260720b024"></script>
+<script src="/js/richtext.js?v=20260720b024"></script>
+<script src="/js/db.js?v=20260720b024"></script>
+<script src="/js/data.js?v=20260720b024"></script>
+<script src="/js/reps.js?v=20260720b024"></script>
+<script src="/js/record-page.js?v=20260720b024"></script>
+<script src="/js/academy.js?v=20260720b024"></script>
+<script src="/js/task_engine.js?v=20260720b024"></script>
+<script src="/js/gw_i18n.js?v=20260720b024"></script>
+<script src="/js/app_premium.js?v=20260720b024"></script>
+<script src="/js/estimates.js?v=20260720b024"></script>
+<script src="/js/multiday.js?v=20260720b024"></script>
+<script src="/js/proposals.js?v=20260720b024"></script>
+<script src="/js/pricing.js?v=20260720b024"></script>
+<script src="/js/invoices.js?v=20260720b024"></script>
+<script src="/js/csv_import.js?v=20260720b024"></script>
+<script src="/js/onboarding.js?v=20260720b024"></script>
+<script src="/js/gw_copilot.js?v=20260720b024"></script>
+<script src="/js/groundwork_ai.js?v=20260720b024"></script>
+<script src="/js/recurring_plans.js?v=20260720b024"></script>
+<script src="/js/reviews.js?v=20260720b024"></script>
+<script src="/js/stripe.js?v=20260720b024"></script>
+<script src="/js/email.js?v=20260720b024"></script>
+<script src="/js/notifications.js?v=20260720b024"></script>
+<script src="/js/integrations.js?v=20260720b024"></script>
+<script src="/js/calendar_sync.js?v=20260720b024"></script>
+<script src="/js/ai_followup.js?v=20260720b024"></script>
+<script src="/js/user_management.js?v=20260720b024"></script>
+<script src="/js/platform_admin.js?v=20260720b024"></script>
+<script src="/js/time_tracker.js?v=20260720b024"></script>
+<script src="/js/field_workday.js?v=20260720b024"></script>
+<script src="/js/platform_core.js?v=20260720b024"></script>
+<script src="/js/approval_engine.js?v=20260720b024"></script>
+<script src="/js/automation_engine.js?v=20260720b024"></script>
+<script src="/js/client_portal.js?v=20260720b024"></script>
+<script src="/js/field_mode.js?v=20260720b024"></script>
+<script src="/js/assets_hub.js?v=20260720b024"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

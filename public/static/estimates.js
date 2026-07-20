@@ -750,7 +750,7 @@ function _estRenderDetail(est) {
       ${est.terms ? `
       <section class="est-detail-section">
         <h2 class="est-detail-section-title">Terms &amp; Conditions</h2>
-        <div class="est-detail-terms">${_estEsc(est.terms).replace(/\n/g,'<br>')}</div>
+        <div class="est-detail-terms gw-rt-view">${typeof window._gwRichRender==='function' ? window._gwRichRender(est.terms) : _estEsc(est.terms).replace(/\n/g,'<br>')}</div>
       </section>` : ''}
 
       <!-- Internal Notes -->
@@ -960,7 +960,10 @@ async function estimateBuilder(id) {
       if (d.terms && !_estDraft.terms) {
         _estDraft.terms = d.terms;
         const el = document.getElementById('est-terms');
-        if (el && !el.value) el.value = d.terms;
+        if (el && !el.value) {
+          if (typeof window._gwRichSet === 'function') window._gwRichSet('est-terms', d.terms);
+          else el.value = d.terms;
+        }
       }
       if (d.customer_notes && !_estDraft.customer_notes) {
         _estDraft.customer_notes = d.customer_notes;
@@ -1400,6 +1403,10 @@ function _estRenderBuilder() {
     _estRenderEngine();
   }
   _estCalcTotals();
+  // Rich-text Terms & Conditions editor (keeps bold / bullets / headings on paste)
+  if (tab === 'document' && typeof window._gwRichAttach === 'function') {
+    window._gwRichAttach('est-terms', { minHeight: '120px' });
+  }
   if (pvOn) { _estPvBrandEnsure(); _estPvRender(); }
 }
 
@@ -2150,7 +2157,7 @@ function _estPortalContentHtml(est, brand, interactive) {
       ${est.terms ? `
       <div class="est-portal-section">
         <h3 class="est-portal-section-title">Terms &amp; Conditions</h3>
-        <div class="est-portal-terms">${_estEsc(est.terms).replace(/\n/g,'<br>')}</div>
+        <div class="est-portal-terms gw-rt-view">${typeof window._gwRichRender==='function' ? window._gwRichRender(est.terms) : _estEsc(est.terms).replace(/\n/g,'<br>')}</div>
       </div>` : ''}
     </div>
 

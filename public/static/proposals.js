@@ -302,7 +302,7 @@ function _prRenderBuilder() {
       <section style="background:var(--gw-surface,#fff);border:1px solid var(--gw-border,#E4E0D6);border-radius:12px;padding:18px;margin-bottom:16px">
         <div style="font-size:13px;font-weight:800;margin-bottom:10px">5 · Terms &amp; Notes</div>
         <label class="est-label">Terms (shown to client)</label>
-        <textarea class="est-input" rows="3" style="resize:vertical;margin-bottom:12px" placeholder="Pricing valid through the date above. Applications weather-dependent…" oninput="_prDraft.terms=this.value">${_prEsc(p.terms)}</textarea>
+        <textarea id="pr-terms" class="est-input" rows="3" style="resize:vertical;margin-bottom:12px" placeholder="Pricing valid through the date above. Applications weather-dependent…" oninput="_prDraft.terms=this.value">${_prEsc(p.terms)}</textarea>
         <label class="est-label">Internal Notes (never shown to client)</label>
         <textarea class="est-input" rows="2" style="resize:vertical" oninput="_prDraft.internal_notes=this.value">${_prEsc(p.internal_notes)}</textarea>
       </section>
@@ -357,6 +357,10 @@ function _prRenderBuilder() {
   if (shell) {
     shell.addEventListener('input', _prPvQueue);
     shell.addEventListener('change', _prPvQueue);
+  }
+  // Rich-text Terms editor (keeps bold / bullets / headings on paste)
+  if (typeof window._gwRichAttach === 'function') {
+    window._gwRichAttach('pr-terms', { minHeight: '90px', onChange: (v) => { _prDraft.terms = v; } });
   }
   if (pvOn) _prPvRender();
 }
@@ -990,7 +994,7 @@ function _prPvRender() {
     ${sections.map((s, si) => _prPvSectionHtml(s, si, optCount)).join('')}
     ${sched.length ? `<div class="pp-section"><h2>Payment Schedule</h2>${sched.map(sp =>
       `<div class="pp-sched-row"><span>${esc(sp.label || 'Payment')}</span><strong>${Number(sp.pct || 0)}%${total ? ' — ' + money(total * Number(sp.pct || 0) / 100) : ''}</strong></div>`).join('')}</div>` : ''}
-    ${p.terms ? `<div class="pp-section"><h2>Terms</h2><p class="pp-body-text" style="font-size:11.5px">${esc(p.terms).replace(/\n/g, '<br>')}</p></div>` : ''}
+    ${p.terms ? `<div class="pp-section"><h2>Terms</h2><div class="pp-body-text gw-rt-view" style="font-size:11.5px">${typeof window._gwRichRender==='function' ? window._gwRichRender(p.terms) : esc(p.terms).replace(/\n/g, '<br>')}</div></div>` : ''}
     <div class="pp-actions">
       <div style="font-size:13px;font-weight:600;margin-bottom:7px">Ready to move forward?</div>
       <button class="pp-accept-btn" disabled style="opacity:.55">Accept Proposal</button>

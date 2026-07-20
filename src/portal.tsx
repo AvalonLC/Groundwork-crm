@@ -1736,6 +1736,7 @@ function portalShellPage(): string {
   .gwp-tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--line)}
   .gwp-tab{background:none;border:none;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--muted);padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
   .gwp-tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .gw-rt-view p{margin:0 0 8px}.gw-rt-view ul,.gw-rt-view ol{margin:4px 0 10px;padding-left:22px}.gw-rt-view li{margin:2px 0}.gw-rt-view h1,.gw-rt-view h2,.gw-rt-view h3,.gw-rt-view h4{margin:10px 0 6px;line-height:1.3;font-size:1.05em}
 </style></head>
 <body>
 <div id="portal-root"><div class="gwp-loading"><div class="gwp-spin"></div>Loading your portal...</div></div>
@@ -1745,6 +1746,34 @@ function portalShellPage(): string {
   var root=document.getElementById('portal-root');
   var money=function(n){return '$'+(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})};
   var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')};
+  // Terms/notes may be legacy plain text OR sanitized HTML from the staff rich editor.
+  var rich=function(v){
+    v=String(v==null?'':v);
+    if(!v)return '';
+    if(!/<[a-z][^>]*>/i.test(v))return esc(v).replace(/\\n/g,'<br>');
+    var ALLOWED=['p','div','br','b','strong','i','em','u','s','strike','ul','ol','li','h1','h2','h3','h4','blockquote'];
+    var d=document.createElement('div');d.innerHTML=v;
+    var bad=d.querySelectorAll('script,style,iframe,object,embed,form,link,meta,svg,img,video,audio,input,button,textarea,select');
+    for(var i=0;i<bad.length;i++)bad[i].parentNode.removeChild(bad[i]);
+    var walk=function(node){
+      var kids=[].slice.call(node.childNodes);
+      for(var j=0;j<kids.length;j++){
+        var ch=kids[j];
+        if(ch.nodeType===8){node.removeChild(ch);continue}
+        if(ch.nodeType!==1)continue;
+        walk(ch);
+        if(ALLOWED.indexOf(ch.tagName.toLowerCase())<0){
+          while(ch.firstChild)node.insertBefore(ch.firstChild,ch);
+          node.removeChild(ch);
+        }else{
+          var atts=[].slice.call(ch.attributes||[]);
+          for(var k=0;k<atts.length;k++)ch.removeAttribute(atts[k].name);
+        }
+      }
+    };
+    walk(d);
+    return d.innerHTML;
+  };
   var NAV=[
     {id:'home',label:'Home'},
     {id:'projects',label:'Projects'},
@@ -1908,7 +1937,7 @@ function portalShellPage(): string {
         (r.deposit_amt?'<div><span>Deposit due</span><span>'+money(r.deposit_amt)+(r.deposit_paid?' (paid)':'')+'</span></div>':'')+
         '</div>'+
         (r.customer_notes?'<div class="gwp-note">'+esc(r.customer_notes)+'</div>':'')+
-        (r.terms?'<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;white-space:pre-wrap">'+esc(r.terms)+'</div>':'')+
+        (r.terms?'<div class="gw-rt-view" style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6">'+rich(r.terms)+'</div>':'')+
         (canApprove?'<div class="gwp-actions"><button class="gwp-btn" id="est-approve" style="width:auto">Approve Estimate</button><button class="gwp-btn-ghost" id="est-decline">Decline / Request Changes</button></div><div id="est-decline-box" style="display:none;margin-top:14px"><label class="gwp-label">Tell us what you would like changed (optional)</label><textarea class="gwp-input" id="est-reason"></textarea><div style="height:10px"></div><button class="gwp-btn-ghost" id="est-decline-send">Send Response</button></div>':'')+
         (r.deposit_amt&&!r.deposit_paid&&can('make_payments')&&(r.status==='approved'||r.status==='accepted'||r.status==='invoiced')?'<div id="est-dep-box" style="margin-top:14px"></div>':'')+
         '<div class="gwp-err" id="est-err"></div></div>');
@@ -2018,7 +2047,7 @@ function portalShellPage(): string {
         (pays?'<div style="margin-top:20px"><div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Payments</div>'+pays+'</div>':'')+
         (openBal&&can('make_payments')?'<div class="gwp-actions" id="inv-pay-row">'+(r.portal_token?'<a class="gwp-btn" style="width:auto;text-decoration:none" href="/invoices/portal/'+esc(r.portal_token)+'" target="_blank" rel="noopener">Pay '+money(r.balance_due)+'</a>':'')+'</div><div id="inv-pay-saved-box"></div><div class="gwp-err" id="inv-pay-err"></div>':'')+
         (r.notes?'<div class="gwp-note">'+esc(r.notes)+'</div>':'')+
-        (r.terms?'<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;white-space:pre-wrap">'+esc(r.terms)+'</div>':'')+
+        (r.terms?'<div class="gw-rt-view" style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6">'+rich(r.terms)+'</div>':'')+
         '</div>');
       bindNav();
       document.getElementById('inv-back').onclick=function(){renderBilling()};
