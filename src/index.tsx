@@ -6896,12 +6896,65 @@ app.delete('/api/invoices/:id', requireAuth, async (c) => {
 })
 
 // POST /api/invoices/:id/send — mark as sent (email handled client-side or via SendGrid)
+// If the client enabled autopay in the portal, the open balance is charged to
+// their chosen saved payment method automatically (respecting max_amount cap).
 app.post('/api/invoices/:id/send', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  const invoiceId = c.req.param('id')
   await db.prepare(`UPDATE invoices SET status='sent', sent_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
-    .bind(c.req.param('id'), companyId).run()
-  return c.json({ ok: true })
+    .bind(invoiceId, companyId).run()
+
+  // Autopay: best-effort, never blocks the send
+  let autopay: any = null
+  try {
+    const stripeKey = (c.env as any).STRIPE_SECRET_KEY as string | undefined
+    const inv: any = await db.prepare(`SELECT * FROM invoices WHERE id=? AND company_id=? LIMIT 1`).bind(invoiceId, companyId).first()
+    if (stripeKey && inv?.client_id) {
+      const ap: any = await db.prepare(`SELECT * FROM client_autopay WHERE client_id=? AND company_id=? AND enabled=1 LIMIT 1`).bind(inv.client_id, companyId).first()
+      const owedCents = Math.round(Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0)) * 100)
+      if (ap?.stripe_pm_id && owedCents >= 50) {
+        if (ap.max_amount > 0 && owedCents / 100 > ap.max_amount) {
+          autopay = { attempted: false, reason: `Balance exceeds the client's autopay cap of $${ap.max_amount}` }
+        } else {
+          const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
+          const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(inv.client_id, companyId).first()
+          if (company?.stripe_account_id && company.stripe_onboarded && client?.stripe_customer_id) {
+            const feePct = company.stripe_platform_fee_pct || 2.9
+            const form = new URLSearchParams({
+              amount: String(owedCents), currency: 'usd', customer: client.stripe_customer_id,
+              payment_method: ap.stripe_pm_id, confirm: 'true', 'off_session': 'true',
+              'application_fee_amount': String(Math.round(owedCents * feePct / 100)),
+              'transfer_data[destination]': company.stripe_account_id,
+              'metadata[invoice_id]': invoiceId, 'metadata[company_id]': companyId, 'metadata[source]': 'autopay',
+            })
+            const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
+              method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+            })
+            const pi: any = await piRes.json()
+            if (piRes.ok && pi.status === 'succeeded') {
+              const amountDollars = owedCents / 100
+              const newPaid = (inv.amount_paid || 0) + amountDollars
+              const newBalance = Math.max(0, (inv.total || 0) - newPaid)
+              await db.prepare(`UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+                .bind(newPaid, newBalance, newBalance <= 0 ? 'paid' : 'partial', invoiceId, companyId).run()
+              await db.prepare(
+                `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+              ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, companyId, invoiceId, inv.client_id, amountDollars, amountDollars,
+                'succeeded', 'card', pi.id, `Autopay — ${ap.pm_label || 'saved method'}`, inv.invoice_number || '').run()
+              autopay = { attempted: true, paid: true, amount: amountDollars, pm_label: ap.pm_label || '' }
+            } else {
+              autopay = { attempted: true, paid: false, reason: pi?.error?.message || `Payment status: ${pi?.status || 'failed'}` }
+            }
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    autopay = { attempted: true, paid: false, reason: e.message }
+  }
+  return c.json({ ok: true, autopay })
 })
 
 // POST /api/invoices/:id/record-payment — record a manual payment
@@ -9411,7 +9464,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b016">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b017">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9435,8 +9488,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b016"></script>
-  <script src="/js/client_portal.js?v=20260720b016"></script>
+  <script src="/js/platform_core.js?v=20260720b017"></script>
+  <script src="/js/client_portal.js?v=20260720b017"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10071,9 +10124,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b016">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b016">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b016">
+  <link rel="stylesheet" href="/js/premium.css?v=20260720b017">
+  <link rel="stylesheet" href="/js/styles.css?v=20260720b017">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b017">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -10633,41 +10686,41 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b016"></script>
-<script src="/js/db.js?v=20260720b016"></script>
-<script src="/js/data.js?v=20260720b016"></script>
-<script src="/js/reps.js?v=20260720b016"></script>
-<script src="/js/record-page.js?v=20260720b016"></script>
-<script src="/js/academy.js?v=20260720b016"></script>
-<script src="/js/task_engine.js?v=20260720b016"></script>
-<script src="/js/gw_i18n.js?v=20260720b016"></script>
-<script src="/js/app_premium.js?v=20260720b016"></script>
-<script src="/js/estimates.js?v=20260720b016"></script>
-<script src="/js/proposals.js?v=20260720b016"></script>
-<script src="/js/pricing.js?v=20260720b016"></script>
-<script src="/js/invoices.js?v=20260720b016"></script>
-<script src="/js/csv_import.js?v=20260720b016"></script>
-<script src="/js/onboarding.js?v=20260720b016"></script>
-<script src="/js/gw_copilot.js?v=20260720b016"></script>
-<script src="/js/groundwork_ai.js?v=20260720b016"></script>
-<script src="/js/recurring_plans.js?v=20260720b016"></script>
-<script src="/js/reviews.js?v=20260720b016"></script>
-<script src="/js/stripe.js?v=20260720b016"></script>
-<script src="/js/email.js?v=20260720b016"></script>
-<script src="/js/notifications.js?v=20260720b016"></script>
-<script src="/js/integrations.js?v=20260720b016"></script>
-<script src="/js/calendar_sync.js?v=20260720b016"></script>
-<script src="/js/ai_followup.js?v=20260720b016"></script>
-<script src="/js/user_management.js?v=20260720b016"></script>
-<script src="/js/platform_admin.js?v=20260720b016"></script>
-<script src="/js/time_tracker.js?v=20260720b016"></script>
-<script src="/js/field_workday.js?v=20260720b016"></script>
-<script src="/js/platform_core.js?v=20260720b016"></script>
-<script src="/js/approval_engine.js?v=20260720b016"></script>
-<script src="/js/automation_engine.js?v=20260720b016"></script>
-<script src="/js/client_portal.js?v=20260720b016"></script>
-<script src="/js/field_mode.js?v=20260720b016"></script>
-<script src="/js/assets_hub.js?v=20260720b016"></script>
+<script src="/js/gw-icons.js?v=20260720b017"></script>
+<script src="/js/db.js?v=20260720b017"></script>
+<script src="/js/data.js?v=20260720b017"></script>
+<script src="/js/reps.js?v=20260720b017"></script>
+<script src="/js/record-page.js?v=20260720b017"></script>
+<script src="/js/academy.js?v=20260720b017"></script>
+<script src="/js/task_engine.js?v=20260720b017"></script>
+<script src="/js/gw_i18n.js?v=20260720b017"></script>
+<script src="/js/app_premium.js?v=20260720b017"></script>
+<script src="/js/estimates.js?v=20260720b017"></script>
+<script src="/js/proposals.js?v=20260720b017"></script>
+<script src="/js/pricing.js?v=20260720b017"></script>
+<script src="/js/invoices.js?v=20260720b017"></script>
+<script src="/js/csv_import.js?v=20260720b017"></script>
+<script src="/js/onboarding.js?v=20260720b017"></script>
+<script src="/js/gw_copilot.js?v=20260720b017"></script>
+<script src="/js/groundwork_ai.js?v=20260720b017"></script>
+<script src="/js/recurring_plans.js?v=20260720b017"></script>
+<script src="/js/reviews.js?v=20260720b017"></script>
+<script src="/js/stripe.js?v=20260720b017"></script>
+<script src="/js/email.js?v=20260720b017"></script>
+<script src="/js/notifications.js?v=20260720b017"></script>
+<script src="/js/integrations.js?v=20260720b017"></script>
+<script src="/js/calendar_sync.js?v=20260720b017"></script>
+<script src="/js/ai_followup.js?v=20260720b017"></script>
+<script src="/js/user_management.js?v=20260720b017"></script>
+<script src="/js/platform_admin.js?v=20260720b017"></script>
+<script src="/js/time_tracker.js?v=20260720b017"></script>
+<script src="/js/field_workday.js?v=20260720b017"></script>
+<script src="/js/platform_core.js?v=20260720b017"></script>
+<script src="/js/approval_engine.js?v=20260720b017"></script>
+<script src="/js/automation_engine.js?v=20260720b017"></script>
+<script src="/js/client_portal.js?v=20260720b017"></script>
+<script src="/js/field_mode.js?v=20260720b017"></script>
+<script src="/js/assets_hub.js?v=20260720b017"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

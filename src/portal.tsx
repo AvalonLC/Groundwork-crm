@@ -17,6 +17,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import mig0041 from '../migrations/0041_properties.sql?raw'
 import mig0042 from '../migrations/0042_portal_identity.sql?raw'
 import mig0043 from '../migrations/0043_project_updates.sql?raw'
+import mig0044 from '../migrations/0044_portal_payments.sql?raw'
 
 type Env = { Bindings: { DB: D1Database; MEDIA: R2Bucket; SENDGRID_API_KEY?: string } }
 
@@ -27,10 +28,10 @@ let _portalSchemaOk = false
 async function ensurePortalSchema(db: D1Database): Promise<void> {
   if (_portalSchemaOk) return
   try {
-    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v3' LIMIT 1").first<any>()
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v4' LIMIT 1").first<any>()
     if (flag) { _portalSchemaOk = true; return }
   } catch (_) {}
-  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043]]
+  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043], ['0044_portal_payments.sql', mig0044]]
   for (const [name, sql] of migs) {
     // Strip inline "--" comments too: 0042 has comments containing ';' which
     // would otherwise break statement splitting (no '--' inside literals here).
@@ -50,7 +51,7 @@ async function ensurePortalSchema(db: D1Database): Promise<void> {
     } catch (_) {}
   }
   try {
-    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v3', ?, datetime('now'))").bind(new Date().toISOString()).run()
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v4', ?, datetime('now'))").bind(new Date().toISOString()).run()
   } catch (_) {}
   _portalSchemaOk = true
 }
@@ -669,6 +670,433 @@ export function registerPortal(app: Hono<any>, deps: {
        ORDER BY created_at DESC LIMIT 100`
     ).bind(s.companyId, ...s.clientIds).all()).results as any[] || []).filter(r => propOk(s, r))
     return c.json({ ok: true, data: { proposals } })
+  })
+
+  // ══ RELEASE 2: PAYMENT METHODS, AUTOPAY, DEPOSITS, CONTACTS ═══════════════
+  //
+  // Payment model (matches existing staff flows in index.tsx):
+  //  - Saved payment methods live on a PLATFORM-account Stripe Customer per
+  //    client (clients.stripe_customer_id). Off-session charges use
+  //    transfer_data[destination] to route funds to the connected account.
+  //  - Hosted Checkout (deposit fallback) is created ON the connected account,
+  //    same as the public invoice pay page.
+  //  - All portal-initiated charges require the company to be Stripe-connected.
+
+  const stripeKeyOf = (c: any) => (c.env as any).STRIPE_SECRET_KEY as string | undefined
+
+  // Resolve which client a payments/contacts request targets. Single-client
+  // accounts need no param; multi-client users pass ?client_id= / body.client_id.
+  function pickClientId(s: PortalScope, requested: string | undefined, perm: string): string | null {
+    if (requested) return s.clientIds.includes(requested) && s.can(perm, requested) ? requested : null
+    const withPerm = s.clientIds.filter(id => s.can(perm, id))
+    return withPerm.length === 1 || (withPerm.length > 1 && s.clientIds.length === 1) ? withPerm[0] : (withPerm[0] || null)
+  }
+
+  async function stripeCustomerFor(db: D1Database, stripeKey: string, companyId: string, clientId: string): Promise<string> {
+    const client: any = await db.prepare(`SELECT id, name, email, stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(clientId, companyId).first()
+    if (!client) throw new Error('Client not found')
+    if (client.stripe_customer_id) return client.stripe_customer_id
+    const form = new URLSearchParams({ name: client.name || '', 'metadata[client_id]': clientId, 'metadata[company_id]': companyId })
+    if (client.email) form.set('email', client.email)
+    const res = await fetch('https://api.stripe.com/v1/customers', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+    })
+    const cust: any = await res.json()
+    if (!res.ok) throw new Error(cust.error?.message || 'Could not create Stripe customer')
+    await db.prepare(`UPDATE clients SET stripe_customer_id=? WHERE id=?`).bind(cust.id, clientId).run()
+    return cust.id
+  }
+
+  async function listStripePMs(stripeKey: string, customerId: string) {
+    const [cardsRes, bankRes] = await Promise.all([
+      fetch(`https://api.stripe.com/v1/payment_methods?customer=${customerId}&type=card&limit=20`, { headers: { 'Authorization': `Bearer ${stripeKey}` } }),
+      fetch(`https://api.stripe.com/v1/payment_methods?customer=${customerId}&type=us_bank_account&limit=20`, { headers: { 'Authorization': `Bearer ${stripeKey}` } })
+    ])
+    const cards = cardsRes.ok ? (await cardsRes.json() as any).data || [] : []
+    const banks = bankRes.ok ? (await bankRes.json() as any).data || [] : []
+    return [...cards, ...banks].map((pm: any) => ({
+      id: pm.id, type: pm.type,
+      brand: pm.card?.brand || pm.us_bank_account?.bank_name || 'Unknown',
+      last4: pm.card?.last4 || pm.us_bank_account?.last4 || '????',
+      exp_month: pm.card?.exp_month, exp_year: pm.card?.exp_year,
+      label: pm.type === 'card'
+        ? `${(pm.card?.brand || 'Card').charAt(0).toUpperCase() + (pm.card?.brand || '').slice(1)} •••• ${pm.card?.last4} (${pm.card?.exp_month}/${pm.card?.exp_year})`
+        : `${pm.us_bank_account?.bank_name || 'Bank'} •••• ${pm.us_bank_account?.last4} (ACH)`
+    }))
+  }
+
+  // Off-session charge on the platform customer, routed to the connected acct.
+  async function chargeSavedPM(stripeKey: string, company: any, customerId: string, pmId: string, amountCents: number, metadata: Record<string, string>) {
+    const feePct = company?.stripe_platform_fee_pct || 2.9
+    const form = new URLSearchParams({
+      amount: String(amountCents), currency: 'usd', customer: customerId,
+      payment_method: pmId, confirm: 'true', 'off_session': 'true',
+      'application_fee_amount': String(Math.round(amountCents * feePct / 100)),
+      'transfer_data[destination]': company.stripe_account_id
+    })
+    for (const [k, v] of Object.entries(metadata)) form.set(`metadata[${k}]`, v)
+    const res = await fetch('https://api.stripe.com/v1/payment_intents', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+    })
+    const pi: any = await res.json()
+    if (!res.ok) throw new Error(pi.error?.message || 'Charge failed')
+    if (pi.status !== 'succeeded') throw new Error(`Payment status: ${pi.status} — this payment method may require additional authentication`)
+    return pi
+  }
+
+  const companyStripe = (db: D1Database, companyId: string) =>
+    db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(companyId).first() as Promise<any>
+
+  async function notifyCompany(db: D1Database, companyId: string, type: string, title: string, body: string, entityType: string, entityId: string, actionUrl: string) {
+    try {
+      await db.prepare(`INSERT OR IGNORE INTO notifications (id,company_id,type,title,body,entity_type,entity_id,action_url) VALUES (?,?,?,?,?,?,?,?)`)
+        .bind(`notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, companyId, type, title, body, entityType, entityId, actionUrl).run()
+    } catch (_) {}
+  }
+
+  // ── Payment methods ────────────────────────────────────────────────────────
+
+  // GET /api/portal/payment-methods — list saved methods for a client
+  app.get('/api/portal/payment-methods', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const perms = ['manage_payment_methods', 'make_payments', 'manage_autopay']
+    const clientId = c.req.query('client_id')
+      ? (s.clientIds.includes(c.req.query('client_id')!) && perms.some(p => s.can(p, c.req.query('client_id')!)) ? c.req.query('client_id')! : null)
+      : (s.clientIds.find(id => perms.some(p => s.can(p, id))) || null)
+    if (!clientId) return c.json({ error: 'Not permitted' }, 403)
+    const stripeKey = stripeKeyOf(c)
+    if (!stripeKey) return c.json({ ok: true, data: [], client_id: clientId, available: false })
+    const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
+    if (!client?.stripe_customer_id) return c.json({ ok: true, data: [], client_id: clientId, available: true })
+    try {
+      return c.json({ ok: true, data: await listStripePMs(stripeKey, client.stripe_customer_id), client_id: clientId, available: true })
+    } catch (e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // POST /api/portal/payment-methods/setup — hosted Checkout (setup mode) to add a card
+  app.post('/api/portal/payment-methods/setup', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const b: any = await c.req.json().catch(() => ({}))
+    const clientId = pickClientId(s, b.client_id, 'manage_payment_methods')
+    if (!clientId) return c.json({ error: 'Not permitted' }, 403)
+    const stripeKey = stripeKeyOf(c)
+    if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
+    try {
+      const customerId = await stripeCustomerFor(db, stripeKey, s.companyId, clientId)
+      const origin = new URL(c.req.url).origin
+      const form = new URLSearchParams({
+        mode: 'setup', customer: customerId, 'payment_method_types[]': 'card',
+        'success_url': `${origin}/portal/home?pm_added=1#billing`,
+        'cancel_url': `${origin}/portal/home#billing`,
+        'metadata[client_id]': clientId, 'metadata[company_id]': s.companyId
+      })
+      const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+        method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+      })
+      const session: any = await res.json()
+      if (!res.ok) throw new Error(session.error?.message || 'Could not start setup')
+      await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId, eventType: 'portal_pm_setup_started', ip: clientIp(c) })
+      return c.json({ ok: true, url: session.url })
+    } catch (e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // DELETE /api/portal/payment-methods/:pmId — detach a saved method
+  app.delete('/api/portal/payment-methods/:pmId', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const clientId = pickClientId(s, c.req.query('client_id'), 'manage_payment_methods')
+    if (!clientId) return c.json({ error: 'Not permitted' }, 403)
+    const stripeKey = stripeKeyOf(c)
+    if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
+    const pmId = c.req.param('pmId')
+    const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
+    if (!client?.stripe_customer_id) return c.json({ error: 'No payment methods on file' }, 404)
+    try {
+      // Ownership check: the PM must belong to this client's customer
+      const pmRes = await fetch(`https://api.stripe.com/v1/payment_methods/${encodeURIComponent(pmId)}`, { headers: { 'Authorization': `Bearer ${stripeKey}` } })
+      const pm: any = await pmRes.json()
+      if (!pmRes.ok || pm.customer !== client.stripe_customer_id) return c.json({ error: 'Payment method not found' }, 404)
+      const detRes = await fetch(`https://api.stripe.com/v1/payment_methods/${encodeURIComponent(pmId)}/detach`, { method: 'POST', headers: { 'Authorization': `Bearer ${stripeKey}` } })
+      if (!detRes.ok) { const err: any = await detRes.json(); throw new Error(err.error?.message || 'Could not remove payment method') }
+      // If autopay pointed at this method, disable it
+      await db.prepare(`UPDATE client_autopay SET enabled=0, stripe_pm_id='', pm_label='', updated_at=datetime('now') WHERE client_id=? AND stripe_pm_id=?`).bind(clientId, pmId).run()
+      await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId, eventType: 'portal_pm_removed', meta: { pm_id: pmId }, ip: clientIp(c) })
+      return c.json({ ok: true })
+    } catch (e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // ── Autopay ────────────────────────────────────────────────────────────────
+
+  // GET /api/portal/autopay — current autopay configuration
+  app.get('/api/portal/autopay', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const clientId = pickClientId(s, c.req.query('client_id'), 'manage_autopay')
+    if (!clientId) return c.json({ error: 'Not permitted' }, 403)
+    const row: any = await db.prepare(`SELECT enabled, stripe_pm_id, pm_label, max_amount, updated_at FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
+    return c.json({ ok: true, data: row || { enabled: 0, stripe_pm_id: '', pm_label: '', max_amount: 0 }, client_id: clientId })
+  })
+
+  // PUT /api/portal/autopay — enable/disable, choose method, set cap
+  app.put('/api/portal/autopay', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const b: any = await c.req.json().catch(() => ({}))
+    const clientId = pickClientId(s, b.client_id, 'manage_autopay')
+    if (!clientId) return c.json({ error: 'Not permitted' }, 403)
+    const enabled = b.enabled ? 1 : 0
+    const maxAmount = Math.max(0, Number(b.max_amount) || 0)
+    let pmId = String(b.stripe_pm_id || '')
+    let pmLabel = ''
+    if (enabled) {
+      const stripeKey = stripeKeyOf(c)
+      if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
+      if (!pmId) return c.json({ error: 'Choose a payment method for autopay' }, 400)
+      const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
+      if (!client?.stripe_customer_id) return c.json({ error: 'Add a payment method first' }, 400)
+      const pms = await listStripePMs(stripeKey, client.stripe_customer_id)
+      const pm = pms.find(p => p.id === pmId)
+      if (!pm) return c.json({ error: 'That payment method is not on file' }, 400)
+      pmLabel = pm.label
+    } else { pmId = '' }
+    await db.prepare(
+      `INSERT INTO client_autopay (id, company_id, client_id, enabled, stripe_pm_id, pm_label, max_amount, updated_by)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(client_id) DO UPDATE SET enabled=excluded.enabled, stripe_pm_id=excluded.stripe_pm_id,
+         pm_label=excluded.pm_label, max_amount=excluded.max_amount, updated_by=excluded.updated_by, updated_at=datetime('now')`
+    ).bind(`ap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, s.companyId, clientId, enabled, pmId, pmLabel, maxAmount, s.user.id).run()
+    await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId, eventType: 'portal_autopay_updated', meta: { enabled: !!enabled, max_amount: maxAmount }, ip: clientIp(c) })
+    await notifyCompany(db, s.companyId, 'portal_autopay', `Autopay ${enabled ? 'enabled' : 'disabled'} by client`, `${s.user.name || s.user.email} ${enabled ? 'enabled' : 'disabled'} autopay${enabled && maxAmount ? ` (cap $${maxAmount})` : ''}.`, 'client', clientId, '#clients')
+    return c.json({ ok: true })
+  })
+
+  // ── Payments: invoice pay + estimate deposit ───────────────────────────────
+
+  async function recordInvoicePayment(db: D1Database, inv: any, amountDollars: number, piId: string, companyId: string) {
+    const newPaid = (inv.amount_paid || 0) + amountDollars
+    const newBalance = Math.max(0, (inv.total || inv.balance_due || 0) - newPaid)
+    const newStatus = newBalance <= 0 ? 'paid' : 'partial'
+    await db.prepare(`UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+      .bind(newPaid, newBalance, newStatus, inv.id, companyId).run()
+    await db.prepare(
+      `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+    ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, companyId, inv.id, inv.client_id || '', amountDollars, amountDollars,
+      'succeeded', 'card', piId, `Portal payment — ${piId}`, inv.invoice_number || '').run()
+    return { status: newStatus, balance_due: newBalance, amount_paid: newPaid }
+  }
+
+  // POST /api/portal/invoices/:id/pay — pay open balance with a saved method
+  app.post('/api/portal/invoices/:id/pay', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('make_payments')) return c.json({ error: 'Not permitted' }, 403)
+    if (!(await rateLimit(db, 'ppay_' + s.user.id, 10, 600))) return c.json({ error: 'Too many payment attempts. Please wait a few minutes.' }, 429)
+    const stripeKey = stripeKeyOf(c)
+    if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
+    const b: any = await c.req.json().catch(() => ({}))
+    const pmId = String(b.stripe_pm_id || '')
+    if (!pmId) return c.json({ error: 'Payment method required' }, 400)
+    const cin = s.clientIds.map(() => '?').join(',')
+    const inv: any = await db.prepare(`SELECT * FROM invoices WHERE id=? AND company_id=? AND client_id IN (${cin}) LIMIT 1`)
+      .bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
+    if (!inv || !propOk(s, inv)) return c.json({ error: 'Not found' }, 404)
+    if (!s.can('make_payments', inv.client_id)) return c.json({ error: 'Not permitted' }, 403)
+    const owedCents = Math.round(Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0)) * 100)
+    if (owedCents < 50) return c.json({ error: 'Nothing due on this invoice' }, 400)
+    const company = await companyStripe(db, s.companyId)
+    if (!company?.stripe_account_id || !company.stripe_onboarded) return c.json({ error: 'Online payment is not available' }, 400)
+    const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(inv.client_id, s.companyId).first()
+    if (!client?.stripe_customer_id) return c.json({ error: 'No saved payment methods on file' }, 400)
+    try {
+      const pi = await chargeSavedPM(stripeKey, company, client.stripe_customer_id, pmId, owedCents,
+        { invoice_id: inv.id, company_id: s.companyId, source: 'portal' })
+      const out = await recordInvoicePayment(db, inv, owedCents / 100, pi.id, s.companyId)
+      await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: inv.client_id, eventType: 'portal_invoice_paid', entityType: 'invoice', entityId: inv.id, entityLabel: inv.invoice_number || inv.id, meta: { amount: owedCents / 100 }, ip: clientIp(c) })
+      await notifyCompany(db, s.companyId, 'portal_payment', `Invoice ${inv.invoice_number || ''} paid via portal`, `${s.user.name || s.user.email} paid $${(owedCents / 100).toFixed(2)}.`, 'invoice', inv.id, '#invoices')
+      return c.json({ ok: true, ...out })
+    } catch (e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  async function markDepositPaid(db: D1Database, est: any, amountDollars: number, piId: string, companyId: string) {
+    await db.prepare(`UPDATE estimates SET deposit_paid=1, deposit_paid_at=datetime('now'), deposit_paid_amount=?, stripe_payment_status='deposit_paid', payment_intent_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+      .bind(amountDollars, piId, est.id, companyId).run()
+    await db.prepare(
+      `INSERT INTO payments (id, company_id, estimate_id, client_id, amount, net_amount, status, payment_method, stripe_payment_intent_id, description, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+    ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, companyId, est.id, est.client_id || '', amountDollars, amountDollars,
+      'succeeded', 'card', piId, `Deposit — estimate ${est.est_number || est.id}`).run()
+  }
+
+  const depositEstFor = async (db: D1Database, s: PortalScope, id: string) => {
+    const cin = s.clientIds.map(() => '?').join(',')
+    const est: any = await db.prepare(`SELECT * FROM estimates WHERE id=? AND company_id=? AND client_id IN (${cin}) LIMIT 1`).bind(id, s.companyId, ...s.clientIds).first()
+    return est && propOk(s, est) ? est : null
+  }
+
+  // POST /api/portal/estimates/:id/pay-deposit — saved method OR hosted checkout
+  app.post('/api/portal/estimates/:id/pay-deposit', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('make_payments')) return c.json({ error: 'Not permitted' }, 403)
+    if (!(await rateLimit(db, 'ppay_' + s.user.id, 10, 600))) return c.json({ error: 'Too many payment attempts. Please wait a few minutes.' }, 429)
+    const stripeKey = stripeKeyOf(c)
+    if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
+    const est = await depositEstFor(db, s, c.req.param('id'))
+    if (!est) return c.json({ error: 'Not found' }, 404)
+    if (!s.can('make_payments', est.client_id)) return c.json({ error: 'Not permitted' }, 403)
+    if (est.deposit_paid) return c.json({ error: 'The deposit on this estimate is already paid' }, 400)
+    const depCents = Math.round(Number(est.deposit_amt || 0) * 100)
+    if (depCents < 50) return c.json({ error: 'No deposit is due on this estimate' }, 400)
+    const company = await companyStripe(db, s.companyId)
+    if (!company?.stripe_account_id || !company.stripe_onboarded) return c.json({ error: 'Online payment is not available' }, 400)
+    const b: any = await c.req.json().catch(() => ({}))
+
+    if (b.stripe_pm_id) {
+      // Saved method: immediate off-session charge
+      const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(est.client_id, s.companyId).first()
+      if (!client?.stripe_customer_id) return c.json({ error: 'No saved payment methods on file' }, 400)
+      try {
+        const pi = await chargeSavedPM(stripeKey, company, client.stripe_customer_id, String(b.stripe_pm_id), depCents,
+          { estimate_id: est.id, company_id: s.companyId, source: 'portal_deposit' })
+        await markDepositPaid(db, est, depCents / 100, pi.id, s.companyId)
+        await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: est.client_id, eventType: 'portal_deposit_paid', entityType: 'estimate', entityId: est.id, entityLabel: est.est_number || est.id, meta: { amount: depCents / 100 }, ip: clientIp(c) })
+        await notifyCompany(db, s.companyId, 'portal_payment', `Deposit paid on estimate ${est.est_number || ''}`, `${s.user.name || s.user.email} paid the $${(depCents / 100).toFixed(2)} deposit via the portal.`, 'estimate', est.id, '#estimates')
+        return c.json({ ok: true, paid: true })
+      } catch (e: any) { return c.json({ error: e.message }, 500) }
+    }
+
+    // No saved method: hosted Stripe Checkout on the connected account
+    try {
+      const origin = new URL(c.req.url).origin
+      const feePct = company.stripe_platform_fee_pct || 2.9
+      const form = new URLSearchParams({
+        'payment_method_types[]': 'card',
+        'line_items[0][price_data][currency]': 'usd',
+        'line_items[0][price_data][unit_amount]': String(depCents),
+        'line_items[0][price_data][product_data][name]': `Deposit — Estimate ${est.est_number || est.id}`,
+        'line_items[0][quantity]': '1',
+        mode: 'payment',
+        'success_url': `${origin}/portal/home?dep_est=${encodeURIComponent(est.id)}&dep_session={CHECKOUT_SESSION_ID}`,
+        'cancel_url': `${origin}/portal/home#estimates`,
+        'payment_intent_data[application_fee_amount]': String(Math.round(depCents * feePct / 100)),
+        'payment_intent_data[metadata][estimate_id]': est.id,
+        'payment_intent_data[metadata][company_id]': s.companyId,
+      })
+      if (s.user.email) form.set('customer_email', s.user.email)
+      const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Account': company.stripe_account_id },
+        body: form.toString()
+      })
+      const session: any = await res.json()
+      if (!res.ok) throw new Error(session.error?.message || 'Checkout creation failed')
+      return c.json({ ok: true, url: session.url })
+    } catch (e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // POST /api/portal/estimates/:id/verify-deposit — confirm a Checkout return
+  app.post('/api/portal/estimates/:id/verify-deposit', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    if (!s.can('make_payments')) return c.json({ error: 'Not permitted' }, 403)
+    const stripeKey = stripeKeyOf(c)
+    if (!stripeKey) return c.json({ error: 'Online payments are not available' }, 503)
+    const est = await depositEstFor(db, s, c.req.param('id'))
+    if (!est) return c.json({ error: 'Not found' }, 404)
+    if (est.deposit_paid) return c.json({ ok: true, paid: true })  // idempotent
+    const b: any = await c.req.json().catch(() => ({}))
+    const sessionId = String(b.session_id || '')
+    if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return c.json({ error: 'Invalid session' }, 400)
+    const company = await companyStripe(db, s.companyId)
+    if (!company?.stripe_account_id) return c.json({ error: 'Online payment is not available' }, 400)
+    try {
+      const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Account': company.stripe_account_id }
+      })
+      const session: any = await res.json()
+      if (!res.ok) throw new Error(session.error?.message || 'Could not verify payment')
+      if (session.payment_status !== 'paid') return c.json({ ok: true, paid: false })
+      // Confirm the session belongs to THIS estimate before marking paid
+      const piRes = await fetch(`https://api.stripe.com/v1/payment_intents/${encodeURIComponent(session.payment_intent)}`, {
+        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Account': company.stripe_account_id }
+      })
+      const pi: any = await piRes.json()
+      if (!piRes.ok || pi.metadata?.estimate_id !== est.id) return c.json({ error: 'Payment does not match this estimate' }, 400)
+      await markDepositPaid(db, est, (session.amount_total || 0) / 100, session.payment_intent || '', s.companyId)
+      await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: est.client_id, eventType: 'portal_deposit_paid', entityType: 'estimate', entityId: est.id, entityLabel: est.est_number || est.id, meta: { amount: (session.amount_total || 0) / 100, via: 'checkout' }, ip: clientIp(c) })
+      await notifyCompany(db, s.companyId, 'portal_payment', `Deposit paid on estimate ${est.est_number || ''}`, `${s.user.name || s.user.email} paid the $${((session.amount_total || 0) / 100).toFixed(2)} deposit via the portal.`, 'estimate', est.id, '#estimates')
+      return c.json({ ok: true, paid: true })
+    } catch (e: any) { return c.json({ error: e.message }, 500) }
+  })
+
+  // ── Contacts ───────────────────────────────────────────────────────────────
+
+  // GET /api/portal/contacts — active contacts across manageable clients
+  app.get('/api/portal/contacts', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const ids = s.clientIds.filter(id => s.can('manage_contacts', id))
+    if (!ids.length) return c.json({ error: 'Not permitted' }, 403)
+    const cin = ids.map(() => '?').join(',')
+    const rows = (await db.prepare(
+      `SELECT id, client_id, name, email, phone, title, is_primary, created_at FROM client_contacts
+       WHERE company_id=? AND client_id IN (${cin}) AND active=1 ORDER BY is_primary DESC, name ASC LIMIT 200`
+    ).bind(s.companyId, ...ids).all()).results || []
+    return c.json({ ok: true, data: rows })
+  })
+
+  // POST /api/portal/contacts — add a contact
+  app.post('/api/portal/contacts', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const b: any = await c.req.json().catch(() => ({}))
+    const clientId = pickClientId(s, b.client_id, 'manage_contacts')
+    if (!clientId) return c.json({ error: 'Not permitted' }, 403)
+    const name = String(b.name || '').trim().slice(0, 120)
+    if (!name) return c.json({ error: 'Name is required' }, 400)
+    const id = `cc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    await db.prepare(
+      `INSERT INTO client_contacts (id, company_id, client_id, name, email, phone, title) VALUES (?,?,?,?,?,?,?)`
+    ).bind(id, s.companyId, clientId, name, String(b.email || '').trim().slice(0, 160).toLowerCase(),
+      String(b.phone || '').trim().slice(0, 40), String(b.title || '').trim().slice(0, 80)).run()
+    await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId, eventType: 'portal_contact_added', entityType: 'contact', entityId: id, entityLabel: name, ip: clientIp(c) })
+    return c.json({ ok: true, id })
+  })
+
+  // PUT /api/portal/contacts/:id — update a contact
+  app.put('/api/portal/contacts/:id', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const row: any = await db.prepare(`SELECT id, client_id, name FROM client_contacts WHERE id=? AND company_id=? AND active=1 LIMIT 1`).bind(c.req.param('id'), s.companyId).first()
+    if (!row || !s.clientIds.includes(row.client_id) || !s.can('manage_contacts', row.client_id)) return c.json({ error: 'Not found' }, 404)
+    const b: any = await c.req.json().catch(() => ({}))
+    const updates: string[] = []; const vals: any[] = []
+    if (typeof b.name === 'string' && b.name.trim()) { updates.push('name=?'); vals.push(b.name.trim().slice(0, 120)) }
+    if (typeof b.email === 'string') { updates.push('email=?'); vals.push(b.email.trim().slice(0, 160).toLowerCase()) }
+    if (typeof b.phone === 'string') { updates.push('phone=?'); vals.push(b.phone.trim().slice(0, 40)) }
+    if (typeof b.title === 'string') { updates.push('title=?'); vals.push(b.title.trim().slice(0, 80)) }
+    if (!updates.length) return c.json({ error: 'Nothing to update' }, 400)
+    updates.push(`updated_at=datetime('now')`)
+    await db.prepare(`UPDATE client_contacts SET ${updates.join(',')} WHERE id=?`).bind(...vals, row.id).run()
+    await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: row.client_id, eventType: 'portal_contact_updated', entityType: 'contact', entityId: row.id, entityLabel: row.name, ip: clientIp(c) })
+    return c.json({ ok: true })
+  })
+
+  // DELETE /api/portal/contacts/:id — deactivate (soft delete)
+  app.delete('/api/portal/contacts/:id', requirePortalAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const s: PortalScope = c.var.portalScope
+    const row: any = await db.prepare(`SELECT id, client_id, name FROM client_contacts WHERE id=? AND company_id=? AND active=1 LIMIT 1`).bind(c.req.param('id'), s.companyId).first()
+    if (!row || !s.clientIds.includes(row.client_id) || !s.can('manage_contacts', row.client_id)) return c.json({ error: 'Not found' }, 404)
+    // A contact that is linked to a portal login cannot be removed from the portal
+    const linked: any = await db.prepare(`SELECT id FROM portal_users WHERE contact_id=? AND status!='disabled' LIMIT 1`).bind(row.id).first()
+    if (linked) return c.json({ error: 'This contact has portal access. Ask your contractor to remove their access first.' }, 400)
+    await db.prepare(`UPDATE client_contacts SET active=0, updated_at=datetime('now') WHERE id=?`).bind(row.id).run()
+    await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: row.client_id, eventType: 'portal_contact_removed', entityType: 'contact', entityId: row.id, entityLabel: row.name, ip: clientIp(c) })
+    return c.json({ ok: true })
   })
 
   // ══ PHASE 1C: PROJECTS — work orders, daily updates, R2 photos ════════════
@@ -1380,8 +1808,10 @@ function portalShellPage(): string {
       '<label class="gwp-label">Current password</label><input class="gwp-input" type="password" id="pw-cur" autocomplete="current-password">'+
       '<label class="gwp-label">New password</label><input class="gwp-input" type="password" id="pw-new" autocomplete="new-password">'+
       '<div style="height:16px"></div><button class="gwp-btn" id="pw-save" style="width:auto;padding:10px 22px">Update Password</button>'+
-      '<div class="gwp-ok" id="pw-ok"></div><div class="gwp-err" id="pw-err"></div></div></div>');
+      '<div class="gwp-ok" id="pw-ok"></div><div class="gwp-err" id="pw-err"></div></div></div>'+
+      (can('manage_contacts')?'<div class="gwp-section"><div class="gwp-form-card"><h3>Contacts</h3><p class="hint">People on your account your contractor may reach out to.</p><div id="ct-list"><div class="gwp-empty">Loading...</div></div><div style="height:12px"></div><button class="gwp-btn-ghost" id="ct-add" style="width:auto;padding:9px 18px">Add Contact</button><div id="ct-form" style="display:none;margin-top:14px"></div><div class="gwp-ok" id="ct-ok"></div><div class="gwp-err" id="ct-err"></div></div></div>':''));
     bindNav();
+    if(can('manage_contacts'))initContacts();
     function flash(id,m){var el=document.getElementById(id);el.textContent=m;el.style.display='block';setTimeout(function(){el.style.display='none'},3500)}
     document.getElementById('ac-save').onclick=function(){
       api('/api/portal/account',{method:'PUT',body:{name:document.getElementById('ac-name').value,phone:document.getElementById('ac-phone').value}})
@@ -1389,6 +1819,46 @@ function portalShellPage(): string {
     document.getElementById('pw-save').onclick=function(){
       api('/api/portal/account',{method:'PUT',body:{current_password:document.getElementById('pw-cur').value,new_password:document.getElementById('pw-new').value}})
         .then(function(d){if(d.error)return flash('pw-err',d.error);document.getElementById('pw-cur').value='';document.getElementById('pw-new').value='';flash('pw-ok','Password updated')})};
+    function initContacts(){
+      function cflash(id,m){flash(id,m)}
+      function ctForm(existing){
+        var f=document.getElementById('ct-form');var e=existing||{};
+        f.style.display='block';
+        f.innerHTML='<label class="gwp-label">Name</label><input class="gwp-input" id="cf-name" value="'+esc(e.name||'')+'">'+
+          '<label class="gwp-label">Email</label><input class="gwp-input" id="cf-email" type="email" value="'+esc(e.email||'')+'">'+
+          '<label class="gwp-label">Phone</label><input class="gwp-input" id="cf-phone" value="'+esc(e.phone||'')+'">'+
+          '<label class="gwp-label">Role / Title (optional)</label><input class="gwp-input" id="cf-title" value="'+esc(e.title||'')+'" placeholder="e.g. Property Manager">'+
+          '<div style="height:12px"></div><button class="gwp-btn" id="cf-save" style="width:auto;padding:9px 20px">'+(e.id?'Save Changes':'Add Contact')+'</button> <button class="gwp-btn-ghost" id="cf-cancel" style="padding:9px 16px">Cancel</button>';
+        document.getElementById('cf-cancel').onclick=function(){f.style.display='none';f.innerHTML=''};
+        document.getElementById('cf-save').onclick=function(){
+          var body={name:document.getElementById('cf-name').value,email:document.getElementById('cf-email').value,phone:document.getElementById('cf-phone').value,title:document.getElementById('cf-title').value};
+          this.disabled=true;var btn=this;
+          api(e.id?'/api/portal/contacts/'+e.id:'/api/portal/contacts',{method:e.id?'PUT':'POST',body:body}).then(function(x){
+            btn.disabled=false;
+            if(x.error)return cflash('ct-err',x.error);
+            f.style.display='none';f.innerHTML='';cflash('ct-ok',e.id?'Contact updated':'Contact added');loadContacts()})};
+      }
+      var CTS=[];
+      function loadContacts(){
+        api('/api/portal/contacts').then(function(d){
+          var list=document.getElementById('ct-list');if(!list)return;
+          CTS=d.data||[];
+          list.innerHTML=CTS.length?'<div class="gwp-list">'+CTS.map(function(ct){
+            return '<div class="gwp-item" style="cursor:default"><div><div class="it">'+esc(ct.name)+(ct.is_primary?' <span class="gwp-status" style="background:var(--bg);color:var(--muted);margin-left:6px">Primary</span>':'')+'</div><div class="is">'+esc([ct.title,ct.email,ct.phone].filter(Boolean).join(' · '))+'</div></div>'+
+              '<div class="ir"><button class="gwp-btn-ghost" data-ct-edit="'+esc(ct.id)+'" style="padding:6px 12px;font-size:12px">Edit</button> <button class="gwp-btn-ghost" data-ct-del="'+esc(ct.id)+'" style="padding:6px 12px;font-size:12px">Remove</button></div></div>'}).join('')+'</div>'
+            :'<div class="gwp-empty">No contacts yet.</div>';
+          Array.prototype.forEach.call(list.querySelectorAll('[data-ct-edit]'),function(b){b.onclick=function(){
+            var ct=CTS.find(function(x){return x.id===b.getAttribute('data-ct-edit')});if(ct)ctForm(ct)}});
+          Array.prototype.forEach.call(list.querySelectorAll('[data-ct-del]'),function(b){b.onclick=function(){
+            if(!confirm('Remove this contact?'))return;
+            api('/api/portal/contacts/'+b.getAttribute('data-ct-del'),{method:'DELETE'}).then(function(x){
+              if(x.error)return cflash('ct-err',x.error);
+              cflash('ct-ok','Contact removed');loadContacts()})}});
+        }).catch(function(){});
+      }
+      document.getElementById('ct-add').onclick=function(){ctForm(null)};
+      loadContacts();
+    }
   }
   var fmtD=function(s){if(!s)return '';var d=new Date(String(s).replace(' ','T'));return isNaN(d)?String(s).slice(0,10):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
   var stPill=function(st){var lbl={sent:'Awaiting Review',viewed:'Awaiting Review',approved:'Approved',accepted:'Accepted',declined:'Declined',paid:'Paid',partial:'Partially Paid',overdue:'Overdue'}[st]||st;return '<span class="gwp-status st-'+esc(st)+'">'+esc(lbl)+'</span>'};
@@ -1439,6 +1909,7 @@ function portalShellPage(): string {
         (r.customer_notes?'<div class="gwp-note">'+esc(r.customer_notes)+'</div>':'')+
         (r.terms?'<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;white-space:pre-wrap">'+esc(r.terms)+'</div>':'')+
         (canApprove?'<div class="gwp-actions"><button class="gwp-btn" id="est-approve" style="width:auto">Approve Estimate</button><button class="gwp-btn-ghost" id="est-decline">Decline / Request Changes</button></div><div id="est-decline-box" style="display:none;margin-top:14px"><label class="gwp-label">Tell us what you would like changed (optional)</label><textarea class="gwp-input" id="est-reason"></textarea><div style="height:10px"></div><button class="gwp-btn-ghost" id="est-decline-send">Send Response</button></div>':'')+
+        (r.deposit_amt&&!r.deposit_paid&&can('make_payments')&&(r.status==='approved'||r.status==='accepted'||r.status==='invoiced')?'<div id="est-dep-box" style="margin-top:14px"></div>':'')+
         '<div class="gwp-err" id="est-err"></div></div>');
       bindNav();
       document.getElementById('est-back').onclick=function(){renderEstimates()};
@@ -1457,17 +1928,50 @@ function portalShellPage(): string {
             if(x.error){errEl.textContent=x.error;errEl.style.display='block';return}
             renderEstimateDetail(id)})};
       }
+      // Deposit payment (approved estimates with an unpaid deposit)
+      var depBox=document.getElementById('est-dep-box');
+      if(depBox){
+        var derr=document.getElementById('est-err');
+        function depFail(m){derr.textContent=m;derr.style.display='block'}
+        api('/api/portal/payment-methods').then(function(pd){
+          var pms=(pd&&pd.data)||[];
+          depBox.innerHTML='<div style="padding:14px;border:1px solid var(--line);border-radius:10px"><div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Deposit due: '+money(r.deposit_amt)+'</div>'+
+            (pms.length?'<select class="gwp-input" id="dep-pm-sel" style="margin-bottom:10px">'+pmOptions(pms,'')+'</select><button class="gwp-btn" id="dep-pay-saved" style="width:auto">Pay Deposit with Saved Method</button> ':'')+
+            '<button class="'+(pms.length?'gwp-btn-ghost':'gwp-btn')+'" id="dep-pay-card" style="width:auto'+(pms.length?';margin-top:8px':'')+'">Pay Deposit by Card</button></div>';
+          var sb=document.getElementById('dep-pay-saved');
+          if(sb){sb.onclick=function(){
+            var pm=document.getElementById('dep-pm-sel').value;if(!pm)return;
+            if(!confirm('Pay the '+money(r.deposit_amt)+' deposit with the selected payment method?'))return;
+            sb.disabled=true;sb.textContent='Processing...';
+            api('/api/portal/estimates/'+id+'/pay-deposit',{method:'POST',body:{stripe_pm_id:pm}}).then(function(x){
+              if(x.error){depFail(x.error);sb.disabled=false;sb.textContent='Pay Deposit with Saved Method';return}
+              renderEstimateDetail(id)})};
+          }
+          var cb=document.getElementById('dep-pay-card');
+          cb.onclick=function(){
+            cb.disabled=true;cb.textContent='Opening secure checkout...';
+            api('/api/portal/estimates/'+id+'/pay-deposit',{method:'POST',body:{}}).then(function(x){
+              if(x.error){depFail(x.error);cb.disabled=false;cb.textContent='Pay Deposit by Card';return}
+              location.href=x.url})};
+        }).catch(function(){});
+      }
     })
   }
 
   // ── Billing ────────────────────────────────────────────────────────────
+  function billingTabs(tab){
+    return '<div class="gwp-tabs"><button class="gwp-tab'+(tab==='invoices'?' active':'')+'" data-tab="invoices">Invoices</button>'+
+      (can('view_payment_history')?'<button class="gwp-tab'+(tab==='history'?' active':'')+'" data-tab="history">Payment History</button>':'')+
+      (can('manage_payment_methods')||can('manage_autopay')?'<button class="gwp-tab'+(tab==='methods'?' active':'')+'" data-tab="methods">Payment Methods</button>':'')+'</div>';
+  }
   function renderBilling(tab){
     tab=tab||'invoices';
     if(!can('view_billing')){shell('<h2 class="gwp-h">Billing</h2><div class="gwp-empty">Your account does not include access to billing.</div>');bindNav();return}
+    if(tab==='methods')return renderPaymentMethods();
     var loadHistory=tab==='history'&&can('view_payment_history');
     api(loadHistory?'/api/portal/payments':'/api/portal/invoices').then(function(d){
       var rows=d.data||[];var inner;
-      var tabs='<div class="gwp-tabs"><button class="gwp-tab'+(tab==='invoices'?' active':'')+'" data-tab="invoices">Invoices</button>'+(can('view_payment_history')?'<button class="gwp-tab'+(tab==='history'?' active':'')+'" data-tab="history">Payment History</button>':'')+'</div>';
+      var tabs=billingTabs(tab);
       if(loadHistory){
         inner=rows.length?'<div class="gwp-list">'+rows.map(function(p){
           return '<div class="gwp-item" style="cursor:default"><div><div class="it">'+money(p.amount)+'</div><div class="is">'+esc(p.invoice_number?('Invoice '+p.invoice_number+' · '):'')+esc(p.payment_method||'payment')+'</div></div><div class="ir"><div class="is">'+fmtD(p.created_at)+'</div></div></div>'}).join('')+'</div>'
@@ -1511,12 +2015,89 @@ function portalShellPage(): string {
         (openBal?'<div class="tt"><span>Balance Due</span><span>'+money(r.balance_due)+'</span></div>':'')+
         '</div>'+
         (pays?'<div style="margin-top:20px"><div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Payments</div>'+pays+'</div>':'')+
-        (openBal&&can('make_payments')&&r.portal_token?'<div class="gwp-actions"><a class="gwp-btn" style="width:auto;text-decoration:none" href="/invoices/portal/'+esc(r.portal_token)+'" target="_blank" rel="noopener">Pay '+money(r.balance_due)+'</a></div>':'')+
+        (openBal&&can('make_payments')?'<div class="gwp-actions" id="inv-pay-row">'+(r.portal_token?'<a class="gwp-btn" style="width:auto;text-decoration:none" href="/invoices/portal/'+esc(r.portal_token)+'" target="_blank" rel="noopener">Pay '+money(r.balance_due)+'</a>':'')+'</div><div id="inv-pay-saved-box"></div><div class="gwp-err" id="inv-pay-err"></div>':'')+
         (r.notes?'<div class="gwp-note">'+esc(r.notes)+'</div>':'')+
         (r.terms?'<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;white-space:pre-wrap">'+esc(r.terms)+'</div>':'')+
         '</div>');
       bindNav();
       document.getElementById('inv-back').onclick=function(){renderBilling()};
+      // Offer saved-method payment when the account has methods on file
+      var box=document.getElementById('inv-pay-saved-box');
+      if(box&&openBal){
+        api('/api/portal/payment-methods').then(function(pd){
+          var pms=(pd&&pd.data)||[];if(!pms.length)return;
+          box.innerHTML='<div style="margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:10px"><div style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Pay with a saved method</div>'+
+            '<select class="gwp-input" id="inv-pm-sel" style="margin-bottom:10px">'+pmOptions(pms,'')+'</select>'+
+            '<button class="gwp-btn" id="inv-pay-saved" style="width:auto">Pay '+money(r.balance_due)+' now</button></div>';
+          document.getElementById('inv-pay-saved').onclick=function(){
+            var payBtn=this,pm=document.getElementById('inv-pm-sel').value;
+            if(!pm)return;
+            if(!confirm('Charge '+money(r.balance_due)+' to the selected payment method?'))return;
+            payBtn.disabled=true;payBtn.textContent='Processing...';
+            api('/api/portal/invoices/'+id+'/pay',{method:'POST',body:{stripe_pm_id:pm}}).then(function(x){
+              if(x.error){var e=document.getElementById('inv-pay-err');e.textContent=x.error;e.style.display='block';payBtn.disabled=false;payBtn.textContent='Pay '+money(r.balance_due)+' now';return}
+              renderInvoiceDetail(id)})};
+        }).catch(function(){});
+      }
+    })
+  }
+
+  // ── Payment methods + autopay ───────────────────────────────────────────
+  function pmOptions(pms,sel){return pms.map(function(p){return '<option value="'+esc(p.id)+'"'+(p.id===sel?' selected':'')+'>'+esc(p.label)+'</option>'}).join('')}
+  function renderPaymentMethods(){
+    var canPM=can('manage_payment_methods'),canAP=can('manage_autopay');
+    if(!canPM&&!canAP){renderBilling();return}
+    Promise.all([api('/api/portal/payment-methods'),canAP?api('/api/portal/autopay'):Promise.resolve({data:null})]).then(function(res){
+      var pmd=res[0]||{},apd=res[1]||{};
+      var pms=pmd.data||[],ap=apd.data||{enabled:0,stripe_pm_id:'',max_amount:0};
+      var unavailable=pmd.available===false;
+      var list=pms.length?'<div class="gwp-list">'+pms.map(function(p){
+        return '<div class="gwp-item" style="cursor:default"><div><div class="it">'+esc(p.label)+'</div><div class="is">'+(p.type==='card'?'Card':'Bank account')+'</div></div>'+
+          (canPM?'<div class="ir"><button class="gwp-btn-ghost" data-pm-del="'+esc(p.id)+'" style="padding:7px 14px;font-size:12px">Remove</button></div>':'')+'</div>'}).join('')+'</div>'
+        :'<div class="gwp-empty">No saved payment methods yet.</div>';
+      var apHtml='';
+      if(canAP){
+        apHtml='<section class="gwp-section"><div class="gwp-form-card"><h3>Autopay</h3>'+
+          '<p class="hint">When enabled, new invoices are charged to your chosen payment method automatically when your contractor sends them.</p>'+
+          (pms.length?'<label style="display:flex;align-items:center;gap:9px;font-size:14px;margin:12px 0;cursor:pointer"><input type="checkbox" id="ap-on"'+(ap.enabled?' checked':'')+'> Enable autopay</label>'+
+          '<label class="gwp-label">Payment method</label><select class="gwp-input" id="ap-pm">'+pmOptions(pms,ap.stripe_pm_id)+'</select>'+
+          '<label class="gwp-label">Maximum per invoice (0 = no limit)</label><input class="gwp-input" id="ap-max" type="number" min="0" step="1" value="'+(ap.max_amount||0)+'">'+
+          '<div style="height:14px"></div><button class="gwp-btn" id="ap-save" style="width:auto;padding:10px 22px">Save Autopay Settings</button>'+
+          '<div class="gwp-ok" id="ap-ok"></div><div class="gwp-err" id="ap-err"></div>'
+          :'<p class="hint" style="margin-top:10px">Add a payment method first to set up autopay.</p>')+
+          '</div></section>';
+      }
+      shell('<h2 class="gwp-h">Billing</h2><p class="gwp-hs">Invoices, balances, and payment history.</p>'+billingTabs('methods')+
+        '<section class="gwp-section"><h2 class="gwp-h" style="font-size:15px">Saved Payment Methods</h2><div style="height:10px"></div>'+
+        (unavailable?'<div class="gwp-empty">Online payments are not available for this account.</div>':list+
+        (canPM?'<div class="gwp-actions"><button class="gwp-btn" id="pm-add" style="width:auto">Add Payment Method</button></div>':''))+
+        '<div class="gwp-err" id="pm-err"></div></section>'+apHtml);
+      bindNav();
+      Array.prototype.forEach.call(document.querySelectorAll('[data-tab]'),function(b){b.onclick=function(){renderBilling(b.getAttribute('data-tab'))}});
+      function perr(id,m){var el=document.getElementById(id);if(el){el.textContent=m;el.style.display='block'}}
+      var addBtn=document.getElementById('pm-add');
+      if(addBtn){addBtn.onclick=function(){
+        addBtn.disabled=true;addBtn.textContent='Opening secure checkout...';
+        api('/api/portal/payment-methods/setup',{method:'POST',body:{}}).then(function(x){
+          if(x.error){perr('pm-err',x.error);addBtn.disabled=false;addBtn.textContent='Add Payment Method';return}
+          location.href=x.url})};
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('[data-pm-del]'),function(b){
+        b.onclick=function(){
+          if(!confirm('Remove this payment method?'))return;
+          b.disabled=true;
+          api('/api/portal/payment-methods/'+encodeURIComponent(b.getAttribute('data-pm-del')),{method:'DELETE'}).then(function(x){
+            if(x.error){perr('pm-err',x.error);b.disabled=false;return}
+            renderPaymentMethods()})};
+      });
+      var apSave=document.getElementById('ap-save');
+      if(apSave){apSave.onclick=function(){
+        apSave.disabled=true;
+        api('/api/portal/autopay',{method:'PUT',body:{enabled:document.getElementById('ap-on').checked,stripe_pm_id:document.getElementById('ap-pm').value,max_amount:Number(document.getElementById('ap-max').value)||0}}).then(function(x){
+          apSave.disabled=false;
+          if(x.error)return perr('ap-err',x.error);
+          var ok=document.getElementById('ap-ok');ok.textContent='Autopay settings saved';ok.style.display='block';setTimeout(function(){ok.style.display='none'},3500)})};
+      }
     })
   }
 
@@ -1614,7 +2195,20 @@ function portalShellPage(): string {
       a.onclick=function(e){e.preventDefault();VIEW=a.getAttribute('data-v');history.replaceState(null,'','#'+VIEW);render()}})
   }
   var h=(location.hash||'').replace('#','');if(NAV.some(function(n){return n.id===h}))VIEW=h;
-  api('/api/portal/auth/me').then(function(d){if(!d.ok){location.href='/portal/login';return}ME=d;render()})
+  // Stripe Checkout returns: deposit verification / payment method added
+  var QS=new URLSearchParams(location.search);
+  var depEst=QS.get('dep_est'),depSession=QS.get('dep_session');
+  if(QS.get('pm_added'))VIEW='billing';
+  api('/api/portal/auth/me').then(function(d){if(!d.ok){location.href='/portal/login';return}ME=d;
+    if(depEst&&depSession){
+      history.replaceState(null,'','/portal/home#estimates');
+      api('/api/portal/estimates/'+depEst+'/verify-deposit',{method:'POST',body:{session_id:depSession}})
+        .then(function(){VIEW='estimates';renderEstimateDetail(depEst)})
+        .catch(function(){VIEW='estimates';render()});
+      return;
+    }
+    if(QS.get('pm_added')){history.replaceState(null,'','/portal/home#billing');renderPaymentMethods();return}
+    render()})
     .catch(function(){/* redirect handled in api() */});
 })();
 </script>
