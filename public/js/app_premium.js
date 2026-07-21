@@ -509,11 +509,21 @@ function canViewTab(viewName) {
   // Admin always has full access (no permission gate for admin role)
   if (rep.role === 'admin') return true;
   const perms = loadNavPerms();
-  // Check cached/D1-sourced perms first, then always supplement with DEFAULT_NAV_PERMS
-  // so newly-added views are never blocked by a stale cached permission set.
-  const cachedAllowed  = perms[rep.role] || [];
+  const savedAllowed   = perms[rep.role];
   const defaultAllowed = DEFAULT_NAV_PERMS[rep.role] || [];
-  if (cachedAllowed.includes(viewName) || defaultAllowed.includes(viewName)) return true;
+  if (Array.isArray(savedAllowed)) {
+    // A saved permission set exists for this role — it is AUTHORITATIVE, so
+    // unchecking a view in Settings genuinely revokes it. Defaults only
+    // supplement for view keys the app added after the save (not present in
+    // the editor's known-view universe at save time), so upgrades never lock
+    // people out of brand-new features.
+    if (savedAllowed.includes(viewName)) return true;
+    const knownAtSave = Array.isArray(perms.__knownViews) ? perms.__knownViews : null;
+    if (knownAtSave && !knownAtSave.includes(viewName) && defaultAllowed.includes(viewName)) return true;
+    if (!knownAtSave && defaultAllowed.includes(viewName)) return true; // legacy saves: old permissive behavior
+  } else if (defaultAllowed.includes(viewName)) {
+    return true;
+  }
   // For custom roles not in DEFAULT_NAV_PERMS, check D1-sourced role permissions
   if (window._gwRoles) {
     const roleDef = window._gwRoles.find(r => r.id === rep.role);

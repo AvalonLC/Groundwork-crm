@@ -670,6 +670,7 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
     laborer: ['today','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
     mechanic: ['today','fieldDashboard','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker'],
+    division_manager: ['today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode','userManagement'],
     view_only: ['today','pipeline'],
     // Legacy alias — D1 rows where role='field_supervisor' still resolve correctly
     field_supervisor: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode']
@@ -922,10 +923,32 @@ app.post('/api/reps', requireAuth, async (c) => {
 })
 
 // PUT /api/reps/:id
+// Guards: admins edit anyone; office managers edit non-admins (and cannot grant
+// admin); everyone else may only edit their OWN safe profile fields.
 app.put('/api/reps/:id', requireAuth, async (c) => {
   const id = c.req.param('id')
   const b  = await c.req.json()
   const companyId = c.var.companyId as string
+  const sessionRole = c.var.role as string
+  const sessionRepId = c.var.repId as string
+  const isSuper = !!c.var.isSuperAdmin
+  const isMgr = sessionRole === 'admin' || sessionRole === 'office_manager' || isSuper
+  const isSelf = id === sessionRepId
+  if (!isMgr && !isSelf) return err(c, 'You can only edit your own profile', 403)
+  const PRIVILEGED = ['role', 'active', 'commission_plan']
+  if (!isMgr) {
+    for (const f of PRIVILEGED) if (b[f] !== undefined) return err(c, 'Not allowed to change ' + f, 403)
+  }
+  if (sessionRole === 'office_manager' && !isSuper) {
+    // OM cannot grant admin, and cannot modify an existing admin account
+    if (b.role === 'admin') return err(c, 'Only an admin can grant the admin role', 403)
+    const target = await c.env.DB.prepare(
+      'SELECT role FROM reps WHERE id = ? AND company_id = ? LIMIT 1'
+    ).bind(id, companyId).first<{ role: string }>()
+    if (target && target.role === 'admin' && !isSelf) return err(c, 'Only an admin can edit an admin account', 403)
+  }
+  // Password changes: self, or a manager resetting a team member
+  if ((b.password || b.pin) && !isSelf && !isMgr) return err(c, 'Not allowed to change passwords', 403)
   const fields = ['name','title','role','color','email','commission_plan','active','email_signature']
   const updates: string[] = []
   const vals: any[] = []
@@ -1178,6 +1201,11 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin'],
     laborer: ['gwDashboard','gwOperations','today','fieldDashboard','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
     mechanic: ['gwDashboard','gwOperations','today','fieldDashboard','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker'],
+    division_manager: ['gwDashboard','gwOperations','gwAdmin',
+      'today','fieldDashboard','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
+      'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
+      'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin','userManagement'],
     view_only: ['gwDashboard','today','pipeline'],
     // Legacy alias — field_supervisor rows in D1 still get correct permissions
     field_supervisor: ['gwDashboard','gwOperations','gwAdmin',
@@ -1223,6 +1251,7 @@ async function sendInviteEmail(
   const inviteUrl = `https://groundwork-crm.com/invite/${token}`
   const roleLabel = role === 'admin' ? 'Owner / Admin'
     : role === 'office_manager' ? 'Office Manager'
+    : role === 'division_manager' ? 'Division Manager'
     : role === 'estimator' ? 'Estimator'
     : role === 'foreman' ? 'Foreman'
     : role === 'field_supervisor' ? 'Foreman'
@@ -1276,6 +1305,11 @@ app.post('/api/auth/invite', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const role      = c.var.role      as string
   if (role !== 'admin' && role !== 'office_manager') return err(c, 'Only admins can send invites', 403)
+  {
+    const _b = await c.req.raw.clone().json().catch(() => ({} as any))
+    if (role === 'office_manager' && !c.var.isSuperAdmin && _b && _b.role === 'admin')
+      return err(c, 'Only an admin can invite another admin', 403)
+  }
 
   const b = await c.req.json()
   const { email, name, inviteRole, title, color, message } = b
@@ -1368,6 +1402,7 @@ app.get('/invite/:token', async (c) => {
 
   const roleLabel = !rep ? '' : rep.role === 'admin' ? 'Owner / Admin'
     : rep.role === 'office_manager' ? 'Office Manager'
+    : rep.role === 'division_manager' ? 'Division Manager'
     : rep.role === 'estimator' ? 'Estimator'
     : rep.role === 'foreman' ? 'Foreman'
     : rep.role === 'field_supervisor' ? 'Foreman'
@@ -2089,9 +2124,12 @@ app.get('/api/settings', requireAuth, async (c) => {
     "SELECT key, value FROM settings WHERE key LIKE ? AND key NOT LIKE 'session_%'"
   ).bind(`${prefix}%`).all()
   const obj: Record<string,string> = {}
+  const roleForRedact = c.var.role as string
+  const canSeeSecrets = !!c.var.isSuperAdmin || roleForRedact === 'admin' || roleForRedact === 'office_manager'
   for (const r of (rows.results as any[])) {
     // Strip the company prefix before returning to client
-    obj[r.key.slice(prefix.length)] = r.value
+    const bare = r.key.slice(prefix.length)
+    obj[bare] = (!canSeeSecrets && SECRET_SETTINGS.includes(bare)) ? '' : r.value
   }
   // Legacy unprefixed keys are Avalon-era only — expose them solely to Avalon
   if (companyId === 'avalon') {
@@ -2103,10 +2141,32 @@ app.get('/api/settings', requireAuth, async (c) => {
   return json(c, obj)
 })
 
+// Setting keys that only admins may write (permission/role control surface)
+const ADMIN_ONLY_SETTINGS = ['nav_perms', 'um_company_role_defaults']
+// Setting keys that admins or office managers may write (company configuration
+// and credentials). Everything else (per-user prefs like bookings_*) stays open
+// to any authenticated user in the company.
+const MANAGER_ONLY_SETTINGS = [
+  'company_divisions', 'company_intake_config', 'pipeline_stages', 'commission_enabled',
+  'google_client_id', 'google_client_secret', 'openai_api_key',
+  'fin_annual_overrides', 'fin_division_actuals', 'fin_revenue_actuals'
+]
+// Setting values redacted from GET /api/settings for non-manager roles
+const SECRET_SETTINGS = ['google_client_secret', 'openai_api_key', 'sendgrid_api_key', 'twilio_auth_token', 'stripe_secret_key']
+
 app.put('/api/settings', requireAuth, async (c) => {
   const b = await c.req.json()
   if (!b.key) return err(c, 'key required')
   const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  const isSuper = !!c.var.isSuperAdmin
+  const bareKey = String(b.key).includes(':') ? String(b.key).split(':').slice(1).join(':') : String(b.key)
+  if (!isSuper) {
+    if (ADMIN_ONLY_SETTINGS.includes(bareKey) && role !== 'admin')
+      return err(c, 'Only admins can change this setting', 403)
+    if (MANAGER_ONLY_SETTINGS.includes(bareKey) && role !== 'admin' && role !== 'office_manager')
+      return err(c, 'Admin or office manager access required for this setting', 403)
+  }
   // Keys are always written under the caller's own company prefix.
   // A pre-prefixed key is only honored if it matches the session's company.
   let scopedKey: string
@@ -9888,7 +9948,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b025">
+  <link rel="stylesheet" href="/js/premium.css?v=20260721b001">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -9912,8 +9972,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260720b025"></script>
-  <script src="/js/client_portal.js?v=20260720b025"></script>
+  <script src="/js/platform_core.js?v=20260721b001"></script>
+  <script src="/js/client_portal.js?v=20260721b001"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10548,9 +10608,9 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260720b025">
-  <link rel="stylesheet" href="/js/styles.css?v=20260720b025">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260720b025">
+  <link rel="stylesheet" href="/js/premium.css?v=20260721b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260721b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260721b001">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -11110,43 +11170,43 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260720b025"></script>
-<script src="/js/richtext.js?v=20260720b025"></script>
-<script src="/js/db.js?v=20260720b025"></script>
-<script src="/js/data.js?v=20260720b025"></script>
-<script src="/js/reps.js?v=20260720b025"></script>
-<script src="/js/record-page.js?v=20260720b025"></script>
-<script src="/js/academy.js?v=20260720b025"></script>
-<script src="/js/task_engine.js?v=20260720b025"></script>
-<script src="/js/gw_i18n.js?v=20260720b025"></script>
-<script src="/js/app_premium.js?v=20260720b025"></script>
-<script src="/js/estimates.js?v=20260720b025"></script>
-<script src="/js/multiday.js?v=20260720b025"></script>
-<script src="/js/proposals.js?v=20260720b025"></script>
-<script src="/js/pricing.js?v=20260720b025"></script>
-<script src="/js/invoices.js?v=20260720b025"></script>
-<script src="/js/csv_import.js?v=20260720b025"></script>
-<script src="/js/onboarding.js?v=20260720b025"></script>
-<script src="/js/gw_copilot.js?v=20260720b025"></script>
-<script src="/js/groundwork_ai.js?v=20260720b025"></script>
-<script src="/js/recurring_plans.js?v=20260720b025"></script>
-<script src="/js/reviews.js?v=20260720b025"></script>
-<script src="/js/stripe.js?v=20260720b025"></script>
-<script src="/js/email.js?v=20260720b025"></script>
-<script src="/js/notifications.js?v=20260720b025"></script>
-<script src="/js/integrations.js?v=20260720b025"></script>
-<script src="/js/calendar_sync.js?v=20260720b025"></script>
-<script src="/js/ai_followup.js?v=20260720b025"></script>
-<script src="/js/user_management.js?v=20260720b025"></script>
-<script src="/js/platform_admin.js?v=20260720b025"></script>
-<script src="/js/time_tracker.js?v=20260720b025"></script>
-<script src="/js/field_workday.js?v=20260720b025"></script>
-<script src="/js/platform_core.js?v=20260720b025"></script>
-<script src="/js/approval_engine.js?v=20260720b025"></script>
-<script src="/js/automation_engine.js?v=20260720b025"></script>
-<script src="/js/client_portal.js?v=20260720b025"></script>
-<script src="/js/field_mode.js?v=20260720b025"></script>
-<script src="/js/assets_hub.js?v=20260720b025"></script>
+<script src="/js/gw-icons.js?v=20260721b001"></script>
+<script src="/js/richtext.js?v=20260721b001"></script>
+<script src="/js/db.js?v=20260721b001"></script>
+<script src="/js/data.js?v=20260721b001"></script>
+<script src="/js/reps.js?v=20260721b001"></script>
+<script src="/js/record-page.js?v=20260721b001"></script>
+<script src="/js/academy.js?v=20260721b001"></script>
+<script src="/js/task_engine.js?v=20260721b001"></script>
+<script src="/js/gw_i18n.js?v=20260721b001"></script>
+<script src="/js/app_premium.js?v=20260721b001"></script>
+<script src="/js/estimates.js?v=20260721b001"></script>
+<script src="/js/multiday.js?v=20260721b001"></script>
+<script src="/js/proposals.js?v=20260721b001"></script>
+<script src="/js/pricing.js?v=20260721b001"></script>
+<script src="/js/invoices.js?v=20260721b001"></script>
+<script src="/js/csv_import.js?v=20260721b001"></script>
+<script src="/js/onboarding.js?v=20260721b001"></script>
+<script src="/js/gw_copilot.js?v=20260721b001"></script>
+<script src="/js/groundwork_ai.js?v=20260721b001"></script>
+<script src="/js/recurring_plans.js?v=20260721b001"></script>
+<script src="/js/reviews.js?v=20260721b001"></script>
+<script src="/js/stripe.js?v=20260721b001"></script>
+<script src="/js/email.js?v=20260721b001"></script>
+<script src="/js/notifications.js?v=20260721b001"></script>
+<script src="/js/integrations.js?v=20260721b001"></script>
+<script src="/js/calendar_sync.js?v=20260721b001"></script>
+<script src="/js/ai_followup.js?v=20260721b001"></script>
+<script src="/js/user_management.js?v=20260721b001"></script>
+<script src="/js/platform_admin.js?v=20260721b001"></script>
+<script src="/js/time_tracker.js?v=20260721b001"></script>
+<script src="/js/field_workday.js?v=20260721b001"></script>
+<script src="/js/platform_core.js?v=20260721b001"></script>
+<script src="/js/approval_engine.js?v=20260721b001"></script>
+<script src="/js/automation_engine.js?v=20260721b001"></script>
+<script src="/js/client_portal.js?v=20260721b001"></script>
+<script src="/js/field_mode.js?v=20260721b001"></script>
+<script src="/js/assets_hub.js?v=20260721b001"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
