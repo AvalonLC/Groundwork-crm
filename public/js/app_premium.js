@@ -18321,7 +18321,7 @@ function teamView() {
   const repRowsHtml = reps.map(r => _tvRepRow(r, null)).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales · Team</div>
@@ -18336,11 +18336,11 @@ function teamView() {
 
     <!-- Team KPIs row -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Open Leads</div>
         <div style="font-size:28px;font-weight:800;color:var(--gds-ink)">${totalOpen}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Value</div>
         <div style="font-size:28px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(totalVal)}</div>
       </div>
@@ -18355,7 +18355,7 @@ function teamView() {
     </div>
 
     <!-- Team Table -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+    <div class="gw-report-card gw-report-panel" style="margin-bottom:20px">
       <table id="tvRepTable" style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -18404,7 +18404,7 @@ function teamView() {
       const sec = document.getElementById('tvInterventionSection');
       if (sec && needsAttention.length) {
         sec.innerHTML = `
-          <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+          <div class="gw-report-card gw-report-panel">
             <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
               <div style="font-size:13px;font-weight:700;color:var(--gds-ink)">Needs Attention</div>
               <span style="font-size:11px;color:var(--gw-muted)">${needsAttention.length} member${needsAttention.length!==1?'s':''} with overdue tasks</span>
@@ -18471,7 +18471,7 @@ function properties() {
   });
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales</div>
@@ -18489,7 +18489,7 @@ function properties() {
         style="width:100%;max-width:360px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink)">
     </div>
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -18557,7 +18557,7 @@ function campaigns() {
     </div>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales · Engagement</div>
@@ -19061,7 +19061,7 @@ function payments() {
     </tr>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
@@ -19074,15 +19074,15 @@ function payments() {
     </header>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Received</div>
         <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalReceived)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
         <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${_p5Money(payments_data.filter(p=>p.date&&p.date.slice(0,7)===todayISO().slice(0,7)).reduce((s,p)=>s+Number(p.amount||0),0))}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Transactions</div>
         <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${payments_data.length}</div>
       </div>
@@ -19092,7 +19092,7 @@ function payments() {
       oninput="window._paySearch=this.value;payments()"
       style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -19218,7 +19218,7 @@ function deposits() {
     </tr>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
@@ -19231,21 +19231,21 @@ function deposits() {
     </header>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Collected</div>
         <div style="font-size:26px;font-weight:800;color:#5B7FA6">${_p5Money(totalDeposited)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Applied to Jobs</div>
         <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalApplied)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Currently Held</div>
         <div style="font-size:26px;font-weight:800;color:#8B6914">${_p5Money(totalHeld)}</div>
       </div>
     </div>
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -19822,7 +19822,7 @@ function financialActivity() {
     </tr>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
@@ -19836,21 +19836,21 @@ function financialActivity() {
     </header>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Activity</div>
         <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${events.length}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total In</div>
         <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalIn)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
         <div style="font-size:26px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(thisMonth)}</div>
       </div>
     </div>
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -19910,7 +19910,7 @@ function crewView() {
   const todayWOs = wos.filter(w=>w.date&&w.date.slice(0,10)===today);
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Operations</div>
@@ -20006,7 +20006,7 @@ function toolsConsumables() {
         }).join('')
         : `<div style="text-align:center;padding:40px 20px;color:#9CA3AF;font-size:14px">${search?'No matching items.':'No tools or consumables tracked yet.'}</div>`}
       </div>`
-    : `<div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    : `<div class="gw-report-card gw-report-panel">
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -20192,7 +20192,7 @@ function salesReports() {
   }).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Dashboard · Business Pulse</div>
@@ -20206,7 +20206,7 @@ function salesReports() {
     </header>
 
     <!-- KPI Row — 5 cards -->
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
+    <div class="gw-report-grid gw-report-grid--five">
       ${[
         {label:'Total Leads',    val:opps.length,           color:'var(--gw-ink)'},
         {label:'Open Leads',     val:openOpps.length,       color:'var(--gw-ink)'},
@@ -20214,33 +20214,33 @@ function salesReports() {
         {label:'Close Rate',     val:closeRate+'%',         color:closeRate>=50?'#2D7A55':closeRate>=25?'#8B6914':'#C97B6A'},
         {label:'Avg Deal Size',  val:_p5Money(avgDeal),     color:'#5B7FA6'}
       ].map(k=>`
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">${k.label}</div>
         <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
       </div>`).join('')}
     </div>
 
     <!-- Secondary row: Pipeline $ + Won total + Won MTD -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+    <div class="gw-report-grid gw-report-grid--three">
+      <div class="gw-report-card">
         <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Pipeline Value (Open)</div>
         <div style="font-size:24px;font-weight:800;color:var(--gw-pine,#4D8A86)">${_p5Money(pipeVal)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Total Won Revenue</div>
         <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonTotal)}</div>
         <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonOpps.length} deal${wonOpps.length!==1?'s':''} closed</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Won This Month</div>
         <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonMTDVal)}</div>
         <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonMTD.length} deal${wonMTD.length!==1?'s':''}</div>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
+    <div class="gw-report-grid gw-report-grid--two">
       <!-- Pipeline Funnel -->
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
+      <div class="gw-report-card">
         <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
         ${FUNNEL.map(f=>{
           const cnt = opps.filter(o=>f.statuses.includes(o.status)).length;
@@ -20261,7 +20261,7 @@ function salesReports() {
 
       <!-- Monthly Won Trend (6 months) + Lead Sources -->
       <div style="display:flex;flex-direction:column;gap:16px">
-        <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;flex:0 0 auto">
+        <div class="gw-report-card" style="flex:0 0 auto">
           <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Won Revenue — Last 6 Months</h3>
           <div style="display:flex;align-items:flex-end;gap:8px;height:80px">
             ${months6.map(m=>{
@@ -20276,7 +20276,7 @@ function salesReports() {
             }).join('')}
           </div>
         </div>
-        <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;flex:1">
+        <div class="gw-report-card" style="flex:1">
           <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Lead Sources</h3>
           ${sources.length
             ? sources.map(([src,cnt])=>{
@@ -20297,7 +20297,7 @@ function salesReports() {
     </div>
 
     <!-- Rep Performance Table -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
         <h3 style="margin:0;font-size:14px;font-weight:800">Rep Performance</h3>
         <span style="font-size:11px;color:var(--gw-muted)">${reps.length} member${reps.length!==1?'s':''}</span>
@@ -20456,7 +20456,7 @@ function financialReports() {
   }).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Dashboard · Financial Snapshot</div>
@@ -20504,7 +20504,7 @@ function financialReports() {
 
     <!-- Invoices + Payments side by side -->
     <div class="fr-panel-grid">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <div class="gw-report-card gw-report-panel">
         <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
           <h3 style="margin:0;font-size:14px;font-weight:800">Recent Invoices</h3>
           <button class="rp-btn" onclick="show('invoices')" style="font-size:11px;padding:4px 10px">All Invoices</button>
@@ -20519,7 +20519,7 @@ function financialReports() {
           <tbody>${invRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No invoices yet.</td></tr>`}</tbody>
         </table>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+      <div class="gw-report-card gw-report-panel">
         <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
           <h3 style="margin:0;font-size:14px;font-weight:800">Recent Payments</h3>
           <button class="rp-btn" onclick="show('payments')" style="font-size:11px;padding:4px 10px">All Payments</button>
@@ -20589,7 +20589,7 @@ function opsReports() {
   }
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Dashboard · Operations Snapshot</div>
@@ -20603,7 +20603,7 @@ function opsReports() {
     </header>
 
     <!-- KPIs -->
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
+    <div class="gw-report-grid gw-report-grid--five">
       ${[
         {label:"Today's Jobs",      val:todayWOs.length,      sub:`${todayDone.length} done · ${todayPending.length} pending`,  color:'var(--gw-ink)'},
         {label:'This Week',         val:thisWeekWOs.length,   sub:`${thisWeekDone.length} completed`,                           color:'var(--gw-pine,#4D8A86)'},
@@ -20611,7 +20611,7 @@ function opsReports() {
         {label:'Upcoming (7 days)', val:upcomingWOs.length,   sub:'scheduled ahead',                                            color:'#8B6914'},
         {label:'Completed Total',   val:completedAll.length,  sub:'all time',                                                    color:'#2D7A55'},
       ].map(k=>`
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
         <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
         <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
@@ -20619,7 +20619,7 @@ function opsReports() {
     </div>
 
     <!-- Today's Work Orders -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+    <div class="gw-report-card gw-report-panel" style="margin-bottom:20px">
       <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
         <h3 style="margin:0;font-size:14px;font-weight:800">Today's Jobs</h3>
         <span style="font-size:11px;color:var(--gw-muted)">${today}</span>
@@ -20637,7 +20637,7 @@ function opsReports() {
     </div>
 
     <!-- Upcoming next 7 days -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+    <div class="gw-report-card gw-report-panel" style="margin-bottom:20px">
       <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line)">
         <h3 style="margin:0;font-size:14px;font-weight:800">Upcoming — Next 7 Days</h3>
       </div>
@@ -20655,7 +20655,7 @@ function opsReports() {
     </div>
 
     <!-- Note: Weeks Booked Out calculation -->
-    <div style="background:var(--gw-surface-2,#F8F6F0);border:1px solid var(--gw-line);border-radius:10px;padding:16px 20px;display:flex;align-items:center;gap:14px">
+    <div class="gw-report-card" style="display:flex;align-items:center;gap:14px">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.5"/><path d="M9 5v4l2.5 2.5" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div>
         <div style="font-size:13px;font-weight:600;color:var(--gw-ink)">Weeks Booked Out — coming soon</div>
@@ -20706,7 +20706,7 @@ function teamReports() {
   const top = repData.sort((a,b)=>(b.won30+b.comms7*0.1)-(a.won30+a.comms7*0.1))[0];
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales · Team</div>
@@ -20729,7 +20729,7 @@ function teamReports() {
       </div>
     </div>` : ''}
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
           <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Team Member</th>
