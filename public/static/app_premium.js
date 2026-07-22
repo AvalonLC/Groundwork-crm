@@ -12852,6 +12852,7 @@ function revenueAdmin(tab) {
   else if (_revTab === 'pnl')      tabContent = renderPnlTab();
 
   view.innerHTML = `
+  <div class="gw-workflow-cleanup gw-revenue-admin-shell">
     <button class="secondary-btn" onclick="show('manager')">← Back to Manager Tools</button>
     <div class="eyebrow" style="margin-top:16px">Admin — FY2026</div>
     <h1>Financial Data Hub</h1>
@@ -12859,7 +12860,7 @@ function revenueAdmin(tab) {
     ${banner}
     ${tabNav}
     ${tabContent}
-  `;
+  </div>`;
 }
 
 // ── Monthly Tab helpers ───────────────────────────────────────────────────────
@@ -14877,11 +14878,14 @@ function financialHub(){
     : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gw-text-subtle);font-style:italic">No open estimates</td></tr>`;
 
   view.innerHTML = `
-  <div class="fhub-shell">
-    <div class="fhub-header">
-      <div class="fhub-title">Financial Hub</div>
-      <div class="fhub-subtitle">Overview of pipeline value, estimates, invoices, and payments</div>
-    </div>
+  <div class="fhub-shell rp-shell gw-report-shell">
+    <header class="fhub-header rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Executive Dashboard</div>
+        <h1 class="fhub-title rp-title">Financial Hub</h1>
+        <p class="fhub-subtitle rp-subtitle">Overview of pipeline value, estimates, invoices, and payments</p>
+      </div>
+    </header>
 
     <!-- Quick Navigation Cards -->
     <div class="fhub-quick-nav">
@@ -15109,8 +15113,8 @@ function opsHub() {
     </div>`).join('') || '<p style="padding:12px 0;color:var(--gw-text-muted);font-style:italic">No active recurring plans.</p>';
 
   view.innerHTML = `
-  <div class="ops-hub-wrap">
-    <header class="rp-header">
+  <div class="ops-hub-wrap gw-ops-shell">
+    <header class="rp-header gw-ops-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Operations Hub</h1>
         <p class="rp-subtitle">Scheduling · Dispatch · Work Orders · Assets · Inventory</p>
@@ -15308,7 +15312,7 @@ async function scheduleBoard() {
   const sb = window._sbState;
 
   // Show loading skeleton
-  view.innerHTML = `<div class="sched-shell"><div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
+  view.innerHTML = `<div class="sched-shell gw-workflow-cleanup"><div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
     <div class="sb-spinner"></div><p style="margin-top:12px">${(typeof window._t==='function')?window._t('Loading schedule…'):'Loading schedule…'}</p></div></div>`;
 
   if (!sb.loaded) await _sbLoadData();
@@ -15492,7 +15496,7 @@ function _sbRender() {
   }
 
   view.innerHTML = `
-  <div class="sched-shell">
+  <div class="sched-shell gw-workflow-cleanup">
     <div class="gwp-shell" style="padding-bottom:0">
       <header class="gwp-header" style="margin-bottom:14px">
         <div class="gwp-header-left">
@@ -15614,7 +15618,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
 
     view.innerHTML = `
-    <div class="sched-shell sbm-shell">
+    <div class="sched-shell sbm-shell gw-workflow-cleanup">
       <!-- Compact header -->
       <div class="sbm-header">
         <div class="sbm-header-row1">
@@ -15739,7 +15743,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
   </div>`;
 
   view.innerHTML = `
-  <div class="sched-shell sbm-shell">
+  <div class="sched-shell sbm-shell gw-workflow-cleanup">
     <!-- Compact mobile header -->
     <div class="sbm-header">
       <div class="sbm-header-row1">
@@ -17292,8 +17296,8 @@ async function workOrderList() {
   : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:16px">${_wlT('No work orders yet.')}</p><button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">${_wlT('+ Create First Work Order')}</button></div>`;
 
   view.innerHTML = `
-  <div class="wo-list-shell">
-    <header class="rp-header">
+  <div class="wo-list-shell gw-list-shell">
+    <header class="rp-header gw-list-header">
       <div class="rp-header-left">
         <h1 class="rp-title">${_wlT('Work Orders')}</h1>
         <p class="rp-subtitle">${wos.length} ${_wlT('total')} · ${counts['in-progress']} ${_wlT('in progress')} · ${counts.scheduled} ${_wlT('scheduled')}</p>
