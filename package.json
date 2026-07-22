@@ -2,14 +2,14 @@
   "name": "groundwork-crm",
   "type": "module",
   "scripts": {
-    "build":       "node scripts/bump-version.js && vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json",
-    "dev":         "vite",
-    "dev:local":   "wrangler pages dev dist --d1=DB --local --ip 0.0.0.0 --port 3000",
-    "preview":     "wrangler pages dev dist --ip 0.0.0.0 --port 3000",
-    "deploy":      "npm run build && wrangler pages deploy dist --project-name groundwork-crm",
-    "cf-typegen":  "wrangler types --env-interface CloudflareBindings",
+    "build": "node scripts/bump-version.js && vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json",
+    "dev": "vite",
+    "dev:local": "wrangler pages dev dist --d1=DB --local --ip 0.0.0.0 --port 3000",
+    "preview": "wrangler pages dev dist --ip 0.0.0.0 --port 3000",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name groundwork-crm",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
-    "db:migrate:prod":  "wrangler d1 migrations apply avalon-sales-hub-production"
+    "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production"
   },
   "dependencies": {
     "hono": "^4.12.23"
@@ -19,5 +19,8 @@
     "@hono/vite-dev-server": "^0.25.2",
     "vite": "^6.3.5",
     "wrangler": "^4.4.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
