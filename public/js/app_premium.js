@@ -15275,15 +15275,25 @@ function _sbCrewPill(crew) {
   return `<span class="sb-crew-pill" style="background:${c}20;color:${c};border-color:${c}40">${escapeHtml(crew.crew_name||crew.name||'')}</span>`;
 }
 
+function _sbMdColor(id) {
+  const palette = ['#2D7A55','#3B82F6','#8B5CF6','#D97706','#0F766E','#BE123C','#4F46E5'];
+  let h = 0; String(id || '').split('').forEach(ch => { h = ((h << 5) - h) + ch.charCodeAt(0); h |= 0; });
+  return palette[Math.abs(h) % palette.length];
+}
+
 function _sbJobCard(wo, crews, draggable) {
-  const crew = crews.find(c=>c.id===wo.crew_id);
+  const mdCrewId = wo.md_crew_id || wo.crew_id;
+  const crew = crews.find(c=>c.id===mdCrewId);
   const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
   const statusCls = _p6WOStatusClass(wo.status);
   const timeStr = wo.scheduled_time ? wo.scheduled_time.slice(0,5) : '';
   const endStr  = wo.scheduled_end_time ? ' – '+wo.scheduled_end_time.slice(0,5) : '';
   const hrs = wo.duration_hours ? `${wo.duration_hours}h` : '';
+  const isMd = !!(wo.is_multiday || wo.md_day_number);
+  const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
+  const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
   return `
-    <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}"
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" style="border-left:3px solid ${crewColor};${isMd ? '--md-color:' + mdColor : ''}"
         ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
@@ -15297,12 +15307,15 @@ function _sbJobCard(wo, crews, draggable) {
         ${_p6WOTrafficDot(wo.status)}
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
+        ${isMd ? `<span class="sb-card-md-pill" title="Multi-day plan">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
       </div>
+      ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
       ${crew||wo.crew_name ? `<div class="sb-card-crew" style="color:${crewColor}">${escapeHtml(wo.crew_name||crew?.name||'')}</div>` : ''}
       <div class="sb-card-meta">
         <span class="sb-card-type">${escapeHtml(wo.type||'Service')}</span>
         ${hrs ? `<span class="sb-card-hrs">${hrs}</span>` : ''}
+        ${wo.md_dependency_type ? `<span class="sb-card-hrs" title="Dependency">after day ${escapeHtml(wo.md_depends_on_day_number||'')}</span>` : ''}
       </div>
       <span class="sb-card-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
     </div>`;
@@ -15320,6 +15333,12 @@ async function scheduleBoard() {
 }
 
 function _sbRender() {
+  if (!document.getElementById('gw-md-schedule-style')) {
+    const st = document.createElement('style');
+    st.id = 'gw-md-schedule-style';
+    st.textContent = '.sb-job-card--multiday{position:relative;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--md-color) 28%,transparent)}.sb-job-card--multiday:before{content:"";position:absolute;left:0;right:0;top:-4px;height:4px;background:var(--md-color);border-radius:8px 8px 0 0}.sb-card-md-pill{font-size:10px;font-weight:800;border-radius:999px;padding:2px 6px;background:color-mix(in srgb,var(--md-color) 14%,white);color:var(--md-color);border:1px solid color-mix(in srgb,var(--md-color) 32%,transparent);white-space:nowrap}.sb-card-md-marker{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--gw-text-muted,#6b7280);margin:3px 0}.sb-card-md-marker span{width:28px;height:4px;border-radius:999px;display:inline-block}.sb-day-body:has(.sb-job-card--multiday),.sb-lane-cell:has(.sb-job-card--multiday){background-image:linear-gradient(90deg,color-mix(in srgb,var(--gw-green,#2D7A55) 8%,transparent),transparent 42%)}.gw-md-warn{border:1px solid #f1c27d;background:#fff7e6;color:#7a4b00;border-radius:8px;padding:8px 10px;font-size:12px;margin:8px 0}.gw-md-row{display:grid;grid-template-columns:64px minmax(120px,1fr) 134px minmax(100px,1fr) 92px;gap:6px;align-items:center;margin-bottom:6px}.gw-md-row input,.gw-md-row select{font-size:12px}.gw-md-row-head{font-size:10px;font-weight:800;color:var(--gw-text-muted,#7a857f);text-transform:uppercase;letter-spacing:.05em}';
+    document.head.appendChild(st);
+  }
   const sb = window._sbState;
   const today = new Date().toISOString().slice(0,10);
   const allCrews = sb.crews;
@@ -15353,8 +15372,9 @@ function _sbRender() {
 
   // Filter WOs by visible crews
   const visibleWOs = allWOs.filter(wo => {
-    if (!wo.crew_id) return true;
-    return !sb.hiddenCrews.has(wo.crew_id);
+    const cid = wo.md_crew_id || wo.crew_id;
+    if (!cid) return true;
+    return !sb.hiddenCrews.has(cid);
   });
 
   let gridHtml = '';
@@ -15396,8 +15416,8 @@ function _sbRender() {
           const iso = d.toISOString().slice(0,10);
           const isToday = iso===today;
           const jobs = isUnassigned
-            ? visibleWOs.filter(w => (!w.crew_id) && w.scheduled_date?.slice(0,10)===iso)
-            : visibleWOs.filter(w => w.crew_id===cr.id && w.scheduled_date?.slice(0,10)===iso);
+            ? visibleWOs.filter(w => (!(w.md_crew_id || w.crew_id)) && w.scheduled_date?.slice(0,10)===iso)
+            : visibleWOs.filter(w => (w.md_crew_id || w.crew_id)===cr.id && w.scheduled_date?.slice(0,10)===iso);
           return `<div class="sb-lane-cell${isToday?' today':''}"
               data-date="${iso}" data-crew="${cr.id}"
               ondragover="event.preventDefault();this.classList.add('drag-over')"
