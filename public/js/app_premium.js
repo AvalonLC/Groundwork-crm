@@ -15208,15 +15208,28 @@ window._sbState = window._sbState || {
   crewLanes: true,         // show crew-lane rows in week view
 };
 
+function _sbCurrentDateRange() {
+  const sb = window._sbState || {};
+  if (sb.viewMode === 'month') {
+    const m = _sbGetMonthDays(sb.monthOffset || 0);
+    const start = new Date(m.first); start.setDate(start.getDate() - start.getDay());
+    const end = new Date(m.last); end.setDate(end.getDate() + (6 - end.getDay()));
+    return { from: start.toISOString().slice(0,10), to: end.toISOString().slice(0,10) };
+  }
+  const days = _sbGetWeekDays(sb.weekOffset || 0);
+  return { from: days[0].toISOString().slice(0,10), to: days[6].toISOString().slice(0,10) };
+}
+
 async function _sbLoadData() {
   try {
     // Field roles only see their assigned crew — pass rep_id to filter server-side
     const _sbRep = window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
     const _sbFieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
     const _sbIsField = _sbRep && _sbFieldRoles.includes(_sbRep.role);
-    const _woUrl = _sbIsField
-      ? `/api/work-orders?limit=500&rep_id=${encodeURIComponent(_sbRep.id)}`
-      : '/api/work-orders?limit=500';
+    const range = _sbCurrentDateRange();
+    const _woParams = new URLSearchParams({ limit: '1000', date_from: range.from, date_to: range.to });
+    if (_sbIsField && _sbRep) _woParams.set('rep_id', _sbRep.id);
+    const _woUrl = '/api/work-orders?' + _woParams.toString();
     const [cr, wo, rr] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
@@ -15281,6 +15294,33 @@ function _sbMdColor(id) {
   return palette[Math.abs(h) % palette.length];
 }
 
+function _sbMdWarningMap(rows) {
+  const out = new Map();
+  const byJob = new Map();
+  (rows || []).filter(w => w.is_multiday || w.md_day_number).forEach(w => {
+    if (!byJob.has(w.id)) byJob.set(w.id, []);
+    byJob.get(w.id).push(w);
+  });
+  const dayVal = v => { const t = Date.parse(String(v || '') + 'T12:00:00Z'); return Number.isFinite(t) ? Math.round(t / 86400000) : null; };
+  byJob.forEach(list => {
+    const sorted = list.slice().sort((a,b)=>(Number(a.md_phase_sequence || a.md_day_number) - Number(b.md_phase_sequence || b.md_day_number)) || String(a.scheduled_date||'').localeCompare(String(b.scheduled_date||'')));
+    for (let i=1;i<sorted.length;i++) {
+      const prev = sorted[i-1], cur = sorted[i];
+      const p = dayVal(prev.scheduled_date), c = dayVal(cur.scheduled_date);
+      if (p == null || c == null) continue;
+      let msg = '';
+      const expected = p + 1 + (Number(cur.md_dependency_lag_days) || 0);
+      if (c < expected) msg = 'Phase overlap';
+      else if (c > expected) msg = 'Phase gap';
+      if (msg) {
+        out.set(cur.id + ':' + cur.md_day_number, msg);
+        if (c <= p) out.set(prev.id + ':' + prev.md_day_number, msg);
+      }
+    }
+  });
+  return out;
+}
+
 function _sbJobCard(wo, crews, draggable) {
   const mdCrewId = wo.md_crew_id || wo.crew_id;
   const crew = crews.find(c=>c.id===mdCrewId);
@@ -15292,9 +15332,10 @@ function _sbJobCard(wo, crews, draggable) {
   const isMd = !!(wo.is_multiday || wo.md_day_number);
   const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
   const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
+  const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   return `
     <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" style="border-left:3px solid ${crewColor};${isMd ? '--md-color:' + mdColor : ''}"
-        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')" ondragend="this.style.opacity=''"` : ''}
+        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -15308,6 +15349,7 @@ function _sbJobCard(wo, crews, draggable) {
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
         ${isMd ? `<span class="sb-card-md-pill" title="Multi-day plan">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
+        ${mdWarn ? `<span class="sb-card-md-warn" title="${escapeHtml(mdWarn)}">${escapeHtml(mdWarn)}</span>` : ''}
       </div>
       ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
@@ -15333,16 +15375,11 @@ async function scheduleBoard() {
 }
 
 function _sbRender() {
-  if (!document.getElementById('gw-md-schedule-style')) {
-    const st = document.createElement('style');
-    st.id = 'gw-md-schedule-style';
-    st.textContent = '.sb-job-card--multiday{position:relative;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--md-color) 28%,transparent)}.sb-job-card--multiday:before{content:"";position:absolute;left:0;right:0;top:-4px;height:4px;background:var(--md-color);border-radius:8px 8px 0 0}.sb-card-md-pill{font-size:10px;font-weight:800;border-radius:999px;padding:2px 6px;background:color-mix(in srgb,var(--md-color) 14%,white);color:var(--md-color);border:1px solid color-mix(in srgb,var(--md-color) 32%,transparent);white-space:nowrap}.sb-card-md-marker{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--gw-text-muted,#6b7280);margin:3px 0}.sb-card-md-marker span{width:28px;height:4px;border-radius:999px;display:inline-block}.sb-day-body:has(.sb-job-card--multiday),.sb-lane-cell:has(.sb-job-card--multiday){background-image:linear-gradient(90deg,color-mix(in srgb,var(--gw-green,#2D7A55) 8%,transparent),transparent 42%)}.gw-md-warn{border:1px solid #f1c27d;background:#fff7e6;color:#7a4b00;border-radius:8px;padding:8px 10px;font-size:12px;margin:8px 0}.gw-md-row{display:grid;grid-template-columns:64px minmax(120px,1fr) 134px minmax(100px,1fr) 92px;gap:6px;align-items:center;margin-bottom:6px}.gw-md-row input,.gw-md-row select{font-size:12px}.gw-md-row-head{font-size:10px;font-weight:800;color:var(--gw-text-muted,#7a857f);text-transform:uppercase;letter-spacing:.05em}';
-    document.head.appendChild(st);
-  }
   const sb = window._sbState;
   const today = new Date().toISOString().slice(0,10);
   const allCrews = sb.crews;
   const allWOs   = sb.workOrders;
+  window._sbMdWarnings = _sbMdWarningMap(allWOs);
 
   // Crew filter bar (toggle visibility per crew)
   const crewFilterBar = `
@@ -15477,8 +15514,10 @@ function _sbRender() {
       const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
       const dots = jobs.slice(0,5).map(wo => {
         // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
-        const dotColor = wo.status === 'hold' ? '#EAB308' : (wo.status === 'cancelled' ? '#DC2626' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8'));
-        return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${wo.status==='hold' ? ' — HOLD (awaiting acceptance)' : ''}"></span>`;
+        const isMd = !!(wo.is_multiday || wo.md_day_number);
+        const dotColor = isMd ? _sbMdColor(wo.id) : (wo.status === 'hold' ? '#EAB308' : (wo.status === 'cancelled' ? '#DC2626' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8')));
+        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
+        return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}${isMd ? ' sb-month-dot--multiday' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${escapeHtml(mdTitle)}${wo.status==='hold' ? ' - HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
         <div class="sb-month-cell${isToday?' sb-month-cell--today':''}"
@@ -15486,13 +15525,15 @@ function _sbRender() {
             ondragover="event.preventDefault();this.classList.add('drag-over')"
             ondragleave="this.classList.remove('drag-over')"
             ondrop="_sbDropOnCell(event,'${iso}',null)"
-            onclick="_sbOpenNewVisit('${iso}',null)">
+            onclick="_sbOpenDaySummary('${iso}')">
           <div class="sb-month-num">${d}</div>
           ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
           ${jobs.slice(0,3).map(wo=>{
-            const crewColor = wo.status === 'hold' ? '#EAB308' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');
-            return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}" style="border-left:2px solid ${crewColor}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
-              ${_p6WOTrafficDot(wo.status)} ${escapeHtml((wo.client_name||wo.title||'Job').slice(0,20))}
+            const isMd = !!(wo.is_multiday || wo.md_day_number);
+            const crewColor = isMd ? _sbMdColor(wo.id) : (wo.status === 'hold' ? '#EAB308' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8'));
+            const mdText = isMd ? `D${wo.md_day_number||'?'} ${wo.md_phase_name || ''}`.trim() + ' - ' : '';
+            return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}${isMd ? ' sb-month-chip--multiday' : ''}" style="border-left:2px solid ${crewColor};${isMd ? '--md-color:' + crewColor : ''}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
+              ${_p6WOTrafficDot(wo.status)} ${escapeHtml((mdText + (wo.client_name||wo.title||'Job')).slice(0,26))}
             </div>`;
           }).join('')}
           ${jobs.length>3 ? `<div class="sb-month-more-link">+${jobs.length-3} more</div>` : ''}
@@ -15508,6 +15549,8 @@ function _sbRender() {
   const totalHolds      = visibleWOs.filter(w=>w.status==='hold').length;
   const totalInProgress = visibleWOs.filter(w=>w.status==='in-progress').length;
   const totalCompleted  = visibleWOs.filter(w=>w.status==='completed').length;
+  const totalUniqueJobs = new Set(visibleWOs.map(w=>w.id)).size;
+  const totalMultiDayPlans = new Set(visibleWOs.filter(w=>w.is_multiday || w.md_day_number).map(w=>w.id)).size;
 
   // ── Mobile layout (≤768px): day-list view ────────────────────────────────
   if (window.innerWidth <= 768) {
@@ -15541,7 +15584,7 @@ function _sbRender() {
       <div class="gwp-kpi-row${totalHolds ? ' gwp-kpi-row--5' : ''}" style="margin-bottom:14px">
         <div class="gwp-kpi-card gwp-kpi-card--blue">
           <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled</div></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled Visits</div><div class="gwp-kpi-sub">${totalUniqueJobs} work orders</div></div>
         </div>
         ${totalHolds ? `<div class="gwp-kpi-card gwp-kpi-card--yellow" title="Jobs held on the calendar — waiting for the client to accept the estimate">
           <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><span style="width:10px;height:10px;border-radius:50%;background:#EAB308;display:inline-block"></span></div>
@@ -15557,7 +15600,7 @@ function _sbRender() {
         </div>
         <div class="gwp-kpi-card gwp-kpi-card--muted">
           <div class="gwp-kpi-icon gwp-kpi-icon--muted"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div><div class="gwp-kpi-sub">${totalMultiDayPlans} multi-day plans</div></div>
         </div>
       </div>
     </div>
@@ -15579,14 +15622,14 @@ window._sbNav = function(dir) {
     const days = _sbGetWeekDays(sb.weekOffset);
     sb.mobileSelectedDay = days[0].toISOString().slice(0,10);
   }
-  _sbRender();
+  _sbRefresh();
 };
 window._sbGoToday = function() {
   window._sbState.weekOffset = 0; window._sbState.monthOffset = 0;
   window._sbState.mobileSelectedDay = new Date().toISOString().slice(0,10);
-  _sbRender();
+  _sbRefresh();
 };
-window._sbSetView = function(v) { window._sbState.viewMode = v; _sbRender(); };
+window._sbSetView = function(v) { window._sbState.viewMode = v; _sbRefresh(); };
 window._sbToggleCrew = function(id) {
   const sb = window._sbState;
   if (sb.hiddenCrews.has(id)) sb.hiddenCrews.delete(id); else sb.hiddenCrews.add(id);
@@ -15735,8 +15778,8 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     dayContent = laneCrews.map(cr => {
       const isUnassigned = cr.id==='__unassigned__';
       const crewJobs = isUnassigned
-        ? selJobs.filter(w=>!w.crew_id)
-        : selJobs.filter(w=>w.crew_id===cr.id);
+        ? selJobs.filter(w=>!(w.md_crew_id || w.crew_id))
+        : selJobs.filter(w=>(w.md_crew_id || w.crew_id)===cr.id);
       if (!crewJobs.length && isUnassigned) return ''; // hide empty unassigned lane
       return `<div class="sbm-crew-lane">
         <div class="sbm-crew-lane-head" style="border-left:3px solid ${cr.color}">
@@ -15829,19 +15872,27 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
 
 // Mobile job card — more touch-friendly than the desktop card
 function _sbMobileJobCard(wo, crews) {
-  const crew = crews.find(c=>c.id===wo.crew_id);
+  const mdCrewId = wo.md_crew_id || wo.crew_id;
+  const crew = crews.find(c=>c.id===mdCrewId);
   const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
   const statusCls = _p6WOStatusClass(wo.status);
   const timeStr = wo.scheduled_time ? wo.scheduled_time.slice(0,5) : '';
-  const endStr  = wo.scheduled_end_time ? ' – '+wo.scheduled_end_time.slice(0,5) : '';
+  const endStr  = wo.scheduled_end_time ? ' - '+wo.scheduled_end_time.slice(0,5) : '';
+  const isMd = !!(wo.is_multiday || wo.md_day_number);
+  const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
+  const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
+  const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   return `
-  <div class="sbm-job-card ${statusCls}" style="border-left:4px solid ${crewColor}" onclick="_sbOpenVisitModal('${wo.id}')">
+  <div class="sbm-job-card ${statusCls}${isMd?' sbm-job-card--multiday':''}" style="border-left:4px solid ${crewColor};${isMd ? '--md-color:' + mdColor : ''}" onclick="_sbOpenVisitModal('${wo.id}')">
     <div class="sbm-job-top">
       ${_p6WOTrafficDot(wo.status)}
       <span class="sbm-job-num">${wo.wo_number||wo.id}</span>
       ${timeStr ? `<span class="sbm-job-time">${timeStr}${endStr}</span>` : ''}
+      ${isMd ? `<span class="sb-card-md-pill">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
+      ${mdWarn ? `<span class="sb-card-md-warn">${escapeHtml(mdWarn)}</span>` : ''}
       <span class="sbm-job-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
     </div>
+    ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
     <div class="sbm-job-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
     <div class="sbm-job-meta">
       ${crew||wo.crew_name ? `<span style="color:${crewColor};font-weight:600;font-size:12px">${escapeHtml(wo.crew_name||crew?.name||'')}</span>` : ''}
@@ -15856,12 +15907,46 @@ window._sbToggleCrewLanes = function() {
   _sbRender();
 };
 
+
+window._sbOpenDaySummary = function(iso) {
+  const jobs = (window._sbState.workOrders || []).filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
+  if (!jobs.length) { _sbOpenNewVisit(iso, null); return; }
+  document.getElementById('sb-day-summary-modal')?.remove();
+  const crews = window._sbState.crews || [];
+  const dayLabel = new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  const mdWarnings = window._sbMdWarnings || _sbMdWarningMap(window._sbState.workOrders || []);
+  const warnRows = jobs.filter(j => mdWarnings.get(j.id + ':' + j.md_day_number));
+  const modal = document.createElement('div');
+  modal.id = 'sb-day-summary-modal';
+  modal.className = 'sb-modal-backdrop';
+  modal.innerHTML = `
+    <div class="sb-visit-modal" style="max-width:760px">
+      <div class="sb-modal-header">
+        <div><h2>${escapeHtml(dayLabel)}</h2><p>${jobs.length} scheduled visit${jobs.length === 1 ? '' : 's'}${warnRows.length ? ' - ' + warnRows.length + ' schedule warning' + (warnRows.length === 1 ? '' : 's') : ''}</p></div>
+        <button class="sb-modal-close" onclick="document.getElementById('sb-day-summary-modal')?.remove()">×</button>
+      </div>
+      <div class="sb-modal-body" style="display:block;max-height:70vh;overflow:auto">
+        ${warnRows.length ? `<div class="gw-md-warn"><strong>Warnings in this day</strong><br>${warnRows.map(w => escapeHtml((w.wo_number || w.id) + ': ' + mdWarnings.get(w.id + ':' + w.md_day_number))).join('<br>')}</div>` : ''}
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${jobs.map(wo => _sbJobCard(wo, crews, false)).join('')}
+        </div>
+      </div>
+      <div class="sb-modal-actions">
+        <button class="rp-btn" onclick="_sbOpenNewVisit('${iso}',null);document.getElementById('sb-day-summary-modal')?.remove()">Add Work Order</button>
+        <button class="rp-btn rp-btn--primary" onclick="document.getElementById('sb-day-summary-modal')?.remove()">Close</button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+};
+
 // ── Drag & Drop ───────────────────────────────────────────────────────────────
 // Handle mousedown on drag handle — only starts a real HTML5 drag if the user
 // actually moves the mouse (>4px), otherwise it's a click and falls through to
 // the card's onclick handler normally.
-window._sbDragStart = function(e, woId) {
+window._sbDragStart = function(e, woId, dayNumber) {
   e.dataTransfer.setData('text/plain', woId);
+  e.dataTransfer.setData('application/gw-day-number', String(dayNumber || 0));
   e.dataTransfer.effectAllowed = 'move';
   e.currentTarget.style.opacity = '0.45';
 };
@@ -15870,38 +15955,56 @@ window._sbDropOnCell = async function(e, iso, crewId) {
   e.preventDefault();
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   const woId = e.dataTransfer.getData('text/plain');
+  const dragDayNumber = parseInt(e.dataTransfer.getData('application/gw-day-number') || '0') || 0;
   if (!woId) return;
-  // Optimistically update local state
-  const wo = window._sbState.workOrders.find(w=>w.id===woId);
+  const wo = window._sbState.workOrders.find(w=>w.id===woId && (!dragDayNumber || Number(w.md_day_number) === dragDayNumber)) || window._sbState.workOrders.find(w=>w.id===woId);
   if (!wo) return;
   const oldDate = wo.scheduled_date;
-  const oldCrew = wo.crew_id;
+  const oldCrew = wo.md_crew_id || wo.crew_id;
+  const isMdDay = !!(wo.md_day_number || dragDayNumber);
+  const dayNumber = Number(wo.md_day_number || dragDayNumber);
+  const nextCrew = crewId && crewId !== '__unassigned__' ? crewId : (crewId === '__unassigned__' ? '' : oldCrew);
+  const shiftMode = isMdDay && e.shiftKey;
   wo.scheduled_date = iso;
-  if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
+  if (isMdDay) wo.md_crew_id = nextCrew || '';
+  else if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
   else if (crewId === '__unassigned__') wo.crew_id = null;
   _sbRender();
-  // Persist
   try {
+    if (isMdDay) {
+      const path = shiftMode
+        ? `/api/work-orders/${woId}/days/${dayNumber}/shift-downstream`
+        : `/api/work-orders/${woId}/days/${dayNumber}`;
+      const body = shiftMode
+        ? { day_date: iso, crew_id: nextCrew || null }
+        : { day_date: iso, crew_id: nextCrew || null };
+      const r = await fetch(path, { method: shiftMode ? 'POST' : 'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const d = await r.json().catch(()=>({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
+      showToast(shiftMode ? 'Phase and downstream days shifted' : 'Phase rescheduled','success');
+      await _sbRefresh();
+      return;
+    }
     const body = { scheduled_date: iso };
     if (crewId !== null) body.crew_id = crewId === '__unassigned__' ? null : crewId;
-    await fetch(`/api/work-orders/${woId}/reschedule`, {
-      method:'PATCH', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
+    const r = await fetch(`/api/work-orders/${woId}/reschedule`, {
+      method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
-    // If crew changed, update via PUT
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
     if (crewId !== null && crewId !== oldCrew) {
       await fetch(`/api/work-orders/${woId}`, {
-        method:'PUT', headers:{'Content-Type':'application/json'},
+        method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ crew_id: crewId === '__unassigned__' ? null : crewId })
       });
     }
     showToast('Job rescheduled','success');
   } catch(err) {
-    // Rollback
     wo.scheduled_date = oldDate;
-    wo.crew_id = oldCrew;
+    if (isMdDay) wo.md_crew_id = oldCrew || '';
+    else wo.crew_id = oldCrew;
     _sbRender();
-    showToast('Reschedule failed','error');
+    showToast((err && err.message) || 'Reschedule failed','error');
   }
 };
 

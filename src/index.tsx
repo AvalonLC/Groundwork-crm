@@ -9274,7 +9274,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   if (dateTo)   { sql += ` AND COALESCE(md.day_date, wo.scheduled_date) <= ?`; params.push(dateTo) }
   // rep_id filter: WOs assigned to this rep OR belonging to a crew the rep is in
   if (repId) {
-    sql += ` AND (wo.assigned_rep_id = ? OR wo.crew_id IN (
+    sql += ` AND (wo.assigned_rep_id = ? OR COALESCE(NULLIF(md.crew_id,''), wo.crew_id) IN (
       SELECT cm.crew_id FROM crew_members cm WHERE cm.rep_id = ? AND cm.company_id = ?
     ))`
     params.push(repId, repId, companyId)
@@ -9688,6 +9688,38 @@ app.get('/api/work-orders/:id/days', requireAuth, async (c) => {
 })
 
 
+// PATCH /api/work-orders/:id/days/:n — move or update one multi-day phase without changing downstream days.
+// Body: { day_date?, crew_id?, phase_name?, phase_sequence?, depends_on_day_number?, dependency_type?, dependency_lag_days? }
+app.patch('/api/work-orders/:id/days/:n', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  await ensureMultidaySchema(db)
+  const woId = c.req.param('id')
+  const dayN = parseInt(c.req.param('n'))
+  const b: any = await c.req.json().catch(() => ({}))
+  const day: any = await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? AND day_number=?`).bind(woId, companyId, dayN).first()
+  if (!day) return c.json({ ok: false, error: 'Day not found' }, 404)
+  const dayDate = b.day_date === undefined || b.day_date === null || b.day_date === '' ? day.day_date : String(b.day_date)
+  if (dayDate && !/^\d{4}-\d{2}-\d{2}$/.test(dayDate)) return c.json({ ok: false, error: 'Valid day_date is required' }, 400)
+  const crewId = b.crew_id === undefined ? (day.crew_id || '') : String(b.crew_id || '')
+  if (crewId) {
+    const crew: any = await db.prepare(`SELECT id FROM crews WHERE id=? AND company_id=?`).bind(crewId, companyId).first()
+    if (!crew) return c.json({ ok: false, error: 'Crew not found' }, 400)
+  }
+  const phaseName = b.phase_name === undefined ? (day.phase_name || '') : String(b.phase_name || '').slice(0, 80)
+  const phaseSequence = b.phase_sequence === undefined ? (day.phase_sequence || dayN) : (Number(b.phase_sequence) || dayN)
+  const dependsOn = b.depends_on_day_number === undefined ? (day.depends_on_day_number ?? null) : (b.depends_on_day_number === null || b.depends_on_day_number === '' ? null : Number(b.depends_on_day_number))
+  const depType = b.dependency_type === undefined ? (day.dependency_type || 'finish_to_start') : String(b.dependency_type || 'finish_to_start').slice(0, 40)
+  const depLag = b.dependency_lag_days === undefined ? (day.dependency_lag_days || 0) : (Number(b.dependency_lag_days) || 0)
+  await db.prepare(`UPDATE wo_days SET day_date=?, crew_id=?, phase_name=?, phase_sequence=?, depends_on_day_number=?, dependency_type=?, dependency_lag_days=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(dayDate || '', crewId, phaseName, phaseSequence, dependsOn, depType, depLag, day.id, companyId).run()
+  if (dayN === 1 && dayDate) {
+    await db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(dayDate, woId, companyId).run()
+  }
+  const updated: any = await db.prepare(`SELECT * FROM wo_days WHERE id=? AND company_id=?`).bind(day.id, companyId).first()
+  return c.json({ ok: true, data: { ...updated, questions: JSON.parse(updated.questions || '[]') } })
+})
+
 // POST /api/work-orders/:id/days/:n/shift-downstream — move this day and every dependent downstream day by the same date delta.
 // Body: { day_date }
 app.post('/api/work-orders/:id/days/:n/shift-downstream', requireAuth, async (c) => {
@@ -9699,6 +9731,11 @@ app.post('/api/work-orders/:id/days/:n/shift-downstream', requireAuth, async (c)
   const b: any = await c.req.json().catch(() => ({}))
   const newDate = String(b.day_date || '')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return c.json({ ok: false, error: 'Valid day_date is required' }, 400)
+  const crewId = b.crew_id === undefined ? undefined : String(b.crew_id || '')
+  if (crewId) {
+    const crew: any = await db.prepare(`SELECT id FROM crews WHERE id=? AND company_id=?`).bind(crewId, companyId).first()
+    if (!crew) return c.json({ ok: false, error: 'Crew not found' }, 400)
+  }
   const wo: any = await db.prepare(`SELECT id FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
   if (!wo) return c.json({ ok: false, error: 'Work order not found' }, 404)
   const days = (await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? ORDER BY day_number`).bind(woId, companyId).all()).results as any[] || []
@@ -9718,8 +9755,12 @@ app.post('/api/work-orders/:id/days/:n/shift-downstream', requireAuth, async (c)
   for (const day of days) {
     if (Number(day.day_number) < dayN) continue
     const shiftedDate = Number(day.day_number) === dayN ? newDate : addDays(day.day_date, deltaDays)
-    await db.prepare(`UPDATE wo_days SET day_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, day.id, companyId).run()
-    shifted.push({ day_number: day.day_number, old_date: day.day_date, day_date: shiftedDate, phase_name: day.phase_name || '', phase_sequence: day.phase_sequence || day.day_number, crew_id: day.crew_id || '', depends_on_day_number: day.depends_on_day_number ?? null, dependency_type: day.dependency_type || 'finish_to_start', dependency_lag_days: day.dependency_lag_days || 0 })
+    if (Number(day.day_number) === dayN && crewId !== undefined) {
+      await db.prepare(`UPDATE wo_days SET day_date=?, crew_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, crewId, day.id, companyId).run()
+    } else {
+      await db.prepare(`UPDATE wo_days SET day_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, day.id, companyId).run()
+    }
+    shifted.push({ day_number: day.day_number, old_date: day.day_date, day_date: shiftedDate, phase_name: day.phase_name || '', phase_sequence: day.phase_sequence || day.day_number, crew_id: Number(day.day_number) === dayN && crewId !== undefined ? crewId : (day.crew_id || ''), depends_on_day_number: day.depends_on_day_number ?? null, dependency_type: day.dependency_type || 'finish_to_start', dependency_lag_days: day.dependency_lag_days || 0 })
   }
   if (dayN === 1) {
     await db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(newDate, woId, companyId).run()
@@ -10017,8 +10058,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260722b007">
-  <link rel="stylesheet" href="/js/premium.css?v=20260722b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -10042,10 +10083,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260722b007"></script>
-  <script src="/js/client_portal.js?v=20260722b007"></script>
-  <script src="/js/platform_core.js?v=20260722b007"></script>
-  <script src="/js/client_portal.js?v=20260722b007"></script>
+  <script src="/js/platform_core.js?v=20260725b001"></script>
+  <script src="/js/client_portal.js?v=20260725b001"></script>
+  <script src="/js/platform_core.js?v=20260725b001"></script>
+  <script src="/js/client_portal.js?v=20260725b001"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10680,12 +10721,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260722b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260722b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260722b007">
-  <link rel="stylesheet" href="/js/premium.css?v=20260722b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260722b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260722b007">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260725b001">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -11245,80 +11286,80 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260722b007"></script>
-<script src="/js/richtext.js?v=20260722b007"></script>
-<script src="/js/db.js?v=20260722b007"></script>
-<script src="/js/data.js?v=20260722b007"></script>
-<script src="/js/reps.js?v=20260722b007"></script>
-<script src="/js/record-page.js?v=20260722b007"></script>
-<script src="/js/academy.js?v=20260722b007"></script>
-<script src="/js/task_engine.js?v=20260722b007"></script>
-<script src="/js/gw_i18n.js?v=20260722b007"></script>
-<script src="/js/app_premium.js?v=20260722b007"></script>
-<script src="/js/estimates.js?v=20260722b007"></script>
-<script src="/js/multiday.js?v=20260722b007"></script>
-<script src="/js/proposals.js?v=20260722b007"></script>
-<script src="/js/pricing.js?v=20260722b007"></script>
-<script src="/js/invoices.js?v=20260722b007"></script>
-<script src="/js/csv_import.js?v=20260722b007"></script>
-<script src="/js/onboarding.js?v=20260722b007"></script>
-<script src="/js/gw_copilot.js?v=20260722b007"></script>
-<script src="/js/groundwork_ai.js?v=20260722b007"></script>
-<script src="/js/recurring_plans.js?v=20260722b007"></script>
-<script src="/js/reviews.js?v=20260722b007"></script>
-<script src="/js/stripe.js?v=20260722b007"></script>
-<script src="/js/email.js?v=20260722b007"></script>
-<script src="/js/notifications.js?v=20260722b007"></script>
-<script src="/js/integrations.js?v=20260722b007"></script>
-<script src="/js/calendar_sync.js?v=20260722b007"></script>
-<script src="/js/ai_followup.js?v=20260722b007"></script>
-<script src="/js/user_management.js?v=20260722b007"></script>
-<script src="/js/platform_admin.js?v=20260722b007"></script>
-<script src="/js/time_tracker.js?v=20260722b007"></script>
-<script src="/js/field_workday.js?v=20260722b007"></script>
-<script src="/js/platform_core.js?v=20260722b007"></script>
-<script src="/js/approval_engine.js?v=20260722b007"></script>
-<script src="/js/automation_engine.js?v=20260722b007"></script>
-<script src="/js/client_portal.js?v=20260722b007"></script>
-<script src="/js/field_mode.js?v=20260722b007"></script>
-<script src="/js/assets_hub.js?v=20260722b007"></script>
-<script src="/js/gw-icons.js?v=20260722b007"></script>
-<script src="/js/richtext.js?v=20260722b007"></script>
-<script src="/js/db.js?v=20260722b007"></script>
-<script src="/js/data.js?v=20260722b007"></script>
-<script src="/js/reps.js?v=20260722b007"></script>
-<script src="/js/record-page.js?v=20260722b007"></script>
-<script src="/js/academy.js?v=20260722b007"></script>
-<script src="/js/task_engine.js?v=20260722b007"></script>
-<script src="/js/gw_i18n.js?v=20260722b007"></script>
-<script src="/js/app_premium.js?v=20260722b007"></script>
-<script src="/js/estimates.js?v=20260722b007"></script>
-<script src="/js/multiday.js?v=20260722b007"></script>
-<script src="/js/proposals.js?v=20260722b007"></script>
-<script src="/js/pricing.js?v=20260722b007"></script>
-<script src="/js/invoices.js?v=20260722b007"></script>
-<script src="/js/csv_import.js?v=20260722b007"></script>
-<script src="/js/onboarding.js?v=20260722b007"></script>
-<script src="/js/gw_copilot.js?v=20260722b007"></script>
-<script src="/js/groundwork_ai.js?v=20260722b007"></script>
-<script src="/js/recurring_plans.js?v=20260722b007"></script>
-<script src="/js/reviews.js?v=20260722b007"></script>
-<script src="/js/stripe.js?v=20260722b007"></script>
-<script src="/js/email.js?v=20260722b007"></script>
-<script src="/js/notifications.js?v=20260722b007"></script>
-<script src="/js/integrations.js?v=20260722b007"></script>
-<script src="/js/calendar_sync.js?v=20260722b007"></script>
-<script src="/js/ai_followup.js?v=20260722b007"></script>
-<script src="/js/user_management.js?v=20260722b007"></script>
-<script src="/js/platform_admin.js?v=20260722b007"></script>
-<script src="/js/time_tracker.js?v=20260722b007"></script>
-<script src="/js/field_workday.js?v=20260722b007"></script>
-<script src="/js/platform_core.js?v=20260722b007"></script>
-<script src="/js/approval_engine.js?v=20260722b007"></script>
-<script src="/js/automation_engine.js?v=20260722b007"></script>
-<script src="/js/client_portal.js?v=20260722b007"></script>
-<script src="/js/field_mode.js?v=20260722b007"></script>
-<script src="/js/assets_hub.js?v=20260722b007"></script>
+<script src="/js/gw-icons.js?v=20260725b001"></script>
+<script src="/js/richtext.js?v=20260725b001"></script>
+<script src="/js/db.js?v=20260725b001"></script>
+<script src="/js/data.js?v=20260725b001"></script>
+<script src="/js/reps.js?v=20260725b001"></script>
+<script src="/js/record-page.js?v=20260725b001"></script>
+<script src="/js/academy.js?v=20260725b001"></script>
+<script src="/js/task_engine.js?v=20260725b001"></script>
+<script src="/js/gw_i18n.js?v=20260725b001"></script>
+<script src="/js/app_premium.js?v=20260725b001"></script>
+<script src="/js/estimates.js?v=20260725b001"></script>
+<script src="/js/multiday.js?v=20260725b001"></script>
+<script src="/js/proposals.js?v=20260725b001"></script>
+<script src="/js/pricing.js?v=20260725b001"></script>
+<script src="/js/invoices.js?v=20260725b001"></script>
+<script src="/js/csv_import.js?v=20260725b001"></script>
+<script src="/js/onboarding.js?v=20260725b001"></script>
+<script src="/js/gw_copilot.js?v=20260725b001"></script>
+<script src="/js/groundwork_ai.js?v=20260725b001"></script>
+<script src="/js/recurring_plans.js?v=20260725b001"></script>
+<script src="/js/reviews.js?v=20260725b001"></script>
+<script src="/js/stripe.js?v=20260725b001"></script>
+<script src="/js/email.js?v=20260725b001"></script>
+<script src="/js/notifications.js?v=20260725b001"></script>
+<script src="/js/integrations.js?v=20260725b001"></script>
+<script src="/js/calendar_sync.js?v=20260725b001"></script>
+<script src="/js/ai_followup.js?v=20260725b001"></script>
+<script src="/js/user_management.js?v=20260725b001"></script>
+<script src="/js/platform_admin.js?v=20260725b001"></script>
+<script src="/js/time_tracker.js?v=20260725b001"></script>
+<script src="/js/field_workday.js?v=20260725b001"></script>
+<script src="/js/platform_core.js?v=20260725b001"></script>
+<script src="/js/approval_engine.js?v=20260725b001"></script>
+<script src="/js/automation_engine.js?v=20260725b001"></script>
+<script src="/js/client_portal.js?v=20260725b001"></script>
+<script src="/js/field_mode.js?v=20260725b001"></script>
+<script src="/js/assets_hub.js?v=20260725b001"></script>
+<script src="/js/gw-icons.js?v=20260725b001"></script>
+<script src="/js/richtext.js?v=20260725b001"></script>
+<script src="/js/db.js?v=20260725b001"></script>
+<script src="/js/data.js?v=20260725b001"></script>
+<script src="/js/reps.js?v=20260725b001"></script>
+<script src="/js/record-page.js?v=20260725b001"></script>
+<script src="/js/academy.js?v=20260725b001"></script>
+<script src="/js/task_engine.js?v=20260725b001"></script>
+<script src="/js/gw_i18n.js?v=20260725b001"></script>
+<script src="/js/app_premium.js?v=20260725b001"></script>
+<script src="/js/estimates.js?v=20260725b001"></script>
+<script src="/js/multiday.js?v=20260725b001"></script>
+<script src="/js/proposals.js?v=20260725b001"></script>
+<script src="/js/pricing.js?v=20260725b001"></script>
+<script src="/js/invoices.js?v=20260725b001"></script>
+<script src="/js/csv_import.js?v=20260725b001"></script>
+<script src="/js/onboarding.js?v=20260725b001"></script>
+<script src="/js/gw_copilot.js?v=20260725b001"></script>
+<script src="/js/groundwork_ai.js?v=20260725b001"></script>
+<script src="/js/recurring_plans.js?v=20260725b001"></script>
+<script src="/js/reviews.js?v=20260725b001"></script>
+<script src="/js/stripe.js?v=20260725b001"></script>
+<script src="/js/email.js?v=20260725b001"></script>
+<script src="/js/notifications.js?v=20260725b001"></script>
+<script src="/js/integrations.js?v=20260725b001"></script>
+<script src="/js/calendar_sync.js?v=20260725b001"></script>
+<script src="/js/ai_followup.js?v=20260725b001"></script>
+<script src="/js/user_management.js?v=20260725b001"></script>
+<script src="/js/platform_admin.js?v=20260725b001"></script>
+<script src="/js/time_tracker.js?v=20260725b001"></script>
+<script src="/js/field_workday.js?v=20260725b001"></script>
+<script src="/js/platform_core.js?v=20260725b001"></script>
+<script src="/js/approval_engine.js?v=20260725b001"></script>
+<script src="/js/automation_engine.js?v=20260725b001"></script>
+<script src="/js/client_portal.js?v=20260725b001"></script>
+<script src="/js/field_mode.js?v=20260725b001"></script>
+<script src="/js/assets_hub.js?v=20260725b001"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.

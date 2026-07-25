@@ -27,8 +27,9 @@
       const prev = sorted[i - 1], cur = sorted[i];
       const p = dateDays(prev.day_date), c = dateDays(cur.day_date);
       if (p == null || c == null) continue;
-      if (c <= p) warnings.push((cur.phase_name || 'Day ' + cur.day_number) + ' overlaps or is not after ' + (prev.phase_name || 'day ' + prev.day_number) + '.');
-      if (c > p + 1) warnings.push('Gap before ' + (cur.phase_name || 'day ' + cur.day_number) + ': ' + (c - p - 1) + ' unscheduled day' + (c - p - 1 === 1 ? '' : 's') + '.');
+      const expected = p + 1 + (Number(cur.dependency_lag_days) || 0);
+      if (c < expected) warnings.push((cur.phase_name || 'Day ' + cur.day_number) + ' overlaps or starts before its dependency lag after ' + (prev.phase_name || 'day ' + prev.day_number) + '.');
+      if (c > expected) warnings.push('Gap before ' + (cur.phase_name || 'day ' + cur.day_number) + ': ' + (c - expected) + ' unscheduled day' + (c - expected === 1 ? '' : 's') + '.');
     }
     return warnings;
   }
@@ -49,8 +50,16 @@
   window._gwMultidayPanel = async function (woId, el) {
     if (!el) return;
     let state;
-    try { state = await api('/api/work-orders/' + woId + '/days'); }
+    let crews = Array.isArray(window._sbState?.crews) ? window._sbState.crews : [];
+    try {
+      state = await api('/api/work-orders/' + woId + '/days');
+      if (!crews.length) {
+        const cr = await api('/api/crews').catch(() => ({ data: [] }));
+        crews = cr.data || [];
+      }
+    }
     catch (e) { el.innerHTML = '<p class="sb-empty-note">Multi-day: ' + esc(e.message) + '</p>'; return; }
+    const crewOptions = value => '<option value="">Default crew</option>' + crews.map(cr => '<option value="' + esc(cr.id) + '"' + (String(value || '') === String(cr.id) ? ' selected' : '') + '>' + esc(cr.name || cr.crew_name || 'Crew') + '</option>').join('');
     render();
 
     function render() {
@@ -97,6 +106,8 @@
             </div>
             ${badge}
             <input class="rp-input" type="date" id="gw-md-shift-${d.day_number}" value="${esc(d.day_date || '')}" style="width:132px">
+            <select class="rp-input" id="gw-md-crew-${d.day_number}" style="width:132px">${crewOptions(d.crew_id)}</select>
+            <button class="rp-btn-sm" title="Save only this phase date and crew" onclick="_gwMdSaveDay('${esc(woId)}',${d.day_number})">Save Phase</button>
             <button class="rp-btn-sm" title="Shift this day and later days by the same amount" onclick="_gwMdShiftDownstream('${esc(woId)}',${d.day_number})">Shift Downstream</button>
             ${d.status !== 'completed' ? `<button class="rp-btn-sm" onclick="_gwMdOpenDay('${esc(woId)}',${d.day_number})">${d.status === 'in_progress' ? 'Continue' : 'Start Day'}</button>` : ''}
           </div>`;
@@ -115,14 +126,16 @@
     if (!box) return;
     box.innerHTML = `
       <p style="font-size:11.5px;color:var(--gw-text-muted,#7a857f);margin:4px 0 6px">Describe what is planned for each day — Groundwork AI turns each day's plan into the crew's end-of-day checklist questions.</p>
-      <div class="gw-md-row gw-md-row-head"><span>Day</span><span>Phase</span><span>Date</span><span>Scope</span><span>Depends on</span></div>
+      <div class="gw-md-row gw-md-row-head"><span>Day</span><span>Phase</span><span>Date</span><span>Scope</span><span>Crew</span><span>Depends</span><span>Lag</span></div>
       ${Array.from({ length: n }, (_, i) => `
         <div class="gw-md-row">
           <span style="font-size:11px;font-weight:700">Day ${i + 1}</span>
           <input class="rp-input" list="gw-md-phase-labels" id="gw-md-phase-${i + 1}" value="${esc(PHASE_LABELS[Math.min(i, PHASE_LABELS.length - 1)])}">
           <input class="rp-input" type="date" id="gw-md-date-${i + 1}">
           <input class="rp-input" id="gw-md-scope-${i + 1}" placeholder="e.g. ${i === 0 ? 'Demo existing patio, excavate and grade base' : i === 1 ? 'Install base material, compact, set edging' : 'Lay pavers, cut borders, final cleanup'}">
+          <select class="rp-input" id="gw-md-setup-crew-${i + 1}">${crewOptions('')}</select>
           <input class="rp-input" type="number" min="1" id="gw-md-dep-${i + 1}" value="${i ? i : ''}" ${i ? '' : 'disabled'}>
+          <input class="rp-input" type="number" min="0" id="gw-md-lag-${i + 1}" value="0" ${i ? '' : 'disabled'}>
         </div>`).join('')}
       <datalist id="gw-md-phase-labels">${phaseOptions('')}</datalist>
       <button class="rp-btn rp-btn--primary" style="margin-top:6px" id="gw-md-create" onclick="_gwMdCreate('${esc(woId)}',${n})">Generate Daily Checklists</button>`;
@@ -137,9 +150,10 @@
       day_date: document.getElementById('gw-md-date-' + (i + 1))?.value || '',
       phase_name: document.getElementById('gw-md-phase-' + (i + 1))?.value?.trim() || PHASE_LABELS[Math.min(i, PHASE_LABELS.length - 1)],
       phase_sequence: i + 1,
+      crew_id: document.getElementById('gw-md-setup-crew-' + (i + 1))?.value || '',
       depends_on_day_number: i ? (parseInt(document.getElementById('gw-md-dep-' + (i + 1))?.value) || i) : null,
       dependency_type: 'finish_to_start',
-      dependency_lag_days: 0,
+      dependency_lag_days: parseInt(document.getElementById('gw-md-lag-' + (i + 1))?.value || '0') || 0,
     }));
     try {
       const d = await api('/api/work-orders/' + woId + '/multiday', { body: { total_days: n, day_scopes } });
@@ -151,12 +165,24 @@
     }
   };
 
+  window._gwMdSaveDay = async function (woId, dayN) {
+    const day_date = document.getElementById('gw-md-shift-' + dayN)?.value || '';
+    const crew_id = document.getElementById('gw-md-crew-' + dayN)?.value || '';
+    try {
+      await api('/api/work-orders/' + woId + '/days/' + dayN, { method: 'PATCH', body: { day_date, crew_id } });
+      _toast('Phase saved', 'success');
+      if (typeof window._gwMdRefreshPanel === 'function') window._gwMdRefreshPanel();
+      if (typeof window._sbRefresh === 'function') window._sbRefresh();
+    } catch (e) { _toast('Save failed: ' + e.message, 'error'); }
+  };
+
   window._gwMdShiftDownstream = async function (woId, dayN) {
     const input = document.getElementById('gw-md-shift-' + dayN);
     const day_date = input && input.value;
+    const crew_id = document.getElementById('gw-md-crew-' + dayN)?.value || '';
     if (!day_date) { _toast('Choose a date first', 'error'); return; }
     try {
-      const d = await api('/api/work-orders/' + woId + '/days/' + dayN + '/shift-downstream', { body: { day_date } });
+      const d = await api('/api/work-orders/' + woId + '/days/' + dayN + '/shift-downstream', { body: { day_date, crew_id } });
       _toast('Shifted ' + ((d.shifted || []).length) + ' downstream day' + ((d.shifted || []).length === 1 ? '' : 's'), 'success');
       if (typeof window._gwMdRefreshPanel === 'function') window._gwMdRefreshPanel();
       if (typeof window._sbRefresh === 'function') window._sbRefresh();
