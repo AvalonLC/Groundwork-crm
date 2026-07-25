@@ -15556,3 +15556,102 @@ h1.pl-title,
   .gw-list-shell,
   .gw-revenue-admin-shell { padding: 16px 14px 36px !important; }
 }
+
+/* Multi-day schedule markers and phase planning controls */
+.sb-job-card--multiday,
+.sbm-job-card--multiday {
+  position: relative;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-color) 28%, transparent);
+}
+.sb-job-card--multiday::before,
+.sbm-job-card--multiday::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  height: 4px;
+  background: var(--md-color);
+  border-radius: 8px 8px 0 0;
+}
+.sb-card-md-pill {
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--md-color) 14%, white);
+  color: var(--md-color);
+  border: 1px solid color-mix(in srgb, var(--md-color) 32%, transparent);
+  white-space: nowrap;
+}
+.sb-card-md-marker {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--gw-text-muted, #6b7280);
+  margin: 3px 0;
+}
+.sb-card-md-marker span {
+  width: 28px;
+  height: 4px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.sb-day-body:has(.sb-job-card--multiday),
+.sb-lane-cell:has(.sb-job-card--multiday) {
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--gw-green, #2D7A55) 8%, transparent), transparent 42%);
+}
+.sb-month-dot--multiday {
+  outline: 1px solid rgba(255,255,255,.9);
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent);
+}
+.sb-month-chip--multiday {
+  background: color-mix(in srgb, var(--md-color) 9%, white);
+}
+.gw-md-warn {
+  border: 1px solid #f1c27d;
+  background: #fff7e6;
+  color: #7a4b00;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.gw-md-row {
+  display: grid;
+  grid-template-columns: 64px minmax(120px,1fr) 134px minmax(110px,1fr) minmax(100px,1fr) 82px 72px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.gw-md-row input,
+.gw-md-row select {
+  font-size: 12px;
+}
+.gw-md-row-head {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--gw-text-muted, #7a857f);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+@media (max-width: 760px) {
+  .gw-md-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .gw-md-row-head {
+    display: none;
+  }
+}
+.sb-card-md-warn {
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #7a4b00;
+  background: #fff7e6;
+  border: 1px solid #f1c27d;
+  white-space: nowrap;
+}
