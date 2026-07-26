@@ -15446,8 +15446,7 @@ function _sbTimelineHtml(sb, visibleWOs, allCrews) {
         const statusColor=_sbStatusColor(w.status);
         const conflict=window._sbConflicts?.get(`${w.id}:${w.md_day_number||0}`);
         return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--status-color:${statusColor}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
-          <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}
-          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
+          <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
         </article>`;
       }).join('')}
     </div></div>`;
@@ -15502,8 +15501,7 @@ function _sbJobCard(wo, crews, draggable) {
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   const statusColor = _sbStatusColor(wo.status);
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"
-        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -15695,8 +15693,7 @@ function _sbRender() {
       const dots = jobs.slice(0,5).map(wo => {
         // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
         const isMd = !!(wo.is_multiday || wo.md_day_number);
-        const dotColor = _sbStatusColor(wo.status);
-        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
+        const dotColor = _sbStatusColor(wo.status);        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
         return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}${isMd ? ' sb-month-dot--multiday' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${escapeHtml(mdTitle)}${wo.status==='hold' ? ' - HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
@@ -15710,8 +15707,7 @@ function _sbRender() {
           ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
           ${jobs.slice(0,3).map(wo=>{
             const isMd = !!(wo.is_multiday || wo.md_day_number);
-            const crewColor = isMd ? _sbMdColor(wo.id) : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');
-            const mdText = isMd ? `D${wo.md_day_number||'?'} ${wo.md_phase_name || ''}`.trim() + ' - ' : '';
+            const crewColor = isMd ? _sbMdColor(wo.id) : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');            const mdText = isMd ? `D${wo.md_day_number||'?'} ${wo.md_phase_name || ''}`.trim() + ' - ' : '';
             return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}${isMd ? ' sb-month-chip--multiday' : ''}" style="border-left:2px solid ${crewColor};${isMd ? '--md-color:' + crewColor : ''}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
               ${_p6WOTrafficDot(wo.status)} ${escapeHtml((mdText + (wo.client_name||wo.title||'Job')).slice(0,26))}
             </div>`;
