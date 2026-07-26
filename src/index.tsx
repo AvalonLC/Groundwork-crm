@@ -25,6 +25,7 @@ import mig0039 from '../migrations/0039_onboarding_system.sql?raw'
 import mig0040 from '../migrations/0040_onboarding_buildout.sql?raw'
 import mig0045 from '../migrations/0045_multiday_jobs.sql?raw'
 import mig0046 from '../migrations/0046_multiday_phase_metadata.sql?raw'
+import mig0047 from '../migrations/0047_schedule_timeline.sql?raw'
 import { registerPortal } from './portal'
 
 
@@ -9257,14 +9258,18 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   const dateTo    = c.req.query('date_to')
   const limitParam = c.req.query('limit')
   const limitVal   = limitParam ? parseInt(limitParam) : 500
-  let sql = `SELECT wo.*, COALESCE(md.day_date, wo.scheduled_date) as scheduled_date, COALESCE(NULLIF(md.crew_id,''), wo.crew_id) as crew_id, cr.name as crew_name, cr.color as crew_color,
+  let sql = `SELECT wo.*, COALESCE(md.day_date, wo.scheduled_date) as scheduled_date, COALESCE(md.start_time, wo.scheduled_time) as scheduled_time,
+             COALESCE(md.end_time, wo.scheduled_end_time) as scheduled_end_time,
+             COALESCE(md.scheduled_duration_minutes, wo.scheduled_duration_minutes) as scheduled_duration_minutes,
+             COALESCE(md.schedule_locked, wo.schedule_locked, 0) as schedule_locked,
+             COALESCE(NULLIF(md.crew_id,''), wo.crew_id) as crew_id, cr.name as crew_name, cr.color as crew_color,
              md.day_number as md_day_number, md.day_date as md_day_date, md.scope as md_scope,
              md.phase_name as md_phase_name, md.phase_sequence as md_phase_sequence, md.crew_id as md_crew_id,
              md.depends_on_day_number as md_depends_on_day_number, md.dependency_type as md_dependency_type, md.dependency_lag_days as md_dependency_lag_days,
              md.status as md_status
              FROM work_orders wo
              LEFT JOIN wo_days md ON md.work_order_id = wo.id AND md.company_id = wo.company_id
-             LEFT JOIN crews cr ON cr.id = COALESCE(NULLIF(md.crew_id,''), wo.crew_id)
+             LEFT JOIN crews cr ON cr.id = COALESCE(NULLIF(md.crew_id,''), wo.crew_id) AND cr.company_id = wo.company_id
              WHERE wo.company_id = ?`
   const params: any[] = [companyId]
   if (status)   { sql += ` AND wo.status = ?`;          params.push(status) }
@@ -9352,7 +9357,7 @@ app.get('/api/work-orders/:id', requireAuth, async (c) => {
             md.status as md_status
      FROM work_orders wo
      LEFT JOIN wo_days md ON md.work_order_id = wo.id AND md.company_id = wo.company_id AND md.day_date = wo.scheduled_date
-     LEFT JOIN crews cr ON cr.id = COALESCE(md.crew_id, wo.crew_id)
+     LEFT JOIN crews cr ON cr.id = COALESCE(md.crew_id, wo.crew_id) AND cr.company_id = wo.company_id
      WHERE wo.id=? AND wo.company_id=?`
   ).bind(woId, companyId).first()
   if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
@@ -9379,6 +9384,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const repId     = c.var.repId as string
   const db = c.env.DB as D1Database
+  await ensureMultidaySchema(db)
   const woId = c.req.param('id')
   const body: any = await c.req.json()
   // Get current WO for timeline diff
@@ -9395,6 +9401,8 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       type=COALESCE(?,type), status=COALESCE(?,status), readiness=COALESCE(?,readiness),
       scheduled_date=COALESCE(?,scheduled_date), scheduled_time=COALESCE(?,scheduled_time),
       scheduled_end_time=COALESCE(?,scheduled_end_time),
+      scheduled_duration_minutes=COALESCE(?,scheduled_duration_minutes),
+      schedule_locked=COALESCE(?,schedule_locked),
       duration_hours=COALESCE(?,duration_hours), notes=COALESCE(?,notes),
       completion_notes=COALESCE(?,completion_notes),
       amount_est=COALESCE(?,amount_est), amount_actual=COALESCE(?,amount_actual),
@@ -9415,6 +9423,8 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     body.scheduled_date !== undefined ? body.scheduled_date : null,
     body.scheduled_time !== undefined ? body.scheduled_time : null,
     body.scheduled_end_time !== undefined ? body.scheduled_end_time : null,
+    body.scheduled_duration_minutes !== undefined ? body.scheduled_duration_minutes : null,
+    body.schedule_locked !== undefined ? (body.schedule_locked ? 1 : 0) : null,
     body.duration_hours !== undefined ? body.duration_hours : null,
     body.notes !== undefined ? body.notes : null,
     body.completion_notes !== undefined ? body.completion_notes : null,
@@ -9495,19 +9505,38 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
 app.patch('/api/work-orders/:id/reschedule', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await ensureMultidaySchema(db)
   const woId = c.req.param('id')
   const body: any = await c.req.json()
+  const current: any = await db.prepare(`SELECT scheduled_date, scheduled_time, scheduled_end_time, scheduled_duration_minutes, schedule_locked, timeline FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
+  if (!current) return c.json({ ok: false, error: 'Work order not found' }, 404)
+  if (current.schedule_locked && !body.force) return c.json({ ok: false, error: 'This visit is locked. Unlock it before rescheduling.' }, 409)
+  const validTime = (value: any) => value === undefined || value === null || value === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))
+  if (!validTime(body.scheduled_time) || !validTime(body.scheduled_end_time)) return c.json({ ok: false, error: 'Times must use HH:MM format' }, 400)
+  const nextStart = body.scheduled_time || current.scheduled_time
+  const nextEnd = body.scheduled_end_time || current.scheduled_end_time
+  if (nextStart && nextEnd && nextEnd <= nextStart) return c.json({ ok: false, error: 'End time must be after start time' }, 400)
+  const durationMinutes = body.scheduled_duration_minutes !== undefined
+    ? Math.max(15, Math.min(1440, Number(body.scheduled_duration_minutes) || 0))
+    : current.scheduled_duration_minutes
+  const timeline = JSON.parse(current.timeline || '[]')
+  timeline.push({ action: 'Schedule updated', note: `Date ${body.scheduled_date || current.scheduled_date || 'unscheduled'}, ${nextStart || 'no start'}-${nextEnd || 'no end'}`, at: new Date().toISOString(), by: c.var.repId })
   await db.prepare(`
     UPDATE work_orders SET
       scheduled_date=COALESCE(?,scheduled_date),
       scheduled_time=COALESCE(?,scheduled_time),
       scheduled_end_time=COALESCE(?,scheduled_end_time),
+      scheduled_duration_minutes=COALESCE(?,scheduled_duration_minutes),
+      schedule_locked=COALESCE(?,schedule_locked), timeline=?,
       updated_at=datetime('now')
     WHERE id=? AND company_id=?
   `).bind(
     body.scheduled_date || null,
     body.scheduled_time || null,
     body.scheduled_end_time || null,
+    durationMinutes || null,
+    body.schedule_locked === undefined ? null : (body.schedule_locked ? 1 : 0),
+    JSON.stringify(timeline),
     woId, companyId
   ).run()
   return c.json({ ok: true })
@@ -9526,10 +9555,10 @@ let _multidaySchemaOk = false
 async function ensureMultidaySchema(db: D1Database): Promise<void> {
   if (_multidaySchemaOk) return
   try {
-    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_multiday_v2' LIMIT 1").first<any>()
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_multiday_v3' LIMIT 1").first<any>()
     if (flag) { _multidaySchemaOk = true; return }
   } catch (_) {}
-  const stmts = (mig0045 + '\n' + mig0046).split('\n').map(l => l.replace(/--.*$/, '')).join('\n')
+  const stmts = (mig0045 + '\n' + mig0046 + '\n' + mig0047).split('\n').map(l => l.replace(/--.*$/, '')).join('\n')
     .split(';').map(s => s.trim()).filter(s => s.length > 0)
   for (const stmt of stmts) {
     try { await db.prepare(stmt).run() } catch (e: any) {
@@ -9540,9 +9569,10 @@ async function ensureMultidaySchema(db: D1Database): Promise<void> {
   try {
     await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0045_multiday_jobs.sql', '0045_multiday_jobs.sql').run()
     await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0046_multiday_phase_metadata.sql', '0046_multiday_phase_metadata.sql').run()
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0047_schedule_timeline.sql', '0047_schedule_timeline.sql').run()
   } catch (_) {}
   try {
-    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_multiday_v2', ?, datetime('now'))").bind(new Date().toISOString()).run()
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_multiday_v3', ?, datetime('now'))").bind(new Date().toISOString()).run()
   } catch (_) {}
   _multidaySchemaOk = true
 }
@@ -9582,7 +9612,7 @@ app.post('/api/work-orders/:id/multiday', requireAuth, async (c) => {
   // AI question generation — one call for all days (cheaper + coherent).
   const phaseDefaults = ['Mobilization', 'Demolition', 'Grading', 'Hardscape', 'Planting', 'Cleanup', 'Final Walkthrough']
   const cleanPhase = (v: any, i: number) => String(v || phaseDefaults[Math.min(i, phaseDefaults.length - 1)] || ('Phase ' + (i + 1))).slice(0, 80)
-  const dayPlans: Array<{ day: number; scope: string; date: string; phase_name: string; phase_sequence: number; crew_id: string; depends_on_day_number: number | null; dependency_type: string; dependency_lag_days: number; questions: string[] }> = []
+  const dayPlans: Array<{ day: number; scope: string; date: string; start_time: string | null; end_time: string | null; scheduled_duration_minutes: number | null; phase_name: string; phase_sequence: number; crew_id: string; depends_on_day_number: number | null; dependency_type: string; dependency_lag_days: number; questions: string[] }> = []
   const addDays = (iso: string, n: number) => {
     const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n)
     return d.toISOString().slice(0, 10)
@@ -9593,6 +9623,9 @@ app.post('/api/work-orders/:id/multiday', requireAuth, async (c) => {
       day: i,
       scope: String(sc?.scope || '').slice(0, 500),
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(sc?.day_date || '')) ? sc.day_date : addDays(startDate, i - 1),
+      start_time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(sc?.start_time || '')) ? sc.start_time : (wo.scheduled_time || null),
+      end_time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(sc?.end_time || '')) ? sc.end_time : (wo.scheduled_end_time || null),
+      scheduled_duration_minutes: Number(sc?.scheduled_duration_minutes) || wo.scheduled_duration_minutes || null,
       phase_name: cleanPhase(sc?.phase_name || sc?.phase, i - 1),
       phase_sequence: Number(sc?.phase_sequence) || i,
       crew_id: String(sc?.crew_id || wo.crew_id || ''),
@@ -9657,15 +9690,15 @@ Return ONLY valid JSON: { "days": [ { "day": 1, "questions": ["...", "..."] }, .
   // Upsert wo_days — days with crew progress keep their questions/answers
   for (const dp of dayPlans) {
     if (protectedDays.has(dp.day)) {
-      await db.prepare(`UPDATE wo_days SET scope=?, day_date=?, phase_name=?, phase_sequence=?, crew_id=?, depends_on_day_number=?, dependency_type=?, dependency_lag_days=?, updated_at=datetime('now') WHERE work_order_id=? AND company_id=? AND day_number=?`)
-        .bind(dp.scope, dp.date, dp.phase_name, dp.phase_sequence, dp.crew_id, dp.depends_on_day_number, dp.dependency_type, dp.dependency_lag_days, woId, companyId, dp.day).run()
+      await db.prepare(`UPDATE wo_days SET scope=?, day_date=?, start_time=?, end_time=?, scheduled_duration_minutes=?, phase_name=?, phase_sequence=?, crew_id=?, depends_on_day_number=?, dependency_type=?, dependency_lag_days=?, updated_at=datetime('now') WHERE work_order_id=? AND company_id=? AND day_number=?`)
+        .bind(dp.scope, dp.date, dp.start_time, dp.end_time, dp.scheduled_duration_minutes, dp.phase_name, dp.phase_sequence, dp.crew_id, dp.depends_on_day_number, dp.dependency_type, dp.dependency_lag_days, woId, companyId, dp.day).run()
       continue
     }
     const questions = dp.questions.map(q => ({ q, answer: null, photo_media_id: '', answered_at: '', answered_by: '' }))
-    await db.prepare(`INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, scope, phase_name, phase_sequence, crew_id, depends_on_day_number, dependency_type, dependency_lag_days, questions, status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')
-      ON CONFLICT(work_order_id, day_number) DO UPDATE SET day_date=excluded.day_date, scope=excluded.scope, phase_name=excluded.phase_name, phase_sequence=excluded.phase_sequence, crew_id=excluded.crew_id, depends_on_day_number=excluded.depends_on_day_number, dependency_type=excluded.dependency_type, dependency_lag_days=excluded.dependency_lag_days, questions=excluded.questions, updated_at=datetime('now')`)
-      .bind('wod_' + _mdUid(), companyId, woId, dp.day, dp.date, dp.scope, dp.phase_name, dp.phase_sequence, dp.crew_id, dp.depends_on_day_number, dp.dependency_type, dp.dependency_lag_days, JSON.stringify(questions)).run()
+    await db.prepare(`INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, start_time, end_time, scheduled_duration_minutes, scope, phase_name, phase_sequence, crew_id, depends_on_day_number, dependency_type, dependency_lag_days, questions, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending')
+      ON CONFLICT(work_order_id, day_number) DO UPDATE SET day_date=excluded.day_date, start_time=excluded.start_time, end_time=excluded.end_time, scheduled_duration_minutes=excluded.scheduled_duration_minutes, scope=excluded.scope, phase_name=excluded.phase_name, phase_sequence=excluded.phase_sequence, crew_id=excluded.crew_id, depends_on_day_number=excluded.depends_on_day_number, dependency_type=excluded.dependency_type, dependency_lag_days=excluded.dependency_lag_days, questions=excluded.questions, updated_at=datetime('now')`)
+      .bind('wod_' + _mdUid(), companyId, woId, dp.day, dp.date, dp.start_time, dp.end_time, dp.scheduled_duration_minutes, dp.scope, dp.phase_name, dp.phase_sequence, dp.crew_id, dp.depends_on_day_number, dp.dependency_type, dp.dependency_lag_days, JSON.stringify(questions)).run()
   }
   // Drop pending days beyond the new total (never completed ones)
   await db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=? AND day_number>? AND status='pending'`).bind(woId, companyId, totalDays).run()
@@ -9689,7 +9722,7 @@ app.get('/api/work-orders/:id/days', requireAuth, async (c) => {
 
 
 // PATCH /api/work-orders/:id/days/:n — move or update one multi-day phase without changing downstream days.
-// Body: { day_date?, crew_id?, phase_name?, phase_sequence?, depends_on_day_number?, dependency_type?, dependency_lag_days? }
+// Body: { day_date?, start_time?, end_time?, scheduled_duration_minutes?, schedule_locked?, crew_id?, phase_name?, phase_sequence?, depends_on_day_number?, dependency_type?, dependency_lag_days? }
 app.patch('/api/work-orders/:id/days/:n', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
@@ -9701,6 +9734,13 @@ app.patch('/api/work-orders/:id/days/:n', requireAuth, async (c) => {
   if (!day) return c.json({ ok: false, error: 'Day not found' }, 404)
   const dayDate = b.day_date === undefined || b.day_date === null || b.day_date === '' ? day.day_date : String(b.day_date)
   if (dayDate && !/^\d{4}-\d{2}-\d{2}$/.test(dayDate)) return c.json({ ok: false, error: 'Valid day_date is required' }, 400)
+  if (day.schedule_locked && !b.force && (b.day_date !== undefined || b.start_time !== undefined || b.end_time !== undefined || b.crew_id !== undefined)) return c.json({ ok: false, error: 'This phase is locked. Unlock it before rescheduling.' }, 409)
+  const validTime = (value: any) => value === undefined || value === null || value === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))
+  if (!validTime(b.start_time) || !validTime(b.end_time)) return c.json({ ok: false, error: 'Times must use HH:MM format' }, 400)
+  const startTime = b.start_time === undefined ? day.start_time : (b.start_time || null)
+  const endTime = b.end_time === undefined ? day.end_time : (b.end_time || null)
+  if (startTime && endTime && endTime <= startTime) return c.json({ ok: false, error: 'End time must be after start time' }, 400)
+  const durationMinutes = b.scheduled_duration_minutes === undefined ? day.scheduled_duration_minutes : Math.max(15, Math.min(1440, Number(b.scheduled_duration_minutes) || 0))
   const crewId = b.crew_id === undefined ? (day.crew_id || '') : String(b.crew_id || '')
   if (crewId) {
     const crew: any = await db.prepare(`SELECT id FROM crews WHERE id=? AND company_id=?`).bind(crewId, companyId).first()
@@ -9711,8 +9751,8 @@ app.patch('/api/work-orders/:id/days/:n', requireAuth, async (c) => {
   const dependsOn = b.depends_on_day_number === undefined ? (day.depends_on_day_number ?? null) : (b.depends_on_day_number === null || b.depends_on_day_number === '' ? null : Number(b.depends_on_day_number))
   const depType = b.dependency_type === undefined ? (day.dependency_type || 'finish_to_start') : String(b.dependency_type || 'finish_to_start').slice(0, 40)
   const depLag = b.dependency_lag_days === undefined ? (day.dependency_lag_days || 0) : (Number(b.dependency_lag_days) || 0)
-  await db.prepare(`UPDATE wo_days SET day_date=?, crew_id=?, phase_name=?, phase_sequence=?, depends_on_day_number=?, dependency_type=?, dependency_lag_days=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-    .bind(dayDate || '', crewId, phaseName, phaseSequence, dependsOn, depType, depLag, day.id, companyId).run()
+  await db.prepare(`UPDATE wo_days SET day_date=?, start_time=?, end_time=?, scheduled_duration_minutes=?, schedule_locked=?, crew_id=?, phase_name=?, phase_sequence=?, depends_on_day_number=?, dependency_type=?, dependency_lag_days=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(dayDate || '', startTime, endTime, durationMinutes, b.schedule_locked === undefined ? (day.schedule_locked || 0) : (b.schedule_locked ? 1 : 0), crewId, phaseName, phaseSequence, dependsOn, depType, depLag, day.id, companyId).run()
   if (dayN === 1 && dayDate) {
     await db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(dayDate, woId, companyId).run()
   }
@@ -9741,6 +9781,8 @@ app.post('/api/work-orders/:id/days/:n/shift-downstream', requireAuth, async (c)
   const days = (await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? ORDER BY day_number`).bind(woId, companyId).all()).results as any[] || []
   const selected = days.find(d => Number(d.day_number) === dayN)
   if (!selected) return c.json({ ok: false, error: 'Day not found' }, 404)
+  const lockedDownstream = days.filter(d => Number(d.day_number) >= dayN && d.schedule_locked)
+  if (lockedDownstream.length && !b.force) return c.json({ ok: false, error: `Cannot shift locked phase${lockedDownstream.length === 1 ? '' : 's'}: ${lockedDownstream.map(d => d.day_number).join(', ')}` }, 409)
   const oldTime = Date.parse(String(selected.day_date || '') + 'T12:00:00Z')
   const newTime = Date.parse(newDate + 'T12:00:00Z')
   if (!Number.isFinite(oldTime) || !Number.isFinite(newTime)) return c.json({ ok: false, error: 'Selected day does not have a valid current date' }, 400)
@@ -9752,19 +9794,21 @@ app.post('/api/work-orders/:id/days/:n/shift-downstream', requireAuth, async (c)
     return d.toISOString().slice(0, 10)
   }
   const shifted: any[] = []
+  const updates: D1PreparedStatement[] = []
   for (const day of days) {
     if (Number(day.day_number) < dayN) continue
     const shiftedDate = Number(day.day_number) === dayN ? newDate : addDays(day.day_date, deltaDays)
     if (Number(day.day_number) === dayN && crewId !== undefined) {
-      await db.prepare(`UPDATE wo_days SET day_date=?, crew_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, crewId, day.id, companyId).run()
+      updates.push(db.prepare(`UPDATE wo_days SET day_date=?, crew_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, crewId, day.id, companyId))
     } else {
-      await db.prepare(`UPDATE wo_days SET day_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, day.id, companyId).run()
+      updates.push(db.prepare(`UPDATE wo_days SET day_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(shiftedDate, day.id, companyId))
     }
     shifted.push({ day_number: day.day_number, old_date: day.day_date, day_date: shiftedDate, phase_name: day.phase_name || '', phase_sequence: day.phase_sequence || day.day_number, crew_id: Number(day.day_number) === dayN && crewId !== undefined ? crewId : (day.crew_id || ''), depends_on_day_number: day.depends_on_day_number ?? null, dependency_type: day.dependency_type || 'finish_to_start', dependency_lag_days: day.dependency_lag_days || 0 })
   }
   if (dayN === 1) {
-    await db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(newDate, woId, companyId).run()
+    updates.push(db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(newDate, woId, companyId))
   }
+  if (updates.length) await db.batch(updates)
   return c.json({ ok: true, delta_days: deltaDays, shifted })
 })
 
@@ -10058,8 +10102,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
-  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b008">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -10083,10 +10127,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260725b001"></script>
-  <script src="/js/client_portal.js?v=20260725b001"></script>
-  <script src="/js/platform_core.js?v=20260725b001"></script>
-  <script src="/js/client_portal.js?v=20260725b001"></script>
+  <script src="/js/platform_core.js?v=20260725b008"></script>
+  <script src="/js/client_portal.js?v=20260725b008"></script>
+  <script src="/js/platform_core.js?v=20260725b008"></script>
+  <script src="/js/client_portal.js?v=20260725b008"></script>
   <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
@@ -10721,12 +10765,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260725b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260725b001">
-  <link rel="stylesheet" href="/js/premium.css?v=20260725b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260725b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260725b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260725b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260725b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260725b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260725b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260725b008">
   <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
@@ -11286,80 +11330,80 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260725b001"></script>
-<script src="/js/richtext.js?v=20260725b001"></script>
-<script src="/js/db.js?v=20260725b001"></script>
-<script src="/js/data.js?v=20260725b001"></script>
-<script src="/js/reps.js?v=20260725b001"></script>
-<script src="/js/record-page.js?v=20260725b001"></script>
-<script src="/js/academy.js?v=20260725b001"></script>
-<script src="/js/task_engine.js?v=20260725b001"></script>
-<script src="/js/gw_i18n.js?v=20260725b001"></script>
-<script src="/js/app_premium.js?v=20260725b001"></script>
-<script src="/js/estimates.js?v=20260725b001"></script>
-<script src="/js/multiday.js?v=20260725b001"></script>
-<script src="/js/proposals.js?v=20260725b001"></script>
-<script src="/js/pricing.js?v=20260725b001"></script>
-<script src="/js/invoices.js?v=20260725b001"></script>
-<script src="/js/csv_import.js?v=20260725b001"></script>
-<script src="/js/onboarding.js?v=20260725b001"></script>
-<script src="/js/gw_copilot.js?v=20260725b001"></script>
-<script src="/js/groundwork_ai.js?v=20260725b001"></script>
-<script src="/js/recurring_plans.js?v=20260725b001"></script>
-<script src="/js/reviews.js?v=20260725b001"></script>
-<script src="/js/stripe.js?v=20260725b001"></script>
-<script src="/js/email.js?v=20260725b001"></script>
-<script src="/js/notifications.js?v=20260725b001"></script>
-<script src="/js/integrations.js?v=20260725b001"></script>
-<script src="/js/calendar_sync.js?v=20260725b001"></script>
-<script src="/js/ai_followup.js?v=20260725b001"></script>
-<script src="/js/user_management.js?v=20260725b001"></script>
-<script src="/js/platform_admin.js?v=20260725b001"></script>
-<script src="/js/time_tracker.js?v=20260725b001"></script>
-<script src="/js/field_workday.js?v=20260725b001"></script>
-<script src="/js/platform_core.js?v=20260725b001"></script>
-<script src="/js/approval_engine.js?v=20260725b001"></script>
-<script src="/js/automation_engine.js?v=20260725b001"></script>
-<script src="/js/client_portal.js?v=20260725b001"></script>
-<script src="/js/field_mode.js?v=20260725b001"></script>
-<script src="/js/assets_hub.js?v=20260725b001"></script>
-<script src="/js/gw-icons.js?v=20260725b001"></script>
-<script src="/js/richtext.js?v=20260725b001"></script>
-<script src="/js/db.js?v=20260725b001"></script>
-<script src="/js/data.js?v=20260725b001"></script>
-<script src="/js/reps.js?v=20260725b001"></script>
-<script src="/js/record-page.js?v=20260725b001"></script>
-<script src="/js/academy.js?v=20260725b001"></script>
-<script src="/js/task_engine.js?v=20260725b001"></script>
-<script src="/js/gw_i18n.js?v=20260725b001"></script>
-<script src="/js/app_premium.js?v=20260725b001"></script>
-<script src="/js/estimates.js?v=20260725b001"></script>
-<script src="/js/multiday.js?v=20260725b001"></script>
-<script src="/js/proposals.js?v=20260725b001"></script>
-<script src="/js/pricing.js?v=20260725b001"></script>
-<script src="/js/invoices.js?v=20260725b001"></script>
-<script src="/js/csv_import.js?v=20260725b001"></script>
-<script src="/js/onboarding.js?v=20260725b001"></script>
-<script src="/js/gw_copilot.js?v=20260725b001"></script>
-<script src="/js/groundwork_ai.js?v=20260725b001"></script>
-<script src="/js/recurring_plans.js?v=20260725b001"></script>
-<script src="/js/reviews.js?v=20260725b001"></script>
-<script src="/js/stripe.js?v=20260725b001"></script>
-<script src="/js/email.js?v=20260725b001"></script>
-<script src="/js/notifications.js?v=20260725b001"></script>
-<script src="/js/integrations.js?v=20260725b001"></script>
-<script src="/js/calendar_sync.js?v=20260725b001"></script>
-<script src="/js/ai_followup.js?v=20260725b001"></script>
-<script src="/js/user_management.js?v=20260725b001"></script>
-<script src="/js/platform_admin.js?v=20260725b001"></script>
-<script src="/js/time_tracker.js?v=20260725b001"></script>
-<script src="/js/field_workday.js?v=20260725b001"></script>
-<script src="/js/platform_core.js?v=20260725b001"></script>
-<script src="/js/approval_engine.js?v=20260725b001"></script>
-<script src="/js/automation_engine.js?v=20260725b001"></script>
-<script src="/js/client_portal.js?v=20260725b001"></script>
-<script src="/js/field_mode.js?v=20260725b001"></script>
-<script src="/js/assets_hub.js?v=20260725b001"></script>
+<script src="/js/gw-icons.js?v=20260725b008"></script>
+<script src="/js/richtext.js?v=20260725b008"></script>
+<script src="/js/db.js?v=20260725b008"></script>
+<script src="/js/data.js?v=20260725b008"></script>
+<script src="/js/reps.js?v=20260725b008"></script>
+<script src="/js/record-page.js?v=20260725b008"></script>
+<script src="/js/academy.js?v=20260725b008"></script>
+<script src="/js/task_engine.js?v=20260725b008"></script>
+<script src="/js/gw_i18n.js?v=20260725b008"></script>
+<script src="/js/app_premium.js?v=20260725b008"></script>
+<script src="/js/estimates.js?v=20260725b008"></script>
+<script src="/js/multiday.js?v=20260725b008"></script>
+<script src="/js/proposals.js?v=20260725b008"></script>
+<script src="/js/pricing.js?v=20260725b008"></script>
+<script src="/js/invoices.js?v=20260725b008"></script>
+<script src="/js/csv_import.js?v=20260725b008"></script>
+<script src="/js/onboarding.js?v=20260725b008"></script>
+<script src="/js/gw_copilot.js?v=20260725b008"></script>
+<script src="/js/groundwork_ai.js?v=20260725b008"></script>
+<script src="/js/recurring_plans.js?v=20260725b008"></script>
+<script src="/js/reviews.js?v=20260725b008"></script>
+<script src="/js/stripe.js?v=20260725b008"></script>
+<script src="/js/email.js?v=20260725b008"></script>
+<script src="/js/notifications.js?v=20260725b008"></script>
+<script src="/js/integrations.js?v=20260725b008"></script>
+<script src="/js/calendar_sync.js?v=20260725b008"></script>
+<script src="/js/ai_followup.js?v=20260725b008"></script>
+<script src="/js/user_management.js?v=20260725b008"></script>
+<script src="/js/platform_admin.js?v=20260725b008"></script>
+<script src="/js/time_tracker.js?v=20260725b008"></script>
+<script src="/js/field_workday.js?v=20260725b008"></script>
+<script src="/js/platform_core.js?v=20260725b008"></script>
+<script src="/js/approval_engine.js?v=20260725b008"></script>
+<script src="/js/automation_engine.js?v=20260725b008"></script>
+<script src="/js/client_portal.js?v=20260725b008"></script>
+<script src="/js/field_mode.js?v=20260725b008"></script>
+<script src="/js/assets_hub.js?v=20260725b008"></script>
+<script src="/js/gw-icons.js?v=20260725b008"></script>
+<script src="/js/richtext.js?v=20260725b008"></script>
+<script src="/js/db.js?v=20260725b008"></script>
+<script src="/js/data.js?v=20260725b008"></script>
+<script src="/js/reps.js?v=20260725b008"></script>
+<script src="/js/record-page.js?v=20260725b008"></script>
+<script src="/js/academy.js?v=20260725b008"></script>
+<script src="/js/task_engine.js?v=20260725b008"></script>
+<script src="/js/gw_i18n.js?v=20260725b008"></script>
+<script src="/js/app_premium.js?v=20260725b008"></script>
+<script src="/js/estimates.js?v=20260725b008"></script>
+<script src="/js/multiday.js?v=20260725b008"></script>
+<script src="/js/proposals.js?v=20260725b008"></script>
+<script src="/js/pricing.js?v=20260725b008"></script>
+<script src="/js/invoices.js?v=20260725b008"></script>
+<script src="/js/csv_import.js?v=20260725b008"></script>
+<script src="/js/onboarding.js?v=20260725b008"></script>
+<script src="/js/gw_copilot.js?v=20260725b008"></script>
+<script src="/js/groundwork_ai.js?v=20260725b008"></script>
+<script src="/js/recurring_plans.js?v=20260725b008"></script>
+<script src="/js/reviews.js?v=20260725b008"></script>
+<script src="/js/stripe.js?v=20260725b008"></script>
+<script src="/js/email.js?v=20260725b008"></script>
+<script src="/js/notifications.js?v=20260725b008"></script>
+<script src="/js/integrations.js?v=20260725b008"></script>
+<script src="/js/calendar_sync.js?v=20260725b008"></script>
+<script src="/js/ai_followup.js?v=20260725b008"></script>
+<script src="/js/user_management.js?v=20260725b008"></script>
+<script src="/js/platform_admin.js?v=20260725b008"></script>
+<script src="/js/time_tracker.js?v=20260725b008"></script>
+<script src="/js/field_workday.js?v=20260725b008"></script>
+<script src="/js/platform_core.js?v=20260725b008"></script>
+<script src="/js/approval_engine.js?v=20260725b008"></script>
+<script src="/js/automation_engine.js?v=20260725b008"></script>
+<script src="/js/client_portal.js?v=20260725b008"></script>
+<script src="/js/field_mode.js?v=20260725b008"></script>
+<script src="/js/assets_hub.js?v=20260725b008"></script>
 <script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
@@ -11717,6 +11761,7 @@ function getHtml(): string {
               fin_revenue_actuals:  'avalonRevenueActuals',
               company_divisions:    'gwCompanyDivisions',
               company_intake_config:'gwIntakeConfig',
+              schedule_preferences: 'gw_schedule_preferences',
             };
             for (const [dk, lk] of Object.entries(FIN_MAP)) {
               if (settings[dk]) {

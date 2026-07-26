@@ -106,7 +106,10 @@
             </div>
             ${badge}
             <input class="rp-input" type="date" id="gw-md-shift-${d.day_number}" value="${esc(d.day_date || '')}" style="width:132px">
+            <input class="rp-input" type="time" id="gw-md-start-${d.day_number}" value="${esc(d.start_time || '')}" title="Phase start time" style="width:104px">
+            <input class="rp-input" type="time" id="gw-md-end-${d.day_number}" value="${esc(d.end_time || '')}" title="Phase end time" style="width:104px">
             <select class="rp-input" id="gw-md-crew-${d.day_number}" style="width:132px">${crewOptions(d.crew_id)}</select>
+            <label style="display:flex;gap:4px;align-items:center;font-size:10px"><input type="checkbox" id="gw-md-lock-${d.day_number}"${d.schedule_locked ? ' checked' : ''}> Lock</label>
             <button class="rp-btn-sm" title="Save only this phase date and crew" onclick="_gwMdSaveDay('${esc(woId)}',${d.day_number})">Save Phase</button>
             <button class="rp-btn-sm" title="Shift this day and later days by the same amount" onclick="_gwMdShiftDownstream('${esc(woId)}',${d.day_number})">Shift Downstream</button>
             ${d.status !== 'completed' ? `<button class="rp-btn-sm" onclick="_gwMdOpenDay('${esc(woId)}',${d.day_number})">${d.status === 'in_progress' ? 'Continue' : 'Start Day'}</button>` : ''}
@@ -126,12 +129,14 @@
     if (!box) return;
     box.innerHTML = `
       <p style="font-size:11.5px;color:var(--gw-text-muted,#7a857f);margin:4px 0 6px">Describe what is planned for each day — Groundwork AI turns each day's plan into the crew's end-of-day checklist questions.</p>
-      <div class="gw-md-row gw-md-row-head"><span>Day</span><span>Phase</span><span>Date</span><span>Scope</span><span>Crew</span><span>Depends</span><span>Lag</span></div>
+      <div class="gw-md-row gw-md-row-head"><span>Day</span><span>Phase</span><span>Date</span><span>Start</span><span>End</span><span>Scope</span><span>Crew</span><span>Depends</span><span>Lag</span></div>
       ${Array.from({ length: n }, (_, i) => `
         <div class="gw-md-row">
           <span style="font-size:11px;font-weight:700">Day ${i + 1}</span>
           <input class="rp-input" list="gw-md-phase-labels" id="gw-md-phase-${i + 1}" value="${esc(PHASE_LABELS[Math.min(i, PHASE_LABELS.length - 1)])}">
           <input class="rp-input" type="date" id="gw-md-date-${i + 1}">
+          <input class="rp-input" type="time" id="gw-md-start-new-${i + 1}" value="07:00">
+          <input class="rp-input" type="time" id="gw-md-end-new-${i + 1}" value="15:00">
           <input class="rp-input" id="gw-md-scope-${i + 1}" placeholder="e.g. ${i === 0 ? 'Demo existing patio, excavate and grade base' : i === 1 ? 'Install base material, compact, set edging' : 'Lay pavers, cut borders, final cleanup'}">
           <select class="rp-input" id="gw-md-setup-crew-${i + 1}">${crewOptions('')}</select>
           <input class="rp-input" type="number" min="1" id="gw-md-dep-${i + 1}" value="${i ? i : ''}" ${i ? '' : 'disabled'}>
@@ -148,6 +153,9 @@
       day_number: i + 1,
       scope: document.getElementById('gw-md-scope-' + (i + 1))?.value?.trim() || '',
       day_date: document.getElementById('gw-md-date-' + (i + 1))?.value || '',
+      start_time: document.getElementById('gw-md-start-new-' + (i + 1))?.value || '',
+      end_time: document.getElementById('gw-md-end-new-' + (i + 1))?.value || '',
+      scheduled_duration_minutes: 480,
       phase_name: document.getElementById('gw-md-phase-' + (i + 1))?.value?.trim() || PHASE_LABELS[Math.min(i, PHASE_LABELS.length - 1)],
       phase_sequence: i + 1,
       crew_id: document.getElementById('gw-md-setup-crew-' + (i + 1))?.value || '',
@@ -168,8 +176,11 @@
   window._gwMdSaveDay = async function (woId, dayN) {
     const day_date = document.getElementById('gw-md-shift-' + dayN)?.value || '';
     const crew_id = document.getElementById('gw-md-crew-' + dayN)?.value || '';
+    const start_time = document.getElementById('gw-md-start-' + dayN)?.value || '';
+    const end_time = document.getElementById('gw-md-end-' + dayN)?.value || '';
+    const schedule_locked = !!document.getElementById('gw-md-lock-' + dayN)?.checked;
     try {
-      await api('/api/work-orders/' + woId + '/days/' + dayN, { method: 'PATCH', body: { day_date, crew_id } });
+      await api('/api/work-orders/' + woId + '/days/' + dayN, { method: 'PATCH', body: { day_date, crew_id, start_time, end_time, schedule_locked, force: true } });
       _toast('Phase saved', 'success');
       if (typeof window._gwMdRefreshPanel === 'function') window._gwMdRefreshPanel();
       if (typeof window._sbRefresh === 'function') window._sbRefresh();
