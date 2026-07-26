@@ -15743,3 +15743,290 @@ h1.pl-title,
 .sb-lane-crew-name small { display:block; margin-top:3px; color:var(--gw-text-muted); font-size:8px; font-weight:600; }
 .sb-lane-crew-name i { display:block; width:76px; height:3px; margin-top:3px; overflow:hidden; border-radius:99px; background:var(--gw-border); }
 .sb-lane-crew-name i b { display:block; height:100%; background:var(--gw-pine-500); border-radius:inherit; }
+
+/* My Day professional structured dashboard */
+.gw-myday-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  grid-auto-rows: auto !important;
+  grid-auto-flow: row !important;
+  gap: 20px !important;
+  align-items: stretch !important;
+}
+.gw-myday-widget {
+  grid-row: auto !important;
+  align-self: stretch;
+  min-width: 0;
+}
+.gw-myday-widget-body {
+  height: auto !important;
+  min-height: 100%;
+  overflow: visible !important;
+  container-type: inline-size;
+}
+.gw-myday-widget-body > .card,
+.gw-myday-widget-body > section.card,
+.gw-myday-widget-body > .gw-today-fin-card,
+.gw-myday-widget-body > div > .card {
+  height: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(31,42,43,.055);
+  padding: 18px;
+}
+.gw-myday-widget-body .section-head {
+  min-height: 42px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gw-line, #E2EAE9);
+}
+.gw-myday-widget-body .section-head h2,
+.gw-myday-widget-body .gw-today-fin-title {
+  font-size: 16px;
+  line-height: 1.25;
+  letter-spacing: -.015em;
+  text-transform: none;
+}
+/* Record-list widgets must never collapse into unusable one-character columns. */
+.gw-myday-widget[data-widget-id="recent"],
+.gw-myday-widget[data-widget-id="staleLeads"],
+.gw-myday-widget[data-widget-id="recentWins"] { grid-column: span 3 !important; }
+.gw-myday-widget[data-widget-id="tasks"] { grid-column: span 4 !important; }
+.gw-myday-widget[data-widget-id="calendar"] { grid-column: span 2 !important; }
+.gw-myday-widget[data-widget-id="pipeStrip"],
+.gw-myday-widget[data-widget-id="activity"],
+.gw-myday-widget[data-widget-id="reviews"] { grid-column: span 6 !important; }
+.gw-myday-widget-body h2,
+.gw-myday-widget-body h3,
+.gw-myday-widget-body .mini-row > *,
+.gw-myday-widget-body .opp-card > * {
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  hyphens: none;
+}
+.gw-myday-widget-body .mini-row strong,
+.gw-myday-widget-body .opp-card h3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gw-myday-widget-body .mini-row em,
+.gw-myday-widget-body .opp-card p {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Keep lists concise; full records remain available from their destination pages. */
+.gw-myday-widget[data-widget-id="recent"] .mini-row:nth-of-type(n+6),
+.gw-myday-widget[data-widget-id="staleLeads"] .mini-row:nth-of-type(n+7),
+.gw-myday-widget[data-widget-id="recentWins"] .mini-row:nth-of-type(n+7) { display:none; }
+/* Arbitrary pixel-height resize caused nested scrollbars and stale empty space. */
+.gw-myday-grip--s,
+.gw-myday-grip--se { display:none !important; }
+.gw-myday-grip--e { top:44px; bottom:12px; }
+.gw-myday-edit-banner { position:sticky; top:68px; z-index:8; box-shadow:0 8px 22px rgba(31,42,43,.08); }
+.gw-myday-widget--edit { animation:none; }
+.gw-myday-placeholder { min-height:72px; display:grid; place-items:center; }
+@media (max-width: 1180px) and (min-width: 769px) {
+  .gw-myday-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  .gw-myday-widget { grid-column:span 1 !important; }
+  .gw-myday-widget[data-widget-id="tasks"],
+  .gw-myday-widget[data-widget-id="pipeStrip"],
+  .gw-myday-widget[data-widget-id="activity"],
+  .gw-myday-widget[data-widget-id="reviews"],
+  .gw-myday-widget[data-widget-id="jobsToday"] { grid-column:1 / -1 !important; }
+}
+@media (max-width:768px) {
+  .gw-myday-grid { grid-template-columns:1fr !important; gap:14px !important; }
+  .gw-myday-widget { grid-column:1 / -1 !important; }
+}
+@media print {
+  .gw-myday-modes,.gw-myday-customize-btn,.gw-myday-edit-banner,.gw-myday-library { display:none !important; }
+  .gw-myday-grid { display:block !important; }
+  .gw-myday-widget { break-inside:avoid; margin-bottom:16px; }
+}
+.gw-myday-widget--compact .gw-myday-widget-body > .card,
+.gw-myday-widget--compact .gw-myday-widget-body > section.card,
+.gw-myday-widget--compact .gw-myday-widget-body > .gw-today-fin-card,
+.gw-myday-widget--compact .gw-myday-widget-body > div > .card { padding:13px; }
+.gw-myday-widget--compact .mini-row:nth-of-type(n+4),
+.gw-myday-widget--compact .opp-card:nth-of-type(n+4),
+.gw-myday-widget--compact .gw-myday-job-row:nth-of-type(n+4) { display:none; }
+.gw-myday-widget--compact .gw-today-fin-divisions { display:none; }
+.gw-myday-widget--expanded { grid-column:1 / -1 !important; }
+.gw-myday-widget--expanded .gw-myday-widget-body > .card,
+.gw-myday-widget--expanded .gw-myday-widget-body > section.card { padding:22px; }
+
+/* Schedule board layout system: consistent sizing and restrained status color. */
+.sched-shell {
+  --sb-frame-width: 1440px;
+  --sb-card-bg: #fff;
+  padding: 18px 0 40px;
+}
+.sched-shell .gwp-shell,
+.sched-shell > .sb-crew-bar,
+.sched-shell > .sb-grid-wrap {
+  width: min(calc(100% - 32px), var(--sb-frame-width));
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
+}
+.sched-shell .gwp-shell { padding: 0 !important; }
+.sched-shell .gwp-header {
+  position: relative;
+  top: auto;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) auto;
+  align-items: center;
+  gap: 14px 24px;
+  padding: 16px 18px !important;
+  margin-bottom: 12px !important;
+}
+.sched-shell .gwp-header-left,
+.sched-shell .gwp-header-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sched-shell .gwp-header-left { flex-wrap: wrap; }
+.sched-shell .gwp-header-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.sched-shell .gwp-title { font-size: clamp(24px, 2.3vw, 34px); line-height: 1; }
+.sched-shell .sb-nav-controls { min-width: 0; }
+.sched-shell .sb-period-label { min-width: 176px; font-variant-numeric: tabular-nums; }
+.sched-shell .sb-view-toggle { flex: 0 0 auto; }
+.sched-shell .sb-view-btn,
+.sched-shell .sb-density-select,
+.sched-shell .gwp-btn-ghost,
+.sched-shell .gwp-btn-primary { min-height: 36px; white-space: nowrap; }
+.sched-shell .gwp-kpi-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px !important;
+}
+.sched-shell .gwp-kpi-card {
+  min-width: 0;
+  min-height: 104px;
+  padding: 16px;
+  box-sizing: border-box;
+}
+.sched-shell .gwp-kpi-label { white-space: normal; line-height: 1.2; }
+.sched-shell > .sb-crew-bar {
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid rgba(26,71,64,.10);
+  border-radius: 12px 12px 0 0;
+  box-shadow: none;
+}
+.sb-crew-bar-chips,
+.sb-crew-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sched-shell .sb-crew-toggle,
+.sched-shell .sb-crew-manage-btn,
+.sched-shell .sb-crew-lane-btn { min-height: 34px; box-sizing: border-box; }
+.sched-shell > .sb-grid-wrap {
+  padding: 12px 12px 18px;
+  border: 1px solid rgba(26,71,64,.10);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(17,57,49,.06);
+}
+
+/* Equal calendar columns. Horizontal scrolling is preferable to squeezed days. */
+.sched-shell .sb-week-grid {
+  grid-template-columns: repeat(7, minmax(160px, 1fr));
+  min-width: 1120px;
+  gap: 6px;
+}
+.sched-shell .sb-lane-wrap { min-width: 1280px; border-radius: 8px; }
+.sched-shell .sb-lane-grid { grid-template-columns: 126px repeat(7, minmax(164px, 1fr)); }
+.sched-shell .sb-lane-day-head { min-height: 58px; box-sizing: border-box; }
+.sched-shell .sb-lane-label { padding: 10px 9px; align-items: flex-start; }
+.sched-shell .sb-lane-cell { min-height: 112px; padding: 7px; gap: 6px; background: #fff; }
+.sched-shell .sb-month-grid {
+  grid-template-columns: repeat(7, minmax(132px, 1fr));
+  min-width: 924px;
+  gap: 4px;
+}
+.sched-shell .sb-month-cell { min-height: 112px; padding: 7px; box-sizing: border-box; }
+.sched-shell .sb-month-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 6px;
+  background: #fff;
+  border: 1px solid var(--gw-border);
+  border-left-width: 3px !important;
+}
+.sched-shell .sb-month-chip--hold,
+.sched-shell .sb-month-chip--multiday { background: #fff; }
+
+/* Event surfaces stay neutral. Status is communicated by a dot and small badge. */
+.sched-shell .sb-job-card,
+.sched-shell .sb-job-card.wo-status--scheduled,
+.sched-shell .sb-job-card.wo-status--inprogress,
+.sched-shell .sb-job-card.wo-status--completed,
+.sched-shell .sb-job-card.wo-status--hold,
+.sched-shell .sb-job-card.wo-status--onhold,
+.sched-shell .sb-job-card.wo-status--cancelled {
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--sb-card-bg) !important;
+  border: 1px solid var(--gw-border) !important;
+  border-left: 4px solid var(--crew-color, #94a3b8) !important;
+  outline: none;
+  box-shadow: 0 2px 6px rgba(17,57,49,.07);
+  color: var(--gw-text);
+}
+.sched-shell .sb-job-card:hover { border-color: color-mix(in srgb, var(--crew-color, #94a3b8) 55%, var(--gw-border)) !important; }
+.sched-shell .sb-card-top { min-width: 0; flex-wrap: nowrap; }
+.sched-shell .sb-card-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-shell .sb-card-time { font-variant-numeric: tabular-nums; }
+.sched-shell .sb-card-client {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.sched-shell .sb-card-status {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sched-shell .sb-job-card--multiday { box-shadow: 0 2px 6px rgba(17,57,49,.07), inset 0 0 0 1px color-mix(in srgb,var(--md-color) 18%,transparent); }
+.sched-shell .sb-day-body:has(.sb-job-card--multiday),
+.sched-shell .sb-lane-cell:has(.sb-job-card--multiday) { background-image: none; }
+.sched-shell .sb-time-event {
+  background: #fff;
+  border-color: var(--gw-border);
+  border-left-color: var(--event-color);
+  box-shadow: 0 2px 7px rgba(17,57,49,.10);
+}
+.sched-shell .sb-time-event-time { display: flex; align-items: center; gap: 6px; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+.sched-shell .sb-time-event .sb-traffic-dot { width: 7px !important; height: 7px !important; box-shadow: none !important; animation: none !important; }
+.sched-shell .sb-time-resize { background: linear-gradient(transparent, rgba(17,57,49,.08)); }
+
+@media (max-width: 1180px) {
+  .sched-shell .gwp-header { grid-template-columns: 1fr; }
+  .sched-shell .gwp-header-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .sched-shell .gwp-kpi-row { grid-template-columns: repeat(3, minmax(0,1fr)); }
+}
+@media (max-width: 768px) {
+  .sched-shell { padding-top: 10px; }
+  .sched-shell .gwp-shell,
+  .sched-shell > .sb-crew-bar,
+  .sched-shell > .sb-grid-wrap { width: calc(100% - 20px); }
+  .sched-shell .gwp-header { padding: 14px !important; }
+  .sched-shell .gwp-header-left { align-items: flex-start; }
+  .sched-shell .sb-period-label { min-width: 138px; text-align: left; }
+  .sched-shell .gwp-kpi-row { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+  .sched-shell .gwp-kpi-card { min-height: 88px; padding: 12px; }
+}

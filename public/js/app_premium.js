@@ -2242,6 +2242,10 @@ const _GW_MYDAY_MODES = [
     desc:'Filling the pipeline — leads, proposals, daily start-up and activity targets',
     order:['pipeStrip','tasks','checklist','recent','staleLeads','activity'],
     spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 } },
+  { id:'focus', label:'Focus', icon:'target',
+    desc:'Only the work that needs attention now — tasks, calendar and jobs',
+    order:['tasks','calendar','jobsToday'],
+    spans:{ tasks:4, calendar:2, jobsToday:6 } },
 ];
 function _gwMyDayModeKey(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
@@ -2256,6 +2260,7 @@ function _gwMyDayGetMode(){
 window.gwMyDaySetMode = function(id){
   if (!_GW_MYDAY_MODES.some(x => x.id === id)) return;
   try { localStorage.setItem(_gwMyDayModeKey(), id); } catch(e) {}
+  _gwMyDayPersistLayout();
   window._gwMyDayEditing = false; window._gwMyDayLibOpen = false;
   _gwTodayRender();
   const m = _GW_MYDAY_MODES.find(x => x.id === id);
@@ -2296,13 +2301,47 @@ function _gwMyDayResolveLayout(ctx){
   }
   const spans   = (saved && saved.spans   && typeof saved.spans   === 'object') ? saved.spans   : {};
   const heights = (saved && saved.heights && typeof saved.heights === 'object') ? saved.heights : {};
-  return { order, hidden, spans, heights };
+  const densities = (saved && saved.densities && typeof saved.densities === 'object') ? saved.densities : {};
+  return { order, hidden, spans, heights, densities };
 }
 function _gwMyDaySaveLayout(l){
   try {
     const seen = _GW_MYDAY_WIDGETS.map(w => w.id); // mark all current widgets as seen
-    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans, heights: l.heights || {}, seen }));
+    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans, heights: l.heights || {}, densities:l.densities || {}, seen }));
   } catch(e) {}
+  _gwMyDayPersistLayout();
+}
+function _gwMyDayRemoteKey(){
+  const r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
+  return 'myday_layout_' + ((r && r.id) || 'anon');
+}
+function _gwMyDayPersistLayout(){
+  let layout = {};
+  try { layout = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || '{}'); } catch(e) {}
+  layout.mode = _gwMyDayGetMode();
+  clearTimeout(window._gwMyDayPersistTimer);
+  window._gwMyDayPersistTimer = setTimeout(() => fetch('/api/settings', {
+    method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ key:_gwMyDayRemoteKey(), value:JSON.stringify(layout) })
+  }).catch(()=>{}), 250);
+}
+function _gwMyDayHydrateLayout(){
+  const key = _gwMyDayRemoteKey();
+  if (window._gwMyDayHydrated === key || window._gwMyDayHydrating === key) return;
+  window._gwMyDayHydrating = key;
+  fetch('/api/settings', { credentials:'include' }).then(r=>r.json()).then(j=>{
+    const settings = (j && (j.data ?? j)) || {};
+    if (settings[key]) {
+      const remote = JSON.parse(settings[key]);
+      const mode = remote.mode;
+      delete remote.mode;
+      localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify(remote));
+      if (_GW_MYDAY_MODES.some(m=>m.id===mode)) localStorage.setItem(_gwMyDayModeKey(), mode);
+    }
+    window._gwMyDayHydrated = key;
+    window._gwMyDayHydrating = '';
+    if (window._currentView === 'today') _gwTodayRender();
+  }).catch(()=>{ window._gwMyDayHydrated = key; window._gwMyDayHydrating = ''; });
 }
 function _gwMyDayCurLayout(){
   // Lightweight role ctx just for layout mutations (allowed() predicates)
@@ -2319,12 +2358,17 @@ function _gwMyDaySpanOf(id, layout){
   const s = Number(layout.spans[id]);
   return (_GW_MYDAY_SPANS.includes(s)) ? s : (w ? w.span : 6);
 }
+function _gwMyDayDensityOf(id, layout){
+  const density = layout.densities && layout.densities[id];
+  return ['compact','standard','expanded'].includes(density) ? density : 'standard';
+}
 function _gwMyDayRenderWidget(id, ctx, layout, editing){
   const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return '';
   if (layout.hidden.includes(id)) return ''; // removed widgets live in the library panel
   const html = w.render(ctx) || '';
   if (!html && !editing) return '';
   const span = _gwMyDaySpanOf(id, layout);
+  const density = _gwMyDayDensityOf(id, layout);
   const h = Number(layout.heights && layout.heights[id]);
   const hStyle = (h && h >= 120) ? `height:${h}px;overflow-y:auto;` : '';
   const bar = editing ? `
@@ -2334,6 +2378,7 @@ function _gwMyDayRenderWidget(id, ctx, layout, editing){
         <button onclick="gwMyDayMove('${id}',-1)" title="Move earlier">\u2190</button>
         <button onclick="gwMyDayMove('${id}',1)" title="Move later">\u2192</button>
         <button onclick="gwMyDaySpanCycle('${id}')" title="Cycle width (or drag the right edge)">${_GW_MYDAY_SPAN_LABEL[span] || ''} width</button>
+        <button onclick="gwMyDayDensityCycle('${id}')" title="Change content density">${density[0].toUpperCase()+density.slice(1)}</button>
         ${h ? `<button onclick="gwMyDayResetHeight('${id}')" title="Reset to automatic height">Auto height</button>` : ''}
         <button class="gw-myday-remove-btn" onclick="gwMyDayToggleHide('${id}')" title="Remove from My Day (find it again in the widget library)">\u00D7 Remove</button>
       </span>
@@ -2342,7 +2387,7 @@ function _gwMyDayRenderWidget(id, ctx, layout, editing){
     <div class="gw-myday-grip gw-myday-grip--e"  data-grip="e"  data-widget-id="${id}" title="Drag to resize width"></div>
     <div class="gw-myday-grip gw-myday-grip--s"  data-grip="s"  data-widget-id="${id}" title="Drag to resize height"></div>
     <div class="gw-myday-grip gw-myday-grip--se" data-grip="se" data-widget-id="${id}" title="Drag to resize"></div>` : '';
-  return `<div class="gw-myday-widget${editing ? ' gw-myday-widget--edit' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true"' : ''}>
+  return `<div class="gw-myday-widget gw-myday-widget--${density}${editing ? ' gw-myday-widget--edit' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true" tabindex="0"' : ''}>
     ${bar}
     <div class="gw-myday-widget-body" style="${hStyle}">${html || `<div class="gw-myday-placeholder">${w.label} \u2014 nothing to show right now</div>`}</div>
     ${grips}
@@ -2381,6 +2426,7 @@ window.gwMyDayDone = function(){
 };
 window.gwMyDayReset = function(){
   try { localStorage.removeItem(_gwMyDayLayoutKey()); } catch(e) {}
+  _gwMyDaySaveLayout(_gwMyDayCurLayout());
   _gwTodayRender();
   if (typeof showToast === 'function') showToast('My Day layout reset to default');
 };
@@ -2399,6 +2445,14 @@ window.gwMyDaySpanCycle = function(id){
   const l = _gwMyDayCurLayout();
   const cur = _gwMyDaySpanOf(id, l);
   l.spans[id] = _GW_MYDAY_SPANS[(_GW_MYDAY_SPANS.indexOf(cur) + 1) % _GW_MYDAY_SPANS.length];
+  _gwMyDaySaveLayout(l); _gwTodayRender();
+};
+window.gwMyDayDensityCycle = function(id){
+  const l = _gwMyDayCurLayout();
+  const options = ['compact','standard','expanded'];
+  const current = _gwMyDayDensityOf(id, l);
+  l.densities = l.densities || {};
+  l.densities[id] = options[(options.indexOf(current) + 1) % options.length];
   _gwMyDaySaveLayout(l); _gwTodayRender();
 };
 window.gwMyDayResetHeight = function(id){
@@ -2467,6 +2521,11 @@ function _gwMyDayBindDnD(){
   const grid = document.getElementById('gw-myday-grid'); if (!grid) return;
   let dragId = null;
   grid.querySelectorAll('.gw-myday-widget').forEach(el => {
+    el.addEventListener('keydown', e => {
+      if (!e.altKey || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
+      e.preventDefault();
+      gwMyDayMove(el.dataset.widgetId, ['ArrowLeft','ArrowUp'].includes(e.key) ? -1 : 1);
+    });
     el.addEventListener('dragstart', e => {
       if (window._gwMyDayResizing) { e.preventDefault(); return; }
       dragId = el.dataset.widgetId;
@@ -2738,6 +2797,7 @@ function _gwTodayRender() {
     const d = window._d1SessionRep;
     _todayRep = { id: d.id, name: d.name, role: d.role || 'admin', email: d.email, color: d.color };
   }
+  _gwMyDayHydrateLayout();
   const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
   const _isOM     = _todayRep && _todayRep.role === 'office_manager';
   const _isField  = _todayRep && (_GW_FIELD_ROLES || ['foreman','laborer','field_supervisor']).includes(_todayRep.role);
@@ -2879,7 +2939,7 @@ function _gwTodayRender() {
   const _libOpen = _editing && !!window._gwMyDayLibOpen;
   const _editBar = _editing ? `
     <div class="gw-myday-edit-banner">
-      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag to reorder, drag the right/bottom edges to resize, remove what you don't need. Saved just for you.</span>
+      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag to reorder, choose a supported width and detail level, or remove what you do not need. Saved across your devices.</span>
       <span class="gw-myday-edit-banner-btns">
         <button class="secondary-btn small${_libOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayToggleLib()">${_libOpen ? 'Close Library' : '+ Widget Library'}</button>
         <button class="secondary-btn small" onclick="gwMyDayReset()">Reset to Default</button>
@@ -15034,11 +15094,17 @@ function _p6WOStatusLabel(s) {
 // Traffic-light dot for schedule cards: yellow = hold (pre-acceptance),
 // green = confirmed/scheduled, red = cancelled/declined.
 function _p6WOTrafficDot(s) {
-  const color = s === 'hold' ? '#EAB308' : (s === 'cancelled' ? '#DC2626' : (s === 'completed' ? '#16A34A' : (s === 'in-progress' ? '#2563EB' : '#22C55E')));
+  const color = _sbStatusColor(s);
   const title = s === 'hold' ? 'HOLD — waiting for the client to accept the estimate' : (s === 'cancelled' ? 'Cancelled / declined' : 'Confirmed');
   return `<span class="sb-traffic-dot" title="${title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${color};flex:0 0 auto;${s==='hold' ? 'box-shadow:0 0 0 3px rgba(234,179,8,.25);animation:sbHoldPulse 1.8s ease-in-out infinite' : ''}"></span>`;
 }
 window._p6WOTrafficDot = _p6WOTrafficDot;
+function _sbStatusColor(s) {
+  return s === 'hold' || s === 'on-hold' ? '#D99A05'
+    : s === 'cancelled' ? '#C94B43'
+    : s === 'in-progress' ? '#3978C5'
+    : '#239A5B';
+}
 function _p6AssetLabel(s) {
   return { active:'Active', idle:'Idle', maintenance:'In Maintenance',
     retired:'Retired', rented:'Rented Out', pending:'Pending',
@@ -15377,10 +15443,10 @@ function _sbTimelineHtml(sb, visibleWOs, allCrews) {
       ${jobs.map(w=>{
         const r=_sbEventRange(w), top=Math.max(0,(r.start-start)*ppm), h=Math.max(32,Math.min(height-top,r.duration*ppm));
         const color=w.is_multiday||w.md_day_number?_sbMdColor(w.id):(w.crew_color||cr.color);
+        const statusColor=_sbStatusColor(w.status);
         const conflict=window._sbConflicts?.get(`${w.id}:${w.md_day_number||0}`);
-        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}" style="top:${top}px;height:${h}px;--event-color:${color}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
-          <div class="sb-time-event-time">${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}
-          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
+        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--status-color:${statusColor}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
+          <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
         </article>`;
       }).join('')}
     </div></div>`;
@@ -15433,9 +15499,9 @@ function _sbJobCard(wo, crews, draggable) {
   const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
   const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
+  const statusColor = _sbStatusColor(wo.status);
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" style="border-left:3px solid ${crewColor};${isMd ? '--md-color:' + mdColor : ''}"
-        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -15627,8 +15693,7 @@ function _sbRender() {
       const dots = jobs.slice(0,5).map(wo => {
         // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
         const isMd = !!(wo.is_multiday || wo.md_day_number);
-        const dotColor = isMd ? _sbMdColor(wo.id) : (wo.status === 'hold' ? '#EAB308' : (wo.status === 'cancelled' ? '#DC2626' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8')));
-        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
+        const dotColor = _sbStatusColor(wo.status);        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
         return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}${isMd ? ' sb-month-dot--multiday' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${escapeHtml(mdTitle)}${wo.status==='hold' ? ' - HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
@@ -15642,8 +15707,7 @@ function _sbRender() {
           ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
           ${jobs.slice(0,3).map(wo=>{
             const isMd = !!(wo.is_multiday || wo.md_day_number);
-            const crewColor = isMd ? _sbMdColor(wo.id) : (wo.status === 'hold' ? '#EAB308' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8'));
-            const mdText = isMd ? `D${wo.md_day_number||'?'} ${wo.md_phase_name || ''}`.trim() + ' - ' : '';
+            const crewColor = isMd ? _sbMdColor(wo.id) : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');            const mdText = isMd ? `D${wo.md_day_number||'?'} ${wo.md_phase_name || ''}`.trim() + ' - ' : '';
             return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}${isMd ? ' sb-month-chip--multiday' : ''}" style="border-left:2px solid ${crewColor};${isMd ? '--md-color:' + crewColor : ''}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
               ${_p6WOTrafficDot(wo.status)} ${escapeHtml((mdText + (wo.client_name||wo.title||'Job')).slice(0,26))}
             </div>`;
