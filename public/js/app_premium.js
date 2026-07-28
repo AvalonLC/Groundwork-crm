@@ -879,6 +879,7 @@ function gwSales(tab) {
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
+    {id:'process',        label:'Sales Process Builder'},
   ], _GW_COMMS_HUB_TABS.includes(tab) ? 'communications' : (tab === 'proposals' ? 'estimates' : tab));
   if (tab === 'pipeline')            pipeline();
   else if (tab === 'lead')           lead();
@@ -887,6 +888,7 @@ function gwSales(tab) {
   else if (tab === 'estimates')      (typeof estimates==='function') ? estimates() : ((typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates'));
   else if (tab === 'proposals')      (typeof proposals==='function') ? proposals() : _gwTabStub('Proposals');
   else if (_GW_COMMS_HUB_TABS.includes(tab)) communicationsHub(tab);
+  else if (tab === 'process')        process('builder');
   else if (tab === 'gwRecords')      lead();
   else pipeline();
 }
@@ -3180,13 +3182,13 @@ function pipeline(selectedId){
   const _isMobilePipe = window.innerWidth <= 768;
   const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))}))
     .filter(g => !_isMobilePipe || g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
-  // Catch-all: leads with legacy/unknown status get bucketed into the first stage
+  // Catch-all: an unknown legacy label is never equivalent to the first stage.
+  // Keep these records visible, searchable, editable, and assigned while clearly
+  // excluding them from stage-specific interpretation until a reviewer maps them.
   const knownStatuses = new Set(filters);
-  const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)));
+  const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)).map(o => ({...o, _needsRestaging:true})));
   if (orphanOpps.length) {
-    const firstGroup = grouped.find(g => g.status === filters[0]);
-    if (firstGroup) firstGroup.items = sortOpps([...orphanOpps, ...firstGroup.items]);
-    else grouped.unshift({status: filters[0], items: orphanOpps});
+    grouped.push({status:'Needs Restaging', items:orphanOpps, needsRestaging:true});
   }
 
   const _repFilterHtml = (()=>{
@@ -3281,6 +3283,7 @@ function pipeline(selectedId){
                       ${overdue ? `<span class="gw-pipe-badge gw-pipe-badge--overdue">OVERDUE</span>` : stale ? `<span class="gw-pipe-badge gw-pipe-badge--stale">${daysSince}d</span>` : ''}
                     </div>
                     <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
+                    ${o._needsRestaging ? `<div class="gw-pipe-badge gw-pipe-badge--overdue" style="margin:6px 0">Original stage: ${escapeHtml(o.status||'(blank)')}</div>` : ''}
                     <div class="gw-pipe-card-bottom">
                       ${o.jobValue ? `<span class="gw-pipe-card-val">${money(Number(o.jobValue))}</span>` : ''}
                       ${o.nextFollowUp ? `<span class="gw-pipe-card-date" style="display:inline-flex;align-items:center;gap:4px">${(typeof gwIcon==='function')?gwIcon('calendar',12):''} ${prettyDate(o.nextFollowUp)}</span>` : ''}
@@ -3294,8 +3297,8 @@ function pipeline(selectedId){
         <div class="gw-kanban-wrap mt">
           <div class="kanban" id="gw-kanban-board">
             ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
-              ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"
-            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+              ${g.needsRestaging ? '' : 'ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"'}
+            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
           </div>
           <div class="gw-scroll-more gw-scroll-more--hidden" id="gw-scroll-more">
             <button type="button" class="gw-scroll-more-btn" onclick="gwPipeScrollRight()">
@@ -7413,12 +7416,16 @@ window.mergeTemplate = mergeTemplate;
 
 // ─── Sales Process ────────────────────────────────────────────────────────────
 function process(stageId){
+  if (stageId === 'builder') return salesProcessBuilder();
   const sp = data.salesProcess;
   if(stageId){ const s = data.stages.find(x=>x.id===Number(stageId)); if(s) return renderStage(s); }
   const stepColors = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
   view.innerHTML = `
 <div class="eyebrow">Operating System</div>
-<h1 style="color:var(--ink)">Avalon Sales Process</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <h1 style="color:var(--ink);margin-bottom:0">Avalon Sales Process</h1>
+  <button class="primary-btn" onclick="show('process','builder')">Sales Process Builder</button>
+</div>
 <p class="lede">${escapeHtml(sp.subtitle)}</p>
 
 <div style="display:flex;align-items:center;gap:10px;margin:24px 0 8px">
@@ -7521,6 +7528,56 @@ ${data.stages.map(s=>{
     panel.scrollIntoView({behavior:'smooth', block:'nearest'});
   };
 }
+
+async function salesProcessBuilder(){
+  view.innerHTML = '<div class="card"><h2>Sales Process Builder</h2><p class="muted">Loading company process...</p></div>';
+  try {
+    const payload = await DB.salesProcess.get();
+    const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
+    const canEdit = currentRep && ['admin','office_manager'].includes(currentRep.role);
+    const tabs = ['Process Overview','Stages','Internal Statuses','Qualification Fields','Checklists','Call Guides','Automations','Email Templates','Academy Training','AI Process Assistant','Versions and Publishing'];
+    if (!payload.process) {
+      view.innerHTML = `<div class="eyebrow">Sales</div><h1>Sales Process Builder</h1>
+        <div class="card"><h2>No normalized process installed</h2>
+        <p>The legacy process remains live. Adopting the Groundwork template creates a company-owned draft only and does not change opportunities or publishing.</p>
+        ${canEdit ? '<button class="primary-btn" onclick="gwAdoptGroundworkTemplate()">Start with Groundwork field-service template</button>' : '<p class="muted">A company administrator can create the first draft.</p>'}</div>`;
+      return;
+    }
+    const p = payload.process;
+    const stages = payload.stages || [];
+    view.innerHTML = `<div class="eyebrow">Sales</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><h1 style="margin-bottom:4px">Sales Process Builder</h1><p class="lede">${escapeHtml(p.name||'Company Sales Process')} · Version ${Number(p.version_number||1)} · ${escapeHtml(p.lifecycle||'draft')}</p></div>
+        <button class="secondary-btn" onclick="show('process')">View legacy guide</button>
+      </div>
+      <div class="tabs" style="overflow:auto;white-space:nowrap">${tabs.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="document.querySelectorAll('.spb-panel').forEach((x,j)=>x.style.display=j===${i}?'block':'none');this.parentElement.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));this.classList.add('active')">${escapeHtml(t)}</button>`).join('')}</div>
+      <section class="spb-panel card"><h2>Process Overview</h2><p>${escapeHtml(p.description||'A shared process definition for Pipeline, Stage Guide, Call Companion, Academy, reporting, and automation.')}</p>
+        <div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Editing</strong><p>${canEdit&&p.lifecycle==='draft'?'Allowed in draft':'Read only'}</p></div></div></section>
+      <section class="spb-panel card" style="display:none"><h2>Stages</h2>${stages.map(s=>`<article style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${Number(s.display_order)}. ${escapeHtml(s.display_name)}</strong><span class="badge">${escapeHtml(s.semantic_type)}</span></div><p class="muted">${escapeHtml(s.description||'')}</p><small>Customer milestone: ${escapeHtml(s.customer_milestone||'Not configured')} · Expected duration: ${Number(s.expected_duration_days||0)} days</small></article>`).join('')}</section>
+      ${tabs.slice(2,10).map(t=>`<section class="spb-panel card" style="display:none"><h2>${escapeHtml(t)}</h2><p class="muted">This building block is version-owned. Configure it in a draft; published versions are immutable.</p></section>`).join('')}
+      <section class="spb-panel card" style="display:none"><h2>Versions and Publishing</h2>
+        <p>Publishing requires validation, a reviewed mapping for every opportunity, reconciliation, and explicit administrator confirmation. AI cannot publish.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${canEdit&&p.lifecycle==='draft'?`<button class="secondary-btn" onclick="gwValidateSalesProcess('${escapeHtml(p.id)}')">Validate draft</button><button class="secondary-btn" onclick="gwCreateMigrationProposal('${escapeHtml(p.id)}')">Map existing opportunities</button>`:''}</div>
+        <div id="spb-action-result" class="muted" style="margin-top:12px"></div></section>`;
+  } catch (e) {
+    view.innerHTML = `<div class="card danger"><h2>Sales Process Builder unavailable</h2><p>${escapeHtml(e.message||String(e))}</p></div>`;
+  }
+}
+window.salesProcessBuilder = salesProcessBuilder;
+window.gwAdoptGroundworkTemplate = async function(){
+  const result = await DB.salesProcess.adoptTemplate('tpl_groundwork_field_service_v1', 'Groundwork Field-Service Sales');
+  await salesProcessBuilder(result.version_id);
+};
+window.gwValidateSalesProcess = async function(versionId){
+  const result = await DB.salesProcess.validate(versionId);
+  const el = document.getElementById('spb-action-result');
+  if (el) el.textContent = result.valid ? `Validation passed with ${result.warnings.length} warning(s).` : `Validation failed: ${result.errors.join('; ')}`;
+};
+window.gwCreateMigrationProposal = async function(versionId){
+  const result = await DB.salesProcess.propose(versionId);
+  const el = document.getElementById('spb-action-result');
+  if (el) el.textContent = `Mapping batch ${result.migration_batch_id} created. ${result.pending} of ${result.total} records require review. No live records were changed.`;
+};
 
 function renderStage(s){
   const stageChecklist = (window.AVALON_DATA.checklists||[]).find(c=>c.stage===s.id);
