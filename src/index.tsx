@@ -1215,13 +1215,15 @@ app.get('/api/sales-process', requireAuth, async (c) => {
     || (versions.results as any[]).find(v => v.lifecycle === 'published')
     || (versions.results as any[]).find(v => v.lifecycle === 'draft') || null
   if (!version) return json(c, { process: null, versions: [], stages: [], requirements: [], guides: [], resources: [] })
-  const [stages, requirements, guides, resources] = await Promise.all([
+  const [stages, requirements, guides, resources, transitions, skills] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id = ? AND process_version_id = ? ORDER BY display_order').bind(companyId, version.id).all(),
     c.env.DB.prepare('SELECT * FROM sales_stage_requirements WHERE company_id = ? AND process_version_id = ? ORDER BY stage_id, display_order').bind(companyId, version.id).all(),
     c.env.DB.prepare('SELECT * FROM sales_stage_guides WHERE company_id = ? AND process_version_id = ? ORDER BY stage_id, display_order').bind(companyId, version.id).all(),
-    c.env.DB.prepare('SELECT * FROM sales_process_resources WHERE company_id = ? AND process_version_id = ? ORDER BY resource_type, name').bind(companyId, version.id).all()
+    c.env.DB.prepare('SELECT * FROM sales_process_resources WHERE company_id = ? AND process_version_id = ? ORDER BY resource_type, name').bind(companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_transitions WHERE company_id = ? AND process_version_id = ? AND active=1').bind(companyId, version.id).all(),
+    c.env.DB.prepare("SELECT * FROM sales_academy_skills WHERE active=1 AND (company_id=? OR (company_id='__global__' AND is_global=1)) ORDER BY title").bind(companyId).all()
   ])
-  return json(c, { process: version, versions: versions.results, stages: stages.results, requirements: requirements.results, guides: guides.results, resources: resources.results })
+  return json(c, { process: version, versions: versions.results, stages: stages.results, requirements: requirements.results, guides: guides.results, resources: resources.results, transitions: transitions.results, academy_skills: skills.results })
 })
 
 // Copy-on-adopt guarantees that tenant edits can never mutate the global template.
@@ -1263,6 +1265,25 @@ app.post('/api/sales-process/drafts/from-template', requireAuth, async (c) => {
   for (const outcome of templateOutcomes.results as any[]) {
     statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_outcomes (id,company_id,process_version_id,stage_id,stable_key,display_name,semantic_type,config_json) VALUES (?,?,?,?,?,?,?,?)`)
       .bind(`${versionId}_outcome_${outcome.stable_key}`, companyId, versionId, `${versionId}_closed`, outcome.stable_key, outcome.display_name, outcome.semantic_type, outcome.config_json || '{}'))
+  }
+  const stageIdByTemplateId = new Map((templateStages.results as any[]).map(source => [source.id, `${versionId}_${source.stable_key}`]))
+  const copyDefinitions = [
+    { table: 'sales_stage_requirements', columns: ['requirement_type','stable_key','label','description','required_level','display_order','config_json'] },
+    { table: 'sales_stage_guides', columns: ['guide_type','interaction_type','title','purpose','suggested_language','completion_guidance','display_order','config_json'] },
+    { table: 'sales_process_resources', columns: ['resource_type','stable_key','name','content_json','active'] }
+  ]
+  for (const definition of copyDefinitions) {
+    const sourceRows = await c.env.DB.prepare(`SELECT * FROM ${definition.table} WHERE company_id=? AND process_version_id=?`).bind('__global__', templateVersionId).all<any>()
+    for (const source of sourceRows.results as any[]) {
+      const columns = ['id','company_id','process_version_id','stage_id', ...definition.columns]
+      const values = [`${versionId}_${definition.table}_${uid()}`, companyId, versionId, source.stage_id ? stageIdByTemplateId.get(source.stage_id) || '' : '', ...definition.columns.map(column => source[column])]
+      statements.push(c.env.DB.prepare(`INSERT INTO ${definition.table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`).bind(...values))
+    }
+  }
+  const tenantStages = (templateStages.results as any[]).map(source => ({ ...source, id: stageIdByTemplateId.get(source.id) })).sort((a, b) => Number(a.display_order) - Number(b.display_order))
+  for (let index = 0; index < tenantStages.length - 1; index++) {
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_transitions (id,company_id,process_version_id,from_stage_id,to_stage_id) VALUES (?,?,?,?,?)`)
+      .bind(`${versionId}_transition_${index + 1}`, companyId, versionId, tenantStages[index].id, tenantStages[index + 1].id))
   }
   await c.env.DB.batch(statements)
   await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'sales_process', entityId: processId, entityLabel: String(body.name || template.name), action: 'draft_created', afterJson: { versionId, templateVersionId } })
@@ -1478,6 +1499,94 @@ app.post('/api/sales-process/publications/:publicationId/rollback', requireAuth,
   statements.push(c.env.DB.prepare(`INSERT INTO sales_process_publications (id,company_id,process_id,process_version_id,previous_version_id,migration_batch_id,action,actor_id,impact_json) VALUES (?,?,?,?,?,?,'rollback',?,?)`).bind(`pub_${uid()}`, companyId, publication.process_id, publication.previous_version_id, publication.process_version_id, publication.migration_batch_id, actorId, JSON.stringify({ restored_opportunities: history.results.length })))
   await c.env.DB.batch(statements)
   return json(c, { rolled_back_to: publication.previous_version_id, restored_opportunities: history.results.length })
+})
+
+// Company-scoped runtime context shared by Stage Guide, Call Companion, and Academy.
+app.get('/api/opportunities/:id/sales-context', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const opportunityId = c.req.param('id')
+  const opportunity = await c.env.DB.prepare('SELECT id,status,pipeline_stage,sales_process_stage_id FROM opportunities WHERE id=? AND company_id=?').bind(opportunityId, companyId).first<any>()
+  if (!opportunity) return err(c, 'Opportunity not found', 404)
+  const assignment = await c.env.DB.prepare(`SELECT a.*,v.lifecycle FROM sales_stage_assignments a
+    JOIN sales_process_versions v ON v.id=a.process_version_id AND v.company_id=a.company_id
+    WHERE a.company_id=? AND a.opportunity_id=? AND v.lifecycle='published' LIMIT 1`).bind(companyId, opportunityId).first<any>()
+  if (!assignment) {
+    const status = String(opportunity.status || '')
+    const pipelineStage = String(opportunity.pipeline_stage || '')
+    const conflict = Boolean(status && pipelineStage && status !== pipelineStage)
+    const legacyLabel = status || pipelineStage
+    return json(c, {
+      normalized: false,
+      legacy_label: legacyLabel,
+      needs_restaging: conflict || !LEGACY_STAGE_MAP[legacyLabel],
+      restaging_reason: conflict ? 'conflicting_legacy_fields' : (!LEGACY_STAGE_MAP[legacyLabel] ? 'unknown_legacy_label' : '')
+    })
+  }
+  const stage = await c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND id=?').bind(companyId, assignment.process_version_id, assignment.stage_id).first<any>()
+  if (!stage) return json(c, { normalized: false, legacy_label: opportunity.status || opportunity.pipeline_stage || '', needs_restaging: true })
+  const [requirements, guides, resources, transitions, skills] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM sales_stage_requirements WHERE company_id=? AND process_version_id=? AND stage_id=? ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_guides WHERE company_id=? AND process_version_id=? AND stage_id=? ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all(),
+    c.env.DB.prepare("SELECT * FROM sales_process_resources WHERE company_id=? AND process_version_id=? AND active=1 AND (stage_id='' OR stage_id=?) ORDER BY resource_type,name").bind(companyId, assignment.process_version_id, stage.id).all(),
+    c.env.DB.prepare(`SELECT t.to_stage_id,s.display_name,s.stable_key,s.semantic_type,t.requires_override FROM sales_stage_transitions t
+      JOIN sales_process_stages s ON s.id=t.to_stage_id AND s.company_id=t.company_id AND s.process_version_id=t.process_version_id
+      WHERE t.company_id=? AND t.process_version_id=? AND t.from_stage_id=? AND t.active=1 ORDER BY s.display_order`).bind(companyId, assignment.process_version_id, stage.id).all(),
+    c.env.DB.prepare("SELECT * FROM sales_academy_skills WHERE active=1 AND (company_id=? OR (company_id='__global__' AND is_global=1)) ORDER BY title").bind(companyId).all()
+  ])
+  const stageKey = String(stage.stable_key || '')
+  const relevantSkills = (skills.results as any[]).filter(skill => {
+    try { return (JSON.parse(skill.content_json || '{}').stage_keys || []).includes(stageKey) } catch (_) { return false }
+  })
+  return json(c, { normalized: true, assignment, stage, requirements: requirements.results, guides: guides.results, resources: resources.results, transitions: transitions.results, academy_skills: relevantSkills })
+})
+
+// Stable transitions update only normalized assignments. Legacy stage text stays
+// untouched throughout the compatibility period and every transition is audited.
+app.put('/api/opportunities/:id/sales-stage', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const actorId = c.var.repId as string
+  const opportunityId = c.req.param('id')
+  const body = await c.req.json()
+  const assignment = await c.env.DB.prepare(`SELECT a.* FROM sales_stage_assignments a
+    JOIN sales_process_versions v ON v.id=a.process_version_id AND v.company_id=a.company_id
+    WHERE a.company_id=? AND a.opportunity_id=? AND v.lifecycle='published' LIMIT 1`).bind(companyId, opportunityId).first<any>()
+  if (!assignment) return err(c, 'Opportunity needs an approved published-process assignment', 409)
+  const expectedStageId = String(body.expected_stage_id || '')
+  if (!expectedStageId) return err(c, 'The current stable stage is required', 400)
+  if (expectedStageId !== String(assignment.stage_id || '')) return err(c, 'The opportunity stage changed; refresh before transitioning', 409)
+  const targetId = String(body.stage_id || '')
+  const target = await c.env.DB.prepare("SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND id=? AND state='active'").bind(companyId, assignment.process_version_id, targetId).first<any>()
+  if (!target) return err(c, 'Target stage is not active in this company process', 400)
+  const allowed = await c.env.DB.prepare(`SELECT requires_override FROM sales_stage_transitions
+    WHERE company_id=? AND process_version_id=? AND from_stage_id=? AND to_stage_id=? AND active=1`).bind(companyId, assignment.process_version_id, assignment.stage_id, targetId).first<any>()
+  const overrideReason = String(body.override_reason || '').trim()
+  if (!allowed && !requireSalesProcessAdmin(c)) return err(c, 'This stage transition requires a manager override', 403)
+  if ((!allowed || Number(allowed.requires_override)) && !overrideReason) return err(c, 'An override reason is required', 400)
+  const outcomeType = String(body.outcome_type || '')
+  if (outcomeType && !['won','lost','disqualified','nurture'].includes(outcomeType)) return err(c, 'Invalid terminal outcome', 400)
+  const terminalSemantics = ['won','lost','disqualified','nurture']
+  if (terminalSemantics.includes(String(target.semantic_type)) && !outcomeType) return err(c, 'A terminal outcome is required', 400)
+  if (!terminalSemantics.includes(String(target.semantic_type)) && outcomeType) return err(c, 'An outcome can only be recorded at a terminal stage', 400)
+  if (outcomeType) {
+    const configuredOutcome = await c.env.DB.prepare(`SELECT id FROM sales_stage_outcomes
+      WHERE company_id=? AND process_version_id=? AND stage_id=? AND semantic_type=? AND active=1`)
+      .bind(companyId, assignment.process_version_id, targetId, outcomeType).first()
+    if (!configuredOutcome) return err(c, 'The selected outcome is not configured for this terminal stage', 400)
+  }
+  const eventId = `transition_${uid()}`
+  const transitionResults = await c.env.DB.batch([
+    c.env.DB.prepare(`INSERT INTO sales_stage_transition_events (id,company_id,opportunity_id,process_version_id,from_stage_id,to_stage_id,outcome_type,actor_id,override_reason)
+      SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (
+        SELECT 1 FROM sales_stage_assignments WHERE id=? AND company_id=? AND stage_id=?
+      ) AND EXISTS (
+        SELECT 1 FROM opportunities WHERE id=? AND company_id=? AND sales_process_stage_id=?
+      )`).bind(eventId, companyId, opportunityId, assignment.process_version_id, assignment.stage_id || '', targetId, outcomeType, actorId, overrideReason, assignment.id, companyId, expectedStageId, opportunityId, companyId, expectedStageId),
+    c.env.DB.prepare(`UPDATE sales_stage_assignments SET stage_id=?,outcome_type=?,classification='transitioned',assigned_at=datetime('now'),assigned_by=? WHERE id=? AND company_id=? AND stage_id=?`).bind(targetId, outcomeType, actorId, assignment.id, companyId, expectedStageId),
+    c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=datetime(\'now\') WHERE id=? AND company_id=? AND sales_process_stage_id=?').bind(targetId, opportunityId, companyId, expectedStageId)
+  ])
+  if (Number((transitionResults[0] as any)?.meta?.changes || 0) !== 1) return err(c, 'The opportunity stage changed; refresh before transitioning', 409)
+  await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'opportunity', entityId: opportunityId, entityLabel: opportunityId, action: 'sales_stage_transitioned', beforeJson: { stage_id: assignment.stage_id }, afterJson: { stage_id: targetId, outcome_type: outcomeType, override_reason: overrideReason } })
+  return json(c, { transitioned: opportunityId, event_id: eventId, stage: target })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -10415,8 +10524,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b003">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">
+  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -10439,10 +10548,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260728b003"></script>
-  <script src="/js/client_portal.js?v=20260728b003"></script>
-  <script src="/js/platform_core.js?v=20260728b003"></script>
-  <script src="/js/client_portal.js?v=20260728b003"></script>  <script>
+  <script src="/js/platform_core.js?v=20260728b005"></script>
+  <script src="/js/client_portal.js?v=20260728b005"></script>
+  <script src="/js/platform_core.js?v=20260728b005"></script>
+  <script src="/js/client_portal.js?v=20260728b005"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -11076,12 +11185,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260728b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260728b003">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b003">
-  <link rel="stylesheet" href="/js/styles.css?v=20260728b003">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260728b003">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">
+  <link rel="stylesheet" href="/js/styles.css?v=20260728b005">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260728b005">
+  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">
+  <link rel="stylesheet" href="/js/styles.css?v=20260728b005">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260728b005">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -11640,80 +11749,80 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260728b003"></script>
-<script src="/js/richtext.js?v=20260728b003"></script>
-<script src="/js/db.js?v=20260728b003"></script>
-<script src="/js/data.js?v=20260728b003"></script>
-<script src="/js/reps.js?v=20260728b003"></script>
-<script src="/js/record-page.js?v=20260728b003"></script>
-<script src="/js/academy.js?v=20260728b003"></script>
-<script src="/js/task_engine.js?v=20260728b003"></script>
-<script src="/js/gw_i18n.js?v=20260728b003"></script>
-<script src="/js/app_premium.js?v=20260728b003"></script>
-<script src="/js/estimates.js?v=20260728b003"></script>
-<script src="/js/multiday.js?v=20260728b003"></script>
-<script src="/js/proposals.js?v=20260728b003"></script>
-<script src="/js/pricing.js?v=20260728b003"></script>
-<script src="/js/invoices.js?v=20260728b003"></script>
-<script src="/js/csv_import.js?v=20260728b003"></script>
-<script src="/js/onboarding.js?v=20260728b003"></script>
-<script src="/js/gw_copilot.js?v=20260728b003"></script>
-<script src="/js/groundwork_ai.js?v=20260728b003"></script>
-<script src="/js/recurring_plans.js?v=20260728b003"></script>
-<script src="/js/reviews.js?v=20260728b003"></script>
-<script src="/js/stripe.js?v=20260728b003"></script>
-<script src="/js/email.js?v=20260728b003"></script>
-<script src="/js/notifications.js?v=20260728b003"></script>
-<script src="/js/integrations.js?v=20260728b003"></script>
-<script src="/js/calendar_sync.js?v=20260728b003"></script>
-<script src="/js/ai_followup.js?v=20260728b003"></script>
-<script src="/js/user_management.js?v=20260728b003"></script>
-<script src="/js/platform_admin.js?v=20260728b003"></script>
-<script src="/js/time_tracker.js?v=20260728b003"></script>
-<script src="/js/field_workday.js?v=20260728b003"></script>
-<script src="/js/platform_core.js?v=20260728b003"></script>
-<script src="/js/approval_engine.js?v=20260728b003"></script>
-<script src="/js/automation_engine.js?v=20260728b003"></script>
-<script src="/js/client_portal.js?v=20260728b003"></script>
-<script src="/js/field_mode.js?v=20260728b003"></script>
-<script src="/js/assets_hub.js?v=20260728b003"></script>
-<script src="/js/gw-icons.js?v=20260728b003"></script>
-<script src="/js/richtext.js?v=20260728b003"></script>
-<script src="/js/db.js?v=20260728b003"></script>
-<script src="/js/data.js?v=20260728b003"></script>
-<script src="/js/reps.js?v=20260728b003"></script>
-<script src="/js/record-page.js?v=20260728b003"></script>
-<script src="/js/academy.js?v=20260728b003"></script>
-<script src="/js/task_engine.js?v=20260728b003"></script>
-<script src="/js/gw_i18n.js?v=20260728b003"></script>
-<script src="/js/app_premium.js?v=20260728b003"></script>
-<script src="/js/estimates.js?v=20260728b003"></script>
-<script src="/js/multiday.js?v=20260728b003"></script>
-<script src="/js/proposals.js?v=20260728b003"></script>
-<script src="/js/pricing.js?v=20260728b003"></script>
-<script src="/js/invoices.js?v=20260728b003"></script>
-<script src="/js/csv_import.js?v=20260728b003"></script>
-<script src="/js/onboarding.js?v=20260728b003"></script>
-<script src="/js/gw_copilot.js?v=20260728b003"></script>
-<script src="/js/groundwork_ai.js?v=20260728b003"></script>
-<script src="/js/recurring_plans.js?v=20260728b003"></script>
-<script src="/js/reviews.js?v=20260728b003"></script>
-<script src="/js/stripe.js?v=20260728b003"></script>
-<script src="/js/email.js?v=20260728b003"></script>
-<script src="/js/notifications.js?v=20260728b003"></script>
-<script src="/js/integrations.js?v=20260728b003"></script>
-<script src="/js/calendar_sync.js?v=20260728b003"></script>
-<script src="/js/ai_followup.js?v=20260728b003"></script>
-<script src="/js/user_management.js?v=20260728b003"></script>
-<script src="/js/platform_admin.js?v=20260728b003"></script>
-<script src="/js/time_tracker.js?v=20260728b003"></script>
-<script src="/js/field_workday.js?v=20260728b003"></script>
-<script src="/js/platform_core.js?v=20260728b003"></script>
-<script src="/js/approval_engine.js?v=20260728b003"></script>
-<script src="/js/automation_engine.js?v=20260728b003"></script>
-<script src="/js/client_portal.js?v=20260728b003"></script>
-<script src="/js/field_mode.js?v=20260728b003"></script>
-<script src="/js/assets_hub.js?v=20260728b003"></script><script>
+<script src="/js/gw-icons.js?v=20260728b005"></script>
+<script src="/js/richtext.js?v=20260728b005"></script>
+<script src="/js/db.js?v=20260728b005"></script>
+<script src="/js/data.js?v=20260728b005"></script>
+<script src="/js/reps.js?v=20260728b005"></script>
+<script src="/js/record-page.js?v=20260728b005"></script>
+<script src="/js/academy.js?v=20260728b005"></script>
+<script src="/js/task_engine.js?v=20260728b005"></script>
+<script src="/js/gw_i18n.js?v=20260728b005"></script>
+<script src="/js/app_premium.js?v=20260728b005"></script>
+<script src="/js/estimates.js?v=20260728b005"></script>
+<script src="/js/multiday.js?v=20260728b005"></script>
+<script src="/js/proposals.js?v=20260728b005"></script>
+<script src="/js/pricing.js?v=20260728b005"></script>
+<script src="/js/invoices.js?v=20260728b005"></script>
+<script src="/js/csv_import.js?v=20260728b005"></script>
+<script src="/js/onboarding.js?v=20260728b005"></script>
+<script src="/js/gw_copilot.js?v=20260728b005"></script>
+<script src="/js/groundwork_ai.js?v=20260728b005"></script>
+<script src="/js/recurring_plans.js?v=20260728b005"></script>
+<script src="/js/reviews.js?v=20260728b005"></script>
+<script src="/js/stripe.js?v=20260728b005"></script>
+<script src="/js/email.js?v=20260728b005"></script>
+<script src="/js/notifications.js?v=20260728b005"></script>
+<script src="/js/integrations.js?v=20260728b005"></script>
+<script src="/js/calendar_sync.js?v=20260728b005"></script>
+<script src="/js/ai_followup.js?v=20260728b005"></script>
+<script src="/js/user_management.js?v=20260728b005"></script>
+<script src="/js/platform_admin.js?v=20260728b005"></script>
+<script src="/js/time_tracker.js?v=20260728b005"></script>
+<script src="/js/field_workday.js?v=20260728b005"></script>
+<script src="/js/platform_core.js?v=20260728b005"></script>
+<script src="/js/approval_engine.js?v=20260728b005"></script>
+<script src="/js/automation_engine.js?v=20260728b005"></script>
+<script src="/js/client_portal.js?v=20260728b005"></script>
+<script src="/js/field_mode.js?v=20260728b005"></script>
+<script src="/js/assets_hub.js?v=20260728b005"></script>
+<script src="/js/gw-icons.js?v=20260728b005"></script>
+<script src="/js/richtext.js?v=20260728b005"></script>
+<script src="/js/db.js?v=20260728b005"></script>
+<script src="/js/data.js?v=20260728b005"></script>
+<script src="/js/reps.js?v=20260728b005"></script>
+<script src="/js/record-page.js?v=20260728b005"></script>
+<script src="/js/academy.js?v=20260728b005"></script>
+<script src="/js/task_engine.js?v=20260728b005"></script>
+<script src="/js/gw_i18n.js?v=20260728b005"></script>
+<script src="/js/app_premium.js?v=20260728b005"></script>
+<script src="/js/estimates.js?v=20260728b005"></script>
+<script src="/js/multiday.js?v=20260728b005"></script>
+<script src="/js/proposals.js?v=20260728b005"></script>
+<script src="/js/pricing.js?v=20260728b005"></script>
+<script src="/js/invoices.js?v=20260728b005"></script>
+<script src="/js/csv_import.js?v=20260728b005"></script>
+<script src="/js/onboarding.js?v=20260728b005"></script>
+<script src="/js/gw_copilot.js?v=20260728b005"></script>
+<script src="/js/groundwork_ai.js?v=20260728b005"></script>
+<script src="/js/recurring_plans.js?v=20260728b005"></script>
+<script src="/js/reviews.js?v=20260728b005"></script>
+<script src="/js/stripe.js?v=20260728b005"></script>
+<script src="/js/email.js?v=20260728b005"></script>
+<script src="/js/notifications.js?v=20260728b005"></script>
+<script src="/js/integrations.js?v=20260728b005"></script>
+<script src="/js/calendar_sync.js?v=20260728b005"></script>
+<script src="/js/ai_followup.js?v=20260728b005"></script>
+<script src="/js/user_management.js?v=20260728b005"></script>
+<script src="/js/platform_admin.js?v=20260728b005"></script>
+<script src="/js/time_tracker.js?v=20260728b005"></script>
+<script src="/js/field_workday.js?v=20260728b005"></script>
+<script src="/js/platform_core.js?v=20260728b005"></script>
+<script src="/js/approval_engine.js?v=20260728b005"></script>
+<script src="/js/automation_engine.js?v=20260728b005"></script>
+<script src="/js/client_portal.js?v=20260728b005"></script>
+<script src="/js/field_mode.js?v=20260728b005"></script>
+<script src="/js/assets_hub.js?v=20260728b005"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
