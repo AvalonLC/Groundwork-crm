@@ -89,6 +89,22 @@ CREATE TABLE IF NOT EXISTS portal_sessions (
 CREATE INDEX IF NOT EXISTS idx_psess_user ON portal_sessions(portal_user_id);
 
 -- ── Audit log extensions — portal actors and request context ────────────────
+-- audit_log originally came from the application's lazy /api/audit setup, not
+-- from the migration chain. Production therefore had the table when this
+-- migration first ran, while a clean database did not. Preserve that schema
+-- here before adding the portal columns so fresh databases match production.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id           TEXT PRIMARY KEY,
+  company_id   TEXT NOT NULL,
+  rep_id       TEXT,
+  event_type   TEXT NOT NULL,
+  entity_type  TEXT,
+  entity_id    TEXT,
+  entity_label TEXT,
+  meta         TEXT,
+  created_at   TEXT NOT NULL
+);
+
 ALTER TABLE audit_log ADD COLUMN actor_type     TEXT DEFAULT 'staff';  -- staff | portal | system
 ALTER TABLE audit_log ADD COLUMN portal_user_id TEXT DEFAULT '';
 ALTER TABLE audit_log ADD COLUMN client_id      TEXT DEFAULT '';
