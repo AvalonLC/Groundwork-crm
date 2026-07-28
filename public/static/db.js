@@ -380,6 +380,22 @@ const DB = (() => {
     save(stages) { return put('/pipeline-stages', { stages }); }
   };
 
+  // Versioned sales processes. AI suggestions are drafts and publication always
+  // requires a separately validated version plus an approved mapping batch.
+  const salesProcess = {
+    get(versionId) { return get('/sales-process' + (versionId ? `?version_id=${encodeURIComponent(versionId)}` : '')); },
+    templates() { return get('/sales-process/templates'); },
+    adoptTemplate(templateVersionId, name) { return post('/sales-process/drafts/from-template', { template_version_id: templateVersionId, name }); },
+    saveStages(versionId, stages) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/stages`, { stages }); },
+    validate(versionId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/validate`, {}); },
+    inventory() { return get('/sales-process/migration/inventory'); },
+    propose(versionId) { return post('/sales-process/migration/propose', { process_version_id: versionId }); },
+    mappings(batchId) { return get(`/sales-process/migration/${encodeURIComponent(batchId)}`); },
+    approveMapping(batchId, opportunityId, finalStageId) { return put(`/sales-process/migration/${encodeURIComponent(batchId)}/${encodeURIComponent(opportunityId)}`, { final_stage_id: finalStageId }); },
+    publish(versionId, batchId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/publish`, { migration_batch_id: batchId, confirm: true }); },
+    rollback(publicationId) { return post(`/sales-process/publications/${encodeURIComponent(publicationId)}/rollback`, {}); }
+  };
+
   // ── NAV PERMISSIONS (per-company per-role access) ────────────────────────────
   const navPerms = {
     /** Get nav perms for this company */
@@ -418,6 +434,7 @@ const DB = (() => {
     events,
     roles,
     pipelineStages,
+    salesProcess,
     navPerms,
     activityLog,
     sync,
