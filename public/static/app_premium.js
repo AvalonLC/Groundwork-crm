@@ -23,6 +23,21 @@ function getPipelineStages() {
 }
 window.getPipelineStages = getPipelineStages;
 
+function gwPublishedStageForOpportunity(o) {
+  const stages = window._gwSalesProcess?.stages || [];
+  return stages.find(s => s.id === o.salesProcessStageId) || null;
+}
+function gwOpportunitySemantic(o) {
+  if (o.salesProcessOutcomeType) return o.salesProcessOutcomeType;
+  const stage = gwPublishedStageForOpportunity(o);
+  if (stage) return stage.semantic_type;
+  if (['Sold / Activation','Deal Closed / Won'].includes(o.status)) return 'won';
+  if (o.status === 'Closed Lost') return 'lost';
+  return 'open';
+}
+window.gwPublishedStageForOpportunity = gwPublishedStageForOpportunity;
+window.gwOpportunitySemantic = gwOpportunitySemantic;
+
 // ── Company-Configurable Divisions ───────────────────────────────────────────
 // Each company names and creates its own divisions (any number).
 // Stored in D1 setting `company_divisions` (JSON array of {key,label,color}),
@@ -879,6 +894,7 @@ function gwSales(tab) {
     {id:'teamView',       label:'Team'},
     {id:'estimates',      label:'Estimates'},
     {id:'communications', label:'Communications'},
+    {id:'process',        label:'Sales Process Builder'},
   ], _GW_COMMS_HUB_TABS.includes(tab) ? 'communications' : (tab === 'proposals' ? 'estimates' : tab));
   if (tab === 'pipeline')            pipeline();
   else if (tab === 'lead')           lead();
@@ -887,6 +903,7 @@ function gwSales(tab) {
   else if (tab === 'estimates')      (typeof estimates==='function') ? estimates() : ((typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates'));
   else if (tab === 'proposals')      (typeof proposals==='function') ? proposals() : _gwTabStub('Proposals');
   else if (_GW_COMMS_HUB_TABS.includes(tab)) communicationsHub(tab);
+  else if (tab === 'process')        process('builder');
   else if (tab === 'gwRecords')      lead();
   else pipeline();
 }
@@ -3155,10 +3172,10 @@ function pipeline(selectedId){
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
   const _closedStatuses = ['Sold / Activation','Deal Closed / Won','Closed Lost'];
-  if (activeStatusFilter === 'open') opps = opps.filter(o => !_closedStatuses.includes(o.status));
+  if (activeStatusFilter === 'open') opps = opps.filter(o => !['won','lost','disqualified'].includes(gwOpportunitySemantic(o)));
   else if (activeStatusFilter === 'proposals') opps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Follow-Up','Presentation & SOW Pitch'].includes(o.status));
-  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !_closedStatuses.includes(o.status));
-  else if (activeStatusFilter === 'sold') opps = opps.filter(o => ['Sold / Activation','Deal Closed / Won'].includes(o.status));
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !['won','lost','disqualified'].includes(gwOpportunitySemantic(o)));
+  else if (activeStatusFilter === 'sold') opps = opps.filter(o => gwOpportunitySemantic(o)==='won');
 
   // T47: Sort
   const activeSort = window._pipelineSort || 'urgent';
@@ -3178,15 +3195,20 @@ function pipeline(selectedId){
   // Desktop: keep ALL stage columns visible (drop targets for drag & drop, and
   // they fill wide monitors). Mobile: only columns with items (list view).
   const _isMobilePipe = window.innerWidth <= 768;
-  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))}))
+  const publishedStages = window._gwSalesProcess?.stages || [];
+  const grouped = filters.map(status => {
+    const stage = publishedStages.find(s=>s.display_name===status);
+    return {status, stageId:stage?.id||'', items:sortOpps(opps.filter(o=>stage ? o.salesProcessStageId===stage.id : o.status===status))};
+  })
     .filter(g => !_isMobilePipe || g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
-  // Catch-all: leads with legacy/unknown status get bucketed into the first stage
+  // Catch-all: an unknown legacy label is never equivalent to the first stage.
+  // Keep these records visible, searchable, editable, and assigned while clearly
+  // excluding them from stage-specific interpretation until a reviewer maps them.
   const knownStatuses = new Set(filters);
-  const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)));
+  const knownStageIds = new Set(publishedStages.map(s=>s.id));
+  const orphanOpps = sortOpps(opps.filter(o => publishedStages.length ? !knownStageIds.has(o.salesProcessStageId) : !knownStatuses.has(o.status)).map(o => ({...o, _needsRestaging:true})));
   if (orphanOpps.length) {
-    const firstGroup = grouped.find(g => g.status === filters[0]);
-    if (firstGroup) firstGroup.items = sortOpps([...orphanOpps, ...firstGroup.items]);
-    else grouped.unshift({status: filters[0], items: orphanOpps});
+    grouped.push({status:'Needs Restaging', items:orphanOpps, needsRestaging:true});
   }
 
   const _repFilterHtml = (()=>{
@@ -3281,6 +3303,7 @@ function pipeline(selectedId){
                       ${overdue ? `<span class="gw-pipe-badge gw-pipe-badge--overdue">OVERDUE</span>` : stale ? `<span class="gw-pipe-badge gw-pipe-badge--stale">${daysSince}d</span>` : ''}
                     </div>
                     <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
+                    ${o._needsRestaging ? `<div class="gw-pipe-badge gw-pipe-badge--overdue" style="margin:6px 0">Original stage: ${escapeHtml(o.status||'(blank)')}</div>` : ''}
                     <div class="gw-pipe-card-bottom">
                       ${o.jobValue ? `<span class="gw-pipe-card-val">${money(Number(o.jobValue))}</span>` : ''}
                       ${o.nextFollowUp ? `<span class="gw-pipe-card-date" style="display:inline-flex;align-items:center;gap:4px">${(typeof gwIcon==='function')?gwIcon('calendar',12):''} ${prettyDate(o.nextFollowUp)}</span>` : ''}
@@ -3293,9 +3316,9 @@ function pipeline(selectedId){
       : /* ── Desktop: kanban ── */ `
         <div class="gw-kanban-wrap mt">
           <div class="kanban" id="gw-kanban-board">
-            ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
-              ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"
-            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+            ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}" data-stage-id="${escapeHtml(g.stageId||'')}"
+              ${g.needsRestaging ? '' : 'ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"'}
+            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
           </div>
           <div class="gw-scroll-more gw-scroll-more--hidden" id="gw-scroll-more">
             <button type="button" class="gw-scroll-more-btn" onclick="gwPipeScrollRight()">
@@ -3389,7 +3412,7 @@ window.gwPipeDragLeave = function(ev) {
   col.querySelectorAll('.gw-drop-hint').forEach(h => h.remove());
 };
 
-window.gwPipeDrop = function(ev) {
+window.gwPipeDrop = async function(ev) {
   ev.preventDefault();
   const col = ev.currentTarget;
   col.classList.remove('gw-drop-target');
@@ -3400,8 +3423,28 @@ window.gwPipeDrop = function(ev) {
   if (!oppId) return;
 
   const newStage = col.dataset.stage;
+  const stableStageId = col.dataset.stageId || '';
   const o = (state.opportunities||[]).find(x => x.id === oppId);
   if (!o || !newStage || o.status === newStage) return;
+
+  if (stableStageId) {
+    const destination = (window._gwSalesProcess?.stages||[]).find(s=>s.id===stableStageId);
+    if (destination?.semantic_type === 'terminal') {
+      if (typeof showToast === 'function') showToast('Open the opportunity to confirm a Won, Lost, Disqualified, or Nurture outcome.');
+      return;
+    }
+    try {
+      await DB.salesProcess.transition(oppId, stableStageId, '', '');
+      const oldStage = o.status;
+      o.status = newStage; o.pipelineStage = newStage; o.salesProcessStageId = stableStageId; o.updatedAt = new Date().toISOString();
+      saveState();
+      if (typeof showToast === 'function') showToast(`${o.client||'Lead'}: ${oldStage} → ${newStage}`);
+      show('pipeline');
+    } catch(e) {
+      if (typeof showToast === 'function') showToast(e.message||'Stage transition blocked');
+    }
+    return;
+  }
 
   const oldStage = o.status;
   o.status    = newStage;
@@ -5501,6 +5544,8 @@ function opportunityDetail(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o){ return pipeline(); }
   const _stages      = getPipelineStages();
+  const _stageDef    = gwPublishedStageForOpportunity(o);
+  const _stageReqs   = (window._gwSalesProcess?.requirements||[]).filter(r=>r.stage_id===_stageDef?.id);
   const stageGuess   = Math.max(1, _stages.indexOf(o.status)+1);
   const _activeTab   = window._leadTab || 'overview';
   const _repObj      = (window.REPS||[]).find(r=>r.id===o.repId);
@@ -5688,7 +5733,7 @@ function opportunityDetail(id){
             <div class="rp-section-card-body">
               <div class="ld-card-label">Pipeline Stage</div>
               ${selectWithId('statusEdit',getPipelineStages(),o.status)}
-              <button class="rp-inline-btn" style="margin-top:10px" onclick="setOppField('${o.id}','status',document.getElementById('statusEdit').value)">Update Stage</button>
+              <button class="rp-inline-btn" style="margin-top:10px" onclick="${window._gwSalesProcess?.active_version_id ? `gwConfirmStageTransition('${o.id}',document.getElementById('statusEdit').value)` : `setOppField('${o.id}','status',document.getElementById('statusEdit').value)`}">Update Stage</button>
             </div>
           </div>
           <div class="rp-section-card">
@@ -5707,7 +5752,8 @@ function opportunityDetail(id){
           </div>
         </div>
       </div>
-    </div>`;
+    </div>
+    ${_stageDef?`<div class="rp-section-card" style="margin-top:12px"><div class="rp-section-card-head"><div class="rp-section-card-title">Stage Guide</div><span class="badge">${escapeHtml(_stageDef.semantic_type)}</span></div><div class="rp-section-card-body"><h3>${escapeHtml(_stageDef.display_name)}</h3><p>${escapeHtml(_stageDef.description||'')}</p><div class="grid grid-2"><div><strong>Customer milestone</strong><p class="muted">${escapeHtml(_stageDef.customer_milestone||'Not configured')}</p></div><div><strong>Expected duration</strong><p class="muted">${Number(_stageDef.expected_duration_days||0)} days</p></div><div><strong>Entry guidance</strong><p class="muted">${escapeHtml(_stageDef.entry_guidance||'Not configured')}</p></div><div><strong>Exit guidance</strong><p class="muted">${escapeHtml(_stageDef.exit_guidance||'Not configured')}</p></div></div>${_stageReqs.length?`<div style="margin-top:10px"><strong>Configured information</strong>${_stageReqs.map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gw-border)"><span>${escapeHtml(r.label)}</span><span class="badge">${escapeHtml(r.required_level)}</span></div>`).join('')}</div>`:''}</div></div>`:''}`;
 
   // ── OVERVIEW TAB: Estimate Tracking ───────────────────────────────────────
   const _overviewEstimateHtml = `
@@ -7099,6 +7145,25 @@ function setOppField(id,field,value){
   const headerFields = ['status','repId','commissionApproved','collected'];
   if (headerFields.includes(field)) { show('pipeline', id); }
 }
+window.gwConfirmStageTransition = async function(opportunityId, displayName){
+  const o=state.opportunities.find(x=>x.id===opportunityId); const stage=(window._gwSalesProcess?.stages||[]).find(s=>s.display_name===displayName);
+  if(!o||!stage) return showToast('Published stage definition not found');
+  let outcome='';
+  if(stage.semantic_type==='terminal'){
+    outcome=window.prompt('Enter the confirmed outcome: won, lost, disqualified, or nurture','')?.trim().toLowerCase()||'';
+    if(!['won','lost','disqualified','nurture'].includes(outcome)) return showToast('A valid terminal outcome is required');
+  }
+  const apply=async(overrideReason)=>{
+    const result=await DB.salesProcess.transition(opportunityId,stage.id,outcome,overrideReason||'');
+    o.status=result.stage_name;o.pipelineStage=result.stage_name;o.salesProcessStageId=result.stage_id;o.salesProcessOutcomeType=result.outcome_type;o.updatedAt=new Date().toISOString();saveState();showToast('Stage updated');show('pipeline',opportunityId);
+  };
+  try{await apply('');}catch(e){
+    if(String(e.message||'').toLowerCase().includes('override reason required')){
+      const reason=window.prompt(`${e.message}\n\nEnter an override reason, or cancel to remain in the current stage.`,'')?.trim();
+      if(reason) try{await apply(reason);}catch(retryError){showToast(retryError.message||'Transition blocked');}
+    }else showToast(e.message||'Transition blocked');
+  }
+};
 function duplicateOpportunity(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o) return;
@@ -7413,12 +7478,16 @@ window.mergeTemplate = mergeTemplate;
 
 // ─── Sales Process ────────────────────────────────────────────────────────────
 function process(stageId){
+  if (stageId === 'builder') return salesProcessBuilder();
   const sp = data.salesProcess;
   if(stageId){ const s = data.stages.find(x=>x.id===Number(stageId)); if(s) return renderStage(s); }
   const stepColors = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
   view.innerHTML = `
 <div class="eyebrow">Operating System</div>
-<h1 style="color:var(--ink)">Avalon Sales Process</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <h1 style="color:var(--ink);margin-bottom:0">Avalon Sales Process</h1>
+  <button class="primary-btn" onclick="show('process','builder')">Sales Process Builder</button>
+</div>
 <p class="lede">${escapeHtml(sp.subtitle)}</p>
 
 <div style="display:flex;align-items:center;gap:10px;margin:24px 0 8px">
@@ -7521,6 +7590,147 @@ ${data.stages.map(s=>{
     panel.scrollIntoView({behavior:'smooth', block:'nearest'});
   };
 }
+
+async function salesProcessBuilder(){
+  view.innerHTML = '<div class="card"><h2>Sales Process Builder</h2><p class="muted">Loading company process...</p></div>';
+  try {
+    const payload = await DB.salesProcess.get();
+    const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
+    const canEdit = currentRep && ['admin','office_manager'].includes(currentRep.role);
+    const tabs = ['Process Overview','Stages','Internal Statuses','Qualification Fields','Checklists','Call Guides','Automations','Email Templates','Academy Training','AI Process Assistant','Versions and Publishing'];
+    if (!payload.process) {
+      view.innerHTML = `<div class="eyebrow">Sales</div><h1>Sales Process Builder</h1>
+        <div class="card"><h2>No normalized process installed</h2>
+        <p>The legacy process remains live. Adopting the Groundwork template creates a company-owned draft only and does not change opportunities or publishing.</p>
+        ${canEdit ? '<button class="primary-btn" onclick="gwAdoptGroundworkTemplate()">Start with Groundwork field-service template</button>' : '<p class="muted">A company administrator can create the first draft.</p>'}</div>`;
+      return;
+    }
+    const p = payload.process;
+    const stages = payload.stages || [];
+    window._gwBuilderDraftStages = stages.map(s=>({...s}));
+    window._gwBuilderProcess = p;
+    view.innerHTML = `<div class="eyebrow">Sales</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><h1 style="margin-bottom:4px">Sales Process Builder</h1><p class="lede">${escapeHtml(p.name||'Company Sales Process')} · Version ${Number(p.version_number||1)} · ${escapeHtml(p.lifecycle||'draft')}</p></div>
+        <button class="secondary-btn" onclick="show('process')">View legacy guide</button>
+      </div>
+      <div class="tabs" style="overflow:auto;white-space:nowrap">${tabs.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="document.querySelectorAll('.spb-panel').forEach((x,j)=>x.style.display=j===${i}?'block':'none');this.parentElement.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));this.classList.add('active')">${escapeHtml(t)}</button>`).join('')}</div>
+      <section class="spb-panel card"><h2>Process Overview</h2><p>${escapeHtml(p.description||'A shared process definition for Pipeline, Stage Guide, Call Companion, Academy, reporting, and automation.')}</p>
+        <div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Editing</strong><p>${canEdit&&p.lifecycle==='draft'?'Allowed in draft':'Read only'}</p></div></div></section>
+      <section class="spb-panel card" style="display:none"><h2>Stages</h2><div id="spb-stage-editor">${stages.map(s=>`<article style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${Number(s.display_order)}. ${escapeHtml(s.display_name)}</strong><span class="badge">${escapeHtml(s.semantic_type)}</span></div><p class="muted">${escapeHtml(s.description||'')}</p><small>Customer milestone: ${escapeHtml(s.customer_milestone||'Not configured')} · Expected duration: ${Number(s.expected_duration_days||0)} days</small></article>`).join('')}</div>${canEdit&&p.lifecycle==='draft'?'<div style="display:flex;gap:8px;margin-top:12px"><button class="secondary-btn" onclick="gwAddBuilderStage()">Add stage</button><button class="primary-btn" onclick="gwSaveBuilderStages()">Save draft stages</button></div>':''}</section>
+      ${tabs.slice(2,10).map(t=>`<section class="spb-panel card" style="display:none"><h2>${escapeHtml(t)}</h2><p class="muted">This building block is version-owned. Configure it in a draft; published versions are immutable.</p></section>`).join('')}
+      <section class="spb-panel card" style="display:none"><h2>Versions and Publishing</h2>
+        <p>Publishing requires validation, a reviewed mapping for every opportunity, reconciliation, and explicit administrator confirmation. AI cannot publish.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${canEdit&&p.lifecycle==='draft'?`<button class="secondary-btn" onclick="gwValidateSalesProcess('${escapeHtml(p.id)}')">Validate draft</button><button class="secondary-btn" onclick="gwCreateMigrationProposal('${escapeHtml(p.id)}')">Map existing opportunities</button>`:''}</div>
+        <div id="spb-action-result" class="muted" style="margin-top:12px"></div></section>`;
+    if(canEdit&&p.lifecycle==='draft') gwRenderBuilderStageEditor();
+  } catch (e) {
+    view.innerHTML = `<div class="card danger"><h2>Sales Process Builder unavailable</h2><p>${escapeHtml(e.message||String(e))}</p></div>`;
+  }
+}
+window.salesProcessBuilder = salesProcessBuilder;
+window.gwRenderBuilderStageEditor = function(){
+  const el=document.getElementById('spb-stage-editor');if(!el)return;const stages=window._gwBuilderDraftStages||[];
+  el.innerHTML=stages.map((s,i)=>`<article style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:grid;grid-template-columns:auto 1fr 180px 90px auto;gap:8px;align-items:center"><strong>${i+1}</strong><input value="${escapeHtml(s.display_name||'')}" aria-label="Stage name" oninput="window._gwBuilderDraftStages[${i}].display_name=this.value"><select aria-label="Semantic type" onchange="window._gwBuilderDraftStages[${i}].semantic_type=this.value">${['intake','active_qualification','consultation','estimate_development','proposal_presentation','decision','terminal','nurture'].map(v=>`<option value="${v}" ${s.semantic_type===v?'selected':''}>${v}</option>`).join('')}</select><input type="number" min="0" value="${Number(s.expected_duration_days||0)}" aria-label="Expected days" oninput="window._gwBuilderDraftStages[${i}].expected_duration_days=Number(this.value)"><span><button class="secondary-btn small" onclick="gwMoveBuilderStage(${i},-1)" ${i===0?'disabled':''}>Up</button> <button class="secondary-btn small" onclick="gwMoveBuilderStage(${i},1)" ${i===stages.length-1?'disabled':''}>Down</button></span></div><textarea rows="2" style="width:100%;margin-top:8px" placeholder="Stage purpose" oninput="window._gwBuilderDraftStages[${i}].description=this.value">${escapeHtml(s.description||'')}</textarea><div class="grid grid-2"><input value="${escapeHtml(s.customer_milestone||'')}" placeholder="Customer milestone" oninput="window._gwBuilderDraftStages[${i}].customer_milestone=this.value"><input value="${escapeHtml(s.exit_guidance||'')}" placeholder="Exit guidance" oninput="window._gwBuilderDraftStages[${i}].exit_guidance=this.value"></div></article>`).join('');
+};
+window.gwMoveBuilderStage=function(index,delta){const a=window._gwBuilderDraftStages||[],j=index+delta;if(j<0||j>=a.length)return;[a[index],a[j]]=[a[j],a[index]];gwRenderBuilderStageEditor();};
+window.gwAddBuilderStage=function(){const p=window._gwBuilderProcess;window._gwBuilderDraftStages.push({id:'',stable_key:`stage_${Date.now().toString(36)}`,display_name:'New Stage',board_label:'',description:'',customer_milestone:'',semantic_type:'active_qualification',state:'active',expected_duration_days:7,entry_guidance:'',exit_guidance:'',manager_override_policy:'allowed_with_reason'});gwRenderBuilderStageEditor();};
+window.gwSaveBuilderStages=async function(){
+  const p=window._gwBuilderProcess,stages=window._gwBuilderDraftStages||[];
+  if(new Set(stages.map(s=>s.stable_key)).size!==stages.length)return showToast('Stable stage identifiers must be unique');
+  try{const result=await DB.salesProcess.saveStages(p.id,stages,p.content_revision);p.content_revision=result.content_revision;showToast('Draft stages saved');await salesProcessBuilder();}catch(e){showToast(e.message||'Draft save failed');}
+};
+window.gwAdoptGroundworkTemplate = async function(){
+  const result = await DB.salesProcess.adoptTemplate('tpl_groundwork_field_service_v1', 'Groundwork Field-Service Sales');
+  await salesProcessBuilder(result.version_id);
+};
+window.gwValidateSalesProcess = async function(versionId){
+  const result = await DB.salesProcess.validate(versionId);
+  const el = document.getElementById('spb-action-result');
+  if (el) el.textContent = result.valid ? `Validation passed with ${result.warnings.length} warning(s).` : `Validation failed: ${result.errors.join('; ')}`;
+};
+window.gwCreateMigrationProposal = async function(versionId){
+  const el = document.getElementById('spb-action-result');
+  if (el) el.textContent = 'Capturing a company-scoped inventory snapshot...';
+  const snapshot = await DB.salesProcess.captureSnapshot(versionId);
+  if (el) el.textContent = 'Generating mapping proposals without changing live opportunities...';
+  const result = await DB.salesProcess.propose(versionId, snapshot.id);
+  window._gwRestagingContext = { batchId:result.migration_batch_id, snapshotId:snapshot.id, versionId };
+  await salesRestagingWorkspace(result.migration_batch_id, snapshot.id, versionId);
+};
+
+async function salesRestagingWorkspace(batchId, snapshotId, versionId){
+  view.innerHTML = '<div class="card"><h2>Needs Restaging</h2><p class="muted">Loading migration review records...</p></div>';
+  try {
+    const [rows, processPayload] = await Promise.all([DB.salesProcess.mappings(batchId), DB.salesProcess.get(versionId)]);
+    const stages = (processPayload.stages||[]).filter(s=>s.state==='active');
+    window._gwRestagingRows = rows;
+    window._gwRestagingStages = stages;
+    window._gwRestagingContext = {batchId,snapshotId,versionId};
+    const reps = [...new Set(rows.map(r=>r.assigned_to_rep_id||r.rep_id).filter(Boolean))];
+    const previous = [...new Set(rows.map(r=>r.previous_label||'(blank)'))].sort();
+    const pending = rows.filter(r=>r.review_state!=='approved').length;
+    const totalValue = rows.reduce((n,r)=>n+Number(r.job_value||0),0);
+    view.innerHTML = `<div class="eyebrow">Sales Process Migration</div>
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div><h1>Needs Restaging</h1><p class="lede">Review suggestions before publication. No live opportunity is changed in this workspace.</p></div>
+        <button class="secondary-btn" onclick="show('process','builder')">Back to Builder</button>
+      </div>
+      <div class="grid grid-3"><article class="card"><strong>Remaining</strong><div style="font-size:1.8rem;font-weight:800">${pending}</div></article><article class="card"><strong>Total records</strong><div style="font-size:1.8rem;font-weight:800">${rows.length}</div></article><article class="card"><strong>Protected value</strong><div style="font-size:1.8rem;font-weight:800">${money(totalValue)}</div></article></div>
+      <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <label>Assignment<select id="restageRepFilter" onchange="gwRenderRestagingRows()"><option value="all">All representatives</option>${reps.map(id=>`<option value="${escapeHtml(id)}">${escapeHtml(((window.REPS||[]).find(r=>r.id===id)||{}).name||id)}</option>`).join('')}</select></label>
+        <label>Previous stage<select id="restagePreviousFilter" onchange="gwRenderRestagingRows()"><option value="all">All previous stages</option>${previous.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')}</select></label>
+        <label>Review state<select id="restageStateFilter" onchange="gwRenderRestagingRows()"><option value="pending">Pending only</option><option value="all">All records</option><option value="approved">Approved only</option></select></label>
+        <button class="secondary-btn" onclick="gwBulkApproveRestaging()">Bulk approve high-confidence suggestions</button>
+        <button class="primary-btn" onclick="gwReconcileRestaging()">Reconcile review</button>
+      </div>
+      <div id="restageResult" class="muted" style="margin:10px 0"></div><div id="restageRows"></div>`;
+    gwRenderRestagingRows();
+  } catch(e) { view.innerHTML = `<div class="card danger"><h2>Migration review unavailable</h2><p>${escapeHtml(e.message||String(e))}</p></div>`; }
+}
+window.salesRestagingWorkspace = salesRestagingWorkspace;
+window.gwRenderRestagingRows = function(){
+  const rep = document.getElementById('restageRepFilter')?.value||'all';
+  const previous = document.getElementById('restagePreviousFilter')?.value||'all';
+  const review = document.getElementById('restageStateFilter')?.value||'pending';
+  const rows = (window._gwRestagingRows||[]).filter(r=>(rep==='all'||(r.assigned_to_rep_id||r.rep_id)===rep)&&(previous==='all'||(r.previous_label||'(blank)')===previous)&&(review==='all'||r.review_state===review));
+  const stages = window._gwRestagingStages||[];
+  const el = document.getElementById('restageRows'); if(!el) return;
+  el.innerHTML = rows.length ? rows.map(r=>{
+    const terminal = stages.find(s=>s.id===(r.final_stage_id||r.proposed_stage_id))?.semantic_type==='terminal';
+    return `<article class="card" id="restage-${escapeHtml(r.opportunity_id)}" style="border-left:4px solid ${r.review_state==='approved'?'var(--green)':'var(--amber)'}">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h3 style="margin:0">${escapeHtml(r.client||'Unnamed opportunity')}</h3><p class="muted" style="margin:4px 0">Previous stage: <strong>${escapeHtml(r.previous_label||'(blank)')}</strong></p></div><div><strong>${money(Number(r.job_value||0))}</strong><br><span class="badge">${escapeHtml(r.review_state)}</span></div></div>
+      <p>${escapeHtml(r.suggestion_reason||'Manual classification required.')}</p>
+      <div class="grid grid-3"><small>Representative: ${escapeHtml(((window.REPS||[]).find(x=>x.id===(r.assigned_to_rep_id||r.rep_id))||{}).name||'Unassigned')}</small><small>Last activity: ${escapeHtml(r.last_activity||'None')}</small><small>Next follow-up: ${escapeHtml(r.next_follow_up||'None')}</small><small>Estimate: ${escapeHtml(r.linked_estimate_status||'None')} ${r.estimate_sent_date?'· sent '+escapeHtml(r.estimate_sent_date):''}</small><small>Appointment: ${escapeHtml(r.appointment_at||'None')}</small><small>Source: ${escapeHtml(r.source||'Unknown')}</small></div>
+      ${r.notes_preview?`<p class="muted"><strong>Notes preview:</strong> ${escapeHtml(String(r.notes_preview).slice(0,180))}</p>`:''}
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label>New stage<select id="restage-stage-${escapeHtml(r.opportunity_id)}" onchange="gwRestagingStageChanged('${escapeHtml(r.opportunity_id)}')"><option value="">Select destination</option>${stages.map(s=>`<option value="${escapeHtml(s.id)}" ${s.id===(r.final_stage_id||r.proposed_stage_id)?'selected':''}>${escapeHtml(s.display_name)}</option>`).join('')}</select></label>
+      <label id="restage-outcome-wrap-${escapeHtml(r.opportunity_id)}" style="${terminal?'':'display:none'}">Outcome<select id="restage-outcome-${escapeHtml(r.opportunity_id)}"><option value="">Select outcome</option>${['won','lost','disqualified','nurture'].map(o=>`<option value="${o}" ${o===(r.final_outcome_type||r.proposed_outcome_type)?'selected':''}>${o.replace('_',' ')}</option>`).join('')}</select></label>
+      <button class="primary-btn" onclick="gwSaveRestaging('${escapeHtml(r.opportunity_id)}',true)">Save and Next</button></div></article>`;
+  }).join('') : '<div class="card"><p class="muted">No records match these filters.</p></div>';
+};
+window.gwRestagingStageChanged = function(opportunityId){
+  const stageId=document.getElementById(`restage-stage-${opportunityId}`)?.value;
+  const terminal=(window._gwRestagingStages||[]).find(s=>s.id===stageId)?.semantic_type==='terminal';
+  const wrap=document.getElementById(`restage-outcome-wrap-${opportunityId}`); if(wrap) wrap.style.display=terminal?'':'none';
+};
+window.gwSaveRestaging = async function(opportunityId, advance){
+  const ctx=window._gwRestagingContext; const stageId=document.getElementById(`restage-stage-${opportunityId}`)?.value;
+  const outcome=document.getElementById(`restage-outcome-${opportunityId}`)?.value||'';
+  if(!stageId) return alert('Choose a destination stage.');
+  await DB.salesProcess.approveMapping(ctx.batchId,opportunityId,stageId,outcome);
+  const row=(window._gwRestagingRows||[]).find(r=>r.opportunity_id===opportunityId); if(row){row.review_state='approved';row.final_stage_id=stageId;row.final_outcome_type=outcome;}
+  gwRenderRestagingRows(); if(advance) document.querySelector('#restageRows article')?.scrollIntoView({behavior:'smooth',block:'center'});
+};
+window.gwBulkApproveRestaging = async function(){
+  const eligible=(window._gwRestagingRows||[]).filter(r=>r.review_state!=='approved'&&Number(r.mapping_confidence)>=0.8&&r.proposed_stage_id);
+  for(const r of eligible) await DB.salesProcess.approveMapping(window._gwRestagingContext.batchId,r.opportunity_id,r.proposed_stage_id,r.proposed_outcome_type||'');
+  await salesRestagingWorkspace(window._gwRestagingContext.batchId,window._gwRestagingContext.snapshotId,window._gwRestagingContext.versionId);
+};
+window.gwReconcileRestaging = async function(){
+  const result=await DB.salesProcess.reconcileSnapshot(window._gwRestagingContext.snapshotId); const el=document.getElementById('restageResult');
+  if(el) el.textContent=result.clean?'Reconciliation passed. The snapshot can be approved for publication.':`Reconciliation blocked: ${result.pending_mappings} pending mappings and ${result.changed_count} changed records.`;
+  if(result.clean){await DB.salesProcess.approveSnapshot(window._gwRestagingContext.snapshotId);if(el)el.textContent+=' Snapshot approved.';}
+};
 
 function renderStage(s){
   const stageChecklist = (window.AVALON_DATA.checklists||[]).find(c=>c.stage===s.id);
@@ -14130,13 +14340,22 @@ function gwCCBudgetRange(opp) {
 }
 
 function gwCCBuildPrompt(kind, transcript, opp) {
+  const stage = opp ? gwPublishedStageForOpportunity(opp) : null;
+  const requirements = stage ? (window._gwSalesProcess?.requirements||[]).filter(r=>r.stage_id===stage.id) : [];
+  const guideSections = stage ? (window._gwSalesProcess?.guides||[]).filter(g=>g.stage_id===stage.id) : [];
   const ctx = [
     'Client: '  + (opp && opp.client  || 'Unknown'),
     'Project: ' + (opp && (opp.project || opp.serviceLine) || 'Landscaping project'),
     'Stage: '   + (opp && opp.status  || 'Unknown'),
     'Budget: '  + gwCCBudgetRange(opp),
+    'Stable stage ID: ' + (stage?.id||'Unresolved legacy stage'),
+    'Stage purpose: ' + (stage?.description||'Not configured'),
+    'Customer milestone: ' + (stage?.customer_milestone||'Not configured'),
+    'Exit guidance: ' + (stage?.exit_guidance||'Not configured'),
+    'Required capture: ' + (requirements.filter(r=>r.required_level==='required').map(r=>r.label).join(', ')||'None configured'),
+    'Call-guide sections: ' + (guideSections.map(g=>g.title).join(', ')||'None configured'),
   ].join('\n');
-  const base = `You are a sales assistant for a premium landscaping company. Use ONLY details from the transcript — never invent specifics.\n\n${ctx}\n\nTRANSCRIPT:\n${transcript.slice(0, 4000)}\n\n`;
+  const base = `You are a sales assistant for a field-service company. Use ONLY details from the transcript and known opportunity context; never invent specifics. Produce a draft for representative review. Never advance the opportunity, mark it Won or Lost, send a communication, or schedule an appointment.\n\n${ctx}\n\nTRANSCRIPT:\n${transcript.slice(0, 4000)}\n\n`;
   switch (kind) {
     case 'summary_email':
       return base + 'Write a client-ready follow-up email: 1) SUBJECT line, 2) warm greeting, 3) 2-3 sentence summary of the call, 4) clear NEXT STEPS as a short bullet list with suggested timing, 5) friendly sign-off.';
