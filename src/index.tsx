@@ -1187,6 +1187,22 @@ const LEGACY_STAGE_MAP: Record<string, string> = {
   'Closed Lost': 'closed'
 }
 
+function migrationAssignmentSnapshot(opportunity: any, assignments: any[]) {
+  return JSON.stringify({
+    rep_id: String(opportunity.rep_id || ''),
+    assigned_to_rep_id: String(opportunity.assigned_to_rep_id || ''),
+    sales_process_stage_id: String(opportunity.sales_process_stage_id || ''),
+    assignments: assignments.map(a => ({
+      process_version_id: String(a.process_version_id || ''),
+      stage_id: String(a.stage_id || ''),
+      classification: String(a.classification || ''),
+      outcome_type: String(a.outcome_type || ''),
+      internal_status_id: String(a.internal_status_id || ''),
+      assigned_by: String(a.assigned_by || '')
+    }))
+  })
+}
+
 function requireSalesProcessAdmin(c: any) {
   return SALES_PROCESS_ADMIN_ROLES.has(String(c.var.role || ''))
 }
@@ -1393,6 +1409,14 @@ app.post('/api/sales-process/migration/propose', requireAuth, async (c) => {
     (SELECT e.status FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS current_estimate_status,
     (SELECT e.sent_at FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS current_estimate_sent_at
     FROM opportunities o WHERE o.company_id=? ORDER BY o.created_at,o.id`).bind(companyId).all<any>()
+  const currentAssignments = await c.env.DB.prepare(`SELECT opportunity_id,process_version_id,stage_id,classification,outcome_type,internal_status_id,assigned_by
+    FROM sales_stage_assignments WHERE company_id=? ORDER BY opportunity_id,process_version_id,id`).bind(companyId).all<any>()
+  const assignmentsByOpportunity = new Map<string, any[]>()
+  for (const assignment of currentAssignments.results as any[]) {
+    const list = assignmentsByOpportunity.get(String(assignment.opportunity_id)) || []
+    list.push(assignment)
+    assignmentsByOpportunity.set(String(assignment.opportunity_id), list)
+  }
   const batchId = `mig_${Date.now().toString(36)}_${uid().slice(0, 6)}`
   const statements: any[] = []
   for (const o of opps.results as any[]) {
@@ -1415,8 +1439,8 @@ app.post('/api/sales-process/migration/propose', requireAuth, async (c) => {
     const method = conflict ? 'conflicting_legacy_fields' : destination ? 'approved_legacy_mapping' : 'unknown_legacy_label'
     const reason = conflict ? `status (${status}) conflicts with pipeline_stage (${pipelineStage})` : presentationReason || (destination ? `Approved legacy mapping from ${status || pipelineStage}` : 'No approved legacy mapping exists')
     statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_mappings
-      (id,company_id,opportunity_id,migration_batch_id,previous_stage_id,previous_label,proposed_stage_id,final_stage_id,proposed_outcome_type,final_outcome_type,mapping_method,mapping_confidence,suggestion_reason,review_state,reviewer_id,reviewed_at,process_version_id,rollback_value)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(`map_${uid()}`, companyId, o.id, batchId, o.sales_process_stage_id || '', status || pipelineStage, destination?.id || '', ambiguous ? '' : destination.id, outcomeType, ambiguous ? '' : outcomeType, method, ambiguous ? 0.35 : 1, reason, ambiguous ? 'pending' : 'approved', ambiguous ? '' : actorId, ambiguous ? '' : new Date().toISOString(), versionId, o.sales_process_stage_id || status || pipelineStage))
+      (id,company_id,opportunity_id,migration_batch_id,previous_stage_id,previous_label,proposed_stage_id,final_stage_id,proposed_outcome_type,final_outcome_type,mapping_method,mapping_confidence,suggestion_reason,review_state,reviewer_id,reviewed_at,process_version_id,rollback_value,opportunity_updated_at,assignment_snapshot)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(`map_${uid()}`, companyId, o.id, batchId, o.sales_process_stage_id || '', status || pipelineStage, destination?.id || '', ambiguous ? '' : destination.id, outcomeType, ambiguous ? '' : outcomeType, method, ambiguous ? 0.35 : 1, reason, ambiguous ? 'pending' : 'approved', ambiguous ? '' : actorId, ambiguous ? '' : new Date().toISOString(), versionId, o.sales_process_stage_id || status || pipelineStage, o.updated_at || '', migrationAssignmentSnapshot(o, assignmentsByOpportunity.get(String(o.id)) || [])))
   }
   if (statements.length) await c.env.DB.batch(statements)
   return json(c, { migration_batch_id: batchId, total: statements.length, pending: (opps.results as any[]).filter(o => {
@@ -1425,6 +1449,7 @@ app.post('/api/sales-process/migration/propose', requireAuth, async (c) => {
 })
 
 app.get('/api/sales-process/migration/:batchId', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
   const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(`SELECT m.*, o.client, o.rep_id, o.assigned_to_rep_id, o.next_follow_up, o.job_value,
     o.estimate_amount, o.estimate_sent_date, o.updated_at AS last_activity
@@ -1449,6 +1474,56 @@ app.put('/api/sales-process/migration/:batchId/:opportunityId', requireAuth, asy
   return json(c, { approved: c.req.param('opportunityId') })
 })
 
+async function salesProcessPublicationReadiness(db: D1Database, companyId: string, versionId: string, batchId: string) {
+  const version = await db.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first<any>()
+  if (!version) return null
+  let validationValid = false
+  try { validationValid = JSON.parse(version.validation_json || '{}').valid === true } catch (_) {}
+  const opportunities = await db.prepare('SELECT id,updated_at,rep_id,assigned_to_rep_id,sales_process_stage_id FROM opportunities WHERE company_id=? ORDER BY id').bind(companyId).all<any>()
+  const currentAssignments = await db.prepare(`SELECT opportunity_id,process_version_id,stage_id,classification,outcome_type,internal_status_id,assigned_by
+    FROM sales_stage_assignments WHERE company_id=? ORDER BY opportunity_id,process_version_id,id`).bind(companyId).all<any>()
+  const assignmentsByOpportunity = new Map<string, any[]>()
+  for (const assignment of currentAssignments.results as any[]) {
+    const list = assignmentsByOpportunity.get(String(assignment.opportunity_id)) || []
+    list.push(assignment)
+    assignmentsByOpportunity.set(String(assignment.opportunity_id), list)
+  }
+  const mappings = batchId ? await db.prepare(`SELECT m.*,s.semantic_type AS stage_semantic,
+      CASE WHEN m.final_outcome_type='' THEN 1 WHEN EXISTS (
+        SELECT 1 FROM sales_stage_outcomes so WHERE so.company_id=m.company_id
+          AND so.process_version_id=m.process_version_id AND so.semantic_type=m.final_outcome_type AND so.active=1
+      ) THEN 1 ELSE 0 END AS outcome_valid
+    FROM sales_migration_mappings m
+    LEFT JOIN sales_process_stages s ON s.id=m.final_stage_id AND s.company_id=m.company_id AND s.process_version_id=m.process_version_id AND s.state='active'
+    WHERE m.company_id=? AND m.migration_batch_id=? AND m.process_version_id=?`).bind(companyId, batchId, versionId).all<any>() : { results: [] as any[] }
+  const byOpportunity = new Map((mappings.results as any[]).map(m => [String(m.opportunity_id), m]))
+  const terminal = new Set(['won','lost','disqualified','nurture'])
+  const issues: any[] = []
+  if (!validationValid) issues.push({ code: 'version_not_validated' })
+  for (const opportunity of opportunities.results as any[]) {
+    const mapping: any = byOpportunity.get(String(opportunity.id))
+    if (!mapping) { issues.push({ code: 'missing_mapping', opportunity_id: opportunity.id }); continue }
+    if (mapping.review_state !== 'approved' || !mapping.final_stage_id) issues.push({ code: 'mapping_not_approved', opportunity_id: opportunity.id })
+    if (!mapping.stage_semantic) issues.push({ code: 'invalid_stage', opportunity_id: opportunity.id })
+    if (String(mapping.opportunity_updated_at || '') !== String(opportunity.updated_at || '')) issues.push({ code: 'stale_mapping', opportunity_id: opportunity.id })
+    if (String(mapping.assignment_snapshot || '') !== migrationAssignmentSnapshot(opportunity, assignmentsByOpportunity.get(String(opportunity.id)) || [])) issues.push({ code: 'stale_assignment', opportunity_id: opportunity.id })
+    const outcome = String(mapping.final_outcome_type || '')
+    if (!Number(mapping.outcome_valid)) issues.push({ code: 'invalid_outcome', opportunity_id: opportunity.id })
+    if (terminal.has(String(mapping.stage_semantic || '')) !== Boolean(outcome)) issues.push({ code: 'terminal_outcome_mismatch', opportunity_id: opportunity.id })
+    if (outcome && outcome !== mapping.stage_semantic && !(mapping.stage_semantic === 'closed' && ['won','lost'].includes(outcome))) issues.push({ code: 'outcome_stage_mismatch', opportunity_id: opportunity.id })
+  }
+  if ((mappings.results as any[]).some(m => !(opportunities.results as any[]).some(o => o.id === m.opportunity_id))) issues.push({ code: 'unknown_opportunity' })
+  return { ready: issues.length === 0, company_id: companyId, process_version_id: versionId, migration_batch_id: batchId, opportunity_count: opportunities.results.length, mapping_count: mappings.results.length, issues }
+}
+
+app.get('/api/sales-process/versions/:versionId/publication-readiness', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const readiness = await salesProcessPublicationReadiness(c.env.DB, companyId, c.req.param('versionId'), String(c.req.query('migration_batch_id') || ''))
+  if (!readiness) return err(c, 'Draft version not found', 404)
+  return json(c, readiness)
+})
+
 app.post('/api/sales-process/versions/:versionId/publish', requireAuth, async (c) => {
   if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
   const companyId = c.var.companyId as string
@@ -1458,13 +1533,10 @@ app.post('/api/sales-process/versions/:versionId/publish', requireAuth, async (c
   if (body.confirm !== true) return err(c, 'Explicit publication confirmation is required')
   const version = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first<any>()
   if (!version) return err(c, 'Draft version not found', 404)
-  const validation = await c.env.DB.prepare('SELECT validation_json FROM sales_process_versions WHERE id=? AND company_id=?').bind(versionId, companyId).first<any>()
-  let valid = false; try { valid = JSON.parse(validation?.validation_json || '{}').valid === true } catch (_) {}
-  if (!valid) return err(c, 'Validate the draft successfully before publication', 409)
   const batchId = String(body.migration_batch_id || '')
+  const readiness = await salesProcessPublicationReadiness(c.env.DB, companyId, versionId, batchId)
+  if (!readiness?.ready) return json(c, { error: 'Publication readiness checks failed', readiness }, 409)
   const mappings = await c.env.DB.prepare('SELECT * FROM sales_migration_mappings WHERE company_id=? AND migration_batch_id=? AND process_version_id=?').bind(companyId, batchId, versionId).all<any>()
-  const oppCount = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM opportunities WHERE company_id=?').bind(companyId).first<any>()
-  if (!batchId || mappings.results.length !== Number(oppCount?.n || 0) || (mappings.results as any[]).some(m => m.review_state !== 'approved' || !m.final_stage_id)) return err(c, 'Every opportunity requires an approved mapping before publication', 409)
   const previous = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE company_id=? AND lifecycle='published' LIMIT 1").bind(companyId).first<any>()
   const publicationId = `pub_${uid()}`
   const statements: any[] = []
