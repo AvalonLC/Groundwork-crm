@@ -392,6 +392,10 @@ const DB = (() => {
     propose(versionId) { return post('/sales-process/migration/propose', { process_version_id: versionId }); },
     mappings(batchId) { return get(`/sales-process/migration/${encodeURIComponent(batchId)}`); },
     approveMapping(batchId, opportunityId, finalStageId) { return put(`/sales-process/migration/${encodeURIComponent(batchId)}/${encodeURIComponent(opportunityId)}`, { final_stage_id: finalStageId }); },
+    context(opportunityId) { return get(`/opportunities/${encodeURIComponent(opportunityId)}/sales-context`); },
+    transition(opportunityId, stageId, expectedStageId, outcomeType = '', overrideReason = '') {
+      return put(`/opportunities/${encodeURIComponent(opportunityId)}/sales-stage`, { stage_id: stageId, expected_stage_id: expectedStageId, outcome_type: outcomeType, override_reason: overrideReason });
+    },
     publish(versionId, batchId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/publish`, { migration_batch_id: batchId, confirm: true }); },
     rollback(publicationId) { return post(`/sales-process/publications/${encodeURIComponent(publicationId)}/rollback`, {}); }
   };

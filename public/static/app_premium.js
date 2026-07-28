@@ -7545,6 +7545,9 @@ async function salesProcessBuilder(){
     }
     const p = payload.process;
     const stages = payload.stages || [];
+    const guides = payload.guides || [];
+    const resources = payload.resources || [];
+    const academySkills = payload.academy_skills || [];
     view.innerHTML = `<div class="eyebrow">Sales</div>
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div><h1 style="margin-bottom:4px">Sales Process Builder</h1><p class="lede">${escapeHtml(p.name||'Company Sales Process')} · Version ${Number(p.version_number||1)} · ${escapeHtml(p.lifecycle||'draft')}</p></div>
@@ -7554,7 +7557,7 @@ async function salesProcessBuilder(){
       <section class="spb-panel card"><h2>Process Overview</h2><p>${escapeHtml(p.description||'A shared process definition for Pipeline, Stage Guide, Call Companion, Academy, reporting, and automation.')}</p>
         <div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Editing</strong><p>${canEdit&&p.lifecycle==='draft'?'Allowed in draft':'Read only'}</p></div></div></section>
       <section class="spb-panel card" style="display:none"><h2>Stages</h2>${stages.map(s=>`<article style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${Number(s.display_order)}. ${escapeHtml(s.display_name)}</strong><span class="badge">${escapeHtml(s.semantic_type)}</span></div><p class="muted">${escapeHtml(s.description||'')}</p><small>Customer milestone: ${escapeHtml(s.customer_milestone||'Not configured')} · Expected duration: ${Number(s.expected_duration_days||0)} days</small></article>`).join('')}</section>
-      ${tabs.slice(2,10).map(t=>`<section class="spb-panel card" style="display:none"><h2>${escapeHtml(t)}</h2><p class="muted">This building block is version-owned. Configure it in a draft; published versions are immutable.</p></section>`).join('')}
+      ${tabs.slice(2,10).map(t=>`<section class="spb-panel card" style="display:none"><h2>${escapeHtml(t)}</h2><p class="muted">This building block is version-owned. Configure it in a draft; published versions are immutable.</p>${t==='Call Guides'?guides.map(g=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(g.title)}</strong><p>${escapeHtml(g.purpose||'')}</p></article>`).join(''):t==='Email Templates'?resources.filter(r=>r.resource_type==='email_template').map(r=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(r.name)}</strong></article>`).join(''):t==='Academy Training'?academySkills.map(s=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(s.title)}</strong></article>`).join(''):''}</section>`).join('')}
       <section class="spb-panel card" style="display:none"><h2>Versions and Publishing</h2>
         <p>Publishing requires validation, a reviewed mapping for every opportunity, reconciliation, and explicit administrator confirmation. AI cannot publish.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${canEdit&&p.lifecycle==='draft'?`<button class="secondary-btn" onclick="gwValidateSalesProcess('${escapeHtml(p.id)}')">Validate draft</button><button class="secondary-btn" onclick="gwCreateMigrationProposal('${escapeHtml(p.id)}')">Map existing opportunities</button>`:''}</div>
@@ -13685,9 +13688,17 @@ window.superAdmin = superAdmin;
 //    • All 6 process steps quick-reference
 //    • Live transcript recorder with AI-assisted next-steps summary
 // ══════════════════════════════════════════════════════════════════════════════
-window.openCallCompanion = function(oppId) {
+window.openCallCompanion = async function(oppId) {
   const o = (state && state.opportunities || []).find(x => x.id === oppId);
   if (!o) { console.warn('[CallCompanion] Opportunity not found:', oppId); return; }
+
+  // Normalized context is authoritative after publication. A missing assignment
+  // deliberately falls back to the legacy guide without guessing a stable stage.
+  if (o._salesProcessContext === undefined && window.DB && DB.salesProcess) {
+    try { o._salesProcessContext = await DB.salesProcess.context(oppId); }
+    catch (_) { o._salesProcessContext = null; }
+  }
+  const normalizedContext = o._salesProcessContext && o._salesProcessContext.normalized ? o._salesProcessContext : null;
 
   // Remove any existing companion
   document.getElementById('gw-call-companion')?.remove();
@@ -13714,9 +13725,15 @@ window.openCallCompanion = function(oppId) {
   function ccStageBody(n) {
     const sd = stagesData.find(s => s.id === n) || {};
     const cl = checklists.find(c => c.stage === n);
+    const normalizedGuide = normalizedContext && n === currentStageNum ? (normalizedContext.guides || [])[0] : null;
+    let normalizedConfig = {};
+    try { normalizedConfig = normalizedGuide ? JSON.parse(normalizedGuide.config_json || '{}') : {}; } catch (_) {}
+    const stageQuestions = normalizedGuide ? (normalizedConfig.questions || []) : (sd.questions || []);
+    const stagePurpose = normalizedGuide ? (normalizedGuide.purpose || normalizedContext.stage.description || '') : (sd.purpose || '');
+    const normalizedChecklist = normalizedContext && n === currentStageNum ? (normalizedContext.requirements || []).filter(item => item.requirement_type === 'checklist') : [];
 
-    const qHtml = (sd.questions || []).length
-      ? sd.questions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
+    const qHtml = stageQuestions.length
+      ? stageQuestions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
       : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
 
     const clPrefix = `cc-cl-${n}-${oppId}`;
@@ -13748,6 +13765,9 @@ window.openCallCompanion = function(oppId) {
           </label>`;
         }).join('')}`;
     }
+    if (normalizedChecklist.length) {
+      clHtml = normalizedChecklist.map(item => `<div class="gw-cc-check-row"><span>${escapeHtml(item.label)}</span></div>`).join('');
+    }
 
     const rfHtml = (sd.redFlags || []).length
       ? `<div style="margin-top:14px"><div class="gw-cc-section-label" style="color:#C97B6A">Red Flags to Watch</div>
@@ -13757,12 +13777,12 @@ window.openCallCompanion = function(oppId) {
     const isCurrent = n === currentStageNum;
     return `
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-        <span style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Stage ${n}: ${escapeHtml(sd.title || '')}</span>
+        <span style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Stage ${n}: ${escapeHtml(normalizedContext && n === currentStageNum ? normalizedContext.stage.display_name : (sd.title || ''))}</span>
         ${isCurrent
           ? '<span style="font-size:9px;font-weight:800;color:#fff;background:#2D7A55;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.05em">Current</span>'
           : `<button type="button" onclick="gwCCStageGo(${currentStageNum})" style="font-size:9px;font-weight:800;color:#8B6914;background:#8B691415;border:1px solid #8B691430;border-radius:99px;padding:2px 8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em">Viewing other stage — back to current</button>`}
       </div>
-      <div style="font-size:11px;color:#5E6E6F;margin-bottom:12px;line-height:1.55">${escapeHtml(sd.purpose || '')}</div>
+      <div style="font-size:11px;color:#5E6E6F;margin-bottom:12px;line-height:1.55">${escapeHtml(stagePurpose)}</div>
       <div class="gw-cc-section-label">Discovery Questions</div>
       ${qHtml}
       ${rfHtml}
@@ -14187,10 +14207,13 @@ function gwCCBudgetRange(opp) {
 }
 
 function gwCCBuildPrompt(kind, transcript, opp) {
+  const processContext = opp && opp._salesProcessContext && opp._salesProcessContext.normalized ? opp._salesProcessContext : null;
   const ctx = [
     'Client: '  + (opp && opp.client  || 'Unknown'),
     'Project: ' + (opp && (opp.project || opp.serviceLine) || 'Landscaping project'),
-    'Stage: '   + (opp && opp.status  || 'Unknown'),
+    'Stage: '   + (processContext ? processContext.stage.display_name : (opp && opp.status || 'Unknown')),
+    'Stage purpose: ' + (processContext ? processContext.stage.description || processContext.stage.customer_milestone || 'Not configured' : 'Legacy process context'),
+    'Stage guidance: ' + (processContext && processContext.guides && processContext.guides[0] ? processContext.guides[0].suggested_language || 'Not configured' : 'Not configured'),
     'Budget: '  + gwCCBudgetRange(opp),
   ].join('\n');
   const base = `You are a sales assistant for a premium landscaping company. Use ONLY details from the transcript — never invent specifics.\n\n${ctx}\n\nTRANSCRIPT:\n${transcript.slice(0, 4000)}\n\n`;
