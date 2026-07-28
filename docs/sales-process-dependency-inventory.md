@@ -32,6 +32,28 @@ This inventory is the pre-change safety record for the normalized sales-process 
 
 The compatibility mapper must recognize, but never use as a relational key: `Lead Intake / Rapport`, `Mutual Agreement Set`, `Discovery / CBR Uncovered`, `Budget & Investment Qualified`, `Decision Process Qualified`, `Presentation & SOW Pitch`, `Deal Closed / Won`, `On Hold`, `Sold / Activation`, `Closed Lost`, `Proposal / Estimate Sent`, and `Follow-Up`. Blank, conflicting, and nonstandard labels are explicitly classified as Needs Restaging.
 
+## Remaining label-comparison classification
+
+Static inventory after the migration-chain repair found these compatibility areas. All
+normalized paths use stable assignments and semantic outcomes; the listed comparisons
+remain solely for tenants without a published process unless marked as pending conversion.
+
+| Consumer | Classification | Labels | Normalized rule |
+| --- | --- | --- | --- |
+| `src/index.tsx` legacy map and migration proposal | Legacy compatibility mapping | All listed legacy labels | Allowed only before publication or as an explicitly approved migration mapping. |
+| `app_premium.js` pipeline grouping | Pipeline rendering / Opportunity editing | Legacy stages, Won, Lost, On Hold | Stable stage ID; unresolved records render once in Needs Restaging. |
+| `record-page.js` tracker | Stage Guide / Opportunity editing | Legacy stages, Sold, Lost | Published stage order and semantic terminal outcome. |
+| `app_premium.js` call scripts | Call Companion | Qualification, Presentation, Follow-Up | Version-owned guide interaction type and stable stage ID. |
+| `academy.js` and `data.js` learning modules | Academy | Mutual Agreement, CBR, Budget, Decision, Presentation, Follow-Up | Stable global skill ID plus company association. |
+| `app_premium.js` and `reps.js` dashboards | Reporting / Forecasting / Stagnation | Proposal, Presentation, Follow-Up, On Hold, Sold, Lost | Shared semantic resolver; unresolved records are excluded from stage-specific denominators. |
+| `reps.js` commission lifecycle | Commission | Sold / Activation | Won outcome transition event, never display text. |
+| `app_premium.js` workflow rules | Automation / AI | Sold, Lost, Proposal, Follow-Up | Stable transition/outcome IDs; suggestions require representative confirmation. |
+| `app_premium.js` estimate and payment displays | Financial calculation | Sold / Activation, Closed Lost | Accepted estimate, invoice, payment, and semantic outcome evidence. Legacy matching remains a no-published-process fallback. |
+
+The shared browser resolver is `public/js/sales-process.js`; the canonical server
+resolver is `resolveSalesOpportunityStage`. Unknown, blank, conflicting, and the
+ambiguous Presentation label never fall through to the first stage.
+
 ## Avalon pre-migration inventory contract
 
 The company-scoped inventory endpoint captures opportunity identity, Avalon company ID, customer/contact fields, representative ownership, both legacy stage fields, value, service line, source, estimate fields, appointment fields, next follow-up, timestamps, inferred Won/Lost state, and task/activity counts. Reconciliation includes total count, counts by status, open value, Won value, Lost count, missing owner, missing next action, missing next-action date, and unknown/blank stage. It reads only `opportunities WHERE company_id = ?` and related rows joined with the same company ID. It never deletes, rewrites, or merges customer, task, estimate, appointment, note, activity, or ownership data.
