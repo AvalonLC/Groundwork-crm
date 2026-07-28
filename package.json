@@ -9,7 +9,8 @@
     "deploy": "npm run build && wrangler pages deploy dist --project-name groundwork-crm",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
-    "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production"
+    "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production",
+    "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs"
   },
   "dependencies": {
     "hono": "^4.12.23"
