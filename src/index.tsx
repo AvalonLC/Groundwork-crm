@@ -1441,6 +1441,8 @@ app.post('/api/sales-process/migration/propose', requireAuth, async (c) => {
     statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_mappings
       (id,company_id,opportunity_id,migration_batch_id,previous_stage_id,previous_label,proposed_stage_id,final_stage_id,proposed_outcome_type,final_outcome_type,mapping_method,mapping_confidence,suggestion_reason,review_state,reviewer_id,reviewed_at,process_version_id,rollback_value,opportunity_updated_at,assignment_snapshot)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(`map_${uid()}`, companyId, o.id, batchId, o.sales_process_stage_id || '', status || pipelineStage, destination?.id || '', ambiguous ? '' : destination.id, outcomeType, ambiguous ? '' : outcomeType, method, ambiguous ? 0.35 : 1, reason, ambiguous ? 'pending' : 'approved', ambiguous ? '' : actorId, ambiguous ? '' : new Date().toISOString(), versionId, o.sales_process_stage_id || status || pipelineStage, o.updated_at || '', migrationAssignmentSnapshot(o, assignmentsByOpportunity.get(String(o.id)) || [])))
+      (id,company_id,opportunity_id,migration_batch_id,previous_stage_id,previous_label,proposed_stage_id,final_stage_id,proposed_outcome_type,final_outcome_type,mapping_method,mapping_confidence,suggestion_reason,review_state,reviewer_id,reviewed_at,process_version_id,rollback_value,opportunity_updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(`map_${uid()}`, companyId, o.id, batchId, o.sales_process_stage_id || '', status || pipelineStage, destination?.id || '', ambiguous ? '' : destination.id, outcomeType, ambiguous ? '' : outcomeType, method, ambiguous ? 0.35 : 1, reason, ambiguous ? 'pending' : 'approved', ambiguous ? '' : actorId, ambiguous ? '' : new Date().toISOString(), versionId, o.sales_process_stage_id || status || pipelineStage, o.updated_at || ''))
   }
   if (statements.length) await c.env.DB.batch(statements)
   return json(c, { migration_batch_id: batchId, total: statements.length, pending: (opps.results as any[]).filter(o => {
@@ -1488,6 +1490,7 @@ async function salesProcessPublicationReadiness(db: D1Database, companyId: strin
     list.push(assignment)
     assignmentsByOpportunity.set(String(assignment.opportunity_id), list)
   }
+  const opportunities = await db.prepare('SELECT id,updated_at FROM opportunities WHERE company_id=? ORDER BY id').bind(companyId).all<any>()
   const mappings = batchId ? await db.prepare(`SELECT m.*,s.semantic_type AS stage_semantic,
       CASE WHEN m.final_outcome_type='' THEN 1 WHEN EXISTS (
         SELECT 1 FROM sales_stage_outcomes so WHERE so.company_id=m.company_id
