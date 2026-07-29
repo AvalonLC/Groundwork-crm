@@ -14,14 +14,17 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 CREATE TABLE opportunities (id TEXT PRIMARY KEY, company_id TEXT, client TEXT, status TEXT, pipeline_stage TEXT, sales_process_stage_id TEXT, rep_id TEXT, assigned_to_rep_id TEXT, next_follow_up TEXT, job_value REAL, estimate_amount REAL, estimate_sent_date TEXT, created_at TEXT, updated_at TEXT);
 CREATE TABLE calendar_events (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT, status TEXT, start_at TEXT);
 CREATE TABLE estimates (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT, status TEXT, sent_at TEXT, updated_at TEXT);
+CREATE TABLE notes (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT, body TEXT, created_at TEXT);
 CREATE TABLE sales_processes (id TEXT PRIMARY KEY, company_id TEXT, name TEXT);
-CREATE TABLE sales_process_versions (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, version_number INTEGER, lifecycle TEXT, validation_json TEXT, published_at TEXT DEFAULT '', published_by TEXT DEFAULT '', updated_at TEXT DEFAULT 'seed');
+CREATE TABLE sales_process_versions (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, version_number INTEGER, lifecycle TEXT, validation_json TEXT, published_at TEXT DEFAULT '', published_by TEXT DEFAULT '', updated_at TEXT DEFAULT 'seed', approved_snapshot_id TEXT DEFAULT '', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT '');
 CREATE TABLE sales_process_stages (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stable_key TEXT, display_name TEXT, semantic_type TEXT, display_order INTEGER, state TEXT);
 CREATE TABLE sales_stage_outcomes (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stage_id TEXT, semantic_type TEXT, active INTEGER);
-CREATE TABLE sales_stage_assignments (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, process_version_id TEXT, stage_id TEXT, classification TEXT, outcome_type TEXT, assigned_by TEXT, UNIQUE(company_id,opportunity_id,process_version_id));
+CREATE TABLE sales_stage_assignments (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, process_version_id TEXT, stage_id TEXT, classification TEXT, outcome_type TEXT, assigned_by TEXT, assigned_at TEXT DEFAULT '', UNIQUE(company_id,opportunity_id,process_version_id));
 CREATE TABLE sales_migration_mappings (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, migration_batch_id TEXT, previous_stage_id TEXT, previous_label TEXT, proposed_stage_id TEXT, final_stage_id TEXT, proposed_outcome_type TEXT, final_outcome_type TEXT, mapping_method TEXT, mapping_confidence REAL, suggestion_reason TEXT, review_state TEXT, reviewer_id TEXT, reviewed_at TEXT, process_version_id TEXT, rollback_value TEXT, opportunity_updated_at TEXT DEFAULT '', assignment_snapshot TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), UNIQUE(company_id,opportunity_id,migration_batch_id));
 CREATE TABLE sales_migration_history (id TEXT PRIMARY KEY, company_id TEXT, migration_batch_id TEXT, opportunity_id TEXT, previous_process_version_id TEXT, new_process_version_id TEXT, previous_stage_id TEXT, previous_label TEXT, new_stage_id TEXT, mapping_id TEXT, actor_id TEXT, event_type TEXT, event_json TEXT, created_at TEXT DEFAULT (datetime('now')));
 CREATE TABLE sales_process_publications (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, process_version_id TEXT, previous_version_id TEXT, migration_batch_id TEXT, action TEXT, actor_id TEXT, impact_json TEXT, created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE sales_migration_snapshots (id TEXT PRIMARY KEY,company_id TEXT,process_version_id TEXT,migration_batch_id TEXT,state TEXT,source_revision TEXT,reconciliation_json TEXT,approved_by TEXT DEFAULT '',approved_at TEXT DEFAULT '',created_by TEXT,created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE sales_migration_snapshot_items (id TEXT PRIMARY KEY,company_id TEXT,snapshot_id TEXT,opportunity_id TEXT,source_updated_at TEXT,original_status TEXT,original_pipeline_stage TEXT,original_stage_id TEXT,snapshot_json TEXT,created_at TEXT DEFAULT (datetime('now')));
 CREATE TABLE activity_log (id TEXT PRIMARY KEY, company_id TEXT);
 `;
 
@@ -53,7 +56,7 @@ before(async () => {
       return [db.prepare('INSERT INTO settings VALUES (?,?,datetime(\'now\'))').bind(`session_${token}`, rep), db.prepare('INSERT INTO settings VALUES (?,?,datetime(\'now\'))').bind(`session_company_${token}`, company)];
     }),
     db.prepare("INSERT INTO sales_processes VALUES ('process-a','company-a','A'),('process-b','company-b','B')"),
-    db.prepare("INSERT INTO sales_process_versions VALUES ('version-a','company-a','process-a',2,'draft','{\"valid\":true}','','','seed'),('published-a','company-a','process-a',1,'published','{\"valid\":true}','','','seed'),('version-b','company-b','process-b',1,'draft','{\"valid\":true}','','','seed')")
+    db.prepare("INSERT INTO sales_process_versions (id,company_id,process_id,version_number,lifecycle,validation_json,published_at,published_by,updated_at) VALUES ('version-a','company-a','process-a',2,'draft','{\"valid\":true}','','','seed'),('published-a','company-a','process-a',1,'published','{\"valid\":true}','','','seed'),('version-b','company-b','process-b',1,'draft','{\"valid\":true}','','','seed')")
   ]);
   const stageDefs = [['new','new_lead','intake'],['qualify','connect_qualify','active_qualification'],['consult','onsite_consultation','consultation'],['estimate','estimate_development','estimate_development'],['present','estimate_presentation','proposal_presentation'],['decision','decision_pending','decision'],['won','closed','won']];
   for (const company of ['a','b']) for (const [id,key,semantic] of stageDefs) await run('INSERT INTO sales_process_stages VALUES (?,?,?,?,?,?,?,?)', `${company}-${id}`, `company-${company}`, `version-${company}`, key, key, semantic, stageDefs.findIndex(x => x[0] === id), 'active');
@@ -126,6 +129,8 @@ test('a failed publication batch rolls back every lifecycle and data change', as
     const terminal = mapping.opportunity_id === 'terminal';
     await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}/${mapping.opportunity_id}`, { method: 'PUT', body: JSON.stringify({ final_stage_id: terminal ? 'a-won' : 'a-new', final_outcome_type: terminal ? 'won' : '' }) });
   }
+  const snapshot = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/snapshots', { method: 'POST', body: JSON.stringify({ migration_batch_id: proposed.migration_batch_id }) }));
+  assert.equal((await request(tokens.admin, `/api/sales-process/snapshots/${snapshot.snapshot_id}/approve`, { method: 'POST', body: '{}' })).status, 200);
   const before = { versions: await rows('sales_process_versions'), assignments: await rows('sales_stage_assignments'), opportunities: await opportunityState(), history: await rows('sales_migration_history'), publications: await rows('sales_process_publications') };
   const failingDb = new Proxy(db, { get(target, property) {
     if (property === 'prepare') return (sql) => sql.includes('INSERT INTO sales_process_publications') ? target.prepare('INSERT INTO deliberately_missing_publication_table VALUES (?)') : target.prepare(sql);
@@ -136,4 +141,26 @@ test('a failed publication batch rolls back every lifecycle and data change', as
   assert.equal(response.status, 500);
   const afterState = { versions: await rows('sales_process_versions'), assignments: await rows('sales_stage_assignments'), opportunities: await opportunityState(), history: await rows('sales_migration_history'), publications: await rows('sales_process_publications') };
   assert.deepEqual(afterState, before);
+});
+
+test('approved snapshot publishes and rollback restores prior stage and outcome', async () => {
+  await run("UPDATE sales_process_versions SET lifecycle='draft',approved_snapshot_id='' WHERE id='version-a' AND company_id='company-a'");
+  await run("UPDATE sales_process_versions SET lifecycle='published' WHERE id='published-a' AND company_id='company-a'");
+  await run("INSERT OR IGNORE INTO sales_stage_assignments (id,company_id,opportunity_id,process_version_id,stage_id,classification,outcome_type,assigned_by) VALUES ('prior-deterministic','company-a','deterministic','published-a','legacy-stage','transitioned','lost','manager-a')");
+  const proposed = await body(await request(tokens.admin, '/api/sales-process/migration/propose', { method: 'POST', body: JSON.stringify({ process_version_id: 'version-a' }) }));
+  const mappings = await body(await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}`));
+  for (const mapping of mappings) if (mapping.review_state !== 'approved') {
+    const terminal = mapping.opportunity_id === 'terminal';
+    assert.equal((await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}/${mapping.opportunity_id}`, { method: 'PUT', body: JSON.stringify({ final_stage_id: terminal ? 'a-won' : 'a-new', final_outcome_type: terminal ? 'won' : '' }) })).status, 200);
+  }
+  const snapshot = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/snapshots', { method: 'POST', body: JSON.stringify({ migration_batch_id: proposed.migration_batch_id }) }));
+  assert.equal((await request(tokens.admin, `/api/sales-process/snapshots/${snapshot.snapshot_id}/approve`, { method: 'POST', body: '{}' })).status, 200);
+  const published = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/publish', { method: 'POST', body: JSON.stringify({ confirm: true, migration_batch_id: proposed.migration_batch_id }) }));
+  assert.equal(published.published, 'version-a');
+  assert.equal((await request(tokens.admin, `/api/sales-process/publications/${published.publication_id}/rollback`, { method: 'POST', body: '{}' })).status, 200);
+  const prior = await db.prepare("SELECT stage_id,outcome_type FROM sales_stage_assignments WHERE id='prior-deterministic' AND company_id='company-a'").first();
+  assert.deepEqual(prior, { stage_id: 'legacy-stage', outcome_type: 'lost' });
+  const versions = await rows('sales_process_versions');
+  assert.equal(versions.find(version => version.id === 'published-a').lifecycle, 'published');
+  assert.equal(versions.find(version => version.id === 'version-a').lifecycle, 'rolled_back');
 });
