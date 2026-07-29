@@ -1182,7 +1182,7 @@ app.put('/api/pipeline-stages', requireAuth, async (c) => {
 // reviewed version. Platform CRM leads in gw_leads are intentionally never read.
 // ------------------------------------------------------------------------------
 
-const SALES_PROCESS_ADMIN_ROLES = new Set(['admin', 'office_manager'])
+const SALES_PROCESS_ADMIN_ROLES = new Set(['admin', 'office_manager', 'sales_manager'])
 const LEGACY_STAGE_MAP: Record<string, string> = {
   'Lead Intake / Rapport': 'new_lead',
   'Mutual Agreement Set': 'connect_qualify',
@@ -1786,12 +1786,18 @@ app.get('/api/sales-process/versions/:versionId/preview', requireAuth, async (c)
   const batchId = String(c.req.query('migration_batch_id') || '')
   const version = await c.env.DB.prepare('SELECT * FROM sales_process_versions WHERE id=? AND company_id=?').bind(versionId, companyId).first<any>()
   if (!version) return err(c, 'Process version not found', 404)
-  const [stages, mappings, opportunities, automations, associations] = await Promise.all([
+  const [stages, mappings, opportunities, automations, associations, transitions] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state=\'active\' ORDER BY display_order').bind(companyId, versionId).all<any>(),
     c.env.DB.prepare('SELECT * FROM sales_migration_mappings WHERE company_id=? AND process_version_id=? AND migration_batch_id=?').bind(companyId, versionId, batchId).all<any>(),
     c.env.DB.prepare('SELECT id,job_value FROM opportunities WHERE company_id=?').bind(companyId).all<any>(),
     c.env.DB.prepare('SELECT id,name,trigger_type,action_type FROM sales_process_automations WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>(),
-    c.env.DB.prepare('SELECT id,stage_id,skill_id FROM sales_academy_associations WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>()
+    c.env.DB.prepare('SELECT id,stage_id,skill_id FROM sales_academy_associations WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare(`SELECT t.id,t.from_stage_id,t.to_stage_id,t.outcome_type,t.requires_override,
+      fs.display_name AS from_stage_name,ts.display_name AS to_stage_name
+      FROM sales_stage_transition_paths t
+      JOIN sales_process_stages fs ON fs.id=t.from_stage_id AND fs.company_id=t.company_id AND fs.process_version_id=t.process_version_id
+      JOIN sales_process_stages ts ON ts.id=t.to_stage_id AND ts.company_id=t.company_id AND ts.process_version_id=t.process_version_id
+      WHERE t.company_id=? AND t.process_version_id=? AND t.active=1 ORDER BY fs.display_order,ts.display_order LIMIT 12`).bind(companyId, versionId).all<any>()
   ])
   const methods: Record<string, number> = { automatic: 0, manual: 0, unknown: 0 }
   for (const mapping of mappings.results as any[]) {
@@ -1799,7 +1805,7 @@ app.get('/api/sales-process/versions/:versionId/preview', requireAuth, async (c)
     else if (mapping.mapping_method === 'manual_review') methods.manual++
     else methods.automatic++
   }
-  return json(c, { version, stages: stages.results, sample_transitions: [], impact: {
+  return json(c, { version, stages: stages.results, sample_transitions: transitions.results, impact: {
     opportunities_affected: opportunities.results.length,
     value_affected: (opportunities.results as any[]).reduce((sum, opportunity) => sum + Number(opportunity.job_value || 0), 0),
     mappings: methods, reporting_changes: stages.results.length, automation_changes: automations.results, training_changes: associations.results
@@ -11033,8 +11039,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b021">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b021">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b022">
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b022">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11057,10 +11063,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260729b021"></script>
-  <script src="/js/client_portal.js?v=20260729b021"></script>
-  <script src="/js/platform_core.js?v=20260729b021"></script>
-  <script src="/js/client_portal.js?v=20260729b021"></script>  <script>
+  <script src="/js/platform_core.js?v=20260729b022"></script>
+  <script src="/js/client_portal.js?v=20260729b022"></script>
+  <script src="/js/platform_core.js?v=20260729b022"></script>
+  <script src="/js/client_portal.js?v=20260729b022"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -11694,12 +11700,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b021">
-  <link rel="stylesheet" href="/js/styles.css?v=20260729b021">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b021">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b021">
-  <link rel="stylesheet" href="/js/styles.css?v=20260729b021">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b021">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b022">
+  <link rel="stylesheet" href="/js/styles.css?v=20260729b022">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b022">
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b022">
+  <link rel="stylesheet" href="/js/styles.css?v=20260729b022">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b022">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -12258,82 +12264,82 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260729b021"></script>
-<script src="/js/sales-process.js?v=20260729b021"></script>
-<script src="/js/richtext.js?v=20260729b021"></script>
-<script src="/js/db.js?v=20260729b021"></script>
-<script src="/js/data.js?v=20260729b021"></script>
-<script src="/js/reps.js?v=20260729b021"></script>
-<script src="/js/record-page.js?v=20260729b021"></script>
-<script src="/js/academy.js?v=20260729b021"></script>
-<script src="/js/task_engine.js?v=20260729b021"></script>
-<script src="/js/gw_i18n.js?v=20260729b021"></script>
-<script src="/js/app_premium.js?v=20260729b021"></script>
-<script src="/js/estimates.js?v=20260729b021"></script>
-<script src="/js/multiday.js?v=20260729b021"></script>
-<script src="/js/proposals.js?v=20260729b021"></script>
-<script src="/js/pricing.js?v=20260729b021"></script>
-<script src="/js/invoices.js?v=20260729b021"></script>
-<script src="/js/csv_import.js?v=20260729b021"></script>
-<script src="/js/onboarding.js?v=20260729b021"></script>
-<script src="/js/gw_copilot.js?v=20260729b021"></script>
-<script src="/js/groundwork_ai.js?v=20260729b021"></script>
-<script src="/js/recurring_plans.js?v=20260729b021"></script>
-<script src="/js/reviews.js?v=20260729b021"></script>
-<script src="/js/stripe.js?v=20260729b021"></script>
-<script src="/js/email.js?v=20260729b021"></script>
-<script src="/js/notifications.js?v=20260729b021"></script>
-<script src="/js/integrations.js?v=20260729b021"></script>
-<script src="/js/calendar_sync.js?v=20260729b021"></script>
-<script src="/js/ai_followup.js?v=20260729b021"></script>
-<script src="/js/user_management.js?v=20260729b021"></script>
-<script src="/js/platform_admin.js?v=20260729b021"></script>
-<script src="/js/time_tracker.js?v=20260729b021"></script>
-<script src="/js/field_workday.js?v=20260729b021"></script>
-<script src="/js/platform_core.js?v=20260729b021"></script>
-<script src="/js/approval_engine.js?v=20260729b021"></script>
-<script src="/js/automation_engine.js?v=20260729b021"></script>
-<script src="/js/client_portal.js?v=20260729b021"></script>
-<script src="/js/field_mode.js?v=20260729b021"></script>
-<script src="/js/assets_hub.js?v=20260729b021"></script>
-<script src="/js/gw-icons.js?v=20260729b021"></script>
-<script src="/js/sales-process.js?v=20260729b021"></script>
-<script src="/js/richtext.js?v=20260729b021"></script>
-<script src="/js/db.js?v=20260729b021"></script>
-<script src="/js/data.js?v=20260729b021"></script>
-<script src="/js/reps.js?v=20260729b021"></script>
-<script src="/js/record-page.js?v=20260729b021"></script>
-<script src="/js/academy.js?v=20260729b021"></script>
-<script src="/js/task_engine.js?v=20260729b021"></script>
-<script src="/js/gw_i18n.js?v=20260729b021"></script>
-<script src="/js/app_premium.js?v=20260729b021"></script>
-<script src="/js/estimates.js?v=20260729b021"></script>
-<script src="/js/multiday.js?v=20260729b021"></script>
-<script src="/js/proposals.js?v=20260729b021"></script>
-<script src="/js/pricing.js?v=20260729b021"></script>
-<script src="/js/invoices.js?v=20260729b021"></script>
-<script src="/js/csv_import.js?v=20260729b021"></script>
-<script src="/js/onboarding.js?v=20260729b021"></script>
-<script src="/js/gw_copilot.js?v=20260729b021"></script>
-<script src="/js/groundwork_ai.js?v=20260729b021"></script>
-<script src="/js/recurring_plans.js?v=20260729b021"></script>
-<script src="/js/reviews.js?v=20260729b021"></script>
-<script src="/js/stripe.js?v=20260729b021"></script>
-<script src="/js/email.js?v=20260729b021"></script>
-<script src="/js/notifications.js?v=20260729b021"></script>
-<script src="/js/integrations.js?v=20260729b021"></script>
-<script src="/js/calendar_sync.js?v=20260729b021"></script>
-<script src="/js/ai_followup.js?v=20260729b021"></script>
-<script src="/js/user_management.js?v=20260729b021"></script>
-<script src="/js/platform_admin.js?v=20260729b021"></script>
-<script src="/js/time_tracker.js?v=20260729b021"></script>
-<script src="/js/field_workday.js?v=20260729b021"></script>
-<script src="/js/platform_core.js?v=20260729b021"></script>
-<script src="/js/approval_engine.js?v=20260729b021"></script>
-<script src="/js/automation_engine.js?v=20260729b021"></script>
-<script src="/js/client_portal.js?v=20260729b021"></script>
-<script src="/js/field_mode.js?v=20260729b021"></script>
-<script src="/js/assets_hub.js?v=20260729b021"></script><script>
+<script src="/js/gw-icons.js?v=20260729b022"></script>
+<script src="/js/sales-process.js?v=20260729b022"></script>
+<script src="/js/richtext.js?v=20260729b022"></script>
+<script src="/js/db.js?v=20260729b022"></script>
+<script src="/js/data.js?v=20260729b022"></script>
+<script src="/js/reps.js?v=20260729b022"></script>
+<script src="/js/record-page.js?v=20260729b022"></script>
+<script src="/js/academy.js?v=20260729b022"></script>
+<script src="/js/task_engine.js?v=20260729b022"></script>
+<script src="/js/gw_i18n.js?v=20260729b022"></script>
+<script src="/js/app_premium.js?v=20260729b022"></script>
+<script src="/js/estimates.js?v=20260729b022"></script>
+<script src="/js/multiday.js?v=20260729b022"></script>
+<script src="/js/proposals.js?v=20260729b022"></script>
+<script src="/js/pricing.js?v=20260729b022"></script>
+<script src="/js/invoices.js?v=20260729b022"></script>
+<script src="/js/csv_import.js?v=20260729b022"></script>
+<script src="/js/onboarding.js?v=20260729b022"></script>
+<script src="/js/gw_copilot.js?v=20260729b022"></script>
+<script src="/js/groundwork_ai.js?v=20260729b022"></script>
+<script src="/js/recurring_plans.js?v=20260729b022"></script>
+<script src="/js/reviews.js?v=20260729b022"></script>
+<script src="/js/stripe.js?v=20260729b022"></script>
+<script src="/js/email.js?v=20260729b022"></script>
+<script src="/js/notifications.js?v=20260729b022"></script>
+<script src="/js/integrations.js?v=20260729b022"></script>
+<script src="/js/calendar_sync.js?v=20260729b022"></script>
+<script src="/js/ai_followup.js?v=20260729b022"></script>
+<script src="/js/user_management.js?v=20260729b022"></script>
+<script src="/js/platform_admin.js?v=20260729b022"></script>
+<script src="/js/time_tracker.js?v=20260729b022"></script>
+<script src="/js/field_workday.js?v=20260729b022"></script>
+<script src="/js/platform_core.js?v=20260729b022"></script>
+<script src="/js/approval_engine.js?v=20260729b022"></script>
+<script src="/js/automation_engine.js?v=20260729b022"></script>
+<script src="/js/client_portal.js?v=20260729b022"></script>
+<script src="/js/field_mode.js?v=20260729b022"></script>
+<script src="/js/assets_hub.js?v=20260729b022"></script>
+<script src="/js/gw-icons.js?v=20260729b022"></script>
+<script src="/js/sales-process.js?v=20260729b022"></script>
+<script src="/js/richtext.js?v=20260729b022"></script>
+<script src="/js/db.js?v=20260729b022"></script>
+<script src="/js/data.js?v=20260729b022"></script>
+<script src="/js/reps.js?v=20260729b022"></script>
+<script src="/js/record-page.js?v=20260729b022"></script>
+<script src="/js/academy.js?v=20260729b022"></script>
+<script src="/js/task_engine.js?v=20260729b022"></script>
+<script src="/js/gw_i18n.js?v=20260729b022"></script>
+<script src="/js/app_premium.js?v=20260729b022"></script>
+<script src="/js/estimates.js?v=20260729b022"></script>
+<script src="/js/multiday.js?v=20260729b022"></script>
+<script src="/js/proposals.js?v=20260729b022"></script>
+<script src="/js/pricing.js?v=20260729b022"></script>
+<script src="/js/invoices.js?v=20260729b022"></script>
+<script src="/js/csv_import.js?v=20260729b022"></script>
+<script src="/js/onboarding.js?v=20260729b022"></script>
+<script src="/js/gw_copilot.js?v=20260729b022"></script>
+<script src="/js/groundwork_ai.js?v=20260729b022"></script>
+<script src="/js/recurring_plans.js?v=20260729b022"></script>
+<script src="/js/reviews.js?v=20260729b022"></script>
+<script src="/js/stripe.js?v=20260729b022"></script>
+<script src="/js/email.js?v=20260729b022"></script>
+<script src="/js/notifications.js?v=20260729b022"></script>
+<script src="/js/integrations.js?v=20260729b022"></script>
+<script src="/js/calendar_sync.js?v=20260729b022"></script>
+<script src="/js/ai_followup.js?v=20260729b022"></script>
+<script src="/js/user_management.js?v=20260729b022"></script>
+<script src="/js/platform_admin.js?v=20260729b022"></script>
+<script src="/js/time_tracker.js?v=20260729b022"></script>
+<script src="/js/field_workday.js?v=20260729b022"></script>
+<script src="/js/platform_core.js?v=20260729b022"></script>
+<script src="/js/approval_engine.js?v=20260729b022"></script>
+<script src="/js/automation_engine.js?v=20260729b022"></script>
+<script src="/js/client_portal.js?v=20260729b022"></script>
+<script src="/js/field_mode.js?v=20260729b022"></script>
+<script src="/js/assets_hub.js?v=20260729b022"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

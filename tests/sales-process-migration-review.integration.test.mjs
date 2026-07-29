@@ -5,7 +5,7 @@ import { Miniflare } from 'miniflare';
 let app;
 let mf;
 let db;
-const tokens = { admin: 'admin-token', manager: 'manager-token', representative: 'representative-token', foreign: 'foreign-token' };
+const tokens = { admin: 'admin-token', manager: 'manager-token', salesManager: 'sales-manager-token', representative: 'representative-token', foreign: 'foreign-token' };
 
 const schema = `
 CREATE TABLE companies (id TEXT PRIMARY KEY, active INTEGER, subscription_status TEXT, trial_expires_at TEXT);
@@ -19,6 +19,9 @@ CREATE TABLE sales_processes (id TEXT PRIMARY KEY, company_id TEXT, name TEXT);
 CREATE TABLE sales_process_versions (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, version_number INTEGER, lifecycle TEXT, validation_json TEXT, published_at TEXT DEFAULT '', published_by TEXT DEFAULT '', updated_at TEXT DEFAULT 'seed', approved_snapshot_id TEXT DEFAULT '', approved_at TEXT DEFAULT '', approved_by TEXT DEFAULT '');
 CREATE TABLE sales_process_stages (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stable_key TEXT, display_name TEXT, semantic_type TEXT, display_order INTEGER, state TEXT);
 CREATE TABLE sales_stage_outcomes (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stage_id TEXT, semantic_type TEXT, active INTEGER);
+CREATE TABLE sales_stage_transition_paths (id TEXT PRIMARY KEY,company_id TEXT,process_version_id TEXT,from_stage_id TEXT,to_stage_id TEXT,outcome_type TEXT,requires_override INTEGER,active INTEGER);
+CREATE TABLE sales_process_automations (id TEXT PRIMARY KEY,company_id TEXT,process_version_id TEXT,name TEXT,trigger_type TEXT,action_type TEXT,active INTEGER);
+CREATE TABLE sales_academy_associations (id TEXT PRIMARY KEY,company_id TEXT,process_version_id TEXT,stage_id TEXT,skill_id TEXT,display_order INTEGER);
 CREATE TABLE sales_stage_assignments (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, process_version_id TEXT, stage_id TEXT, classification TEXT, outcome_type TEXT, assigned_by TEXT, assigned_at TEXT DEFAULT '', UNIQUE(company_id,opportunity_id,process_version_id));
 CREATE TABLE sales_migration_mappings (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, migration_batch_id TEXT, previous_stage_id TEXT, previous_label TEXT, proposed_stage_id TEXT, final_stage_id TEXT, proposed_outcome_type TEXT, final_outcome_type TEXT, mapping_method TEXT, mapping_confidence REAL, suggestion_reason TEXT, review_state TEXT, reviewer_id TEXT, reviewed_at TEXT, process_version_id TEXT, rollback_value TEXT, opportunity_updated_at TEXT DEFAULT '', assignment_snapshot TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), UNIQUE(company_id,opportunity_id,migration_batch_id));
 CREATE TABLE sales_migration_history (id TEXT PRIMARY KEY, company_id TEXT, migration_batch_id TEXT, opportunity_id TEXT, previous_process_version_id TEXT, new_process_version_id TEXT, previous_stage_id TEXT, previous_label TEXT, new_stage_id TEXT, mapping_id TEXT, actor_id TEXT, event_type TEXT, event_json TEXT, created_at TEXT DEFAULT (datetime('now')));
@@ -49,9 +52,9 @@ before(async () => {
   await db.exec(schema);
   await db.batch([
     db.prepare("INSERT INTO companies VALUES ('company-a',1,'active',''),('company-b',1,'active','')"),
-    db.prepare("INSERT INTO reps VALUES ('admin-a','company-a','admin',0,1),('manager-a','company-a','office_manager',0,1),('rep-a','company-a','representative',0,1),('admin-b','company-b','admin',0,1)"),
+    db.prepare("INSERT INTO reps VALUES ('admin-a','company-a','admin',0,1),('manager-a','company-a','office_manager',0,1),('sales-manager-a','company-a','sales_manager',0,1),('rep-a','company-a','representative',0,1),('admin-b','company-b','admin',0,1)"),
     ...Object.entries(tokens).flatMap(([role, token]) => {
-      const rep = role === 'admin' ? 'admin-a' : role === 'manager' ? 'manager-a' : role === 'representative' ? 'rep-a' : 'admin-b';
+      const rep = role === 'admin' ? 'admin-a' : role === 'manager' ? 'manager-a' : role === 'salesManager' ? 'sales-manager-a' : role === 'representative' ? 'rep-a' : 'admin-b';
       const company = role === 'foreign' ? 'company-b' : 'company-a';
       return [db.prepare('INSERT INTO settings VALUES (?,?,datetime(\'now\'))').bind(`session_${token}`, rep), db.prepare('INSERT INTO settings VALUES (?,?,datetime(\'now\'))').bind(`session_company_${token}`, company)];
     }),
@@ -61,6 +64,7 @@ before(async () => {
   const stageDefs = [['new','new_lead','intake'],['qualify','connect_qualify','active_qualification'],['consult','onsite_consultation','consultation'],['estimate','estimate_development','estimate_development'],['present','estimate_presentation','proposal_presentation'],['decision','decision_pending','decision'],['won','closed','won']];
   for (const company of ['a','b']) for (const [id,key,semantic] of stageDefs) await run('INSERT INTO sales_process_stages VALUES (?,?,?,?,?,?,?,?)', `${company}-${id}`, `company-${company}`, `version-${company}`, key, key, semantic, stageDefs.findIndex(x => x[0] === id), 'active');
   await run("INSERT INTO sales_stage_outcomes VALUES ('outcome-a-won','company-a','version-a','a-won','won',1),('outcome-b-won','company-b','version-b','b-won','won',1)");
+  await run("INSERT INTO sales_stage_transition_paths VALUES ('transition-a','company-a','version-a','a-new','a-qualify','',0,1),('transition-b','company-b','version-b','b-new','b-qualify','',0,1)");
   const opportunities = [
     ['deterministic','Lead Intake / Rapport','Lead Intake / Rapport'], ['ambiguous','Presentation & SOW Pitch','Presentation & SOW Pitch'],
     ['conflicting','On Hold','New Lead'], ['unknown','Mystery','Mystery'], ['blank','',''],
@@ -74,7 +78,7 @@ before(async () => {
 after(async () => { await mf.dispose(); });
 
 test('authentication owns company scope and role policy', async () => {
-  for (const token of [tokens.admin, tokens.manager]) {
+  for (const token of [tokens.admin, tokens.manager, tokens.salesManager]) {
     const response = await request(token, '/api/sales-process/migration/propose', { method: 'POST', body: JSON.stringify({ process_version_id: 'version-a', company_id: 'company-b' }) });
     assert.equal(response.status, 200);
   }
@@ -155,6 +159,13 @@ test('approved snapshot publishes and rollback restores prior stage and outcome'
   }
   const snapshot = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/snapshots', { method: 'POST', body: JSON.stringify({ migration_batch_id: proposed.migration_batch_id }) }));
   assert.equal((await request(tokens.admin, `/api/sales-process/snapshots/${snapshot.snapshot_id}/approve`, { method: 'POST', body: '{}' })).status, 200);
+  const preview = await body(await request(tokens.admin, `/api/sales-process/versions/version-a/preview?migration_batch_id=${proposed.migration_batch_id}`));
+  assert.deepEqual(preview.surfaces, ['pipeline','opportunity_detail','stage_guide','call_companion','representative_view','reporting','mobile']);
+  assert.equal(preview.sample_transitions[0].from_stage_name, 'new_lead');
+  assert.equal(preview.sample_transitions[0].to_stage_name, 'connect_qualify');
+  assert.equal(preview.impact.opportunities_affected, 7);
+  assert.equal(preview.impact.value_affected, 700);
+  assert.equal(preview.impact.mappings.unknown, 0);
   const published = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/publish', { method: 'POST', body: JSON.stringify({ confirm: true, migration_batch_id: proposed.migration_batch_id }) }));
   assert.equal(published.published, 'version-a');
   assert.equal((await request(tokens.admin, `/api/sales-process/publications/${published.publication_id}/rollback`, { method: 'POST', body: '{}' })).status, 200);

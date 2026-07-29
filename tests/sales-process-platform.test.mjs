@@ -85,6 +85,22 @@ test('reporting and financial consumers use normalized semantics instead of oper
   assert.doesNotMatch(division, /POTS_STAGES|STAGE_WIN_PROB/);
 });
 
+test('Builder preview renders lifecycle impact gates and responsive surfaces', () => {
+  const frontend = readFileSync(new URL('../public/js/app_premium.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../public/js/premium.css', import.meta.url), 'utf8');
+  const start = frontend.indexOf('window.gwPreviewSalesProcess=');
+  const end = frontend.indexOf('window.gwAdoptGroundworkTemplate=', start);
+  const block = frontend.slice(start, end);
+  for (const label of ['Opportunities affected','Value affected','Automatic mappings','Manual mappings','Unknown mappings','Sample transitions','Preview surfaces','Impact changes']) assert.match(block, new RegExp(label));
+  assert.match(block, /DB\.salesProcess\.readiness/);
+  assert.match(block, /gwPublishSalesProcess/);
+  assert.match(block, /previous active version was preserved/);
+  assert.match(frontend, /Needs review - select a stage/);
+  assert.match(frontend, /Select a reviewed stage before approving this opportunity/);
+  assert.match(css, /spb-preview-grid/);
+  assert.match(css, /@media\(max-width:768px\)[^{]*\{[^}]*\.spb-preview-grid|@media\(max-width:768px\)\{\.spb-preview-heading/);
+});
+
 test('StageTracker follows published stage IDs and renamed display order', () => {
   const definition = { process:{ lifecycle:'published' }, stages:[
     { id:'renamed-intake', display_name:'Welcome', semantic_type:'intake', state:'active', stage_order:1 },
