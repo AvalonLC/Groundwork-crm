@@ -74,6 +74,26 @@ test('AI decisions are draft-only optimistic role-scoped and tenant isolated',as
   assert.equal((await query('SELECT COUNT(*) AS n FROM sales_ai_suggestions WHERE company_id=?','company-b'))[0].n,0);
 });
 
+test('guided AI generation covers the recommendation catalog without operational side effects',async()=>{
+  const path=`/api/sales-process/drafts/${adoptedVersion}/ai-suggestions/generate`;
+  const interview={business_type:'Design-build landscape',average_cycle_days:45,primary_bottleneck:'Proposal review',required_qualification:'Budget authority and timing'};
+  assert.equal((await request('rep-token',path,interview)).status,403);
+  assert.equal((await request('foreign-token',path,interview)).status,404);
+  const assignmentsBefore=JSON.stringify(await query('SELECT * FROM sales_stage_assignments WHERE company_id=? ORDER BY id','company-a'));
+  const generated=await payload(await request('admin-token',path,interview));
+  assert.equal(generated.generated,18);
+  const pending=await query("SELECT * FROM sales_ai_suggestions WHERE company_id=? AND process_version_id=? AND decision='pending'",'company-a',adoptedVersion);
+  const types=new Set(pending.map(item=>item.suggestion_type));
+  for(const type of ['guided_interview','business_type','simplification','duplicate_stage','name','purpose','milestone','internal_status','condition','checklist','qualification_field','call_guide','email_template','academy_association','automation','stagnation_review','migration_suggestion','impact_explanation']) assert.ok(types.has(type),`missing ${type}`);
+  const advisory=pending.find(item=>item.suggestion_type==='impact_explanation');
+  assert.equal((await mutate('admin-token','PUT',`/api/sales-process/drafts/${adoptedVersion}/ai-suggestions/${advisory.id}`,{decision:'accepted',applied_revision:0})).status,409);
+  assert.equal((await mutate('admin-token','PUT',`/api/sales-process/drafts/${adoptedVersion}/ai-suggestions/${advisory.id}`,{decision:'accepted',applied_revision:generated.content_revision})).status,200);
+  const actionable=pending.find(item=>item.suggestion_type==='automation');
+  assert.equal((await mutate('admin-token','PUT',`/api/sales-process/drafts/${adoptedVersion}/ai-suggestions/${actionable.id}`,{decision:'accepted',applied_revision:generated.content_revision})).status,409);
+  assert.equal(JSON.stringify(await query('SELECT * FROM sales_stage_assignments WHERE company_id=? ORDER BY id','company-a')),assignmentsBefore);
+  assert.equal((await query('SELECT COUNT(*) AS n FROM sales_ai_suggestions WHERE company_id=?','company-b'))[0].n,0);
+});
+
 test('Builder enforces roles occupied-stage archival published immutability and stale revisions',async()=>{
   let stages=await query('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? ORDER BY display_order','company-a',adoptedVersion);
   assert.equal((await mutate('rep-token','PUT',`/api/sales-process/drafts/${adoptedVersion}/stages`,{stages,content_revision:2})).status,403);

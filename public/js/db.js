@@ -389,6 +389,7 @@ const DB = (() => {
     saveStages(versionId, stages, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/stages`, { stages, content_revision: contentRevision }); },
     saveComponents(versionId, component, items, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/components/${encodeURIComponent(component)}`, { items, content_revision: contentRevision }); },
     createSuggestion(versionId, suggestion) { return post(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions`, suggestion); },
+    generateSuggestions(versionId, interview) { return post(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions/generate`, interview); },
     decideSuggestion(versionId, suggestionId, decision, appliedRevision = 0) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions/${encodeURIComponent(suggestionId)}`, { decision, applied_revision: appliedRevision }); },
     validate(versionId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/validate`, {}); },
     inventory() { return get('/sales-process/migration/inventory'); },
