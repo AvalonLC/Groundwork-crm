@@ -55,6 +55,7 @@ test('every numbered migration applies to a clean database', () => {
       'sales_migration_mappings',
       'sales_stage_transitions',
       'sales_stage_transition_events',
+      'sales_stage_transition_paths',
       'sales_process_company_state',
       'sales_migration_snapshots',
       'sales_migration_snapshot_items',

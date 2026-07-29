@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
 
 const server = readFileSync(new URL('../src/index.tsx', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../migrations/0051_sales_process_platform_completion.sql', import.meta.url), 'utf8');
 const resolverSource = readFileSync(new URL('../public/js/sales-process.js', import.meta.url), 'utf8');
+const migrationsDirectory = new URL('../migrations/', import.meta.url);
 
 function browserResolver(process = null) {
   const context = { window: { _gwSalesProcess: process } };
@@ -48,4 +52,47 @@ test('canonical server resolver is tenant scoped and never reads platform leads'
 test('global blocks, skills, and distinct templates are immutable seeds', () => {
   for (const key of ['lead_intake','contact_attempts','qualification_call','consultation','site_visit','needs_assessment','scope_discovery','estimate_development','proposal_preparation','estimate_presentation','negotiation','decision_follow_up','contract','deposit','won','lost','disqualified','nurture']) assert.match(migration, new RegExp(`'${key}'`));
   for (const template of ['High-Ticket Design-Build','Recurring Maintenance','Fast-Turn Service Sales','Commercial Bid Work']) assert.match(migration, new RegExp(template));
+});
+
+test('every immutable catalog template has a usable stage outcome and transition graph', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'groundwork-template-catalog-'));
+  const database = join(directory, 'catalog.sqlite');
+  try {
+    for (const name of readdirSync(migrationsDirectory).filter(name => /^\d{4}_.+\.sql$/.test(name)).sort()) {
+      execFileSync('sqlite3', ['-bail', database], { input: readFileSync(new URL(name, migrationsDirectory)) });
+    }
+    const rows = execFileSync('sqlite3', ['-json', database, `
+      SELECT v.id,
+        (SELECT COUNT(*) FROM sales_process_stages s WHERE s.company_id=v.company_id AND s.process_version_id=v.id) AS stages,
+        (SELECT COUNT(*) FROM sales_stage_outcomes o WHERE o.company_id=v.company_id AND o.process_version_id=v.id) AS outcomes,
+        (SELECT COUNT(*) FROM sales_stage_transition_paths t WHERE t.company_id=v.company_id AND t.process_version_id=v.id) AS transitions
+      FROM sales_process_versions v JOIN sales_processes p ON p.id=v.process_id AND p.company_id=v.company_id
+      WHERE v.company_id='__global__' AND p.is_template=1
+        AND v.id IN ('tpl_groundwork_field_service_v2','tpl_design_build_v1','tpl_maintenance_v1','tpl_fast_turn_v1','tpl_commercial_bid_v1')
+      ORDER BY v.id;
+    `], { encoding: 'utf8' });
+    const templates = JSON.parse(rows);
+    assert.equal(templates.length, 5);
+    for (const template of templates) {
+      assert.ok(template.stages >= 5, `${template.id} lacks a meaningful stage graph`);
+      assert.ok(template.outcomes >= 2, `${template.id} lacks terminal outcomes`);
+      assert.ok(template.transitions >= 4, `${template.id} lacks configured transitions`);
+    }
+    const groundwork = templates.find(template => template.id === 'tpl_groundwork_field_service_v2');
+    assert.equal(groundwork.stages, 7);
+    assert.ok(groundwork.transitions >= 15);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('template adoption remaps outcomes transitions and academy associations', () => {
+  const start = server.indexOf("app.post('/api/sales-process/drafts/from-template'");
+  const end = server.indexOf("app.put('/api/sales-process/drafts/:versionId/stages'", start);
+  const block = server.slice(start, end);
+  assert.match(block, /stageIdByTemplateId\.get\(outcome\.stage_id\)/);
+  assert.match(block, /stageIdByTemplateId\.get\(transition\.from_stage_id\)/);
+  assert.match(block, /stageIdByTemplateId\.get\(transition\.to_stage_id\)/);
+  assert.match(block, /INSERT INTO sales_academy_associations/);
+  assert.doesNotMatch(block, /`\$\{versionId\}_closed`/);
 });
