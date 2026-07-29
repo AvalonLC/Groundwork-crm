@@ -29,7 +29,7 @@
     const stageId = String((assignment && assignment.stage_id) || (opportunity && (opportunity.salesProcessStageId || opportunity.sales_process_stage_id)) || '');
     if (process && process.process && process.process.lifecycle === 'published' && stageId) {
       const stage = stages.find(item => String(item.id) === stageId);
-      if (stage) return { resolved: true, source: 'assignment', stage, semantic: stage.semantic_type, outcome: (assignment && assignment.outcome_type) || '' };
+      if (stage) return { resolved: true, source: 'assignment', stage, semantic: stage.semantic_type, outcome: (assignment && assignment.outcome_type) || opportunity.sales_process_outcome_type || opportunity.salesProcessOutcomeType || '' };
     }
     const mapping = opportunity && (opportunity.salesProcessMapping || opportunity.sales_process_mapping);
     if (mapping && mapping.review_state === 'approved') {
@@ -52,8 +52,64 @@
   function includedInStageMetrics(opportunity) { return resolve(opportunity).resolved; }
   function isOpen(opportunity) {
     const result = resolve(opportunity);
-    return result.resolved && !['won', 'lost', 'disqualified'].includes(result.outcome || result.semantic);
+    return !result.resolved || !['won', 'lost', 'disqualified'].includes(result.outcome || result.semantic);
   }
 
-  window.GWSalesProcess = Object.freeze({ resolve, is, isOpen, includedInStageMetrics, legacy });
+  // Operational metrics consume stable semantics. Unresolved opportunities stay
+  // in overall totals, but cannot distort stage conversion, forecast, or aging.
+  function summarize(opportunities, options = {}) {
+    const rows = Array.isArray(opportunities) ? opportunities : [];
+    const resolved = rows.map(opportunity => ({ opportunity, resolution: resolve(opportunity, options.definition) }));
+    const stageEligible = resolved.filter(row => row.resolution.resolved);
+    const won = stageEligible.filter(row => row.resolution.outcome === 'won' || row.resolution.semantic === 'won');
+    const lost = stageEligible.filter(row => row.resolution.outcome === 'lost' || row.resolution.semantic === 'lost');
+    const open = resolved.filter(row => !row.resolution.resolved || !['won','lost','disqualified'].includes(row.resolution.outcome || row.resolution.semantic));
+    const value = row => Number(row.opportunity.jobValue || row.opportunity.job_value || row.opportunity.estimateAmount || row.opportunity.estimate_amount || 0);
+    const proposal = stageEligible.filter(row => row.resolution.semantic === 'proposal_presentation');
+    const probability = Object.assign({ intake:.1, active_qualification:.2, consultation:.35, estimate_development:.5, proposal_presentation:.7, decision:.8 }, options.probability || {});
+    return {
+      total: rows.length,
+      totalValue: rows.reduce((sum, opportunity) => sum + Number(opportunity.jobValue || opportunity.job_value || 0), 0),
+      needsRestaging: resolved.length - stageEligible.length,
+      open: open.length,
+      won: won.length,
+      lost: lost.length,
+      wonValue: won.reduce((sum, row) => sum + value(row), 0),
+      proposal: proposal.length,
+      presentation: proposal.length,
+      closeRate: won.length + lost.length ? won.length / (won.length + lost.length) : 0,
+      forecast: open.reduce((sum, row) => sum + value(row) * Number(probability[row.resolution.semantic] || 0), 0),
+      stageEligible: stageEligible.length
+    };
+  }
+
+  function isStagnant(opportunity, now = Date.now()) {
+    const result = resolve(opportunity);
+    if (!result.resolved || ['won','lost','disqualified','nurture'].includes(result.outcome || result.semantic)) return false;
+    const duration = Number(result.stage && result.stage.expected_duration_days || 0);
+    const entered = Date.parse(opportunity.stage_entered_at || opportunity.stageEnteredAt || opportunity.updated_at || opportunity.updatedAt || '');
+    return duration > 0 && Number.isFinite(entered) && now - entered > duration * 86400000;
+  }
+
+  const defaultProbability = Object.freeze({ intake:.1, active_qualification:.2, consultation:.35, estimate_development:.5, proposal_presentation:.7, decision:.8 });
+  function forecastProbability(opportunity, probability = defaultProbability) {
+    const result = resolve(opportunity);
+    if (!result.resolved || ['won','lost','disqualified','nurture'].includes(result.outcome || result.semantic)) return 0;
+    return Number(probability[result.semantic] || 0);
+  }
+
+  function hasOpenEstimate(opportunity) {
+    if (!isOpen(opportunity) || !includedInStageMetrics(opportunity)) return false;
+    const estimateStatus = String(opportunity.estimateStatus || opportunity.estimate_status || '').toLowerCase().replace(/ /g, '_');
+    return ['sent','revised','viewed','awaiting_response'].includes(estimateStatus) || isProposal(opportunity);
+  }
+
+  function isProposal(opportunity) { return is(opportunity, 'proposal_presentation'); }
+  function isWon(opportunity) { return is(opportunity, 'won'); }
+  function isLost(opportunity) { return is(opportunity, 'lost'); }
+  function didEnterOutcome(previous, current, outcome) { return !is(previous, outcome) && is(current, outcome); }
+
+  window.GWSalesProcess = Object.freeze({ resolve, is, isOpen, isWon, isLost, isProposal, didEnterOutcome, includedInStageMetrics, summarize, isStagnant, forecastProbability, hasOpenEstimate, legacy });
+  window.gwSalesIs = is;
+  window.gwSalesIsOpen = isOpen;
 })();
