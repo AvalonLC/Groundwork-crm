@@ -11,7 +11,10 @@
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
     "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production",
     "test:migrations": "node --test tests/clean-migrations.test.mjs",
-    "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs"
+    "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs",
+    "test:sales-process-transitions": "vite build && node --test tests/sales-process-transitions.integration.test.mjs",
+    "test:sales-process-adoption": "vite build && node --test tests/sales-process-template-adoption.integration.test.mjs",
+    "test:sales-process-ui": "node --test tests/sales-process-admin-ui.test.mjs"
   },
   "dependencies": {
     "hono": "^4.12.23"
@@ -19,6 +22,7 @@
   "devDependencies": {
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.25.2",
+    "linkedom": "^0.18.13",
     "vite": "^6.3.5",
     "wrangler": "^4.4.0"
   },

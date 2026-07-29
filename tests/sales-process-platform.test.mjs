@@ -9,6 +9,7 @@ import test from 'node:test';
 const server = readFileSync(new URL('../src/index.tsx', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../migrations/0051_sales_process_platform_completion.sql', import.meta.url), 'utf8');
 const resolverSource = readFileSync(new URL('../public/js/sales-process.js', import.meta.url), 'utf8');
+const recordPageSource = readFileSync(new URL('../public/js/record-page.js', import.meta.url), 'utf8');
 const migrationsDirectory = new URL('../migrations/', import.meta.url);
 
 function browserResolver(process = null) {
@@ -36,6 +37,84 @@ test('shared resolver follows assignment, approved mapping, legacy, then restagi
   assert.equal(resolver.resolve({ status: 'Presentation & SOW Pitch' }).source, 'needs_restaging');
   resolver = browserResolver(null);
   assert.equal(resolver.resolve({ status: 'Sold / Activation' }).outcome, 'won');
+});
+
+test('semantic metrics are rename invariant and exclude Needs Restaging from stage calculations', () => {
+  const definition = { process: { lifecycle: 'published' }, stages: [
+    { id: 'intake', display_name: 'Any intake name', semantic_type: 'intake', expected_duration_days: 2 },
+    { id: 'present', display_name: 'Customer review', semantic_type: 'proposal_presentation', expected_duration_days: 5 },
+    { id: 'closed', display_name: 'Finished', semantic_type: 'terminal' }
+  ] };
+  const resolver = browserResolver(definition);
+  const opportunities = [
+    { id:'a', sales_process_stage_id:'intake', job_value:100, updated_at:'2020-01-01' },
+    { id:'b', sales_process_stage_id:'present', job_value:200 },
+    { id:'c', sales_process_stage_id:'closed', sales_process_assignment:{stage_id:'closed',outcome_type:'won'}, job_value:300 },
+    { id:'d', sales_process_stage_id:'closed', sales_process_assignment:{stage_id:'closed',outcome_type:'lost'}, job_value:400 },
+    { id:'e', status:'Proposal / Estimate Sent', job_value:500 }
+  ];
+  const before = resolver.summarize(opportunities, { definition });
+  definition.stages.forEach(stage => { stage.display_name = `Renamed ${stage.id}`; });
+  const after = resolver.summarize(opportunities, { definition });
+  assert.deepEqual(JSON.parse(JSON.stringify(after)), JSON.parse(JSON.stringify(before)));
+  assert.deepEqual(JSON.parse(JSON.stringify(before)), { total:5,totalValue:1500,needsRestaging:1,open:3,won:1,lost:1,wonValue:300,proposal:1,presentation:1,closeRate:.5,forecast:150,stageEligible:4 });
+  assert.equal(resolver.isStagnant(opportunities[0], Date.parse('2020-01-10')), true);
+  assert.equal(resolver.isStagnant(opportunities[4], Date.parse('2020-01-10')), false);
+  assert.equal(resolver.forecastProbability(opportunities[0]), .1);
+  assert.equal(resolver.forecastProbability(opportunities[4]), 0);
+  assert.equal(resolver.hasOpenEstimate({...opportunities[1], estimate_status:'sent'}), true);
+  assert.equal(resolver.hasOpenEstimate({...opportunities[4], estimate_status:'sent'}), false);
+  assert.equal(resolver.didEnterOutcome(opportunities[1], opportunities[2], 'won'), true);
+  assert.equal(resolver.didEnterOutcome(opportunities[2], opportunities[2], 'won'), false);
+});
+
+test('reporting and financial consumers use normalized semantics instead of operational labels', () => {
+  const frontend = readFileSync(new URL('../public/js/app_premium.js', import.meta.url), 'utf8');
+  const reportStart = frontend.indexOf('function salesReports()');
+  const reportEnd = frontend.indexOf('\nfunction ', reportStart + 20);
+  const report = frontend.slice(reportStart, reportEnd > reportStart ? reportEnd : undefined);
+  assert.match(report, /GWSalesProcess\.isWon/);
+  assert.match(report, /GWSalesProcess\.isProposal/);
+  assert.doesNotMatch(report, /WON_STATUSES|LOST_STATUSES|Proposal \/ Estimate Sent|Presentation & SOW Pitch/);
+
+  const divisionStart = frontend.indexOf('function buildDivisionPipeline()');
+  const divisionEnd = frontend.indexOf('\nfunction ', divisionStart + 20);
+  const division = frontend.slice(divisionStart, divisionEnd > divisionStart ? divisionEnd : undefined);
+  assert.match(division, /GWSalesProcess\.forecastProbability/);
+  assert.match(division, /GWSalesProcess\.hasOpenEstimate/);
+  assert.doesNotMatch(division, /POTS_STAGES|STAGE_WIN_PROB/);
+});
+
+test('Builder preview renders lifecycle impact gates and responsive surfaces', () => {
+  const frontend = readFileSync(new URL('../public/js/app_premium.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../public/js/premium.css', import.meta.url), 'utf8');
+  const start = frontend.indexOf('window.gwPreviewSalesProcess=');
+  const end = frontend.indexOf('window.gwAdoptGroundworkTemplate=', start);
+  const block = frontend.slice(start, end);
+  for (const label of ['Opportunities affected','Value affected','Automatic mappings','Manual mappings','Unknown mappings','Sample transitions','Preview surfaces','Impact changes']) assert.match(block, new RegExp(label));
+  assert.match(block, /DB\.salesProcess\.readiness/);
+  assert.match(block, /gwPublishSalesProcess/);
+  assert.match(block, /previous active version was preserved/);
+  assert.match(frontend, /Needs review - select a stage/);
+  assert.match(frontend, /Select a reviewed stage before approving this opportunity/);
+  assert.match(css, /spb-preview-grid/);
+  assert.match(css, /@media\(max-width:768px\)[^{]*\{[^}]*\.spb-preview-grid|@media\(max-width:768px\)\{\.spb-preview-heading/);
+});
+
+test('StageTracker follows published stage IDs and renamed display order', () => {
+  const definition = { process:{ lifecycle:'published' }, stages:[
+    { id:'renamed-intake', display_name:'Welcome', semantic_type:'intake', state:'active', stage_order:1 },
+    { id:'renamed-review', display_name:'Scope Review', semantic_type:'proposal_presentation', state:'active', stage_order:2 },
+    { id:'renamed-terminal', display_name:'Finished', semantic_type:'terminal', state:'active', stage_order:3 }
+  ] };
+  const context = { window:{ _gwSalesProcess:definition }, document:{ addEventListener(){}, querySelectorAll(){ return []; } } };
+  vm.runInNewContext(resolverSource, context);
+  vm.runInNewContext(recordPageSource, context);
+  const html = context.window.GW.record.StageTracker(['Old Intake','Old Proposal'], { sales_process_stage_id:'renamed-review' });
+  assert.match(html, /Welcome/);
+  assert.match(html, /Scope Review/);
+  assert.match(html, /is-current/);
+  assert.doesNotMatch(html, /Old Intake|Old Proposal|Finished/);
 });
 
 test('canonical server resolver is tenant scoped and never reads platform leads', () => {

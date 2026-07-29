@@ -66,3 +66,11 @@ The company-scoped inventory endpoint captures opportunity identity, Avalon comp
 4. Review every active mapping and reconcile counts, values, owners, actions, estimates, tasks, activities, and appointments with zero unexplained differences.
 5. Publish the immutable version and apply approved assignments as one D1 batch; retain legacy text and all mapping/history rows.
 6. Rollback creates a new audited publication event, reactivates the prior version, and restores recorded assignments without deleting later activity.
+
+## Continuation inspection notes
+
+The semantic conversion audit now confines exact legacy labels to immutable content, migration review, display copy, and explicitly guarded compatibility branches used only when no normalized process is published. Pipeline quick filters, sales reports, division and manager forecasts, representative commission eligibility, estimate state, financial summaries, StageTracker, workflow outcome hooks, and backend AI coaching resolve stable assignments and semantic outcomes. Needs Restaging remains in overall/open counts while being excluded from stage-specific forecast, proposal, estimate, and stagnation calculations.
+
+## Consolidated implementation pass
+
+The published process and active stable stages now hydrate in the authenticated bootstrap, and opportunity reads include the published assignment outcome. Shared semantic helpers are used for common open, Won, Lost, and proposal calculations in the primary and representative bundles. Exact legacy text remains in compatibility configuration, rendering copy, immutable Academy material, and consumers still listed as pending in the completion matrix. The new Needs Restaging workspace and AI decision controls do not publish or mutate live assignments.
