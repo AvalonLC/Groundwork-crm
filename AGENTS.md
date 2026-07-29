@@ -80,6 +80,50 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   `groundwork-crm` on every push to main, using repo secrets `CF_API_TOKEN`
   and `CF_ACCOUNT_ID`. Do not add other deploy paths.
 
+## Sales process platform (versioned)
+
+- Schema: migrations `0046`–`0052`. Core tables: `sales_processes`,
+  `sales_process_versions`, `sales_process_stages`, `sales_stage_outcomes`,
+  `sales_stage_internal_statuses`, `sales_stage_requirements`,
+  `sales_stage_guides`, `sales_process_resources`, `sales_process_automations`,
+  `sales_stage_transition_paths` (current; `sales_stage_transitions` is legacy
+  fallback), `sales_stage_assignments`, `sales_migration_mappings/history/
+  snapshots/snapshot_items`, `sales_process_publications`,
+  `sales_ai_suggestions`, `sales_academy_associations`.
+- Global template catalog is immutable (`company_id='__global__'`,
+  `is_template=1`, `is_immutable=1`). The templates endpoint returns only the
+  latest version per template; adopting a graphless superseded version
+  (e.g. `tpl_groundwork_field_service_v1`) is rejected with 409. Never edit
+  global templates — tenants get deep copies with fresh IDs on adopt.
+- Lifecycle (all `/api/sales-process/*`, admin session): draft from template ->
+  validate -> migration propose -> per-opportunity mapping review
+  (`final_stage_id`, optional `final_outcome_type`) -> snapshot
+  (`migration_batch_id` in body) -> snapshot approve -> publication-readiness
+  (`?migration_batch_id=` query) -> publish `{confirm:true, migration_batch_id}`
+  -> optional rollback `{confirm:true}`.
+- Canonical stage resolver: `resolveSalesOpportunityStage` in `src/index.tsx`;
+  browser mirror: `public/js/sales-process.js`. Keep them in sync.
+- Migration/publishing code must NEVER touch `gw_leads`
+  (see `docs/sales-process-dependency-inventory.md`).
+- Production publication for a live tenant is a deliberate HUMAN gate — never
+  automate adopt/review/publish against production data
+  (see `docs/sales-process-completion-matrix.md`).
+
+## Tests
+
+39 tests across 7 suites; all must pass before pushing sales-process changes:
+
+```bash
+npm run test:migrations            # needs the sqlite3 CLI (apt-get install sqlite3)
+node --test tests/sales-process-platform.test.mjs tests/sales-process-safety.test.mjs
+npm run test:sales-process-ui      # linkedom DOM proof of the admin builder
+npm run test:sales-process-transitions   # Miniflare; vite-builds dist first
+npm run test:sales-process-adoption      # Miniflare; vite-builds dist first
+npm run test:migration-review            # Miniflare; vite-builds dist first
+```
+
+Sandboxes reset: reinstall the `sqlite3` CLI if `test:migrations` fails to spawn it.
+
 ## Gotchas learned the hard way
 
 - Some existing strings contain unicode (em/en dashes). If an exact-match edit

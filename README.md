@@ -511,3 +511,28 @@ Builds on the existing Stripe Connect integration (platform-level Stripe Custome
 - **Storage**: D1 settings keys `company_divisions` and `company_intake_config`, hydrated to localStorage (`gwCompanyDivisions` / `gwIntakeConfig`) at login.
 - **Onboarding (9 steps)**: Welcome > Business Profile (incl. logo upload) > Name Your Divisions > Lead Intake Setup > First Client > First Estimate > Team Setup > Preferences (commission opt-in, email signature, Google Workspace connect) > Done.
 - **Legacy Work Order Detail page retired**: every job click routes to the Schedule board and opens the visit modal (single source of truth for job details).
+
+## Versioned Sales Process Platform (July 2026)
+
+Full versioned, migration-safe sales process engine replacing the legacy fixed pipeline labels. Shipped across migrations `0046`–`0052` and the July 2026 sales-process continuation (PR #19 lineage, merged to main).
+
+### Concepts
+- **Immutable global template catalog**: 5 curated templates owned by `company_id='__global__'` (`tpl_groundwork_field_service_v2`, `tpl_design_build_v1`, `tpl_maintenance_v1`, `tpl_fast_turn_v1`, `tpl_commercial_bid_v1`). The template list endpoint returns only the latest version per template; superseded graphless versions (e.g. groundwork v1) are hidden and adoption of them is rejected with 409.
+- **Copy-on-adopt**: adopting a template deep-copies stages, outcomes, internal statuses, requirements, guides, resources, automations, transition paths and academy associations into a tenant-owned draft with fresh IDs and remapped relationships.
+- **Optimistic concurrency**: drafts carry `content_revision`; stale writes are rejected.
+- **Migration review**: proposing a migration builds a mapping batch for every open opportunity (approved legacy mappings auto-approve; ambiguous/conflicting ones require per-opportunity review with `final_stage_id` and optional `final_outcome_type`).
+- **Snapshots + approval + readiness gates**: a publication requires an approved snapshot of the migration batch and a passing publication-readiness check (validation, no pending mappings, no snapshot drift, no stale mappings).
+- **Atomic publish + rollback**: publish flips the prior published version to superseded, writes `sales_stage_assignments`, sets `opportunities.sales_process_stage_id` and history in one batch; rollback restores the snapshot.
+
+### API lifecycle (all under `/api/sales-process`, admin session required)
+`POST /drafts/from-template` -> `POST /versions/:id/validate` -> `POST /migration/propose` -> `PUT /migration/:batchId/:oppId` -> `POST /versions/:id/snapshots` -> `POST /snapshots/:id/approve` -> `GET /versions/:id/publication-readiness?migration_batch_id=X` -> `POST /versions/:id/publish {confirm:true, migration_batch_id}` -> optional `POST /publications/:id/rollback {confirm:true}`.
+
+### Frontend
+- **Sales Process Builder** view in `public/js/app_premium.js` (template dropdown + adopt, draft editing, migration review, snapshot approval, publish).
+- Shared stage resolver `public/js/sales-process.js` (browser) mirrors the canonical server resolver `resolveSalesOpportunityStage` in `src/index.tsx`. Record pages use the StageTracker conversion.
+
+### Tests (39 total across 7 suites)
+`npm run test:migrations` (needs the `sqlite3` CLI), `node --test tests/sales-process-platform.test.mjs tests/sales-process-safety.test.mjs` (platform + safety), `npm run test:sales-process-ui` (linkedom DOM proof), plus 3 Miniflare integration suites: `npm run test:sales-process-transitions`, `test:sales-process-adoption`, `test:migration-review` (these `vite build` first and import `dist/_worker.js`).
+
+### Deliberate human gate
+Publishing a sales process for a live tenant (including Avalon) is intentionally NOT automatable: an authenticated admin must adopt, review mappings, approve the snapshot and publish through the Sales Process Builder UI in production. See `docs/sales-process-completion-matrix.md` and `docs/sales-process-dependency-inventory.md`.
