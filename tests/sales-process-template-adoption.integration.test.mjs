@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { Miniflare } from 'miniflare';
 
 let app, mf, db, adoptedVersion;
-const templates = ['tpl_groundwork_field_service_v1','tpl_groundwork_field_service_v2','tpl_design_build_v1','tpl_maintenance_v1','tpl_fast_turn_v1','tpl_commercial_bid_v1'];
+const templates = ['tpl_groundwork_field_service_v2','tpl_design_build_v1','tpl_maintenance_v1','tpl_fast_turn_v1','tpl_commercial_bid_v1'];
 const copyTables = ['sales_process_stages','sales_stage_outcomes','sales_stage_internal_statuses','sales_stage_requirements','sales_stage_guides','sales_process_resources','sales_process_automations','sales_stage_transition_paths','sales_academy_associations'];
 async function query(sql,...args){return (await db.prepare(sql).bind(...args).all()).results;}
 async function request(token,path,body){return app.request(`http://test.local${path}`,{method:'POST',headers:{cookie:`avalon_session=${token}`,'content-type':'application/json'},body:JSON.stringify(body)},{DB:db});}
@@ -58,6 +58,16 @@ test('every immutable template is copied with fresh tenant IDs and remapped rela
   assert.ok(new Set(signatures).size>=5,'template graphs are not meaningfully distinct');
   assert.equal(await fingerprint(),globalBefore,'immutable global catalog changed');
   assert.equal(await fingerprint('company-b'),foreignBefore,'another company changed');
+});
+
+test('superseded template versions without a transition graph are rejected and hidden from the catalog',async()=>{
+  const rejected=await request('admin-token','/api/sales-process/drafts/from-template',{template_version_id:'tpl_groundwork_field_service_v1',name:'Graphless adoption'});
+  assert.equal(rejected.status,409);
+  const listed=await app.request('http://test.local/api/sales-process/templates',{headers:{cookie:'avalon_session=admin-token'}},{DB:db});
+  const catalog=await payload(listed);
+  assert.ok(!catalog.some(entry=>entry.version_id==='tpl_groundwork_field_service_v1'),'catalog still offers the graphless v1');
+  assert.ok(catalog.some(entry=>entry.version_id==='tpl_groundwork_field_service_v2'),'catalog lost the current groundwork version');
+  assert.equal(catalog.length,new Set(catalog.map(entry=>entry.id)).size,'catalog lists a template process more than once');
 });
 
 test('AI decisions are draft-only optimistic role-scoped and tenant isolated',async()=>{
