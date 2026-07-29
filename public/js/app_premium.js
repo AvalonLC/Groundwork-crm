@@ -401,7 +401,7 @@ const DEFAULT_NAV_PERMS = {
   admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates','proposals',
-    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
@@ -415,7 +415,7 @@ const DEFAULT_NAV_PERMS = {
   office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates','proposals',
-    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
@@ -429,7 +429,7 @@ const DEFAULT_NAV_PERMS = {
   rep: ['gwDashboard','gwSales','gwLearning',
     'today','myDashboard',
     'pipeline','lead','clients','properties','estimates','proposals',
-    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai',
     'academy','learnEstimating','learnFinancial','learnCrmGuide'],
   // Estimator: quote/pricing specialist + learning
@@ -867,7 +867,7 @@ window.gwDashboard = gwDashboard;
 // ── Sales workspace ───────────────────────────────────────────────────────────
 // Communications hub tabs — Templates / Sequences / Talk Tracks / Playbooks /
 // AI Assist are merged into the single Communications page as internal tabs.
-const _GW_COMMS_HUB_TABS = ['communications','templates','sequences','talkTracks','playbooks','aiAssist'];
+const _GW_COMMS_HUB_TABS = ['communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist'];
 
 function gwSales(tab) {
   tab = tab || 'pipeline';
@@ -911,6 +911,7 @@ function communicationsHub(section) {
     canViewTab(t.id) || (t.alts || []).some(a => canViewTab(a));
   const HUB_TABS = [
     {id:'communications', label:'Inbox',       icon:_gi('comms')},
+    {id:'textMessages',   label:'Text Messages', icon:_gi('message'),  alts:['communications']},
     {id:'templates',      label:'Templates',   icon:_gi('note'),       alts:['emailTemplates']},
     {id:'sequences',      label:'Sequences',   icon:_gi('automation'), alts:['automations','campaigns']},
     {id:'talkTracks',     label:'Talk Tracks', icon:_gi('call'),       alts:['scripts','objections']},
@@ -947,6 +948,7 @@ function communicationsHub(section) {
   // Render the selected section — each fn writes view.innerHTML; the patched
   // setter re-injects the hub bar at the top automatically.
   if (section === 'communications')  (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
+  else if (section === 'textMessages') (typeof smsCenter==='function') ? smsCenter() : _gwTabStub('Text Messages');
   else if (section === 'templates')  (typeof templates==='function') ? templates() : _gwTabStub('Templates');
   else if (section === 'sequences')  (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
   else if (section === 'talkTracks') (typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
@@ -1449,7 +1451,7 @@ function show(viewName='today', param){
       academy:'Sales Academy', learnEstimating:'Estimating 101', learnFinancial:'Financial Literacy', learnCrmGuide:'CRM Guide',
       // Sales
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
-      estimates:'Estimates', proposals:'Proposals', communications:'Communications', automations:'Sequences',
+      estimates:'Estimates', proposals:'Proposals', communications:'Communications', textMessages:'Text Messages', automations:'Sequences',
       templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
       playbooks:'Playbooks', aiAssist:'AI Assist',
       campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
@@ -1505,7 +1507,7 @@ function show(viewName='today', param){
     pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales', teamReports:'Sales',
     // Learning workspace tab aliases
     academy:'Learning', learnEstimating:'Learning', learnFinancial:'Learning', learnCrmGuide:'Learning',
-    estimates:'Sales', proposals:'Sales', communications:'Sales', templates:'Sales',
+    estimates:'Sales', proposals:'Sales', communications:'Sales', textMessages:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
     scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
@@ -1560,7 +1562,7 @@ function show(viewName='today', param){
       else if (viewName === 'teamReports')_tabHighlight = 'teamView';
       else if (['assetDetail','assetList','maintenanceQueue','inventoryList','toolsConsumables','materialAllocation'].includes(viewName)) _tabHighlight = 'assetsHub';
       // Communications-hub sections + their legacy aliases highlight the Communications tab
-      else if (['templates','sequences','talkTracks','playbooks','aiAssist',
+      else if (['textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
                 'automations','campaigns','scripts','objections','emailTemplates','ai'].includes(viewName)) _tabHighlight = 'communications';
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
       // Clear any stale sub-header
@@ -1691,6 +1693,7 @@ function show(viewName='today', param){
   // legacy detail pages directly so nothing breaks.
   const commsHubRoute = {
     communications: ()   => communicationsHub('communications'),
+    textMessages:   ()   => communicationsHub('textMessages'),
     templates:      ()   => communicationsHub('templates'),
     emailTemplates: ()   => communicationsHub('templates'),
     automations:    ()   => communicationsHub('sequences'),
@@ -1724,7 +1727,7 @@ function show(viewName='today', param){
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
   const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports'];
-  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','proposals','communications','templates',
+  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','proposals','communications','textMessages','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
     'process','forms','scripts','emailTemplates','objections','calculator'];
   const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
@@ -4519,6 +4522,19 @@ window.customerDetail = customerDetail;
 window._gwOpenMessageModal = function(opts = {}) {
   const existing = document.getElementById('gw-message-modal');
   if (existing) existing.remove();
+  window._gwMsgOpts = opts;
+  // Async: check live SMS availability and upgrade the modal chrome when ready
+  if ((opts.type || 'email') === 'sms' && typeof window.gwSmsStatus === 'function') {
+    window.gwSmsStatus().then(st => {
+      window._gwSmsConfigured = !!(st && st.configured);
+      if (window._gwSmsConfigured) {
+        const note = document.getElementById('gwm-sms-note');
+        if (note) note.innerHTML = '<strong>Live texting is on.</strong> This message sends from ' + (st.from_number || 'your company number') + ' and the reply lands in Text Messages.';
+        const btn = document.getElementById('gwm-send-btn');
+        if (btn && btn.innerHTML.includes('Log SMS')) btn.innerHTML = btn.innerHTML.replace('Log SMS', 'Send SMS');
+      }
+    }).catch(() => {});
+  }
 
   const type     = opts.type || 'email';
   const toAddr   = opts.to || '';
@@ -4612,7 +4628,7 @@ window._gwOpenMessageModal = function(opts = {}) {
 
         <!-- SMS note -->
         <div id="gwm-sms-note" style="${isSms ? 'font-size:12px;color:var(--gw-text-muted,#64748b);background:var(--gw-bg-app,#f4f6f8);border-radius:7px;padding:8px 12px' : 'display:none'}">
-          <strong>SMS will be logged</strong> in this customer's Communications tab. Sending via carrier requires a Twilio integration (Admin → Integrations).
+          <strong>SMS will be logged</strong> in this customer's Communications tab. Live carrier sending turns on once Twilio is connected in Sales, Text Messages, Setup.
         </div>
       </div>
 
@@ -4718,10 +4734,16 @@ window._gwMsgSend = async function() {
       state.communications.push({ id: uid('comm'), type:'email', direction:'out', to, subject, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep'), gmailSent: googleConnected });
       saveState();
     } else {
-      // SMS — log it (live send requires Twilio integration)
-      showToast('SMS logged in Communications', 'info');
+      // SMS — live send via Twilio when configured, otherwise log only
+      const mo = window._gwMsgOpts || {};
+      if (window._gwSmsConfigured && typeof window.gwSmsSend === 'function') {
+        await window.gwSmsSend({ to, body, toName: mo.toName || '', clientId: mo.clientId || '', oppId: mo.oppId || '' });
+        showToast('Text message sent', 'success');
+      } else {
+        showToast('SMS logged (connect Twilio in Text Messages, Setup to send live)', 'info');
+      }
       if (!state.communications) state.communications = [];
-      state.communications.push({ id: uid('comm'), type:'sms', direction:'out', to, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep') });
+      state.communications.push({ id: uid('comm'), type:'sms', direction:'out', to, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep'), smsSent: !!window._gwSmsConfigured });
       saveState();
     }
     document.getElementById('gw-message-modal')?.remove();

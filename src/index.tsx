@@ -671,9 +671,9 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
     "Presentation & SOW Pitch","Deal Closed / Won","On Hold","Closed Lost"
   ]
   const defaultNavPerms = {
-    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing'],
-    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','pricing'],
-    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','proposals','communications','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
+    admin: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing'],
+    office_manager: ['today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals','communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy','financialHub','invoices','payments','deposits','statements','financialActivity','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker','revenueAdmin','salesReports','financialReports','opsReports','teamReports','settings','userManagement','integrations','manager','pricing'],
+    rep: ['today','myDashboard','pipeline','lead','clients','properties','estimates','proposals','communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist','automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['today','pipeline','clients','properties','estimates','proposals','calculator','forms','playbooks'],
     foreman: ['today','myDashboard','scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables','timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
     laborer: ['today','scheduleBoard','workOrderList','assetsHub','timeTracker','fieldMode'],
@@ -2102,7 +2102,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
   const defaultPerms = {
     admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
-      'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+      'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
@@ -2112,7 +2112,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
-      'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+      'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail',
@@ -2121,7 +2121,7 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'settings','userManagement','integrations','manager','pricing','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     rep: ['gwDashboard','gwSales',
       'today','myDashboard','pipeline','lead','clients','properties','estimates','proposals',
-      'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+      'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
     estimator: ['gwDashboard','gwSales','today','pipeline','clients','properties','estimates','proposals','calculator','forms','playbooks'],
     foreman: ['gwDashboard','gwOperations','gwAdmin',
@@ -3084,6 +3084,7 @@ const ADMIN_ONLY_SETTINGS = ['nav_perms', 'um_company_role_defaults']
 const MANAGER_ONLY_SETTINGS = [
   'company_divisions', 'company_intake_config', 'pipeline_stages', 'commission_enabled',
   'google_client_id', 'google_client_secret', 'openai_api_key',
+  'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
   'fin_annual_overrides', 'fin_division_actuals', 'fin_revenue_actuals'
 ]
 // Setting values redacted from GET /api/settings for non-manager roles
@@ -9073,6 +9074,327 @@ app.put('/api/reviews/:id', requireAuth, async (c) => {
   return c.json(updated)
 })
 
+// ── SMS (Twilio) ──────────────────────────────────────────────────────────────
+// Per-company two-way texting. Each company configures its own Twilio account
+// SID, auth token, and sending number (Settings -> Text Messaging). Outbound
+// sends go through the Twilio REST API; delivery receipts and inbound replies
+// arrive on per-company webhooks validated with the Twilio request signature.
+
+const SMS_SEGMENT = 160
+
+function smsNormalizePhone(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  if (String(raw || '').trim().startsWith('+') && digits.length >= 8) return `+${digits}`
+  return ''
+}
+
+async function smsGetConfig(db: D1Database, companyId: string): Promise<{ sid: string; token: string; from: string }> {
+  const rows = await db.prepare(
+    "SELECT key, value FROM settings WHERE key IN (?, ?, ?)"
+  ).bind(`${companyId}:twilio_account_sid`, `${companyId}:twilio_auth_token`, `${companyId}:twilio_from_number`).all<any>()
+  const map: Record<string, string> = {}
+  for (const r of rows.results as any[]) map[String(r.key).split(':').slice(1).join(':')] = String(r.value || '')
+  return { sid: map.twilio_account_sid || '', token: map.twilio_auth_token || '', from: map.twilio_from_number || '' }
+}
+
+// Twilio webhook signature: base64(HMAC-SHA1(url + sortedParamsConcat, authToken))
+async function smsValidTwilioSignature(authToken: string, url: string, params: Record<string, string>, signature: string): Promise<boolean> {
+  try {
+    let data = url
+    for (const k of Object.keys(params).sort()) data += k + params[k]
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(authToken), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'])
+    const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data))
+    const expected = btoa(String.fromCharCode(...new Uint8Array(mac)))
+    return expected === signature
+  } catch { return false }
+}
+
+async function smsFindOrCreateConversation(db: D1Database, companyId: string, phone: string, hints?: { name?: string; clientId?: string; oppId?: string }): Promise<any> {
+  let conv = await db.prepare('SELECT * FROM sms_conversations WHERE company_id=? AND phone_e164=? LIMIT 1').bind(companyId, phone).first<any>()
+  if (conv) {
+    // Backfill identity hints if the conversation was created from a bare number
+    if ((hints?.name && !conv.display_name) || (hints?.clientId && !conv.client_id) || (hints?.oppId && !conv.opp_id)) {
+      await db.prepare('UPDATE sms_conversations SET display_name=CASE WHEN display_name=\'\' THEN ? ELSE display_name END, client_id=CASE WHEN client_id=\'\' THEN ? ELSE client_id END, opp_id=CASE WHEN opp_id=\'\' THEN ? ELSE opp_id END WHERE id=?')
+        .bind(hints?.name || '', hints?.clientId || '', hints?.oppId || '', conv.id).run()
+      conv = await db.prepare('SELECT * FROM sms_conversations WHERE id=?').bind(conv.id).first<any>()
+    }
+    return conv
+  }
+  // Try to identify the client by phone digits
+  let name = hints?.name || '', clientId = hints?.clientId || ''
+  if (!name) {
+    const digits = phone.replace(/\D/g, '').slice(-10)
+    if (digits.length === 10) {
+      const client = await db.prepare(
+        "SELECT id, name FROM clients WHERE company_id=? AND replace(replace(replace(replace(phone,'-',''),'(',''),')',''),' ','') LIKE ? LIMIT 1"
+      ).bind(companyId, `%${digits}`).first<any>()
+      if (client) { name = client.name || ''; clientId = clientId || client.id }
+    }
+  }
+  const id = 'smsc_' + uid()
+  await db.prepare(
+    "INSERT INTO sms_conversations (id, company_id, phone_e164, display_name, client_id, opp_id) VALUES (?,?,?,?,?,?)"
+  ).bind(id, companyId, phone, name, clientId, hints?.oppId || '').run()
+  return await db.prepare('SELECT * FROM sms_conversations WHERE id=?').bind(id).first<any>()
+}
+
+async function smsTouchConversation(db: D1Database, convId: string, preview: string, direction: string, incrementUnread: boolean): Promise<void> {
+  await db.prepare(
+    `UPDATE sms_conversations SET last_message_at=datetime('now'), last_message_preview=?, last_direction=?, status='active',
+       unread_count=CASE WHEN ? THEN unread_count+1 ELSE unread_count END WHERE id=?`
+  ).bind(String(preview || '').slice(0, 140), direction, incrementUnread ? 1 : 0, convId).run()
+}
+
+// GET /api/sms/status — is texting configured for this company?
+app.get('/api/sms/status', requireAuth, async (c) => {
+  const cfg = await smsGetConfig(c.env.DB, c.var.companyId as string)
+  return json(c, { configured: !!(cfg.sid && cfg.token && cfg.from), from_number: cfg.from })
+})
+
+// GET /api/sms/config — admin view of config (token redacted)
+app.get('/api/sms/config', requireAuth, async (c) => {
+  const role = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager' && !c.var.isSuperAdmin) return err(c, 'Admin access required', 403)
+  const cfg = await smsGetConfig(c.env.DB, c.var.companyId as string)
+  return json(c, { account_sid: cfg.sid, from_number: cfg.from, token_set: !!cfg.token })
+})
+
+// PUT /api/sms/config — save Twilio credentials for the company
+app.put('/api/sms/config', requireAuth, async (c) => {
+  const role = c.var.role as string
+  if (role !== 'admin' && role !== 'office_manager' && !c.var.isSuperAdmin) return err(c, 'Admin access required', 403)
+  const companyId = c.var.companyId as string
+  const b = await c.req.json()
+  const sets: Array<[string, string]> = []
+  if (b.account_sid !== undefined) sets.push(['twilio_account_sid', String(b.account_sid).trim()])
+  if (b.auth_token !== undefined && String(b.auth_token).trim() !== '') sets.push(['twilio_auth_token', String(b.auth_token).trim()])
+  if (b.from_number !== undefined) {
+    const from = smsNormalizePhone(String(b.from_number))
+    if (String(b.from_number).trim() && !from) return err(c, 'From number must be a valid phone number', 400)
+    sets.push(['twilio_from_number', from])
+  }
+  for (const [k, v] of sets) {
+    await c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .bind(`${companyId}:${k}`, v).run()
+  }
+  const cfg = await smsGetConfig(c.env.DB, companyId)
+  return json(c, { configured: !!(cfg.sid && cfg.token && cfg.from), from_number: cfg.from })
+})
+
+// POST /api/sms/send — send a text (creates/reuses the conversation thread)
+app.post('/api/sms/send', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const b = await c.req.json()
+  const body = String(b.body || '').trim()
+  if (!body) return err(c, 'Message body required', 400)
+  if (body.length > 1600) return err(c, 'Message too long (max 1600 characters)', 400)
+  const to = smsNormalizePhone(String(b.to || ''))
+  if (!to) return err(c, 'A valid destination phone number is required', 400)
+  const cfg = await smsGetConfig(c.env.DB, companyId)
+  const mock = (c.env as any).SMS_MOCK === '1'
+  if (!mock && !(cfg.sid && cfg.token && cfg.from)) return err(c, 'Text messaging is not configured. Add Twilio credentials in Settings.', 503)
+
+  const conv = await smsFindOrCreateConversation(c.env.DB, companyId, to, {
+    name: String(b.to_name || ''), clientId: String(b.client_id || ''), oppId: String(b.opp_id || '')
+  })
+  const msgId = 'smsm_' + uid()
+  const repId = String(c.var.repId || '')
+  await c.env.DB.prepare(
+    "INSERT INTO sms_messages (id, company_id, conversation_id, direction, body, from_number, to_number, status, rep_id) VALUES (?,?,?,?,?,?,?,'queued',?)"
+  ).bind(msgId, companyId, conv.id, 'out', body, cfg.from || 'mock', to, repId).run()
+
+  let status = 'sent', twilioSid = '', errorCode = '', errorMessage = ''
+  if (mock) {
+    twilioSid = 'SM_mock_' + uid()
+  } else {
+    try {
+      const origin = new URL(c.req.url).origin
+      const form = new URLSearchParams({
+        To: to, From: cfg.from, Body: body,
+        StatusCallback: `${origin}/api/sms/webhook/status/${companyId}`
+      })
+      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.sid}/Messages.json`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Basic ' + btoa(`${cfg.sid}:${cfg.token}`), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString()
+      })
+      const data: any = await res.json().catch(() => ({}))
+      if (res.ok) {
+        twilioSid = String(data.sid || '')
+        status = String(data.status || 'sent')
+        if (status === 'queued' || status === 'accepted') status = 'sent'
+      } else {
+        status = 'failed'
+        errorCode = String(data.code || res.status)
+        errorMessage = String(data.message || 'Twilio request failed')
+      }
+    } catch (e: any) {
+      status = 'failed'
+      errorMessage = String(e?.message || 'Network error reaching Twilio')
+    }
+  }
+  await c.env.DB.prepare(
+    "UPDATE sms_messages SET status=?, twilio_sid=?, error_code=?, error_message=?, updated_at=datetime('now') WHERE id=?"
+  ).bind(status, twilioSid, errorCode, errorMessage, msgId).run()
+  await smsTouchConversation(c.env.DB, conv.id, body, 'out', false)
+
+  // Mirror into the opportunity communications timeline when linked
+  const oppId = String(b.opp_id || conv.opp_id || '')
+  if (oppId && status !== 'failed') {
+    await c.env.DB.prepare(
+      "INSERT INTO communications (id, opp_id, rep_id, type, direction, subject, body, ts, company_id) VALUES (?,?,?,?,?,?,?,datetime('now'),?)"
+    ).bind('comm_' + uid(), oppId, repId || null, 'sms', 'out', '', body, companyId).run()
+  }
+  if (status === 'failed') return err(c, errorMessage || 'Send failed', 502)
+  return json(c, { id: msgId, conversation_id: conv.id, status, twilio_sid: twilioSid }, 201)
+})
+
+// GET /api/sms/conversations — inbox list (search + unread filter)
+app.get('/api/sms/conversations', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const search = String(c.req.query('q') || '').trim()
+  const unreadOnly = c.req.query('unread') === '1'
+  let q = 'SELECT * FROM sms_conversations WHERE company_id=?'
+  const binds: any[] = [companyId]
+  if (unreadOnly) q += ' AND unread_count > 0'
+  if (search) {
+    q += ' AND (display_name LIKE ? OR phone_e164 LIKE ? OR last_message_preview LIKE ?)'
+    binds.push(`%${search}%`, `%${search}%`, `%${search}%`)
+  }
+  q += " ORDER BY CASE WHEN last_message_at='' THEN created_at ELSE last_message_at END DESC LIMIT 200"
+  const rows = await c.env.DB.prepare(q).bind(...binds).all()
+  return json(c, rows.results)
+})
+
+// GET /api/sms/conversations/:id/messages — thread (marks as read)
+app.get('/api/sms/conversations/:id/messages', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const convId = c.req.param('id')
+  const conv = await c.env.DB.prepare('SELECT * FROM sms_conversations WHERE id=? AND company_id=?').bind(convId, companyId).first<any>()
+  if (!conv) return err(c, 'Conversation not found', 404)
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM sms_messages WHERE conversation_id=? AND company_id=? ORDER BY created_at ASC, id ASC LIMIT 500'
+  ).bind(convId, companyId).all()
+  if (Number(conv.unread_count) > 0) {
+    await c.env.DB.prepare('UPDATE sms_conversations SET unread_count=0 WHERE id=?').bind(convId).run()
+  }
+  return json(c, { conversation: conv, messages: rows.results })
+})
+
+// POST /api/sms/conversations/:id/archive
+app.post('/api/sms/conversations/:id/archive', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  await c.env.DB.prepare("UPDATE sms_conversations SET status='archived', unread_count=0 WHERE id=? AND company_id=?")
+    .bind(c.req.param('id'), companyId).run()
+  return json(c, { ok: true })
+})
+
+// ── SMS templates ──
+app.get('/api/sms/templates', requireAuth, async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM sms_templates WHERE company_id=? ORDER BY name').bind(c.var.companyId as string).all()
+  return json(c, rows.results)
+})
+app.post('/api/sms/templates', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const b = await c.req.json()
+  if (!String(b.name || '').trim() || !String(b.body || '').trim()) return err(c, 'Name and body required', 400)
+  const id = 'smst_' + uid()
+  await c.env.DB.prepare(
+    'INSERT INTO sms_templates (id, company_id, name, body, category, created_by) VALUES (?,?,?,?,?,?)'
+  ).bind(id, companyId, String(b.name).trim(), String(b.body).trim(), String(b.category || 'general'), String(c.var.repId || '')).run()
+  return json(c, { id }, 201)
+})
+app.put('/api/sms/templates/:id', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const b = await c.req.json()
+  await c.env.DB.prepare(
+    "UPDATE sms_templates SET name=COALESCE(?,name), body=COALESCE(?,body), category=COALESCE(?,category), updated_at=datetime('now') WHERE id=? AND company_id=?"
+  ).bind(b.name != null ? String(b.name).trim() : null, b.body != null ? String(b.body).trim() : null, b.category != null ? String(b.category) : null, c.req.param('id'), companyId).run()
+  return json(c, { ok: true })
+})
+app.delete('/api/sms/templates/:id', requireAuth, async (c) => {
+  await c.env.DB.prepare('DELETE FROM sms_templates WHERE id=? AND company_id=?').bind(c.req.param('id'), c.var.companyId as string).run()
+  return json(c, { ok: true })
+})
+
+// GET /api/sms/errors — failed and undelivered messages (error log)
+app.get('/api/sms/errors', requireAuth, async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT m.*, v.display_name, v.phone_e164 FROM sms_messages m
+     JOIN sms_conversations v ON v.id = m.conversation_id
+     WHERE m.company_id=? AND m.status IN ('failed','undelivered')
+     ORDER BY m.created_at DESC LIMIT 200`
+  ).bind(c.var.companyId as string).all()
+  return json(c, rows.results)
+})
+
+// GET /api/sms/unread-count — badge for nav
+app.get('/api/sms/unread-count', requireAuth, async (c) => {
+  const row = await c.env.DB.prepare(
+    "SELECT COALESCE(SUM(unread_count),0) AS n FROM sms_conversations WHERE company_id=? AND status='active'"
+  ).bind(c.var.companyId as string).first<any>()
+  return json(c, { unread: Number(row?.n || 0) })
+})
+
+// ── Twilio webhooks (no session auth; validated by Twilio signature) ──
+
+// POST /api/sms/webhook/status/:companyId — delivery receipts
+app.post('/api/sms/webhook/status/:companyId', async (c) => {
+  const companyId = c.req.param('companyId')
+  const cfg = await smsGetConfig(c.env.DB, companyId)
+  const form = await c.req.parseBody()
+  const params: Record<string, string> = {}
+  for (const [k, v] of Object.entries(form)) params[k] = String(v)
+  const mock = (c.env as any).SMS_MOCK === '1'
+  if (!mock) {
+    if (!cfg.token) return c.text('no config', 403)
+    const ok = await smsValidTwilioSignature(cfg.token, c.req.url, params, c.req.header('X-Twilio-Signature') || '')
+    if (!ok) return c.text('invalid signature', 403)
+  }
+  const sid = params.MessageSid || params.SmsSid || ''
+  const status = params.MessageStatus || params.SmsStatus || ''
+  if (sid && status) {
+    await c.env.DB.prepare(
+      "UPDATE sms_messages SET status=?, error_code=COALESCE(NULLIF(?,''), error_code), error_message=COALESCE(NULLIF(?,''), error_message), updated_at=datetime('now') WHERE twilio_sid=? AND company_id=?"
+    ).bind(status, params.ErrorCode || '', params.ErrorMessage || '', sid, companyId).run()
+  }
+  return c.text('ok')
+})
+
+// POST /api/sms/webhook/inbound/:companyId — incoming replies
+app.post('/api/sms/webhook/inbound/:companyId', async (c) => {
+  const companyId = c.req.param('companyId')
+  const cfg = await smsGetConfig(c.env.DB, companyId)
+  const form = await c.req.parseBody()
+  const params: Record<string, string> = {}
+  for (const [k, v] of Object.entries(form)) params[k] = String(v)
+  const mock = (c.env as any).SMS_MOCK === '1'
+  if (!mock) {
+    if (!cfg.token) return c.text('no config', 403)
+    const ok = await smsValidTwilioSignature(cfg.token, c.req.url, params, c.req.header('X-Twilio-Signature') || '')
+    if (!ok) return c.text('invalid signature', 403)
+  }
+  const from = smsNormalizePhone(params.From || '')
+  const body = String(params.Body || '').trim()
+  if (from && body) {
+    const conv = await smsFindOrCreateConversation(c.env.DB, companyId, from)
+    await c.env.DB.prepare(
+      "INSERT INTO sms_messages (id, company_id, conversation_id, direction, body, from_number, to_number, status, twilio_sid) VALUES (?,?,?,?,?,?,?,'received',?)"
+    ).bind('smsm_' + uid(), companyId, conv.id, 'in', body, from, params.To || cfg.from, params.MessageSid || '').run()
+    await smsTouchConversation(c.env.DB, conv.id, body, 'in', true)
+    // Mirror inbound texts into the opportunity timeline when the thread is linked
+    if (conv.opp_id) {
+      await c.env.DB.prepare(
+        "INSERT INTO communications (id, opp_id, rep_id, type, direction, subject, body, ts, company_id) VALUES (?,?,?,?,?,?,?,datetime('now'),?)"
+      ).bind('comm_' + uid(), conv.opp_id, null, 'sms', 'in', '', body, companyId).run()
+    }
+  }
+  // Empty TwiML response — no auto-reply
+  return c.body('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, { 'Content-Type': 'text/xml' })
+})
+
 // ── EMAIL (SendGrid) ─────────────────────────────────────────────────────────
 
 // GET /api/email/status — check if SendGrid is configured
@@ -11044,8 +11366,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b025">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b025">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11068,10 +11390,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260729b025"></script>
-  <script src="/js/client_portal.js?v=20260729b025"></script>
-  <script src="/js/platform_core.js?v=20260729b025"></script>
-  <script src="/js/client_portal.js?v=20260729b025"></script>  <script>
+  <script src="/js/platform_core.js?v=20260729b027"></script>
+  <script src="/js/client_portal.js?v=20260729b027"></script>
+  <script src="/js/platform_core.js?v=20260729b027"></script>
+  <script src="/js/client_portal.js?v=20260729b027"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -11705,12 +12027,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b025">
-  <link rel="stylesheet" href="/js/styles.css?v=20260729b025">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b025">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b025">
-  <link rel="stylesheet" href="/js/styles.css?v=20260729b025">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b025">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">
+  <link rel="stylesheet" href="/js/styles.css?v=20260729b027">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b027">
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">
+  <link rel="stylesheet" href="/js/styles.css?v=20260729b027">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b027">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -12269,82 +12591,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260729b025"></script>
-<script src="/js/sales-process.js?v=20260729b025"></script>
-<script src="/js/richtext.js?v=20260729b025"></script>
-<script src="/js/db.js?v=20260729b025"></script>
-<script src="/js/data.js?v=20260729b025"></script>
-<script src="/js/reps.js?v=20260729b025"></script>
-<script src="/js/record-page.js?v=20260729b025"></script>
-<script src="/js/academy.js?v=20260729b025"></script>
-<script src="/js/task_engine.js?v=20260729b025"></script>
-<script src="/js/gw_i18n.js?v=20260729b025"></script>
-<script src="/js/app_premium.js?v=20260729b025"></script>
-<script src="/js/estimates.js?v=20260729b025"></script>
-<script src="/js/multiday.js?v=20260729b025"></script>
-<script src="/js/proposals.js?v=20260729b025"></script>
-<script src="/js/pricing.js?v=20260729b025"></script>
-<script src="/js/invoices.js?v=20260729b025"></script>
-<script src="/js/csv_import.js?v=20260729b025"></script>
-<script src="/js/onboarding.js?v=20260729b025"></script>
-<script src="/js/gw_copilot.js?v=20260729b025"></script>
-<script src="/js/groundwork_ai.js?v=20260729b025"></script>
-<script src="/js/recurring_plans.js?v=20260729b025"></script>
-<script src="/js/reviews.js?v=20260729b025"></script>
-<script src="/js/stripe.js?v=20260729b025"></script>
-<script src="/js/email.js?v=20260729b025"></script>
-<script src="/js/notifications.js?v=20260729b025"></script>
-<script src="/js/integrations.js?v=20260729b025"></script>
-<script src="/js/calendar_sync.js?v=20260729b025"></script>
-<script src="/js/ai_followup.js?v=20260729b025"></script>
-<script src="/js/user_management.js?v=20260729b025"></script>
-<script src="/js/platform_admin.js?v=20260729b025"></script>
-<script src="/js/time_tracker.js?v=20260729b025"></script>
-<script src="/js/field_workday.js?v=20260729b025"></script>
-<script src="/js/platform_core.js?v=20260729b025"></script>
-<script src="/js/approval_engine.js?v=20260729b025"></script>
-<script src="/js/automation_engine.js?v=20260729b025"></script>
-<script src="/js/client_portal.js?v=20260729b025"></script>
-<script src="/js/field_mode.js?v=20260729b025"></script>
-<script src="/js/assets_hub.js?v=20260729b025"></script>
-<script src="/js/gw-icons.js?v=20260729b025"></script>
-<script src="/js/sales-process.js?v=20260729b025"></script>
-<script src="/js/richtext.js?v=20260729b025"></script>
-<script src="/js/db.js?v=20260729b025"></script>
-<script src="/js/data.js?v=20260729b025"></script>
-<script src="/js/reps.js?v=20260729b025"></script>
-<script src="/js/record-page.js?v=20260729b025"></script>
-<script src="/js/academy.js?v=20260729b025"></script>
-<script src="/js/task_engine.js?v=20260729b025"></script>
-<script src="/js/gw_i18n.js?v=20260729b025"></script>
-<script src="/js/app_premium.js?v=20260729b025"></script>
-<script src="/js/estimates.js?v=20260729b025"></script>
-<script src="/js/multiday.js?v=20260729b025"></script>
-<script src="/js/proposals.js?v=20260729b025"></script>
-<script src="/js/pricing.js?v=20260729b025"></script>
-<script src="/js/invoices.js?v=20260729b025"></script>
-<script src="/js/csv_import.js?v=20260729b025"></script>
-<script src="/js/onboarding.js?v=20260729b025"></script>
-<script src="/js/gw_copilot.js?v=20260729b025"></script>
-<script src="/js/groundwork_ai.js?v=20260729b025"></script>
-<script src="/js/recurring_plans.js?v=20260729b025"></script>
-<script src="/js/reviews.js?v=20260729b025"></script>
-<script src="/js/stripe.js?v=20260729b025"></script>
-<script src="/js/email.js?v=20260729b025"></script>
-<script src="/js/notifications.js?v=20260729b025"></script>
-<script src="/js/integrations.js?v=20260729b025"></script>
-<script src="/js/calendar_sync.js?v=20260729b025"></script>
-<script src="/js/ai_followup.js?v=20260729b025"></script>
-<script src="/js/user_management.js?v=20260729b025"></script>
-<script src="/js/platform_admin.js?v=20260729b025"></script>
-<script src="/js/time_tracker.js?v=20260729b025"></script>
-<script src="/js/field_workday.js?v=20260729b025"></script>
-<script src="/js/platform_core.js?v=20260729b025"></script>
-<script src="/js/approval_engine.js?v=20260729b025"></script>
-<script src="/js/automation_engine.js?v=20260729b025"></script>
-<script src="/js/client_portal.js?v=20260729b025"></script>
-<script src="/js/field_mode.js?v=20260729b025"></script>
-<script src="/js/assets_hub.js?v=20260729b025"></script><script>
+<script src="/js/gw-icons.js?v=20260729b027"></script>
+<script src="/js/sales-process.js?v=20260729b027"></script>
+<script src="/js/richtext.js?v=20260729b027"></script>
+<script src="/js/db.js?v=20260729b027"></script>
+<script src="/js/data.js?v=20260729b027"></script>
+<script src="/js/reps.js?v=20260729b027"></script>
+<script src="/js/record-page.js?v=20260729b027"></script>
+<script src="/js/academy.js?v=20260729b027"></script>
+<script src="/js/task_engine.js?v=20260729b027"></script>
+<script src="/js/gw_i18n.js?v=20260729b027"></script>
+<script src="/js/app_premium.js?v=20260729b027"></script>
+<script src="/js/estimates.js?v=20260729b027"></script>
+<script src="/js/multiday.js?v=20260729b027"></script>
+<script src="/js/proposals.js?v=20260729b027"></script>
+<script src="/js/pricing.js?v=20260729b027"></script>
+<script src="/js/invoices.js?v=20260729b027"></script>
+<script src="/js/csv_import.js?v=20260729b027"></script>
+<script src="/js/onboarding.js?v=20260729b027"></script>
+<script src="/js/gw_copilot.js?v=20260729b027"></script>
+<script src="/js/groundwork_ai.js?v=20260729b027"></script>
+<script src="/js/recurring_plans.js?v=20260729b027"></script>
+<script src="/js/reviews.js?v=20260729b027"></script>
+<script src="/js/stripe.js?v=20260729b027"></script>
+<script src="/js/email.js?v=20260729b027"></script>
+<script src="/js/notifications.js?v=20260729b027"></script>
+<script src="/js/integrations.js?v=20260729b027"></script>
+<script src="/js/sms.js?v=20260729b027"></script>
+<script src="/js/calendar_sync.js?v=20260729b027"></script>
+<script src="/js/ai_followup.js?v=20260729b027"></script>
+<script src="/js/user_management.js?v=20260729b027"></script>
+<script src="/js/platform_admin.js?v=20260729b027"></script>
+<script src="/js/time_tracker.js?v=20260729b027"></script>
+<script src="/js/field_workday.js?v=20260729b027"></script>
+<script src="/js/platform_core.js?v=20260729b027"></script>
+<script src="/js/approval_engine.js?v=20260729b027"></script>
+<script src="/js/automation_engine.js?v=20260729b027"></script>
+<script src="/js/client_portal.js?v=20260729b027"></script>
+<script src="/js/field_mode.js?v=20260729b027"></script>
+<script src="/js/assets_hub.js?v=20260729b027"></script>
+<script src="/js/gw-icons.js?v=20260729b027"></script>
+<script src="/js/sales-process.js?v=20260729b027"></script>
+<script src="/js/richtext.js?v=20260729b027"></script>
+<script src="/js/db.js?v=20260729b027"></script>
+<script src="/js/data.js?v=20260729b027"></script>
+<script src="/js/reps.js?v=20260729b027"></script>
+<script src="/js/record-page.js?v=20260729b027"></script>
+<script src="/js/academy.js?v=20260729b027"></script>
+<script src="/js/task_engine.js?v=20260729b027"></script>
+<script src="/js/gw_i18n.js?v=20260729b027"></script>
+<script src="/js/app_premium.js?v=20260729b027"></script>
+<script src="/js/estimates.js?v=20260729b027"></script>
+<script src="/js/multiday.js?v=20260729b027"></script>
+<script src="/js/proposals.js?v=20260729b027"></script>
+<script src="/js/pricing.js?v=20260729b027"></script>
+<script src="/js/invoices.js?v=20260729b027"></script>
+<script src="/js/csv_import.js?v=20260729b027"></script>
+<script src="/js/onboarding.js?v=20260729b027"></script>
+<script src="/js/gw_copilot.js?v=20260729b027"></script>
+<script src="/js/groundwork_ai.js?v=20260729b027"></script>
+<script src="/js/recurring_plans.js?v=20260729b027"></script>
+<script src="/js/reviews.js?v=20260729b027"></script>
+<script src="/js/stripe.js?v=20260729b027"></script>
+<script src="/js/email.js?v=20260729b027"></script>
+<script src="/js/notifications.js?v=20260729b027"></script>
+<script src="/js/integrations.js?v=20260729b027"></script>
+<script src="/js/sms.js?v=20260729b027"></script>
+<script src="/js/calendar_sync.js?v=20260729b027"></script>
+<script src="/js/ai_followup.js?v=20260729b027"></script>
+<script src="/js/user_management.js?v=20260729b027"></script>
+<script src="/js/platform_admin.js?v=20260729b027"></script>
+<script src="/js/time_tracker.js?v=20260729b027"></script>
+<script src="/js/field_workday.js?v=20260729b027"></script>
+<script src="/js/platform_core.js?v=20260729b027"></script>
+<script src="/js/approval_engine.js?v=20260729b027"></script>
+<script src="/js/automation_engine.js?v=20260729b027"></script>
+<script src="/js/client_portal.js?v=20260729b027"></script>
+<script src="/js/field_mode.js?v=20260729b027"></script>
+<script src="/js/assets_hub.js?v=20260729b027"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
