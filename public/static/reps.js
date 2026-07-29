@@ -120,7 +120,7 @@ function getCommissionStatus(opp) {
   }
   // Migrate legacy boolean field
   if (opp.commissionApproved === true)  return 'approved';
-  if (opp.status === 'Sold / Activation') return 'pending_approval';
+  if (window.GWSalesProcess ? window.GWSalesProcess.is(opp, 'won') : opp.status === 'Sold / Activation') return 'pending_approval';
   return 'estimated';
 }
 window.getCommissionStatus = getCommissionStatus;

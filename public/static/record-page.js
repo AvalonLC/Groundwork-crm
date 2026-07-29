@@ -64,8 +64,11 @@
     if (!stages || !stages.length) return '';
 
     const currentIdx = stages.indexOf(current);
-    const isSold     = current === 'Sold / Activation';
-    const isLost     = current === 'Closed Lost';
+    const semantic = window.GWSalesProcess ? window.GWSalesProcess.resolve(
+      typeof current === 'object' ? current : { status: current }
+    ) : null;
+    const isSold = semantic ? semantic.outcome === 'won' || semantic.semantic === 'won' : current === 'Sold / Activation';
+    const isLost = semantic ? semantic.outcome === 'lost' || semantic.semantic === 'lost' : current === 'Closed Lost';
     // For sold/lost, treat as terminal
     const effectiveIdx = isSold
       ? stages.length
