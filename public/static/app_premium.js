@@ -23,6 +23,31 @@ function getPipelineStages() {
 }
 window.getPipelineStages = getPipelineStages;
 
+function gwSalesResolved(o) { return window.GWSalesProcess ? window.GWSalesProcess.resolve(o) : { resolved:false }; }
+function gwSalesWon(o) { return window.GWSalesProcess ? window.GWSalesProcess.isWon(o) : o.status === 'Sold / Activation'; }
+function gwSalesLost(o) { return window.GWSalesProcess ? window.GWSalesProcess.isLost(o) : o.status === 'Closed Lost'; }
+function gwSalesOpen(o) { return window.GWSalesProcess ? window.GWSalesProcess.isOverallOpen(o) : !['Sold / Activation','Closed Lost'].includes(o.status); }
+function gwSalesStageMetricOpen(o) { return window.GWSalesProcess ? window.GWSalesProcess.isOpen(o) : !['Sold / Activation','Closed Lost'].includes(o.status); }
+function gwSalesProposal(o) { return window.GWSalesProcess ? window.GWSalesProcess.isProposal(o) : ['Proposal / Estimate Sent','Proposal Sent','Follow-Up'].includes(o.status); }
+function gwSalesPresentation(o) { return window.GWSalesProcess ? window.GWSalesProcess.isPresentation(o) : o.status === 'Presentation & SOW Pitch'; }
+function gwSalesNeedsRestaging(o) { return window.GWSalesProcess ? window.GWSalesProcess.needsRestaging(o) : false; }
+function gwSalesProbability(o) {
+  const result = gwSalesResolved(o);
+  if (!result.resolved) return null;
+  if (result.outcome === 'won' || result.semantic === 'won') return 1;
+  if (['lost','disqualified'].includes(result.outcome || result.semantic)) return 0;
+  return { intake:.10, active_qualification:.25, consultation:.35, estimate_development:.45, proposal_presentation:.65, decision:.70, nurture:.10 }[result.semantic] ?? .20;
+}
+window.gwSalesResolved = gwSalesResolved;
+window.gwSalesWon = gwSalesWon;
+window.gwSalesLost = gwSalesLost;
+window.gwSalesOpen = gwSalesOpen;
+window.gwSalesStageMetricOpen = gwSalesStageMetricOpen;
+window.gwSalesProposal = gwSalesProposal;
+window.gwSalesPresentation = gwSalesPresentation;
+window.gwSalesNeedsRestaging = gwSalesNeedsRestaging;
+window.gwSalesProbability = gwSalesProbability;
+
 // ── Company-Configurable Divisions ───────────────────────────────────────────
 // Each company names and creates its own divisions (any number).
 // Stored in D1 setting `company_divisions` (JSON array of {key,label,color}),
@@ -1888,10 +1913,10 @@ window._updateSidebarRep = function updateSidebarRep() {
 };
 
 function statCards(){
-  const openOpps = state.opportunities.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-  const proposalOpps = state.opportunities.filter(o=>['Proposal / Estimate Sent','Proposal Sent','Follow-Up'].includes(o.status));
-  const overdueOpps = state.opportunities.filter(o=>o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status));
-  const soldOpps = state.opportunities.filter(o=>o.status==='Sold / Activation');
+  const openOpps = state.opportunities.filter(gwSalesOpen);
+  const proposalOpps = state.opportunities.filter(gwSalesProposal);
+  const overdueOpps = state.opportunities.filter(o=>o.nextFollowUp && o.nextFollowUp < todayISO() && gwSalesStageMetricOpen(o));
+  const soldOpps = state.opportunities.filter(gwSalesWon);
   return `<div class="grid grid-4 stat-grid">
     <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
       <span>Open</span><strong>${openOpps.length}</strong>
@@ -1917,16 +1942,16 @@ function buildSuggestedActions(currentRep){
     : state.opportunities;
   const _today = todayISO();
   const staleOpps = myOpps.filter(o =>
-    !['Sold / Activation','Closed Lost'].includes(o.status) &&
+    gwSalesStageMetricOpen(o) &&
     o.updatedAt && Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) >= 7
   ).slice(0,3);
   const noNextStep = myOpps.filter(o =>
-    !['Sold / Activation','Closed Lost'].includes(o.status) && !o.nextFollowUp
+    gwSalesStageMetricOpen(o) && !o.nextFollowUp
   ).slice(0,2);
   const proposalsPending = myOpps.filter(o =>
-    ['Proposal / Estimate Sent','Proposal Sent'].includes(o.status)
+    gwSalesProposal(o)
   ).slice(0,3);
-  const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && !['Sold / Activation','Closed Lost'].includes(o.status)) : [];
+  const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && gwSalesOpen(o)) : [];
 
   if(staleOpps.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="10" r="6" stroke="#8B6914" stroke-width="1.5"/><path d="M9 7v4l2 1.5" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 2h6" stroke="#8B6914" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg>',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
   if(proposalsPending.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#4D8A86" stroke-width="1.5"/><path d="M2 8h14" stroke="#4D8A86" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#4D8A86" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><circle cx="13" cy="13" r="2.5" fill="#C97B6A" stroke="#113931" stroke-width="1"/><path d="M13 11.5v1.5M13 14h.01" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/></svg>',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
@@ -2056,10 +2081,10 @@ function _gwTodayRenderMobile(opts) {
   // opts: { rep, isAdmin, isOM, isField, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent }
   const { rep, isAdmin, isOM, isField, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent } = opts;
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
-  const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-  const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
+  const _open    = opps.filter(gwSalesOpen);
+  const _propo   = opps.filter(gwSalesProposal);
   const _pipeVal = _open.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const _won     = opps.filter(o=>o.status==='Sold / Activation');
+  const _won     = opps.filter(gwSalesWon);
   const _wonMTD  = _won.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7) === todayISO().slice(0,7));
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
 
@@ -2816,10 +2841,10 @@ function _gwTodayRender() {
 
   // Pipeline quick-stats strip (compact, owner-relevant)
   const opps = state.opportunities || [];
-  const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-  const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
+  const _open    = opps.filter(gwSalesOpen);
+  const _propo   = opps.filter(gwSalesProposal);
   const _pipeVal = _open.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const _won     = opps.filter(o=>o.status==='Sold / Activation');
+  const _won     = opps.filter(gwSalesWon);
   const _wonMTD  = _won.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7) === todayISO().slice(0,7));
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
@@ -3039,7 +3064,7 @@ function empty(text, icon, ctaHtml){
 }
 function oppMini(o){
   const _today = todayISO();
-  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && gwSalesStageMetricOpen(o);
   const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : null;
   // Urgency dot inline — small colored dot before client name
   const urgencyDot = isOverdue
@@ -3063,9 +3088,9 @@ function oppMini(o){
 }
 function oppCard(o){
   const _today = todayISO();
-  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && gwSalesStageMetricOpen(o);
   const daysSinceUpdate = o.updatedAt ? Math.floor((Date.now() - new Date(o.updatedAt).getTime()) / 86400000) : 999;
-  const isStale = daysSinceUpdate >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const isStale = daysSinceUpdate >= 14 && gwSalesStageMetricOpen(o);
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
   const urgencyBadge = isOverdue
     ? `<span class="urgency-badge overdue">OVERDUE</span>`
@@ -3111,7 +3136,7 @@ function gwNextUpForOpp(o){
     }
     // 2. Estimate status drives the sales motion
     const es = (o.estimateStatus || '').toLowerCase();
-    const won = ['Sold / Activation','Closed Lost'].includes(o.status);
+    const won = gwSalesWon(o) || gwSalesLost(o);
     if (!won) {
       if (es === 'sent' || es === 'revised') return { label: 'Follow up on estimate', date: o.nextFollowUp || null, title: 'Estimate sent — awaiting client response' };
       if (es === 'draft') return { label: 'Finish & send estimate', date: o.nextFollowUp || null, title: 'Estimate drafted but not sent' };
@@ -3157,10 +3182,10 @@ function pipeline(selectedId){
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
   const _closedStatuses = ['Sold / Activation','Deal Closed / Won','Closed Lost'];
-  if (activeStatusFilter === 'open') opps = opps.filter(o => !_closedStatuses.includes(o.status));
-  else if (activeStatusFilter === 'proposals') opps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Follow-Up','Presentation & SOW Pitch'].includes(o.status));
-  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !_closedStatuses.includes(o.status));
-  else if (activeStatusFilter === 'sold') opps = opps.filter(o => ['Sold / Activation','Deal Closed / Won'].includes(o.status));
+  if (activeStatusFilter === 'open') opps = opps.filter(gwSalesOpen);
+  else if (activeStatusFilter === 'proposals') opps = opps.filter(gwSalesProposal);
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && gwSalesStageMetricOpen(o));
+  else if (activeStatusFilter === 'sold') opps = opps.filter(gwSalesWon);
 
   // T47: Sort
   const activeSort = window._pipelineSort || 'urgent';
@@ -3273,9 +3298,9 @@ function pipeline(selectedId){
                 </div>
                 ${g.items.map(o => {
                   const _t = todayISO();
-                  const overdue = o.nextFollowUp && o.nextFollowUp < _t && !['Sold / Activation','Closed Lost'].includes(o.status);
+                  const overdue = o.nextFollowUp && o.nextFollowUp < _t && gwSalesStageMetricOpen(o);
                   const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : 999;
-                  const stale = daysSince >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
+                  const stale = daysSince >= 14 && gwSalesStageMetricOpen(o);
                   const repObj = (window.REPS||[]).find(r=>r.id===o.repId);
                   return `<div class="gw-pipe-card ${overdue?'gw-pipe-card--overdue':stale?'gw-pipe-card--stale':''}" onclick="show('pipeline','${o.id}')">
                     <div class="gw-pipe-card-top">
@@ -3347,6 +3372,18 @@ window._gwDraggedOppId = null;
 
 window.gwPipeDragStart = function(ev, oppId) {
   window._gwDraggedOppId = oppId;
+  window._gwAllowedDropStages = null;
+  if (window._gwSalesProcess?.process?.lifecycle === 'published') {
+    const assignment = (window._gwSalesProcess.assignments||[]).find(item=>String(item.opportunity_id)===String(oppId));
+    if (assignment) {
+      const edges = (window._gwSalesProcess.transitions||[]).filter(item=>item.from_stage_id===assignment.stage_id);
+      window._gwAllowedDropStages = new Set(edges.map(edge=>{
+        if (edge.outcome_type) return (window._gwSalesProcess.outcomes||[]).find(outcome=>outcome.stage_id===edge.to_stage_id&&outcome.semantic_type===edge.outcome_type)?.display_name;
+        return (window._gwSalesProcess.stages||[]).find(stage=>stage.id===edge.to_stage_id)?.display_name;
+      }).filter(Boolean));
+      document.querySelectorAll('.kanban-col[data-stage]').forEach(col=>col.classList.toggle('gw-drop-disabled',!window._gwAllowedDropStages.has(col.dataset.stage)));
+    }
+  }
   try { ev.dataTransfer.setData('text/plain', oppId); ev.dataTransfer.effectAllowed = 'move'; } catch(e) {}
   const card = ev.target.closest('.opp-card');
   if (card) setTimeout(() => card.classList.add('gw-dragging'), 0);
@@ -3357,10 +3394,13 @@ window.gwPipeDragEnd = function(ev) {
   document.querySelectorAll('.opp-card.gw-dragging').forEach(c => c.classList.remove('gw-dragging'));
   document.querySelectorAll('.kanban-col.gw-drop-target').forEach(c => c.classList.remove('gw-drop-target'));
   document.querySelectorAll('.gw-drop-hint').forEach(h => h.remove());
+  document.querySelectorAll('.kanban-col.gw-drop-disabled').forEach(c => c.classList.remove('gw-drop-disabled'));
+  window._gwAllowedDropStages = null;
 };
 
 window.gwPipeDragOver = function(ev) {
   if (!window._gwDraggedOppId) return;
+  if (window._gwAllowedDropStages && !window._gwAllowedDropStages.has(ev.currentTarget.dataset.stage)) return;
   ev.preventDefault(); // required to allow drop
   try { ev.dataTransfer.dropEffect = 'move'; } catch(e) {}
 };
@@ -3368,6 +3408,7 @@ window.gwPipeDragOver = function(ev) {
 window.gwPipeDragEnter = function(ev) {
   if (!window._gwDraggedOppId) return;
   const col = ev.currentTarget;
+  if (window._gwAllowedDropStages && !window._gwAllowedDropStages.has(col.dataset.stage)) return;
   ev.preventDefault();
   if (col.classList.contains('gw-drop-target')) return;
   // Don't highlight the column the card is already in
@@ -3392,7 +3433,7 @@ window.gwPipeDragLeave = function(ev) {
   col.querySelectorAll('.gw-drop-hint').forEach(h => h.remove());
 };
 
-window.gwPipeDrop = function(ev) {
+window.gwPipeDrop = async function(ev) {
   ev.preventDefault();
   const col = ev.currentTarget;
   col.classList.remove('gw-drop-target');
@@ -3405,6 +3446,29 @@ window.gwPipeDrop = function(ev) {
   const newStage = col.dataset.stage;
   const o = (state.opportunities||[]).find(x => x.id === oppId);
   if (!o || !newStage || o.status === newStage) return;
+
+  const normalized = window._gwSalesProcess && window._gwSalesProcess.process?.lifecycle === 'published';
+  if (normalized) {
+    const assignment = (window._gwSalesProcess.assignments||[]).find(item=>String(item.opportunity_id)===String(o.id));
+    const outcome = (window._gwSalesProcess.outcomes||[]).find(item=>item.display_name===newStage);
+    const target = outcome
+      ? (window._gwSalesProcess.stages||[]).find(item=>item.id===outcome.stage_id)
+      : (window._gwSalesProcess.stages||[]).find(item=>item.display_name===newStage);
+    const edge = assignment && target && (window._gwSalesProcess.transitions||[]).find(item=>item.from_stage_id===assignment.stage_id&&item.to_stage_id===target.id&&(!item.outcome_type||item.outcome_type===(outcome?.semantic_type||'')));
+    if (!assignment || !target || !edge) { showToast('That destination is not configured for this stage'); show('pipeline'); return; }
+    if (!confirm(`Move ${o.client||'this opportunity'} to ${newStage}?`)) { show('pipeline'); return; }
+    try {
+      await DB.salesProcess.transition(o.id,target.id,assignment.stage_id,outcome?.semantic_type||'','');
+      assignment.stage_id=target.id; assignment.outcome_type=outcome?.semantic_type||'';
+      o.salesProcessStageId=target.id; o.status=newStage; o.updatedAt=new Date().toISOString(); saveState();
+      showToast(`${o.client||'Opportunity'} moved to ${newStage}`); show('pipeline'); return;
+    } catch (error) {
+      const missing = error?.data?.missing;
+      const detail = missing?.required?.map(item=>item.label).join(', ');
+      showToast(detail ? `Missing requirements: ${detail}` : (error?.message||'Transition failed'));
+      show('pipeline'); return;
+    }
+  }
 
   const oldStage = o.status;
   o.status    = newStage;
@@ -3446,7 +3510,8 @@ function buildDivisionPipeline() {
     'Closed Lost': 0.0,
   };
   function winProb(o) {
-    return STAGE_WIN_PROB[o.status] || 0.20;
+    const semanticProbability = gwSalesProbability(o);
+    return semanticProbability == null ? 0 : semanticProbability;
   }
 
   // "Paper on the Street" statuses — formal estimates/proposals in front of customers
@@ -3487,9 +3552,9 @@ function buildDivisionPipeline() {
     const val = parseFloat(o.jobValue || 0);
     const estAmt = parseFloat(o.estimateAmount || val); // fall back to jobValue if no estimateAmount
 
-    const isSold = o.status === 'Sold / Activation';
-    const isLost = o.status === 'Closed Lost';
-    const isOpen = !isSold && !isLost;
+    const isSold = gwSalesWon(o);
+    const isLost = gwSalesLost(o);
+    const isOpen = gwSalesOpen(o);
 
     // Close rate denominator
     if (isSold || isLost) d.totalClosed++;
@@ -3507,13 +3572,13 @@ function buildDivisionPipeline() {
     // Open pipeline
     d.openCount++;
     d.openValue += val;
-    d.weightedPipeline += val * winProb(o);
+    if (!gwSalesNeedsRestaging(o)) d.weightedPipeline += val * winProb(o);
 
     // Estimate open?
     const estStatus = (o.estimateStatus || '').toLowerCase().replace(/ /g,'_');
     const hasOpenEstimate = POTS_ESTIMATE_STATUSES.includes(estStatus) ||
                              POTS_ESTIMATE_STATUSES.includes((o.estimateStatus||'').toLowerCase()) ||
-                             POTS_STAGES.includes(o.status);
+                             gwSalesProposal(o);
     if (hasOpenEstimate && estAmt > 0) {
       d.openEstimateCount++;
       d.openEstimateValue += estAmt;
@@ -3552,8 +3617,8 @@ function buildDivisionPipeline() {
       ? Math.round((d.totalSold > 0 ? (d.soldCountThisMonth > 0 ? 1 : 0) : 0) * 100) / 100
       : null;
     // Better close rate: sold / (sold + lost) by count
-    const soldCount = opps.filter(o => o.status === 'Sold / Activation' && getDiv(o) === k).length;
-    const lostCount = opps.filter(o => o.status === 'Closed Lost'        && getDiv(o) === k).length;
+    const soldCount = opps.filter(o => gwSalesWon(o) && getDiv(o) === k).length;
+    const lostCount = opps.filter(o => gwSalesLost(o) && getDiv(o) === k).length;
     d.closeRatePct = (soldCount + lostCount) > 0
       ? Math.round((soldCount / (soldCount + lostCount)) * 100)
       : null;
@@ -5500,6 +5565,75 @@ function input(name,label,type='text'){ const required = type===true; const actu
 function select(name,label,options,selected=''){ return `<label><span>${label}</span><select name="${name}"><option value="">Select...</option>${options.map(o=>`<option ${o===selected?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></label>`; }
 function textarea(name,label,value=''){ return `<label class="full"><span>${label}</span><textarea name="${name}" rows="4">${escapeHtml(value)}</textarea></label>`; }
 
+function gwSalesProcessList(items, emptyText) {
+  if (!items || !items.length) return `<div style="font-size:12px;color:var(--gw-text-subtle)">${escapeHtml(emptyText || 'None configured')}</div>`;
+  return `<div style="display:flex;flex-direction:column;gap:6px">${items.map(item => `<div style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--gw-text-primary)"><span style="color:${item.completed ? 'var(--gw-success)' : 'var(--gw-text-subtle)'};font-weight:800">${item.completed ? 'Complete' : 'Pending'}</span><span><strong>${escapeHtml(item.label || item.display_name || item.name || item.title || '')}</strong>${item.description ? `<br><span style="color:var(--gw-text-muted)">${escapeHtml(item.description)}</span>` : ''}</span></div>`).join('')}</div>`;
+}
+
+window.gwLoadStageGuide = async function(opportunityId) {
+  const host = document.getElementById('gw-stage-guide-' + opportunityId);
+  if (!host || !window.DB || !DB.salesProcess) return;
+  try {
+    const context = await DB.salesProcess.context(opportunityId);
+    const opportunity = (state.opportunities || []).find(item => item.id === opportunityId);
+    if (opportunity) opportunity._salesProcessContext = context;
+    if (!context.normalized) {
+      host.innerHTML = `<p style="font-size:12px;color:var(--gw-text-muted);line-height:1.5">${context.needs_restaging ? 'This opportunity needs restaging before a published Stage Guide can be shown.' : `Legacy compatibility stage: ${escapeHtml(context.legacy_label || 'Unassigned')}`}</p>`;
+      return;
+    }
+    const stage = context.stage || {};
+    const selector = document.getElementById('gw-stage-selector-' + opportunityId);
+    if (selector) selector.innerHTML = `<div style="font-size:13px;font-weight:800;margin-top:8px">${escapeHtml(stage.display_name || '')}</div><div style="font-size:11px;color:var(--gw-text-muted);margin-top:4px">Use an allowed destination below. Direct label editing is disabled for published processes.</div>`;
+    const groups = context.requirement_groups || {};
+    const transitions = context.transitions || [];
+    const resources = context.resources || [];
+    const guides = context.guides || [];
+    const academy = [...(context.academy_skills || []), ...(context.company_playbook || [])];
+    const aging = context.aging || {};
+    host.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px"><div><div style="font-size:15px;font-weight:800">${escapeHtml(stage.display_name || '')}</div><div style="font-size:11px;color:var(--gw-text-muted)">${escapeHtml(context.process?.name || '')} version ${escapeHtml(String(context.process?.version_number || ''))}</div></div><span style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--gw-${aging.status === 'overdue' ? 'danger' : aging.status === 'warning' ? 'warning' : 'success'})">${escapeHtml(String(aging.status || '').replace('_',' '))}</span></div>
+      <p style="font-size:12px;line-height:1.55;margin:0 0 8px"><strong>Purpose:</strong> ${escapeHtml(stage.description || 'Not configured')}</p>
+      <p style="font-size:12px;line-height:1.55;margin:0 0 8px"><strong>Customer milestone:</strong> ${escapeHtml(stage.customer_milestone || 'Not configured')}</p>
+      <p style="font-size:12px;line-height:1.55;margin:0 0 8px"><strong>Why it belongs here:</strong> Assigned to stable stage ${escapeHtml(stage.stable_key || '')}${context.internal_status ? ` with internal status ${escapeHtml(context.internal_status.display_name)}` : ''}.</p>
+      <p style="font-size:12px;line-height:1.55;margin:0 0 12px"><strong>Next action:</strong> ${escapeHtml(context.opportunity?.next_action || 'Not set')} <strong>Date:</strong> ${escapeHtml(context.opportunity?.next_action_date || context.opportunity?.next_follow_up || 'Not set')} <strong>Expected duration:</strong> ${Number(aging.expected_duration_days || 0) || 'Not configured'}${aging.expected_duration_days ? ' days' : ''}</p>
+      <details open><summary style="font-size:12px;font-weight:800;cursor:pointer">Required items</summary><div style="padding:8px 0">${gwSalesProcessList(groups.required, 'No required items')}</div></details>
+      <details><summary style="font-size:12px;font-weight:800;cursor:pointer">Recommended fields</summary><div style="padding:8px 0">${gwSalesProcessList(groups.recommended, 'No recommended fields')}</div></details>
+      <details><summary style="font-size:12px;font-weight:800;cursor:pointer">Optional coaching</summary><div style="padding:8px 0">${gwSalesProcessList(groups.optional, 'No optional coaching')}</div></details>
+      <details><summary style="font-size:12px;font-weight:800;cursor:pointer">Manager review</summary><div style="padding:8px 0">${gwSalesProcessList(groups.manager_review, 'No manager-only review')}</div></details>
+      <div style="font-size:12px;margin-top:10px"><strong>Exit conditions:</strong> ${escapeHtml(stage.exit_guidance || 'Not configured')}</div>
+      <div style="font-size:12px;margin-top:10px"><strong>Call guides:</strong> ${guides.map(item => escapeHtml(item.title)).join(', ') || 'None configured'}</div>
+      <div style="font-size:12px;margin-top:6px"><strong>Email templates and resources:</strong> ${resources.map(item => escapeHtml(item.name)).join(', ') || 'None configured'}</div>
+      <div style="font-size:12px;margin-top:6px"><strong>Academy training:</strong> ${academy.map(item => escapeHtml(item.title)).join(', ') || 'None associated'}</div>
+      <div style="margin-top:12px"><div style="font-size:12px;font-weight:800;margin-bottom:6px">Allowed destinations</div><div style="display:flex;gap:6px;flex-wrap:wrap">${transitions.map(item => `<button class="rp-inline-btn" onclick="gwStageGuideTransition('${opportunityId}','${item.transition_id}')">${escapeHtml(item.display_label || item.outcome_name || item.display_name)}</button>`).join('') || '<span style="font-size:12px;color:var(--gw-text-subtle)">No active transitions configured</span>'}</div></div>`;
+  } catch (error) {
+    host.innerHTML = `<p style="font-size:12px;color:var(--gw-danger)">Stage Guide could not be loaded.</p>`;
+  }
+};
+
+window.gwStageGuideTransition = async function(opportunityId, transitionId) {
+  const opportunity = (state.opportunities || []).find(item => item.id === opportunityId);
+  const context = opportunity && opportunity._salesProcessContext;
+  const transition = context && (context.transitions || []).find(item => item.transition_id === transitionId);
+  if (!context || !transition) return;
+  const missing = (context.missing_required || []).map(item => item.label);
+  const enforcement = missing.length ? `\n\nMissing required items:\n- ${missing.join('\n- ')}` : '\n\nAll currently evaluated required items are complete.';
+  const overrideNeeded = Boolean(transition.requires_override || missing.length);
+  let overrideReason = '';
+  if (overrideNeeded) {
+    overrideReason = String(prompt(`This transition is enforced by the published process.${enforcement}\n\nEnter an override reason for manager review, or cancel.`) || '').trim();
+    if (!overrideReason) return;
+  }
+  if (!confirm(`Move to ${transition.outcome_name || transition.display_name}?${enforcement}\n\nThis action updates the opportunity and creates an audit record.`)) return;
+  try {
+    await DB.salesProcess.transition(opportunityId, transition.to_stage_id, context.assignment.stage_id, transition.outcome_type || '', overrideReason);
+    showToast('Stage transition completed', 'success');
+    show('pipeline', opportunityId);
+  } catch (error) {
+    const detail = error && (error.message || error.error) || 'Transition failed';
+    alert(detail);
+  }
+};
+
 function opportunityDetail(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o){ return pipeline(); }
@@ -5508,7 +5642,7 @@ function opportunityDetail(id){
   const _activeTab   = window._leadTab || 'overview';
   const _repObj      = (window.REPS||[]).find(r=>r.id===o.repId);
   const _repName     = _repObj ? _repObj.name : 'Unassigned';
-  const _isOvd       = o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const _isOvd       = o.nextFollowUp && o.nextFollowUp < todayISO() && gwSalesStageMetricOpen(o);
   const _estComm     = estCommission(o);
   const _cr          = window.getCurrentRep ? window.getCurrentRep() : null;
   const _isAdm       = _cr && _cr.role === 'admin';
@@ -5523,8 +5657,8 @@ function opportunityDetail(id){
   const _filesCnt    = (state.communications||[]).filter(c=>c.oppId===o.id&&c.files&&c.files.length).reduce((a,c)=>a+c.files.length,0);
   const _notesCnt    = (o.notes||[]).length;
   const _lastComm    = (state.communications||[]).filter(c=>c.oppId===o.id).sort((a,b)=>new Date(b.ts)-new Date(a.ts))[0];
-  const _isSold      = o.status === 'Sold / Activation';
-  const _isClosed    = o.status === 'Closed Lost';
+  const _isSold      = gwSalesWon(o);
+  const _isClosed    = gwSalesLost(o);
 
   // ── Stat chip helper ─────────────────────────────────────────────────────
   const statChip = (icon, label, value, accent='') =>
@@ -5690,8 +5824,8 @@ function opportunityDetail(id){
           <div class="rp-section-card">
             <div class="rp-section-card-body">
               <div class="ld-card-label">Pipeline Stage</div>
-              ${selectWithId('statusEdit',getPipelineStages(),o.status)}
-              <button class="rp-inline-btn" style="margin-top:10px" onclick="setOppField('${o.id}','status',document.getElementById('statusEdit').value)">Update Stage</button>
+              <div id="gw-stage-selector-${o.id}">${selectWithId('statusEdit',getPipelineStages(),o.status)}
+              <button class="rp-inline-btn" style="margin-top:10px" onclick="setOppField('${o.id}','status',document.getElementById('statusEdit').value)">Update Stage</button></div>
             </div>
           </div>
           <div class="rp-section-card">
@@ -5704,8 +5838,7 @@ function opportunityDetail(id){
           <div class="rp-section-card">
             <div class="rp-section-card-body">
               <div class="ld-card-label">Stage Guide</div>
-              <p style="font-size:12px;color:var(--gw-text-muted);margin:8px 0 10px;line-height:1.5">See what Stage ${stageGuess} requires before moving forward.</p>
-              <button class="rp-inline-btn" onclick="show('process',${Math.min(stageGuess,12)})">Open Stage ${stageGuess} Guide</button>
+              <div id="gw-stage-guide-${o.id}" style="margin-top:8px"><p style="font-size:12px;color:var(--gw-text-muted)">Loading the published stage definition...</p></div>
             </div>
           </div>
         </div>
@@ -6253,13 +6386,13 @@ function opportunityDetail(id){
           <div style="padding:12px 12px 4px">
             ${R.FinancialSummary({
               contractValue: o.jobValue,
-              estimateStatus: o.status==='Sold / Activation'?'paid':(o.status==='Closed Lost'?'declined':(o.jobValue?'sent':'draft')),
-              depositPaid: o.status==='Sold / Activation' ? Math.round(Number(o.jobValue)*0.30) : 0,
-              totalBilled: o.status==='Sold / Activation' ? o.jobValue : (o.jobValue ? Math.round(Number(o.jobValue)*0.30) : 0),
-              totalPaid:   o.status==='Sold / Activation' ? o.jobValue : 0,
-              balanceDue:  o.status==='Sold / Activation' ? 0 : o.jobValue,
+              estimateStatus: gwSalesWon(o)?'paid':(gwSalesLost(o)?'declined':(o.jobValue?'sent':'draft')),
+              depositPaid: gwSalesWon(o) ? Math.round(Number(o.jobValue)*0.30) : 0,
+              totalBilled: gwSalesWon(o) ? o.jobValue : (o.jobValue ? Math.round(Number(o.jobValue)*0.30) : 0),
+              totalPaid:   gwSalesWon(o) ? o.jobValue : 0,
+              balanceDue:  gwSalesWon(o) ? 0 : o.jobValue,
               estimateId: o.id,
-              invoiceId:  o.status==='Sold / Activation' ? o.id : null
+              invoiceId:  gwSalesWon(o) ? o.id : null
             })}
           </div>
         </div>` : ''}
@@ -6272,10 +6405,10 @@ function opportunityDetail(id){
           </div>
           <div style="padding:12px 12px 4px">
             ${R.PaymentTimeline([
-              { name:'Deposit (30%)', amount: Math.round(Number(o.jobValue)*0.30), dueDate: o.createdAt, status: o.status==='Sold / Activation'?'paid':'pending', paidDate: o.closedDate||null },
+              { name:'Deposit (30%)', amount: Math.round(Number(o.jobValue)*0.30), dueDate: o.createdAt, status: gwSalesWon(o)?'paid':'pending', paidDate: o.closedDate||null },
               { name:'Progress (50%)', amount: Math.round(Number(o.jobValue)*0.50), dueDate: o.nextFollowUp||null, status: 'pending' },
               { name:'Final (20%)', amount: Math.round(Number(o.jobValue)*0.20), dueDate: null, status: 'pending' }
-            ], { invoiceId: o.status==='Sold / Activation'?o.id:null })}
+            ], { invoiceId: gwSalesWon(o)?o.id:null })}
           </div>
         </div>` : ''}
 
@@ -6352,6 +6485,9 @@ function opportunityDetail(id){
       el.addEventListener(f.type, function() { _oppAutosave(f.name, el.value); });
     });
   }, 0);
+
+  // Render the authoritative published Stage Guide after the opportunity shell exists.
+  window.gwLoadStageGuide(o.id);
 
   // Wire checklist checkboxes + progress bars immediately after render
   wireChecks();
@@ -7023,7 +7159,7 @@ function saveOpportunity(id){
   // flag for reapproval so Tyler must re-review the commission amount.
   // Respects COMM-17 feature flag — autoReapprovalEnabled (default: true).
   const _commFlags = window.getCommissionFlags ? window.getCommissionFlags() : { autoReapprovalEnabled: true };
-  if (o.status === 'Sold / Activation' && _commFlags.autoReapprovalEnabled) {
+  if (gwSalesWon(o) && _commFlags.autoReapprovalEnabled) {
     const changed = commFields.some(f => String(before[f]||'') !== String(o[f]||''));
     if (changed) {
       const lcStatus = window.getCommissionStatus ? window.getCommissionStatus(o) : null;
@@ -7079,7 +7215,7 @@ function setOppField(id,field,value){
   // Instead, update just the visible follow-up display elements.
   if (field === 'nextFollowUp') {
     const dateStr = prettyDate(value);
-    const isOvd   = value && value < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
+    const isOvd   = value && value < todayISO() && gwSalesStageMetricOpen(o);
     // Rail display date
     const railDate = document.querySelector('.ld-rail-follow-date');
     if (railDate) { railDate.textContent = dateStr; railDate.classList.toggle('overdue', isOvd); }
@@ -7355,7 +7491,7 @@ function wireChecks(){
 
 // ── Lead Picker Modal (shared by Scripts, Templates, Objections, Pricing) ──
 function openLeadPicker(onSelect){
-  const open = state.opportunities.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+  const open = state.opportunities.filter(gwSalesOpen);
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:80px';
@@ -7417,6 +7553,7 @@ window.mergeTemplate = mergeTemplate;
 // ─── Sales Process ────────────────────────────────────────────────────────────
 function process(stageId){
   if (stageId === 'builder') return salesProcessBuilder();
+  if (window._gwSalesProcess?.process?.lifecycle === 'published') return salesProcessBuilder();
   const sp = data.salesProcess;
   if(stageId){ const s = data.stages.find(x=>x.id===Number(stageId)); if(s) return renderStage(s); }
   const stepColors = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
@@ -7545,9 +7682,20 @@ async function salesProcessBuilder(){
     }
     const p = payload.process;
     const stages = payload.stages || [];
+    const outcomes = payload.outcomes || [];
+    const statuses = payload.internal_statuses || [];
+    const requirements = payload.requirements || [];
     const guides = payload.guides || [];
     const resources = payload.resources || [];
+    const automations = payload.automations || [];
+    const transitions = payload.transitions || [];
+    const academyAssociations = payload.academy_associations || [];
+    const academyContent = payload.academy_content || [];
+    const suggestions = payload.ai_suggestions || [];
     const academySkills = payload.academy_skills || [];
+    window._gwBuilderPayload = payload;
+    const editable = canEdit && p.lifecycle === 'draft';
+    const resourcePanel = (title, type, items, description) => `<section class="spb-panel card" style="display:none"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(description)}</p></div>${editable?`<button class="primary-btn" onclick="gwEditProcessContent('${type}','new')">Add</button>`:''}</div>${items.length?items.map(item=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px"><div><strong>${escapeHtml(item.display_name||item.label||item.title||item.name||item.stable_key||item.id)}</strong><p class="muted" style="margin:4px 0">${escapeHtml(item.description||item.purpose||item.trigger_type||item.content_type||item.semantic_type||'Version-owned content')}</p></div>${editable?`<div style="display:flex;gap:6px"><button class="secondary-btn small" onclick="gwEditProcessContent('${type}','${escapeHtml(item.id)}')">Edit</button><button class="secondary-btn small" onclick="gwDeleteProcessContent('${type}','${escapeHtml(item.id)}')">Delete</button></div>`:''}</div></article>`).join(''):'<p class="muted">No content configured.</p>'}</section>`;
     view.innerHTML = `<div class="eyebrow">Sales</div>
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div><h1 style="margin-bottom:4px">Sales Process Builder</h1><p class="lede">${escapeHtml(p.name||'Company Sales Process')} · Version ${Number(p.version_number||1)} · ${escapeHtml(p.lifecycle||'draft')}</p></div>
@@ -7555,9 +7703,16 @@ async function salesProcessBuilder(){
       </div>
       <div class="tabs" style="overflow:auto;white-space:nowrap">${tabs.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="document.querySelectorAll('.spb-panel').forEach((x,j)=>x.style.display=j===${i}?'block':'none');this.parentElement.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));this.classList.add('active')">${escapeHtml(t)}</button>`).join('')}</div>
       <section class="spb-panel card"><h2>Process Overview</h2><p>${escapeHtml(p.description||'A shared process definition for Pipeline, Stage Guide, Call Companion, Academy, reporting, and automation.')}</p>
-        <div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Editing</strong><p>${canEdit&&p.lifecycle==='draft'?'Allowed in draft':'Read only'}</p></div></div></section>
-      <section class="spb-panel card" style="display:none"><h2>Stages</h2>${stages.map(s=>`<article style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${Number(s.display_order)}. ${escapeHtml(s.display_name)}</strong><span class="badge">${escapeHtml(s.semantic_type)}</span></div><p class="muted">${escapeHtml(s.description||'')}</p><small>Customer milestone: ${escapeHtml(s.customer_milestone||'Not configured')} · Expected duration: ${Number(s.expected_duration_days||0)} days</small></article>`).join('')}</section>
-      ${tabs.slice(2,10).map(t=>`<section class="spb-panel card" style="display:none"><h2>${escapeHtml(t)}</h2><p class="muted">This building block is version-owned. Configure it in a draft; published versions are immutable.</p>${t==='Call Guides'?guides.map(g=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(g.title)}</strong><p>${escapeHtml(g.purpose||'')}</p></article>`).join(''):t==='Email Templates'?resources.filter(r=>r.resource_type==='email_template').map(r=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(r.name)}</strong></article>`).join(''):t==='Academy Training'?academySkills.map(s=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(s.title)}</strong></article>`).join(''):''}</section>`).join('')}
+        <div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Revision</strong><p>${Number(p.content_revision||1)}</p></div></div><h3>Semantic outcomes</h3>${outcomes.map(o=>`<span class="badge" style="margin-right:6px">${escapeHtml(o.display_name)} · ${escapeHtml(o.semantic_type)}</span>`).join('')}${editable?'<div style="margin-top:12px"><button class="secondary-btn" onclick="gwEditProcessContent(\'outcomes\',\'new\')">Configure outcome</button></div>':''}</section>
+      <section class="spb-panel card" style="display:none"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Stages and Transition Graph</h2>${editable?'<button class="primary-btn" onclick="gwEditProcessStages()">Edit stages</button>':''}</div>${stages.map(s=>`<article style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${Number(s.display_order)}. ${escapeHtml(s.display_name)}</strong><span class="badge">${escapeHtml(s.semantic_type)}</span></div><p class="muted">${escapeHtml(s.description||'')}</p><small>Customer milestone: ${escapeHtml(s.customer_milestone||'Not configured')} · Expected duration: ${Number(s.expected_duration_days||0)} days</small></article>`).join('')}<h3 style="margin-top:16px">Configured destinations</h3>${transitions.map(t=>`<div style="padding:6px 0">${escapeHtml(t.from_stage_id)} → ${escapeHtml(t.to_stage_id)} ${t.outcome_type?`· ${escapeHtml(t.outcome_type)}`:''}${editable?` <button class="secondary-btn small" onclick="gwEditProcessContent('transitions','${escapeHtml(t.id)}')">Edit</button>`:''}</div>`).join('')}${editable?'<button class="secondary-btn" onclick="gwEditProcessContent(\'transitions\',\'new\')">Add transition</button>':''}</section>
+      ${resourcePanel('Internal Statuses','statuses',statuses,'Configure representative-visible work states inside each stage.')}
+      ${resourcePanel('Qualification Fields','requirements',requirements.filter(item=>item.requirement_type==='field'||item.requirement_type==='qualification'),'Configure required, recommended, optional, and manager-only capture fields.')}
+      ${resourcePanel('Checklists','requirements',requirements.filter(item=>item.requirement_type==='checklist'),'Configure stage checklists and entry or exit enforcement.')}
+      ${resourcePanel('Call Guides','guides',guides,'Configure interaction-specific conversational sections and completion guidance.')}
+      ${resourcePanel('Automations','automations',automations,'Automations remain suggestions until an authorized representative confirms an action.')}
+      ${resourcePanel('Email Templates','resources',resources.filter(item=>item.resource_type==='email_template'),'Configure version-owned, review-before-send email resources.')}
+      ${resourcePanel('Academy Training','academy-content',academyContent,'Create company playbook training without modifying the Groundwork skill library.')}
+      <section class="spb-panel card" style="display:none"><div style="display:flex;justify-content:space-between;gap:12px"><div><h2>AI Process Assistant</h2><p class="muted">Suggestions are draft-only and cannot publish, remap, transition, communicate, schedule, or choose outcomes.</p></div>${editable?'<button class="primary-btn" onclick="gwCreateProcessSuggestion()">New suggestion</button>':''}</div>${suggestions.length?suggestions.map(s=>`<article style="padding:10px 0;border-bottom:1px solid var(--line)"><strong>${escapeHtml(s.suggestion_type)}</strong><p>${escapeHtml(s.reason||'')}</p><div class="grid grid-2"><div><small>Current</small><pre style="white-space:pre-wrap">${escapeHtml(s.current_json||'{}')}</pre></div><div><small>Proposed</small><pre style="white-space:pre-wrap">${escapeHtml(s.proposed_json||'{}')}</pre></div></div><span class="badge">${escapeHtml(s.decision)}</span>${editable&&s.decision==='pending'?` <button class="secondary-btn small" onclick="gwDecideProcessSuggestion('${escapeHtml(s.id)}','accepted')">Accept</button> <button class="secondary-btn small" onclick="gwDecideProcessSuggestion('${escapeHtml(s.id)}','rejected')">Reject</button>`:''}</article>`).join(''):'<p class="muted">No AI suggestions recorded.</p>'}</section>
       <section class="spb-panel card" style="display:none"><h2>Versions and Publishing</h2>
         <p>Publishing requires validation, a reviewed mapping for every opportunity, reconciliation, and explicit administrator confirmation. AI cannot publish.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${canEdit&&p.lifecycle==='draft'?`<button class="secondary-btn" onclick="gwValidateSalesProcess('${escapeHtml(p.id)}')">Validate draft</button><button class="secondary-btn" onclick="gwCreateMigrationProposal('${escapeHtml(p.id)}')">Map existing opportunities</button>`:''}</div>
@@ -7568,7 +7723,7 @@ async function salesProcessBuilder(){
 }
 window.salesProcessBuilder = salesProcessBuilder;
 window.gwAdoptGroundworkTemplate = async function(){
-  const result = await DB.salesProcess.adoptTemplate('tpl_groundwork_field_service_v1', 'Groundwork Field-Service Sales');
+  const result = await DB.salesProcess.adoptTemplate('tpl_groundwork_field_service_v2', 'Groundwork Field-Service Sales');
   await salesProcessBuilder(result.version_id);
 };
 window.gwValidateSalesProcess = async function(versionId){
@@ -7578,8 +7733,100 @@ window.gwValidateSalesProcess = async function(versionId){
 };
 window.gwCreateMigrationProposal = async function(versionId){
   const result = await DB.salesProcess.propose(versionId);
+  window._gwMigrationBatchId = result.migration_batch_id;
+  window._gwMigrationVersionId = versionId;
   const el = document.getElementById('spb-action-result');
-  if (el) el.textContent = `Mapping batch ${result.migration_batch_id} created. ${result.pending} of ${result.total} records require review. No live records were changed.`;
+  if (el) el.innerHTML = `Mapping batch ${escapeHtml(result.migration_batch_id)} created. ${result.pending} of ${result.total} records require review. No live records were changed.<div style="margin-top:10px"><button class="primary-btn" onclick="gwNeedsRestaging('${escapeHtml(result.migration_batch_id)}','${escapeHtml(versionId)}')">Open Needs Restaging</button></div>`;
+};
+
+window.gwEditProcessStages = async function(){
+  const payload = window._gwBuilderPayload;
+  if (!payload?.process || payload.process.lifecycle !== 'draft') return;
+  const editableStages = payload.stages.map(({id,stable_key,display_name,board_label,description,customer_milestone,semantic_type,state,expected_duration_days,entry_guidance,exit_guidance,manager_override_policy})=>({id,stable_key,display_name,board_label,description,customer_milestone,semantic_type,state,expected_duration_days,entry_guidance,exit_guidance,manager_override_policy}));
+  const raw = prompt('Edit the ordered stage JSON. Stable IDs must not change.', JSON.stringify(editableStages,null,2));
+  if (!raw) return;
+  try { await DB.salesProcess.saveStages(payload.process.id, JSON.parse(raw), payload.process.content_revision); await salesProcessBuilder(); }
+  catch (error) { alert(error?.message||String(error)); await salesProcessBuilder(); }
+};
+
+window.gwEditProcessContent = async function(resourceType, resourceId){
+  const payload = window._gwBuilderPayload;
+  if (!payload?.process || payload.process.lifecycle !== 'draft') return;
+  const collections = { outcomes:'outcomes', statuses:'internal_statuses', requirements:'requirements', guides:'guides', resources:'resources', automations:'automations', transitions:'transitions', 'academy-associations':'academy_associations', 'academy-content':'academy_content' };
+  const existing = resourceId==='new' ? { stage_id: payload.stages[0]?.id||'' } : (payload[collections[resourceType]]||[]).find(item=>item.id===resourceId);
+  const raw = prompt(`Edit ${resourceType} JSON.`, JSON.stringify(existing||{},null,2));
+  if (!raw) return;
+  try { const value=JSON.parse(raw); delete value.id; delete value.company_id; delete value.process_version_id; await DB.salesProcess.saveContent(payload.process.id,resourceType,resourceId,value,payload.process.content_revision); await salesProcessBuilder(); }
+  catch (error) { alert(error?.message||String(error)); await salesProcessBuilder(); }
+};
+
+window.gwDeleteProcessContent = async function(resourceType, resourceId){
+  const payload = window._gwBuilderPayload;
+  if (!payload?.process || !confirm('Delete this draft-only resource?')) return;
+  try { await DB.salesProcess.deleteContent(payload.process.id,resourceType,resourceId,payload.process.content_revision); await salesProcessBuilder(); }
+  catch (error) { alert(error?.message||String(error)); await salesProcessBuilder(); }
+};
+
+window.gwCreateProcessSuggestion = async function(){
+  const payload = window._gwBuilderPayload;
+  const suggestionType = prompt('Suggestion type, such as simplify_stage or improve_call_guide:');
+  if (!suggestionType) return;
+  const proposed = prompt('Proposed JSON value:', '{}');
+  if (!proposed) return;
+  const reason = prompt('Rationale:','')||'';
+  try { await DB.salesProcess.suggest(payload.process.id,{suggestion_type:suggestionType,current:{},proposed:JSON.parse(proposed),reason}); await salesProcessBuilder(); }
+  catch (error) { alert(error?.message||String(error)); }
+};
+
+window.gwDecideProcessSuggestion = async function(id, decision){ await DB.salesProcess.decideSuggestion(id,decision); await salesProcessBuilder(); };
+
+window.gwNeedsRestaging = async function(batchId, versionId){
+  const [mappings, processPayload] = await Promise.all([DB.salesProcess.mappings(batchId), DB.salesProcess.get(versionId)]);
+  const stages = processPayload.stages || [];
+  const reps = [...new Set(mappings.map(item => item.assigned_to_rep_id || item.rep_id).filter(Boolean))];
+  const prior = [...new Set(mappings.map(item => item.previous_label || '(blank)'))];
+  const pending = mappings.filter(item => item.review_state !== 'approved');
+  window._gwRestaging = { batchId, versionId, mappings, stages };
+  view.innerHTML = `<div class="eyebrow">Sales Process Migration</div><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap"><div><h1>Needs Restaging</h1><p class="lede">Review unresolved opportunities without changing live pipeline data.</p></div><div><strong>${pending.length}</strong> remaining of ${mappings.length}</div></div>
+    <section class="card"><div class="grid grid-3"><label>Representative<select id="restage-rep" onchange="gwFilterRestaging()"><option value="">All representatives</option>${reps.map(rep=>`<option>${escapeHtml(rep)}</option>`).join('')}</select></label><label>Previous stage<select id="restage-prior" onchange="gwFilterRestaging()"><option value="">All previous stages</option>${prior.map(label=>`<option>${escapeHtml(label)}</option>`).join('')}</select></label><label>Review state<select id="restage-state" onchange="gwFilterRestaging()"><option value="">All states</option><option value="pending">Pending</option><option value="approved">Approved</option></select></label></div><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="secondary-btn" onclick="gwBulkApproveRestaging()">Approve high-confidence suggestions</button>${pending.length===0?`<button class="primary-btn" onclick="gwCaptureSalesSnapshot('${escapeHtml(versionId)}','${escapeHtml(batchId)}')">Capture reconciliation snapshot</button>`:''}<button class="secondary-btn" onclick="salesProcessBuilder()">Back to Builder</button></div></section>
+    <div id="restaging-list"></div>`;
+  gwFilterRestaging();
+};
+
+window.gwFilterRestaging = function(){
+  const workspace = window._gwRestaging;
+  if (!workspace) return;
+  const rep = document.getElementById('restage-rep')?.value || '';
+  const prior = document.getElementById('restage-prior')?.value || '';
+  const review = document.getElementById('restage-state')?.value || '';
+  const rows = workspace.mappings.filter(item => (!rep || (item.assigned_to_rep_id || item.rep_id)===rep) && (!prior || (item.previous_label || '(blank)')===prior) && (!review || item.review_state===review));
+  const list = document.getElementById('restaging-list');
+  if (!list) return;
+  list.innerHTML = rows.length ? rows.map(item=>`<article class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h3 style="margin:0">${escapeHtml(item.client||item.opportunity_id)}</h3><p class="muted" style="margin:4px 0">Previous: ${escapeHtml(item.previous_label||'(blank)')} · Representative: ${escapeHtml(item.assigned_to_rep_id||item.rep_id||'Unassigned')}</p></div><span class="badge">${escapeHtml(item.review_state)}</span></div><div class="grid grid-3"><div><small>Suggestion</small><p>${escapeHtml(item.suggestion_reason||'Manual review required')}</p></div><div><small>Confidence</small><p>${Math.round(Number(item.mapping_confidence||0)*100)}%</p></div><div><small>Evidence</small><p>Estimate: ${escapeHtml(item.estimate_status||item.estimate_sent_date||'Unknown')}<br>Next follow-up: ${escapeHtml(item.next_follow_up||'None')}<br>Value: ${money(Number(item.job_value||0))}</p></div></div><div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><label style="flex:1;min-width:220px">Final stage<select id="restage-stage-${escapeHtml(item.opportunity_id)}">${workspace.stages.map(stage=>`<option value="${escapeHtml(stage.id)}" ${stage.id===(item.final_stage_id||item.proposed_stage_id)?'selected':''}>${escapeHtml(stage.display_name)}</option>`).join('')}</select></label><label>Outcome<select id="restage-outcome-${escapeHtml(item.opportunity_id)}"><option value="">None</option><option value="won">Won</option><option value="lost">Lost</option><option value="disqualified">Disqualified</option><option value="nurture">Nurture</option></select></label><button class="primary-btn" onclick="gwApproveRestaging('${escapeHtml(item.opportunity_id)}')">Save and Next</button></div><details style="margin-top:8px"><summary>Original notes and mapping metadata</summary><pre style="white-space:pre-wrap">${escapeHtml(item.suggestion_reason||'')}</pre></details></article>`).join('') : '<div class="card"><p>No records match these filters.</p></div>';
+};
+
+window.gwApproveRestaging = async function(opportunityId){
+  const workspace = window._gwRestaging;
+  const stageId = document.getElementById(`restage-stage-${opportunityId}`)?.value || '';
+  const outcome = document.getElementById(`restage-outcome-${opportunityId}`)?.value || '';
+  await DB.salesProcess.approveMapping(workspace.batchId, opportunityId, stageId, outcome);
+  await gwNeedsRestaging(workspace.batchId, workspace.versionId);
+};
+
+window.gwBulkApproveRestaging = async function(){
+  const workspace = window._gwRestaging;
+  const candidates = workspace.mappings.filter(item => item.review_state !== 'approved' && Number(item.mapping_confidence)>=0.9 && item.proposed_stage_id);
+  await Promise.all(candidates.map(item => DB.salesProcess.approveMapping(workspace.batchId, item.opportunity_id, item.proposed_stage_id, item.proposed_outcome_type||'')));
+  await gwNeedsRestaging(workspace.batchId, workspace.versionId);
+};
+
+window.gwCaptureSalesSnapshot = async function(versionId, batchId){
+  const snapshot = await DB.salesProcess.captureSnapshot(versionId, batchId);
+  const approved = confirm(`Approve snapshot ${snapshot.snapshot_id} with ${snapshot.reconciliation.opportunity_count} opportunities after reviewing reconciliation totals?`);
+  if (!approved) return;
+  await DB.salesProcess.approveSnapshot(snapshot.snapshot_id);
+  const preview = await DB.salesProcess.preview(versionId);
+  view.innerHTML = `<div class="eyebrow">Sales Process Preview</div><h1>Publication Preview</h1><section class="card"><h2>Impact report</h2><p>Opportunities affected: ${preview.impact.opportunities_affected}</p><p>Automatic mappings: ${preview.impact.automatic_mappings}</p><p>Manual or unknown mappings: ${preview.impact.manual_or_unknown_mappings}</p><p>Preview surfaces: ${preview.preview_surfaces.map(escapeHtml).join(', ')}</p><button class="secondary-btn" onclick="gwNeedsRestaging('${escapeHtml(batchId)}','${escapeHtml(versionId)}')">Return to mappings</button></section><section class="card"><h2>Approval gate</h2><p>Publishing remains unavailable until an administrator separately confirms readiness. This preview does not modify live data.</p></section>`;
 };
 
 function renderStage(s){
@@ -8140,7 +8387,7 @@ function ai(){
     { id:'custom',          label:'Custom Situation',               icon: gwIcon('ai-spark',18,'#fff'), color:'#6F7E6A' },
   ];
 
-  const openLeads = (state.opportunities||[]).filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
+  const openLeads = (state.opportunities||[]).filter(gwSalesOpen);
 
   view.innerHTML = `
 <div class="eyebrow">AI-Powered Sales</div>
@@ -8950,12 +9197,13 @@ const ACAD_STYLES = `
 @media(max-width:1000px){.acad-home-grid{grid-template-columns:1fr}}
 .acad-home-main{min-width:0}
 .acad-home-sidebar{min-width:0}
+.acad-published{margin:0 0 24px}.acad-published-intro{color:var(--muted);font-size:.85rem;margin:-5px 0 12px}.acad-library-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.acad-library-card{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:14px}.acad-library-card h3{font-size:.9rem;margin:3px 0 6px;color:var(--ink)}.acad-library-card p{font-size:.76rem;line-height:1.45;color:var(--muted);margin:0}.acad-library-kicker{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--blue)}.acad-playbook-stage{border:1px solid var(--line);background:var(--card);border-radius:12px;margin-bottom:8px}.acad-playbook-stage summary{display:flex;justify-content:space-between;gap:12px;cursor:pointer;padding:13px 15px;font-size:.86rem;font-weight:800;color:var(--ink)}.acad-playbook-stage summary span:last-child{font-size:.7rem;color:var(--muted);font-weight:700}.acad-playbook-stage-body{border-top:1px solid var(--line);padding:12px 15px}.acad-playbook-stage-body>p{font-size:.78rem;color:var(--muted);margin:0 0 9px}.acad-playbook-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px;margin-top:7px}.acad-playbook-items>div{display:flex;flex-direction:column;background:var(--bg);border-radius:8px;padding:9px}.acad-playbook-items strong{font-size:.78rem}.acad-playbook-items small{font-size:.65rem;color:var(--muted);text-transform:capitalize;margin-top:2px}
 @media(max-width:1000px){.acad-home-sidebar{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
 @media(max-width:620px){.acad-home-sidebar{grid-template-columns:1fr}}
 </style>`;
 
 // ─── Academy Home (SA-101) ────────────────────────────────────────────────────
-function academyHome() {
+async function academyHome() {
   const rep = window.getCurrentRep ? window.getCurrentRep() : null;
   const repId = rep ? rep.id : 'ryan';
   const hd = window.Academy.getHomeData(repId);
@@ -8966,6 +9214,22 @@ function academyHome() {
     ? Math.min(100, Math.round(((hd.points - level.minPoints) / (nextLevel.minPoints - level.minPoints)) * 100))
     : 100;
   const isAdmin = rep && (rep.role === 'admin' || rep.role === 'office_manager');
+  let publishedPlaybook = null;
+  if (window.DB && DB.academyPlaybook) {
+    view.innerHTML = ACAD_STYLES + '<div class="card mt"><p style="color:var(--muted)">Loading the published Academy playbook...</p></div>';
+    try { publishedPlaybook = await DB.academyPlaybook.get(); } catch (error) { console.warn('[Academy] Published playbook unavailable:', error); }
+  }
+  const parseAcademyContent = value => { try { return JSON.parse(value || '{}'); } catch (_) { return {}; } };
+  const coreSkillCards = publishedPlaybook ? (publishedPlaybook.core_skills || []).map(skill => {
+    const content = parseAcademyContent(skill.content_json);
+    return `<article class="acad-library-card"><div class="acad-library-kicker">Groundwork core skill</div><h3>${escapeHtml(skill.title)}</h3><p>${escapeHtml(content.purpose || content.summary || 'Reusable sales skill from the immutable Groundwork library.')}</p></article>`;
+  }).join('') : '';
+  const playbookStages = publishedPlaybook && publishedPlaybook.published ? (publishedPlaybook.stages || []).map(stage => {
+    const skills = stage.skills || [];
+    const content = stage.content || [];
+    return `<details class="acad-playbook-stage" ${Number(stage.display_order)===1?'open':''}><summary><span>${escapeHtml(stage.display_name)}</span><span>${skills.length + content.length} resources</span></summary><div class="acad-playbook-stage-body"><p>${escapeHtml(stage.description || '')}</p>${skills.length?`<div class="acad-playbook-items">${skills.map(item=>`<div><strong>${escapeHtml(item.title)}</strong><small>Core skill${item.internal_status_name ? ` · ${escapeHtml(item.internal_status_name)}` : ''}</small></div>`).join('')}</div>`:''}${content.length?`<div class="acad-playbook-items">${content.map(item=>`<div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(String(item.content_type || 'training').replace(/_/g,' '))}${item.internal_status_name ? ` · ${escapeHtml(item.internal_status_name)}` : ''}</small></div>`).join('')}</div>`:''}${!skills.length&&!content.length?'<p class="muted">No training is associated with this stage.</p>':''}</div></details>`;
+  }).join('') : '';
+  const publishedAcademyHtml = publishedPlaybook ? `<section class="acad-published"><div class="acad-sh">Groundwork Core Skill Library</div><p class="acad-published-intro">Global skills are immutable and shared as stable learning references. Company content remains separate.</p><div class="acad-library-grid">${coreSkillCards || '<p class="muted">No core skills are available.</p>'}</div><div class="acad-sh" style="margin-top:24px">Company Playbook</div><p class="acad-published-intro">${publishedPlaybook.published ? `${escapeHtml(publishedPlaybook.process.name)} version ${escapeHtml(String(publishedPlaybook.process.version_number))}, generated in published process order.` : 'No process is published. The company playbook will appear after an approved publication.'}</p>${(publishedPlaybook.company_content || []).length ? `<div class="acad-playbook-items" style="margin-bottom:10px">${publishedPlaybook.company_content.map(item=>`<div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(String(item.content_type || 'training').replace(/_/g,' '))}</small></div>`).join('')}</div>` : ''}${playbookStages || '<div class="card"><p class="muted">No published company playbook is available.</p></div>'}</section>` : '';
 
   // ── SA-203 Phase cards ──
   const phaseCards = hd.phaseProgress.map(ph => {
@@ -9069,8 +9333,8 @@ function academyHome() {
   <div class="acad-banner-row">
     <div class="acad-banner-left">
       <div class="acad-banner-eyebrow">Sales Training</div>
-      <h1 class="acad-banner-title">Avalon Sales Academy</h1>
-      <p class="acad-banner-sub">Master consultative selling, close more deals, and earn your certifications.</p>
+      <h1 class="acad-banner-title">Sales Academy</h1>
+      <p class="acad-banner-sub">Build core skills and follow your company’s published sales playbook.</p>
     </div>
     <div class="acad-banner-right">
       <div class="acad-level-badge" style="border-color:${level.color}22;background:${level.color}0d;color:${level.color}">
@@ -9115,6 +9379,8 @@ function academyHome() {
       </div>`
     : `<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:.86rem;color:#8B6914;font-weight:700;display:inline-flex;align-items:center;gap:7px">${svgBadgeShape('star','#8B6914',18)} Maximum Level Reached — Mentor</div>`}
 </div>
+
+${publishedAcademyHtml}
 
 <!-- ── Continue CTA ── -->
 ${continueCard}
@@ -10922,15 +11188,16 @@ window._renderDpTable = function() {
       if (!d) return;
       const val = parseFloat(o.jobValue||0);
       const estAmt = parseFloat(o.estimateAmount||val);
-      const isSold = o.status==='Sold / Activation';
-      const isLost = o.status==='Closed Lost';
+      const isSold = gwSalesWon(o);
+      const isLost = gwSalesLost(o);
 
       if (isSold) { d.sold+=val; d.soldCt++; if ((o.updatedAt||'').slice(0,10)>=startOfMonth){d.soldMo+=val;d.soldMoCt++;} }
       if (isLost) { d.lostCt++; }
       if (isSold||isLost) return;
 
-      d.openCt++; d.openVal+=val; d.weighted+=val*(STAGE_WIN[o.status]||0.20);
-      const hasEst = POTS_STATUSES.includes(estSt)||POTS_STATUSES.includes((o.estimateStatus||'').toLowerCase())||POTS_STAGES.includes(o.status);
+      d.openCt++; d.openVal+=val;
+      const probability = gwSalesProbability(o); if (probability != null) d.weighted+=val*probability;
+      const hasEst = POTS_STATUSES.includes(estSt)||POTS_STATUSES.includes((o.estimateStatus||'').toLowerCase())||gwSalesProposal(o);
       if (hasEst&&estAmt>0) {
         d.estCt++; d.estVal+=estAmt; d.pots+=estAmt;
         const sentDate = o.estimateSentDate||o.updatedAt||o.createdAt;
@@ -11024,7 +11291,7 @@ window._renderDpTable = function() {
       if (repFilter && o.repId !== repFilter) return;
       const estSt2 = (o.estimateStatus||'').toLowerCase().replace(/ /g,'_');
       if (estFilter && estSt2 !== estFilter) return;
-      if (['Sold / Activation','Closed Lost'].includes(o.status)) return;
+      if (!gwSalesStageMetricOpen(o)) return;
       const hasEst2 = POTS_S.includes(estSt2)||POTS_S.includes((o.estimateStatus||'').toLowerCase())||POTS_ST.includes(o.status);
       if (!hasEst2) return;
       const sentDate2 = o.estimateSentDate||o.updatedAt||o.createdAt;
@@ -13703,8 +13970,8 @@ window.openCallCompanion = async function(oppId) {
   // Remove any existing companion
   document.getElementById('gw-call-companion')?.remove();
 
-  const currentStageNum = Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
-  const stagesData   = (window.AVALON_DATA && window.AVALON_DATA.stages) || [];
+  const currentStageNum = normalizedContext ? 1 : Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
+  const stagesData   = normalizedContext ? [{ id:1, title:normalizedContext.stage.display_name, purpose:normalizedContext.stage.description }] : ((window.AVALON_DATA && window.AVALON_DATA.stages) || []);
   const checklists   = (window.AVALON_DATA && window.AVALON_DATA.checklists) || [];
   const sp           = (window.AVALON_DATA && window.AVALON_DATA.salesProcess) || {};
   const steps        = sp.steps || [];
@@ -13731,10 +13998,22 @@ window.openCallCompanion = async function(oppId) {
     const stageQuestions = normalizedGuide ? (normalizedConfig.questions || []) : (sd.questions || []);
     const stagePurpose = normalizedGuide ? (normalizedGuide.purpose || normalizedContext.stage.description || '') : (sd.purpose || '');
     const normalizedChecklist = normalizedContext && n === currentStageNum ? (normalizedContext.requirements || []).filter(item => item.requirement_type === 'checklist') : [];
+    const normalizedSections = normalizedGuide ? (normalizedConfig.sections || []).map(section => ({
+      title: String(section).replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()),
+      purpose: normalizedGuide.purpose || '',
+      suggested: normalizedGuide.suggested_language || '',
+      questions: normalizedConfig.optional_questions || stageQuestions,
+      capture: (normalizedContext.missing_information || []).map(item => item.label),
+      followup: normalizedConfig.follow_up_prompts || [],
+      warnings: normalizedConfig.warning_signs || [],
+      completion: normalizedGuide.completion_guidance || ''
+    })) : [];
 
-    const qHtml = stageQuestions.length
-      ? stageQuestions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
-      : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
+    const qHtml = normalizedSections.length
+      ? normalizedSections.map((section, index) => `<details class="gw-cc-guide-section" ${index===0?'open':''}><summary>${escapeHtml(section.title)}</summary><div><strong>Purpose</strong><p>${escapeHtml(section.purpose || 'Use this section to advance the conversation.')}</p><strong>Suggested language</strong><p>${escapeHtml(section.suggested || 'Use your own conversational language.')}</p>${section.questions.length?`<strong>Optional questions</strong>${section.questions.map(q=>`<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')}`:''}${section.capture.length?`<strong>Required capture fields</strong><p>${section.capture.map(escapeHtml).join(', ')}</p>`:''}${section.followup.length?`<strong>Follow-up prompts</strong><p>${section.followup.map(escapeHtml).join(', ')}</p>`:''}${section.warnings.length?`<strong>Warning signs</strong><p>${section.warnings.map(escapeHtml).join(', ')}</p>`:''}<strong>Completion guidance</strong><p>${escapeHtml(section.completion || 'Review captured information before completing.')}</p></div></details>`).join('')
+      : stageQuestions.length
+        ? stageQuestions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
+        : '<div class="gw-cc-empty">No guide sections are configured for this interaction.</div>';
 
     const clPrefix = `cc-cl-${n}-${oppId}`;
     let clHtml = '<div class="gw-cc-empty">No checklist for this stage.</div>';
@@ -13782,8 +14061,9 @@ window.openCallCompanion = async function(oppId) {
           ? '<span style="font-size:9px;font-weight:800;color:#fff;background:#2D7A55;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.05em">Current</span>'
           : `<button type="button" onclick="gwCCStageGo(${currentStageNum})" style="font-size:9px;font-weight:800;color:#8B6914;background:#8B691415;border:1px solid #8B691430;border-radius:99px;padding:2px 8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em">Viewing other stage — back to current</button>`}
       </div>
-      <div style="font-size:11px;color:#5E6E6F;margin-bottom:12px;line-height:1.55">${escapeHtml(stagePurpose)}</div>
-      <div class="gw-cc-section-label">Discovery Questions</div>
+      <div style="font-size:11px;color:#5E6E6F;margin-bottom:8px;line-height:1.55">${escapeHtml(stagePurpose)}</div>
+      ${normalizedGuide ? `<div style="font-size:10px;font-weight:800;color:#2D7A55;margin-bottom:10px;text-transform:uppercase">Interaction: ${escapeHtml(String(normalizedGuide.interaction_type || 'call').replace(/_/g,' '))}</div>` : ''}
+      <div class="gw-cc-section-label">Conversation Guide</div>
       ${qHtml}
       ${rfHtml}
       <div style="margin-top:14px">${clHtml}</div>`;
@@ -13903,6 +14183,7 @@ window.openCallCompanion = async function(oppId) {
               style="padding:6px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:7px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">
               Save as Note
             </button>
+            ${['recap email','task','follow-up date','scheduling','suggested transition'].map(action => `<button type="button" onclick="gwCCReviewAction('${oppId}','${action}')" style="padding:6px 12px;background:#F5F2EC;border:1px solid #E0DDD5;border-radius:7px;color:#5E6E6F;font-size:11px;font-weight:700;cursor:pointer">Review ${action}</button>`).join('')}
           </div>
         </div>
       </div>
@@ -13930,6 +14211,10 @@ window.openCallCompanion = async function(oppId) {
       .gw-cc-nav-btn:hover { background:#2D7A55;border-color:#2D7A55;color:#fff }
       .gw-cc-gen-btn { text-align:left;padding:8px 11px;background:#FAFAF8;border:1px solid #E0DDD5;border-radius:9px;cursor:pointer;font-size:11.5px;color:#1F2A2B;line-height:1.35;transition:all .12s }
       .gw-cc-gen-btn:hover { border-color:#2D7A55;background:#EAF1EE }
+      .gw-cc-guide-section { border:1px solid #E0DDD5;border-radius:8px;margin-bottom:7px;background:#FAFAF8 }
+      .gw-cc-guide-section summary { cursor:pointer;padding:8px 10px;font-size:11.5px;font-weight:800;color:#1F2A2B }
+      .gw-cc-guide-section > div { padding:0 10px 10px;font-size:11px;line-height:1.5;color:#5E6E6F }
+      .gw-cc-guide-section p { margin:3px 0 8px }
       @keyframes gw-cc-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     </style>`;
 
@@ -14118,6 +14403,7 @@ window.openCallCompanion = async function(oppId) {
     const ta = document.getElementById('gw-cc-transcript-ta');
     if (!ta || !ta.value.trim()) { window.showToast && window.showToast('Nothing to save yet'); return; }
     const transcript = ta.value.trim();
+    if (!confirm('Save this reviewed transcript to the opportunity call log?')) return;
     const ts         = new Date().toISOString();
     const rep        = window.getCurrentRep ? window.getCurrentRep() : null;
     const entry = {
@@ -14172,12 +14458,21 @@ window.openCallCompanion = async function(oppId) {
     .catch(() => { txt.textContent = gwCCLocalGen(kind, transcript, opp); });
   };
 
+  // Generated actions remain review-only until the representative separately confirms each action.
+  window.gwCCReviewAction = function(oid, action) {
+    const txt = document.getElementById('gw-cc-summary-text');
+    if (!txt || !txt.textContent.trim() || txt.textContent === 'Generating…') return;
+    if (!confirm(`Review the ${action} draft? Nothing will be sent, scheduled, created, or transitioned by this step.`)) return;
+    window.showToast && window.showToast(`${action.charAt(0).toUpperCase() + action.slice(1)} draft is ready for review. Use the corresponding CRM workflow to apply it.`);
+  };
+
   // ── Save generated output as a note on the opportunity ──────────────────────
   window.gwCCSaveNote = function(oid) {
     const txt = document.getElementById('gw-cc-summary-text');
     const ttl = document.getElementById('gw-cc-summary-title');
     if (!txt || !txt.textContent.trim() || txt.textContent === 'Generating…') return;
     const noteBody = (ttl ? ttl.textContent : 'Call Output') + '\n\n' + txt.textContent.trim();
+    if (!confirm('Save this reviewed draft as an opportunity note?')) return;
     const ts       = new Date().toISOString();
     const note     = { id: 'note_' + Date.now(), oppId: oid, body: noteBody, createdAt: ts };
     if (!state.notes) state.notes = [];
@@ -14289,7 +14584,7 @@ function estimateDetail(id){
   const jobVal     = opp ? Number(opp.jobValue||0) : 5400;
   const deposit    = Math.round(jobVal * 0.30);
   const remaining  = jobVal - deposit;
-  const status     = opp ? (opp.status==='Sold / Activation'?'approved':(opp.estimateStatus||'draft')) : 'draft';
+  const status     = opp ? (gwSalesWon(opp)?'approved':(opp.estimateStatus||'draft')) : 'draft';
   const badgeClass = {draft:'est-badge--draft',sent:'est-badge--sent',approved:'est-badge--approved',declined:'est-badge--declined',expired:'est-badge--expired'}[status]||'est-badge--draft';
   const badgeLabel = status.charAt(0).toUpperCase()+status.slice(1);
   const backTo     = opp ? `show('pipeline','${opp.id}')` : "show('financialHub')";
@@ -14494,7 +14789,7 @@ function invoiceDetail(id){
   const jobVal     = opp ? Number(opp.jobValue||0) : 5400;
   const deposit    = Math.round(jobVal * 0.30);
   const totalDue   = jobVal;
-  const isPaid     = opp ? opp.status==='Sold / Activation' : false;
+  const isPaid     = opp ? gwSalesWon(opp) : false;
   const paidAmt    = isPaid ? totalDue : deposit;
   const balance    = totalDue - paidAmt;
   const status     = isPaid ? 'paid' : (balance > 0 ? 'partial' : 'sent');
@@ -14658,14 +14953,14 @@ function accountStatement(clientId){
   }).slice(0,20);
 
   const totalContract = clientOpps.reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const totalPaid     = clientOpps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalPaid     = clientOpps.filter(gwSalesWon).reduce((a,o)=>a+Number(o.jobValue||0),0);
   const totalDue      = totalContract - totalPaid;
   const clientName    = clientId ? (clientOpps[0]?.client||'Client') : 'All Clients';
 
   // Build table rows from opps
   const rows = clientOpps.length ? clientOpps.map(o=>{
-    const st = o.status==='Sold / Activation' ? 'paid' :
-               (o.status==='Closed Lost' ? 'declined' :
+    const st = gwSalesWon(o) ? 'paid' :
+               (gwSalesLost(o) ? 'declined' :
                (o.jobValue&&Number(o.jobValue)>0 ? 'invoiced' : 'draft'));
     const bdgClass = {paid:'stmt-badge--paid',draft:'stmt-badge--draft',invoiced:'stmt-badge--sent',declined:'stmt-badge--overdue',approved:'stmt-badge--approved'}[st]||'stmt-badge--draft';
     const bdgLabel = {paid:'Paid',draft:'Draft',invoiced:'Invoiced',declined:'Declined',approved:'Approved'}[st]||'Draft';
@@ -14674,8 +14969,8 @@ function accountStatement(clientId){
       <td>${escapeHtml(o.client||'—')}</td>
       <td>${_p5FmtDate(o.createdAt)}</td>
       <td>${_p5Money(o.jobValue)}</td>
-      <td>${o.status==='Sold / Activation'?_p5Money(o.jobValue):'$0.00'}</td>
-      <td>${o.status!=='Sold / Activation'&&o.jobValue?_p5Money(o.jobValue):'$0.00'}</td>
+      <td>${gwSalesWon(o)?_p5Money(o.jobValue):'$0.00'}</td>
+      <td>${!gwSalesWon(o)&&o.jobValue?_p5Money(o.jobValue):'$0.00'}</td>
       <td><span class="stmt-badge ${bdgClass}">${bdgLabel}</span></td>
     </tr>`;
   }).join('') : `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--gw-text-subtle);font-style:italic">No documents found</td></tr>`;
@@ -14981,22 +15276,22 @@ function financialHub(){
 
   // KPIs
   const totalPipeline  = opps.reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const totalSold      = opps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const totalOpen      = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const estimatesOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)&&Number(o.jobValue||0)>0).length;
+  const totalSold      = opps.filter(gwSalesWon).reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalOpen      = opps.filter(gwSalesOpen).reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const estimatesOpen  = opps.filter(o=>gwSalesOpen(o)&&Number(o.jobValue||0)>0).length;
 
   // Recent deals (last 5 sold)
-  const recentSold = opps.filter(o=>o.status==='Sold / Activation')
+  const recentSold = opps.filter(gwSalesWon)
     .sort((a,b)=>new Date(b.closedDate||b.createdAt)-new Date(a.closedDate||a.createdAt))
     .slice(0,5);
 
   // Open estimates (top 5 by value)
-  const openEstimates = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)&&Number(o.jobValue||0)>0)
+  const openEstimates = opps.filter(o=>gwSalesOpen(o)&&Number(o.jobValue||0)>0)
     .sort((a,b)=>Number(b.jobValue)-Number(a.jobValue))
     .slice(0,5);
 
   // Outstanding (any open opp with a value)
-  const outstanding = opps.filter(o=>o.status!=='Sold / Activation'&&o.status!=='Closed Lost'&&Number(o.jobValue||0)>0)
+  const outstanding = opps.filter(o=>gwSalesOpen(o)&&Number(o.jobValue||0)>0)
     .sort((a,b)=>Number(b.jobValue)-Number(a.jobValue)).slice(0,5);
 
   const soldRows = recentSold.length
@@ -15069,7 +15364,7 @@ function financialHub(){
       <div class="fhub-kpi-card">
         <div class="fhub-kpi-label">Closed / Collected</div>
         <div class="fhub-kpi-val fhub-kpi-val--positive">${_p5Money(totalSold)}</div>
-        <div class="fhub-kpi-delta fhub-kpi-delta--up">${opps.filter(o=>o.status==='Sold / Activation').length} sold</div>
+        <div class="fhub-kpi-delta fhub-kpi-delta--up">${opps.filter(gwSalesWon).length} sold</div>
       </div>
       <div class="fhub-kpi-card">
         <div class="fhub-kpi-label">Open Value</div>
@@ -15078,7 +15373,7 @@ function financialHub(){
       </div>
       <div class="fhub-kpi-card">
         <div class="fhub-kpi-label">Conversion Rate</div>
-        <div class="fhub-kpi-val">${opps.length>0?Math.round((opps.filter(o=>o.status==='Sold / Activation').length/opps.length)*100):0}%</div>
+        <div class="fhub-kpi-val">${opps.length>0?Math.round((opps.filter(gwSalesWon).length/opps.length)*100):0}%</div>
         <div class="fhub-kpi-delta">Close rate</div>
       </div>
     </div>
@@ -18714,14 +19009,14 @@ function teamView() {
   const today  = todayISO();
 
   // Pipeline-derived stats (immediate, no async)
-  const totalOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length;
-  const totalSold  = opps.filter(o=>o.status==='Sold / Activation').length;
-  const totalVal   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const totalOpen  = opps.filter(gwSalesOpen).length;
+  const totalSold  = opps.filter(gwSalesWon).length;
+  const totalVal   = opps.filter(gwSalesOpen).reduce((s,o)=>s+Number(o.jobValue||0),0);
 
   function _tvRepRow(r, taskSummary) {
     const myOpps    = opps.filter(o => o.repId === r.id || o.assignedToRepId === r.id);
-    const openOpps  = myOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-    const soldOpps  = myOpps.filter(o => o.status === 'Sold / Activation');
+    const openOpps  = myOpps.filter(gwSalesOpen);
+    const soldOpps  = myOpps.filter(gwSalesWon);
     const myComms   = comms.filter(c => c.repId === r.id);
     const lastComm  = myComms.sort((a,b)=>new Date(b.ts)-new Date(a.ts))[0];
     const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
@@ -20070,8 +20365,8 @@ function _stmtRender(report, opts) {
 
   // ── Revenue Forecast ───────────────────────────────────────────────────────
   else if (window._stmtReport === 'forecast') {
-    const openOpps = opps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-    const soldUnbilled = opps.filter(o => o.status==='Sold / Activation');
+    const openOpps = opps.filter(gwSalesOpen);
+    const soldUnbilled = opps.filter(gwSalesWon);
     const forecastByMonth = {};
     openOpps.forEach(o => {
       const month = (o.expectedCloseDate||o.nextFollowUp||TODAY).slice(0,7);
@@ -20249,7 +20544,7 @@ function financialActivity() {
     ...deps.filter(d=>d.applied).map(d=>({ ts:d.date+'T14:00:00', type:'applied',  label:`Deposit Applied — ${d.clientName}`, amount:-d.amount, color:'#8B6914', icon:'check', note:'' })),
     ...invList.map(i=>({ ts:i.date+'T09:00:00', type:'invoice', label:`Invoice ${i.number||''} — ${i.clientName}`, amount:+i.amount, color:'#6B5EA8', icon:'invoice', note:i.status||'' })),
     // Also pull sold opps as "job won" events
-    ...(state.opportunities||[]).filter(o=>o.status==='Sold / Activation'&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'trophy', note:o.project||'' }))
+    ...(state.opportunities||[]).filter(o=>gwSalesWon(o)&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'trophy', note:o.project||'' }))
   ].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
 
   const totalIn  = events.filter(e=>e.amount>0&&['payment','deposit','won'].includes(e.type)).reduce((s,e)=>s+e.amount,0);
@@ -20566,14 +20861,10 @@ function salesReports() {
   const mtd    = today.slice(0,7); // YYYY-MM
 
   // Core metrics
-  const WON_STATUSES = ['Sold / Activation','Deal Closed / Won'];
-  const LOST_STATUSES = ['Closed Lost'];
-  const OPEN_STATUSES = s => !WON_STATUSES.includes(s) && !LOST_STATUSES.includes(s);
-
-  const wonOpps   = opps.filter(o => WON_STATUSES.includes(o.status));
-  const openOpps  = opps.filter(o => OPEN_STATUSES(o.status));
-  const proposalOpps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Presentation & SOW Pitch'].includes(o.status));
-  const closedAll = opps.filter(o => WON_STATUSES.includes(o.status) || LOST_STATUSES.includes(o.status));
+  const wonOpps   = opps.filter(gwSalesWon);
+  const openOpps  = opps.filter(gwSalesOpen);
+  const proposalOpps = opps.filter(gwSalesProposal);
+  const closedAll = opps.filter(o => gwSalesWon(o) || gwSalesLost(o));
   const closeRate = closedAll.length ? Math.round((wonOpps.length/closedAll.length)*100) : 0;
   const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
   const wonTotal  = wonOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
@@ -20584,18 +20875,19 @@ function salesReports() {
   const wonMTDVal = wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
 
   // Pipeline funnel stages
-  const FUNNEL = [
-    {label:'Initial Inquiry',        statuses:['Initial Inquiry']},
-    {label:'Discovery / Consult',    statuses:['Discovery / Consultation']},
-    {label:'Site Walk / Assessment', statuses:['Site Walk / Assessment']},
-    {label:'Proposal Sent',          statuses:['Proposal / Estimate Sent','Proposal Sent']},
-    {label:'Follow-Up',              statuses:['Follow-Up']},
-    {label:'SOW Pitch',              statuses:['Presentation & SOW Pitch']},
-    {label:'On Hold',                statuses:['On Hold']},
-    {label:'Won',                    statuses:WON_STATUSES, won:true},
-    {label:'Lost',                   statuses:LOST_STATUSES, lost:true},
-  ];
-  const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(o=>f.statuses.includes(o.status)).length));
+  const normalizedFunnel = window._gwSalesProcess?.process?.lifecycle === 'published';
+  const FUNNEL = normalizedFunnel
+    ? [...(window._gwSalesProcess.stages||[]).filter(stage=>stage.semantic_type!=='terminal').map(stage=>({label:stage.display_name,matches:o=>gwSalesResolved(o).stage?.id===stage.id})),
+       {label:'Won',matches:gwSalesWon,won:true},{label:'Lost',matches:gwSalesLost,lost:true}]
+    : [
+      {label:'Initial Inquiry',matches:o=>o.status==='Initial Inquiry'},
+      {label:'Discovery / Consult',matches:o=>o.status==='Discovery / Consultation'},
+      {label:'Site Walk / Assessment',matches:o=>o.status==='Site Walk / Assessment'},
+      {label:'Proposal Sent',matches:gwSalesProposal},
+      {label:'Won',matches:gwSalesWon,won:true},
+      {label:'Lost',matches:gwSalesLost,lost:true}
+    ];
+  const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(f.matches).length));
 
   // Lead source breakdown
   const sourceMap = {};
@@ -20612,9 +20904,9 @@ function salesReports() {
   // Rep performance table
   const repRows = reps.map(r=>{
     const mine    = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
-    const mWon    = mine.filter(o=>WON_STATUSES.includes(o.status));
-    const mOpen   = mine.filter(o=>OPEN_STATUSES(o.status));
-    const mLost   = mine.filter(o=>LOST_STATUSES.includes(o.status));
+    const mWon    = mine.filter(gwSalesWon);
+    const mOpen   = mine.filter(gwSalesOpen);
+    const mLost   = mine.filter(gwSalesLost);
     const mPipe   = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
     const mWonVal = mWon.reduce((s,o)=>s+Number(o.jobValue||0),0);
     const mClosed = mWon.length + mLost.length;
@@ -20689,7 +20981,7 @@ function salesReports() {
       <div class="gw-report-card">
         <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
         ${FUNNEL.map(f=>{
-          const cnt = opps.filter(o=>f.statuses.includes(o.status)).length;
+          const cnt = opps.filter(f.matches).length;
           if(!cnt) return '';
           const pct = Math.max(4, Math.round((cnt/funnelMax)*100));
           const bar = f.won ? 'background:#2D7A55' : f.lost ? 'background:#A05050' : 'background:var(--gw-pine,#4D8A86)';
@@ -21128,10 +21420,10 @@ function teamReports() {
     const myOpps  = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
     const myComms = comms.filter(c=>c.repId===r.id);
     const myWOs   = wos.filter(w=>w.assignedTo===r.id||w.crew===r.name);
-    const won30   = myOpps.filter(o=>o.status==='Sold / Activation'&&(o.closedDate||'')>=day30).length;
+    const won30   = myOpps.filter(o=>gwSalesWon(o)&&(o.closedDate||'')>=day30).length;
     const comms7  = myComms.filter(c=>c.ts>=day7).length;
     const woDone  = myWOs.filter(w=>w.status==='completed').length;
-    const openPipe= myOpps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+    const openPipe= myOpps.filter(gwSalesOpen).reduce((s,o)=>s+Number(o.jobValue||0),0);
     return { r, myOpps:myOpps.length, won30, comms7, woDone, openPipe };
   });
 

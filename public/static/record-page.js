@@ -61,16 +61,21 @@
   // onStageClick: fn   — optional, receives (stageName)
   // ══════════════════════════════════════════════════════════════════════════
   R.StageTracker = function (stages, current) {
-    if (!stages || !stages.length) return '';
-
-    const currentIdx = stages.indexOf(current);
-    const isSold     = current === 'Sold / Activation';
-    const isLost     = current === 'Closed Lost';
+    const published = window._gwSalesProcess && window._gwSalesProcess.process && window._gwSalesProcess.process.lifecycle === 'published' ? window._gwSalesProcess : null;
+    const stageModels = published && Array.isArray(published.stages)
+      ? published.stages.map(stage => ({ id: String(stage.id), label: stage.display_name, semantic: stage.semantic_type }))
+      : (stages || []).map(stage => typeof stage === 'object' ? { id: String(stage.id), label: stage.display_name || stage.label || '', semantic: stage.semantic_type || '' } : { id: String(stage), label: String(stage), semantic: '' });
+    if (!stageModels.length) return '';
+    const semantic = window.GWSalesProcess ? window.GWSalesProcess.resolve(typeof current === 'object' ? current : { status: current }) : null;
+    const currentKey = semantic && semantic.stage ? String(semantic.stage.id) : String(typeof current === 'object' ? (current.salesProcessStageId || current.sales_process_stage_id || current.status || '') : current);
+    const currentIdx = stageModels.findIndex(stage => stage.id === currentKey || stage.label === currentKey);
+    const isSold = semantic ? semantic.outcome === 'won' || semantic.semantic === 'won' : current === 'Sold / Activation';
+    const isLost = semantic ? semantic.outcome === 'lost' || semantic.semantic === 'lost' : current === 'Closed Lost';
     // For sold/lost, treat as terminal
     const effectiveIdx = isSold
-      ? stages.length
+      ? stageModels.length
       : isLost
-        ? stages.indexOf('Closed Lost')
+        ? currentIdx
         : currentIdx;
 
     // Shorten long labels for the tracker
@@ -92,11 +97,12 @@
     };
 
     // Only show active pipeline stages (not Sold/Lost which are handled as terminal)
-    const trackStages = stages.filter(s => s !== 'Sold / Activation' && s !== 'Closed Lost');
+    const trackStages = stageModels.filter(stage => !['terminal','won','lost','disqualified','nurture'].includes(stage.semantic) && stage.label !== 'Sold / Activation' && stage.label !== 'Closed Lost');
 
-    const nodes = trackStages.map((s, i) => {
+    const nodes = trackStages.map((stage, i) => {
+      const s = stage.label;
       const isDone    = i < effectiveIdx && !isLost;
-      const isCurrent = s === current && !isSold && !isLost;
+      const isCurrent = (stage.id === currentKey || s === currentKey) && !isSold && !isLost;
       let stateClass  = '';
       if (isDone)    stateClass = 'is-done';
       if (isCurrent) stateClass = 'is-current';
@@ -110,9 +116,10 @@
       const connector = i < trackStages.length - 1
         ? `<div class="rp-stage-connector"></div>`
         : '';
+      const interaction = published ? 'disabled aria-disabled="true"' : `onclick="setOppField&&document.getElementById('statusEdit')&&(document.getElementById('statusEdit').value=this.dataset.stage)&&setOppField"`;
 
       return `<div class="rp-stage-node ${stateClass}">
-        <button class="rp-stage-btn" title="${esc(s)}" onclick="setOppField&&document.getElementById('statusEdit')&&(document.getElementById('statusEdit').value=this.dataset.stage)&&setOppField" data-stage="${esc(s)}">
+        <button class="rp-stage-btn" title="${esc(s)}" ${interaction} data-stage="${esc(s)}">
           <div class="rp-stage-dot">${dotIcon}</div>
           <span class="rp-stage-label">${esc(shorten(s))}</span>
         </button>

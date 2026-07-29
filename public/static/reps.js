@@ -24,6 +24,11 @@
 // DO NOT add any specific user data back to this array.
 let REPS = [];
 
+const _spWon = opp => window.GWSalesProcess ? window.GWSalesProcess.isWon(opp) : opp.status === 'Sold / Activation';
+const _spLost = opp => window.GWSalesProcess ? window.GWSalesProcess.isLost(opp) : opp.status === 'Closed Lost';
+const _spOpen = opp => window.GWSalesProcess ? window.GWSalesProcess.isOverallOpen(opp) : !['Sold / Activation','Closed Lost'].includes(opp.status);
+const _spProposal = opp => window.GWSalesProcess ? window.GWSalesProcess.isProposal(opp) : ['Proposal / Estimate Sent','Follow-Up'].includes(opp.status);
+
 // Expose globally so user_management.js and other modules can reference it
 window.REPS = REPS;
 
@@ -120,7 +125,7 @@ function getCommissionStatus(opp) {
   }
   // Migrate legacy boolean field
   if (opp.commissionApproved === true)  return 'approved';
-  if (opp.status === 'Sold / Activation') return 'pending_approval';
+  if (window.GWSalesProcess ? window.GWSalesProcess.is(opp, 'won') : opp.status === 'Sold / Activation') return 'pending_approval';
   return 'estimated';
 }
 window.getCommissionStatus = getCommissionStatus;
@@ -502,7 +507,7 @@ function estimateCommission(opts) {
  */
 function calcRepCommissions(repId) {
   const allOpps = getGlobalOpps();
-  const repOpps = allOpps.filter(o => o.repId === repId && o.status === 'Sold / Activation');
+  const repOpps = allOpps.filter(o => o.repId === repId && _spWon(o));
   const repObj  = REPS.find(r => r.id === repId);
   const planId  = repObj?.commissionPlan || 'ryan';
 
@@ -1239,9 +1244,9 @@ function repDashboard() {
 
 function renderRepDashboard(viewEl, rep) {
   const opps = getRepOpps(rep.id);
-  const open = opps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-  const sold = opps.filter(o => o.status === 'Sold / Activation');
-  const lost = opps.filter(o => o.status === 'Closed Lost');
+  const open = opps.filter(_spOpen);
+  const sold = opps.filter(_spWon);
+  const lost = opps.filter(_spLost);
   const overdue = open.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO());
   const { totalEarned, pendingCollection, breakdown,
           paidTotal, approvedTotal, pendingApprovalTotal, onHoldTotal, rejectedTotal,
@@ -1640,12 +1645,12 @@ function renderOMDashboard(viewEl, rep) {
   const allOpps = getGlobalOpps();
 
   // Pipeline health counts — all reps (Jen sees the whole pipeline)
-  const open   = allOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-  const sold   = allOpps.filter(o => o.status === 'Sold / Activation');
-  const lost   = allOpps.filter(o => o.status === 'Closed Lost');
+  const open   = allOpps.filter(_spOpen);
+  const sold   = allOpps.filter(_spWon);
+  const lost   = allOpps.filter(_spLost);
   const overdue = open.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO());
   const needsFollowUp = open.filter(o => !o.nextFollowUp);
-  const proposals = open.filter(o => ['Proposal / Estimate Sent','Follow-Up'].includes(o.status));
+  const proposals = open.filter(_spProposal);
   const newLeads  = open.filter(o => o.status === 'New Lead' || o.status === 'Contacted');
 
   // Sort overdue by most overdue first
@@ -1799,13 +1804,13 @@ function renderAdminDashboard(viewEl) {
 
 
   // ── Pipeline stats ──
-  const openOpps   = allOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-  const soldOpps   = allOpps.filter(o => o.status === 'Sold / Activation');
-  const lostOpps   = allOpps.filter(o => o.status === 'Closed Lost');
+  const openOpps   = allOpps.filter(_spOpen);
+  const soldOpps   = allOpps.filter(_spWon);
+  const lostOpps   = allOpps.filter(_spLost);
   const overdueList = openOpps.filter(o => o.nextFollowUp && o.nextFollowUp < today)
                               .sort((a,b) => a.nextFollowUp.localeCompare(b.nextFollowUp));
   const unassigned = openOpps.filter(o => !o.repId);
-  const proposals  = openOpps.filter(o => ['Proposal / Estimate Sent','Follow-Up'].includes(o.status));
+  const proposals  = openOpps.filter(_spProposal);
   const stale      = openOpps.filter(o => {
     if (!o.updatedAt) return false;
     return (Date.now() - new Date(o.updatedAt).getTime()) > 14 * 24 * 60 * 60 * 1000;
@@ -1828,11 +1833,11 @@ function renderAdminDashboard(viewEl) {
   // ── Rep performance ──
   const repRows = REPS.filter(r => r.role === 'rep').map(rep => {
     const repOpps   = allOpps.filter(o => o.repId === rep.id);
-    const repOpen   = repOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-    const repSold   = repOpps.filter(o => o.status === 'Sold / Activation');
+    const repOpen   = repOpps.filter(_spOpen);
+    const repSold   = repOpps.filter(_spWon);
     const repSoldVal = repSold.reduce((a,o) => a + parseFloat(o.jobValue || 0), 0);
     const repOverdue = repOpen.filter(o => o.nextFollowUp && o.nextFollowUp < today).length;
-    const repProposals = repOpen.filter(o => ['Proposal / Estimate Sent','Follow-Up'].includes(o.status)).length;
+    const repProposals = repOpen.filter(_spProposal).length;
     const { totalEarned, pendingCollection } = calcRepCommissions(rep.id);
     // Close rate
     const repTotal = repSold.length + lostOpps.filter(o => o.repId === rep.id).length;
@@ -2351,7 +2356,7 @@ ${(()=>{
 }
 
 function renderUnassignedOpps(allOpps) {
-  const unassigned = allOpps.filter(o => !o.repId && !['Closed Lost'].includes(o.status));
+  const unassigned = allOpps.filter(o => !o.repId && !_spLost(o));
   if (!unassigned.length) return '<p style="color:var(--muted);font-size:13px">All opportunities are assigned to reps.</p>';
   return unassigned.map(o => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--gw-surface-2);border-radius:10px;margin-bottom:8px">
@@ -2525,7 +2530,7 @@ function migrateCommissionLifecycle() {
 
   opps.forEach((o, idx) => {
     // Only process sold opps that are missing a lifecycle record
-    if (o.status !== 'Sold / Activation') return;
+    if (!_spWon(o)) return;
     if (o.commissionLifecycle && o.commissionLifecycle.status) { skipped++; return; }
 
     // Determine correct initial status from legacy fields
@@ -2582,7 +2587,7 @@ window._migrateCommissionLifecycle = migrateCommissionLifecycle;
     const stateKey = 'avalonSalesHubStateV3';
     const s = JSON.parse(localStorage.getItem(stateKey) || '{}');
     const needsMigration = (s.opportunities || []).some(
-      o => o.status === 'Sold / Activation' && !o.commissionLifecycle
+      o => _spWon(o) && !o.commissionLifecycle
     );
     if (needsMigration) migrateCommissionLifecycle();
   } catch(e) {}
@@ -2763,7 +2768,7 @@ function runCommissionQA() {
   check('No sold opps missing lifecycle after migration', () => {
     try {
       const s = JSON.parse(localStorage.getItem('avalonSalesHubStateV3') || '{}');
-      const missing = (s.opportunities || []).filter(o => o.status === 'Sold / Activation' && !o.commissionLifecycle);
+      const missing = (s.opportunities || []).filter(o => _spWon(o) && !o.commissionLifecycle);
       return missing.length === 0 ? true : { warn:`${missing.length} sold opps still missing lifecycle — run window._migrateCommissionLifecycle()` };
     } catch(e) { return { fail: e.message }; }
   });

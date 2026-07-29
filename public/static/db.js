@@ -40,7 +40,12 @@ const DB = (() => {
     if (body !== undefined) opts.body = JSON.stringify(body);
     const res = await fetch('/api' + path, opts);
     const json = await res.json();
-    if (!json.ok) throw new Error(json.error || `API error ${res.status}: ${path}`);
+    if (!json.ok) {
+      const error = new Error(json.error || `API error ${res.status}: ${path}`);
+      error.status = res.status;
+      error.data = json.data || json;
+      throw error;
+    }
     return json.data;
   }
 
@@ -386,17 +391,25 @@ const DB = (() => {
     get(versionId) { return get('/sales-process' + (versionId ? `?version_id=${encodeURIComponent(versionId)}` : '')); },
     templates() { return get('/sales-process/templates'); },
     adoptTemplate(templateVersionId, name) { return post('/sales-process/drafts/from-template', { template_version_id: templateVersionId, name }); },
-    saveStages(versionId, stages) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/stages`, { stages }); },
+    saveStages(versionId, stages, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/stages`, { stages, content_revision: contentRevision }); },
+    saveContent(versionId, resourceType, resourceId, value, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/content/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId || 'new')}`, { ...value, content_revision: contentRevision }); },
+    deleteContent(versionId, resourceType, resourceId, contentRevision) { return del(`/sales-process/drafts/${encodeURIComponent(versionId)}/content/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}?content_revision=${encodeURIComponent(contentRevision)}`); },
+    suggest(versionId, suggestion) { return post(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions`, suggestion); },
+    decideSuggestion(suggestionId, decision) { return post(`/sales-process/ai-suggestions/${encodeURIComponent(suggestionId)}/decision`, { decision }); },
     validate(versionId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/validate`, {}); },
     inventory() { return get('/sales-process/migration/inventory'); },
     propose(versionId) { return post('/sales-process/migration/propose', { process_version_id: versionId }); },
     mappings(batchId) { return get(`/sales-process/migration/${encodeURIComponent(batchId)}`); },
-    approveMapping(batchId, opportunityId, finalStageId) { return put(`/sales-process/migration/${encodeURIComponent(batchId)}/${encodeURIComponent(opportunityId)}`, { final_stage_id: finalStageId }); },
+    approveMapping(batchId, opportunityId, finalStageId, finalOutcomeType = '') { return put(`/sales-process/migration/${encodeURIComponent(batchId)}/${encodeURIComponent(opportunityId)}`, { final_stage_id: finalStageId, final_outcome_type: finalOutcomeType }); },
+    captureSnapshot(versionId, batchId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/snapshots`, { migration_batch_id: batchId }); },
+    approveSnapshot(snapshotId) { return post(`/sales-process/snapshots/${encodeURIComponent(snapshotId)}/approve`, { confirm: true }); },
+    preview(versionId) { return get(`/sales-process/versions/${encodeURIComponent(versionId)}/preview`); },
+    readiness(versionId, batchId, snapshotId = '') { return get(`/sales-process/versions/${encodeURIComponent(versionId)}/publication-readiness?migration_batch_id=${encodeURIComponent(batchId)}&snapshot_id=${encodeURIComponent(snapshotId)}`); },
     context(opportunityId) { return get(`/opportunities/${encodeURIComponent(opportunityId)}/sales-context`); },
     transition(opportunityId, stageId, expectedStageId, outcomeType = '', overrideReason = '') {
-      return put(`/opportunities/${encodeURIComponent(opportunityId)}/sales-stage`, { stage_id: stageId, expected_stage_id: expectedStageId, outcome_type: outcomeType, override_reason: overrideReason });
+      return post(`/opportunities/${encodeURIComponent(opportunityId)}/stage-transition`, { stage_id: stageId, expected_stage_id: expectedStageId, outcome_type: outcomeType, override_reason: overrideReason, confirm: true });
     },
-    publish(versionId, batchId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/publish`, { migration_batch_id: batchId, confirm: true }); },
+    publish(versionId, batchId, snapshotId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/publish`, { migration_batch_id: batchId, snapshot_id: snapshotId, confirm: true, administrator_approval: true }); },
     rollback(publicationId) { return post(`/sales-process/publications/${encodeURIComponent(publicationId)}/rollback`, {}); }
   };
 
@@ -406,6 +419,10 @@ const DB = (() => {
     get() { return get('/nav-perms'); },
     /** Save updated nav perms (admin only) */
     save(perms) { return put('/nav-perms', { perms }); }
+  };
+
+  const academyPlaybook = {
+    get() { return get('/academy/playbook'); }
   };
 
   // ── ACTIVITY LOG (append-only audit trail) ────────────────────────────────────
@@ -439,6 +456,7 @@ const DB = (() => {
     roles,
     pipelineStages,
     salesProcess,
+    academyPlaybook,
     navPerms,
     activityLog,
     sync,

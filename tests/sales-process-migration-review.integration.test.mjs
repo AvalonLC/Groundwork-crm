@@ -15,14 +15,23 @@ CREATE TABLE opportunities (id TEXT PRIMARY KEY, company_id TEXT, client TEXT, s
 CREATE TABLE calendar_events (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT, status TEXT, start_at TEXT);
 CREATE TABLE estimates (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT, status TEXT, sent_at TEXT, updated_at TEXT);
 CREATE TABLE sales_processes (id TEXT PRIMARY KEY, company_id TEXT, name TEXT);
-CREATE TABLE sales_process_versions (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, version_number INTEGER, lifecycle TEXT, validation_json TEXT, published_at TEXT DEFAULT '', published_by TEXT DEFAULT '', updated_at TEXT DEFAULT 'seed');
-CREATE TABLE sales_process_stages (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stable_key TEXT, display_name TEXT, semantic_type TEXT, display_order INTEGER, state TEXT);
-CREATE TABLE sales_stage_outcomes (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stage_id TEXT, semantic_type TEXT, active INTEGER);
+CREATE TABLE sales_process_versions (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, version_number INTEGER, lifecycle TEXT, validation_json TEXT, published_at TEXT DEFAULT '', published_by TEXT DEFAULT '', updated_at TEXT DEFAULT 'seed', approved_snapshot_id TEXT DEFAULT '', approved_by TEXT DEFAULT '', approved_at TEXT DEFAULT '', content_revision INTEGER NOT NULL DEFAULT 1, draft_lock_token TEXT NOT NULL DEFAULT '');
+CREATE TABLE sales_process_stages (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stable_key TEXT, display_name TEXT, board_label TEXT DEFAULT '', description TEXT DEFAULT '', customer_milestone TEXT DEFAULT '', semantic_type TEXT, display_order INTEGER, state TEXT, expected_duration_days INTEGER DEFAULT 0, entry_guidance TEXT DEFAULT '', exit_guidance TEXT DEFAULT '', manager_override_policy TEXT DEFAULT 'allowed_with_reason', created_by TEXT DEFAULT '');
+CREATE TABLE sales_stage_outcomes (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stage_id TEXT, display_name TEXT DEFAULT '', semantic_type TEXT, active INTEGER);
 CREATE TABLE sales_stage_assignments (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, process_version_id TEXT, stage_id TEXT, classification TEXT, outcome_type TEXT, assigned_by TEXT, UNIQUE(company_id,opportunity_id,process_version_id));
 CREATE TABLE sales_migration_mappings (id TEXT PRIMARY KEY, company_id TEXT, opportunity_id TEXT, migration_batch_id TEXT, previous_stage_id TEXT, previous_label TEXT, proposed_stage_id TEXT, final_stage_id TEXT, proposed_outcome_type TEXT, final_outcome_type TEXT, mapping_method TEXT, mapping_confidence REAL, suggestion_reason TEXT, review_state TEXT, reviewer_id TEXT, reviewed_at TEXT, process_version_id TEXT, rollback_value TEXT, opportunity_updated_at TEXT DEFAULT '', assignment_snapshot TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), UNIQUE(company_id,opportunity_id,migration_batch_id));
 CREATE TABLE sales_migration_history (id TEXT PRIMARY KEY, company_id TEXT, migration_batch_id TEXT, opportunity_id TEXT, previous_process_version_id TEXT, new_process_version_id TEXT, previous_stage_id TEXT, previous_label TEXT, new_stage_id TEXT, mapping_id TEXT, actor_id TEXT, event_type TEXT, event_json TEXT, created_at TEXT DEFAULT (datetime('now')));
 CREATE TABLE sales_process_publications (id TEXT PRIMARY KEY, company_id TEXT, process_id TEXT, process_version_id TEXT, previous_version_id TEXT, migration_batch_id TEXT, action TEXT, actor_id TEXT, impact_json TEXT, created_at TEXT DEFAULT (datetime('now')));
-CREATE TABLE activity_log (id TEXT PRIMARY KEY, company_id TEXT);
+CREATE TABLE activity_log (id TEXT PRIMARY KEY, company_id TEXT, entity_type TEXT, entity_id TEXT);
+CREATE TABLE tasks (id TEXT PRIMARY KEY, company_id TEXT, linked_record_type TEXT, linked_record_id TEXT);
+CREATE TABLE notes (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT);
+CREATE TABLE communications (id TEXT PRIMARY KEY, company_id TEXT, opp_id TEXT);
+CREATE TABLE sales_migration_snapshots (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, migration_batch_id TEXT, state TEXT, source_revision TEXT, reconciliation_json TEXT, approved_by TEXT DEFAULT '', approved_at TEXT DEFAULT '', created_by TEXT, created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE sales_migration_snapshot_items (id TEXT PRIMARY KEY, company_id TEXT, snapshot_id TEXT, opportunity_id TEXT, source_updated_at TEXT, original_status TEXT, original_pipeline_stage TEXT, original_stage_id TEXT, snapshot_json TEXT, created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE sales_process_company_state (company_id TEXT PRIMARY KEY, active_process_id TEXT, active_process_version_id TEXT, activated_publication_id TEXT, updated_by TEXT, updated_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE sales_stage_internal_statuses (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, stage_id TEXT, stable_key TEXT, display_name TEXT, display_order INTEGER, active INTEGER, created_at TEXT DEFAULT '', updated_at TEXT DEFAULT '');
+CREATE TABLE sales_process_draft_mutations (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, content_revision INTEGER, resource_type TEXT, resource_id TEXT, action TEXT, actor_id TEXT, before_json TEXT, after_json TEXT, created_at TEXT DEFAULT '', UNIQUE(company_id,process_version_id,content_revision));
+CREATE TABLE sales_ai_suggestions (id TEXT PRIMARY KEY, company_id TEXT, process_version_id TEXT, user_id TEXT, suggestion_type TEXT, current_json TEXT, proposed_json TEXT, reason TEXT, decision TEXT DEFAULT 'pending', decided_by TEXT DEFAULT '', decided_at TEXT DEFAULT '', created_at TEXT DEFAULT '');
 `;
 
 async function run(sql, ...values) { return db.prepare(sql).bind(...values).run(); }
@@ -36,7 +45,7 @@ async function body(response) {
   const payload = await response.json();
   return payload.ok === true && Object.hasOwn(payload, 'data') ? payload.data : payload;
 }
-async function rows(table, company = 'company-a') { return (await db.prepare(`SELECT * FROM ${table} WHERE company_id=? ORDER BY id`).bind(company).all()).results; }
+async function rows(table, company = 'company-a') { return (await db.prepare(`SELECT * FROM ${table} WHERE company_id=? ORDER BY company_id`).bind(company).all()).results; }
 async function opportunityState() { return (await db.prepare('SELECT id,status,pipeline_stage,sales_process_stage_id,rep_id,assigned_to_rep_id FROM opportunities ORDER BY company_id,id').all()).results; }
 
 before(async () => {
@@ -53,11 +62,11 @@ before(async () => {
       return [db.prepare('INSERT INTO settings VALUES (?,?,datetime(\'now\'))').bind(`session_${token}`, rep), db.prepare('INSERT INTO settings VALUES (?,?,datetime(\'now\'))').bind(`session_company_${token}`, company)];
     }),
     db.prepare("INSERT INTO sales_processes VALUES ('process-a','company-a','A'),('process-b','company-b','B')"),
-    db.prepare("INSERT INTO sales_process_versions VALUES ('version-a','company-a','process-a',2,'draft','{\"valid\":true}','','','seed'),('published-a','company-a','process-a',1,'published','{\"valid\":true}','','','seed'),('version-b','company-b','process-b',1,'draft','{\"valid\":true}','','','seed')")
+    db.prepare("INSERT INTO sales_process_versions (id,company_id,process_id,version_number,lifecycle,validation_json,published_at,published_by,updated_at) VALUES ('version-a','company-a','process-a',2,'draft','{\"valid\":true}','','','seed'),('published-a','company-a','process-a',1,'published','{\"valid\":true}','','','seed'),('version-b','company-b','process-b',1,'draft','{\"valid\":true}','','','seed')")
   ]);
   const stageDefs = [['new','new_lead','intake'],['qualify','connect_qualify','active_qualification'],['consult','onsite_consultation','consultation'],['estimate','estimate_development','estimate_development'],['present','estimate_presentation','proposal_presentation'],['decision','decision_pending','decision'],['won','closed','won']];
-  for (const company of ['a','b']) for (const [id,key,semantic] of stageDefs) await run('INSERT INTO sales_process_stages VALUES (?,?,?,?,?,?,?,?)', `${company}-${id}`, `company-${company}`, `version-${company}`, key, key, semantic, stageDefs.findIndex(x => x[0] === id), 'active');
-  await run("INSERT INTO sales_stage_outcomes VALUES ('outcome-a-won','company-a','version-a','a-won','won',1),('outcome-b-won','company-b','version-b','b-won','won',1)");
+  for (const company of ['a','b']) for (const [id,key,semantic] of stageDefs) await run('INSERT INTO sales_process_stages (id,company_id,process_version_id,stable_key,display_name,semantic_type,display_order,state) VALUES (?,?,?,?,?,?,?,?)', `${company}-${id}`, `company-${company}`, `version-${company}`, key, key, semantic, stageDefs.findIndex(x => x[0] === id) + 1, 'active');
+  await run("INSERT INTO sales_stage_outcomes (id,company_id,process_version_id,stage_id,display_name,semantic_type,active) VALUES ('outcome-a-won','company-a','version-a','a-won','Won','won',1),('outcome-b-won','company-b','version-b','b-won','Won','won',1)");
   const opportunities = [
     ['deterministic','Lead Intake / Rapport','Lead Intake / Rapport'], ['ambiguous','Presentation & SOW Pitch','Presentation & SOW Pitch'],
     ['conflicting','On Hold','New Lead'], ['unknown','Mystery','Mystery'], ['blank','',''],
@@ -118,6 +127,53 @@ test('readiness rejects pending, stale, cross-tenant, terminal, and nonterminal 
   assert.equal(readiness.ready, false);
 });
 
+test('draft content mutations are optimistic role-scoped and auditable', async () => {
+  const path = '/api/sales-process/drafts/version-a/content/statuses/new';
+  const value = { content_revision: 1, stage_id: 'a-new', stable_key: 'contacting', display_name: 'Contacting', display_order: 1, active: 1 };
+  assert.equal((await request(tokens.representative, path, { method: 'PUT', body: JSON.stringify(value) })).status, 403);
+  const createdResponse = await request(tokens.admin, path, { method: 'PUT', body: JSON.stringify(value) });
+  assert.equal(createdResponse.status, 200);
+  const created = await body(createdResponse);
+  assert.equal(created.content_revision, 2);
+  const concurrentPayload = { content_revision: 2, stage_id: 'a-new', stable_key: 'connected', display_name: 'Connected', display_order: 2, active: 1 };
+  const concurrent = await Promise.all([
+    request(tokens.admin, path, { method: 'PUT', body: JSON.stringify(concurrentPayload) }),
+    request(tokens.manager, path, { method: 'PUT', body: JSON.stringify({ ...concurrentPayload, stable_key: 'attempting', display_name: 'Attempting' }) })
+  ]);
+  assert.deepEqual(concurrent.map(response => response.status).sort(), [200, 409]);
+  const statuses = await rows('sales_stage_internal_statuses');
+  assert.equal(statuses.length, 2);
+  assert.equal((await rows('sales_process_draft_mutations')).length, 2);
+  assert.equal((await request(tokens.admin, '/api/sales-process/drafts/version-b/content/statuses/new', { method: 'PUT', body: JSON.stringify({ ...value, content_revision: 1, stage_id: 'b-new' }) })).status, 404);
+});
+
+test('concurrent stage replacements claim one revision without deleting the winner', async () => {
+  const stageRows = (await db.prepare("SELECT * FROM sales_process_stages WHERE company_id='company-a' AND process_version_id='version-a' ORDER BY display_order").all()).results;
+  const stages = stageRows.map(stage => ({ ...stage, display_name: `${stage.display_name} Updated` }));
+  const responses = await Promise.all([
+    request(tokens.admin, '/api/sales-process/drafts/version-a/stages', { method: 'PUT', body: JSON.stringify({ content_revision: 3, stages }) }),
+    request(tokens.manager, '/api/sales-process/drafts/version-a/stages', { method: 'PUT', body: JSON.stringify({ content_revision: 3, stages: stages.map(stage => ({ ...stage, display_name: `${stage.display_name} Alternate` })) }) })
+  ]);
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  const remaining = (await db.prepare("SELECT * FROM sales_process_stages WHERE company_id='company-a' AND process_version_id='version-a'").all()).results;
+  assert.equal(remaining.length, 7);
+  assert.equal((await db.prepare("SELECT content_revision FROM sales_process_versions WHERE id='version-a' AND company_id='company-a'").first()).content_revision, 4);
+  assert.equal((await rows('sales_process_draft_mutations')).length, 3);
+});
+
+test('AI suggestions are audited draft-only decisions without execution side effects', async () => {
+  const beforeStatuses = await rows('sales_stage_internal_statuses');
+  const response = await request(tokens.manager, '/api/sales-process/drafts/version-a/ai-suggestions', { method: 'POST', body: JSON.stringify({ suggestion_type: 'simplify_stage', current: { name: 'Old' }, proposed: { name: 'New' }, reason: 'Duplicate purpose' }) });
+  assert.equal(response.status, 201);
+  const suggestion = await body(response);
+  const decision = await body(await request(tokens.admin, `/api/sales-process/ai-suggestions/${suggestion.id}/decision`, { method: 'POST', body: JSON.stringify({ decision: 'accepted' }) }));
+  assert.equal(decision.decision, 'accepted');
+  assert.equal(decision.draft_only, true);
+  assert.deepEqual(decision.side_effects, []);
+  assert.deepEqual(await rows('sales_stage_internal_statuses'), beforeStatuses);
+  assert.equal((await request(tokens.representative, '/api/sales-process/drafts/version-a/ai-suggestions', { method: 'POST', body: JSON.stringify({ suggestion_type: 'publish', proposed: { publish: true } }) })).status, 403);
+});
+
 test('a failed publication batch rolls back every lifecycle and data change', async () => {
   await run("UPDATE opportunities SET updated_at='revision-deterministic' WHERE id='deterministic'");
   const proposed = await body(await request(tokens.admin, '/api/sales-process/migration/propose', { method: 'POST', body: JSON.stringify({ process_version_id: 'version-a' }) }));
@@ -126,14 +182,59 @@ test('a failed publication batch rolls back every lifecycle and data change', as
     const terminal = mapping.opportunity_id === 'terminal';
     await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}/${mapping.opportunity_id}`, { method: 'PUT', body: JSON.stringify({ final_stage_id: terminal ? 'a-won' : 'a-new', final_outcome_type: terminal ? 'won' : '' }) });
   }
-  const before = { versions: await rows('sales_process_versions'), assignments: await rows('sales_stage_assignments'), opportunities: await opportunityState(), history: await rows('sales_migration_history'), publications: await rows('sales_process_publications') };
+  const snapshot = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/snapshots', { method: 'POST', body: JSON.stringify({ migration_batch_id: proposed.migration_batch_id }) }));
+  assert.equal((await request(tokens.admin, `/api/sales-process/snapshots/${snapshot.snapshot_id}/approve`, { method: 'POST', body: JSON.stringify({ confirm: true }) })).status, 200);
+  const before = { versions: await rows('sales_process_versions'), assignments: await rows('sales_stage_assignments'), opportunities: await opportunityState(), history: await rows('sales_migration_history'), publications: await rows('sales_process_publications'), companyState: await rows('sales_process_company_state') };
   const failingDb = new Proxy(db, { get(target, property) {
     if (property === 'prepare') return (sql) => sql.includes('INSERT INTO sales_process_publications') ? target.prepare('INSERT INTO deliberately_missing_publication_table VALUES (?)') : target.prepare(sql);
     const value = Reflect.get(target, property, target);
     return typeof value === 'function' ? value.bind(target) : value;
   }});
-  const response = await request(tokens.admin, '/api/sales-process/versions/version-a/publish', { method: 'POST', body: JSON.stringify({ confirm: true, migration_batch_id: proposed.migration_batch_id, company_id: 'company-b' }) }, failingDb);
+  const response = await request(tokens.admin, '/api/sales-process/versions/version-a/publish', { method: 'POST', body: JSON.stringify({ confirm: true, administrator_approval: true, snapshot_id: snapshot.snapshot_id, migration_batch_id: proposed.migration_batch_id, company_id: 'company-b' }) }, failingDb);
   assert.equal(response.status, 500);
-  const afterState = { versions: await rows('sales_process_versions'), assignments: await rows('sales_stage_assignments'), opportunities: await opportunityState(), history: await rows('sales_migration_history'), publications: await rows('sales_process_publications') };
+  const afterState = { versions: await rows('sales_process_versions'), assignments: await rows('sales_stage_assignments'), opportunities: await opportunityState(), history: await rows('sales_migration_history'), publications: await rows('sales_process_publications'), companyState: await rows('sales_process_company_state') };
   assert.deepEqual(afterState, before);
+});
+
+test('snapshot approval rejects opportunity relationship drift', async () => {
+  const proposed = await body(await request(tokens.admin, '/api/sales-process/migration/propose', { method: 'POST', body: JSON.stringify({ process_version_id: 'version-a' }) }));
+  const mappings = await body(await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}`));
+  for (const mapping of mappings) if (mapping.review_state !== 'approved') {
+    const terminal = mapping.opportunity_id === 'terminal';
+    await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}/${mapping.opportunity_id}`, { method: 'PUT', body: JSON.stringify({ final_stage_id: terminal ? 'a-won' : 'a-new', final_outcome_type: terminal ? 'won' : '' }) });
+  }
+  const snapshot = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/snapshots', { method: 'POST', body: JSON.stringify({ migration_batch_id: proposed.migration_batch_id }) }));
+  await run("INSERT INTO tasks VALUES ('drift-task','company-a','lead','deterministic')");
+  const approval = await request(tokens.admin, `/api/sales-process/snapshots/${snapshot.snapshot_id}/approve`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+  assert.equal(approval.status, 409);
+  assert.equal((await body(approval)).error, 'Snapshot drift detected');
+  await run("DELETE FROM tasks WHERE id='drift-task' AND company_id='company-a'");
+});
+
+test('approved current snapshot publishes atomically and rollback restores the active pointer', async () => {
+  const proposed = await body(await request(tokens.admin, '/api/sales-process/migration/propose', { method: 'POST', body: JSON.stringify({ process_version_id: 'version-a' }) }));
+  const mappings = await body(await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}`));
+  for (const mapping of mappings) if (mapping.review_state !== 'approved') {
+    const terminal = mapping.opportunity_id === 'terminal';
+    const response = await request(tokens.admin, `/api/sales-process/migration/${proposed.migration_batch_id}/${mapping.opportunity_id}`, { method: 'PUT', body: JSON.stringify({ final_stage_id: terminal ? 'a-won' : 'a-new', final_outcome_type: terminal ? 'won' : '' }) });
+    assert.equal(response.status, 200);
+  }
+  const snapshot = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/snapshots', { method: 'POST', body: JSON.stringify({ migration_batch_id: proposed.migration_batch_id }) }));
+  assert.equal((await request(tokens.manager, `/api/sales-process/snapshots/${snapshot.snapshot_id}/approve`, { method: 'POST', body: JSON.stringify({ confirm: true }) })).status, 200);
+  const readiness = await body(await request(tokens.admin, `/api/sales-process/versions/version-a/publication-readiness?migration_batch_id=${proposed.migration_batch_id}&snapshot_id=${snapshot.snapshot_id}`));
+  assert.equal(readiness.ready, true);
+  const beforePublication = await opportunityState();
+  const publication = await body(await request(tokens.admin, '/api/sales-process/versions/version-a/publish', { method: 'POST', body: JSON.stringify({ confirm: true, administrator_approval: true, migration_batch_id: proposed.migration_batch_id, snapshot_id: snapshot.snapshot_id }) }));
+  assert.equal(publication.published, 'version-a');
+  let state = (await rows('sales_process_company_state'))[0];
+  assert.equal(state.active_process_version_id, 'version-a');
+  assert.equal((await rows('sales_process_company_state', 'company-b')).length, 0);
+  const rollback = await body(await request(tokens.admin, `/api/sales-process/publications/${publication.publication_id}/rollback`, { method: 'POST', body: '{}' }));
+  assert.equal(rollback.rolled_back_to, 'published-a');
+  state = (await rows('sales_process_company_state'))[0];
+  assert.equal(state.active_process_version_id, 'published-a');
+  assert.deepEqual(await opportunityState(), beforePublication);
+  const events = await rows('sales_process_publications');
+  assert.ok(events.some(event => event.action === 'publish'));
+  assert.ok(events.some(event => event.action === 'rollback'));
 });

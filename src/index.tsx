@@ -711,11 +711,34 @@ app.get('/api/auth/bootstrap', requireAuth, async (c) => {
   const verifiedRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ? LIMIT 1')
     .bind(`${companyId}:email_verified_${repId}`).first<{ value: string }>()
 
+  let salesProcess: any = null
+  const activeVersion = await c.env.DB.prepare(`SELECT v.* FROM sales_process_versions v
+    LEFT JOIN sales_process_company_state cs ON cs.company_id=v.company_id AND cs.active_process_version_id=v.id
+    WHERE v.company_id=? AND v.lifecycle='published'
+    ORDER BY CASE WHEN cs.active_process_version_id=v.id THEN 0 ELSE 1 END,v.published_at DESC LIMIT 1`).bind(companyId).first<any>()
+  if (activeVersion) {
+    const [processRow, processStages, outcomes, transitions, assignments, mappings] = await Promise.all([
+      c.env.DB.prepare('SELECT * FROM sales_processes WHERE id=? AND company_id=?').bind(activeVersion.process_id, companyId).first(),
+      c.env.DB.prepare("SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state='active' ORDER BY display_order").bind(companyId, activeVersion.id).all(),
+      c.env.DB.prepare('SELECT * FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, activeVersion.id).all(),
+      c.env.DB.prepare('SELECT * FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=? AND active=1 ORDER BY display_order').bind(companyId, activeVersion.id).all(),
+      c.env.DB.prepare('SELECT opportunity_id,stage_id,outcome_type,internal_status_id,classification FROM sales_stage_assignments WHERE company_id=? AND process_version_id=?').bind(companyId, activeVersion.id).all(),
+      c.env.DB.prepare("SELECT opportunity_id,final_stage_id,final_outcome_type,review_state FROM sales_migration_mappings WHERE company_id=? AND process_version_id=? AND review_state='approved'").bind(companyId, activeVersion.id).all()
+    ])
+    salesProcess = { process: { ...processRow, ...activeVersion }, stages: processStages.results, outcomes: outcomes.results, transitions: transitions.results, assignments: assignments.results, mappings: mappings.results }
+  }
+  const normalizedPipelineStages = salesProcess ? (salesProcess.stages as any[]).flatMap(stage => {
+    if (stage.semantic_type !== 'terminal') return [stage.display_name]
+    const terminalOutcomes = (salesProcess.outcomes as any[]).filter(outcome => outcome.stage_id === stage.id && ['won','lost','disqualified','nurture'].includes(outcome.semantic_type))
+    return terminalOutcomes.length ? terminalOutcomes.map(outcome => outcome.display_name) : [stage.display_name]
+  }) : stages
+
   return json(c, {
     reps: repsResult.results || [],
     roles,
-    pipelineStages: stages,
+    pipelineStages: normalizedPipelineStages,
     navPerms,
+    salesProcess,
     company,
     // Include the logged-in rep's language preference so the i18n engine can hydrate on bootstrap
     rep: { preferred_language: myRepRow?.preferred_language || 'en', email_verified: !!verifiedRow }
@@ -1191,6 +1214,41 @@ function requireSalesProcessAdmin(c: any) {
   return SALES_PROCESS_ADMIN_ROLES.has(String(c.var.role || ''))
 }
 
+async function resolveSalesOpportunityStage(db: any, companyId: string, opportunityId: string) {
+  const opportunity = await db.prepare(
+    'SELECT id,status,pipeline_stage,sales_process_stage_id FROM opportunities WHERE id=? AND company_id=?'
+  ).bind(opportunityId, companyId).first<any>()
+  if (!opportunity) return null
+  const published = await db.prepare(`SELECT v.id FROM sales_process_versions v
+    JOIN sales_processes p ON p.id=v.process_id AND p.company_id=v.company_id
+    WHERE v.company_id=? AND v.lifecycle='published' ORDER BY v.published_at DESC LIMIT 1`).bind(companyId).first<any>()
+  if (published) {
+    const assignment = await db.prepare(`SELECT a.*,s.stable_key,s.display_name,s.semantic_type
+      FROM sales_stage_assignments a JOIN sales_process_stages s
+        ON s.id=a.stage_id AND s.company_id=a.company_id AND s.process_version_id=a.process_version_id
+      WHERE a.company_id=? AND a.opportunity_id=? AND a.process_version_id=?`)
+      .bind(companyId, opportunityId, published.id).first<any>()
+    if (assignment) return { resolution: 'stable_assignment', resolved: true, ...assignment }
+    const mapping = await db.prepare(`SELECT m.*,s.stable_key,s.display_name,s.semantic_type
+      FROM sales_migration_mappings m JOIN sales_process_stages s
+        ON s.id=m.final_stage_id AND s.company_id=m.company_id AND s.process_version_id=m.process_version_id
+      WHERE m.company_id=? AND m.opportunity_id=? AND m.process_version_id=? AND m.review_state='approved'
+      ORDER BY m.reviewed_at DESC LIMIT 1`).bind(companyId, opportunityId, published.id).first<any>()
+    if (mapping) return { resolution: 'approved_mapping', resolved: true, ...mapping }
+    return { resolution: 'needs_restaging', resolved: false, opportunity_id: opportunityId, original_label: opportunity.status || opportunity.pipeline_stage || '' }
+  }
+  const label = String(opportunity.status || opportunity.pipeline_stage || '')
+  const stableKey = LEGACY_STAGE_MAP[label]
+  return stableKey
+    ? { resolution: 'approved_legacy_mapping', resolved: true, opportunity_id: opportunityId, stable_key: stableKey, original_label: label }
+    : { resolution: 'needs_restaging', resolved: false, opportunity_id: opportunityId, original_label: label }
+}
+
+app.get('/api/opportunities/:id/sales-process-resolution', requireAuth, async (c) => {
+  const resolution = await resolveSalesOpportunityStage(c.env.DB, c.var.companyId as string, c.req.param('id'))
+  return resolution ? json(c, resolution) : err(c, 'Opportunity not found', 404)
+})
+
 app.get('/api/sales-process/templates', requireAuth, async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT p.id, p.name, p.description, v.id AS version_id, v.version_number
@@ -1215,15 +1273,79 @@ app.get('/api/sales-process', requireAuth, async (c) => {
     || (versions.results as any[]).find(v => v.lifecycle === 'published')
     || (versions.results as any[]).find(v => v.lifecycle === 'draft') || null
   if (!version) return json(c, { process: null, versions: [], stages: [], requirements: [], guides: [], resources: [] })
-  const [stages, requirements, guides, resources, transitions, skills] = await Promise.all([
+  const [stages, outcomes, statuses, requirements, guides, resources, automations, transitions, associations, companyContent, suggestions, skills] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id = ? AND process_version_id = ? ORDER BY display_order').bind(companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? ORDER BY stage_id,display_name').bind(companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_internal_statuses WHERE company_id=? AND process_version_id=? ORDER BY stage_id,display_order').bind(companyId, version.id).all(),
     c.env.DB.prepare('SELECT * FROM sales_stage_requirements WHERE company_id = ? AND process_version_id = ? ORDER BY stage_id, display_order').bind(companyId, version.id).all(),
     c.env.DB.prepare('SELECT * FROM sales_stage_guides WHERE company_id = ? AND process_version_id = ? ORDER BY stage_id, display_order').bind(companyId, version.id).all(),
     c.env.DB.prepare('SELECT * FROM sales_process_resources WHERE company_id = ? AND process_version_id = ? ORDER BY resource_type, name').bind(companyId, version.id).all(),
-    c.env.DB.prepare('SELECT * FROM sales_stage_transitions WHERE company_id = ? AND process_version_id = ? AND active=1').bind(companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_process_automations WHERE company_id=? AND process_version_id=? ORDER BY stage_id,name').bind(companyId, version.id).all(),
+    c.env.DB.prepare(`SELECT id,company_id,process_version_id,from_stage_id,to_stage_id,requires_override,active,created_at,outcome_type,display_label,guidance,display_order,override_policy,created_by,updated_by,updated_at
+      FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=? AND active=1
+      UNION ALL SELECT id,company_id,process_version_id,from_stage_id,to_stage_id,requires_override,active,created_at,outcome_type,display_label,guidance,display_order,override_policy,created_by,updated_by,updated_at
+      FROM sales_stage_transitions WHERE company_id=? AND process_version_id=? AND active=1
+      AND NOT EXISTS (SELECT 1 FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=?)`)
+      .bind(companyId, version.id, companyId, version.id, companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_academy_associations WHERE company_id=? AND process_version_id=? ORDER BY stage_id,display_order').bind(companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_academy_company_content WHERE company_id=? AND process_version_id=? ORDER BY stage_id,display_order').bind(companyId, version.id).all(),
+    c.env.DB.prepare('SELECT * FROM sales_ai_suggestions WHERE company_id=? AND process_version_id=? ORDER BY created_at DESC').bind(companyId, version.id).all(),
     c.env.DB.prepare("SELECT * FROM sales_academy_skills WHERE active=1 AND (company_id=? OR (company_id='__global__' AND is_global=1)) ORDER BY title").bind(companyId).all()
   ])
-  return json(c, { process: version, versions: versions.results, stages: stages.results, requirements: requirements.results, guides: guides.results, resources: resources.results, transitions: transitions.results, academy_skills: skills.results })
+  return json(c, { process: version, versions: versions.results, stages: stages.results, outcomes: outcomes.results, internal_statuses: statuses.results, requirements: requirements.results, guides: guides.results, resources: resources.results, automations: automations.results, transitions: transitions.results, academy_associations: associations.results, academy_content: companyContent.results, ai_suggestions: suggestions.results, academy_skills: skills.results })
+})
+
+
+// Published Academy playbook keeps the immutable Groundwork skill library
+// separate from company-authored training and follows the active process order.
+app.get('/api/academy/playbook', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = String(c.var.role || '')
+  const canSeeManagerContent = ['admin','owner','office_manager','sales_manager'].includes(role)
+  const active = await c.env.DB.prepare(`SELECT cs.active_process_version_id AS version_id,v.version_number,p.name AS process_name
+    FROM sales_process_company_state cs
+    JOIN sales_process_versions v ON v.id=cs.active_process_version_id AND v.company_id=cs.company_id AND v.lifecycle='published'
+    JOIN sales_processes p ON p.id=v.process_id AND p.company_id=v.company_id
+    WHERE cs.company_id=?`).bind(companyId).first<any>()
+  const coreSkills = await c.env.DB.prepare(`SELECT id,stable_key,title,content_json FROM sales_academy_skills
+    WHERE company_id='__global__' AND is_global=1 AND active=1
+    ORDER BY CASE stable_key
+      WHEN 'mutual_agreements' THEN 1 WHEN 'core_buying_reasons' THEN 2 WHEN 'budget_conversations' THEN 3
+      WHEN 'decision_makers' THEN 4 WHEN 'decision_process' THEN 5 WHEN 'initial_qualification' THEN 6
+      WHEN 'onsite_discovery' THEN 7 WHEN 'scope_development' THEN 8 WHEN 'estimate_creation' THEN 9
+      WHEN 'estimate_presentation' THEN 10 WHEN 'objection_handling' THEN 11 WHEN 'follow_up' THEN 12
+      WHEN 'closing' THEN 13 WHEN 'lost_opportunity_review' THEN 14 WHEN 'nurture' THEN 15 ELSE 99 END,title`).all<any>()
+  if (!active) return json(c, { published: false, core_skills: coreSkills.results, process: null, stages: [], company_content: [] })
+  const [stages, associations, companyContent] = await Promise.all([
+    c.env.DB.prepare("SELECT id,stable_key,display_name,board_label,description,display_order FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state='active' ORDER BY display_order").bind(companyId, active.version_id).all<any>(),
+    c.env.DB.prepare(`SELECT a.id,a.stage_id,a.internal_status_id,i.display_name AS internal_status_name,a.visibility,a.display_order,s.id AS skill_id,s.stable_key,s.title,s.content_json
+      FROM sales_academy_associations a
+      JOIN sales_academy_skills s ON s.id=a.skill_id AND s.active=1
+      LEFT JOIN sales_stage_internal_statuses i ON i.id=a.internal_status_id AND i.company_id=a.company_id AND i.process_version_id=a.process_version_id
+      WHERE a.company_id=? AND a.process_version_id=?
+        AND (?=1 OR a.visibility NOT IN ('manager','manager_only'))
+      ORDER BY a.display_order,s.title`).bind(companyId, active.version_id, canSeeManagerContent ? 1 : 0).all<any>(),
+    c.env.DB.prepare(`SELECT c.id,c.stage_id,c.internal_status_id,i.display_name AS internal_status_name,c.stable_key,c.content_type,c.title,c.content_json,c.visibility,c.display_order
+      FROM sales_academy_company_content c
+      LEFT JOIN sales_stage_internal_statuses i ON i.id=c.internal_status_id AND i.company_id=c.company_id AND i.process_version_id=c.process_version_id
+      WHERE c.company_id=? AND c.process_version_id=? AND c.active=1
+        AND (?=1 OR c.visibility NOT IN ('manager','manager_only'))
+      ORDER BY c.display_order,c.title`).bind(companyId, active.version_id, canSeeManagerContent ? 1 : 0).all<any>()
+  ])
+  const associationRows = associations.results as any[]
+  const contentRows = companyContent.results as any[]
+  const orderedStages = (stages.results as any[]).map(stage => ({
+    ...stage,
+    skills: associationRows.filter(item => item.stage_id === stage.id),
+    content: contentRows.filter(item => item.stage_id === stage.id)
+  }))
+  return json(c, {
+    published: true,
+    process: { version_id: active.version_id, version_number: active.version_number, name: active.process_name },
+    core_skills: coreSkills.results,
+    stages: orderedStages,
+    company_content: contentRows.filter(item => !item.stage_id)
+  })
 })
 
 // Copy-on-adopt guarantees that tenant edits can never mutate the global template.
@@ -1245,6 +1367,7 @@ app.post('/api/sales-process/drafts/from-template', requireAuth, async (c) => {
   const templateStages = await c.env.DB.prepare(
     'SELECT * FROM sales_process_stages WHERE company_id = ? AND process_version_id = ? ORDER BY display_order'
   ).bind('__global__', templateVersionId).all<any>()
+  if (!templateStages.results.length) return err(c, 'Template version has no stages', 409)
   const statements: any[] = [
     c.env.DB.prepare(`INSERT INTO sales_processes (id,company_id,name,description,source_template_id,created_by) VALUES (?,?,?,?,?,?)`)
       .bind(processId, companyId, String(body.name || template.name), template.description || '', template.process_id, actorId),
@@ -1261,29 +1384,68 @@ app.post('/api/sales-process/drafts/from-template', requireAuth, async (c) => {
       source.description, source.customer_milestone, source.semantic_type, source.display_order, source.state,
       source.expected_duration_days, source.entry_guidance, source.exit_guidance, source.manager_override_policy, actorId))
   }
+  const stageIdByTemplateId = new Map((templateStages.results as any[]).map(source => [source.id, `${versionId}_${source.stable_key}`]))
+  const internalStatusIdByTemplateId = new Map<string, string>()
+  const templateStatuses = await c.env.DB.prepare('SELECT * FROM sales_stage_internal_statuses WHERE company_id=? AND process_version_id=? ORDER BY stage_id,display_order').bind('__global__', templateVersionId).all<any>()
+  for (const source of templateStatuses.results as any[]) {
+    const destinationStageId = stageIdByTemplateId.get(source.stage_id)
+    if (!destinationStageId) return err(c, 'Template internal status references an unknown stage', 409)
+    const destinationStatusId = `${versionId}_status_${uid()}`
+    internalStatusIdByTemplateId.set(source.id, destinationStatusId)
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_internal_statuses
+      (id,company_id,process_version_id,stage_id,stable_key,display_name,display_order,active) VALUES (?,?,?,?,?,?,?,?)`)
+      .bind(destinationStatusId, companyId, versionId, destinationStageId, source.stable_key, source.display_name, source.display_order, source.active))
+  }
+  const remapStructuredJson = (raw: any) => {
+    if (!raw) return raw
+    let text = typeof raw === 'string' ? raw : JSON.stringify(raw)
+    for (const [source, destination] of [...stageIdByTemplateId.entries(), ...internalStatusIdByTemplateId.entries()]) text = text.split(String(source)).join(String(destination))
+    return text
+  }
   const templateOutcomes = await c.env.DB.prepare('SELECT * FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=?').bind('__global__', templateVersionId).all<any>()
   for (const outcome of templateOutcomes.results as any[]) {
+    const destinationStageId = stageIdByTemplateId.get(outcome.stage_id)
+    if (!destinationStageId) return err(c, 'Template outcome references an unknown stage', 409)
     statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_outcomes (id,company_id,process_version_id,stage_id,stable_key,display_name,semantic_type,config_json) VALUES (?,?,?,?,?,?,?,?)`)
-      .bind(`${versionId}_outcome_${outcome.stable_key}`, companyId, versionId, `${versionId}_closed`, outcome.stable_key, outcome.display_name, outcome.semantic_type, outcome.config_json || '{}'))
+      .bind(`${versionId}_outcome_${outcome.stable_key}`, companyId, versionId, destinationStageId, outcome.stable_key, outcome.display_name, outcome.semantic_type, remapStructuredJson(outcome.config_json || '{}')))
   }
-  const stageIdByTemplateId = new Map((templateStages.results as any[]).map(source => [source.id, `${versionId}_${source.stable_key}`]))
   const copyDefinitions = [
     { table: 'sales_stage_requirements', columns: ['requirement_type','stable_key','label','description','required_level','display_order','config_json'] },
     { table: 'sales_stage_guides', columns: ['guide_type','interaction_type','title','purpose','suggested_language','completion_guidance','display_order','config_json'] },
-    { table: 'sales_process_resources', columns: ['resource_type','stable_key','name','content_json','active'] }
+    { table: 'sales_process_resources', columns: ['resource_type','stable_key','name','content_json','active'] },
+    { table: 'sales_process_automations', columns: ['name','trigger_type','action_type','config_json','active'] }
   ]
   for (const definition of copyDefinitions) {
     const sourceRows = await c.env.DB.prepare(`SELECT * FROM ${definition.table} WHERE company_id=? AND process_version_id=?`).bind('__global__', templateVersionId).all<any>()
     for (const source of sourceRows.results as any[]) {
       const columns = ['id','company_id','process_version_id','stage_id', ...definition.columns]
-      const values = [`${versionId}_${definition.table}_${uid()}`, companyId, versionId, source.stage_id ? stageIdByTemplateId.get(source.stage_id) || '' : '', ...definition.columns.map(column => source[column])]
+      const values = [`${versionId}_${definition.table}_${uid()}`, companyId, versionId, source.stage_id ? stageIdByTemplateId.get(source.stage_id) || '' : '', ...definition.columns.map(column => column.endsWith('_json') ? remapStructuredJson(source[column]) : source[column])]
       statements.push(c.env.DB.prepare(`INSERT INTO ${definition.table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`).bind(...values))
     }
   }
-  const tenantStages = (templateStages.results as any[]).map(source => ({ ...source, id: stageIdByTemplateId.get(source.id) })).sort((a, b) => Number(a.display_order) - Number(b.display_order))
-  for (let index = 0; index < tenantStages.length - 1; index++) {
-    statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_transitions (id,company_id,process_version_id,from_stage_id,to_stage_id) VALUES (?,?,?,?,?)`)
-      .bind(`${versionId}_transition_${index + 1}`, companyId, versionId, tenantStages[index].id, tenantStages[index + 1].id))
+  let templateTransitions = await c.env.DB.prepare('SELECT * FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=?').bind('__global__', templateVersionId).all<any>()
+  if (!templateTransitions.results.length) templateTransitions = await c.env.DB.prepare('SELECT * FROM sales_stage_transitions WHERE company_id=? AND process_version_id=?').bind('__global__', templateVersionId).all<any>()
+  for (const transition of templateTransitions.results as any[]) {
+    const fromStageId = stageIdByTemplateId.get(transition.from_stage_id)
+    const toStageId = stageIdByTemplateId.get(transition.to_stage_id)
+    if (!fromStageId || !toStageId) return err(c, 'Template transition references an unknown stage', 409)
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_transition_paths
+      (id,company_id,process_version_id,from_stage_id,to_stage_id,requires_override,active,outcome_type,display_label,guidance,display_order,override_policy,created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(`${versionId}_transition_${uid()}`, companyId, versionId,
+      fromStageId, toStageId,
+      transition.requires_override || 0, transition.active, transition.outcome_type || '', transition.display_label || '',
+      transition.guidance || '', transition.display_order || 0, transition.override_policy || 'stage_policy', actorId))
+  }
+  const templateAssociations = await c.env.DB.prepare('SELECT * FROM sales_academy_associations WHERE company_id=? AND process_version_id=?').bind('__global__', templateVersionId).all<any>()
+  for (const association of templateAssociations.results as any[]) {
+    const destinationStageId = association.stage_id ? stageIdByTemplateId.get(association.stage_id) : ''
+    if (association.stage_id && !destinationStageId) return err(c, 'Template Academy association references an unknown stage', 409)
+    const destinationInternalStatusId = association.internal_status_id ? internalStatusIdByTemplateId.get(association.internal_status_id) : ''
+    if (association.internal_status_id && !destinationInternalStatusId) return err(c, 'Template Academy association references an unknown internal status', 409)
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_academy_associations
+      (id,company_id,process_version_id,stage_id,internal_status_id,skill_id,visibility,display_order)
+      VALUES (?,?,?,?,?,?,?,?)`).bind(`${versionId}_academy_${uid()}`, companyId, versionId, destinationStageId || '', destinationInternalStatusId || '',
+      association.skill_id, association.visibility || 'representative', association.display_order || 0))
   }
   await c.env.DB.batch(statements)
   await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'sales_process', entityId: processId, entityLabel: String(body.name || template.name), action: 'draft_created', afterJson: { versionId, templateVersionId } })
@@ -1297,6 +1459,10 @@ app.put('/api/sales-process/drafts/:versionId/stages', requireAuth, async (c) =>
   const version = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first<any>()
   if (!version) return err(c, 'Editable draft not found', 404)
   const body = await c.req.json()
+  const expectedRevision = Number(body.content_revision || 0)
+  if (!expectedRevision || expectedRevision !== Number(version.content_revision || 1)) {
+    return err(c, 'Draft changed since it was loaded', 409)
+  }
   const stages = Array.isArray(body.stages) ? body.stages : []
   if (!stages.length) return err(c, 'At least one stage is required')
   const existing = await c.env.DB.prepare('SELECT id FROM sales_process_stages WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>()
@@ -1308,21 +1474,150 @@ app.put('/api/sales-process/drafts/:versionId/stages', requireAuth, async (c) =>
       if (Number(occupied?.n || 0) > 0) return err(c, 'A stage containing opportunities cannot be deleted; map or restage them first', 409)
     }
   }
-  const allowedSemantics = new Set(['intake','active_qualification','consultation','estimate_development','proposal_presentation','decision','won','lost','disqualified','nurture'])
-  const statements: any[] = [c.env.DB.prepare('DELETE FROM sales_process_stages WHERE company_id=? AND process_version_id=?').bind(companyId, versionId)]
+  const allowedSemantics = new Set(['intake','active_qualification','consultation','estimate_development','proposal_presentation','decision','terminal','won','lost','disqualified','nurture'])
+  const lockToken = `mut_${uid()}`
+  const statements: any[] = [
+    c.env.DB.prepare("UPDATE sales_process_versions SET content_revision=content_revision+1,draft_lock_token=?,updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='draft' AND content_revision=?").bind(lockToken, versionId, companyId, expectedRevision),
+    c.env.DB.prepare(`DELETE FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND EXISTS (
+      SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft' AND draft_lock_token=?)`).bind(companyId, versionId, versionId, companyId, lockToken)
+  ]
   stages.forEach((stage: any, index: number) => {
     const semantic = String(stage.semantic_type || '')
     if (!allowedSemantics.has(semantic)) throw new Error(`Invalid semantic type: ${semantic}`)
     const id = existingIds.has(String(stage.id)) ? String(stage.id) : `${versionId}_${uid()}`
     statements.push(c.env.DB.prepare(`INSERT INTO sales_process_stages
       (id,company_id,process_version_id,stable_key,display_name,board_label,description,customer_milestone,semantic_type,display_order,state,expected_duration_days,entry_guidance,exit_guidance,manager_override_policy,created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, companyId, versionId, String(stage.stable_key || id), String(stage.display_name || '').trim(), String(stage.board_label || ''), String(stage.description || ''), String(stage.customer_milestone || ''), semantic, index + 1, stage.state === 'archived' ? 'archived' : 'active', Number(stage.expected_duration_days || 0), String(stage.entry_guidance || ''), String(stage.exit_guidance || ''), String(stage.manager_override_policy || 'allowed_with_reason'), c.var.repId))
+      SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (
+        SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft' AND draft_lock_token=?)`).bind(id, companyId, versionId, String(stage.stable_key || id), String(stage.display_name || '').trim(), String(stage.board_label || ''), String(stage.description || ''), String(stage.customer_milestone || ''), semantic, index + 1, stage.state === 'archived' ? 'archived' : 'active', Number(stage.expected_duration_days || 0), String(stage.entry_guidance || ''), String(stage.exit_guidance || ''), String(stage.manager_override_policy || 'allowed_with_reason'), c.var.repId, versionId, companyId, lockToken))
   })
-  await c.env.DB.batch(statements)
-  return json(c, { updated: stages.length })
+  statements.push(c.env.DB.prepare(`INSERT INTO sales_process_draft_mutations (id,company_id,process_version_id,content_revision,resource_type,resource_id,action,actor_id,before_json,after_json)
+    SELECT ?,?,?,?,?,?,'replace',?,?,? WHERE EXISTS (SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND draft_lock_token=?)`).bind(`audit_${uid()}`, companyId, versionId, expectedRevision + 1, 'stages', versionId, c.var.repId, JSON.stringify(existing.results), JSON.stringify(stages), versionId, companyId, lockToken))
+  const results = await c.env.DB.batch(statements)
+  if (Number((results[0] as any)?.meta?.changes || 0) !== 1) return json(c, { error: 'Draft changed since it was loaded' }, 409)
+  return json(c, { updated: stages.length, content_revision: expectedRevision + 1 })
+})
+
+const SALES_PROCESS_DRAFT_RESOURCES: Record<string, { table: string, fields: string[], defaults?: Record<string, any> }> = {
+  outcomes: { table: 'sales_stage_outcomes', fields: ['stage_id','stable_key','display_name','semantic_type','active','config_json'], defaults: { active: 1, config_json: '{}' } },
+  statuses: { table: 'sales_stage_internal_statuses', fields: ['stage_id','stable_key','display_name','display_order','active'], defaults: { display_order: 0, active: 1 } },
+  requirements: { table: 'sales_stage_requirements', fields: ['stage_id','requirement_type','stable_key','label','description','required_level','display_order','config_json'], defaults: { description: '', required_level: 'recommended', display_order: 0, config_json: '{}' } },
+  guides: { table: 'sales_stage_guides', fields: ['stage_id','guide_type','interaction_type','title','purpose','suggested_language','completion_guidance','display_order','config_json'], defaults: { interaction_type: '', purpose: '', suggested_language: '', completion_guidance: '', display_order: 0, config_json: '{}' } },
+  resources: { table: 'sales_process_resources', fields: ['stage_id','resource_type','stable_key','name','content_json','active'], defaults: { stage_id: '', content_json: '{}', active: 1 } },
+  automations: { table: 'sales_process_automations', fields: ['stage_id','name','trigger_type','action_type','config_json','active'], defaults: { stage_id: '', config_json: '{}', active: 1 } },
+  transitions: { table: 'sales_stage_transition_paths', fields: ['from_stage_id','to_stage_id','outcome_type','display_label','guidance','active','display_order','override_policy','requires_override','created_by','updated_by'], defaults: { outcome_type: '', display_label: '', guidance: '', active: 1, display_order: 0, override_policy: 'stage_policy', requires_override: 0 } },
+  'academy-associations': { table: 'sales_academy_associations', fields: ['stage_id','internal_status_id','skill_id','visibility','display_order'], defaults: { stage_id: '', internal_status_id: '', visibility: 'representative', display_order: 0 } },
+  'academy-content': { table: 'sales_academy_company_content', fields: ['stage_id','internal_status_id','stable_key','content_type','title','content_json','visibility','display_order','active','created_by','updated_by'], defaults: { stage_id: '', internal_status_id: '', content_json: '{}', visibility: 'representative', display_order: 0, active: 1 } }
+}
+
+app.put('/api/sales-process/drafts/:versionId/content/:resourceType/:resourceId', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const actorId = c.var.repId as string
+  const versionId = c.req.param('versionId')
+  const resourceType = c.req.param('resourceType')
+  const definition = SALES_PROCESS_DRAFT_RESOURCES[resourceType]
+  if (!definition) return err(c, 'Unsupported draft resource', 404)
+  const body = await c.req.json()
+  const expectedRevision = Number(body.content_revision || 0)
+  if (!expectedRevision) return err(c, 'The current content revision is required', 400)
+  const version = await c.env.DB.prepare("SELECT content_revision FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first<any>()
+  if (!version) return err(c, 'Editable draft not found', 404)
+  if (Number(version.content_revision) !== expectedRevision) return json(c, { error: 'Draft changed since it was loaded', current_revision: Number(version.content_revision) }, 409)
+  const requestedId = c.req.param('resourceId')
+  const resourceId = requestedId === 'new' ? `${versionId}_${resourceType.replace(/[^a-z0-9]/gi, '_')}_${uid()}` : requestedId
+  const existing = requestedId === 'new' ? null : await c.env.DB.prepare(`SELECT * FROM ${definition.table} WHERE id=? AND company_id=? AND process_version_id=?`).bind(resourceId, companyId, versionId).first<any>()
+  if (requestedId !== 'new' && !existing) return err(c, 'Draft resource not found', 404)
+  const stageFields = ['stage_id','from_stage_id','to_stage_id']
+  for (const field of stageFields) if (definition.fields.includes(field) && body[field]) {
+    const stage = await c.env.DB.prepare("SELECT id FROM sales_process_stages WHERE id=? AND company_id=? AND process_version_id=? AND state='active'").bind(String(body[field]), companyId, versionId).first()
+    if (!stage) return err(c, `${field} must reference an active stage in this draft`, 400)
+  }
+  if (definition.fields.includes('internal_status_id') && body.internal_status_id) {
+    const status = await c.env.DB.prepare('SELECT id FROM sales_stage_internal_statuses WHERE id=? AND company_id=? AND process_version_id=? AND active=1').bind(String(body.internal_status_id), companyId, versionId).first()
+    if (!status) return err(c, 'internal_status_id must reference this draft', 400)
+  }
+  if (definition.fields.includes('skill_id') && body.skill_id) {
+    const skill = await c.env.DB.prepare("SELECT id FROM sales_academy_skills WHERE id=? AND active=1 AND (company_id=? OR (company_id='__global__' AND is_global=1))").bind(String(body.skill_id), companyId).first()
+    if (!skill) return err(c, 'skill_id is not available to this company', 400)
+  }
+  const lockToken = `mut_${uid()}`
+  const values = definition.fields.map(field => {
+    if (field === 'created_by') return existing?.created_by || actorId
+    if (field === 'updated_by') return actorId
+    let value = Object.prototype.hasOwnProperty.call(body, field) ? body[field] : existing?.[field] ?? definition.defaults?.[field] ?? ''
+    if (field.endsWith('_json') && typeof value !== 'string') value = JSON.stringify(value || {})
+    return value
+  })
+  const columns = ['id','company_id','process_version_id',...definition.fields]
+  const updateFields = definition.fields.filter(field => field !== 'created_by')
+  const insertSql = `INSERT INTO ${definition.table} (${columns.join(',')})
+    SELECT ${columns.map(() => '?').join(',')} WHERE EXISTS (
+      SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft' AND draft_lock_token=?
+    ) ON CONFLICT(id) DO UPDATE SET ${updateFields.map(field => `${field}=excluded.${field}`).join(',')}${definition.table === 'sales_academy_company_content' ? ",updated_at=datetime('now')" : ''}
+    WHERE ${definition.table}.company_id=excluded.company_id AND ${definition.table}.process_version_id=excluded.process_version_id`
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE sales_process_versions SET content_revision=content_revision+1,draft_lock_token=?,updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='draft' AND content_revision=?").bind(lockToken, versionId, companyId, expectedRevision),
+    c.env.DB.prepare(insertSql).bind(resourceId, companyId, versionId, ...values, versionId, companyId, lockToken),
+    c.env.DB.prepare(`INSERT INTO sales_process_draft_mutations (id,company_id,process_version_id,content_revision,resource_type,resource_id,action,actor_id,before_json,after_json)
+      SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND draft_lock_token=?)`).bind(`audit_${uid()}`, companyId, versionId, expectedRevision + 1, resourceType, resourceId, existing ? 'update' : 'create', actorId, JSON.stringify(existing || {}), JSON.stringify(body), versionId, companyId, lockToken)
+  ])
+  if (Number((results[0] as any)?.meta?.changes || 0) !== 1 || Number((results[1] as any)?.meta?.changes || 0) !== 1) return json(c, { error: 'Draft changed since it was loaded', current_revision: expectedRevision + 1 }, 409)
+  return json(c, { id: resourceId, resource_type: resourceType, content_revision: expectedRevision + 1 })
+})
+
+app.delete('/api/sales-process/drafts/:versionId/content/:resourceType/:resourceId', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const actorId = c.var.repId as string
+  const versionId = c.req.param('versionId')
+  const resourceType = c.req.param('resourceType')
+  const definition = SALES_PROCESS_DRAFT_RESOURCES[resourceType]
+  if (!definition) return err(c, 'Unsupported draft resource', 404)
+  const expectedRevision = Number(c.req.query('content_revision') || 0)
+  if (!expectedRevision) return err(c, 'The current content revision is required', 400)
+  const resourceId = c.req.param('resourceId')
+  const existing = await c.env.DB.prepare(`SELECT * FROM ${definition.table} WHERE id=? AND company_id=? AND process_version_id=?`).bind(resourceId, companyId, versionId).first<any>()
+  if (!existing) return err(c, 'Draft resource not found', 404)
+  const lockToken = `mut_${uid()}`
+  const results = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE sales_process_versions SET content_revision=content_revision+1,draft_lock_token=?,updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='draft' AND content_revision=?").bind(lockToken, versionId, companyId, expectedRevision),
+    c.env.DB.prepare(`DELETE FROM ${definition.table} WHERE id=? AND company_id=? AND process_version_id=? AND EXISTS (SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND draft_lock_token=?)`).bind(resourceId, companyId, versionId, versionId, companyId, lockToken),
+    c.env.DB.prepare(`INSERT INTO sales_process_draft_mutations (id,company_id,process_version_id,content_revision,resource_type,resource_id,action,actor_id,before_json,after_json)
+      SELECT ?,?,?,?,?,?,'delete',?,?,'{}' WHERE EXISTS (SELECT 1 FROM sales_process_versions WHERE id=? AND company_id=? AND draft_lock_token=?)`).bind(`audit_${uid()}`, companyId, versionId, expectedRevision + 1, resourceType, resourceId, actorId, JSON.stringify(existing), versionId, companyId, lockToken)
+  ])
+  if (Number((results[0] as any)?.meta?.changes || 0) !== 1 || Number((results[1] as any)?.meta?.changes || 0) !== 1) return json(c, { error: 'Draft changed since it was loaded' }, 409)
+  return json(c, { deleted: resourceId, content_revision: expectedRevision + 1 })
+})
+
+app.post('/api/sales-process/drafts/:versionId/ai-suggestions', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const versionId = c.req.param('versionId')
+  const body = await c.req.json()
+  const version = await c.env.DB.prepare("SELECT id FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first()
+  if (!version) return err(c, 'Editable draft not found', 404)
+  if (!body.proposed || !String(body.suggestion_type || '').trim()) return err(c, 'Suggestion type and proposed value are required', 400)
+  const id = `suggest_${uid()}`
+  await c.env.DB.prepare(`INSERT INTO sales_ai_suggestions (id,company_id,process_version_id,user_id,suggestion_type,current_json,proposed_json,reason)
+    VALUES (?,?,?,?,?,?,?,?)`).bind(id, companyId, versionId, c.var.repId, String(body.suggestion_type), JSON.stringify(body.current || {}), JSON.stringify(body.proposed), String(body.reason || '')).run()
+  return json(c, { id, decision: 'pending', draft_only: true }, 201)
+})
+
+app.post('/api/sales-process/ai-suggestions/:suggestionId/decision', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const body = await c.req.json()
+  const decision = String(body.decision || '')
+  if (!['accepted','rejected'].includes(decision)) return err(c, 'Decision must be accepted or rejected', 400)
+  const suggestion = await c.env.DB.prepare(`SELECT s.* FROM sales_ai_suggestions s JOIN sales_process_versions v ON v.id=s.process_version_id AND v.company_id=s.company_id
+    WHERE s.id=? AND s.company_id=? AND s.decision='pending' AND v.lifecycle='draft'`).bind(c.req.param('suggestionId'), companyId).first<any>()
+  if (!suggestion) return err(c, 'Pending draft suggestion not found', 404)
+  await c.env.DB.prepare("UPDATE sales_ai_suggestions SET decision=?,decided_by=?,decided_at=datetime('now') WHERE id=? AND company_id=? AND decision='pending'").bind(decision, c.var.repId, suggestion.id, companyId).run()
+  return json(c, { id: suggestion.id, decision, draft_only: true, side_effects: [] })
 })
 
 app.post('/api/sales-process/versions/:versionId/validate', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
   const companyId = c.var.companyId as string
   const versionId = c.req.param('versionId')
   const stages = await c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? ORDER BY display_order').bind(companyId, versionId).all<any>()
@@ -1332,15 +1627,55 @@ app.post('/api/sales-process/versions/:versionId/validate', requireAuth, async (
   const active = (stages.results as any[]).filter(s => s.state === 'active')
   const keys = active.map(s => s.stable_key)
   if (new Set(keys).size !== keys.length) errors.push('Stable stage identifiers must be unique')
-  if (!active.some(s => s.semantic_type === 'won')) errors.push('A Won terminal outcome is required')
-  const outcomes = await c.env.DB.prepare('SELECT semantic_type FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>()
+  const [outcomes, transitions, requirements, guides, resources, automations, associations] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_requirements WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_guides WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_process_resources WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_process_automations WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_academy_associations WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>()
+  ])
+  const stageIds = new Set(active.map(s => String(s.id)))
+  const orders = active.map(s => Number(s.display_order))
+  if (!active.some(s => s.semantic_type === 'intake')) errors.push('An active Intake stage is required')
+  if (new Set(orders).size !== orders.length || orders.some(order => !Number.isInteger(order) || order < 1)) errors.push('Active stage order must contain unique positive integers')
   if (!(outcomes.results as any[]).some(o => o.semantic_type === 'won')) errors.push('A Won terminal outcome is required')
   if (!(outcomes.results as any[]).some(o => o.semantic_type === 'lost')) errors.push('A Lost terminal outcome is required')
+  for (const outcome of outcomes.results as any[]) if (!stageIds.has(String(outcome.stage_id))) errors.push(`Outcome ${outcome.display_name} references an inactive or missing stage`)
+  const outgoing = new Map<string, any[]>()
+  for (const transition of transitions.results as any[]) {
+    if (!stageIds.has(String(transition.from_stage_id)) || !stageIds.has(String(transition.to_stage_id))) errors.push(`Transition ${transition.id} references an inactive or missing stage`)
+    const list = outgoing.get(String(transition.from_stage_id)) || []; list.push(transition); outgoing.set(String(transition.from_stage_id), list)
+  }
+  const intake = active.find(s => s.semantic_type === 'intake')
+  if (intake) {
+    const reached = new Set<string>([String(intake.id)]); const queue = [String(intake.id)]
+    while (queue.length) for (const edge of outgoing.get(queue.shift()!) || []) if (!reached.has(String(edge.to_stage_id))) { reached.add(String(edge.to_stage_id)); queue.push(String(edge.to_stage_id)) }
+    for (const stage of active) if (!reached.has(String(stage.id))) errors.push(`Active stage ${stage.display_name} is unreachable from Intake`)
+  }
   active.forEach(s => {
     if (!s.display_name) errors.push(`Stage ${s.stable_key} requires a display name`)
-    if (!s.exit_guidance && !['won','lost','disqualified','nurture'].includes(s.semantic_type)) warnings.push(`${s.display_name} has no exit guidance`)
+    const isTerminal = ['terminal','won','lost','disqualified','nurture'].includes(s.semantic_type)
+    if (!s.exit_guidance && !isTerminal) warnings.push(`${s.display_name} has no exit guidance`)
+    if (!isTerminal && !(outgoing.get(String(s.id)) || []).length) errors.push(`${s.display_name} has no configured exit path`)
+    if (!s.customer_milestone) warnings.push(`${s.display_name} has no customer milestone`)
   })
-  if (active.filter(s => !['won','lost','disqualified','nurture'].includes(s.semantic_type)).length > 9) warnings.push('The process has an excessive number of active stages')
+  for (const requirement of requirements.results as any[]) if (!stageIds.has(String(requirement.stage_id))) errors.push(`Requirement ${requirement.label} references an inactive or missing stage`)
+  for (const guide of guides.results as any[]) if (!stageIds.has(String(guide.stage_id))) errors.push(`Call guide ${guide.title} references an inactive or missing stage`)
+  for (const resource of resources.results as any[]) if (resource.stage_id && !stageIds.has(String(resource.stage_id))) errors.push(`Resource ${resource.name} references an inactive or missing stage`)
+  for (const automation of automations.results as any[]) if (automation.stage_id && !stageIds.has(String(automation.stage_id))) errors.push(`Automation ${automation.name} references an inactive or missing stage`)
+  const skillIds = new Set((await c.env.DB.prepare("SELECT id FROM sales_academy_skills WHERE company_id=? OR (company_id='__global__' AND is_global=1)").bind(companyId).all<any>()).results.map((skill: any) => String(skill.id)))
+  for (const association of associations.results as any[]) {
+    if (association.stage_id && !stageIds.has(String(association.stage_id))) errors.push(`Academy association ${association.id} references an inactive or missing stage`)
+    if (!skillIds.has(String(association.skill_id))) errors.push(`Academy association ${association.id} references a missing skill`)
+  }
+  const decisionStages = active.filter(s => s.semantic_type === 'decision')
+  for (const stage of decisionStages) {
+    const keys = new Set((requirements.results as any[]).filter(r => r.stage_id === stage.id && r.required_level === 'required').map(r => r.stable_key))
+    if (!keys.has('next_action') || !keys.has('next_action_date')) warnings.push(`${stage.display_name} should require a next action and next-action date`)
+  }
+  if (active.filter(s => !['terminal','won','lost','disqualified','nurture'].includes(s.semantic_type)).length > 9) warnings.push('The process has an excessive number of active stages')
   const result = { valid: errors.length === 0, errors, warnings }
   await c.env.DB.prepare("UPDATE sales_process_versions SET validation_json=?, updated_at=datetime('now') WHERE id=? AND company_id=?").bind(JSON.stringify(result), versionId, companyId).run()
   return json(c, result)
@@ -1351,18 +1686,23 @@ app.get('/api/sales-process/migration/inventory', requireAuth, async (c) => {
   if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
   const companyId = c.var.companyId as string
   const rows = await c.env.DB.prepare(`
-    SELECT o.*,
+    SELECT o.*,sa.outcome_type AS resolved_outcome_type,ss.semantic_type AS resolved_stage_semantic,
       (SELECT COUNT(*) FROM tasks t WHERE t.company_id=o.company_id AND t.linked_record_type='lead' AND t.linked_record_id=o.id) AS task_count,
       (SELECT COUNT(*) FROM activity_log a WHERE a.company_id=o.company_id AND a.entity_type='opportunity' AND a.entity_id=o.id) AS activity_count,
       (SELECT COUNT(*) FROM calendar_events ce WHERE ce.company_id=o.company_id AND ce.opp_id=o.id) AS appointment_count,
       (SELECT e.status FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_status,
       (SELECT e.total FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_amount,
       (SELECT e.sent_at FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_sent_at
-    FROM opportunities o WHERE o.company_id=? ORDER BY o.created_at, o.id
+    FROM opportunities o
+    LEFT JOIN sales_process_company_state scs ON scs.company_id=o.company_id
+    LEFT JOIN sales_stage_assignments sa ON sa.company_id=o.company_id AND sa.opportunity_id=o.id AND sa.process_version_id=scs.active_process_version_id
+    LEFT JOIN sales_process_stages ss ON ss.company_id=sa.company_id AND ss.process_version_id=sa.process_version_id AND ss.id=sa.stage_id
+    WHERE o.company_id=? ORDER BY o.created_at, o.id
   `).bind(companyId).all<any>()
   const items = rows.results as any[]
-  const isWon = (o: any) => ['Deal Closed / Won','Sold / Activation'].includes(String(o.status || o.pipeline_stage || ''))
-  const isLost = (o: any) => String(o.status || o.pipeline_stage || '') === 'Closed Lost'
+  const hasNormalized = (o: any) => Boolean(o.resolved_stage_semantic)
+  const isWon = (o: any) => hasNormalized(o) ? o.resolved_outcome_type === 'won' || o.resolved_stage_semantic === 'won' : ['Deal Closed / Won','Sold / Activation'].includes(String(o.status || o.pipeline_stage || ''))
+  const isLost = (o: any) => hasNormalized(o) ? o.resolved_outcome_type === 'lost' || o.resolved_stage_semantic === 'lost' : String(o.status || o.pipeline_stage || '') === 'Closed Lost'
   const open = items.filter(o => !isWon(o) && !isLost(o))
   const countsByStatus: Record<string, number> = {}
   items.forEach(o => { const key = String(o.status || '(blank)'); countsByStatus[key] = (countsByStatus[key] || 0) + 1 })
@@ -1374,7 +1714,7 @@ app.get('/api/sales-process/migration/inventory', requireAuth, async (c) => {
     without_assigned_representative: items.filter(o => !o.assigned_to_rep_id && !o.rep_id).length,
     without_next_action: items.filter(o => !o.next_follow_up && Number(o.task_count || 0) === 0).length,
     without_next_action_date: items.filter(o => !o.next_follow_up).length,
-    unknown_or_blank_stage: items.filter(o => !LEGACY_STAGE_MAP[String(o.status || o.pipeline_stage || '')]).length
+    unknown_or_blank_stage: items.filter(o => !hasNormalized(o) && !LEGACY_STAGE_MAP[String(o.status || o.pipeline_stage || '')]).length
   } })
 })
 
@@ -1450,7 +1790,93 @@ app.put('/api/sales-process/migration/:batchId/:opportunityId', requireAuth, asy
   return json(c, { approved: c.req.param('opportunityId') })
 })
 
-async function salesProcessPublicationReadiness(db: D1Database, companyId: string, versionId: string, batchId: string) {
+async function salesProcessSnapshotSource(db: D1Database, companyId: string) {
+  const rows = await db.prepare(`SELECT o.*,
+    (SELECT COUNT(*) FROM tasks t WHERE t.company_id=o.company_id AND t.linked_record_type='lead' AND t.linked_record_id=o.id) AS task_count,
+    (SELECT COUNT(*) FROM activity_log a WHERE a.company_id=o.company_id AND a.entity_type='opportunity' AND a.entity_id=o.id) AS activity_count,
+    (SELECT COUNT(*) FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id) AS estimate_count,
+    (SELECT COUNT(*) FROM calendar_events ce WHERE ce.company_id=o.company_id AND ce.opp_id=o.id) AS appointment_count,
+    (SELECT COUNT(*) FROM notes n WHERE n.company_id=o.company_id AND n.opp_id=o.id) AS note_count,
+    (SELECT COUNT(*) FROM communications co WHERE co.company_id=o.company_id AND co.opp_id=o.id) AS communication_count
+    FROM opportunities o WHERE o.company_id=? ORDER BY o.id`).bind(companyId).all<any>()
+  const items = rows.results as any[]
+  const sourceRevision = JSON.stringify(items.map(item => [item.id, item.updated_at || '', Number(item.task_count || 0), Number(item.activity_count || 0), Number(item.estimate_count || 0), Number(item.appointment_count || 0), Number(item.note_count || 0), Number(item.communication_count || 0)]))
+  return { items, sourceRevision }
+}
+
+app.post('/api/sales-process/versions/:versionId/snapshots', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const actorId = c.var.repId as string
+  const versionId = c.req.param('versionId')
+  const body = await c.req.json()
+  const version = await c.env.DB.prepare("SELECT id FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first()
+  if (!version) return err(c, 'Draft version not found', 404)
+  const batchId = String(body.migration_batch_id || '')
+  if (!batchId) return err(c, 'A migration batch is required', 400)
+  const mappingCount = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM sales_migration_mappings WHERE company_id=? AND process_version_id=? AND migration_batch_id=?').bind(companyId, versionId, batchId).first<any>()
+  const { items, sourceRevision } = await salesProcessSnapshotSource(c.env.DB, companyId)
+  if (Number(mappingCount?.n || 0) !== items.length) return err(c, 'Snapshot requires exactly one mapping for every opportunity', 409)
+  const snapshotId = `snap_${uid()}`
+  const reconciliation = {
+    opportunity_count: items.length,
+    total_value: items.reduce((sum, item) => sum + Number(item.job_value || 0), 0),
+    task_count: items.reduce((sum, item) => sum + Number(item.task_count || 0), 0),
+    activity_count: items.reduce((sum, item) => sum + Number(item.activity_count || 0), 0),
+    estimate_count: items.reduce((sum, item) => sum + Number(item.estimate_count || 0), 0),
+    appointment_count: items.reduce((sum, item) => sum + Number(item.appointment_count || 0), 0),
+    note_count: items.reduce((sum, item) => sum + Number(item.note_count || 0), 0),
+    communication_count: items.reduce((sum, item) => sum + Number(item.communication_count || 0), 0)
+  }
+  const statements: any[] = [c.env.DB.prepare(`INSERT INTO sales_migration_snapshots
+    (id,company_id,process_version_id,migration_batch_id,state,source_revision,reconciliation_json,created_by)
+    VALUES (?,?,?,?,'captured',?,?,?)`).bind(snapshotId, companyId, versionId, batchId, sourceRevision, JSON.stringify(reconciliation), actorId)]
+  for (const item of items) statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_snapshot_items
+    (id,company_id,snapshot_id,opportunity_id,source_updated_at,original_status,original_pipeline_stage,original_stage_id,snapshot_json)
+    VALUES (?,?,?,?,?,?,?,?,?)`).bind(`snapitem_${uid()}`, companyId, snapshotId, item.id, item.updated_at || '', item.status || '', item.pipeline_stage || '', item.sales_process_stage_id || '', JSON.stringify(item)))
+  await c.env.DB.batch(statements)
+  return json(c, { snapshot_id: snapshotId, state: 'captured', source_revision: sourceRevision, reconciliation }, 201)
+})
+
+app.post('/api/sales-process/snapshots/:snapshotId/approve', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const actorId = c.var.repId as string
+  const body = await c.req.json()
+  if (body.confirm !== true) return err(c, 'Explicit snapshot approval is required', 400)
+  const snapshot = await c.env.DB.prepare("SELECT * FROM sales_migration_snapshots WHERE id=? AND company_id=? AND state='captured'").bind(c.req.param('snapshotId'), companyId).first<any>()
+  if (!snapshot) return err(c, 'Captured snapshot not found', 404)
+  const current = await salesProcessSnapshotSource(c.env.DB, companyId)
+  if (current.sourceRevision !== snapshot.source_revision) return json(c, { error: 'Snapshot drift detected', snapshot_id: snapshot.id }, 409)
+  const mappings = await c.env.DB.prepare(`SELECT review_state,final_stage_id FROM sales_migration_mappings
+    WHERE company_id=? AND process_version_id=? AND migration_batch_id=?`).bind(companyId, snapshot.process_version_id, snapshot.migration_batch_id).all<any>()
+  if (!mappings.results.length || (mappings.results as any[]).some(mapping => mapping.review_state !== 'approved' || !mapping.final_stage_id)) return err(c, 'Every mapping must be approved before snapshot approval', 409)
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE sales_migration_snapshots SET state='approved',approved_by=?,approved_at=datetime('now') WHERE id=? AND company_id=? AND state='captured'").bind(actorId, snapshot.id, companyId),
+    c.env.DB.prepare("UPDATE sales_process_versions SET approved_snapshot_id=?,approved_by=?,approved_at=datetime('now'),updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='draft'").bind(snapshot.id, actorId, snapshot.process_version_id, companyId)
+  ])
+  return json(c, { snapshot_id: snapshot.id, state: 'approved' })
+})
+
+app.get('/api/sales-process/versions/:versionId/preview', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const versionId = c.req.param('versionId')
+  const version = await c.env.DB.prepare('SELECT * FROM sales_process_versions WHERE id=? AND company_id=?').bind(versionId, companyId).first<any>()
+  if (!version) return err(c, 'Process version not found', 404)
+  const [stages, outcomes, transitions, mappings, snapshot] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state='active' ORDER BY display_order").bind(companyId, versionId).all(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=? AND active=1 ORDER BY display_order').bind(companyId, versionId).all(),
+    c.env.DB.prepare('SELECT review_state,mapping_confidence,final_stage_id,final_outcome_type FROM sales_migration_mappings WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_migration_snapshots WHERE id=? AND company_id=?').bind(version.approved_snapshot_id || '', companyId).first<any>()
+  ])
+  const mapRows = mappings.results as any[]
+  return json(c, { version, stages: stages.results, outcomes: outcomes.results, transitions: transitions.results, snapshot,
+    impact: { opportunities_affected: mapRows.length, automatic_mappings: mapRows.filter(row => row.review_state === 'approved' && Number(row.mapping_confidence) === 1).length, manual_or_unknown_mappings: mapRows.filter(row => row.review_state !== 'approved' || Number(row.mapping_confidence) < 1).length },
+    preview_surfaces: ['pipeline','opportunity_detail','stage_guide','call_companion','representative_view','reporting','mobile','sample_transitions'] })
+})
+
+async function salesProcessPublicationReadiness(db: D1Database, companyId: string, versionId: string, batchId: string, snapshotId = '') {
   const version = await db.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first<any>()
   if (!version) return null
   let validationValid = false
@@ -1468,6 +1894,12 @@ async function salesProcessPublicationReadiness(db: D1Database, companyId: strin
   const terminal = new Set(['won','lost','disqualified','nurture'])
   const issues: any[] = []
   if (!validationValid) issues.push({ code: 'version_not_validated' })
+  const approvedSnapshot = await db.prepare("SELECT * FROM sales_migration_snapshots WHERE id=? AND company_id=? AND process_version_id=? AND migration_batch_id=? AND state='approved'").bind(snapshotId || version.approved_snapshot_id || '', companyId, versionId, batchId).first<any>()
+  if (!approvedSnapshot) issues.push({ code: 'approved_snapshot_required' })
+  else {
+    const current = await salesProcessSnapshotSource(db, companyId)
+    if (current.sourceRevision !== approvedSnapshot.source_revision) issues.push({ code: 'snapshot_drift' })
+  }
   for (const opportunity of opportunities.results as any[]) {
     const mapping: any = byOpportunity.get(String(opportunity.id))
     if (!mapping) { issues.push({ code: 'missing_mapping', opportunity_id: opportunity.id }); continue }
@@ -1480,13 +1912,13 @@ async function salesProcessPublicationReadiness(db: D1Database, companyId: strin
     if (outcome && outcome !== mapping.stage_semantic && !(mapping.stage_semantic === 'closed' && ['won','lost'].includes(outcome))) issues.push({ code: 'outcome_stage_mismatch', opportunity_id: opportunity.id })
   }
   if ((mappings.results as any[]).some(m => !(opportunities.results as any[]).some(o => o.id === m.opportunity_id))) issues.push({ code: 'unknown_opportunity' })
-  return { ready: issues.length === 0, company_id: companyId, process_version_id: versionId, migration_batch_id: batchId, opportunity_count: opportunities.results.length, mapping_count: mappings.results.length, issues }
+  return { ready: issues.length === 0, company_id: companyId, process_version_id: versionId, migration_batch_id: batchId, snapshot_id: approvedSnapshot?.id || '', opportunity_count: opportunities.results.length, mapping_count: mappings.results.length, issues }
 }
 
 app.get('/api/sales-process/versions/:versionId/publication-readiness', requireAuth, async (c) => {
   if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
   const companyId = c.var.companyId as string
-  const readiness = await salesProcessPublicationReadiness(c.env.DB, companyId, c.req.param('versionId'), String(c.req.query('migration_batch_id') || ''))
+  const readiness = await salesProcessPublicationReadiness(c.env.DB, companyId, c.req.param('versionId'), String(c.req.query('migration_batch_id') || ''), String(c.req.query('snapshot_id') || ''))
   if (!readiness) return err(c, 'Draft version not found', 404)
   return json(c, readiness)
 })
@@ -1497,13 +1929,17 @@ app.post('/api/sales-process/versions/:versionId/publish', requireAuth, async (c
   const actorId = c.var.repId as string
   const versionId = c.req.param('versionId')
   const body = await c.req.json()
-  if (body.confirm !== true) return err(c, 'Explicit publication confirmation is required')
+  if (body.confirm !== true || body.administrator_approval !== true) return err(c, 'Explicit administrator publication approval is required')
   const version = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='draft'").bind(versionId, companyId).first<any>()
   if (!version) return err(c, 'Draft version not found', 404)
   const batchId = String(body.migration_batch_id || '')
-  const readiness = await salesProcessPublicationReadiness(c.env.DB, companyId, versionId, batchId)
+  const readiness = await salesProcessPublicationReadiness(c.env.DB, companyId, versionId, batchId, String(body.snapshot_id || ''))
   if (!readiness?.ready) return json(c, { error: 'Publication readiness checks failed', readiness }, 409)
-  const mappings = await c.env.DB.prepare('SELECT * FROM sales_migration_mappings WHERE company_id=? AND migration_batch_id=? AND process_version_id=?').bind(companyId, batchId, versionId).all<any>()
+  const mappings = await c.env.DB.prepare(`SELECT m.*,s.display_name AS stage_display_name,
+    COALESCE(o.display_name,'') AS outcome_display_name FROM sales_migration_mappings m
+    JOIN sales_process_stages s ON s.id=m.final_stage_id AND s.company_id=m.company_id AND s.process_version_id=m.process_version_id
+    LEFT JOIN sales_stage_outcomes o ON o.company_id=m.company_id AND o.process_version_id=m.process_version_id AND o.stage_id=m.final_stage_id AND o.semantic_type=m.final_outcome_type AND o.active=1
+    WHERE m.company_id=? AND m.migration_batch_id=? AND m.process_version_id=?`).bind(companyId, batchId, versionId).all<any>()
   const previous = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE company_id=? AND lifecycle='published' LIMIT 1").bind(companyId).first<any>()
   const publicationId = `pub_${uid()}`
   const statements: any[] = []
@@ -1512,10 +1948,13 @@ app.post('/api/sales-process/versions/:versionId/publish', requireAuth, async (c
   for (const m of mappings.results as any[]) {
     const assignmentId = `asg_${uid()}`
     statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_assignments (id,company_id,opportunity_id,process_version_id,stage_id,classification,outcome_type,assigned_by) VALUES (?,?,?,?,?,'mapped',?,?)`).bind(assignmentId, companyId, m.opportunity_id, versionId, m.final_stage_id, m.final_outcome_type || '', actorId))
-    statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(m.final_stage_id, m.opportunity_id, companyId))
+    const compatibilityLabel = m.outcome_display_name || m.stage_display_name
+    statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,status=?,pipeline_stage=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(m.final_stage_id, compatibilityLabel, compatibilityLabel, m.opportunity_id, companyId))
     statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_history (id,company_id,migration_batch_id,opportunity_id,previous_process_version_id,new_process_version_id,previous_stage_id,previous_label,new_stage_id,mapping_id,actor_id,event_type,event_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,'published','{}')`).bind(`hist_${uid()}`, companyId, batchId, m.opportunity_id, previous?.id || '', versionId, m.previous_stage_id || '', m.previous_label || '', m.final_stage_id, m.id, actorId))
   }
   statements.push(c.env.DB.prepare(`INSERT INTO sales_process_publications (id,company_id,process_id,process_version_id,previous_version_id,migration_batch_id,action,actor_id,impact_json) VALUES (?,?,?,?,?,?,'publish',?,?)`).bind(publicationId, companyId, version.process_id, versionId, previous?.id || '', batchId, actorId, JSON.stringify({ opportunity_count: mappings.results.length })))
+  statements.push(c.env.DB.prepare(`INSERT INTO sales_process_company_state (company_id,active_process_id,active_process_version_id,activated_publication_id,updated_by)
+    VALUES (?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET active_process_id=excluded.active_process_id,active_process_version_id=excluded.active_process_version_id,activated_publication_id=excluded.activated_publication_id,updated_by=excluded.updated_by,updated_at=datetime('now')`).bind(companyId, version.process_id, versionId, publicationId, actorId))
   await c.env.DB.batch(statements)
   return json(c, { published: versionId, publication_id: publicationId })
 })
@@ -1526,16 +1965,22 @@ app.post('/api/sales-process/publications/:publicationId/rollback', requireAuth,
   const actorId = c.var.repId as string
   const publication = await c.env.DB.prepare("SELECT * FROM sales_process_publications WHERE id=? AND company_id=? AND action='publish'").bind(c.req.param('publicationId'), companyId).first<any>()
   if (!publication?.previous_version_id) return err(c, 'No previous published version is available', 409)
-  const history = await c.env.DB.prepare('SELECT * FROM sales_migration_history WHERE company_id=? AND migration_batch_id=?').bind(companyId, publication.migration_batch_id).all<any>()
+  const history = await c.env.DB.prepare(`SELECT h.*,si.original_status,si.original_pipeline_stage,si.original_stage_id
+    FROM sales_migration_history h
+    LEFT JOIN sales_migration_snapshots sn ON sn.company_id=h.company_id AND sn.migration_batch_id=h.migration_batch_id AND sn.process_version_id=h.new_process_version_id
+    LEFT JOIN sales_migration_snapshot_items si ON si.company_id=h.company_id AND si.snapshot_id=sn.id AND si.opportunity_id=h.opportunity_id
+    WHERE h.company_id=? AND h.migration_batch_id=? AND h.event_type='published'`).bind(companyId, publication.migration_batch_id).all<any>()
+  const rollbackPublicationId = `pub_${uid()}`
   const statements: any[] = [
     c.env.DB.prepare("UPDATE sales_process_versions SET lifecycle='rolled_back',updated_at=datetime('now') WHERE id=? AND company_id=?").bind(publication.process_version_id, companyId),
     c.env.DB.prepare("UPDATE sales_process_versions SET lifecycle='published',updated_at=datetime('now') WHERE id=? AND company_id=?").bind(publication.previous_version_id, companyId)
   ]
   for (const h of history.results as any[]) {
-    statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(h.previous_stage_id || '', h.opportunity_id, companyId))
+    statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,status=?,pipeline_stage=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(h.original_stage_id || h.previous_stage_id || '', h.original_status || h.previous_label || '', h.original_pipeline_stage || h.previous_label || '', h.opportunity_id, companyId))
     statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_history (id,company_id,migration_batch_id,opportunity_id,previous_process_version_id,new_process_version_id,previous_stage_id,previous_label,new_stage_id,actor_id,event_type,event_json) VALUES (?,?,?,?,?,?,?,?,?,?,'rollback','{}')`).bind(`hist_${uid()}`, companyId, publication.migration_batch_id, h.opportunity_id, publication.process_version_id, publication.previous_version_id, h.new_stage_id, h.previous_label, h.previous_stage_id || '', actorId))
   }
-  statements.push(c.env.DB.prepare(`INSERT INTO sales_process_publications (id,company_id,process_id,process_version_id,previous_version_id,migration_batch_id,action,actor_id,impact_json) VALUES (?,?,?,?,?,?,'rollback',?,?)`).bind(`pub_${uid()}`, companyId, publication.process_id, publication.previous_version_id, publication.process_version_id, publication.migration_batch_id, actorId, JSON.stringify({ restored_opportunities: history.results.length })))
+  statements.push(c.env.DB.prepare(`INSERT INTO sales_process_publications (id,company_id,process_id,process_version_id,previous_version_id,migration_batch_id,action,actor_id,impact_json) VALUES (?,?,?,?,?,?,'rollback',?,?)`).bind(rollbackPublicationId, companyId, publication.process_id, publication.previous_version_id, publication.process_version_id, publication.migration_batch_id, actorId, JSON.stringify({ restored_opportunities: history.results.length })))
+  statements.push(c.env.DB.prepare(`UPDATE sales_process_company_state SET active_process_id=?,active_process_version_id=?,activated_publication_id=?,updated_by=?,updated_at=datetime('now') WHERE company_id=?`).bind(publication.process_id, publication.previous_version_id, rollbackPublicationId, actorId, companyId))
   await c.env.DB.batch(statements)
   return json(c, { rolled_back_to: publication.previous_version_id, restored_opportunities: history.results.length })
 })
@@ -1544,10 +1989,12 @@ app.post('/api/sales-process/publications/:publicationId/rollback', requireAuth,
 app.get('/api/opportunities/:id/sales-context', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const opportunityId = c.req.param('id')
-  const opportunity = await c.env.DB.prepare('SELECT id,status,pipeline_stage,sales_process_stage_id FROM opportunities WHERE id=? AND company_id=?').bind(opportunityId, companyId).first<any>()
+  const opportunity = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id=? AND company_id=?').bind(opportunityId, companyId).first<any>()
   if (!opportunity) return err(c, 'Opportunity not found', 404)
-  const assignment = await c.env.DB.prepare(`SELECT a.*,v.lifecycle FROM sales_stage_assignments a
+  const assignment = await c.env.DB.prepare(`SELECT a.*,v.lifecycle,v.version_number,p.name AS process_name
+    FROM sales_stage_assignments a
     JOIN sales_process_versions v ON v.id=a.process_version_id AND v.company_id=a.company_id
+    JOIN sales_processes p ON p.id=v.process_id AND p.company_id=v.company_id
     WHERE a.company_id=? AND a.opportunity_id=? AND v.lifecycle='published' LIMIT 1`).bind(companyId, opportunityId).first<any>()
   if (!assignment) {
     const status = String(opportunity.status || '')
@@ -1556,36 +2003,113 @@ app.get('/api/opportunities/:id/sales-context', requireAuth, async (c) => {
     const legacyLabel = status || pipelineStage
     return json(c, {
       normalized: false,
+      opportunity,
       legacy_label: legacyLabel,
       needs_restaging: conflict || !LEGACY_STAGE_MAP[legacyLabel],
       restaging_reason: conflict ? 'conflicting_legacy_fields' : (!LEGACY_STAGE_MAP[legacyLabel] ? 'unknown_legacy_label' : '')
     })
   }
   const stage = await c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND id=?').bind(companyId, assignment.process_version_id, assignment.stage_id).first<any>()
-  if (!stage) return json(c, { normalized: false, legacy_label: opportunity.status || opportunity.pipeline_stage || '', needs_restaging: true })
-  const [requirements, guides, resources, transitions, skills] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM sales_stage_requirements WHERE company_id=? AND process_version_id=? AND stage_id=? ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all(),
-    c.env.DB.prepare('SELECT * FROM sales_stage_guides WHERE company_id=? AND process_version_id=? AND stage_id=? ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all(),
-    c.env.DB.prepare("SELECT * FROM sales_process_resources WHERE company_id=? AND process_version_id=? AND active=1 AND (stage_id='' OR stage_id=?) ORDER BY resource_type,name").bind(companyId, assignment.process_version_id, stage.id).all(),
-    c.env.DB.prepare(`SELECT t.to_stage_id,s.display_name,s.stable_key,s.semantic_type,t.requires_override FROM sales_stage_transitions t
+  if (!stage) return json(c, { normalized: false, opportunity, legacy_label: opportunity.status || opportunity.pipeline_stage || '', needs_restaging: true, restaging_reason: 'missing_published_stage' })
+  const [requirements, guides, resources, transitions, statuses, evidence, academy, companyContent, allStages, estimates, appointments, tasks] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM sales_stage_requirements WHERE company_id=? AND process_version_id=? AND stage_id=? ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_guides WHERE company_id=? AND process_version_id=? AND stage_id=? ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all<any>(),
+    c.env.DB.prepare("SELECT * FROM sales_process_resources WHERE company_id=? AND process_version_id=? AND active=1 AND (stage_id='' OR stage_id=?) ORDER BY resource_type,name").bind(companyId, assignment.process_version_id, stage.id).all<any>(),
+    c.env.DB.prepare(`SELECT t.id AS transition_id,t.to_stage_id,s.display_name,s.board_label,s.stable_key,s.semantic_type,
+        t.requires_override,t.override_policy,t.outcome_type,t.display_label,t.guidance,o.id AS outcome_id,o.display_name AS outcome_name
+      FROM sales_stage_transition_paths t
       JOIN sales_process_stages s ON s.id=t.to_stage_id AND s.company_id=t.company_id AND s.process_version_id=t.process_version_id
-      WHERE t.company_id=? AND t.process_version_id=? AND t.from_stage_id=? AND t.active=1 ORDER BY s.display_order`).bind(companyId, assignment.process_version_id, stage.id).all(),
-    c.env.DB.prepare("SELECT * FROM sales_academy_skills WHERE active=1 AND (company_id=? OR (company_id='__global__' AND is_global=1)) ORDER BY title").bind(companyId).all()
+      LEFT JOIN sales_stage_outcomes o ON o.company_id=t.company_id AND o.process_version_id=t.process_version_id
+        AND o.stage_id=t.to_stage_id AND o.semantic_type=t.outcome_type AND o.active=1
+      WHERE t.company_id=? AND t.process_version_id=? AND t.from_stage_id=? AND t.active=1 ORDER BY t.display_order,s.display_order`).bind(companyId, assignment.process_version_id, stage.id).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_internal_statuses WHERE company_id=? AND process_version_id=? AND stage_id=? AND active=1 ORDER BY display_order').bind(companyId, assignment.process_version_id, stage.id).all<any>(),
+    c.env.DB.prepare('SELECT * FROM sales_stage_checklist_evidence WHERE company_id=? AND opportunity_id=? AND process_version_id=?').bind(companyId, opportunityId, assignment.process_version_id).all<any>(),
+    c.env.DB.prepare(`SELECT a.*,s.stable_key,s.title,s.content_json
+      FROM sales_academy_associations a JOIN sales_academy_skills s ON s.id=a.skill_id
+      WHERE a.company_id=? AND a.process_version_id=? AND (a.stage_id='' OR a.stage_id=?)
+        AND (a.internal_status_id='' OR a.internal_status_id=?) AND s.active=1 ORDER BY a.display_order,s.title`).bind(companyId, assignment.process_version_id, stage.id, assignment.internal_status_id || '').all<any>(),
+    c.env.DB.prepare(`SELECT * FROM sales_academy_company_content WHERE company_id=? AND process_version_id=? AND active=1
+      AND (stage_id='' OR stage_id=?) AND (internal_status_id='' OR internal_status_id=?) ORDER BY display_order,title`).bind(companyId, assignment.process_version_id, stage.id, assignment.internal_status_id || '').all<any>(),
+    c.env.DB.prepare("SELECT id,stable_key,display_name,board_label,semantic_type,display_order FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state='active' ORDER BY display_order").bind(companyId, assignment.process_version_id).all<any>(),
+    c.env.DB.prepare('SELECT * FROM estimates WHERE company_id=? AND opp_id=? ORDER BY updated_at DESC LIMIT 10').bind(companyId, opportunityId).all<any>(),
+    c.env.DB.prepare("SELECT * FROM calendar_events WHERE company_id=? AND opp_id=? AND status!='cancelled' ORDER BY start_at DESC LIMIT 20").bind(companyId, opportunityId).all<any>(),
+    c.env.DB.prepare("SELECT * FROM tasks WHERE company_id=? AND linked_record_type='lead' AND linked_record_id=? ORDER BY due_date LIMIT 20").bind(companyId, opportunityId).all<any>()
   ])
-  const stageKey = String(stage.stable_key || '')
-  const relevantSkills = (skills.results as any[]).filter(skill => {
-    try { return (JSON.parse(skill.content_json || '{}').stage_keys || []).includes(stageKey) } catch (_) { return false }
+  const evidenceByRequirement = new Map((evidence.results as any[]).map(row => [String(row.requirement_id), row]))
+  const latestEstimate: any = (estimates.results as any[])[0] || null
+  const hasAppointment = (appointments.results as any[]).length > 0
+  const hasCompletedAppointment = (appointments.results as any[]).some(item => String(item.status || '').toLowerCase() === 'completed')
+  const valueFor = (requirement: any) => {
+    if (Number(evidenceByRequirement.get(String(requirement.id))?.completed)) return true
+    const key = String(requirement.stable_key || '')
+    const aliases: Record<string, any> = {
+      assigned_owner: opportunity.assigned_to_rep_id || opportunity.rep_id,
+      contact_details: opportunity.email || opportunity.phone || opportunity.contact_email || opportunity.contact_phone,
+      property_address: opportunity.address || opportunity.property_address,
+      service_requested: opportunity.project || opportunity.service_line || opportunity.work_type,
+      next_action: opportunity.next_action || (tasks.results as any[])[0]?.title,
+      next_action_date: opportunity.next_action_date || opportunity.next_follow_up || (tasks.results as any[])[0]?.due_date,
+      onsite_appointment: hasAppointment,
+      appointment_confirmation: hasAppointment,
+      walkthrough_complete: hasCompletedAppointment,
+      estimate_readiness: latestEstimate && !['draft','incomplete'].includes(String(latestEstimate.status || '').toLowerCase()),
+      estimate_presented_live: latestEstimate?.presented_at || latestEstimate?.presentation_completed_at,
+      delay_reason: opportunity.delay_reason,
+      primary_objection: opportunity.primary_objection,
+      lost_reason: opportunity.lost_reason,
+      final_value: opportunity.value || opportunity.job_value
+    }
+    return aliases[key] ?? opportunity[key] ?? null
+  }
+  const requirementRows = (requirements.results as any[]).map(requirement => {
+    let config: any = {}
+    try { config = JSON.parse(requirement.config_json || '{}') } catch (_) {}
+    const value = valueFor(requirement)
+    return { ...requirement, config, completed: Boolean(value), evidence: value || null }
   })
-  return json(c, { normalized: true, assignment, stage, requirements: requirements.results, guides: guides.results, resources: resources.results, transitions: transitions.results, academy_skills: relevantSkills })
+  const requirementGroups: Record<string, any[]> = { required: [], recommended: [], optional: [], manager_review: [] }
+  for (const requirement of requirementRows) {
+    const group = requirement.config?.manager_only || requirement.required_level === 'manager_only' ? 'manager_review' :
+      (requirement.required_level === 'required' ? 'required' : requirement.required_level === 'optional' ? 'optional' : 'recommended')
+    requirementGroups[group].push(requirement)
+  }
+  const internalStatus = (statuses.results as any[]).find(item => item.id === assignment.internal_status_id) || null
+  const assignedAt = new Date(assignment.assigned_at || Date.now())
+  const daysInStage = Math.max(0, Math.floor((Date.now() - assignedAt.getTime()) / 86400000))
+  const expectedDays = Number(stage.expected_duration_days || 0)
+  const aging = { days_in_stage: daysInStage, expected_duration_days: expectedDays, status: !expectedDays ? 'not_configured' : daysInStage > expectedDays ? 'overdue' : daysInStage >= Math.max(1, Math.floor(expectedDays * 0.8)) ? 'warning' : 'on_track' }
+  return json(c, {
+    normalized: true,
+    process: { name: assignment.process_name, version_id: assignment.process_version_id, version_number: assignment.version_number },
+    opportunity,
+    assignment,
+    stage,
+    internal_status: internalStatus,
+    internal_statuses: statuses.results,
+    requirements: requirementRows,
+    requirement_groups: requirementGroups,
+    missing_required: requirementRows.filter(item => item.required_level === 'required' && !item.completed),
+    guides: guides.results,
+    resources: resources.results,
+    transitions: transitions.results,
+    stages: allStages.results,
+    academy_skills: academy.results,
+    company_playbook: companyContent.results,
+    evidence_summary: { estimate: latestEstimate, appointments: appointments.results, tasks: tasks.results },
+    known_data: requirementRows.filter(item => item.completed).map(item => ({ key: item.stable_key, label: item.label, value: item.evidence })),
+    missing_information: requirementRows.filter(item => !item.completed).map(item => ({ key: item.stable_key, label: item.label, level: item.required_level })),
+    aging
+  })
 })
 
 // Stable transitions update only normalized assignments. Legacy stage text stays
 // untouched throughout the compatibility period and every transition is audited.
-app.put('/api/opportunities/:id/sales-stage', requireAuth, async (c) => {
+app.on(['PUT', 'POST'], ['/api/opportunities/:id/sales-stage', '/api/opportunities/:id/stage-transition'], requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const actorId = c.var.repId as string
   const opportunityId = c.req.param('id')
   const body = await c.req.json()
+  if (body.confirm !== true) return err(c, 'Explicit representative confirmation is required', 400)
   const assignment = await c.env.DB.prepare(`SELECT a.* FROM sales_stage_assignments a
     JOIN sales_process_versions v ON v.id=a.process_version_id AND v.company_id=a.company_id
     WHERE a.company_id=? AND a.opportunity_id=? AND v.lifecycle='published' LIMIT 1`).bind(companyId, opportunityId).first<any>()
@@ -1596,14 +2120,26 @@ app.put('/api/opportunities/:id/sales-stage', requireAuth, async (c) => {
   const targetId = String(body.stage_id || '')
   const target = await c.env.DB.prepare("SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND id=? AND state='active'").bind(companyId, assignment.process_version_id, targetId).first<any>()
   if (!target) return err(c, 'Target stage is not active in this company process', 400)
-  const allowed = await c.env.DB.prepare(`SELECT requires_override FROM sales_stage_transitions
+  const currentStage = await c.env.DB.prepare("SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND id=? AND state='active'").bind(companyId, assignment.process_version_id, assignment.stage_id).first<any>()
+  if (!currentStage) return err(c, 'Current stage is not active in this company process', 409)
+  const outcomeType = String(body.outcome_type || '')
+  const normalizedPathCount = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM sales_stage_transition_paths
+    WHERE company_id=? AND process_version_id=?`).bind(companyId, assignment.process_version_id).first<any>()
+  let allowed = await c.env.DB.prepare(`SELECT requires_override,override_policy,outcome_type FROM sales_stage_transition_paths
+    WHERE company_id=? AND process_version_id=? AND from_stage_id=? AND to_stage_id=? AND active=1
+      AND (outcome_type='' OR outcome_type=?) ORDER BY CASE WHEN outcome_type=? THEN 0 ELSE 1 END LIMIT 1`)
+    .bind(companyId, assignment.process_version_id, assignment.stage_id, targetId, outcomeType, outcomeType).first<any>()
+  if (!allowed && Number(normalizedPathCount?.n || 0) === 0) allowed = await c.env.DB.prepare(`SELECT requires_override,'stage_policy' AS override_policy,'' AS outcome_type FROM sales_stage_transitions
     WHERE company_id=? AND process_version_id=? AND from_stage_id=? AND to_stage_id=? AND active=1`).bind(companyId, assignment.process_version_id, assignment.stage_id, targetId).first<any>()
   const overrideReason = String(body.override_reason || '').trim()
-  if (!allowed && !requireSalesProcessAdmin(c)) return err(c, 'This stage transition requires a manager override', 403)
-  if ((!allowed || Number(allowed.requires_override)) && !overrideReason) return err(c, 'An override reason is required', 400)
-  const outcomeType = String(body.outcome_type || '')
+  const manager = requireSalesProcessAdmin(c)
+  const pathOverridePolicy = String(allowed?.override_policy || currentStage.manager_override_policy || 'allowed_with_reason')
+  const pathRequiresOverride = !allowed || Number(allowed?.requires_override || 0) === 1
+  const pathRequiresManager = !allowed || (pathRequiresOverride && ['manager_required','manager_only'].includes(pathOverridePolicy))
+  if (pathRequiresManager && !manager) return json(c, { error: 'This stage transition requires manager authorization', missing: { required: [], recommended: [], optional: [], manager_review: [] }, override: { allowed: true, manager_required: true, policy: pathOverridePolicy } }, 403)
+  if (pathRequiresOverride && !overrideReason) return json(c, { error: 'An override reason is required', missing: { required: [], recommended: [], optional: [], manager_review: [] }, override: { allowed: true, manager_required: pathRequiresManager, policy: pathOverridePolicy } }, 400)
   if (outcomeType && !['won','lost','disqualified','nurture'].includes(outcomeType)) return err(c, 'Invalid terminal outcome', 400)
-  const terminalSemantics = ['won','lost','disqualified','nurture']
+  const terminalSemantics = ['terminal','won','lost','disqualified','nurture']
   if (terminalSemantics.includes(String(target.semantic_type)) && !outcomeType) return err(c, 'A terminal outcome is required', 400)
   if (!terminalSemantics.includes(String(target.semantic_type)) && outcomeType) return err(c, 'An outcome can only be recorded at a terminal stage', 400)
   if (outcomeType) {
@@ -1612,7 +2148,75 @@ app.put('/api/opportunities/:id/sales-stage', requireAuth, async (c) => {
       .bind(companyId, assignment.process_version_id, targetId, outcomeType).first()
     if (!configuredOutcome) return err(c, 'The selected outcome is not configured for this terminal stage', 400)
   }
+  const opportunity = await c.env.DB.prepare('SELECT * FROM opportunities WHERE id=? AND company_id=?').bind(opportunityId, companyId).first<any>()
+  if (!opportunity) return err(c, 'Opportunity not found', 404)
+  const [requirements, checklist, estimates, appointments, tasks] = await Promise.all([
+    c.env.DB.prepare(`SELECT * FROM sales_stage_requirements WHERE company_id=? AND process_version_id=?
+      AND ((stage_id=? AND json_extract(config_json,'$.phase')='exit') OR
+           (stage_id=? AND json_extract(config_json,'$.phase')='entry') OR
+           (stage_id=? AND COALESCE(json_extract(config_json,'$.phase'),'general')='general'))
+      ORDER BY stage_id,display_order`).bind(companyId, assignment.process_version_id, assignment.stage_id, targetId, targetId).all<any>(),
+    c.env.DB.prepare(`SELECT requirement_id,completed,evidence_json FROM sales_stage_checklist_evidence
+      WHERE company_id=? AND opportunity_id=? AND process_version_id=?`).bind(companyId, opportunityId, assignment.process_version_id).all<any>(),
+    c.env.DB.prepare('SELECT * FROM estimates WHERE company_id=? AND opp_id=? ORDER BY updated_at DESC').bind(companyId, opportunityId).all<any>(),
+    c.env.DB.prepare("SELECT * FROM calendar_events WHERE company_id=? AND opp_id=? AND status!='cancelled' ORDER BY start_at DESC").bind(companyId, opportunityId).all<any>(),
+    c.env.DB.prepare("SELECT * FROM tasks WHERE company_id=? AND linked_record_type='lead' AND linked_record_id=?").bind(companyId, opportunityId).all<any>()
+  ])
+  const supplied = body.evidence && typeof body.evidence === 'object' ? body.evidence : {}
+  const completedChecklist = new Set((checklist.results as any[]).filter(row => Number(row.completed)).map(row => String(row.requirement_id)))
+  const latestEstimate: any = (estimates.results as any[])[0] || null
+  const hasCompletedAppointment = (appointments.results as any[]).some(item => String(item.status || '').toLowerCase() === 'completed' || String(item.start_at || '') <= new Date().toISOString())
+  const evidenceValue = (requirement: any) => {
+    if (Object.prototype.hasOwnProperty.call(supplied, requirement.stable_key)) return supplied[requirement.stable_key]
+    if (completedChecklist.has(String(requirement.id))) return true
+    const key = String(requirement.stable_key || '')
+    const aliases: Record<string, any> = {
+      assigned_owner: opportunity.assigned_to_rep_id || opportunity.rep_id,
+      contact_details: opportunity.email || opportunity.phone || opportunity.contact_email || opportunity.contact_phone,
+      property_address: opportunity.address || opportunity.property_address,
+      service_requested: opportunity.project || opportunity.service_line || opportunity.work_type,
+      next_action: opportunity.next_action || ((tasks.results as any[])[0]?.title || ''),
+      next_action_date: opportunity.next_action_date || opportunity.next_follow_up || ((tasks.results as any[])[0]?.due_date || ''),
+      onsite_appointment: (appointments.results as any[]).length > 0,
+      completed_walkthrough: hasCompletedAppointment,
+      estimate_ready: latestEstimate && ['ready','sent','viewed','accepted','declined'].includes(String(latestEstimate.status || '').toLowerCase()),
+      presented_live: supplied.estimate_presentation_completed === true,
+      labor_pricing: latestEstimate && Number(latestEstimate.total || latestEstimate.amount || 0) > 0,
+      material_pricing: latestEstimate && Number(latestEstimate.total || latestEstimate.amount || 0) > 0
+    }
+    const directValue = opportunity[key]
+    return directValue !== null && directValue !== undefined && String(directValue).trim() !== '' ? directValue : aliases[key]
+  }
+  const missing = { required: [] as any[], recommended: [] as any[], optional: [] as any[], manager_review: [] as any[] }
+  for (const requirement of requirements.results as any[]) {
+    const value = evidenceValue(requirement)
+    const present = typeof value === 'boolean' ? value : (value !== null && value !== undefined && String(value).trim() !== '')
+    if (present) continue
+    let config: any = {}
+    try { config = JSON.parse(requirement.config_json || '{}') } catch (_) {}
+    const item = { id: requirement.id, stable_key: requirement.stable_key, label: requirement.label, stage_id: requirement.stage_id, phase: config.phase || 'general', required_level: requirement.required_level }
+    if (config.manager_only) missing.manager_review.push(item)
+    else if (requirement.required_level === 'required') missing.required.push(item)
+    else if (requirement.required_level === 'recommended') missing.recommended.push(item)
+    else missing.optional.push(item)
+  }
+  if (outcomeType) {
+    const outcome = await c.env.DB.prepare(`SELECT config_json FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND stage_id=? AND semantic_type=? AND active=1`)
+      .bind(companyId, assignment.process_version_id, targetId, outcomeType).first<any>()
+    let config: any = {}
+    try { config = JSON.parse(outcome?.config_json || '{}') } catch (_) {}
+    for (const key of Array.isArray(config.required) ? config.required : []) {
+      const value = supplied[key] ?? opportunity[key]
+      if (value === null || value === undefined || String(value).trim() === '') missing.required.push({ stable_key: key, label: String(key).replace(/_/g, ' '), stage_id: targetId, phase: 'outcome', required_level: 'required' })
+    }
+  }
+  const hasBlocking = missing.required.length > 0 || missing.manager_review.length > 0
+  const overridePolicy = pathOverridePolicy
+  if (hasBlocking && overridePolicy === 'prohibited') return json(c, { error: 'Transition requirements are not complete', missing, override: { allowed: false } }, 409)
+  if (hasBlocking && !manager) return json(c, { error: 'Manager authorization is required', missing, override: { allowed: true, manager_required: true } }, 403)
+  if (hasBlocking && !overrideReason) return json(c, { error: 'An override reason is required', missing, override: { allowed: true, manager_required: true } }, 409)
   const eventId = `transition_${uid()}`
+  const compatibilityLabel = outcomeType ? String((await c.env.DB.prepare(`SELECT display_name FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND stage_id=? AND semantic_type=?`).bind(companyId, assignment.process_version_id, targetId, outcomeType).first<any>())?.display_name || target.display_name) : String(target.display_name)
   const transitionResults = await c.env.DB.batch([
     c.env.DB.prepare(`INSERT INTO sales_stage_transition_events (id,company_id,opportunity_id,process_version_id,from_stage_id,to_stage_id,outcome_type,actor_id,override_reason)
       SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (
@@ -1621,11 +2225,11 @@ app.put('/api/opportunities/:id/sales-stage', requireAuth, async (c) => {
         SELECT 1 FROM opportunities WHERE id=? AND company_id=? AND sales_process_stage_id=?
       )`).bind(eventId, companyId, opportunityId, assignment.process_version_id, assignment.stage_id || '', targetId, outcomeType, actorId, overrideReason, assignment.id, companyId, expectedStageId, opportunityId, companyId, expectedStageId),
     c.env.DB.prepare(`UPDATE sales_stage_assignments SET stage_id=?,outcome_type=?,classification='transitioned',assigned_at=datetime('now'),assigned_by=? WHERE id=? AND company_id=? AND stage_id=?`).bind(targetId, outcomeType, actorId, assignment.id, companyId, expectedStageId),
-    c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=datetime(\'now\') WHERE id=? AND company_id=? AND sales_process_stage_id=?').bind(targetId, opportunityId, companyId, expectedStageId)
+    c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,status=?,pipeline_stage=?,updated_at=datetime(\'now\') WHERE id=? AND company_id=? AND sales_process_stage_id=?').bind(targetId, compatibilityLabel, compatibilityLabel, opportunityId, companyId, expectedStageId)
   ])
   if (Number((transitionResults[0] as any)?.meta?.changes || 0) !== 1) return err(c, 'The opportunity stage changed; refresh before transitioning', 409)
   await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'opportunity', entityId: opportunityId, entityLabel: opportunityId, action: 'sales_stage_transitioned', beforeJson: { stage_id: assignment.stage_id }, afterJson: { stage_id: targetId, outcome_type: outcomeType, override_reason: overrideReason } })
-  return json(c, { transitioned: opportunityId, event_id: eventId, stage: target })
+  return json(c, { transitioned: opportunityId, event_id: eventId, stage: target, outcome_type: outcomeType, compatibility_label: compatibilityLabel, missing })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -10563,8 +11167,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b001">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -10587,10 +11191,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260728b005"></script>
-  <script src="/js/client_portal.js?v=20260728b005"></script>
-  <script src="/js/platform_core.js?v=20260728b005"></script>
-  <script src="/js/client_portal.js?v=20260728b005"></script>  <script>
+  <script src="/js/platform_core.js?v=20260729b001"></script>
+  <script src="/js/client_portal.js?v=20260729b001"></script>
+  <script src="/js/platform_core.js?v=20260729b001"></script>
+  <script src="/js/client_portal.js?v=20260729b001"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -11224,12 +11828,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">
-  <link rel="stylesheet" href="/js/styles.css?v=20260728b005">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260728b005">
-  <link rel="stylesheet" href="/js/premium.css?v=20260728b005">
-  <link rel="stylesheet" href="/js/styles.css?v=20260728b005">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260728b005">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260729b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260729b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260729b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b001">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -11788,80 +12392,82 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260728b005"></script>
-<script src="/js/richtext.js?v=20260728b005"></script>
-<script src="/js/db.js?v=20260728b005"></script>
-<script src="/js/data.js?v=20260728b005"></script>
-<script src="/js/reps.js?v=20260728b005"></script>
-<script src="/js/record-page.js?v=20260728b005"></script>
-<script src="/js/academy.js?v=20260728b005"></script>
-<script src="/js/task_engine.js?v=20260728b005"></script>
-<script src="/js/gw_i18n.js?v=20260728b005"></script>
-<script src="/js/app_premium.js?v=20260728b005"></script>
-<script src="/js/estimates.js?v=20260728b005"></script>
-<script src="/js/multiday.js?v=20260728b005"></script>
-<script src="/js/proposals.js?v=20260728b005"></script>
-<script src="/js/pricing.js?v=20260728b005"></script>
-<script src="/js/invoices.js?v=20260728b005"></script>
-<script src="/js/csv_import.js?v=20260728b005"></script>
-<script src="/js/onboarding.js?v=20260728b005"></script>
-<script src="/js/gw_copilot.js?v=20260728b005"></script>
-<script src="/js/groundwork_ai.js?v=20260728b005"></script>
-<script src="/js/recurring_plans.js?v=20260728b005"></script>
-<script src="/js/reviews.js?v=20260728b005"></script>
-<script src="/js/stripe.js?v=20260728b005"></script>
-<script src="/js/email.js?v=20260728b005"></script>
-<script src="/js/notifications.js?v=20260728b005"></script>
-<script src="/js/integrations.js?v=20260728b005"></script>
-<script src="/js/calendar_sync.js?v=20260728b005"></script>
-<script src="/js/ai_followup.js?v=20260728b005"></script>
-<script src="/js/user_management.js?v=20260728b005"></script>
-<script src="/js/platform_admin.js?v=20260728b005"></script>
-<script src="/js/time_tracker.js?v=20260728b005"></script>
-<script src="/js/field_workday.js?v=20260728b005"></script>
-<script src="/js/platform_core.js?v=20260728b005"></script>
-<script src="/js/approval_engine.js?v=20260728b005"></script>
-<script src="/js/automation_engine.js?v=20260728b005"></script>
-<script src="/js/client_portal.js?v=20260728b005"></script>
-<script src="/js/field_mode.js?v=20260728b005"></script>
-<script src="/js/assets_hub.js?v=20260728b005"></script>
-<script src="/js/gw-icons.js?v=20260728b005"></script>
-<script src="/js/richtext.js?v=20260728b005"></script>
-<script src="/js/db.js?v=20260728b005"></script>
-<script src="/js/data.js?v=20260728b005"></script>
-<script src="/js/reps.js?v=20260728b005"></script>
-<script src="/js/record-page.js?v=20260728b005"></script>
-<script src="/js/academy.js?v=20260728b005"></script>
-<script src="/js/task_engine.js?v=20260728b005"></script>
-<script src="/js/gw_i18n.js?v=20260728b005"></script>
-<script src="/js/app_premium.js?v=20260728b005"></script>
-<script src="/js/estimates.js?v=20260728b005"></script>
-<script src="/js/multiday.js?v=20260728b005"></script>
-<script src="/js/proposals.js?v=20260728b005"></script>
-<script src="/js/pricing.js?v=20260728b005"></script>
-<script src="/js/invoices.js?v=20260728b005"></script>
-<script src="/js/csv_import.js?v=20260728b005"></script>
-<script src="/js/onboarding.js?v=20260728b005"></script>
-<script src="/js/gw_copilot.js?v=20260728b005"></script>
-<script src="/js/groundwork_ai.js?v=20260728b005"></script>
-<script src="/js/recurring_plans.js?v=20260728b005"></script>
-<script src="/js/reviews.js?v=20260728b005"></script>
-<script src="/js/stripe.js?v=20260728b005"></script>
-<script src="/js/email.js?v=20260728b005"></script>
-<script src="/js/notifications.js?v=20260728b005"></script>
-<script src="/js/integrations.js?v=20260728b005"></script>
-<script src="/js/calendar_sync.js?v=20260728b005"></script>
-<script src="/js/ai_followup.js?v=20260728b005"></script>
-<script src="/js/user_management.js?v=20260728b005"></script>
-<script src="/js/platform_admin.js?v=20260728b005"></script>
-<script src="/js/time_tracker.js?v=20260728b005"></script>
-<script src="/js/field_workday.js?v=20260728b005"></script>
-<script src="/js/platform_core.js?v=20260728b005"></script>
-<script src="/js/approval_engine.js?v=20260728b005"></script>
-<script src="/js/automation_engine.js?v=20260728b005"></script>
-<script src="/js/client_portal.js?v=20260728b005"></script>
-<script src="/js/field_mode.js?v=20260728b005"></script>
-<script src="/js/assets_hub.js?v=20260728b005"></script><script>
+<script src="/js/gw-icons.js?v=20260729b001"></script>
+<script src="/js/sales-process.js?v=20260729b001"></script>
+<script src="/js/richtext.js?v=20260729b001"></script>
+<script src="/js/db.js?v=20260729b001"></script>
+<script src="/js/data.js?v=20260729b001"></script>
+<script src="/js/reps.js?v=20260729b001"></script>
+<script src="/js/record-page.js?v=20260729b001"></script>
+<script src="/js/academy.js?v=20260729b001"></script>
+<script src="/js/task_engine.js?v=20260729b001"></script>
+<script src="/js/gw_i18n.js?v=20260729b001"></script>
+<script src="/js/app_premium.js?v=20260729b001"></script>
+<script src="/js/estimates.js?v=20260729b001"></script>
+<script src="/js/multiday.js?v=20260729b001"></script>
+<script src="/js/proposals.js?v=20260729b001"></script>
+<script src="/js/pricing.js?v=20260729b001"></script>
+<script src="/js/invoices.js?v=20260729b001"></script>
+<script src="/js/csv_import.js?v=20260729b001"></script>
+<script src="/js/onboarding.js?v=20260729b001"></script>
+<script src="/js/gw_copilot.js?v=20260729b001"></script>
+<script src="/js/groundwork_ai.js?v=20260729b001"></script>
+<script src="/js/recurring_plans.js?v=20260729b001"></script>
+<script src="/js/reviews.js?v=20260729b001"></script>
+<script src="/js/stripe.js?v=20260729b001"></script>
+<script src="/js/email.js?v=20260729b001"></script>
+<script src="/js/notifications.js?v=20260729b001"></script>
+<script src="/js/integrations.js?v=20260729b001"></script>
+<script src="/js/calendar_sync.js?v=20260729b001"></script>
+<script src="/js/ai_followup.js?v=20260729b001"></script>
+<script src="/js/user_management.js?v=20260729b001"></script>
+<script src="/js/platform_admin.js?v=20260729b001"></script>
+<script src="/js/time_tracker.js?v=20260729b001"></script>
+<script src="/js/field_workday.js?v=20260729b001"></script>
+<script src="/js/platform_core.js?v=20260729b001"></script>
+<script src="/js/approval_engine.js?v=20260729b001"></script>
+<script src="/js/automation_engine.js?v=20260729b001"></script>
+<script src="/js/client_portal.js?v=20260729b001"></script>
+<script src="/js/field_mode.js?v=20260729b001"></script>
+<script src="/js/assets_hub.js?v=20260729b001"></script>
+<script src="/js/gw-icons.js?v=20260729b001"></script>
+<script src="/js/sales-process.js?v=20260729b001"></script>
+<script src="/js/richtext.js?v=20260729b001"></script>
+<script src="/js/db.js?v=20260729b001"></script>
+<script src="/js/data.js?v=20260729b001"></script>
+<script src="/js/reps.js?v=20260729b001"></script>
+<script src="/js/record-page.js?v=20260729b001"></script>
+<script src="/js/academy.js?v=20260729b001"></script>
+<script src="/js/task_engine.js?v=20260729b001"></script>
+<script src="/js/gw_i18n.js?v=20260729b001"></script>
+<script src="/js/app_premium.js?v=20260729b001"></script>
+<script src="/js/estimates.js?v=20260729b001"></script>
+<script src="/js/multiday.js?v=20260729b001"></script>
+<script src="/js/proposals.js?v=20260729b001"></script>
+<script src="/js/pricing.js?v=20260729b001"></script>
+<script src="/js/invoices.js?v=20260729b001"></script>
+<script src="/js/csv_import.js?v=20260729b001"></script>
+<script src="/js/onboarding.js?v=20260729b001"></script>
+<script src="/js/gw_copilot.js?v=20260729b001"></script>
+<script src="/js/groundwork_ai.js?v=20260729b001"></script>
+<script src="/js/recurring_plans.js?v=20260729b001"></script>
+<script src="/js/reviews.js?v=20260729b001"></script>
+<script src="/js/stripe.js?v=20260729b001"></script>
+<script src="/js/email.js?v=20260729b001"></script>
+<script src="/js/notifications.js?v=20260729b001"></script>
+<script src="/js/integrations.js?v=20260729b001"></script>
+<script src="/js/calendar_sync.js?v=20260729b001"></script>
+<script src="/js/ai_followup.js?v=20260729b001"></script>
+<script src="/js/user_management.js?v=20260729b001"></script>
+<script src="/js/platform_admin.js?v=20260729b001"></script>
+<script src="/js/time_tracker.js?v=20260729b001"></script>
+<script src="/js/field_workday.js?v=20260729b001"></script>
+<script src="/js/platform_core.js?v=20260729b001"></script>
+<script src="/js/approval_engine.js?v=20260729b001"></script>
+<script src="/js/automation_engine.js?v=20260729b001"></script>
+<script src="/js/client_portal.js?v=20260729b001"></script>
+<script src="/js/field_mode.js?v=20260729b001"></script>
+<script src="/js/assets_hub.js?v=20260729b001"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
@@ -11979,6 +12585,7 @@ function getHtml(): string {
               window._gwRoles           = bs.data.roles;
               window._gwPipelineStages  = bs.data.pipelineStages;
               window._gwNavPerms        = bs.data.navPerms;
+              window._gwSalesProcess    = bs.data.salesProcess || null;
               // Hydrate language preference from D1 (overrides localStorage default)
               if (bs.data.rep && bs.data.rep.preferred_language) {
                 const _bsLang = bs.data.rep.preferred_language;

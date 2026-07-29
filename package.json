@@ -11,7 +11,8 @@
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
     "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production",
     "test:migrations": "node --test tests/clean-migrations.test.mjs",
-    "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs"
+    "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs",
+    "test:sales-process-transitions": "vite build && node --test tests/sales-process-transitions.integration.test.mjs"
   },
   "dependencies": {
     "hono": "^4.12.23"
