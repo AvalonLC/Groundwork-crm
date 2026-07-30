@@ -121,8 +121,13 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   `content_revision` optimistic concurrency (same changes()=0 INSERT trick as
   drafts). Stage saves cascade live: rewrite `{companyId}:pipeline_stages`
   setting and UPDATE renamed stages' opportunities `status`/`pipeline_stage`
-  by `sales_process_stage_id`. Deleting/archiving a stage that holds
-  `sales_stage_assignments` is rejected 409 (draft flow required). New active
+  by `sales_process_stage_id`. Deleting/archiving a NON-CLOSING stage that
+  holds `sales_stage_assignments` is rejected 409 (draft flow required).
+  Occupied CLOSING stages may be archived/removed when active closing stages
+  absorb every lead by its assignment `outcome_type` (split Closed into
+  Won/Lost; preference chains won->terminal, lost->terminal,
+  disqualified->lost->terminal, nurture->terminal->lost; unmatched outcome
+  = 409). Response carries `redistributed_leads`. New active
   stages get wired into the transition graph; orphaned transitions/outcomes
   for removed stages are deleted. Draft routes still 404 on published
   versions (immutability contract in the adoption integration test).
