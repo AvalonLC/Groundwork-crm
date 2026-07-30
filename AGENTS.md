@@ -138,6 +138,20 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
 - Production publication for a live tenant is a deliberate HUMAN gate — never
   automate adopt/review/publish against production data
   (see `docs/sales-process-completion-matrix.md`).
+- GROUNDWORK AI LEAD SCORING (client-side, `public/js/app_premium.js`):
+  `gwStageClock(o)` = days in current stage from `stageEnteredAt` (API field
+  `sales_process_assigned_at`, a subselect on GET /api/opportunities over
+  `sales_stage_assignments.assigned_at`, which is refreshed on every stage
+  move) vs the stage's `expected_duration_days`; bands ok/watch/late (late =
+  1.75x expected) drive the follow-up urgency chips, the "Needs Follow-Up"
+  stat card and the `overdue` quick-filter. `gwLeadScore(o)` = deterministic
+  0-100 close likelihood; hard pins won=100 / lost|disqualified=0; open leads
+  clamped 3-97; baseline from stage position plus factors (stage-clock ratio,
+  process velocity, lead source, budget-vs-estimate via `gwParseBudget`,
+  estimate momentum from `linked_estimate_status`, engagement recency), all
+  surfaced in a factor breakdown (rail card + pill tooltip). Pipeline sort
+  default is `priority` (score desc). If you add signals, keep the factor
+  list transparent and never let an open lead hit 0 or 100.
 
 ## Tests
 

@@ -1894,7 +1894,7 @@ window._updateSidebarRep = function updateSidebarRep() {
 function statCards(){
   const openOpps = state.opportunities.filter(o=>gwSalesIsOpen(o));
   const proposalOpps = state.opportunities.filter(o=>gwSalesIs(o,'proposal_presentation'));
-  const overdueOpps = state.opportunities.filter(o=>o.nextFollowUp && o.nextFollowUp < todayISO() && gwSalesIsOpen(o));
+  const overdueOpps = state.opportunities.filter(o=>gwSalesIsOpen(o) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
   const soldOpps = state.opportunities.filter(o=>gwSalesIs(o,'won'));
   return `<div class="grid grid-4 stat-grid">
     <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
@@ -1903,8 +1903,8 @@ function statCards(){
     <article class="stat dash-card-clickable" title="Click to filter: Proposals" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" style="cursor:pointer">
       <span>Proposals</span><strong>${proposalOpps.length}</strong>
     </article>
-    <article class="stat ${overdueOpps.length?'bad':''} dash-card-clickable" title="Click to filter: Overdue" onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="cursor:pointer">
-      <span>Overdue</span><strong>${overdueOpps.length}</strong>
+    <article class="stat ${overdueOpps.length?'bad':''} dash-card-clickable" title="Click to filter: leads sitting past their stage's expected duration" onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="cursor:pointer">
+      <span>Needs Follow-Up</span><strong>${overdueOpps.length}</strong>
     </article>
     <article class="stat dash-card-clickable" title="Click to filter: Sold" onclick="window._pipelineStatusFilter='sold';show('pipeline')" style="cursor:pointer">
       <span>Sold</span><strong>${soldOpps.length}</strong>
@@ -3041,48 +3041,215 @@ function empty(text, icon, ctaHtml){
   }
   return `<div class="empty">${escapeHtml(text)}</div>`;
 }
+// ══════════════════════════════════════════════════════════════════════════
+// GROUNDWORK AI — LEAD CLOSE LIKELIHOOD + TIME-IN-STAGE CLOCK
+// A running 0-100% score recomputed live on every render from internal
+// metrics: time sitting in the current stage vs its expected duration, the
+// lead's velocity through the process, lead source quality, budget vs
+// estimate fit, estimate momentum, and engagement recency.
+// Hard pins: won = 100, lost/disqualified = 0. Open leads live in 3-97.
+// Every factor is surfaced in a transparent breakdown so reps trust it.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Stage clock: how long has this lead been sitting in its current stage,
+// and how does that compare to the stage's expected duration?
+function gwStageClock(o){
+  const sp = window._gwSalesProcess;
+  let stage = null;
+  if (window.GWSalesProcess) {
+    const r = GWSalesProcess.resolve(o);
+    if (r.resolved && r.stage) stage = r.stage;
+  }
+  if (!stage && sp && Array.isArray(sp.stages)) {
+    stage = sp.stages.find(s => s.display_name === o.status) || null;
+  }
+  // Entry timestamp: stage assignment clock, falling back to last update
+  const enteredRaw = o.stageEnteredAt || o.sales_process_assigned_at || o.updatedAt || o.createdAt;
+  let daysIn = null;
+  if (enteredRaw) {
+    const t = new Date(String(enteredRaw).includes('T') ? enteredRaw : String(enteredRaw).replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(t)) daysIn = Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  }
+  const expected = stage && Number(stage.expected_duration_days) > 0 ? Number(stage.expected_duration_days) : 7;
+  const ratio = daysIn === null ? 0 : daysIn / expected;
+  // Urgency bands drive follow-up prioritization on the board
+  const level = daysIn === null ? 'ok' : ratio >= 1.75 ? 'late' : ratio >= 1 ? 'watch' : 'ok';
+  return { daysIn, expected, ratio, level, stage };
+}
+window.gwStageClock = gwStageClock;
+
+// Parse a free-text budget range like "$10k-$15k" / "10,000 to 15,000"
+function gwParseBudget(text){
+  if (!text) return null;
+  const s = String(text).toLowerCase();
+  const nums = (s.match(/\d[\d,.]*\s*k?/g) || []).map(m => {
+    const k = /k\s*$/.test(m.trim());
+    const n = parseFloat(m.replace(/[,k\s]/g, ''));
+    return isNaN(n) ? null : (k ? n * 1000 : n);
+  }).filter(n => n !== null && n > 0);
+  if (!nums.length) return null;
+  return { min: Math.min(...nums), max: Math.max(...nums) };
+}
+
+// The Groundwork AI close-likelihood engine.
+// Returns { score, pinned, factors:[{label, delta}], clock }
+function gwLeadScore(o){
+  const factors = [];
+  const clock = gwStageClock(o);
+
+  // ── Hard pins on terminal outcomes ──
+  const outcome = (o.salesProcessOutcomeType || o.sales_process_outcome_type || '').toLowerCase();
+  const isWon  = outcome === 'won'  || (typeof gwSalesIs === 'function' && gwSalesIs(o, 'won'));
+  const isLost = outcome === 'lost' || outcome === 'disqualified' || (typeof gwSalesIs === 'function' && gwSalesIs(o, 'lost'));
+  if (isWon)  return { score: 100, pinned: 'won',  factors: [{ label: 'Deal won', delta: 0 }], clock };
+  if (isLost) return { score: 0,   pinned: 'lost', factors: [{ label: outcome === 'disqualified' ? 'Disqualified' : 'Deal lost', delta: 0 }], clock };
+
+  // ── Baseline from stage progression (15% intake → 85% closing) ──
+  const sp = window._gwSalesProcess;
+  let base = 30, stageIdx = 0, openStages = [];
+  if (sp && Array.isArray(sp.stages)) {
+    openStages = sp.stages
+      .filter(s => (s.state || 'active') === 'active' && s.semantic_type !== 'terminal' && !['won','lost','disqualified'].includes(String(s.semantic_type||'').toLowerCase()))
+      .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0));
+    const cur = clock.stage ? openStages.findIndex(s => s.id === clock.stage.id) : -1;
+    if (cur >= 0 && openStages.length > 1) {
+      stageIdx = cur;
+      base = Math.round(15 + (cur / (openStages.length - 1)) * 70);
+    }
+  }
+  if (base === 30) {
+    // Fallback: position in the pipeline label list
+    const labels = (typeof getPipelineStages === 'function') ? getPipelineStages() : [];
+    const i = labels.indexOf(o.status);
+    if (i >= 0 && labels.length > 1) { stageIdx = i; base = Math.round(15 + (i / (labels.length - 1)) * 70); }
+  }
+  factors.push({ label: 'Stage progress (' + (o.status || 'early') + ')', delta: base, base: true });
+
+  // ── Factor 1: time sitting in the current stage vs expected duration ──
+  if (clock.daysIn !== null) {
+    let d = 0, lbl;
+    if (clock.ratio <= 0.5)      { d = 6;   lbl = 'Fresh in stage (' + clock.daysIn + 'd of ~' + clock.expected + 'd)'; }
+    else if (clock.ratio <= 1)   { d = 0;   lbl = 'On pace in stage (' + clock.daysIn + 'd of ~' + clock.expected + 'd)'; }
+    else if (clock.ratio <= 2)   { d = -8;  lbl = 'Sitting past expected (' + clock.daysIn + 'd vs ~' + clock.expected + 'd)'; }
+    else if (clock.ratio <= 3)   { d = -14; lbl = 'Stalled in stage (' + clock.daysIn + 'd vs ~' + clock.expected + 'd)'; }
+    else                         { d = -20; lbl = 'Deeply stalled (' + clock.daysIn + 'd vs ~' + clock.expected + 'd)'; }
+    factors.push({ label: lbl, delta: d });
+  }
+
+  // ── Factor 2: velocity through the process so far ──
+  if (o.createdAt && stageIdx > 0 && openStages.length) {
+    const t0 = new Date(String(o.createdAt).includes('T') ? o.createdAt : String(o.createdAt).replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(t0)) {
+      const totalDays = Math.max(0, (Date.now() - t0) / 86400000);
+      const expectedSoFar = openStages.slice(0, stageIdx).reduce((a, s) => a + (Number(s.expected_duration_days) > 0 ? Number(s.expected_duration_days) : 7), 0);
+      if (expectedSoFar > 0) {
+        const v = totalDays / expectedSoFar;
+        if (v <= 0.75)     factors.push({ label: 'Moving faster than typical', delta: 8 });
+        else if (v <= 1.25) factors.push({ label: 'Typical speed through process', delta: 2 });
+        else if (v <= 2)   factors.push({ label: 'Slower than typical pace', delta: -5 });
+        else               factors.push({ label: 'Well behind typical pace', delta: -10 });
+      }
+    }
+  }
+
+  // ── Factor 3: lead source quality ──
+  const src = (o.leadSource || o.source || '').toLowerCase();
+  if (src) {
+    if (src.includes('existing') || src.includes('repeat'))      factors.push({ label: 'Existing client relationship', delta: 12 });
+    else if (src.includes('referral') || src.includes('refer'))  factors.push({ label: 'Referral lead', delta: 10 });
+    else if (src.includes('website') || src.includes('web'))     factors.push({ label: 'Website inquiry', delta: 3 });
+    else if (src.includes('cold'))                               factors.push({ label: 'Cold outreach lead', delta: -6 });
+  }
+
+  // ── Factor 4: budget vs estimate fit ──
+  const budget = gwParseBudget(o.budgetRange);
+  const est = Number(o.estimateAmount || 0) || Number(o.jobValue || 0);
+  if (budget && est > 0) {
+    if (est <= budget.max)                factors.push({ label: 'Estimate within stated budget', delta: 8 });
+    else if (est <= budget.max * 1.25)    factors.push({ label: 'Estimate slightly above budget', delta: -4 });
+    else                                  factors.push({ label: 'Estimate well above budget', delta: -10 });
+  }
+
+  // ── Factor 5: estimate momentum ──
+  const es = (o.estimateStatus || '').toLowerCase();
+  if (es === 'accepted' || es === 'approved' || es === 'paid') factors.push({ label: 'Estimate accepted', delta: 18 });
+  else if (es === 'sent' || es === 'viewed' || es === 'awaiting_response') factors.push({ label: 'Estimate in customer hands', delta: 6 });
+  else if (es === 'revised') factors.push({ label: 'Estimate revised and resent', delta: 2 });
+  else if (es === 'declined' || es === 'rejected' || es === 'expired') factors.push({ label: 'Estimate declined or expired', delta: -18 });
+  else if (!es && o.estimateSentDate) factors.push({ label: 'Estimate sent', delta: 5 });
+
+  // ── Factor 6: engagement recency ──
+  if (o.updatedAt) {
+    const du = Math.floor((Date.now() - new Date(String(o.updatedAt).includes('T') ? o.updatedAt : String(o.updatedAt).replace(' ', 'T') + 'Z').getTime()) / 86400000);
+    if (!isNaN(du)) {
+      if (du <= 2)       factors.push({ label: 'Active in the last 2 days', delta: 4 });
+      else if (du > 14)  factors.push({ label: 'No activity in ' + du + ' days', delta: -10 });
+      else if (du > 7)   factors.push({ label: 'Quiet for ' + du + ' days', delta: -5 });
+    }
+  }
+
+  const raw = factors.reduce((a, f) => a + f.delta, 0);
+  const score = Math.max(3, Math.min(97, Math.round(raw)));
+  return { score, pinned: null, factors, clock };
+}
+window.gwLeadScore = gwLeadScore;
+
+// Compact score pill markup shared by cards
+function gwScorePill(o, size){
+  const r = gwLeadScore(o);
+  const band = r.score >= 70 ? 'high' : r.score >= 40 ? 'mid' : 'low';
+  const cls = 'gw-score-pill gw-score-' + (r.pinned || band) + (size === 'sm' ? ' gw-score-sm' : '');
+  const title = r.factors.map(f => (f.base ? '' : (f.delta > 0 ? '+' + f.delta : f.delta) + ' ') + f.label).join('\n');
+  return `<span class="${cls}" title="Groundwork AI close likelihood\n${escapeHtml(title)}">${r.score}%</span>`;
+}
+window.gwScorePill = gwScorePill;
+
+// Days-in-stage chip with escalating urgency (replaces the old OVERDUE badge)
+function gwStageChip(o){
+  const c = gwStageClock(o);
+  if (c.daysIn === null || !gwSalesIsOpen(o)) return '';
+  const lbl = c.daysIn === 0 ? 'New today' : c.daysIn + 'd in stage';
+  const txt = c.level === 'late' ? lbl + ' — follow up' : lbl;
+  return `<span class="stage-clock-chip stage-clock-${c.level}" title="~${c.expected}d expected in this stage">${txt}</span>`;
+}
+window.gwStageChip = gwStageChip;
+
 function oppMini(o){
-  const _today = todayISO();
-  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && gwSalesIsOpen(o);
-  const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : null;
-  // Urgency dot inline — small colored dot before client name
-  const urgencyDot = isOverdue
-    ? `<span style="display:inline-block;width:6px;height:6px;background:#C97B6A;border-radius:50%;flex-shrink:0;margin-top:1px"></span>`
+  const clock = gwStageClock(o);
+  const needsAttention = gwSalesIsOpen(o) && clock.level !== 'ok';
+  // Urgency dot inline — colored by how long the lead has sat in its stage
+  const urgencyDot = needsAttention
+    ? `<span style="display:inline-block;width:6px;height:6px;background:${clock.level==='late'?'#C97B6A':'#B8860B'};border-radius:50%;flex-shrink:0;margin-top:1px"></span>`
     : '';
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
   // Rep pill — color-coded, uses class + minimal inline for the brand color
   const repPill = repObj
     ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40">${escapeHtml(repObj.name)}</span>`
     : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22)">Unassigned</span>`;
-  // Time label
-  const timeLabel = daysSince !== null
-    ? `<span class="mini-row-time">${daysSince===0?'Today':daysSince===1?'Yesterday':daysSince+'d ago'}</span>`
+  // Time-in-stage label
+  const timeLabel = clock.daysIn !== null
+    ? `<span class="mini-row-time">${clock.daysIn===0?'New today':clock.daysIn+'d in stage'}</span>`
     : '';
-  return `<button class="mini-row ${isOverdue?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
+  return `<button class="mini-row ${clock.level==='late'&&gwSalesIsOpen(o)?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
     <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed Lead')}</strong>
     <span class="status-chip ${statusCssClass(o.status||'')}">${escapeHtml(o.status||'New Lead')}</span>
     <em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em>
-    <span class="mini-row-meta">${repPill}${timeLabel}</span>
+    <span class="mini-row-meta">${gwSalesIsOpen(o)?gwScorePill(o,'sm'):''}${repPill}${timeLabel}</span>
   </button>`;
 }
 function oppCard(o){
-  const _today = todayISO();
-  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && gwSalesIsOpen(o);
-  const daysSinceUpdate = o.updatedAt ? Math.floor((Date.now() - new Date(o.updatedAt).getTime()) / 86400000) : 999;
-  const isStale = daysSinceUpdate >= 14 && gwSalesIsOpen(o);
+  const clock = gwStageClock(o);
+  const isOpen = gwSalesIsOpen(o);
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
-  const urgencyBadge = isOverdue
-    ? `<span class="urgency-badge overdue">OVERDUE</span>`
-    : isStale
-    ? `<span class="urgency-badge stale">STALE ${daysSinceUpdate}d</span>`
-    : '';
-  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}" onclick="show('pipeline','${o.id}')" style="cursor:pointer"
+  const cardState = !isOpen ? '' : clock.level === 'late' ? 'opp-overdue' : clock.level === 'watch' ? 'opp-stale' : '';
+  return `<article class="opp-card ${cardState}" onclick="show('pipeline','${o.id}')" style="cursor:pointer"
     draggable="true" data-opp-id="${o.id}"
     ondragstart="gwPipeDragStart(event,'${o.id}')" ondragend="gwPipeDragEnd(event)">
     <div class="opp-card-top">
       <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
-      ${urgencyBadge}
+      ${isOpen ? gwScorePill(o) : ''}
     </div>
+    ${gwStageChip(o)}
     <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')}${o.address ? ` · ${escapeHtml(o.address)}` : ''}</p>
     <div class="opp-meta">
       ${badge(o.status||'New Lead')}
@@ -3163,20 +3330,23 @@ function pipeline(selectedId){
   const semantic = o => window.GWSalesProcess ? GWSalesProcess.resolve(o) : { resolved:false };
   if (activeStatusFilter === 'open') opps = opps.filter(o => window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status));
   else if (activeStatusFilter === 'proposals') opps = opps.filter(o => { const r=semantic(o); return r.resolved && r.semantic==='proposal_presentation'; });
-  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && (window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status)));
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => (window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status)) && gwStageClock(o).level === 'late');
   else if (activeStatusFilter === 'sold') opps = opps.filter(o => { const r=semantic(o); return r.resolved && (r.outcome==='won'||r.semantic==='won'); });
 
   // T47: Sort
-  const activeSort = window._pipelineSort || 'urgent';
+  const activeSort = window._pipelineSort || 'priority';
   function sortOpps(items){
     if(activeSort==='recent') return [...items].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
     if(activeSort==='value') return [...items].sort((a,b)=>Number(b.jobValue||0)-Number(a.jobValue||0));
-    const _t = todayISO();
-    return [...items].sort((a,b)=>{
-      const ao=a.nextFollowUp&&a.nextFollowUp<_t?0:1; const bo=b.nextFollowUp&&b.nextFollowUp<_t?0:1;
-      if(ao!==bo) return ao-bo;
-      return (a.nextFollowUp||'9999').localeCompare(b.nextFollowUp||'9999');
-    });
+    if(activeSort==='urgent'){
+      // Longest sitting past its stage's expected duration first
+      return [...items].sort((a,b)=>{
+        const ca=gwStageClock(a), cb=gwStageClock(b);
+        return (cb.ratio||0)-(ca.ratio||0);
+      });
+    }
+    // Default: Groundwork AI priority — highest close likelihood first
+    return [...items].sort((a,b)=>gwLeadScore(b).score-gwLeadScore(a).score);
   }
 
   const filters = getPipelineStages();
@@ -3252,7 +3422,8 @@ function pipeline(selectedId){
       <div class="pl-filter-divider"></div>
       <div class="pl-filter-group">
         <span class="pl-filter-label">Sort</span>
-        <button class="pl-filter-btn ${activeSort==='urgent'?'pl-active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">Urgent</button>
+        <button class="pl-filter-btn ${activeSort==='priority'?'pl-active':''}" onclick="window._pipelineSort='priority';show('pipeline')" title="Groundwork AI close likelihood, highest first">Priority</button>
+        <button class="pl-filter-btn ${activeSort==='urgent'?'pl-active':''}" onclick="window._pipelineSort='urgent';show('pipeline')" title="Longest sitting in stage first">Sitting Longest</button>
         <button class="pl-filter-btn ${activeSort==='recent'?'pl-active':''}" onclick="window._pipelineSort='recent';show('pipeline')">Recent</button>
         <button class="pl-filter-btn ${activeSort==='value'?'pl-active':''}" onclick="window._pipelineSort='value';show('pipeline')">Value</button>
       </div>
@@ -5600,7 +5771,16 @@ function opportunityDetail(id){
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Rep',escapeHtml(_repName))}
             ${o.jobValue ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Value',money(Number(o.jobValue)),'green') : ''}
             ${_estComm > 0 ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12L7 2l5 10M4.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>','Commission',money(_estComm),'blue') : ''}
-            ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'')}
+            ${(function(){
+              const _sc = gwLeadScore(o);
+              const _accent = _sc.pinned==='won'||_sc.score>=70?'green':_sc.pinned==='lost'||_sc.score<40?'red':'amber';
+              return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1.5a5.5 5.5 0 105.5 5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7 4v3l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Close Likelihood',_sc.score+'%',_accent);
+            })()}
+            ${(function(){
+              const _c = gwStageClock(o);
+              if (_c.daysIn === null || !gwSalesIsOpen(o)) return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'');
+              return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','In Stage',_c.daysIn+'d of ~'+_c.expected+'d',_c.level==='late'?'red':_c.level==='watch'?'amber':'');
+            })()}
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2l5.5 10H1.5L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v3M7 10.5h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Comm.',o.commissionApproved?'Approved':'Pending',o.commissionApproved?'green':'amber')}
           </div>
         </div>
@@ -6188,6 +6368,34 @@ function opportunityDetail(id){
 
       <!-- RIGHT RAIL -->
       <aside class="ld-rail rp-rail" aria-label="Lead context">
+
+        <!-- Groundwork AI Close Likelihood -->
+        ${(function(){
+          const sc = gwLeadScore(o);
+          const band = sc.pinned==='won' ? 'won' : sc.pinned==='lost' ? 'lost' : sc.score>=70 ? 'high' : sc.score>=40 ? 'mid' : 'low';
+          const clockLine = sc.clock && sc.clock.daysIn !== null && !sc.pinned
+            ? `<div class="gw-ai-clock">${sc.clock.daysIn}d in <strong>${escapeHtml(o.status||'stage')}</strong> · ~${sc.clock.expected}d expected</div>` : '';
+          const rows = sc.factors.map(f => f.base
+            ? `<div class="gw-ai-factor gw-ai-factor--base"><span>${escapeHtml(f.label)}</span><em>${f.delta}%</em></div>`
+            : `<div class="gw-ai-factor"><span>${escapeHtml(f.label)}</span><em class="${f.delta>0?'pos':f.delta<0?'neg':''}">${f.delta>0?'+':''}${f.delta}%</em></div>`
+          ).join('');
+          return `<div class="ld-rail-card gw-ai-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.2 3.3L11.5 5 8.2 6.2 7 9.5 5.8 6.2 2.5 5l3.3-.7L7 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M11 9l.6 1.6 1.6.6-1.6.6L11 13.4l-.6-1.6-1.6-.6 1.6-.6L11 9z" fill="currentColor"/></svg>
+            Groundwork AI
+          </div>
+          <div class="gw-ai-body">
+            <div class="gw-ai-score-row">
+              <span class="gw-ai-score gw-ai-score--${band}">${sc.score}%</span>
+              <span class="gw-ai-score-label">Close likelihood${sc.pinned==='won'?' — deal won':sc.pinned==='lost'?' — closed out':''}</span>
+            </div>
+            <div class="gw-ai-meter"><div class="gw-ai-meter-fill gw-ai-meter--${band}" style="width:${sc.score}%"></div></div>
+            ${clockLine}
+            <div class="gw-ai-factors">${rows}</div>
+            <div class="gw-ai-footnote">Recalculates live as this lead moves through your process and new signals come in.</div>
+          </div>
+        </div>`;
+        })()}
 
         <!-- Task Panel (replaces legacy Follow-Up card) -->
         <div class="ld-rail-card" id="gwTaskRailCard_${o.id}">

@@ -16083,3 +16083,53 @@ h1.pl-title,
 .spb-component-row label input:focus,.spb-component-row label select:focus,.spb-component-row label textarea:focus{outline:none;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 .spb-component-row>button{justify-self:start;align-self:end;font-size:.78rem}
 @media(max-width:768px){.spb-stage-card{padding:14px}.spb-stage-card-head{flex-direction:column}.spb-stage-card-head .spb-field,.spb-stage-card-head .spb-field-narrow,.spb-field-grow{flex:1 1 auto;width:100%}.spb-stage-card-guidance{grid-template-columns:1fr}.spb-stage-num{margin-top:0}.spb-stage-card-actions button{flex:1 1 auto}}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GROUNDWORK AI — CLOSE LIKELIHOOD SCORE + TIME-IN-STAGE CLOCK
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Score pill (pipeline cards + mini rows) */
+.gw-score-pill{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:38px;padding:2px 8px;border-radius:20px;
+  font-size:11px;font-weight:800;letter-spacing:.02em;flex-shrink:0;
+  cursor:help;line-height:1.5;
+}
+.gw-score-pill.gw-score-sm{min-width:32px;padding:1px 6px;font-size:10px}
+.gw-score-high,.gw-score-won{background:#E4F2EA;color:#1E5C3F;border:1px solid #C6E3D2}
+.gw-score-mid {background:#FAF6E8;color:#7A5C10;border:1px solid #F5E8C0}
+.gw-score-low,.gw-score-lost{background:#FAE8E4;color:#8B3A2A;border:1px solid #F5D5C8}
+
+/* Days-in-stage chip (replaces the OVERDUE badge) */
+.stage-clock-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 8px;border-radius:20px;margin-bottom:6px;
+  font-size:10px;font-weight:700;letter-spacing:.03em;
+}
+.stage-clock-ok   {background:#EEF3EE;color:#4A5C4A;border:1px solid #DDE7DD}
+.stage-clock-watch{background:#FAF6E8;color:#7A5C10;border:1px solid #F5E8C0}
+.stage-clock-late {background:#FAE8E4;color:#8B3A2A;border:1px solid #F5D5C8}
+
+/* Detail page — Groundwork AI rail card */
+.gw-ai-card{border-top:3px solid var(--gw-brand,#113931)}
+.gw-ai-body{padding:14px 16px}
+.gw-ai-score-row{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.gw-ai-score{font-size:1.7rem;font-weight:900;line-height:1}
+.gw-ai-score--high,.gw-ai-score--won{color:#1E5C3F}
+.gw-ai-score--mid{color:#7A5C10}
+.gw-ai-score--low,.gw-ai-score--lost{color:#8B3A2A}
+.gw-ai-score-label{font-size:11.5px;font-weight:600;color:var(--gw-text-muted,#6F7E6A)}
+.gw-ai-meter{height:6px;border-radius:4px;background:#EDF1ED;overflow:hidden;margin-bottom:10px}
+.gw-ai-meter-fill{height:100%;border-radius:4px;transition:width .5s ease}
+.gw-ai-meter--high,.gw-ai-meter--won{background:linear-gradient(90deg,#2D7A55,#4D8A86)}
+.gw-ai-meter--mid{background:linear-gradient(90deg,#B8860B,#D4A82C)}
+.gw-ai-meter--low,.gw-ai-meter--lost{background:linear-gradient(90deg,#8B3A2A,#C97B6A)}
+.gw-ai-clock{font-size:11.5px;color:var(--gw-text-muted,#6F7E6A);margin-bottom:10px}
+.gw-ai-clock strong{color:var(--gw-ink,#1B2A1B)}
+.gw-ai-factors{display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--gw-border,#E4EAE4);padding-top:10px}
+.gw-ai-factor{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:11.5px;color:var(--gw-text,#334133)}
+.gw-ai-factor em{font-style:normal;font-weight:800;font-size:11px;color:var(--gw-text-muted,#6F7E6A);flex-shrink:0}
+.gw-ai-factor em.pos{color:#1E5C3F}
+.gw-ai-factor em.neg{color:#8B3A2A}
+.gw-ai-factor--base{color:var(--gw-text-muted,#6F7E6A)}
+.gw-ai-footnote{margin-top:10px;font-size:10.5px;color:var(--gw-text-subtle,#8A968A);line-height:1.45}

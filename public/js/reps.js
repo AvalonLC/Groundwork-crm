@@ -911,6 +911,10 @@ function _renderLoginHTML(brand) {
       soldDate: o.sold_date, soldAmount: o.sold_amount,
       leadSource: o.lead_source || '',
       projectCategory: o.project_category || o.service_line || '',
+      salesProcessStageId: o.sales_process_stage_id || '',
+      salesProcessOutcomeType: o.sales_process_outcome_type || '',
+      stageEnteredAt: o.sales_process_assigned_at || '',
+      estimateStatus: o.linked_estimate_status || o.estimate_status || '',
       createdAt: o.created_at, updatedAt: o.updated_at,
       _fromD1: true
     };
