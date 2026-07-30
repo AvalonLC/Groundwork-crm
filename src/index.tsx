@@ -1234,6 +1234,44 @@ app.get('/api/opportunities/:id/sales-process-resolution', requireAuth, async (c
   return resolution ? json(c, resolution) : err(c, 'Opportunity not found', 404)
 })
 
+// Keep the published-process stage assignment in step with legacy status-label
+// writes (board drag-and-drop, lead form, record editing). When the new status
+// label matches an active stage of the published version, the opportunity's
+// stable assignment and sales_process_stage_id follow it. Unknown labels leave
+// the assignment untouched, so Needs Restaging semantics are preserved.
+// The platform-level leads table is intentionally never read or written here.
+async function syncPublishedStageAssignment(db: D1Database, companyId: string, opportunityId: string, statusLabel: string, actorId: string) {
+  const label = String(statusLabel || '').trim()
+  if (!label) return
+  const published = await db.prepare(`SELECT v.id FROM sales_process_versions v
+    JOIN sales_processes p ON p.id=v.process_id AND p.company_id=v.company_id
+    WHERE v.company_id=? AND v.lifecycle='published' ORDER BY v.published_at DESC LIMIT 1`).bind(companyId).first<any>()
+  if (!published) return
+  const stage = await db.prepare(`SELECT * FROM sales_process_stages
+    WHERE company_id=? AND process_version_id=? AND state='active'
+      AND (board_label=? OR display_name=?) ORDER BY display_order LIMIT 1`)
+    .bind(companyId, published.id, label, label).first<any>()
+  if (!stage) return
+  const terminal = ['won', 'lost', 'disqualified', 'nurture', 'terminal'].includes(String(stage.semantic_type))
+  let outcomeType = ''
+  if (terminal) {
+    const outcome = await db.prepare(`SELECT semantic_type FROM sales_stage_outcomes
+      WHERE company_id=? AND process_version_id=? AND stage_id=? AND active=1 LIMIT 1`)
+      .bind(companyId, published.id, stage.id).first<any>()
+    outcomeType = String(outcome?.semantic_type || stage.semantic_type)
+    if (!['won', 'lost', 'disqualified', 'nurture'].includes(outcomeType)) outcomeType = ''
+  }
+  await db.batch([
+    db.prepare(`INSERT INTO sales_stage_assignments (id,company_id,opportunity_id,process_version_id,stage_id,classification,outcome_type,assigned_by)
+      VALUES (?,?,?,?,?,'status_synced',?,?)
+      ON CONFLICT(company_id,opportunity_id,process_version_id)
+      DO UPDATE SET stage_id=excluded.stage_id,outcome_type=excluded.outcome_type,classification='status_synced',assigned_at=datetime('now'),assigned_by=excluded.assigned_by`)
+      .bind(`asg_${uid()}`, companyId, opportunityId, published.id, stage.id, outcomeType, actorId),
+    db.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?')
+      .bind(stage.id, opportunityId, companyId)
+  ])
+}
+
 app.get('/api/sales-process/templates', requireAuth, async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT p.id, p.name, p.description, v.id AS version_id, v.version_number
@@ -1368,6 +1406,86 @@ app.post('/api/sales-process/drafts/from-template', requireAuth, async (c) => {
   }
   await c.env.DB.batch(statements)
   await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'sales_process', entityId: processId, entityLabel: String(body.name || template.name), action: 'draft_created', afterJson: { versionId, templateVersionId } })
+  return json(c, { process_id: processId, version_id: versionId, lifecycle: 'draft' }, 201)
+})
+
+// Start a draft directly from the company's live pipeline stage labels so an
+// administrator can tune the current board without adopting a template first.
+// The generated draft is validation-complete: inferred semantic types, terminal
+// won and lost stages, per-terminal outcomes, and an open transition graph.
+app.post('/api/sales-process/drafts/from-current-pipeline', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const actorId = c.var.repId as string
+  const body = await c.req.json().catch(() => ({}))
+  const stagesRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key=? LIMIT 1').bind(`${companyId}:pipeline_stages`).first<{ value: string }>()
+  let labels: string[] = []
+  try { if (stagesRow?.value) labels = JSON.parse(stagesRow.value) } catch (_) {}
+  if (!Array.isArray(labels) || labels.length < 2) labels = [
+    'Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered',
+    'Budget & Investment Qualified','Decision Process Qualified',
+    'Presentation & SOW Pitch','Deal Closed / Won','On Hold','Closed Lost'
+  ]
+  labels = labels.map(l => String(l).trim()).filter(Boolean)
+  const slug = (label: string, index: number) => {
+    const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    return base ? `${base}_${index + 1}` : `stage_${index + 1}`
+  }
+  const inferSemantic = (label: string, index: number): string => {
+    const lower = label.toLowerCase()
+    if (/\bwon\b|\bsold\b|activation/.test(lower)) return 'won'
+    if (/\blost\b/.test(lower)) return 'lost'
+    if (index === 0) return 'intake'
+    if (/proposal|estimate|presentation|pitch|sow/.test(lower)) return 'proposal_presentation'
+    if (/hold|follow|decision/.test(lower)) return 'decision'
+    return 'active_qualification'
+  }
+  const now = Date.now().toString(36)
+  const processId = `sp_${now}_${uid().slice(0, 6)}`
+  const versionId = `${processId}_v1`
+  const terminalSemantics = new Set(['won', 'lost', 'disqualified', 'nurture', 'terminal'])
+  const draftStages = labels.map((label, index) => ({
+    id: `${versionId}_${slug(label, index)}`,
+    stable_key: slug(label, index),
+    display_name: label,
+    semantic: inferSemantic(label, index)
+  }))
+  // Guarantee validation gates: an intake stage plus won and lost terminals.
+  if (!draftStages.some(s => s.semantic === 'intake')) draftStages[0].semantic = 'intake'
+  if (!draftStages.some(s => s.semantic === 'won')) draftStages.push({ id: `${versionId}_stage_won`, stable_key: 'stage_won', display_name: 'Won', semantic: 'won' })
+  if (!draftStages.some(s => s.semantic === 'lost')) draftStages.push({ id: `${versionId}_stage_lost`, stable_key: 'stage_lost', display_name: 'Lost', semantic: 'lost' })
+  const statements: any[] = [
+    c.env.DB.prepare('INSERT INTO sales_processes (id,company_id,name,description,source_template_id,created_by) VALUES (?,?,?,?,?,?)')
+      .bind(processId, companyId, String(body.name || 'Company Sales Process'), 'Draft created from the live pipeline stages', '', actorId),
+    c.env.DB.prepare("INSERT INTO sales_process_versions (id,company_id,process_id,version_number,lifecycle,based_on_version_id,created_by) VALUES (?,?,?,1,'draft','',?)")
+      .bind(versionId, companyId, processId, actorId)
+  ]
+  draftStages.forEach((stage, index) => {
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_process_stages
+      (id,company_id,process_version_id,stable_key,display_name,board_label,description,customer_milestone,semantic_type,display_order,state,expected_duration_days,entry_guidance,exit_guidance,manager_override_policy,created_by)
+      VALUES (?,?,?,?,?,?,'','',?,?,'active',0,'','','allowed_with_reason',?)`)
+      .bind(stage.id, companyId, versionId, stage.stable_key, stage.display_name, stage.display_name, stage.semantic, index + 1, actorId))
+    if (terminalSemantics.has(stage.semantic)) {
+      statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_outcomes (id,company_id,process_version_id,stage_id,stable_key,display_name,semantic_type,config_json) VALUES (?,?,?,?,?,?,?,'{}')`)
+        .bind(`${versionId}_outcome_${stage.stable_key}`, companyId, versionId, stage.id, `outcome_${stage.stable_key}`, stage.display_name, stage.semantic))
+    }
+  })
+  // Open transition graph: every non-terminal stage can reach every other stage,
+  // mirroring the freedom of the legacy drag-and-drop board.
+  let transitionOrder = 0
+  for (const from of draftStages) {
+    if (terminalSemantics.has(from.semantic)) continue
+    for (const to of draftStages) {
+      if (from.id === to.id) continue
+      transitionOrder += 1
+      statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_transition_paths
+        (id,company_id,process_version_id,from_stage_id,to_stage_id,outcome_type,display_label,guidance,active,display_order,override_policy,requires_override,created_by)
+        VALUES (?,?,?,?,?,?,'','',1,?,'allowed_with_reason',0,?)`)
+        .bind(`${versionId}_transition_${transitionOrder}`, companyId, versionId, from.id, to.id, terminalSemantics.has(to.semantic) ? to.semantic : '', transitionOrder, actorId))
+    }
+  }
+  await c.env.DB.batch(statements)
+  await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'sales_process', entityId: processId, entityLabel: String(body.name || 'Company Sales Process'), action: 'draft_created', afterJson: { versionId, source: 'current_pipeline', labels } })
   return json(c, { process_id: processId, version_id: versionId, lifecycle: 'draft' }, 201)
 })
 
@@ -1884,20 +2002,37 @@ app.post('/api/sales-process/versions/:versionId/publish', requireAuth, async (c
   const previous = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE company_id=? AND lifecycle='published' LIMIT 1").bind(companyId).first<any>()
   const previousAssignments = previous ? await c.env.DB.prepare('SELECT * FROM sales_stage_assignments WHERE company_id=? AND process_version_id=?').bind(companyId, previous.id).all<any>() : { results: [] }
   const previousAssignmentByOpportunity = new Map((previousAssignments.results as any[]).map(assignment => [String(assignment.opportunity_id), assignment]))
+  // Live cutover inputs: the published stage labels replace the legacy
+  // pipeline_stages setting, and each mapped opportunity's status text moves to
+  // its new stage label so the board, lead flow, and reports reshape instantly.
+  // Prior values are captured for exact rollback.
+  const newStages = await c.env.DB.prepare("SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state='active' ORDER BY display_order").bind(companyId, versionId).all<any>()
+  const stageById = new Map((newStages.results as any[]).map(stage => [String(stage.id), stage]))
+  const newStageLabels = (newStages.results as any[]).map(stage => String(stage.board_label || stage.display_name || '').trim()).filter(Boolean)
+  const previousStagesRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key=? LIMIT 1').bind(`${companyId}:pipeline_stages`).first<{ value: string }>()
+  let previousPipelineStages: any = null
+  try { if (previousStagesRow?.value) previousPipelineStages = JSON.parse(previousStagesRow.value) } catch (_) {}
+  const previousOpportunities = await c.env.DB.prepare('SELECT id,status,pipeline_stage FROM opportunities WHERE company_id=?').bind(companyId).all<any>()
+  const previousOppById = new Map((previousOpportunities.results as any[]).map(o => [String(o.id), o]))
   const publicationId = `pub_${uid()}`
   const statements: any[] = []
   if (previous) statements.push(c.env.DB.prepare("UPDATE sales_process_versions SET lifecycle='superseded',updated_at=datetime('now') WHERE id=? AND company_id=?").bind(previous.id, companyId))
   statements.push(c.env.DB.prepare("UPDATE sales_process_versions SET lifecycle='published',published_at=datetime('now'),published_by=?,updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='draft'").bind(actorId, versionId, companyId))
+  if (newStageLabels.length >= 2) statements.push(c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`${companyId}:pipeline_stages`, JSON.stringify(newStageLabels)))
   for (const m of mappings.results as any[]) {
     const previousAssignment: any = previousAssignmentByOpportunity.get(String(m.opportunity_id))
+    const previousOpp: any = previousOppById.get(String(m.opportunity_id))
+    const targetStage: any = stageById.get(String(m.final_stage_id))
+    const targetLabel = targetStage ? String(targetStage.board_label || targetStage.display_name || '').trim() : ''
     const assignmentId = `asg_${uid()}`
     statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_assignments (id,company_id,opportunity_id,process_version_id,stage_id,classification,outcome_type,assigned_by) VALUES (?,?,?,?,?,'mapped',?,?)`).bind(assignmentId, companyId, m.opportunity_id, versionId, m.final_stage_id, m.final_outcome_type || '', actorId))
-    statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(m.final_stage_id, m.opportunity_id, companyId))
-    statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_history (id,company_id,migration_batch_id,opportunity_id,previous_process_version_id,new_process_version_id,previous_stage_id,previous_label,new_stage_id,mapping_id,actor_id,event_type,event_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,'published',?)`).bind(`hist_${uid()}`, companyId, batchId, m.opportunity_id, previous?.id || '', versionId, previousAssignment?.stage_id || m.previous_stage_id || '', m.previous_label || '', m.final_stage_id, m.id, actorId, JSON.stringify({ previous_outcome_type: previousAssignment?.outcome_type || '', previous_classification: previousAssignment?.classification || '' })))
+    if (targetLabel) statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,status=?,pipeline_stage=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(m.final_stage_id, targetLabel, targetLabel, m.opportunity_id, companyId))
+    else statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(m.final_stage_id, m.opportunity_id, companyId))
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_history (id,company_id,migration_batch_id,opportunity_id,previous_process_version_id,new_process_version_id,previous_stage_id,previous_label,new_stage_id,mapping_id,actor_id,event_type,event_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,'published',?)`).bind(`hist_${uid()}`, companyId, batchId, m.opportunity_id, previous?.id || '', versionId, previousAssignment?.stage_id || m.previous_stage_id || '', m.previous_label || '', m.final_stage_id, m.id, actorId, JSON.stringify({ previous_outcome_type: previousAssignment?.outcome_type || '', previous_classification: previousAssignment?.classification || '', previous_status: previousOpp?.status ?? null, previous_pipeline_stage: previousOpp?.pipeline_stage ?? null })))
   }
-  statements.push(c.env.DB.prepare(`INSERT INTO sales_process_publications (id,company_id,process_id,process_version_id,previous_version_id,migration_batch_id,action,actor_id,impact_json) VALUES (?,?,?,?,?,?,'publish',?,?)`).bind(publicationId, companyId, version.process_id, versionId, previous?.id || '', batchId, actorId, JSON.stringify({ opportunity_count: mappings.results.length })))
+  statements.push(c.env.DB.prepare(`INSERT INTO sales_process_publications (id,company_id,process_id,process_version_id,previous_version_id,migration_batch_id,action,actor_id,impact_json) VALUES (?,?,?,?,?,?,'publish',?,?)`).bind(publicationId, companyId, version.process_id, versionId, previous?.id || '', batchId, actorId, JSON.stringify({ opportunity_count: mappings.results.length, pipeline_stages: newStageLabels, previous_pipeline_stages: previousPipelineStages })))
   await c.env.DB.batch(statements)
-  return json(c, { published: versionId, publication_id: publicationId })
+  return json(c, { published: versionId, publication_id: publicationId, pipeline_stages: newStageLabels })
 })
 
 app.post('/api/sales-process/publications/:publicationId/rollback', requireAuth, async (c) => {
@@ -1911,9 +2046,21 @@ app.post('/api/sales-process/publications/:publicationId/rollback', requireAuth,
     c.env.DB.prepare("UPDATE sales_process_versions SET lifecycle='rolled_back',updated_at=datetime('now') WHERE id=? AND company_id=?").bind(publication.process_version_id, companyId),
     c.env.DB.prepare("UPDATE sales_process_versions SET lifecycle='published',updated_at=datetime('now') WHERE id=? AND company_id=?").bind(publication.previous_version_id, companyId)
   ]
+  // Restore the legacy pipeline_stages setting captured at publish time so the
+  // live board columns revert together with the process version.
+  let publicationImpact: any = {}; try { publicationImpact = JSON.parse(publication.impact_json || '{}') } catch (_) {}
+  if (Array.isArray(publicationImpact.previous_pipeline_stages) && publicationImpact.previous_pipeline_stages.length >= 2) {
+    statements.push(c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`${companyId}:pipeline_stages`, JSON.stringify(publicationImpact.previous_pipeline_stages)))
+  } else if (publicationImpact.previous_pipeline_stages === null) {
+    statements.push(c.env.DB.prepare('DELETE FROM settings WHERE key=?').bind(`${companyId}:pipeline_stages`))
+  }
   for (const h of history.results as any[]) {
     let historyEvent: any = {}; try { historyEvent = JSON.parse(h.event_json || '{}') } catch (_) {}
-    statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(h.previous_stage_id || '', h.opportunity_id, companyId))
+    if (h.event_type === 'published' && (typeof historyEvent.previous_status === 'string' || typeof historyEvent.previous_pipeline_stage === 'string')) {
+      statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,status=?,pipeline_stage=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(h.previous_stage_id || '', historyEvent.previous_status ?? '', historyEvent.previous_pipeline_stage ?? '', h.opportunity_id, companyId))
+    } else {
+      statements.push(c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=updated_at WHERE id=? AND company_id=?').bind(h.previous_stage_id || '', h.opportunity_id, companyId))
+    }
     statements.push(c.env.DB.prepare(`UPDATE sales_stage_assignments SET stage_id=?,outcome_type=?,classification=?,assigned_at=datetime('now'),assigned_by=?
       WHERE company_id=? AND opportunity_id=? AND process_version_id=?`).bind(h.previous_stage_id || '', historyEvent.previous_outcome_type || '', historyEvent.previous_classification || 'rollback_restored', actorId, companyId, h.opportunity_id, publication.previous_version_id))
     statements.push(c.env.DB.prepare(`INSERT INTO sales_migration_history (id,company_id,migration_batch_id,opportunity_id,previous_process_version_id,new_process_version_id,previous_stage_id,previous_label,new_stage_id,actor_id,event_type,event_json) VALUES (?,?,?,?,?,?,?,?,?,?,'rollback','{}')`).bind(`hist_${uid()}`, companyId, publication.migration_batch_id, h.opportunity_id, publication.process_version_id, publication.previous_version_id, h.new_stage_id, h.previous_label, h.previous_stage_id || '', actorId))
@@ -2082,7 +2229,9 @@ app.on(['PUT', 'POST'], ['/api/opportunities/:id/sales-stage', '/api/opportuniti
         SELECT 1 FROM opportunities WHERE id=? AND company_id=? AND sales_process_stage_id=?
       )`).bind(eventId, companyId, opportunityId, assignment.process_version_id, assignment.stage_id || '', targetId, outcomeType, actorId, overrideReason, assignment.id, companyId, expectedStageId, opportunityId, companyId, expectedStageId),
     c.env.DB.prepare(`UPDATE sales_stage_assignments SET stage_id=?,outcome_type=?,classification='transitioned',assigned_at=datetime('now'),assigned_by=? WHERE id=? AND company_id=? AND stage_id=?`).bind(targetId, outcomeType, actorId, assignment.id, companyId, expectedStageId),
-    c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,updated_at=datetime(\'now\') WHERE id=? AND company_id=? AND sales_process_stage_id=?').bind(targetId, opportunityId, companyId, expectedStageId)
+    // The legacy status and pipeline_stage labels follow the stable transition so
+    // the pipeline board, lead flow, and reports stay aligned with the process.
+    c.env.DB.prepare('UPDATE opportunities SET sales_process_stage_id=?,status=?,pipeline_stage=?,updated_at=datetime(\'now\') WHERE id=? AND company_id=? AND sales_process_stage_id=?').bind(targetId, String(target.board_label || target.display_name || ''), String(target.board_label || target.display_name || ''), opportunityId, companyId, expectedStageId)
   ])
   if (Number((transitionResults[0] as any)?.meta?.changes || 0) !== 1) return err(c, 'The opportunity stage changed; refresh before transitioning', 409)
   await logActivity(c.env.DB, { companyId, actorId, actorName: actorId, entityType: 'opportunity', entityId: opportunityId, entityLabel: opportunityId, action: 'sales_stage_transitioned', beforeJson: { stage_id: assignment.stage_id }, afterJson: { stage_id: targetId, outcome_type: outcomeType, override_reason: overrideReason } })
@@ -2545,6 +2694,15 @@ app.post('/api/opportunities', requireAuth, async (c) => {
   // assigned_to_rep_id: if Jen creates and assigns to Tyler, set to Tyler's id
   // defaults to same as rep_id (owner = assignee for reps creating their own leads)
   const assignedTo = b.assignedToRepId||b.assigned_to_rep_id||effRepId||''
+  // New-lead default stage: first label of the company's live pipeline setting
+  // (kept in sync with the published sales process on publish), falling back to
+  // the legacy nine-stage default only when the setting is absent.
+  let defaultStatus = 'Lead Intake / Rapport'
+  try {
+    const stagesRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key=? LIMIT 1').bind(`${companyId}:pipeline_stages`).first<{ value: string }>()
+    if (stagesRow?.value) { const parsed = JSON.parse(stagesRow.value); if (Array.isArray(parsed) && parsed.length && String(parsed[0]).trim()) defaultStatus = String(parsed[0]).trim() }
+  } catch (_) {}
+  const effStatus = b.status || defaultStatus
   await c.env.DB.prepare(`
     INSERT INTO opportunities (
       id, company_id, rep_id, assigned_to_rep_id,
@@ -2559,7 +2717,7 @@ app.post('/api/opportunities', requireAuth, async (c) => {
     id, companyId, effRepId, assignedTo,
     b.client||'', b.phone||'', b.email||'',
     b.address||'', b.serviceLine||b.service_line||'', b.source||'',
-    b.status||'Lead Intake / Rapport', Number(b.jobValue||b.job_value||0),
+    effStatus, Number(b.jobValue||b.job_value||0),
     b.project||'', b.urgency||'', b.decisionMaker||b.decision_maker||'',
     b.budgetRange||b.budget_range||'', b.nextFollowUp||b.next_follow_up||'',
     b.pipelineStage||b.pipeline_stage||'',
@@ -2573,6 +2731,10 @@ app.post('/api/opportunities', requireAuth, async (c) => {
     b.collected?1:0, b.soldDate||b.sold_date||'',
     Number(b.soldAmount||b.sold_amount||0)
   ).run()
+  // Published-process lead flow: a brand new lead is immediately assigned to the
+  // published stage whose label matches its status (default: the first stage),
+  // so it participates in stage tracking without needing restaging review.
+  try { await syncPublishedStageAssignment(c.env.DB, companyId, id, effStatus, c.var.repId as string) } catch (_) {}
   // Broadcast + activity log (non-blocking)
   c.executionCtx?.waitUntil?.(Promise.all([
     c.env.DB.prepare(
@@ -2582,7 +2744,7 @@ app.post('/api/opportunities', requireAuth, async (c) => {
       companyId, actorId: c.var.repId, actorName: c.var.repId,
       entityType: 'opportunity', entityId: id,
       entityLabel: b.client || id,
-      action: 'created', afterJson: { client: b.client, status: b.status || 'Lead Intake / Rapport', repId: effRepId }
+      action: 'created', afterJson: { client: b.client, status: effStatus, repId: effRepId }
     })
   ]))
   return json(c, { id }, 201)
@@ -2626,6 +2788,11 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
   await c.env.DB.prepare(
     `UPDATE opportunities SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ? AND company_id = ?`
   ).bind(...vals, id, companyId).run()
+  // Board drag-and-drop and record edits write legacy status labels; keep the
+  // published-process stable assignment in step when the label matches a stage.
+  if (b.status !== undefined || b.pipelineStage !== undefined || b.pipeline_stage !== undefined) {
+    try { await syncPublishedStageAssignment(c.env.DB, companyId, id, String(b.status ?? b.pipelineStage ?? b.pipeline_stage ?? ''), c.var.repId as string) } catch (_) {}
+  }
   // Broadcast + activity log (non-blocking)
   c.executionCtx?.waitUntil?.(Promise.all([
     c.env.DB.prepare(
@@ -11366,8 +11533,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b004">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11390,10 +11557,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260729b027"></script>
-  <script src="/js/client_portal.js?v=20260729b027"></script>
-  <script src="/js/platform_core.js?v=20260729b027"></script>
-  <script src="/js/client_portal.js?v=20260729b027"></script>  <script>
+  <script src="/js/platform_core.js?v=20260730b004"></script>
+  <script src="/js/client_portal.js?v=20260730b004"></script>
+  <script src="/js/platform_core.js?v=20260730b004"></script>
+  <script src="/js/client_portal.js?v=20260730b004"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12027,12 +12194,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">
-  <link rel="stylesheet" href="/js/styles.css?v=20260729b027">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b027">
-  <link rel="stylesheet" href="/js/premium.css?v=20260729b027">
-  <link rel="stylesheet" href="/js/styles.css?v=20260729b027">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260729b027">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b004">
+  <link rel="stylesheet" href="/js/styles.css?v=20260730b004">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b004">
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b004">
+  <link rel="stylesheet" href="/js/styles.css?v=20260730b004">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b004">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -12591,84 +12758,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260729b027"></script>
-<script src="/js/sales-process.js?v=20260729b027"></script>
-<script src="/js/richtext.js?v=20260729b027"></script>
-<script src="/js/db.js?v=20260729b027"></script>
-<script src="/js/data.js?v=20260729b027"></script>
-<script src="/js/reps.js?v=20260729b027"></script>
-<script src="/js/record-page.js?v=20260729b027"></script>
-<script src="/js/academy.js?v=20260729b027"></script>
-<script src="/js/task_engine.js?v=20260729b027"></script>
-<script src="/js/gw_i18n.js?v=20260729b027"></script>
-<script src="/js/app_premium.js?v=20260729b027"></script>
-<script src="/js/estimates.js?v=20260729b027"></script>
-<script src="/js/multiday.js?v=20260729b027"></script>
-<script src="/js/proposals.js?v=20260729b027"></script>
-<script src="/js/pricing.js?v=20260729b027"></script>
-<script src="/js/invoices.js?v=20260729b027"></script>
-<script src="/js/csv_import.js?v=20260729b027"></script>
-<script src="/js/onboarding.js?v=20260729b027"></script>
-<script src="/js/gw_copilot.js?v=20260729b027"></script>
-<script src="/js/groundwork_ai.js?v=20260729b027"></script>
-<script src="/js/recurring_plans.js?v=20260729b027"></script>
-<script src="/js/reviews.js?v=20260729b027"></script>
-<script src="/js/stripe.js?v=20260729b027"></script>
-<script src="/js/email.js?v=20260729b027"></script>
-<script src="/js/notifications.js?v=20260729b027"></script>
-<script src="/js/integrations.js?v=20260729b027"></script>
-<script src="/js/sms.js?v=20260729b027"></script>
-<script src="/js/calendar_sync.js?v=20260729b027"></script>
-<script src="/js/ai_followup.js?v=20260729b027"></script>
-<script src="/js/user_management.js?v=20260729b027"></script>
-<script src="/js/platform_admin.js?v=20260729b027"></script>
-<script src="/js/time_tracker.js?v=20260729b027"></script>
-<script src="/js/field_workday.js?v=20260729b027"></script>
-<script src="/js/platform_core.js?v=20260729b027"></script>
-<script src="/js/approval_engine.js?v=20260729b027"></script>
-<script src="/js/automation_engine.js?v=20260729b027"></script>
-<script src="/js/client_portal.js?v=20260729b027"></script>
-<script src="/js/field_mode.js?v=20260729b027"></script>
-<script src="/js/assets_hub.js?v=20260729b027"></script>
-<script src="/js/gw-icons.js?v=20260729b027"></script>
-<script src="/js/sales-process.js?v=20260729b027"></script>
-<script src="/js/richtext.js?v=20260729b027"></script>
-<script src="/js/db.js?v=20260729b027"></script>
-<script src="/js/data.js?v=20260729b027"></script>
-<script src="/js/reps.js?v=20260729b027"></script>
-<script src="/js/record-page.js?v=20260729b027"></script>
-<script src="/js/academy.js?v=20260729b027"></script>
-<script src="/js/task_engine.js?v=20260729b027"></script>
-<script src="/js/gw_i18n.js?v=20260729b027"></script>
-<script src="/js/app_premium.js?v=20260729b027"></script>
-<script src="/js/estimates.js?v=20260729b027"></script>
-<script src="/js/multiday.js?v=20260729b027"></script>
-<script src="/js/proposals.js?v=20260729b027"></script>
-<script src="/js/pricing.js?v=20260729b027"></script>
-<script src="/js/invoices.js?v=20260729b027"></script>
-<script src="/js/csv_import.js?v=20260729b027"></script>
-<script src="/js/onboarding.js?v=20260729b027"></script>
-<script src="/js/gw_copilot.js?v=20260729b027"></script>
-<script src="/js/groundwork_ai.js?v=20260729b027"></script>
-<script src="/js/recurring_plans.js?v=20260729b027"></script>
-<script src="/js/reviews.js?v=20260729b027"></script>
-<script src="/js/stripe.js?v=20260729b027"></script>
-<script src="/js/email.js?v=20260729b027"></script>
-<script src="/js/notifications.js?v=20260729b027"></script>
-<script src="/js/integrations.js?v=20260729b027"></script>
-<script src="/js/sms.js?v=20260729b027"></script>
-<script src="/js/calendar_sync.js?v=20260729b027"></script>
-<script src="/js/ai_followup.js?v=20260729b027"></script>
-<script src="/js/user_management.js?v=20260729b027"></script>
-<script src="/js/platform_admin.js?v=20260729b027"></script>
-<script src="/js/time_tracker.js?v=20260729b027"></script>
-<script src="/js/field_workday.js?v=20260729b027"></script>
-<script src="/js/platform_core.js?v=20260729b027"></script>
-<script src="/js/approval_engine.js?v=20260729b027"></script>
-<script src="/js/automation_engine.js?v=20260729b027"></script>
-<script src="/js/client_portal.js?v=20260729b027"></script>
-<script src="/js/field_mode.js?v=20260729b027"></script>
-<script src="/js/assets_hub.js?v=20260729b027"></script><script>
+<script src="/js/gw-icons.js?v=20260730b004"></script>
+<script src="/js/sales-process.js?v=20260730b004"></script>
+<script src="/js/richtext.js?v=20260730b004"></script>
+<script src="/js/db.js?v=20260730b004"></script>
+<script src="/js/data.js?v=20260730b004"></script>
+<script src="/js/reps.js?v=20260730b004"></script>
+<script src="/js/record-page.js?v=20260730b004"></script>
+<script src="/js/academy.js?v=20260730b004"></script>
+<script src="/js/task_engine.js?v=20260730b004"></script>
+<script src="/js/gw_i18n.js?v=20260730b004"></script>
+<script src="/js/app_premium.js?v=20260730b004"></script>
+<script src="/js/estimates.js?v=20260730b004"></script>
+<script src="/js/multiday.js?v=20260730b004"></script>
+<script src="/js/proposals.js?v=20260730b004"></script>
+<script src="/js/pricing.js?v=20260730b004"></script>
+<script src="/js/invoices.js?v=20260730b004"></script>
+<script src="/js/csv_import.js?v=20260730b004"></script>
+<script src="/js/onboarding.js?v=20260730b004"></script>
+<script src="/js/gw_copilot.js?v=20260730b004"></script>
+<script src="/js/groundwork_ai.js?v=20260730b004"></script>
+<script src="/js/recurring_plans.js?v=20260730b004"></script>
+<script src="/js/reviews.js?v=20260730b004"></script>
+<script src="/js/stripe.js?v=20260730b004"></script>
+<script src="/js/email.js?v=20260730b004"></script>
+<script src="/js/notifications.js?v=20260730b004"></script>
+<script src="/js/integrations.js?v=20260730b004"></script>
+<script src="/js/sms.js?v=20260730b004"></script>
+<script src="/js/calendar_sync.js?v=20260730b004"></script>
+<script src="/js/ai_followup.js?v=20260730b004"></script>
+<script src="/js/user_management.js?v=20260730b004"></script>
+<script src="/js/platform_admin.js?v=20260730b004"></script>
+<script src="/js/time_tracker.js?v=20260730b004"></script>
+<script src="/js/field_workday.js?v=20260730b004"></script>
+<script src="/js/platform_core.js?v=20260730b004"></script>
+<script src="/js/approval_engine.js?v=20260730b004"></script>
+<script src="/js/automation_engine.js?v=20260730b004"></script>
+<script src="/js/client_portal.js?v=20260730b004"></script>
+<script src="/js/field_mode.js?v=20260730b004"></script>
+<script src="/js/assets_hub.js?v=20260730b004"></script>
+<script src="/js/gw-icons.js?v=20260730b004"></script>
+<script src="/js/sales-process.js?v=20260730b004"></script>
+<script src="/js/richtext.js?v=20260730b004"></script>
+<script src="/js/db.js?v=20260730b004"></script>
+<script src="/js/data.js?v=20260730b004"></script>
+<script src="/js/reps.js?v=20260730b004"></script>
+<script src="/js/record-page.js?v=20260730b004"></script>
+<script src="/js/academy.js?v=20260730b004"></script>
+<script src="/js/task_engine.js?v=20260730b004"></script>
+<script src="/js/gw_i18n.js?v=20260730b004"></script>
+<script src="/js/app_premium.js?v=20260730b004"></script>
+<script src="/js/estimates.js?v=20260730b004"></script>
+<script src="/js/multiday.js?v=20260730b004"></script>
+<script src="/js/proposals.js?v=20260730b004"></script>
+<script src="/js/pricing.js?v=20260730b004"></script>
+<script src="/js/invoices.js?v=20260730b004"></script>
+<script src="/js/csv_import.js?v=20260730b004"></script>
+<script src="/js/onboarding.js?v=20260730b004"></script>
+<script src="/js/gw_copilot.js?v=20260730b004"></script>
+<script src="/js/groundwork_ai.js?v=20260730b004"></script>
+<script src="/js/recurring_plans.js?v=20260730b004"></script>
+<script src="/js/reviews.js?v=20260730b004"></script>
+<script src="/js/stripe.js?v=20260730b004"></script>
+<script src="/js/email.js?v=20260730b004"></script>
+<script src="/js/notifications.js?v=20260730b004"></script>
+<script src="/js/integrations.js?v=20260730b004"></script>
+<script src="/js/sms.js?v=20260730b004"></script>
+<script src="/js/calendar_sync.js?v=20260730b004"></script>
+<script src="/js/ai_followup.js?v=20260730b004"></script>
+<script src="/js/user_management.js?v=20260730b004"></script>
+<script src="/js/platform_admin.js?v=20260730b004"></script>
+<script src="/js/time_tracker.js?v=20260730b004"></script>
+<script src="/js/field_workday.js?v=20260730b004"></script>
+<script src="/js/platform_core.js?v=20260730b004"></script>
+<script src="/js/approval_engine.js?v=20260730b004"></script>
+<script src="/js/automation_engine.js?v=20260730b004"></script>
+<script src="/js/client_portal.js?v=20260730b004"></script>
+<script src="/js/field_mode.js?v=20260730b004"></script>
+<script src="/js/assets_hub.js?v=20260730b004"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

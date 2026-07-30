@@ -386,6 +386,7 @@ const DB = (() => {
     get(versionId) { return get('/sales-process' + (versionId ? `?version_id=${encodeURIComponent(versionId)}` : '')); },
     templates() { return get('/sales-process/templates'); },
     adoptTemplate(templateVersionId, name) { return post('/sales-process/drafts/from-template', { template_version_id: templateVersionId, name }); },
+    fromCurrentPipeline(name) { return post('/sales-process/drafts/from-current-pipeline', { name }); },
     saveStages(versionId, stages, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/stages`, { stages, content_revision: contentRevision }); },
     saveComponents(versionId, component, items, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/components/${encodeURIComponent(component)}`, { items, content_revision: contentRevision }); },
     createSuggestion(versionId, suggestion) { return post(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions`, suggestion); },

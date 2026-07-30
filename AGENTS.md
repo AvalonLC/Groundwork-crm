@@ -95,12 +95,25 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   latest version per template; adopting a graphless superseded version
   (e.g. `tpl_groundwork_field_service_v1`) is rejected with 409. Never edit
   global templates — tenants get deep copies with fresh IDs on adopt.
-- Lifecycle (all `/api/sales-process/*`, admin session): draft from template ->
-  validate -> migration propose -> per-opportunity mapping review
-  (`final_stage_id`, optional `final_outcome_type`) -> snapshot
-  (`migration_batch_id` in body) -> snapshot approve -> publication-readiness
-  (`?migration_batch_id=` query) -> publish `{confirm:true, migration_batch_id}`
-  -> optional rollback `{confirm:true}`.
+- Lifecycle (all `/api/sales-process/*`, admin session): draft from template
+  (`/drafts/from-template`) or from the live board
+  (`/drafts/from-current-pipeline`, imports current pipeline labels as a
+  validation-complete draft) -> validate -> migration propose ->
+  per-opportunity mapping review (`final_stage_id`, optional
+  `final_outcome_type`) -> snapshot (`migration_batch_id` in body) ->
+  snapshot approve -> publication-readiness (`?migration_batch_id=` query) ->
+  publish `{confirm:true, migration_batch_id}` -> optional rollback
+  `{confirm:true}`.
+- Publish is a FULL PIPELINE CUTOVER: it writes the published stage labels to
+  the `{companyId}:pipeline_stages` setting, migrates each mapped
+  opportunity's `status`/`pipeline_stage` text to the new labels, and captures
+  the prior setting in `impact_json.previous_pipeline_stages` (`null` if the
+  setting did not exist) plus per-opportunity prior labels in history
+  `event_json`. Rollback restores all of it exactly (deletes the setting when
+  previously absent). New leads default to the live setting's first label;
+  legacy status writes sync the stable assignment via
+  `syncPublishedStageAssignment` (classification `status_synced`) — unknown
+  labels leave assignments untouched (Needs Restaging preserved).
 - Canonical stage resolver: `resolveSalesOpportunityStage` in `src/index.tsx`;
   browser mirror: `public/js/sales-process.js`. Keep them in sync.
 - Migration/publishing code must NEVER touch `gw_leads`
