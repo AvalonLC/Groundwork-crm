@@ -16055,3 +16055,31 @@ h1.pl-title,
 .spb-adv-select{margin-left:auto;max-width:190px;font-size:.82rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:var(--muted);background:transparent}
 .spb-step-hint{margin:0 0 14px;padding:10px 12px;background:var(--surface);border-radius:8px;color:var(--muted);font-size:.85rem}
 @media(max-width:768px){.spb-start-grid{grid-template-columns:1fr}.spb-steps{flex-direction:column;align-items:stretch}.spb-step{justify-content:flex-start}.spb-adv-select{margin-left:0;max-width:none}}
+.spb-stage-card{display:flex;flex-direction:column;gap:12px;padding:18px;margin-bottom:14px;background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);counter-increment:spbstage;transition:box-shadow .15s,border-color .15s}
+.spb-stage-card:focus-within{border-color:var(--blue);box-shadow:0 4px 14px rgba(37,99,235,.1)}
+#spb-stage-list{counter-reset:spbstage}
+.spb-stage-num::before{content:counter(spbstage)}
+.spb-stage-num{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-size:.82rem;font-weight:800;flex:none;margin-top:18px}
+.spb-stage-card-head{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.spb-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.spb-field>label{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.spb-field input,.spb-field select,.spb-field textarea{font-size:.9rem;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);width:100%}
+.spb-field input:focus,.spb-field select:focus,.spb-field textarea:focus{outline:none;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.spb-field input:disabled,.spb-field select:disabled,.spb-field textarea:disabled{opacity:.65;background:var(--line);cursor:not-allowed}
+.spb-field-grow{flex:2 1 220px}
+.spb-stage-card-head .spb-field{flex:1 1 170px}
+.spb-stage-card-head .spb-field-narrow{flex:0 1 110px}
+.spb-stage-card-guidance{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.spb-stage-card-guidance textarea{min-height:74px;resize:vertical}
+.spb-stage-card-actions{display:flex;gap:8px;flex-wrap:wrap;padding-top:4px;border-top:1px dashed var(--line)}
+.spb-stage-card-actions button{font-size:.78rem;padding:7px 12px}
+.spb-stage-card-actions .spb-remove-btn{margin-left:auto;color:var(--danger,#b91c1c);border-color:currentColor}
+.spb-stage-card-actions .spb-remove-btn:hover{background:rgba(185,28,28,.06)}
+.spb-empty{padding:22px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+.spb-component-row{background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.spb-component-row:focus-within{border-color:var(--blue)}
+.spb-component-row label{text-transform:uppercase;letter-spacing:.04em}
+.spb-component-row label input,.spb-component-row label select,.spb-component-row label textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.spb-component-row label input:focus,.spb-component-row label select:focus,.spb-component-row label textarea:focus{outline:none;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.spb-component-row>button{justify-self:start;align-self:end;font-size:.78rem}
+@media(max-width:768px){.spb-stage-card{padding:14px}.spb-stage-card-head{flex-direction:column}.spb-stage-card-head .spb-field,.spb-stage-card-head .spb-field-narrow,.spb-field-grow{flex:1 1 auto;width:100%}.spb-stage-card-guidance{grid-template-columns:1fr}.spb-stage-num{margin-top:0}.spb-stage-card-actions button{flex:1 1 auto}}

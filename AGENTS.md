@@ -114,6 +114,18 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   legacy status writes sync the stable assignment via
   `syncPublishedStageAssignment` (classification `status_synced`) — unknown
   labels leave assignments untouched (Needs Restaging preserved).
+- LIVE EDITING (published version, no draft cycle): `PUT /api/sales-process/
+  live/:versionId/stages` and `PUT .../live/:versionId/components/:component`
+  (internal_statuses|requirements|guides|resources|automations|academy only —
+  no transitions/outcomes). Gated on `lifecycle='published'` + admin role +
+  `content_revision` optimistic concurrency (same changes()=0 INSERT trick as
+  drafts). Stage saves cascade live: rewrite `{companyId}:pipeline_stages`
+  setting and UPDATE renamed stages' opportunities `status`/`pipeline_stage`
+  by `sales_process_stage_id`. Deleting/archiving a stage that holds
+  `sales_stage_assignments` is rejected 409 (draft flow required). New active
+  stages get wired into the transition graph; orphaned transitions/outcomes
+  for removed stages are deleted. Draft routes still 404 on published
+  versions (immutability contract in the adoption integration test).
 - Canonical stage resolver: `resolveSalesOpportunityStage` in `src/index.tsx`;
   browser mirror: `public/js/sales-process.js`. Keep them in sync.
 - Migration/publishing code must NEVER touch `gw_leads`

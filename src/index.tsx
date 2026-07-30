@@ -1605,6 +1605,156 @@ app.put('/api/sales-process/drafts/:versionId/components/:component', requireAut
   return json(c, { component, updated: items.length, content_revision: expectedRevision + 1 })
 })
 
+// ── LIVE EDITING OF THE PUBLISHED PROCESS ────────────────────────────────────
+// Content edits (names, order, guidance, durations, milestones, new stages)
+// apply directly to the published version and cascade to the live board:
+// the pipeline_stages setting is rewritten and renamed stages carry their
+// leads' status/pipeline_stage text with them. Structural lead moves still
+// require the draft -> review -> publish flow. Stages holding opportunities
+// can never be deleted or archived here.
+app.put('/api/sales-process/live/:versionId/stages', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const versionId = c.req.param('versionId')
+  const version = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='published'").bind(versionId, companyId).first<any>()
+  if (!version) return err(c, 'Published version not found', 404)
+  const body = await c.req.json()
+  const expectedRevision = Number(body.content_revision || 0)
+  if (!expectedRevision || expectedRevision !== Number(version.content_revision || 1)) return err(c, 'The process changed since it was loaded', 409)
+  const stages = Array.isArray(body.stages) ? body.stages : []
+  if (!stages.length) return err(c, 'At least one stage is required')
+  const allowedSemantics = new Set(['intake','active_qualification','consultation','estimate_development','proposal_presentation','decision','terminal','won','lost','disqualified','nurture'])
+  const terminalSemantics = new Set(['terminal','won','lost','disqualified','nurture'])
+  for (const stage of stages) if (!allowedSemantics.has(String(stage.semantic_type || ''))) return err(c, `Invalid semantic type: ${stage.semantic_type}`)
+  const activeStages = stages.filter((s: any) => s.state !== 'archived')
+  if (activeStages.length < 2) return err(c, 'A live process needs at least two active stages')
+  if (!activeStages.some((s: any) => String(s.semantic_type) === 'intake')) return err(c, 'One active stage must have the intake type so new leads have a home')
+  if (!activeStages.some((s: any) => terminalSemantics.has(String(s.semantic_type)))) return err(c, 'At least one active closing stage (won, lost, or terminal) is required')
+  const existing = await c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>()
+  const existingById = new Map((existing.results as any[]).map(s => [String(s.id), s]))
+  const submittedIds = new Set(stages.map((s: any) => String(s.id || '')))
+  // Occupied-stage guard for deletion and archival.
+  for (const [stageId] of existingById) {
+    const submitted: any = stages.find((s: any) => String(s.id) === stageId)
+    if (!submitted || submitted.state === 'archived') {
+      const occupied = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM sales_stage_assignments WHERE company_id=? AND stage_id=?').bind(companyId, stageId).first<any>()
+      if (Number(occupied?.n || 0) > 0) return err(c, 'A stage that contains leads cannot be removed or archived. Move those leads first (drag them on the Pipeline board), or use a new draft with lead review for a bigger restructure.', 409)
+    }
+  }
+  const statements: any[] = [
+    c.env.DB.prepare("UPDATE sales_process_versions SET content_revision=content_revision+1,updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='published' AND content_revision=?").bind(versionId, companyId, expectedRevision),
+    c.env.DB.prepare("INSERT INTO sales_process_versions (id,company_id,process_id,version_number,lifecycle) SELECT id,company_id,process_id,version_number,lifecycle FROM sales_process_versions WHERE id=? AND company_id=? AND changes()=0").bind(versionId, companyId),
+    c.env.DB.prepare('DELETE FROM sales_process_stages WHERE company_id=? AND process_version_id=?').bind(companyId, versionId)
+  ]
+  const finalStages: any[] = []
+  let activeOrder = 0
+  stages.forEach((stage: any, index: number) => {
+    const isNew = !existingById.has(String(stage.id))
+    const id = isNew ? `${versionId}_${uid()}` : String(stage.id)
+    const label = String(stage.display_name || '').trim()
+    const record = { id, isNew, label, semantic: String(stage.semantic_type), state: stage.state === 'archived' ? 'archived' : 'active' }
+    finalStages.push(record)
+    if (record.state === 'active') activeOrder += 1
+    const prior: any = existingById.get(String(stage.id)) || {}
+    statements.push(c.env.DB.prepare(`INSERT INTO sales_process_stages
+      (id,company_id,process_version_id,stable_key,display_name,board_label,description,customer_milestone,semantic_type,display_order,state,expected_duration_days,entry_guidance,exit_guidance,manager_override_policy,created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(id, companyId, versionId, String(stage.stable_key || prior.stable_key || id), label, label,
+        String(stage.description ?? prior.description ?? ''), String(stage.customer_milestone ?? ''), record.semantic, index + 1, record.state,
+        Number(stage.expected_duration_days || 0), String(stage.entry_guidance ?? ''), String(stage.exit_guidance ?? ''),
+        String(prior.manager_override_policy || 'allowed_with_reason'), c.var.repId))
+    // New terminal stages need a recordable outcome.
+    if (isNew && terminalSemantics.has(record.semantic)) {
+      const outcomeSemantic = ['won','lost','disqualified','nurture'].includes(record.semantic) ? record.semantic : 'won'
+      statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_outcomes (id,company_id,process_version_id,stage_id,stable_key,display_name,semantic_type,config_json) VALUES (?,?,?,?,?,?,?,'{}')`)
+        .bind(`${versionId}_outcome_${uid()}`, companyId, versionId, id, `outcome_${uid()}`, label, outcomeSemantic))
+    }
+  })
+  // Remove orphaned rows for deleted stages; wire new stages into the graph.
+  const keptIds = finalStages.map(s => s.id)
+  const keptPlaceholders = keptIds.map(() => '?').join(',')
+  statements.push(c.env.DB.prepare(`DELETE FROM sales_stage_transition_paths WHERE company_id=? AND process_version_id=? AND (from_stage_id NOT IN (${keptPlaceholders}) OR to_stage_id NOT IN (${keptPlaceholders}))`).bind(companyId, versionId, ...keptIds, ...keptIds))
+  statements.push(c.env.DB.prepare(`DELETE FROM sales_stage_outcomes WHERE company_id=? AND process_version_id=? AND stage_id NOT IN (${keptPlaceholders})`).bind(companyId, versionId, ...keptIds))
+  let transitionOrder = 900
+  for (const s of finalStages.filter(x => x.isNew && x.state === 'active')) {
+    for (const other of finalStages.filter(x => x.state === 'active' && x.id !== s.id)) {
+      transitionOrder += 1
+      if (!terminalSemantics.has(other.semantic) || !terminalSemantics.has(s.semantic)) {
+        if (!terminalSemantics.has(other.semantic)) statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_transition_paths (id,company_id,process_version_id,from_stage_id,to_stage_id,outcome_type,display_label,guidance,active,display_order,override_policy,requires_override,created_by) VALUES (?,?,?,?,?,?,'','',1,?,'allowed_with_reason',0,?)`)
+          .bind(`${versionId}_lt_${uid()}`, companyId, versionId, other.id, s.id, terminalSemantics.has(s.semantic) ? (['won','lost','disqualified','nurture'].includes(s.semantic) ? s.semantic : '') : '', transitionOrder, c.var.repId))
+        if (!terminalSemantics.has(s.semantic)) statements.push(c.env.DB.prepare(`INSERT INTO sales_stage_transition_paths (id,company_id,process_version_id,from_stage_id,to_stage_id,outcome_type,display_label,guidance,active,display_order,override_policy,requires_override,created_by) VALUES (?,?,?,?,?,?,'','',1,?,'allowed_with_reason',0,?)`)
+          .bind(`${versionId}_lt_${uid()}`, companyId, versionId, s.id, other.id, terminalSemantics.has(other.semantic) ? (['won','lost','disqualified','nurture'].includes(other.semantic) ? other.semantic : '') : '', transitionOrder + 500, c.var.repId))
+      }
+    }
+  }
+  // Live cascade: board columns follow the new labels and order; leads in a
+  // renamed stage carry the new label. The platform-level leads table is never touched.
+  const newLabels = finalStages.filter(s => s.state === 'active').map(s => s.label).filter(Boolean)
+  if (newLabels.length >= 2) statements.push(c.env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").bind(`${companyId}:pipeline_stages`, JSON.stringify(newLabels)))
+  for (const s of finalStages) {
+    const prior: any = existingById.get(s.id)
+    const priorLabel = prior ? String(prior.board_label || prior.display_name || '').trim() : ''
+    if (prior && priorLabel && s.label && priorLabel !== s.label) {
+      statements.push(c.env.DB.prepare('UPDATE opportunities SET status=?,pipeline_stage=?,updated_at=updated_at WHERE company_id=? AND sales_process_stage_id=?').bind(s.label, s.label, companyId, s.id))
+    }
+  }
+  try { await c.env.DB.batch(statements) }
+  catch (error: any) {
+    if (/UNIQUE constraint|constraint failed/i.test(String(error?.message || error))) return err(c, 'The process changed since it was loaded', 409)
+    throw error
+  }
+  await logActivity(c.env.DB, { companyId, actorId: c.var.repId, actorName: c.var.repId, entityType: 'sales_process', entityId: version.process_id, entityLabel: 'Live process stages', action: 'live_updated', afterJson: { stages: newLabels } })
+  return json(c, { updated: stages.length, content_revision: expectedRevision + 1, pipeline_stages: newLabels })
+})
+
+app.put('/api/sales-process/live/:versionId/components/:component', requireAuth, async (c) => {
+  if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
+  const companyId = c.var.companyId as string
+  const versionId = c.req.param('versionId')
+  const component = c.req.param('component')
+  const definitions: Record<string, { table: string, columns: string[], stageColumns: string[] }> = {
+    internal_statuses: { table: 'sales_stage_internal_statuses', columns: ['stage_id','stable_key','display_name','display_order','active'], stageColumns: ['stage_id'] },
+    requirements: { table: 'sales_stage_requirements', columns: ['stage_id','requirement_type','stable_key','label','description','required_level','display_order','config_json'], stageColumns: ['stage_id'] },
+    guides: { table: 'sales_stage_guides', columns: ['stage_id','guide_type','interaction_type','title','purpose','suggested_language','completion_guidance','display_order','config_json'], stageColumns: ['stage_id'] },
+    resources: { table: 'sales_process_resources', columns: ['stage_id','resource_type','stable_key','name','content_json','active'], stageColumns: ['stage_id'] },
+    automations: { table: 'sales_process_automations', columns: ['stage_id','name','trigger_type','action_type','config_json','active'], stageColumns: ['stage_id'] },
+    academy: { table: 'sales_academy_associations', columns: ['stage_id','internal_status_id','skill_id','visibility','display_order'], stageColumns: ['stage_id'] }
+  }
+  const definition = definitions[component]
+  if (!definition) return err(c, 'Unknown component', 404)
+  const version = await c.env.DB.prepare("SELECT * FROM sales_process_versions WHERE id=? AND company_id=? AND lifecycle='published'").bind(versionId, companyId).first<any>()
+  if (!version) return err(c, 'Published version not found', 404)
+  const body = await c.req.json()
+  const expectedRevision = Number(body.content_revision || 0)
+  if (!expectedRevision || expectedRevision !== Number(version.content_revision || 1)) return err(c, 'The process changed since it was loaded', 409)
+  const items = Array.isArray(body.items) ? body.items : []
+  const stageRows = await c.env.DB.prepare('SELECT id FROM sales_process_stages WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>()
+  const stageIds = new Set((stageRows.results as any[]).map(row => String(row.id)))
+  const skillRows = component === 'academy' ? await c.env.DB.prepare("SELECT id FROM sales_academy_skills WHERE active=1 AND (company_id=? OR (company_id='__global__' AND is_global=1))").bind(companyId).all<any>() : { results: [] }
+  const skillIds = new Set((skillRows.results as any[]).map(row => String(row.id)))
+  for (const item of items) {
+    for (const column of definition.stageColumns) if (!stageIds.has(String(item[column] || ''))) return err(c, `${component} references an unknown stage`)
+    if (component === 'academy' && !skillIds.has(String(item.skill_id || ''))) return err(c, 'Academy association references an unavailable skill')
+    if (component === 'requirements' && !['entry','exit','required','recommended','optional','manager_review'].includes(String(item.required_level || ''))) return err(c, 'Invalid requirement level')
+  }
+  const statements: any[] = [
+    c.env.DB.prepare("UPDATE sales_process_versions SET content_revision=content_revision+1,updated_at=datetime('now') WHERE id=? AND company_id=? AND lifecycle='published' AND content_revision=?").bind(versionId, companyId, expectedRevision),
+    c.env.DB.prepare("INSERT INTO sales_process_versions (id,company_id,process_id,version_number,lifecycle) SELECT id,company_id,process_id,version_number,lifecycle FROM sales_process_versions WHERE id=? AND company_id=? AND changes()=0").bind(versionId, companyId),
+    c.env.DB.prepare(`DELETE FROM ${definition.table} WHERE company_id=? AND process_version_id=?`).bind(companyId, versionId)
+  ]
+  items.forEach((item: any, index: number) => {
+    const id = String(item.id || `${versionId}_${component}_${uid()}`)
+    const values = definition.columns.map(column => item[column] ?? (column === 'display_order' ? index + 1 : ''))
+    statements.push(c.env.DB.prepare(`INSERT INTO ${definition.table} (id,company_id,process_version_id,${definition.columns.join(',')}) VALUES (?,?,?,${definition.columns.map(() => '?').join(',')})`).bind(id, companyId, versionId, ...values))
+  })
+  try { await c.env.DB.batch(statements) }
+  catch (error: any) {
+    if (/UNIQUE constraint|constraint failed/i.test(String(error?.message || error))) return err(c, 'The process changed since it was loaded', 409)
+    throw error
+  }
+  return json(c, { component, updated: items.length, content_revision: expectedRevision + 1 })
+})
+
 const SALES_AI_DRAFT_TYPES = new Set(['guided_interview','business_type','simplification','duplicate_stage','name','purpose','milestone','internal_status','condition','checklist','qualification_field','call_guide','email_template','academy_association','automation','stagnation_review','migration_suggestion','impact_explanation'])
 const SALES_AI_ADVISORY_TYPES = new Set(['guided_interview','business_type','simplification','duplicate_stage','stagnation_review','migration_suggestion','impact_explanation'])
 
@@ -11548,8 +11698,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b007">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b007">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b010">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11572,10 +11722,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260730b007"></script>
-  <script src="/js/client_portal.js?v=20260730b007"></script>
-  <script src="/js/platform_core.js?v=20260730b007"></script>
-  <script src="/js/client_portal.js?v=20260730b007"></script>  <script>
+  <script src="/js/platform_core.js?v=20260730b010"></script>
+  <script src="/js/client_portal.js?v=20260730b010"></script>
+  <script src="/js/platform_core.js?v=20260730b010"></script>
+  <script src="/js/client_portal.js?v=20260730b010"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12209,12 +12359,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260730b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b007">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b007">
-  <link rel="stylesheet" href="/js/styles.css?v=20260730b007">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b007">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b010">
+  <link rel="stylesheet" href="/js/styles.css?v=20260730b010">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b010">
+  <link rel="stylesheet" href="/js/premium.css?v=20260730b010">
+  <link rel="stylesheet" href="/js/styles.css?v=20260730b010">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b010">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -12773,84 +12923,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260730b007"></script>
-<script src="/js/sales-process.js?v=20260730b007"></script>
-<script src="/js/richtext.js?v=20260730b007"></script>
-<script src="/js/db.js?v=20260730b007"></script>
-<script src="/js/data.js?v=20260730b007"></script>
-<script src="/js/reps.js?v=20260730b007"></script>
-<script src="/js/record-page.js?v=20260730b007"></script>
-<script src="/js/academy.js?v=20260730b007"></script>
-<script src="/js/task_engine.js?v=20260730b007"></script>
-<script src="/js/gw_i18n.js?v=20260730b007"></script>
-<script src="/js/app_premium.js?v=20260730b007"></script>
-<script src="/js/estimates.js?v=20260730b007"></script>
-<script src="/js/multiday.js?v=20260730b007"></script>
-<script src="/js/proposals.js?v=20260730b007"></script>
-<script src="/js/pricing.js?v=20260730b007"></script>
-<script src="/js/invoices.js?v=20260730b007"></script>
-<script src="/js/csv_import.js?v=20260730b007"></script>
-<script src="/js/onboarding.js?v=20260730b007"></script>
-<script src="/js/gw_copilot.js?v=20260730b007"></script>
-<script src="/js/groundwork_ai.js?v=20260730b007"></script>
-<script src="/js/recurring_plans.js?v=20260730b007"></script>
-<script src="/js/reviews.js?v=20260730b007"></script>
-<script src="/js/stripe.js?v=20260730b007"></script>
-<script src="/js/email.js?v=20260730b007"></script>
-<script src="/js/notifications.js?v=20260730b007"></script>
-<script src="/js/integrations.js?v=20260730b007"></script>
-<script src="/js/sms.js?v=20260730b007"></script>
-<script src="/js/calendar_sync.js?v=20260730b007"></script>
-<script src="/js/ai_followup.js?v=20260730b007"></script>
-<script src="/js/user_management.js?v=20260730b007"></script>
-<script src="/js/platform_admin.js?v=20260730b007"></script>
-<script src="/js/time_tracker.js?v=20260730b007"></script>
-<script src="/js/field_workday.js?v=20260730b007"></script>
-<script src="/js/platform_core.js?v=20260730b007"></script>
-<script src="/js/approval_engine.js?v=20260730b007"></script>
-<script src="/js/automation_engine.js?v=20260730b007"></script>
-<script src="/js/client_portal.js?v=20260730b007"></script>
-<script src="/js/field_mode.js?v=20260730b007"></script>
-<script src="/js/assets_hub.js?v=20260730b007"></script>
-<script src="/js/gw-icons.js?v=20260730b007"></script>
-<script src="/js/sales-process.js?v=20260730b007"></script>
-<script src="/js/richtext.js?v=20260730b007"></script>
-<script src="/js/db.js?v=20260730b007"></script>
-<script src="/js/data.js?v=20260730b007"></script>
-<script src="/js/reps.js?v=20260730b007"></script>
-<script src="/js/record-page.js?v=20260730b007"></script>
-<script src="/js/academy.js?v=20260730b007"></script>
-<script src="/js/task_engine.js?v=20260730b007"></script>
-<script src="/js/gw_i18n.js?v=20260730b007"></script>
-<script src="/js/app_premium.js?v=20260730b007"></script>
-<script src="/js/estimates.js?v=20260730b007"></script>
-<script src="/js/multiday.js?v=20260730b007"></script>
-<script src="/js/proposals.js?v=20260730b007"></script>
-<script src="/js/pricing.js?v=20260730b007"></script>
-<script src="/js/invoices.js?v=20260730b007"></script>
-<script src="/js/csv_import.js?v=20260730b007"></script>
-<script src="/js/onboarding.js?v=20260730b007"></script>
-<script src="/js/gw_copilot.js?v=20260730b007"></script>
-<script src="/js/groundwork_ai.js?v=20260730b007"></script>
-<script src="/js/recurring_plans.js?v=20260730b007"></script>
-<script src="/js/reviews.js?v=20260730b007"></script>
-<script src="/js/stripe.js?v=20260730b007"></script>
-<script src="/js/email.js?v=20260730b007"></script>
-<script src="/js/notifications.js?v=20260730b007"></script>
-<script src="/js/integrations.js?v=20260730b007"></script>
-<script src="/js/sms.js?v=20260730b007"></script>
-<script src="/js/calendar_sync.js?v=20260730b007"></script>
-<script src="/js/ai_followup.js?v=20260730b007"></script>
-<script src="/js/user_management.js?v=20260730b007"></script>
-<script src="/js/platform_admin.js?v=20260730b007"></script>
-<script src="/js/time_tracker.js?v=20260730b007"></script>
-<script src="/js/field_workday.js?v=20260730b007"></script>
-<script src="/js/platform_core.js?v=20260730b007"></script>
-<script src="/js/approval_engine.js?v=20260730b007"></script>
-<script src="/js/automation_engine.js?v=20260730b007"></script>
-<script src="/js/client_portal.js?v=20260730b007"></script>
-<script src="/js/field_mode.js?v=20260730b007"></script>
-<script src="/js/assets_hub.js?v=20260730b007"></script><script>
+<script src="/js/gw-icons.js?v=20260730b010"></script>
+<script src="/js/sales-process.js?v=20260730b010"></script>
+<script src="/js/richtext.js?v=20260730b010"></script>
+<script src="/js/db.js?v=20260730b010"></script>
+<script src="/js/data.js?v=20260730b010"></script>
+<script src="/js/reps.js?v=20260730b010"></script>
+<script src="/js/record-page.js?v=20260730b010"></script>
+<script src="/js/academy.js?v=20260730b010"></script>
+<script src="/js/task_engine.js?v=20260730b010"></script>
+<script src="/js/gw_i18n.js?v=20260730b010"></script>
+<script src="/js/app_premium.js?v=20260730b010"></script>
+<script src="/js/estimates.js?v=20260730b010"></script>
+<script src="/js/multiday.js?v=20260730b010"></script>
+<script src="/js/proposals.js?v=20260730b010"></script>
+<script src="/js/pricing.js?v=20260730b010"></script>
+<script src="/js/invoices.js?v=20260730b010"></script>
+<script src="/js/csv_import.js?v=20260730b010"></script>
+<script src="/js/onboarding.js?v=20260730b010"></script>
+<script src="/js/gw_copilot.js?v=20260730b010"></script>
+<script src="/js/groundwork_ai.js?v=20260730b010"></script>
+<script src="/js/recurring_plans.js?v=20260730b010"></script>
+<script src="/js/reviews.js?v=20260730b010"></script>
+<script src="/js/stripe.js?v=20260730b010"></script>
+<script src="/js/email.js?v=20260730b010"></script>
+<script src="/js/notifications.js?v=20260730b010"></script>
+<script src="/js/integrations.js?v=20260730b010"></script>
+<script src="/js/sms.js?v=20260730b010"></script>
+<script src="/js/calendar_sync.js?v=20260730b010"></script>
+<script src="/js/ai_followup.js?v=20260730b010"></script>
+<script src="/js/user_management.js?v=20260730b010"></script>
+<script src="/js/platform_admin.js?v=20260730b010"></script>
+<script src="/js/time_tracker.js?v=20260730b010"></script>
+<script src="/js/field_workday.js?v=20260730b010"></script>
+<script src="/js/platform_core.js?v=20260730b010"></script>
+<script src="/js/approval_engine.js?v=20260730b010"></script>
+<script src="/js/automation_engine.js?v=20260730b010"></script>
+<script src="/js/client_portal.js?v=20260730b010"></script>
+<script src="/js/field_mode.js?v=20260730b010"></script>
+<script src="/js/assets_hub.js?v=20260730b010"></script>
+<script src="/js/gw-icons.js?v=20260730b010"></script>
+<script src="/js/sales-process.js?v=20260730b010"></script>
+<script src="/js/richtext.js?v=20260730b010"></script>
+<script src="/js/db.js?v=20260730b010"></script>
+<script src="/js/data.js?v=20260730b010"></script>
+<script src="/js/reps.js?v=20260730b010"></script>
+<script src="/js/record-page.js?v=20260730b010"></script>
+<script src="/js/academy.js?v=20260730b010"></script>
+<script src="/js/task_engine.js?v=20260730b010"></script>
+<script src="/js/gw_i18n.js?v=20260730b010"></script>
+<script src="/js/app_premium.js?v=20260730b010"></script>
+<script src="/js/estimates.js?v=20260730b010"></script>
+<script src="/js/multiday.js?v=20260730b010"></script>
+<script src="/js/proposals.js?v=20260730b010"></script>
+<script src="/js/pricing.js?v=20260730b010"></script>
+<script src="/js/invoices.js?v=20260730b010"></script>
+<script src="/js/csv_import.js?v=20260730b010"></script>
+<script src="/js/onboarding.js?v=20260730b010"></script>
+<script src="/js/gw_copilot.js?v=20260730b010"></script>
+<script src="/js/groundwork_ai.js?v=20260730b010"></script>
+<script src="/js/recurring_plans.js?v=20260730b010"></script>
+<script src="/js/reviews.js?v=20260730b010"></script>
+<script src="/js/stripe.js?v=20260730b010"></script>
+<script src="/js/email.js?v=20260730b010"></script>
+<script src="/js/notifications.js?v=20260730b010"></script>
+<script src="/js/integrations.js?v=20260730b010"></script>
+<script src="/js/sms.js?v=20260730b010"></script>
+<script src="/js/calendar_sync.js?v=20260730b010"></script>
+<script src="/js/ai_followup.js?v=20260730b010"></script>
+<script src="/js/user_management.js?v=20260730b010"></script>
+<script src="/js/platform_admin.js?v=20260730b010"></script>
+<script src="/js/time_tracker.js?v=20260730b010"></script>
+<script src="/js/field_workday.js?v=20260730b010"></script>
+<script src="/js/platform_core.js?v=20260730b010"></script>
+<script src="/js/approval_engine.js?v=20260730b010"></script>
+<script src="/js/automation_engine.js?v=20260730b010"></script>
+<script src="/js/client_portal.js?v=20260730b010"></script>
+<script src="/js/field_mode.js?v=20260730b010"></script>
+<script src="/js/assets_hub.js?v=20260730b010"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
