@@ -23387,6 +23387,20 @@ body.gw-mobile-mode #view > .rp-shell,
 body.gw-mobile-mode .main { padding-bottom:84px!important; }
 /* Topbar Admin button is redundant on mobile — bottom nav has it */
 body.gw-mobile-mode .topbar-settings { display:none!important; }
+/* ── Sidebar drawer vs bottom nav ──
+   The drawer must layer ABOVE the bottom nav (z 8000) so the user profile
+   footer at its bottom is reachable. Use dynamic viewport height (dvh) so
+   iOS Safari's collapsing toolbars don't push the footer off-screen, and
+   reserve safe-area space so the footer clears the home indicator. */
+body.gw-mobile-mode .sidebar {
+  z-index:8500!important;
+  height:100vh!important;
+  height:100dvh!important;
+  padding-bottom:env(safe-area-inset-bottom)!important;
+}
+body.gw-mobile-mode .sidebar .sidebar-footer {
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+}
 /* Notification bell: ensure it's never pushed off-screen on mobile */
 body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
 </style>
