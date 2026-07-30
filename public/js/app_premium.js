@@ -1894,7 +1894,7 @@ window._updateSidebarRep = function updateSidebarRep() {
 function statCards(){
   const openOpps = state.opportunities.filter(o=>gwSalesIsOpen(o));
   const proposalOpps = state.opportunities.filter(o=>gwSalesIs(o,'proposal_presentation'));
-  const overdueOpps = state.opportunities.filter(o=>gwSalesIsOpen(o) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
+  const overdueOpps = state.opportunities.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
   const soldOpps = state.opportunities.filter(o=>gwSalesIs(o,'won'));
   return `<div class="grid grid-4 stat-grid">
     <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
@@ -3078,6 +3078,52 @@ function gwStageClock(o){
 }
 window.gwStageClock = gwStageClock;
 
+// Robust closed-state detector: returns 'won' | 'lost' | '' (open/unknown).
+// Checks the assignment outcome first, then the semantic resolver, then falls
+// back to matching the status label against the published process stages —
+// so terminal leads stay pinned even when browser state predates the
+// sales-process fields (stale localStorage, mid-deploy sessions).
+function gwLeadClosedState(o){
+  const outcome = (o.salesProcessOutcomeType || o.sales_process_outcome_type || '').toLowerCase();
+  if (outcome === 'won') return 'won';
+  if (outcome === 'lost' || outcome === 'disqualified') return 'lost';
+  if (typeof gwSalesIs === 'function') {
+    try {
+      if (gwSalesIs(o, 'won')) return 'won';
+      if (gwSalesIs(o, 'lost') || gwSalesIs(o, 'disqualified')) return 'lost';
+    } catch(e){}
+  }
+  // Stage-label fallback against the published process definition
+  const sp = window._gwSalesProcess;
+  if (sp && Array.isArray(sp.stages) && o.status) {
+    const st = sp.stages.find(s => s.display_name === o.status);
+    if (st) {
+      const sem = String(st.semantic_type || '').toLowerCase();
+      if (sem === 'won') return 'won';
+      if (sem === 'lost' || sem === 'disqualified') return 'lost';
+      if (sem === 'terminal') {
+        if (/lost|disqualif/i.test(o.status)) return 'lost';
+        if (/won|sold/i.test(o.status)) return 'won';
+      }
+    }
+  }
+  // Last resort: unambiguous terminal labels, even before the process
+  // definition is hydrated (first paint, stale sessions)
+  const label = String(o.status || '');
+  if (/^(won|sold)\b|deal closed|closed won|sold \/ activation/i.test(label)) return 'won';
+  if (/^lost\b|closed lost|disqualified/i.test(label)) return 'lost';
+  return '';
+}
+window.gwLeadClosedState = gwLeadClosedState;
+
+// Open check that never mistakes a closed lead for open, even when the
+// semantic resolver cannot resolve yet
+function gwLeadIsOpen(o){
+  if (gwLeadClosedState(o)) return false;
+  return typeof gwSalesIsOpen === 'function' ? gwSalesIsOpen(o) : true;
+}
+window.gwLeadIsOpen = gwLeadIsOpen;
+
 // Parse a free-text budget range like "$10k-$15k" / "10,000 to 15,000"
 function gwParseBudget(text){
   if (!text) return null;
@@ -3098,11 +3144,10 @@ function gwLeadScore(o){
   const clock = gwStageClock(o);
 
   // ── Hard pins on terminal outcomes ──
+  const closed = gwLeadClosedState(o);
   const outcome = (o.salesProcessOutcomeType || o.sales_process_outcome_type || '').toLowerCase();
-  const isWon  = outcome === 'won'  || (typeof gwSalesIs === 'function' && gwSalesIs(o, 'won'));
-  const isLost = outcome === 'lost' || outcome === 'disqualified' || (typeof gwSalesIs === 'function' && gwSalesIs(o, 'lost'));
-  if (isWon)  return { score: 100, pinned: 'won',  factors: [{ label: 'Deal won', delta: 0 }], clock };
-  if (isLost) return { score: 0,   pinned: 'lost', factors: [{ label: outcome === 'disqualified' ? 'Disqualified' : 'Deal lost', delta: 0 }], clock };
+  if (closed === 'won')  return { score: 100, pinned: 'won',  factors: [{ label: 'Deal won', delta: 0 }], clock };
+  if (closed === 'lost') return { score: 0,   pinned: 'lost', factors: [{ label: outcome === 'disqualified' ? 'Disqualified' : 'Deal lost', delta: 0 }], clock };
 
   // ── Baseline from stage progression (15% intake → 85% closing) ──
   const sp = window._gwSalesProcess;
@@ -3207,7 +3252,7 @@ window.gwScorePill = gwScorePill;
 // Days-in-stage chip with escalating urgency (replaces the old OVERDUE badge)
 function gwStageChip(o){
   const c = gwStageClock(o);
-  if (c.daysIn === null || !gwSalesIsOpen(o)) return '';
+  if (c.daysIn === null || !gwLeadIsOpen(o)) return '';
   const lbl = c.daysIn === 0 ? 'New today' : c.daysIn + 'd in stage';
   const txt = c.level === 'late' ? lbl + ' — follow up' : lbl;
   return `<span class="stage-clock-chip stage-clock-${c.level}" title="~${c.expected}d expected in this stage">${txt}</span>`;
@@ -3216,7 +3261,8 @@ window.gwStageChip = gwStageChip;
 
 function oppMini(o){
   const clock = gwStageClock(o);
-  const needsAttention = gwSalesIsOpen(o) && clock.level !== 'ok';
+  const isOpen = gwLeadIsOpen(o);
+  const needsAttention = isOpen && clock.level !== 'ok';
   // Urgency dot inline — colored by how long the lead has sat in its stage
   const urgencyDot = needsAttention
     ? `<span style="display:inline-block;width:6px;height:6px;background:${clock.level==='late'?'#C97B6A':'#B8860B'};border-radius:50%;flex-shrink:0;margin-top:1px"></span>`
@@ -3226,20 +3272,20 @@ function oppMini(o){
   const repPill = repObj
     ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40">${escapeHtml(repObj.name)}</span>`
     : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22)">Unassigned</span>`;
-  // Time-in-stage label
-  const timeLabel = clock.daysIn !== null
+  // Time-in-stage label (open leads only — closed leads are done moving)
+  const timeLabel = isOpen && clock.daysIn !== null
     ? `<span class="mini-row-time">${clock.daysIn===0?'New today':clock.daysIn+'d in stage'}</span>`
     : '';
-  return `<button class="mini-row ${clock.level==='late'&&gwSalesIsOpen(o)?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
+  return `<button class="mini-row ${clock.level==='late'&&isOpen?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
     <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed Lead')}</strong>
     <span class="status-chip ${statusCssClass(o.status||'')}">${escapeHtml(o.status||'New Lead')}</span>
     <em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em>
-    <span class="mini-row-meta">${gwSalesIsOpen(o)?gwScorePill(o,'sm'):''}${repPill}${timeLabel}</span>
+    <span class="mini-row-meta">${isOpen?gwScorePill(o,'sm'):''}${repPill}${timeLabel}</span>
   </button>`;
 }
 function oppCard(o){
   const clock = gwStageClock(o);
-  const isOpen = gwSalesIsOpen(o);
+  const isOpen = gwLeadIsOpen(o);
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
   const cardState = !isOpen ? '' : clock.level === 'late' ? 'opp-overdue' : clock.level === 'watch' ? 'opp-stale' : '';
   return `<article class="opp-card ${cardState}" onclick="show('pipeline','${o.id}')" style="cursor:pointer"
@@ -3247,13 +3293,14 @@ function oppCard(o){
     ondragstart="gwPipeDragStart(event,'${o.id}')" ondragend="gwPipeDragEnd(event)">
     <div class="opp-card-top">
       <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
-      ${isOpen ? gwScorePill(o) : ''}
+      ${gwScorePill(o)}
     </div>
     ${gwStageChip(o)}
     <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')}${o.address ? ` · ${escapeHtml(o.address)}` : ''}</p>
     <div class="opp-meta">
       ${badge(o.status||'New Lead')}
       ${(function(){
+        if (!isOpen) return '';
         const nu = (typeof gwNextUpForOpp === 'function') ? gwNextUpForOpp(o) : null;
         if (nu) return `<span class="opp-next" title="${escapeHtml(nu.title)}">Next Up: ${escapeHtml(nu.label)}${nu.date ? ' · ' + prettyDate(nu.date) : ''}</span>`;
         return o.nextFollowUp ? `<span class="opp-next">Next Up: Follow up · ${prettyDate(o.nextFollowUp)}</span>` : '';
@@ -3270,6 +3317,8 @@ function oppCard(o){
 // Priority: 1) earliest open task on the record  2) estimate-status action  3) stage default
 function gwNextUpForOpp(o){
   try {
+    // Closed leads have no next sales action
+    if (typeof gwLeadClosedState === 'function' && gwLeadClosedState(o)) return null;
     // 1. Open tasks linked to this lead
     if (window.gwTask && typeof window.gwTask.forRecord === 'function') {
       const open = (window.gwTask.forRecord('lead', o.id) || [])
@@ -3330,7 +3379,7 @@ function pipeline(selectedId){
   const semantic = o => window.GWSalesProcess ? GWSalesProcess.resolve(o) : { resolved:false };
   if (activeStatusFilter === 'open') opps = opps.filter(o => window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status));
   else if (activeStatusFilter === 'proposals') opps = opps.filter(o => { const r=semantic(o); return r.resolved && r.semantic==='proposal_presentation'; });
-  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => (window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status)) && gwStageClock(o).level === 'late');
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => gwLeadIsOpen(o) && gwStageClock(o).level === 'late');
   else if (activeStatusFilter === 'sold') opps = opps.filter(o => { const r=semantic(o); return r.resolved && (r.outcome==='won'||r.semantic==='won'); });
 
   // T47: Sort
@@ -3448,16 +3497,17 @@ function pipeline(selectedId){
                   <span class="gw-pipe-group-count">${g.items.length}</span>
                 </div>
                 ${g.items.map(o => {
-                  const _t = todayISO();
-                  const overdue = o.nextFollowUp && o.nextFollowUp < _t && gwSalesIsOpen(o);
-                  const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : 999;
-                  const stale = daysSince >= 14 && gwSalesIsOpen(o);
+                  const _mc = gwStageClock(o);
+                  const _mOpen = gwLeadIsOpen(o);
+                  const overdue = _mOpen && _mc.level === 'late';
+                  const stale = _mOpen && _mc.level === 'watch';
                   const repObj = (window.REPS||[]).find(r=>r.id===o.repId);
                   return `<div class="gw-pipe-card ${overdue?'gw-pipe-card--overdue':stale?'gw-pipe-card--stale':''}" onclick="show('pipeline','${o.id}')">
                     <div class="gw-pipe-card-top">
                       <span class="gw-pipe-card-name">${escapeHtml(o.client||'Unnamed Lead')}</span>
-                      ${overdue ? `<span class="gw-pipe-badge gw-pipe-badge--overdue">OVERDUE</span>` : stale ? `<span class="gw-pipe-badge gw-pipe-badge--stale">${daysSince}d</span>` : ''}
+                      ${gwScorePill(o,'sm')}
                     </div>
+                    ${_mOpen && _mc.daysIn !== null ? `<div style="margin:2px 0 4px">${gwStageChip(o)}</div>` : ''}
                     <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
                     ${o._needsRestaging ? `<div class="gw-pipe-badge gw-pipe-badge--overdue" style="margin:6px 0">Original stage: ${escapeHtml(o.status||'(blank)')}</div>` : ''}
                     <div class="gw-pipe-card-bottom">
@@ -5778,7 +5828,7 @@ function opportunityDetail(id){
             })()}
             ${(function(){
               const _c = gwStageClock(o);
-              if (_c.daysIn === null || !gwSalesIsOpen(o)) return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'');
+              if (_c.daysIn === null || !gwLeadIsOpen(o)) return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'');
               return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','In Stage',_c.daysIn+'d of ~'+_c.expected+'d',_c.level==='late'?'red':_c.level==='watch'?'amber':'');
             })()}
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2l5.5 10H1.5L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v3M7 10.5h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Comm.',o.commissionApproved?'Approved':'Pending',o.commissionApproved?'green':'amber')}
