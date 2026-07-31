@@ -7685,6 +7685,84 @@ Return ONLY valid JSON (no markdown fences): { "subject": "string — specific, 
   }
 })
 
+// POST /api/ai/parse-lead — AI Lead Import.
+// Paste raw email text (or a dropped .eml file's contents) and get back a
+// structured lead: contact info + EVERY property address mentioned (commercial
+// property managers often send one email covering multiple sites to bid).
+// { email_text }
+app.post('/api/ai/parse-lead', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) {
+    return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet. Ask your Groundwork rep to enable it, or add your own OpenAI key under Integrations → Admin Setup.' }, 400)
+  }
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
+  const b: any = await c.req.json().catch(() => ({}))
+  const emailText = String(b.email_text || '').trim()
+  if (!emailText) return err(c, 'email_text required')
+
+  const sys = `You are a CRM intake assistant for a landscaping / commercial grounds maintenance company. The user pastes a raw email (possibly with headers, signatures, forwarded chains). Extract the NEW LEAD it describes.
+
+Critical rules:
+- Extract EVERY distinct property/site address mentioned as work to bid or service. Commercial property managers often list several properties in one email — capture each one separately with its own site-specific notes (e.g. "no mowing needed", "meet here first", exclusions).
+- The CONTACT is the prospective client (the person/company asking for the work), never the recipient or the sender's own company if the email was forwarded by a company employee.
+- Pull phone numbers from signature blocks (prefer cell/direct lines). Pull the company name from the signature or domain.
+- client_type is "Commercial" when the sender represents a business/property-management firm or the properties are commercial sites; otherwise "Residential".
+- contract_hint: "annual", "multi_year", "one_time", or "unknown" — based on any mention of annual contracts, seasons, multi-year terms.
+- Do NOT invent data. Use "" for anything not present.
+
+Return ONLY valid JSON:
+{
+  "contact": { "name": "person's full name", "company": "their company", "phone": "", "email": "" },
+  "client_type": "Commercial" | "Residential",
+  "properties": [ { "label": "short site name e.g. Yorktowne Shopping Center", "address": "full street address", "notes": "site-specific instructions/exclusions" } ],
+  "project": "one-line summary of the requested work/scope",
+  "urgency": "any timing/meeting requests mentioned, e.g. 'Meet Tue Aug 4, 9am at Yorktowne'",
+  "contract_hint": "annual" | "multi_year" | "one_time" | "unknown",
+  "summary_note": "2-4 sentence plain-text summary of the email: who, what they want, key dates, site specifics"
+}`
+
+  try {
+    const r = await _aiChatJson(baseUrl, apiKey, model, [
+      { role: 'system', content: sys },
+      { role: 'user', content: emailText.slice(0, 16000) },
+    ])
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '')
+      console.error('[ai/parse-lead] upstream', r.status, errText.slice(0, 300))
+      return c.json({ ok: false, error: 'ai_upstream', message: `AI service error (${r.status}).` }, 502)
+    }
+    const j: any = await r.json()
+    await _logAiUsage(db, companyId, c.var.repId as string, 'lead_import', model, j?.usage, keySource)
+    const raw = (j?.choices?.[0]?.message?.content || '').trim()
+    const draft: any = _aiParseJson(raw)
+    const props = Array.isArray(draft.properties) ? draft.properties : []
+    return json(c, {
+      contact: {
+        name: String(draft?.contact?.name || ''),
+        company: String(draft?.contact?.company || ''),
+        phone: String(draft?.contact?.phone || ''),
+        email: String(draft?.contact?.email || ''),
+      },
+      client_type: draft?.client_type === 'Residential' ? 'Residential' : 'Commercial',
+      properties: props.slice(0, 25).map((p: any) => ({
+        label: String(p?.label || ''), address: String(p?.address || ''), notes: String(p?.notes || ''),
+      })),
+      project: String(draft?.project || ''),
+      urgency: String(draft?.urgency || ''),
+      contract_hint: String(draft?.contract_hint || 'unknown'),
+      summary_note: String(draft?.summary_note || ''),
+      model: j?.model || model,
+      tokens: j?.usage?.total_tokens || 0,
+    })
+  } catch (e: any) {
+    console.error('[ai/parse-lead]', e?.message || e)
+    return c.json({ ok: false, error: 'ai_error', message: String(e?.message || e).slice(0, 200) }, 500)
+  }
+})
+
 // POST /api/ai/generate-quote — the AI Quote Generator.
 // Inputs: lead conversation history + the company's OWN price book + brand +
 // (optional) live market-rate search. Output: a tiered quote whose line items
@@ -11808,8 +11886,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b006">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b008">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11832,10 +11910,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260731b006"></script>
-  <script src="/js/client_portal.js?v=20260731b006"></script>
-  <script src="/js/platform_core.js?v=20260731b006"></script>
-  <script src="/js/client_portal.js?v=20260731b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260731b008"></script>
+  <script src="/js/client_portal.js?v=20260731b008"></script>
+  <script src="/js/platform_core.js?v=20260731b008"></script>
+  <script src="/js/client_portal.js?v=20260731b008"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12469,12 +12547,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b006">
-  <link rel="stylesheet" href="/js/styles.css?v=20260731b006">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b006">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b006">
-  <link rel="stylesheet" href="/js/styles.css?v=20260731b006">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b008">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b008">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b008">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b008">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13033,84 +13111,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260731b006"></script>
-<script src="/js/sales-process.js?v=20260731b006"></script>
-<script src="/js/richtext.js?v=20260731b006"></script>
-<script src="/js/db.js?v=20260731b006"></script>
-<script src="/js/data.js?v=20260731b006"></script>
-<script src="/js/reps.js?v=20260731b006"></script>
-<script src="/js/record-page.js?v=20260731b006"></script>
-<script src="/js/academy.js?v=20260731b006"></script>
-<script src="/js/task_engine.js?v=20260731b006"></script>
-<script src="/js/gw_i18n.js?v=20260731b006"></script>
-<script src="/js/app_premium.js?v=20260731b006"></script>
-<script src="/js/estimates.js?v=20260731b006"></script>
-<script src="/js/multiday.js?v=20260731b006"></script>
-<script src="/js/proposals.js?v=20260731b006"></script>
-<script src="/js/pricing.js?v=20260731b006"></script>
-<script src="/js/invoices.js?v=20260731b006"></script>
-<script src="/js/csv_import.js?v=20260731b006"></script>
-<script src="/js/onboarding.js?v=20260731b006"></script>
-<script src="/js/gw_copilot.js?v=20260731b006"></script>
-<script src="/js/groundwork_ai.js?v=20260731b006"></script>
-<script src="/js/recurring_plans.js?v=20260731b006"></script>
-<script src="/js/reviews.js?v=20260731b006"></script>
-<script src="/js/stripe.js?v=20260731b006"></script>
-<script src="/js/email.js?v=20260731b006"></script>
-<script src="/js/notifications.js?v=20260731b006"></script>
-<script src="/js/integrations.js?v=20260731b006"></script>
-<script src="/js/sms.js?v=20260731b006"></script>
-<script src="/js/calendar_sync.js?v=20260731b006"></script>
-<script src="/js/ai_followup.js?v=20260731b006"></script>
-<script src="/js/user_management.js?v=20260731b006"></script>
-<script src="/js/platform_admin.js?v=20260731b006"></script>
-<script src="/js/time_tracker.js?v=20260731b006"></script>
-<script src="/js/field_workday.js?v=20260731b006"></script>
-<script src="/js/platform_core.js?v=20260731b006"></script>
-<script src="/js/approval_engine.js?v=20260731b006"></script>
-<script src="/js/automation_engine.js?v=20260731b006"></script>
-<script src="/js/client_portal.js?v=20260731b006"></script>
-<script src="/js/field_mode.js?v=20260731b006"></script>
-<script src="/js/assets_hub.js?v=20260731b006"></script>
-<script src="/js/gw-icons.js?v=20260731b006"></script>
-<script src="/js/sales-process.js?v=20260731b006"></script>
-<script src="/js/richtext.js?v=20260731b006"></script>
-<script src="/js/db.js?v=20260731b006"></script>
-<script src="/js/data.js?v=20260731b006"></script>
-<script src="/js/reps.js?v=20260731b006"></script>
-<script src="/js/record-page.js?v=20260731b006"></script>
-<script src="/js/academy.js?v=20260731b006"></script>
-<script src="/js/task_engine.js?v=20260731b006"></script>
-<script src="/js/gw_i18n.js?v=20260731b006"></script>
-<script src="/js/app_premium.js?v=20260731b006"></script>
-<script src="/js/estimates.js?v=20260731b006"></script>
-<script src="/js/multiday.js?v=20260731b006"></script>
-<script src="/js/proposals.js?v=20260731b006"></script>
-<script src="/js/pricing.js?v=20260731b006"></script>
-<script src="/js/invoices.js?v=20260731b006"></script>
-<script src="/js/csv_import.js?v=20260731b006"></script>
-<script src="/js/onboarding.js?v=20260731b006"></script>
-<script src="/js/gw_copilot.js?v=20260731b006"></script>
-<script src="/js/groundwork_ai.js?v=20260731b006"></script>
-<script src="/js/recurring_plans.js?v=20260731b006"></script>
-<script src="/js/reviews.js?v=20260731b006"></script>
-<script src="/js/stripe.js?v=20260731b006"></script>
-<script src="/js/email.js?v=20260731b006"></script>
-<script src="/js/notifications.js?v=20260731b006"></script>
-<script src="/js/integrations.js?v=20260731b006"></script>
-<script src="/js/sms.js?v=20260731b006"></script>
-<script src="/js/calendar_sync.js?v=20260731b006"></script>
-<script src="/js/ai_followup.js?v=20260731b006"></script>
-<script src="/js/user_management.js?v=20260731b006"></script>
-<script src="/js/platform_admin.js?v=20260731b006"></script>
-<script src="/js/time_tracker.js?v=20260731b006"></script>
-<script src="/js/field_workday.js?v=20260731b006"></script>
-<script src="/js/platform_core.js?v=20260731b006"></script>
-<script src="/js/approval_engine.js?v=20260731b006"></script>
-<script src="/js/automation_engine.js?v=20260731b006"></script>
-<script src="/js/client_portal.js?v=20260731b006"></script>
-<script src="/js/field_mode.js?v=20260731b006"></script>
-<script src="/js/assets_hub.js?v=20260731b006"></script><script>
+<script src="/js/gw-icons.js?v=20260731b008"></script>
+<script src="/js/sales-process.js?v=20260731b008"></script>
+<script src="/js/richtext.js?v=20260731b008"></script>
+<script src="/js/db.js?v=20260731b008"></script>
+<script src="/js/data.js?v=20260731b008"></script>
+<script src="/js/reps.js?v=20260731b008"></script>
+<script src="/js/record-page.js?v=20260731b008"></script>
+<script src="/js/academy.js?v=20260731b008"></script>
+<script src="/js/task_engine.js?v=20260731b008"></script>
+<script src="/js/gw_i18n.js?v=20260731b008"></script>
+<script src="/js/app_premium.js?v=20260731b008"></script>
+<script src="/js/estimates.js?v=20260731b008"></script>
+<script src="/js/multiday.js?v=20260731b008"></script>
+<script src="/js/proposals.js?v=20260731b008"></script>
+<script src="/js/pricing.js?v=20260731b008"></script>
+<script src="/js/invoices.js?v=20260731b008"></script>
+<script src="/js/csv_import.js?v=20260731b008"></script>
+<script src="/js/onboarding.js?v=20260731b008"></script>
+<script src="/js/gw_copilot.js?v=20260731b008"></script>
+<script src="/js/groundwork_ai.js?v=20260731b008"></script>
+<script src="/js/recurring_plans.js?v=20260731b008"></script>
+<script src="/js/reviews.js?v=20260731b008"></script>
+<script src="/js/stripe.js?v=20260731b008"></script>
+<script src="/js/email.js?v=20260731b008"></script>
+<script src="/js/notifications.js?v=20260731b008"></script>
+<script src="/js/integrations.js?v=20260731b008"></script>
+<script src="/js/sms.js?v=20260731b008"></script>
+<script src="/js/calendar_sync.js?v=20260731b008"></script>
+<script src="/js/ai_followup.js?v=20260731b008"></script>
+<script src="/js/user_management.js?v=20260731b008"></script>
+<script src="/js/platform_admin.js?v=20260731b008"></script>
+<script src="/js/time_tracker.js?v=20260731b008"></script>
+<script src="/js/field_workday.js?v=20260731b008"></script>
+<script src="/js/platform_core.js?v=20260731b008"></script>
+<script src="/js/approval_engine.js?v=20260731b008"></script>
+<script src="/js/automation_engine.js?v=20260731b008"></script>
+<script src="/js/client_portal.js?v=20260731b008"></script>
+<script src="/js/field_mode.js?v=20260731b008"></script>
+<script src="/js/assets_hub.js?v=20260731b008"></script>
+<script src="/js/gw-icons.js?v=20260731b008"></script>
+<script src="/js/sales-process.js?v=20260731b008"></script>
+<script src="/js/richtext.js?v=20260731b008"></script>
+<script src="/js/db.js?v=20260731b008"></script>
+<script src="/js/data.js?v=20260731b008"></script>
+<script src="/js/reps.js?v=20260731b008"></script>
+<script src="/js/record-page.js?v=20260731b008"></script>
+<script src="/js/academy.js?v=20260731b008"></script>
+<script src="/js/task_engine.js?v=20260731b008"></script>
+<script src="/js/gw_i18n.js?v=20260731b008"></script>
+<script src="/js/app_premium.js?v=20260731b008"></script>
+<script src="/js/estimates.js?v=20260731b008"></script>
+<script src="/js/multiday.js?v=20260731b008"></script>
+<script src="/js/proposals.js?v=20260731b008"></script>
+<script src="/js/pricing.js?v=20260731b008"></script>
+<script src="/js/invoices.js?v=20260731b008"></script>
+<script src="/js/csv_import.js?v=20260731b008"></script>
+<script src="/js/onboarding.js?v=20260731b008"></script>
+<script src="/js/gw_copilot.js?v=20260731b008"></script>
+<script src="/js/groundwork_ai.js?v=20260731b008"></script>
+<script src="/js/recurring_plans.js?v=20260731b008"></script>
+<script src="/js/reviews.js?v=20260731b008"></script>
+<script src="/js/stripe.js?v=20260731b008"></script>
+<script src="/js/email.js?v=20260731b008"></script>
+<script src="/js/notifications.js?v=20260731b008"></script>
+<script src="/js/integrations.js?v=20260731b008"></script>
+<script src="/js/sms.js?v=20260731b008"></script>
+<script src="/js/calendar_sync.js?v=20260731b008"></script>
+<script src="/js/ai_followup.js?v=20260731b008"></script>
+<script src="/js/user_management.js?v=20260731b008"></script>
+<script src="/js/platform_admin.js?v=20260731b008"></script>
+<script src="/js/time_tracker.js?v=20260731b008"></script>
+<script src="/js/field_workday.js?v=20260731b008"></script>
+<script src="/js/platform_core.js?v=20260731b008"></script>
+<script src="/js/approval_engine.js?v=20260731b008"></script>
+<script src="/js/automation_engine.js?v=20260731b008"></script>
+<script src="/js/client_portal.js?v=20260731b008"></script>
+<script src="/js/field_mode.js?v=20260731b008"></script>
+<script src="/js/assets_hub.js?v=20260731b008"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

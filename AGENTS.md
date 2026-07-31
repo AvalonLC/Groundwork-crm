@@ -194,6 +194,22 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   `_invOpenBuilder`, `_invPaymentPicker` in invoices.js, `_ahNewAsset`,
   `_umOpenInviteForm`). Keep role gates: estimate = admin/sales; invoice,
   payment, asset, employee = admin (admin includes office_manager).
+- AI LEAD IMPORT: `POST /api/ai/parse-lead` (index.tsx) follows the standard
+  AI pattern — `_aiCreds` -> `_aiQuotaGate` -> `_aiChatJson` -> `_logAiUsage`
+  ('lead_import') -> `_aiParseJson`. `_aiChatJson` returns the RAW fetch
+  Response: consume as `const r = await _aiChatJson(...); if (!r.ok) {...};
+  const j = await r.json()` — never destructure `{j}`. Frontend
+  (`window._gwAiLeadImport` / `_gwAiLeadParse` / `_gwAiLeadRenderPreview` /
+  `_gwAiLeadCreate` in app_premium.js, before the Mark Sold Modal block):
+  paste-or-drop email -> preview -> creates ONE client (point of contact) +
+  ONE lead per checked property linked via `clientId`. This one-client-many-
+  leads shape is the commercial multi-property architecture — do not collapse
+  multiple addresses into a single lead. D1 `clients` persists only base
+  columns (id/name/phone/email/address/type/notes/company_id); rich fields
+  (`company`, `properties[]`, `tags`, ...) are localStorage-only, so the AI
+  summary goes in `notes` and durable property data lives in the per-property
+  leads themselves. Entry points: +New menu item (admin/sales) and the Add
+  Lead hero "Import from Email (AI)" button.
 
 ## Tests
 

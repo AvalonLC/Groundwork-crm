@@ -5267,9 +5267,15 @@ function lead(){
   const lsOptions = (_intakeCfg.leadSources||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
 
   view.innerHTML =
-    '<div class="lf-hero">'
-      + '<span class="lf-hero-eyebrow">New Opportunity</span>'
-      + '<h1 class="lf-hero-title">Add Lead</h1>'
+    '<div class="lf-hero" style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      + '<div>'
+        + '<span class="lf-hero-eyebrow">New Opportunity</span>'
+        + '<h1 class="lf-hero-title">Add Lead</h1>'
+      + '</div>'
+      + '<button type="button" class="secondary-btn" onclick="window._gwAiLeadImport&&window._gwAiLeadImport()" title="Paste or drop an email — AI extracts the contact and every property address">'
+        + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 5l6.5 4 6.5-4"/></svg>'
+        + 'Import from Email (AI)'
+      + '</button>'
     + '</div>'
     + '<form id="leadForm">'
 
@@ -12154,6 +12160,254 @@ window._toggleNavPerm = function(role, viewKey, enabled) {
   saveNavPerms(perms);
   showToast('Permission updated');
 };
+// ── AI LEAD IMPORT — paste or drop an email, AI extracts the lead(s) ──────────
+// Commercial property managers often send ONE email listing SEVERAL properties
+// to bid. The importer creates one client record (the point of contact) plus
+// one linked lead per property, so each site carries its own bid/value while
+// sharing the contact.
+window._gwAiLeadImport = function() {
+  document.getElementById('gwAiLeadModal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gwAiLeadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+<div class="gw-modal-card" style="width:min(680px,100%);max-height:92vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <h2 style="margin:0 0 4px;font-size:18px">AI Lead Import</h2>
+      <p style="margin:0;font-size:13px;color:#6F7E6A">Paste an email below — or drop a downloaded email file. The AI pulls out the contact and every property address, then you confirm before anything is created.</p>
+    </div>
+    <button onclick="document.getElementById('gwAiLeadModal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <div id="gwAiLeadStep1">
+    <div id="gwAiLeadDrop" style="border:2px dashed #C9D6C8;border-radius:12px;padding:10px;transition:border-color .15s,background .15s">
+      <textarea id="gwAiLeadText" rows="10" placeholder="Paste the full email here (headers and signatures are fine)…" style="width:100%;border:none;outline:none;resize:vertical;font-size:13px;line-height:1.5;background:transparent"></textarea>
+      <div style="display:flex;align-items:center;gap:10px;border-top:1px solid #E4EAE3;padding-top:10px;margin-top:6px">
+        <button type="button" class="secondary-btn small" onclick="document.getElementById('gwAiLeadFile').click()">Choose email file</button>
+        <input type="file" id="gwAiLeadFile" accept=".eml,.txt,.md,.html,message/rfc822,text/plain" style="display:none">
+        <span style="font-size:12px;color:#6F7E6A">or drag &amp; drop a .eml / .txt file anywhere in this box</span>
+      </div>
+    </div>
+    <div id="gwAiLeadErr" style="display:none;margin-top:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="primary-btn" id="gwAiLeadParseBtn" style="flex:1" onclick="window._gwAiLeadParse()">Extract Lead Details</button>
+      <button class="secondary-btn" onclick="document.getElementById('gwAiLeadModal').remove()">Cancel</button>
+    </div>
+  </div>
+  <div id="gwAiLeadStep2" style="display:none"></div>
+</div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+
+  // File handling — read dropped/selected files as text
+  const readFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ta = document.getElementById('gwAiLeadText');
+      if (ta) ta.value = String(reader.result || '').slice(0, 60000);
+    };
+    reader.readAsText(file);
+  };
+  const drop = document.getElementById('gwAiLeadDrop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#2D7A55'; drop.style.background = '#2D7A5508'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent'; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent';
+    readFile(e.dataTransfer?.files?.[0]);
+  });
+  document.getElementById('gwAiLeadFile').addEventListener('change', e => readFile(e.target.files?.[0]));
+  document.getElementById('gwAiLeadText').focus();
+};
+
+window._gwAiLeadParse = async function() {
+  const text = (document.getElementById('gwAiLeadText')?.value || '').trim();
+  const errEl = document.getElementById('gwAiLeadErr');
+  if (text.length < 20) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Paste the email content first (at least a few lines).'; } return; }
+  const btn = document.getElementById('gwAiLeadParseBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reading email…'; }
+  if (errEl) errEl.style.display = 'none';
+  let data = null;
+  try {
+    const r = await fetch('/api/ai/parse-lead', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email_text: text })
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'AI could not read this email');
+    data = j.data || j;
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Extract Lead Details'; }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message || 'AI parse failed — try again.'; }
+    return;
+  }
+  window._gwAiLeadDraft = data;
+  window._gwAiLeadRawEmail = text;
+  _gwAiLeadRenderPreview(data);
+};
+
+function _gwAiLeadRenderPreview(d) {
+  const s1 = document.getElementById('gwAiLeadStep1');
+  const s2 = document.getElementById('gwAiLeadStep2');
+  if (!s2) return;
+  if (s1) s1.style.display = 'none';
+  const props = (d.properties && d.properties.length) ? d.properties : [{ label: '', address: '', notes: '' }];
+  const multi = props.length > 1;
+  const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
+  const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
+  const repSel = _ia
+    ? `<label style="display:grid;gap:4px"><span class="um-label">Assigned Rep</span><select id="gwAiL_rep" class="um-input">${(window.REPS||[]).filter(r=>!_GW_FIELD_ROLES.includes(r.role)).map(r=>`<option value="${r.id}" ${_cr&&r.id===_cr.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></label>`
+    : `<input type="hidden" id="gwAiL_rep" value="${_cr ? _cr.id : ''}">`;
+  const contractLabel = d.contract_hint === 'annual' ? 'Annual contract' : d.contract_hint === 'multi_year' ? 'Multi-year contract' : d.contract_hint === 'one_time' ? 'One-time project' : '';
+  s2.style.display = 'block';
+  s2.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#2D7A55">Review before creating</span>
+      ${multi ? `<span style="font-size:11px;font-weight:600;background:#4D8A8618;color:#2E5E5A;border:1px solid #4D8A8640;border-radius:20px;padding:2px 10px">Multi-property account — 1 contact, ${props.length} sites</span>` : ''}
+      ${contractLabel ? `<span style="font-size:11px;font-weight:600;background:#8B691414;color:#8B6914;border:1px solid #8B691430;border-radius:20px;padding:2px 10px">${contractLabel}</span>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <label style="display:grid;gap:4px"><span class="um-label">Contact Name</span><input id="gwAiL_name" class="um-input" value="${escapeHtml(d.contact?.name||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Company</span><input id="gwAiL_company" class="um-input" value="${escapeHtml(d.contact?.company||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Phone</span><input id="gwAiL_phone" class="um-input" value="${escapeHtml(d.contact?.phone||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Email</span><input id="gwAiL_email" class="um-input" value="${escapeHtml(d.contact?.email||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Client Type</span><select id="gwAiL_type" class="um-input"><option ${d.client_type==='Commercial'?'selected':''}>Commercial</option><option ${d.client_type==='Residential'?'selected':''}>Residential</option></select></label>
+      ${repSel}
+    </div>
+    <label style="display:grid;gap:4px;margin-bottom:12px"><span class="um-label">Project / Scope</span><input id="gwAiL_project" class="um-input" value="${escapeHtml(d.project||'')}"></label>
+    ${d.urgency ? `<div style="font-size:12.5px;color:#8B6914;background:#8B691410;border:1px solid #8B691425;border-radius:8px;padding:8px 12px;margin-bottom:12px"><strong>Timing:</strong> ${escapeHtml(d.urgency)}</div>` : ''}
+    <div class="um-label" style="margin-bottom:6px">Properties — one lead is created per checked site</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">
+      ${props.map((p, i) => `
+        <div style="display:flex;gap:8px;align-items:flex-start;border:1px solid #E4EAE3;border-radius:10px;padding:10px">
+          <input type="checkbox" class="gwAiL_prop_ck" data-i="${i}" checked style="width:16px;height:16px;margin-top:8px;accent-color:#2D7A55;flex-shrink:0">
+          <div style="flex:1;display:grid;gap:6px">
+            <input class="um-input gwAiL_prop_label" data-i="${i}" placeholder="Site name" value="${escapeHtml(p.label||'')}" style="font-weight:600">
+            <input class="um-input gwAiL_prop_addr" data-i="${i}" placeholder="Address" value="${escapeHtml(p.address||'')}">
+            <input class="um-input gwAiL_prop_notes" data-i="${i}" placeholder="Site notes (exclusions, instructions)" value="${escapeHtml(p.notes||'')}">
+          </div>
+        </div>`).join('')}
+    </div>
+    ${d.summary_note ? `<div style="font-size:12px;color:#6F7E6A;background:#F4F7F3;border-radius:8px;padding:10px 12px;margin-bottom:14px"><strong style="color:#3E4A3C">AI summary (saved as a note on each lead):</strong><br>${escapeHtml(d.summary_note)}</div>` : ''}
+    <div id="gwAiLeadErr2" style="display:none;margin-bottom:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px">
+      <button class="primary-btn" id="gwAiLeadCreateBtn" style="flex:1" onclick="window._gwAiLeadCreate()">Create</button>
+      <button class="secondary-btn" onclick="document.getElementById('gwAiLeadStep2').style.display='none';document.getElementById('gwAiLeadStep1').style.display='block';const b=document.getElementById('gwAiLeadParseBtn');if(b){b.disabled=false;b.textContent='Extract Lead Details';}">Back</button>
+    </div>`;
+  _gwAiLeadSyncCreateBtn();
+  s2.querySelectorAll('.gwAiL_prop_ck').forEach(ck => ck.addEventListener('change', _gwAiLeadSyncCreateBtn));
+}
+
+function _gwAiLeadSyncCreateBtn() {
+  const btn = document.getElementById('gwAiLeadCreateBtn');
+  if (!btn) return;
+  const n = document.querySelectorAll('.gwAiL_prop_ck:checked').length;
+  btn.textContent = n > 1 ? `Create Account + ${n} Property Leads` : 'Create Lead';
+  btn.disabled = n === 0;
+}
+
+window._gwAiLeadCreate = function() {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const name = g('gwAiL_name'), company = g('gwAiL_company');
+  const errEl = document.getElementById('gwAiLeadErr2');
+  if (!name && !company) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Enter at least a contact name or company.'; } return; }
+  const contactName = name || company;
+  const phone = g('gwAiL_phone'), email = g('gwAiL_email');
+  const clientType = g('gwAiL_type') || 'Commercial';
+  const repId = document.getElementById('gwAiL_rep')?.value || '';
+  const project = g('gwAiL_project');
+  const d = window._gwAiLeadDraft || {};
+
+  // Collect checked properties
+  const checked = [];
+  document.querySelectorAll('.gwAiL_prop_ck:checked').forEach(ck => {
+    const i = ck.dataset.i;
+    checked.push({
+      label: (document.querySelector(`.gwAiL_prop_label[data-i="${i}"]`)?.value || '').trim(),
+      address: (document.querySelector(`.gwAiL_prop_addr[data-i="${i}"]`)?.value || '').trim(),
+      notes: (document.querySelector(`.gwAiL_prop_notes[data-i="${i}"]`)?.value || '').trim()
+    });
+  });
+  if (!checked.length) return;
+  const multi = checked.length > 1;
+
+  // ── Client record: the point of contact (one record for the whole account) ─
+  const clientList = loadClients();
+  let cl = clientList.find(c => (c.name||'').toLowerCase() === contactName.toLowerCase());
+  if (!cl) {
+    cl = {
+      id: clientId(), name: contactName, firstName: '', lastName: '',
+      company: company || '', type: clientType, status: 'Active',
+      email: email, phone: phone, mobile: '',
+      street: checked[0].address || '', address: checked[0].address || '',
+      street2: '', city: '', state: 'VA', zip: '',
+      since: new Date().toLocaleDateString('en-US',{month:'short',year:'numeric'}),
+      tags: multi ? ['Multi-Property'] : [],
+      notes: d.summary_note || '',
+      homeworksId: '',
+      properties: checked.map(p => ({ label: p.label, address: p.address, notes: p.notes })),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    clientList.push(cl);
+    saveClients(clientList);
+    if (typeof _d1SaveClient === 'function') _d1SaveClient(cl);
+  } else {
+    // Merge any new properties into the existing account
+    cl.properties = cl.properties || [];
+    checked.forEach(p => {
+      if (p.address && !cl.properties.some(x => (x.address||'').toLowerCase() === p.address.toLowerCase())) {
+        cl.properties.push({ label: p.label, address: p.address, notes: p.notes });
+      }
+    });
+    cl.updatedAt = new Date().toISOString();
+    saveClients(clientList);
+    if (typeof _d1SaveClient === 'function') _d1SaveClient(cl);
+  }
+
+  // ── One lead per property, all linked to the contact's client record ──────
+  const stages = getPipelineStages();
+  const now = new Date().toISOString();
+  const createdIds = [];
+  checked.forEach(p => {
+    const opp = {
+      id: uid('opp'),
+      client: multi ? `${contactName} — ${p.label || p.address || 'Site'}` : contactName,
+      phone, email,
+      address: p.address,
+      clientId: cl.id,
+      clientType,
+      serviceLine: '',
+      source: 'Email',
+      leadSource: 'company_lead',
+      project: project || (d.summary_note ? d.summary_note.slice(0, 120) : 'Imported from email'),
+      urgency: d.urgency || '',
+      decisionMaker: contactName,
+      status: stages[0] || 'Lead Intake / Rapport',
+      repId,
+      createdAt: now, updatedAt: now
+    };
+    state.opportunities.unshift(opp);
+    _d1SaveOpp(opp);
+    createdIds.push(opp.id);
+    // Attach the AI summary + site notes as the first note on the lead
+    const noteBody = [d.summary_note || '', p.notes ? `Site notes: ${p.notes}` : ''].filter(Boolean).join('\n');
+    if (noteBody) {
+      const note = { id: uid('note'), oppId: opp.id, body: noteBody, createdAt: now };
+      state.notes.unshift(note);
+      if (typeof _d1SaveNote === 'function') _d1SaveNote(opp.id, noteBody, repId, note.id);
+    }
+  });
+  saveState();
+  document.getElementById('gwAiLeadModal')?.remove();
+  showToast(multi
+    ? `Created ${createdIds.length} property leads under ${contactName}`
+    : `Lead created for ${contactName}`);
+  if (multi) show('pipeline');
+  else show('pipeline', createdIds[0]);
+};
+
 // ── Mark Sold Modal ───────────────────────────────────────────────────────────
 function openMarkSoldModal(oppId) {
   const o = state.opportunities.find(x => x.id === oppId);
@@ -12454,6 +12708,10 @@ window._gwBuildNewMenu = function() {
       <button class="tnd-item" onclick="window._closeNewMenu();show('lead')" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
         Add Lead
+      </button>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwAiLeadImport&&window._gwAiLeadImport()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 5l6.5 4 6.5-4"/></svg>
+        AI Lead Import
       </button>
       <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
