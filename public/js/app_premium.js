@@ -4597,6 +4597,32 @@ async function customerDetail(clientId) {
   const avatarColors = ['#2D7A55','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899'];
   const avatarBg = avatarColors[(client.name||'A').charCodeAt(0) % avatarColors.length];
 
+  // ── Section icon badges + compact empty-state builder ───────────────────
+  // Small gradient icon tiles for each card header (cohesive visual language),
+  // and a centered/compact empty-state block so placeholder cards never
+  // stretch to fight taller neighbours for space.
+  const _cdIco = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const CD_ICONS = {
+    contact:    _cdIco('<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/>'),
+    quick:      _cdIco('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),
+    portal:     _cdIco('<path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>'),
+    notes:      _cdIco('<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>'),
+    recurring:  _cdIco('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>'),
+    timeline:   _cdIco('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'),
+    jobs:       _cdIco('<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>'),
+    pipeline:   _cdIco('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+    financials: _cdIco('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>'),
+    properties: _cdIco('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>'),
+    photos:     _cdIco('<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+  };
+  const _cdSecIcon = (key) => `<span class="cd-section-icon">${CD_ICONS[key]||''}</span>`;
+  const _cdEmpty = (iconKey, title, sub, ctaHtml) => `<div class="cd-empty">
+      <div class="cd-empty-icon">${CD_ICONS[iconKey]||''}</div>
+      <p class="cd-empty-title">${title}</p>
+      ${sub ? `<p class="cd-empty-sub">${sub}</p>` : ''}
+      ${ctaHtml ? `<div class="cd-empty-cta">${ctaHtml}</div>` : ''}
+    </div>`;
+
   // ── Helper: build a job row ───────────────────────────────────────────────
   function _cdWoRow(wo) {
     const statusCls = _p6WOStatusClass(wo.status);
@@ -4612,7 +4638,8 @@ async function customerDetail(clientId) {
   window._cdWoRow = _cdWoRow; // expose for _cdJobTab
 
   const woRows = workOrders.slice(0,20).map(_cdWoRow).join('')
-    || `<p class="sb-empty-note" style="padding:12px 0">No jobs yet. <button class="stmt-link" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">Schedule first job →</button></p>`;
+    || _cdEmpty('jobs', 'No jobs yet', 'Schedule this client\'s first visit to start building their job history.',
+        `<button class="cd-add-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule First Job</button>`);
 
   // Full lead portfolio: open first, then won, then lost/archived — every
   // lead ever attached to this client stays visible on the client page.
@@ -4633,7 +4660,7 @@ async function customerDetail(clientId) {
     _cdOppGroup('Open', openOpps) +
     _cdOppGroup('Won', wonOpps) +
     _cdOppGroup('Lost / Archived', lostOpps)
-  ) : `<p class="sb-empty-note" style="padding:12px 0">No pipeline opportunities yet.</p>`;
+  ) : _cdEmpty('pipeline', 'No pipeline opportunities yet', 'New leads and quotes for this client will show up here.');
 
   const notesHtml = customerNotes.map((n,i)=>`
     <div class="cd-note-item" data-note-id="${n.id||i}">
@@ -4770,7 +4797,7 @@ async function customerDetail(clientId) {
         <!-- Contact Info -->
         <section class="cd-section cd-span-2">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Contact Info
+            <h2 class="cd-section-title">${_cdSecIcon('contact')}Contact Info
               <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(click any field to edit — saves automatically)</span>
             </h2>
             <span id="cdAutosaveInd" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
@@ -4787,7 +4814,7 @@ async function customerDetail(clientId) {
         <!-- Quick Actions -->
         <section class="cd-section">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Quick Actions</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('quick')}Quick Actions</h2>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="cd-quick-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">
@@ -4823,7 +4850,7 @@ async function customerDetail(clientId) {
         <!-- Customer Portal -->
         <section class="cd-section">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Customer Portal</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('portal')}Customer Portal</h2>
           </div>
           <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
             One-click link lets this client view their jobs, photos, invoices, and pay online — all without logging in.
@@ -4850,15 +4877,14 @@ async function customerDetail(clientId) {
         </section>
 
         <!-- Internal Notes -->
-        <section class="cd-section">
+        <section class="cd-section${customerNotes.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">
-              Customer Notes
+            <h2 class="cd-section-title">${_cdSecIcon('notes')}Customer Notes
               <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(internal — never shown to client)</span>
             </h2>
           </div>
           <div id="cd-customer-notes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-            ${notesHtml || '<p class="sb-empty-note">No notes yet. Add context about this customer, preferences, gate codes, etc.</p>'}
+            ${notesHtml || _cdEmpty('notes', 'No notes yet', 'Add context about this customer — preferences, gate codes, etc.')}
           </div>
           <textarea id="cd-note-input" class="rp-input" rows="3"
             placeholder="Gate code, dog on property, preferred schedule, special instructions…"
@@ -4867,9 +4893,9 @@ async function customerDetail(clientId) {
         </section>
 
         <!-- Recurring Services & Revenue Projections -->
-        <section class="cd-section">
+        <section class="cd-section${_activeSubs.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Recurring &amp; Projections</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('recurring')}Recurring &amp; Projections</h2>
           </div>
           ${_activeSubs.length ? `
             ${_activeSubs.map(s=>{
@@ -4887,13 +4913,13 @@ async function customerDetail(clientId) {
               <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Next 12 months</span><strong style="color:#2D7A55">$${_subAnnual.toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
               <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>3-year value</span><strong>$${(_subAnnual*3).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
             </div>`
-          : '<p class="sb-empty-note">No recurring plans. Put this client on a recurring service plan to see revenue projections here.</p>'}
+          : _cdEmpty('recurring', 'No recurring plans', 'Put this client on a service plan to see revenue projections here.')}
         </section>
 
         <!-- Activity Timeline -->
-        <section class="cd-section">
+        <section class="cd-section${workOrders.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Activity Timeline</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('timeline')}Activity Timeline</h2>
           </div>
           <div id="cd-timeline" class="cd-timeline">
             ${workOrders.length ? workOrders.slice(0,10).map(wo=>`
@@ -4910,14 +4936,14 @@ async function customerDetail(clientId) {
                 </div>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.3;flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
               </div>`).join('')
-            : '<p class="sb-empty-note">No activity yet.</p>'}
+            : _cdEmpty('timeline', 'No activity yet', 'Jobs scheduled for this client will appear here.')}
           </div>
         </section>
 
         <!-- Jobs -->
         <section class="cd-section cd-span-2">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Jobs</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('jobs')}Jobs</h2>
           </div>
           <div class="cd-tab-bar" id="cd-jobs-tabs">
             <button class="cd-tab active" data-filter="all"    onclick="_cdJobTab(this,'all')">All (${totalJobs})</button>
@@ -4934,9 +4960,9 @@ async function customerDetail(clientId) {
         </section>
 
         <!-- Pipeline Opportunities -->
-        <section class="cd-section">
+        <section class="cd-section${linkedOpps.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Leads &amp; Opportunities
+            <h2 class="cd-section-title">${_cdSecIcon('pipeline')}Leads &amp; Opportunities
               ${pipelineValue ? `<span style="font-size:11px;font-weight:600;color:#2D7A55;margin-left:8px">$${pipelineValue.toLocaleString()} open pipeline</span>` : ''}
             </h2>
           </div>
@@ -4947,7 +4973,7 @@ async function customerDetail(clientId) {
         <!-- Financials: Estimates / Invoices / Payments -->
         <section class="cd-section cd-span-2">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Financials
+            <h2 class="cd-section-title">${_cdSecIcon('financials')}Financials
               ${outstanding>0 ? `<span style="font-size:11px;font-weight:600;color:#B4552E;margin-left:8px">$${outstanding.toLocaleString('en-US',{minimumFractionDigits:2})} outstanding</span>` : ''}
             </h2>
           </div>
@@ -4964,7 +4990,7 @@ async function customerDetail(clientId) {
                 <span class="cd-wo-date">${e.estimate_date||e.created_at ? _p5FmtDate(e.estimate_date||e.created_at) : '—'}</span>
                 <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(e.status||'draft')}</span>
                 <span class="cd-wo-amt">${Number(e.total) ? '$'+Number(e.total).toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</span>
-              </div>`).join('') : '<p class="sb-empty-note" style="padding:12px 0">No estimates yet.</p>'}
+              </div>`).join('') : _cdEmpty('financials', 'No estimates yet', 'Quotes you send this client will show up here.')}
             <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewEstimateForClient('${client.id}')">+ New Estimate</button></div>
           </div>
           <div id="cd-fin-invoices" style="display:none">
@@ -4977,7 +5003,7 @@ async function customerDetail(clientId) {
                 <span class="cd-wo-date">${i.due_date ? 'Due '+_p5FmtDate(i.due_date) : (i.created_at ? _p5FmtDate(i.created_at) : '—')}</span>
                 <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(i.status||'draft')}</span>
                 <span class="cd-wo-amt" ${bal>0?'style="color:#B4552E;font-weight:700"':''}>${bal>0 ? '$'+bal.toLocaleString('en-US',{minimumFractionDigits:2})+' due' : (Number(i.total)?'$'+Number(i.total).toLocaleString('en-US',{minimumFractionDigits:2}):'—')}</span>
-              </div>`;}).join('') : '<p class="sb-empty-note" style="padding:12px 0">No invoices yet.</p>'}
+              </div>`;}).join('') : _cdEmpty('financials', 'No invoices yet', 'Invoices billed to this client will show up here.')}
             <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewInvoiceForClient('${client.id}')">+ New Invoice</button></div>
           </div>
           <div id="cd-fin-payments" style="display:none">
@@ -4988,15 +5014,15 @@ async function customerDetail(clientId) {
                 <span class="cd-wo-date">${p.created_at ? _p5FmtDate(p.created_at) : '—'}</span>
                 <span class="ops-ready-badge ops-ready" style="font-size:10px">${escapeHtml(p.status||'succeeded')}</span>
                 <span class="cd-wo-amt" style="color:#2D7A55;font-weight:700">$${(Number(p.amount)||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
-              </div>`).join('') : '<p class="sb-empty-note" style="padding:12px 0">No payments recorded yet.</p>'}
+              </div>`).join('') : _cdEmpty('financials', 'No payments recorded yet', 'Payments collected from this client will show up here.')}
             <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdRecordPaymentForClient('${client.id}')">+ Record Payment</button></div>
           </div>
         </section>
 
         <!-- Service Properties -->
-        <section class="cd-section">
+        <section class="cd-section${(client.properties||[]).length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Properties</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('properties')}Properties</h2>
           </div>
           ${(client.properties||[]).length ? (client.properties||[]).map(p=>{
             const pAddr = [p.street,p.city,p.state,p.zip].filter(Boolean).join(', ') || p.address || '';
@@ -5012,21 +5038,21 @@ async function customerDetail(clientId) {
                  <svg width="10" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
                  Map
               </a>
-            </div>`;}).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
+            </div>`;}).join('') : _cdEmpty('properties', 'No additional properties', 'The primary address above is the main service location.')}
           <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="showAddProperty('${client.id}')">+ Add Property</button></div>
         </section>
 
         <!-- Site Photos -->
-        <section class="cd-section cd-span-2">
+        <section class="cd-section cd-span-2${cdMedia.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Site Photos ${cdMedia.length ? `<span style="font-size:11px;font-weight:400;color:var(--gw-text-muted)">(${cdMedia.length})</span>` : ''}</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('photos')}Site Photos ${cdMedia.length ? `<span style="font-size:11px;font-weight:400;color:var(--gw-text-muted)">(${cdMedia.length})</span>` : ''}</h2>
           </div>
           ${cdMedia.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">
             ${cdMedia.slice(0,24).map(m=>`
               <a href="/api/admin/portal/media/${m.id}" target="_blank" rel="noopener" title="${escapeHtml([m.caption,m.wo_number||m.wo_title].filter(Boolean).join(' — '))}" style="display:block;border-radius:8px;overflow:hidden;border:1px solid var(--gw-border);aspect-ratio:1;background:#f0f2ef">
                 <img src="/api/admin/portal/media/${m.id}" loading="lazy" alt="${escapeHtml(m.caption||m.file_name||'Site photo')}" style="width:100%;height:100%;object-fit:cover">
               </a>`).join('')}
-          </div>` : '<p class="sb-empty-note">No site photos yet. Photos crews attach to jobs for this client appear here automatically, or upload directly below.</p>'}
+          </div>` : _cdEmpty('photos', 'No site photos yet', 'Photos crews attach to jobs will appear here automatically, or upload directly below.')}
           <div class="cd-add-btn-row">
             <button class="cd-add-btn" onclick="_cdUploadPhotos('${client.id}')">+ Upload Photos</button>
             <input type="file" id="cdPhotoInput" accept="image/*" multiple style="display:none">
