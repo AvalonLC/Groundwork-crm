@@ -3407,6 +3407,16 @@ app.post('/api/clients', requireAuth, async (c) => {
   return json(c, { id }, 201)
 })
 
+// NOTE: this is an UPSERT, not a plain UPDATE. Root-cause fix (2026-07-31):
+// the frontend assigns a client-side id the moment a new client is created
+// (before any network round-trip), so DB.clients.save() sees client.id
+// truthy and calls PUT on the very first save — a POST never happens. A
+// plain "UPDATE ... WHERE id=?" against a row that doesn't exist yet
+// silently matches 0 rows and still returns 200 OK, leaving the client
+// stranded in localStorage forever (invisible to any real D1 query, e.g.
+// the staff Preview Portal endpoint, while still rendering fine elsewhere
+// via the app's localStorage fallback). INSERT ... ON CONFLICT DO UPDATE
+// makes this self-healing: first save creates the row, later saves update it.
 app.put('/api/clients/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const b         = await c.req.json()
@@ -3414,22 +3424,29 @@ app.put('/api/clients/:id', requireAuth, async (c) => {
   await ensurePortfolioSchema(c.env.DB)
   // Merge extra so a partial payload never wipes previously saved rich fields
   let extra = _packClientExtra(b)
-  if (extra !== null) {
-    try {
-      const prev: any = await c.env.DB.prepare('SELECT extra FROM clients WHERE id=? AND company_id=?').bind(id, companyId).first()
-      if (prev?.extra) extra = JSON.stringify({ ...JSON.parse(prev.extra), ...JSON.parse(extra) })
-    } catch {}
+  const prev: any = await c.env.DB.prepare('SELECT extra FROM clients WHERE id=? AND company_id=?').bind(id, companyId).first()
+  if (extra !== null && prev?.extra) {
+    try { extra = JSON.stringify({ ...JSON.parse(prev.extra), ...JSON.parse(extra) }) } catch {}
   }
   await c.env.DB.prepare(
-    `UPDATE clients SET name=?, phone=?, email=?, address=?, type=?, notes=?,
-       street=COALESCE(?,street), street2=COALESCE(?,street2), city=COALESCE(?,city),
-       state=COALESCE(?,state), zip=COALESCE(?,zip), mobile=COALESCE(?,mobile),
-       email2=COALESCE(?,email2), since=COALESCE(?,since),
-       tags=COALESCE(?,tags), properties=COALESCE(?,properties), status=COALESCE(?,status),
-       extra=COALESCE(?,extra),
-       updated_at=datetime('now') WHERE id=? AND company_id=?`
+    `INSERT INTO clients (
+       id, name, phone, email, address, type, notes, company_id,
+       street, street2, city, state, zip, mobile, email2, since, tags, properties, status, extra,
+       created_at, updated_at
+     ) VALUES (?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?, datetime('now'), datetime('now'))
+     ON CONFLICT(id) DO UPDATE SET
+       name=excluded.name, phone=excluded.phone, email=excluded.email, address=excluded.address,
+       type=excluded.type, notes=excluded.notes,
+       street=COALESCE(excluded.street, clients.street), street2=COALESCE(excluded.street2, clients.street2),
+       city=COALESCE(excluded.city, clients.city), state=COALESCE(excluded.state, clients.state),
+       zip=COALESCE(excluded.zip, clients.zip), mobile=COALESCE(excluded.mobile, clients.mobile),
+       email2=COALESCE(excluded.email2, clients.email2), since=COALESCE(excluded.since, clients.since),
+       tags=COALESCE(excluded.tags, clients.tags), properties=COALESCE(excluded.properties, clients.properties),
+       status=COALESCE(excluded.status, clients.status), extra=COALESCE(excluded.extra, clients.extra),
+       updated_at=datetime('now')
+     WHERE clients.company_id = excluded.company_id`
   ).bind(
-    b.name||'', b.phone||'', b.email||'', b.address||'', b.type||'Residential', b.notes||'',
+    id, b.name||'', b.phone||'', b.email||'', b.address||'', b.type||'Residential', b.notes||'', companyId,
     b.street !== undefined ? (b.street||'') : null,
     b.street2 !== undefined ? (b.street2||'') : null,
     b.city !== undefined ? (b.city||'') : null,
@@ -3441,10 +3458,9 @@ app.put('/api/clients/:id', requireAuth, async (c) => {
     b.tags !== undefined ? JSON.stringify(b.tags||[]) : null,
     b.properties !== undefined ? JSON.stringify(b.properties||[]) : null,
     b.status !== undefined ? (b.status||'Active') : null,
-    extra,
-    id, companyId
+    extra
   ).run()
-  return json(c, { updated: id })
+  return json(c, { updated: id, wasCreated: !prev })
 })
 
 app.delete('/api/clients/:id', requireAuth, async (c) => {
@@ -3470,35 +3486,55 @@ app.get('/api/customers/:id', requireAuth, async (c) => {
 })
 
 // PUT /api/customers/:id — update a client with all fields
+// UPSERT (see comment on PUT /api/clients/:id above) — a plain UPDATE here
+// silently no-ops for a client whose first-ever save never went through
+// POST, leaving it permanently invisible to D1 despite looking fine in the
+// UI (localStorage fallback). INSERT ... ON CONFLICT DO UPDATE self-heals it.
 app.put('/api/customers/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const id = c.req.param('id')
   const b: any = await c.req.json()
   await ensurePortfolioSchema(c.env.DB)
   let extra = _packClientExtra(b)
-  if (extra !== null) {
-    try {
-      const prev: any = await c.env.DB.prepare('SELECT extra FROM clients WHERE id=? AND company_id=?').bind(id, companyId).first()
-      if (prev?.extra) extra = JSON.stringify({ ...JSON.parse(prev.extra), ...JSON.parse(extra) })
-    } catch {}
+  const prev: any = await c.env.DB.prepare('SELECT extra FROM clients WHERE id=? AND company_id=?').bind(id, companyId).first()
+  if (extra !== null && prev?.extra) {
+    try { extra = JSON.stringify({ ...JSON.parse(prev.extra), ...JSON.parse(extra) }) } catch {}
   }
   await c.env.DB.prepare(`
-    UPDATE clients SET
-      name=COALESCE(?,name), phone=COALESCE(?,phone), email=COALESCE(?,email),
-      address=COALESCE(?,address), type=COALESCE(?,type), notes=COALESCE(?,notes),
-      street=COALESCE(?,street), street2=COALESCE(?,street2), city=COALESCE(?,city),
-      state=COALESCE(?,state), zip=COALESCE(?,zip), mobile=COALESCE(?,mobile),
-      email2=COALESCE(?,email2), since=COALESCE(?,since),
-      tags=COALESCE(?,tags), properties=COALESCE(?,properties), status=COALESCE(?,status),
-      extra=COALESCE(?,extra),
-      updated_at=datetime('now')
-    WHERE id=? AND company_id=?
+    INSERT INTO clients (
+      id, name, phone, email, address, type, notes, company_id,
+      street, street2, city, state, zip, mobile, email2, since, tags, properties, status, extra,
+      created_at, updated_at
+    ) VALUES (?, COALESCE(?,''), ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?, datetime('now'), datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      name    = CASE WHEN excluded.name = '' THEN clients.name ELSE excluded.name END,
+      phone   = COALESCE(excluded.phone, clients.phone),
+      email   = COALESCE(excluded.email, clients.email),
+      address = COALESCE(excluded.address, clients.address),
+      type    = COALESCE(excluded.type, clients.type),
+      notes   = COALESCE(excluded.notes, clients.notes),
+      street  = COALESCE(excluded.street, clients.street),
+      street2 = COALESCE(excluded.street2, clients.street2),
+      city    = COALESCE(excluded.city, clients.city),
+      state   = COALESCE(excluded.state, clients.state),
+      zip     = COALESCE(excluded.zip, clients.zip),
+      mobile  = COALESCE(excluded.mobile, clients.mobile),
+      email2  = COALESCE(excluded.email2, clients.email2),
+      since   = COALESCE(excluded.since, clients.since),
+      tags    = COALESCE(excluded.tags, clients.tags),
+      properties = COALESCE(excluded.properties, clients.properties),
+      status  = COALESCE(excluded.status, clients.status),
+      extra   = COALESCE(excluded.extra, clients.extra),
+      updated_at = datetime('now')
+    WHERE clients.company_id = excluded.company_id
   `).bind(
+    id,
     // "!== undefined" (not ||) so an inline edit can clear a field to ''
     b.name || null, // name may never be blanked
     b.phone !== undefined ? b.phone : null, b.email !== undefined ? b.email : null,
     b.address !== undefined ? b.address : null, b.type || null,
     b.notes !== undefined ? b.notes : null,
+    companyId,
     b.street !== undefined ? b.street : null, b.street2 !== undefined ? b.street2 : null,
     b.city !== undefined ? b.city : null, b.state !== undefined ? b.state : null,
     b.zip !== undefined ? b.zip : null, b.mobile !== undefined ? b.mobile : null,
@@ -3506,10 +3542,9 @@ app.put('/api/customers/:id', requireAuth, async (c) => {
     b.tags !== undefined ? JSON.stringify(b.tags) : null,
     b.properties !== undefined ? JSON.stringify(b.properties) : null,
     b.status||null,
-    extra,
-    id, companyId
+    extra
   ).run()
-  return json(c, { updated: id })
+  return json(c, { updated: id, wasCreated: !prev })
 })
 
 // GET /api/customers/:id/notes — get notes for a customer
@@ -12051,8 +12086,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b020">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b020">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b021">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b021">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12075,10 +12110,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260731b020"></script>
-  <script src="/js/client_portal.js?v=20260731b020"></script>
-  <script src="/js/platform_core.js?v=20260731b020"></script>
-  <script src="/js/client_portal.js?v=20260731b020"></script>  <script>
+  <script src="/js/platform_core.js?v=20260731b021"></script>
+  <script src="/js/client_portal.js?v=20260731b021"></script>
+  <script src="/js/platform_core.js?v=20260731b021"></script>
+  <script src="/js/client_portal.js?v=20260731b021"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12712,12 +12747,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b020">
-  <link rel="stylesheet" href="/js/styles.css?v=20260731b020">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b020">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b020">
-  <link rel="stylesheet" href="/js/styles.css?v=20260731b020">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b020">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b021">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b021">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b021">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b021">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b021">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b021">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13276,84 +13311,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260731b020"></script>
-<script src="/js/sales-process.js?v=20260731b020"></script>
-<script src="/js/richtext.js?v=20260731b020"></script>
-<script src="/js/db.js?v=20260731b020"></script>
-<script src="/js/data.js?v=20260731b020"></script>
-<script src="/js/reps.js?v=20260731b020"></script>
-<script src="/js/record-page.js?v=20260731b020"></script>
-<script src="/js/academy.js?v=20260731b020"></script>
-<script src="/js/task_engine.js?v=20260731b020"></script>
-<script src="/js/gw_i18n.js?v=20260731b020"></script>
-<script src="/js/app_premium.js?v=20260731b020"></script>
-<script src="/js/estimates.js?v=20260731b020"></script>
-<script src="/js/multiday.js?v=20260731b020"></script>
-<script src="/js/proposals.js?v=20260731b020"></script>
-<script src="/js/pricing.js?v=20260731b020"></script>
-<script src="/js/invoices.js?v=20260731b020"></script>
-<script src="/js/csv_import.js?v=20260731b020"></script>
-<script src="/js/onboarding.js?v=20260731b020"></script>
-<script src="/js/gw_copilot.js?v=20260731b020"></script>
-<script src="/js/groundwork_ai.js?v=20260731b020"></script>
-<script src="/js/recurring_plans.js?v=20260731b020"></script>
-<script src="/js/reviews.js?v=20260731b020"></script>
-<script src="/js/stripe.js?v=20260731b020"></script>
-<script src="/js/email.js?v=20260731b020"></script>
-<script src="/js/notifications.js?v=20260731b020"></script>
-<script src="/js/integrations.js?v=20260731b020"></script>
-<script src="/js/sms.js?v=20260731b020"></script>
-<script src="/js/calendar_sync.js?v=20260731b020"></script>
-<script src="/js/ai_followup.js?v=20260731b020"></script>
-<script src="/js/user_management.js?v=20260731b020"></script>
-<script src="/js/platform_admin.js?v=20260731b020"></script>
-<script src="/js/time_tracker.js?v=20260731b020"></script>
-<script src="/js/field_workday.js?v=20260731b020"></script>
-<script src="/js/platform_core.js?v=20260731b020"></script>
-<script src="/js/approval_engine.js?v=20260731b020"></script>
-<script src="/js/automation_engine.js?v=20260731b020"></script>
-<script src="/js/client_portal.js?v=20260731b020"></script>
-<script src="/js/field_mode.js?v=20260731b020"></script>
-<script src="/js/assets_hub.js?v=20260731b020"></script>
-<script src="/js/gw-icons.js?v=20260731b020"></script>
-<script src="/js/sales-process.js?v=20260731b020"></script>
-<script src="/js/richtext.js?v=20260731b020"></script>
-<script src="/js/db.js?v=20260731b020"></script>
-<script src="/js/data.js?v=20260731b020"></script>
-<script src="/js/reps.js?v=20260731b020"></script>
-<script src="/js/record-page.js?v=20260731b020"></script>
-<script src="/js/academy.js?v=20260731b020"></script>
-<script src="/js/task_engine.js?v=20260731b020"></script>
-<script src="/js/gw_i18n.js?v=20260731b020"></script>
-<script src="/js/app_premium.js?v=20260731b020"></script>
-<script src="/js/estimates.js?v=20260731b020"></script>
-<script src="/js/multiday.js?v=20260731b020"></script>
-<script src="/js/proposals.js?v=20260731b020"></script>
-<script src="/js/pricing.js?v=20260731b020"></script>
-<script src="/js/invoices.js?v=20260731b020"></script>
-<script src="/js/csv_import.js?v=20260731b020"></script>
-<script src="/js/onboarding.js?v=20260731b020"></script>
-<script src="/js/gw_copilot.js?v=20260731b020"></script>
-<script src="/js/groundwork_ai.js?v=20260731b020"></script>
-<script src="/js/recurring_plans.js?v=20260731b020"></script>
-<script src="/js/reviews.js?v=20260731b020"></script>
-<script src="/js/stripe.js?v=20260731b020"></script>
-<script src="/js/email.js?v=20260731b020"></script>
-<script src="/js/notifications.js?v=20260731b020"></script>
-<script src="/js/integrations.js?v=20260731b020"></script>
-<script src="/js/sms.js?v=20260731b020"></script>
-<script src="/js/calendar_sync.js?v=20260731b020"></script>
-<script src="/js/ai_followup.js?v=20260731b020"></script>
-<script src="/js/user_management.js?v=20260731b020"></script>
-<script src="/js/platform_admin.js?v=20260731b020"></script>
-<script src="/js/time_tracker.js?v=20260731b020"></script>
-<script src="/js/field_workday.js?v=20260731b020"></script>
-<script src="/js/platform_core.js?v=20260731b020"></script>
-<script src="/js/approval_engine.js?v=20260731b020"></script>
-<script src="/js/automation_engine.js?v=20260731b020"></script>
-<script src="/js/client_portal.js?v=20260731b020"></script>
-<script src="/js/field_mode.js?v=20260731b020"></script>
-<script src="/js/assets_hub.js?v=20260731b020"></script><script>
+<script src="/js/gw-icons.js?v=20260731b021"></script>
+<script src="/js/sales-process.js?v=20260731b021"></script>
+<script src="/js/richtext.js?v=20260731b021"></script>
+<script src="/js/db.js?v=20260731b021"></script>
+<script src="/js/data.js?v=20260731b021"></script>
+<script src="/js/reps.js?v=20260731b021"></script>
+<script src="/js/record-page.js?v=20260731b021"></script>
+<script src="/js/academy.js?v=20260731b021"></script>
+<script src="/js/task_engine.js?v=20260731b021"></script>
+<script src="/js/gw_i18n.js?v=20260731b021"></script>
+<script src="/js/app_premium.js?v=20260731b021"></script>
+<script src="/js/estimates.js?v=20260731b021"></script>
+<script src="/js/multiday.js?v=20260731b021"></script>
+<script src="/js/proposals.js?v=20260731b021"></script>
+<script src="/js/pricing.js?v=20260731b021"></script>
+<script src="/js/invoices.js?v=20260731b021"></script>
+<script src="/js/csv_import.js?v=20260731b021"></script>
+<script src="/js/onboarding.js?v=20260731b021"></script>
+<script src="/js/gw_copilot.js?v=20260731b021"></script>
+<script src="/js/groundwork_ai.js?v=20260731b021"></script>
+<script src="/js/recurring_plans.js?v=20260731b021"></script>
+<script src="/js/reviews.js?v=20260731b021"></script>
+<script src="/js/stripe.js?v=20260731b021"></script>
+<script src="/js/email.js?v=20260731b021"></script>
+<script src="/js/notifications.js?v=20260731b021"></script>
+<script src="/js/integrations.js?v=20260731b021"></script>
+<script src="/js/sms.js?v=20260731b021"></script>
+<script src="/js/calendar_sync.js?v=20260731b021"></script>
+<script src="/js/ai_followup.js?v=20260731b021"></script>
+<script src="/js/user_management.js?v=20260731b021"></script>
+<script src="/js/platform_admin.js?v=20260731b021"></script>
+<script src="/js/time_tracker.js?v=20260731b021"></script>
+<script src="/js/field_workday.js?v=20260731b021"></script>
+<script src="/js/platform_core.js?v=20260731b021"></script>
+<script src="/js/approval_engine.js?v=20260731b021"></script>
+<script src="/js/automation_engine.js?v=20260731b021"></script>
+<script src="/js/client_portal.js?v=20260731b021"></script>
+<script src="/js/field_mode.js?v=20260731b021"></script>
+<script src="/js/assets_hub.js?v=20260731b021"></script>
+<script src="/js/gw-icons.js?v=20260731b021"></script>
+<script src="/js/sales-process.js?v=20260731b021"></script>
+<script src="/js/richtext.js?v=20260731b021"></script>
+<script src="/js/db.js?v=20260731b021"></script>
+<script src="/js/data.js?v=20260731b021"></script>
+<script src="/js/reps.js?v=20260731b021"></script>
+<script src="/js/record-page.js?v=20260731b021"></script>
+<script src="/js/academy.js?v=20260731b021"></script>
+<script src="/js/task_engine.js?v=20260731b021"></script>
+<script src="/js/gw_i18n.js?v=20260731b021"></script>
+<script src="/js/app_premium.js?v=20260731b021"></script>
+<script src="/js/estimates.js?v=20260731b021"></script>
+<script src="/js/multiday.js?v=20260731b021"></script>
+<script src="/js/proposals.js?v=20260731b021"></script>
+<script src="/js/pricing.js?v=20260731b021"></script>
+<script src="/js/invoices.js?v=20260731b021"></script>
+<script src="/js/csv_import.js?v=20260731b021"></script>
+<script src="/js/onboarding.js?v=20260731b021"></script>
+<script src="/js/gw_copilot.js?v=20260731b021"></script>
+<script src="/js/groundwork_ai.js?v=20260731b021"></script>
+<script src="/js/recurring_plans.js?v=20260731b021"></script>
+<script src="/js/reviews.js?v=20260731b021"></script>
+<script src="/js/stripe.js?v=20260731b021"></script>
+<script src="/js/email.js?v=20260731b021"></script>
+<script src="/js/notifications.js?v=20260731b021"></script>
+<script src="/js/integrations.js?v=20260731b021"></script>
+<script src="/js/sms.js?v=20260731b021"></script>
+<script src="/js/calendar_sync.js?v=20260731b021"></script>
+<script src="/js/ai_followup.js?v=20260731b021"></script>
+<script src="/js/user_management.js?v=20260731b021"></script>
+<script src="/js/platform_admin.js?v=20260731b021"></script>
+<script src="/js/time_tracker.js?v=20260731b021"></script>
+<script src="/js/field_workday.js?v=20260731b021"></script>
+<script src="/js/platform_core.js?v=20260731b021"></script>
+<script src="/js/approval_engine.js?v=20260731b021"></script>
+<script src="/js/automation_engine.js?v=20260731b021"></script>
+<script src="/js/client_portal.js?v=20260731b021"></script>
+<script src="/js/field_mode.js?v=20260731b021"></script>
+<script src="/js/assets_hub.js?v=20260731b021"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

@@ -4542,10 +4542,20 @@ async function customerDetail(clientId) {
     client = (loadClients()||[]).find(c => c.id === resolvedId);
   }
 
-  // If D1 returned null/empty, try localStorage as fallback
+  // If D1 returned null/empty, try localStorage as fallback.
+  // Self-heal: some older clients were created client-side and, due to a
+  // now-fixed backend bug, never actually got persisted to D1 (their first
+  // save silently hit a no-op UPDATE instead of an INSERT). Re-push them to
+  // D1 here so every D1-backed feature (Jobs, Preview Portal, etc.) works
+  // going forward without the user having to notice or take any action.
   if (!client || !client.name) {
     const local = (loadClients()||[]).find(c => c.id === resolvedId);
-    if (local) client = { ...local, ...(client||{}) };
+    if (local) {
+      client = { ...local, ...(client||{}) };
+      try {
+        if (typeof _d1SaveClient === 'function') await _d1SaveClient(local);
+      } catch(e) { console.warn('[client sync] repair failed for', resolvedId, e); }
+    }
   }
 
   if (!client) {
@@ -5594,11 +5604,29 @@ window._cdInvitePortal = function(clientId, name, email, phone) {
 // details are hidden and no actions can be taken from a preview session.
 window._cdPreviewClientPortal = async function(clientId) {
   try {
-    const r = await fetch(`/api/admin/portal/preview/${clientId}`, { method:'POST', credentials:'include' });
-    const d = await r.json();
+    let r = await fetch(`/api/admin/portal/preview/${clientId}`, { method:'POST', credentials:'include' });
+    let d = await r.json();
+    if (!d.ok && r.status === 404) {
+      // Self-heal: this client may pre-date a now-fixed sync bug where a
+      // client's first save silently never reached D1. If we still have it
+      // locally, push it now (upsert) and retry once before giving up.
+      const local = (loadClients()||[]).find(c => c.id === clientId);
+      if (local && typeof _d1SaveClient === 'function') {
+        try {
+          await _d1SaveClient(local);
+          r = await fetch(`/api/admin/portal/preview/${clientId}`, { method:'POST', credentials:'include' });
+          d = await r.json();
+        } catch(syncErr) { /* fall through to error below */ }
+      }
+    }
     if (!d.ok) throw new Error(d.error || 'Could not start preview');
     window.open(d.url, '_blank', 'noopener');
-  } catch(e) { showToast('Failed to start preview: ' + (e.message||'Unknown error'), 'error'); }
+  } catch(e) {
+    const msg = /not found/i.test(e.message||'')
+      ? 'This client record needs to finish syncing — click any field to save, then try Preview again.'
+      : (e.message || 'Unknown error');
+    showToast('Failed to start preview: ' + msg, 'error');
+  }
 };
 
 window._cdResendPortalInvite = async function(userId, clientId) {
