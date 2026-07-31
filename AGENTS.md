@@ -241,3 +241,4 @@ Sandboxes reset: reinstall the `sqlite3` CLI if `test:migrations` fails to spawn
   schedule board visit modal (`workOrderDetail()` is redirect-only; keep it so).
 - Onboarding wizard: `public/js/onboarding.js`, 9 steps, gated by
   `onboarding_completed` / `onboarding_step >= 9` on the company record.
+- CLIENT PORTFOLIO (mig 0055): opportunities.client_id is the durable client->lead link (POST/PUT /api/opportunities map clientId; _mapOppFromD1 maps it back; customerDetail self-heals unlinked leads via exact-name or "Name — Site" prefix match then _d1SaveOpp). Rich client fields ride in clients.extra JSON via _packClientExtra/_unpackClientRow (CLIENT_EXTRA_FIELDS); PUT merges extra with previous so partial payloads never wipe. ensurePortfolioSchema (settings key _schema_portfolio_v1) self-heals schema, incl. recurring_plans.frequency_unit/visit_duration_minutes/services_included drift. Local migrations DB name: avalon-sales-hub-production.

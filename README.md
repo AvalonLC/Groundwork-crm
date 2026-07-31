@@ -589,3 +589,13 @@ Fast lead creation from raw email text, with first-class support for commercial 
 - **Create**: one Commercial client record (found by name match in `loadClients()` or created — tagged `Multi-Property` when N>1, AI summary stored in `notes` since D1 `clients` persists base columns only; the `properties` array lives in the client payload/localStorage) plus **one lead per checked property**, each named `Contact — Site label`, linked via `clientId`, `source:'Email'`, `leadSource:'company_lead'`, first pipeline stage, its own value/bid, and an auto-note combining the AI summary with the site notes (persisted via `_d1SaveNote`). Multi-property lands on the Pipeline; single property opens the new lead.
 - **Why one-lead-per-property**: each site carries its own bid, value, stage and commission math independently, while the client record shows the whole portfolio (client page already lists linked leads via `clientId`).
 - Validated end-to-end against a real commercial email (3 properties + per-site notes extracted correctly, ~8s, ~1.3k tokens).
+
+## Client Portfolio (Client Detail Page)
+Each client page now shows the full portfolio:
+- **Leads & Opportunities**: every lead grouped Open / Won / Lost-Archived, linked via the new `opportunities.client_id` column (with name/prefix-match self-heal for older leads), plus open pipeline value chip.
+- **Financials tabs**: Estimates, Invoices (balance-due highlighted), Payments (with invoice number), filtered per client via `GET /api/estimates?client_id=`, `GET /api/invoices?client_id=`, and the new `GET /api/payments?client_id=`.
+- **Outstanding balance** stat (sum of unpaid invoice balances).
+- **Site Photos** grid from project media (`GET /api/customers/:id/media`).
+- **Recurring & Projections**: active subscriptions plus revenue projection card (monthly run rate, 12-month, 3-year).
+- **Extended contact card**: office phone, CC emails, mailing address vs service address, main POC, billing contact, site contact, payment method — all editable in the client form and persisted in `clients.extra` JSON (see `CLIENT_EXTRA_FIELDS` in src/index.tsx).
+- Migration `0055_client_portfolio.sql` adds `opportunities.client_id`, `clients.extra`, and fixes `recurring_plans` drift (`frequency_unit`, `visit_duration_minutes`, `services_included` — previously every recurring-subscriptions request returned 500). Self-heals in prod via `ensurePortfolioSchema`.

@@ -4221,14 +4221,37 @@ window.showClientForm = function(clientIdToEdit) {
               ${['Active','Inactive','Lead'].map(s => `<option ${(c?.status||'Active')===s?'selected':''}>${s}</option>`).join('')}
             </select>
           </label>
+          <label class="cl-form-label full"><span>Company</span>
+            <input id="clf-company" class="cl-input" value="${escapeHtml(c?.company||'')}" placeholder="Company / management firm">
+          </label>
           <label class="cl-form-label"><span>Email</span>
             <input id="clf-email" class="cl-input" type="email" value="${escapeHtml(c?.email||'')}" placeholder="client@email.com">
+          </label>
+          <label class="cl-form-label"><span>CC Emails <span style="color:#6F7E6A;font-weight:400">(comma-separated)</span></span>
+            <input id="clf-ccemails" class="cl-input" value="${escapeHtml(Array.isArray(c?.ccEmails)?c.ccEmails.join(', '):(c?.ccEmails||''))}" placeholder="billing@co.com, pm@co.com">
           </label>
           <label class="cl-form-label"><span>Phone</span>
             <input id="clf-phone" class="cl-input" value="${escapeHtml(c?.phone||'')}" placeholder="703-xxx-xxxx">
           </label>
           <label class="cl-form-label"><span>Mobile</span>
             <input id="clf-mobile" class="cl-input" value="${escapeHtml(c?.mobile||'')}" placeholder="Mobile">
+          </label>
+          <label class="cl-form-label"><span>Office Phone</span>
+            <input id="clf-phone2" class="cl-input" value="${escapeHtml(c?.phone2||'')}" placeholder="Office / alt line">
+          </label>
+          <label class="cl-form-label"><span>Main POC</span>
+            <input id="clf-poc" class="cl-input" value="${escapeHtml(c?.poc||'')}" placeholder="Primary point of contact">
+          </label>
+          <label class="cl-form-label"><span>Billing Contact</span>
+            <input id="clf-billing" class="cl-input" value="${escapeHtml(c?.billingContact||'')}" placeholder="Name / email for invoices">
+          </label>
+          <label class="cl-form-label"><span>Site Contact</span>
+            <input id="clf-sitecontact" class="cl-input" value="${escapeHtml(c?.siteContact||'')}" placeholder="On-site contact">
+          </label>
+          <label class="cl-form-label"><span>Payment Method</span>
+            <select id="clf-paymethod" class="cl-input">
+              ${['','Check','ACH','Credit Card','Cash','Autopay','Net 30','Other'].map(m => `<option value="${m}" ${(c?.paymentMethod||'')===m?'selected':''}>${m||'— Not set —'}</option>`).join('')}
+            </select>
           </label>
           <label class="cl-form-label full"><span>Street Address</span>
             <input id="clf-street" class="cl-input" value="${escapeHtml(c?.street||'')}" placeholder="123 Main St">
@@ -4239,6 +4262,16 @@ window.showClientForm = function(clientIdToEdit) {
           <label class="cl-form-label" style="grid-template-columns:80px 1fr;gap:8px">
             <div><span>State</span><input id="clf-state" class="cl-input" value="${escapeHtml(c?.state||'VA')}" placeholder="VA" maxlength="2"></div>
             <div><span>Zip</span><input id="clf-zip" class="cl-input" value="${escapeHtml(c?.zip||'')}" placeholder="22180"></div>
+          </label>
+          <label class="cl-form-label full"><span>Mailing Address <span style="color:#6F7E6A;font-weight:400">(if different from service address)</span></span>
+            <input id="clf-mailstreet" class="cl-input" value="${escapeHtml(c?.mailingStreet||'')}" placeholder="Mailing street / PO Box" style="margin-bottom:6px">
+          </label>
+          <label class="cl-form-label"><span>Mailing City</span>
+            <input id="clf-mailcity" class="cl-input" value="${escapeHtml(c?.mailingCity||'')}" placeholder="City">
+          </label>
+          <label class="cl-form-label" style="grid-template-columns:80px 1fr;gap:8px">
+            <div><span>Mail State</span><input id="clf-mailstate" class="cl-input" value="${escapeHtml(c?.mailingState||'')}" placeholder="VA" maxlength="2"></div>
+            <div><span>Mail Zip</span><input id="clf-mailzip" class="cl-input" value="${escapeHtml(c?.mailingZip||'')}" placeholder="22180"></div>
           </label>
           <label class="cl-form-label full"><span>Tags <span style="color:#6F7E6A;font-weight:400">(comma-separated)</span></span>
             <input id="clf-tags" class="cl-input" value="${escapeHtml((c?.tags||[]).join(', '))}" placeholder="Annual Maintenance Client, HOA, etc.">
@@ -4276,19 +4309,35 @@ window.saveClientForm = function(existingId) {
   if (existingId) {
     const idx = list.findIndex(x => x.id === existingId);
     if (idx < 0) return;
+    const richFields = {
+      company:val('clf-company'),
+      ccEmails:val('clf-ccemails').split(',').map(s=>s.trim()).filter(Boolean),
+      phone2:val('clf-phone2'), poc:val('clf-poc'),
+      billingContact:val('clf-billing'), siteContact:val('clf-sitecontact'),
+      paymentMethod:val('clf-paymethod'),
+      mailingStreet:val('clf-mailstreet'), mailingCity:val('clf-mailcity'),
+      mailingState:val('clf-mailstate'), mailingZip:val('clf-mailzip')
+    };
     Object.assign(list[idx], {
       name, firstName:val('clf-first'), lastName:val('clf-last'),
       type:val('clf-type'), status:val('clf-status'),
       email:val('clf-email'), phone:val('clf-phone'), mobile:val('clf-mobile'),
       street:val('clf-street'), city:val('clf-city'), state:val('clf-state'), zip:val('clf-zip'),
       tags, notes:val('clf-notes'), homeworksId:val('clf-hwid'), since:val('clf-since'),
+      ...richFields,
       updatedAt:new Date().toISOString()
     });
   } else {
     list.push({
       id:clientId(), name, firstName:val('clf-first'), lastName:val('clf-last'),
-      company:'', type:val('clf-type'), status:val('clf-status'),
+      company:val('clf-company'), type:val('clf-type'), status:val('clf-status'),
       email:val('clf-email'), phone:val('clf-phone'), mobile:val('clf-mobile'),
+      ccEmails:val('clf-ccemails').split(',').map(s=>s.trim()).filter(Boolean),
+      phone2:val('clf-phone2'), poc:val('clf-poc'),
+      billingContact:val('clf-billing'), siteContact:val('clf-sitecontact'),
+      paymentMethod:val('clf-paymethod'),
+      mailingStreet:val('clf-mailstreet'), mailingCity:val('clf-mailcity'),
+      mailingState:val('clf-mailstate'), mailingZip:val('clf-mailzip'),
       street:val('clf-street'), street2:'', city:val('clf-city'), state:val('clf-state'), zip:val('clf-zip'),
       since:val('clf-since'), tags, notes:val('clf-notes'), homeworksId:val('clf-hwid'),
       properties:[], createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
@@ -4427,15 +4476,27 @@ async function customerDetail(clientId) {
 
   // ── Fetch all data in parallel ────────────────────────────────────────────
   let client = null, workOrders = [], customerNotes = [];
+  let cdEstimates = [], cdInvoices = [], cdPayments = [], cdSubs = [], cdMedia = [];
+  const _cdJ = (u) => fetch(u, { credentials:'include' }).then(r=>r.json()).catch(()=>null);
   try {
-    const [cr, wr, nr] = await Promise.all([
+    const [cr, wr, nr, er, ir, pr, sr, mr] = await Promise.all([
       fetch(`/api/customers/${resolvedId}`, { credentials:'include' }).then(r=>r.json()),
       fetch(`/api/work-orders?client_id=${resolvedId}&limit=200`, { credentials:'include' }).then(r=>r.json()),
       fetch(`/api/customers/${resolvedId}/notes`, { credentials:'include' }).then(r=>r.json()),
+      _cdJ(`/api/estimates?client_id=${resolvedId}&limit=100`),
+      _cdJ(`/api/invoices?client_id=${resolvedId}&limit=100`),
+      _cdJ(`/api/payments?client_id=${resolvedId}&limit=100`),
+      _cdJ(`/api/recurring-subscriptions`),
+      _cdJ(`/api/customers/${resolvedId}/media`),
     ]);
     client = cr.data || cr;
     workOrders = wr.data || [];
     customerNotes = nr.data || [];
+    cdEstimates = (er && (er.data || er)) || []; if (!Array.isArray(cdEstimates)) cdEstimates = [];
+    cdInvoices  = (ir && (ir.data || ir)) || []; if (!Array.isArray(cdInvoices))  cdInvoices  = [];
+    cdPayments  = (pr && (pr.data || pr)) || []; if (!Array.isArray(cdPayments))  cdPayments  = [];
+    cdSubs      = (Array.isArray(sr) ? sr : (sr && sr.data) || []).filter(s => s.client_id === resolvedId);
+    cdMedia     = (mr && (mr.data || mr)) || []; if (!Array.isArray(cdMedia))     cdMedia     = [];
   } catch(e) {
     // Fallback to localStorage
     client = (loadClients()||[]).find(c => c.id === resolvedId);
@@ -4459,9 +4520,40 @@ async function customerDetail(clientId) {
   const completedJobs = workOrders.filter(w=>w.status==='completed').length;
   const inProgressJobs= workOrders.filter(w=>w.status==='in-progress').length;
   const scheduledJobs = workOrders.filter(w=>w.status==='scheduled').length;
-  const linkedOpps    = (state.opportunities||[]).filter(o =>
-    o.clientId === client.id || (o.client||'').toLowerCase() === (client.name||'').toLowerCase()
-  );
+  // Linked leads: clientId link, exact name match, or multi-property prefix
+  // ("Lyn Lyons — Yorktowne Shopping Center"). Prefix hits missing a clientId
+  // get self-healed with a D1 write-through so the durable link is restored.
+  const _cnLower = (client.name||'').toLowerCase();
+  const linkedOpps = (state.opportunities||[]).filter(o => {
+    if (o.clientId === client.id) return true;
+    const on = (o.client||'').toLowerCase();
+    if (!_cnLower) return false;
+    if (on === _cnLower) return true;
+    return on.startsWith(_cnLower + ' — ') || on.startsWith(_cnLower + ' - ');
+  });
+  linkedOpps.forEach(o => {
+    if (o.clientId !== client.id) { o.clientId = client.id; if (typeof _d1SaveOpp === 'function') _d1SaveOpp(o); }
+  });
+  const _oppOpen = o => (typeof window.gwSalesIsOpen === 'function') ? window.gwSalesIsOpen(o) : true;
+  const _oppWon  = o => /won|sold/i.test(o.status||'') || !!o.soldAmount;
+  const openOpps = linkedOpps.filter(_oppOpen);
+  const closedOpps = linkedOpps.filter(o => !_oppOpen(o));
+  const wonOpps  = closedOpps.filter(_oppWon);
+  const lostOpps = closedOpps.filter(o => !_oppWon(o));
+  const pipelineValue = openOpps.reduce((s,o)=>s+(Number((typeof gwLeadBaseValue==='function'?gwLeadBaseValue(o):o.jobValue))||0),0);
+  // Outstanding balance across unpaid invoices
+  const outstanding = cdInvoices
+    .filter(i => !['paid','void','voided','draft'].includes(String(i.status||'').toLowerCase()))
+    .reduce((s,i)=>s+(Number(i.balance_due)||0),0);
+  // Recurring revenue projection from active subscriptions
+  const _activeSubs = cdSubs.filter(s => String(s.status||'').toLowerCase()==='active');
+  const _subAnnual = _activeSubs.reduce((sum,s)=>{
+    const price = Number(s.custom_price)||Number(s.plan_price)||0;
+    const freq  = Math.max(1, Number(s.frequency)||1);
+    const unit  = String(s.frequency_unit||'month').toLowerCase();
+    const perYear = unit.startsWith('week') ? 52/freq : unit.startsWith('day') ? 365/freq : unit.startsWith('year') ? 1/freq : 12/freq;
+    return sum + price * perYear;
+  },0);
   const tags = (client.tags||[]);
   // Avatar bg — cycle through a few nice colors based on first char
   const avatarColors = ['#2D7A55','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899'];
@@ -4484,12 +4576,26 @@ async function customerDetail(clientId) {
   const woRows = workOrders.slice(0,20).map(_cdWoRow).join('')
     || `<p class="sb-empty-note" style="padding:12px 0">No jobs yet. <button class="stmt-link" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">Schedule first job →</button></p>`;
 
-  const oppRows = linkedOpps.slice(0,6).map(o => `
+  // Full lead portfolio: open first, then won, then lost/archived — every
+  // lead ever attached to this client stays visible on the client page.
+  const _cdOppRow = o => {
+    const val = Number((typeof gwLeadBaseValue==='function'?gwLeadBaseValue(o):o.jobValue))||0;
+    const site = (o.client||'').includes(' — ') ? (o.client||'').split(' — ').slice(1).join(' — ') : '';
+    return `
     <div class="cd-opp-row" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
-      <span class="cd-opp-proj">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</span>
+      <span class="cd-opp-proj">${escapeHtml(site || o.project || o.serviceLine || 'Opportunity')}</span>
       <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px">${escapeHtml(o.status||'New Lead')}</span>
-      <span class="cd-opp-val">${o.budget ? '$'+Number(o.budget).toLocaleString() : '—'}</span>
-    </div>`).join('') || `<p class="sb-empty-note" style="padding:12px 0">No pipeline opportunities yet.</p>`;
+      <span class="cd-opp-val">${val ? '$'+val.toLocaleString() : '—'}</span>
+    </div>`;
+  };
+  const _cdOppGroup = (label, arr) => arr.length ? `
+    <div style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">${label} (${arr.length})</div>
+    ${arr.map(_cdOppRow).join('')}` : '';
+  const oppRows = linkedOpps.length ? (
+    _cdOppGroup('Open', openOpps) +
+    _cdOppGroup('Won', wonOpps) +
+    _cdOppGroup('Lost / Archived', lostOpps)
+  ) : `<p class="sb-empty-note" style="padding:12px 0">No pipeline opportunities yet.</p>`;
 
   const notesHtml = customerNotes.map((n,i)=>`
     <div class="cd-note-item" data-note-id="${n.id||i}">
@@ -4576,6 +4682,10 @@ async function customerDetail(clientId) {
         <span class="cd-stat-val">${linkedOpps.length}</span>
         <span class="cd-stat-lbl">Opportunities</span>
       </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val ${outstanding>0?'cd-stat-val--blue':''}" ${outstanding>0?'style="color:#B4552E"':''}>$${outstanding.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <span class="cd-stat-lbl">Outstanding</span>
+      </div>
     </div>
 
     <!-- ══ Body: Left + Right ══ -->
@@ -4618,6 +4728,34 @@ async function customerDetail(clientId) {
             ${client.company && client.company!==client.name ? `<div class="cd-info-row">
               <span class="cd-info-lbl">Company</span>
               <span class="cd-info-val">${escapeHtml(client.company)}</span>
+            </div>` : ''}
+            ${client.phone2 ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Office Phone</span>
+              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.phone2)}">${escapeHtml(client.phone2)}</a>
+            </div>` : ''}
+            ${(Array.isArray(client.ccEmails)?client.ccEmails:String(client.ccEmails||'').split(',').map(s=>s.trim()).filter(Boolean)).length ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">CC Emails</span>
+              <span class="cd-info-val">${(Array.isArray(client.ccEmails)?client.ccEmails:String(client.ccEmails||'').split(',').map(s=>s.trim()).filter(Boolean)).map(e=>escapeHtml(e)).join('<br>')}</span>
+            </div>` : ''}
+            ${[client.mailingStreet,client.mailingCity,client.mailingState,client.mailingZip].filter(Boolean).length ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Mailing Address</span>
+              <span class="cd-info-val">${escapeHtml([client.mailingStreet,client.mailingCity,client.mailingState,client.mailingZip].filter(Boolean).join(', '))}</span>
+            </div>` : ''}
+            ${client.poc ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Main POC</span>
+              <span class="cd-info-val">${escapeHtml(client.poc)}</span>
+            </div>` : ''}
+            ${client.billingContact ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Billing Contact</span>
+              <span class="cd-info-val">${escapeHtml(client.billingContact)}</span>
+            </div>` : ''}
+            ${client.siteContact ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Site Contact</span>
+              <span class="cd-info-val">${escapeHtml(client.siteContact)}</span>
+            </div>` : ''}
+            ${client.paymentMethod ? `<div class="cd-info-row">
+              <span class="cd-info-lbl">Payment Method</span>
+              <span class="cd-info-val">${escapeHtml(client.paymentMethod)}</span>
             </div>` : ''}
           </div>
           ${tags.length ? `<div class="cd-tags" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
@@ -4665,10 +4803,58 @@ async function customerDetail(clientId) {
         <!-- Pipeline Opportunities -->
         <section class="cd-section">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Pipeline</h2>
+            <h2 class="cd-section-title">Leads &amp; Opportunities
+              ${pipelineValue ? `<span style="font-size:11px;font-weight:600;color:#2D7A55;margin-left:8px">$${pipelineValue.toLocaleString()} open pipeline</span>` : ''}
+            </h2>
             <button class="rp-btn-sm" onclick="show('lead')">+ New Opportunity</button>
           </div>
           ${oppRows}
+        </section>
+
+        <!-- Financials: Estimates / Invoices / Payments -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Financials
+              ${outstanding>0 ? `<span style="font-size:11px;font-weight:600;color:#B4552E;margin-left:8px">$${outstanding.toLocaleString('en-US',{minimumFractionDigits:2})} outstanding</span>` : ''}
+            </h2>
+          </div>
+          <div class="cd-tab-bar" id="cd-fin-tabs">
+            <button class="cd-tab active" onclick="_cdFinTab(this,'estimates')">Estimates (${cdEstimates.length})</button>
+            <button class="cd-tab" onclick="_cdFinTab(this,'invoices')">Invoices (${cdInvoices.length})</button>
+            <button class="cd-tab" onclick="_cdFinTab(this,'payments')">Payments (${cdPayments.length})</button>
+          </div>
+          <div id="cd-fin-estimates">
+            ${cdEstimates.length ? cdEstimates.slice(0,15).map(e=>`
+              <div class="cd-wo-row" style="cursor:pointer" onclick="window.estimateDetail?estimateDetail('${e.id}'):show('estimates')">
+                <span class="cd-wo-num">${escapeHtml(e.est_number||'EST')}</span>
+                <span class="cd-wo-title">${escapeHtml(e.title||e.property_addr||'Estimate')}</span>
+                <span class="cd-wo-date">${e.estimate_date||e.created_at ? _p5FmtDate(e.estimate_date||e.created_at) : '—'}</span>
+                <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(e.status||'draft')}</span>
+                <span class="cd-wo-amt">${Number(e.total) ? '$'+Number(e.total).toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</span>
+              </div>`).join('') : '<p class="sb-empty-note" style="padding:12px 0">No estimates yet.</p>'}
+          </div>
+          <div id="cd-fin-invoices" style="display:none">
+            ${cdInvoices.length ? cdInvoices.slice(0,15).map(i=>{
+              const bal = Number(i.balance_due)||0;
+              return `
+              <div class="cd-wo-row" style="cursor:pointer" onclick="window._invOpenDetail?_invOpenDetail('${i.id}'):show('invoices')">
+                <span class="cd-wo-num">${escapeHtml(i.invoice_number||'INV')}</span>
+                <span class="cd-wo-title">${escapeHtml(i.title||'Invoice')}</span>
+                <span class="cd-wo-date">${i.due_date ? 'Due '+_p5FmtDate(i.due_date) : (i.created_at ? _p5FmtDate(i.created_at) : '—')}</span>
+                <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(i.status||'draft')}</span>
+                <span class="cd-wo-amt" ${bal>0?'style="color:#B4552E;font-weight:700"':''}>${bal>0 ? '$'+bal.toLocaleString('en-US',{minimumFractionDigits:2})+' due' : (Number(i.total)?'$'+Number(i.total).toLocaleString('en-US',{minimumFractionDigits:2}):'—')}</span>
+              </div>`;}).join('') : '<p class="sb-empty-note" style="padding:12px 0">No invoices yet.</p>'}
+          </div>
+          <div id="cd-fin-payments" style="display:none">
+            ${cdPayments.length ? cdPayments.slice(0,15).map(p=>`
+              <div class="cd-wo-row">
+                <span class="cd-wo-num">${escapeHtml(p.invoice_number_display||p.invoice_number||'—')}</span>
+                <span class="cd-wo-title">${escapeHtml(p.payment_method||p.description||'Payment')}</span>
+                <span class="cd-wo-date">${p.created_at ? _p5FmtDate(p.created_at) : '—'}</span>
+                <span class="ops-ready-badge ops-ready" style="font-size:10px">${escapeHtml(p.status||'succeeded')}</span>
+                <span class="cd-wo-amt" style="color:#2D7A55;font-weight:700">$${(Number(p.amount)||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+              </div>`).join('') : '<p class="sb-empty-note" style="padding:12px 0">No payments recorded yet.</p>'}
+          </div>
         </section>
 
         <!-- Service Properties -->
@@ -4677,19 +4863,34 @@ async function customerDetail(clientId) {
             <h2 class="cd-section-title">Properties</h2>
             <button class="rp-btn-sm" onclick="showAddProperty('${client.id}')">+ Add Property</button>
           </div>
-          ${(client.properties||[]).length ? (client.properties||[]).map(p=>`
+          ${(client.properties||[]).length ? (client.properties||[]).map(p=>{
+            const pAddr = [p.street,p.city,p.state,p.zip].filter(Boolean).join(', ') || p.address || '';
+            return `
             <div class="cd-property-row">
               <div>
                 <div style="font-weight:600;font-size:13px">${escapeHtml(p.label||'Property')}</div>
-                <div style="font-size:12px;color:var(--gw-text-muted)">${escapeHtml([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}</div>
+                ${pAddr ? `<div style="font-size:12px;color:var(--gw-text-muted)">${escapeHtml(pAddr)}</div>` : ''}
                 ${p.notes ? `<div style="font-size:11px;color:var(--gw-text-muted);margin-top:2px">${escapeHtml(p.notes)}</div>` : ''}
               </div>
-              <a href="https://maps.google.com/?q=${encodeURIComponent([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}"
+              <a href="https://maps.google.com/?q=${encodeURIComponent(pAddr)}"
                  target="_blank" rel="noopener" class="rp-btn-sm" style="font-size:11px">
                  <svg width="10" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
                  Map
               </a>
-            </div>`).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
+            </div>`;}).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
+        </section>
+
+        <!-- Site Photos -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Site Photos ${cdMedia.length ? `<span style="font-size:11px;font-weight:400;color:var(--gw-text-muted)">(${cdMedia.length})</span>` : ''}</h2>
+          </div>
+          ${cdMedia.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">
+            ${cdMedia.slice(0,24).map(m=>`
+              <a href="/api/admin/portal/media/${m.id}" target="_blank" rel="noopener" title="${escapeHtml([m.caption,m.wo_number||m.wo_title].filter(Boolean).join(' — '))}" style="display:block;border-radius:8px;overflow:hidden;border:1px solid var(--gw-border);aspect-ratio:1;background:#f0f2ef">
+                <img src="/api/admin/portal/media/${m.id}" loading="lazy" alt="${escapeHtml(m.caption||m.file_name||'Site photo')}" style="width:100%;height:100%;object-fit:cover">
+              </a>`).join('')}
+          </div>` : '<p class="sb-empty-note">No site photos yet. Photos crews attach to jobs for this client appear here automatically.</p>'}
         </section>
 
       </div>
@@ -4719,6 +4920,30 @@ async function customerDetail(clientId) {
               </div>`).join('')
             : '<p class="sb-empty-note">No activity yet.</p>'}
           </div>
+        </section>
+
+        <!-- Recurring Services & Revenue Projections -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Recurring &amp; Projections</h2>
+          </div>
+          ${_activeSubs.length ? `
+            ${_activeSubs.map(s=>{
+              const price = Number(s.custom_price)||Number(s.plan_price)||0;
+              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--gw-border)">
+                <div>
+                  <div style="font-weight:600;font-size:13px">${escapeHtml(s.plan_name||'Recurring plan')}</div>
+                  <div style="font-size:11px;color:var(--gw-text-muted)">Every ${Number(s.frequency)||1} ${escapeHtml(s.frequency_unit||'month')}${(Number(s.frequency)||1)>1?'s':''}${s.next_visit_date ? ' · Next: '+_p5FmtDate(s.next_visit_date) : ''}</div>
+                </div>
+                <span style="font-weight:700;font-size:13px;color:#2D7A55">$${price.toLocaleString()}</span>
+              </div>`;}).join('')}
+            <div style="background:var(--gw-bg-app,#f4f6f8);border-radius:10px;padding:12px 14px;margin-top:12px">
+              <div style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Revenue Projection</div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Monthly run rate</span><strong>$${(_subAnnual/12).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Next 12 months</span><strong style="color:#2D7A55">$${_subAnnual.toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>3-year value</span><strong>$${(_subAnnual*3).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+            </div>`
+          : '<p class="sb-empty-note">No recurring plans. Put this client on a recurring service plan to see revenue projections here.</p>'}
         </section>
 
         <!-- Quick Actions -->
@@ -4795,6 +5020,16 @@ async function customerDetail(clientId) {
   window._cdCurrentClientWOs = workOrders;
 }
 window.customerDetail = customerDetail;
+
+// Financials tab switcher on the customer detail page
+window._cdFinTab = function(btn, which) {
+  document.querySelectorAll('#cd-fin-tabs .cd-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['estimates','invoices','payments'].forEach(k => {
+    const el = document.getElementById('cd-fin-' + k);
+    if (el) el.style.display = (k === which) ? '' : 'none';
+  });
+};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // UNIVERSAL IN-APP MESSAGE COMPOSE MODAL

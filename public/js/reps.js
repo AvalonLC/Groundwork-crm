@@ -904,6 +904,7 @@ function _renderLoginHTML(brand) {
       id: o.id, repId: o.rep_id, companyId: o.company_id,
       assignedToRepId: o.assigned_to_rep_id || o.rep_id || '',
       client: o.client, phone: o.phone, email: o.email, address: o.address,
+      clientId: o.client_id || '',
       serviceLine: o.service_line, source: o.source,
       status: o.status, jobValue: o.job_value,
       project: o.project, urgency: o.urgency,
@@ -1009,13 +1010,20 @@ function _renderLoginHTML(brand) {
         const localOnly = localClients.filter(c => !d1Ids.has(c.id));
         const merged = d1Clients.map(dc => {
           const lc = localClients.find(l => l.id === dc.id);
+          // D1 now returns rich columns (street/city/tags/properties) plus
+          // unpacked extra JSON (company, ccEmails, contacts, paymentMethod...).
+          // Prefer server values; fall back to local cache for anything absent.
+          const richKeys = ['firstName','lastName','company','status','mobile','since','tags','homeworksId','properties','street','street2','city','state','zip','email2','ccEmails','phone2','mailingStreet','mailingCity','mailingState','mailingZip','poc','billingContact','siteContact','paymentMethod'];
+          const rich = {};
+          richKeys.forEach(k => {
+            const dv = dc[k], lv = lc ? lc[k] : undefined;
+            const dEmpty = dv === undefined || dv === null || dv === '' || (Array.isArray(dv) && dv.length === 0);
+            rich[k] = dEmpty ? lv : dv;
+          });
           return {
             id: dc.id, name: dc.name, phone: dc.phone || '', email: dc.email || '',
             address: dc.address || '', type: dc.type || 'Residential', notes: dc.notes || '',
-            ...(lc ? { firstName: lc.firstName, lastName: lc.lastName,
-                        company: lc.company, status: lc.status, mobile: lc.mobile,
-                        since: lc.since, tags: lc.tags, homeworksId: lc.homeworksId,
-                        properties: lc.properties } : {})
+            ...rich
           };
         });
         localStorage.setItem('avalonClientsV1', JSON.stringify([...merged, ...localOnly]));

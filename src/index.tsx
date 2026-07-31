@@ -27,6 +27,7 @@ import mig0040 from '../migrations/0040_onboarding_buildout.sql?raw'
 import mig0045 from '../migrations/0045_multiday_jobs.sql?raw'
 import mig0046 from '../migrations/0046_multiday_phase_metadata.sql?raw'
 import mig0047 from '../migrations/0047_schedule_timeline.sql?raw'
+import mig0055 from '../migrations/0055_client_portfolio.sql?raw'
 import { registerPortal } from './portal'
 
 
@@ -366,6 +367,27 @@ async function ensureAssetsSchema(db: D1Database): Promise<void> {
   } catch {}
   await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_assets_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
   _assetsSchemaOk = true
+}
+
+// ── Client portfolio schema (migration 0055): opportunities.client_id + clients.extra ──
+let _portfolioSchemaOk = false
+async function ensurePortfolioSchema(db: D1Database): Promise<void> {
+  if (_portfolioSchemaOk) return
+  const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portfolio_v1' LIMIT 1").first<any>()
+  if (flag) { _portfolioSchemaOk = true; return }
+  const stmts = mig0055.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensurePortfolioSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0055_client_portfolio.sql', '0055_client_portfolio.sql').run()
+  } catch {}
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portfolio_v1', ?, datetime('now'))").bind(new Date().toISOString()).run()
+  _portfolioSchemaOk = true
 }
 
 // ── Proposals / payment schedules / google tokens schema (migration 0032) ──
@@ -2870,6 +2892,7 @@ app.post('/api/auth/accept-invite', async (c) => {
 app.get('/api/opportunities', requireAuth, async (c) => {
   // Session-authenticated company takes precedence over query param
   const companyId = c.var.companyId as string
+  await ensurePortfolioSchema(c.env.DB)
   const repId     = c.req.query('repId')
   const status    = c.req.query('status')
   let q = `SELECT o.*,
@@ -2908,6 +2931,7 @@ app.get('/api/opportunities/:id', requireAuth, async (c) => {
 // Uses session cookie company_id as authoritative source — prevents cross-tenant writes.
 app.post('/api/opportunities', requireAuth, async (c) => {
   const b = await c.req.json()
+  await ensurePortfolioSchema(c.env.DB)
   const id        = b.id || ('opp_' + uid())
   // Session company_id is authoritative — body companyId is a hint only
   const companyId = c.var.companyId as string
@@ -2931,9 +2955,9 @@ app.post('/api/opportunities', requireAuth, async (c) => {
       job_value, project, urgency, decision_maker, budget_range, next_follow_up,
       pipeline_stage, estimate_amount, estimate_sent_date, estimate_count,
       work_type, client_type, prompt, desired_outcome, fit_concerns,
-      commission_approved, collected, sold_date, sold_amount,
+      commission_approved, collected, sold_date, sold_amount, client_id,
       created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(
     id, companyId, effRepId, assignedTo,
     b.client||'', b.phone||'', b.email||'',
@@ -2950,7 +2974,8 @@ app.post('/api/opportunities', requireAuth, async (c) => {
     b.fitConcerns||b.fit_concerns||'',
     b.commissionApproved||b.commission_approved?1:0,
     b.collected?1:0, b.soldDate||b.sold_date||'',
-    Number(b.soldAmount||b.sold_amount||0)
+    Number(b.soldAmount||b.sold_amount||0),
+    b.clientId||b.client_id||''
   ).run()
   // Published-process lead flow: a brand new lead is immediately assigned to the
   // published stage whose label matches its status (default: the first stage),
@@ -2976,6 +3001,7 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const b         = await c.req.json()
   const companyId = c.var.companyId as string
+  await ensurePortfolioSchema(c.env.DB)
   const fieldMap: Record<string,string> = {
     repId:'rep_id', assignedToRepId:'assigned_to_rep_id',
     client:'client', phone:'phone', email:'email',
@@ -2995,7 +3021,8 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
     estimate_amount:'estimate_amount', estimate_sent_date:'estimate_sent_date',
     estimate_count:'estimate_count', work_type:'work_type', client_type:'client_type',
     desired_outcome:'desired_outcome', fit_concerns:'fit_concerns',
-    commission_approved:'commission_approved', sold_date:'sold_date', sold_amount:'sold_amount'
+    commission_approved:'commission_approved', sold_date:'sold_date', sold_amount:'sold_amount',
+    clientId:'client_id', client_id:'client_id'
   }
   const updates: string[] = []
   const vals: any[] = []
@@ -3333,21 +3360,50 @@ app.put('/api/academy/certs', requireAuth, async (c) => {
 // CLIENTS  — scoped by company_id
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Rich contact fields without dedicated columns ride in clients.extra (JSON).
+const CLIENT_EXTRA_FIELDS = ['company','firstName','lastName','homeworksId','ccEmails','phone2','mailingStreet','mailingCity','mailingState','mailingZip','poc','billingContact','siteContact','paymentMethod'] as const
+function _packClientExtra(b: any): string | null {
+  const extra: Record<string, any> = {}
+  let any = false
+  for (const f of CLIENT_EXTRA_FIELDS) {
+    if (b[f] !== undefined) { extra[f] = b[f]; any = true }
+  }
+  return any ? JSON.stringify(extra) : null
+}
+function _unpackClientRow(row: any): any {
+  const out: any = { ...row }
+  try { out.tags = JSON.parse(row.tags || '[]') } catch { out.tags = [] }
+  try { out.properties = JSON.parse(row.properties || '[]') } catch { out.properties = [] }
+  try { Object.assign(out, JSON.parse(row.extra || '{}')) } catch {}
+  delete out.extra
+  return out
+}
+
 app.get('/api/clients', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
+  await ensurePortfolioSchema(c.env.DB)
   const rows = await c.env.DB.prepare(
     'SELECT * FROM clients WHERE company_id = ? ORDER BY name ASC'
   ).bind(companyId).all()
-  return json(c, rows.results)
+  return json(c, (rows.results as any[]).map(_unpackClientRow))
 })
 
 app.post('/api/clients', requireAuth, async (c) => {
   const b = await c.req.json()
   const id        = b.id || ('client_' + uid())
   const companyId = c.var.companyId as string
+  await ensurePortfolioSchema(c.env.DB)
   await c.env.DB.prepare(
-    "INSERT OR REPLACE INTO clients (id, name, phone, email, address, type, notes, company_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))"
-  ).bind(id, b.name||'', b.phone||'', b.email||'', b.address||'', b.type||'Residential', b.notes||'', companyId).run()
+    `INSERT OR REPLACE INTO clients (
+       id, name, phone, email, address, type, notes, company_id,
+       street, street2, city, state, zip, mobile, email2, since, tags, properties, status, extra,
+       created_at, updated_at
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+  ).bind(
+    id, b.name||'', b.phone||'', b.email||'', b.address||'', b.type||'Residential', b.notes||'', companyId,
+    b.street||'', b.street2||'', b.city||'', b.state||'', b.zip||'', b.mobile||'', b.email2||'', b.since||'',
+    JSON.stringify(b.tags||[]), JSON.stringify(b.properties||[]), b.status||'Active', _packClientExtra(b)
+  ).run()
   return json(c, { id }, 201)
 })
 
@@ -3355,9 +3411,39 @@ app.put('/api/clients/:id', requireAuth, async (c) => {
   const id        = c.req.param('id')
   const b         = await c.req.json()
   const companyId = c.var.companyId as string
+  await ensurePortfolioSchema(c.env.DB)
+  // Merge extra so a partial payload never wipes previously saved rich fields
+  let extra = _packClientExtra(b)
+  if (extra !== null) {
+    try {
+      const prev: any = await c.env.DB.prepare('SELECT extra FROM clients WHERE id=? AND company_id=?').bind(id, companyId).first()
+      if (prev?.extra) extra = JSON.stringify({ ...JSON.parse(prev.extra), ...JSON.parse(extra) })
+    } catch {}
+  }
   await c.env.DB.prepare(
-    "UPDATE clients SET name=?, phone=?, email=?, address=?, type=?, notes=?, updated_at=datetime('now') WHERE id=? AND company_id=?"
-  ).bind(b.name||'', b.phone||'', b.email||'', b.address||'', b.type||'Residential', b.notes||'', id, companyId).run()
+    `UPDATE clients SET name=?, phone=?, email=?, address=?, type=?, notes=?,
+       street=COALESCE(?,street), street2=COALESCE(?,street2), city=COALESCE(?,city),
+       state=COALESCE(?,state), zip=COALESCE(?,zip), mobile=COALESCE(?,mobile),
+       email2=COALESCE(?,email2), since=COALESCE(?,since),
+       tags=COALESCE(?,tags), properties=COALESCE(?,properties), status=COALESCE(?,status),
+       extra=COALESCE(?,extra),
+       updated_at=datetime('now') WHERE id=? AND company_id=?`
+  ).bind(
+    b.name||'', b.phone||'', b.email||'', b.address||'', b.type||'Residential', b.notes||'',
+    b.street !== undefined ? (b.street||'') : null,
+    b.street2 !== undefined ? (b.street2||'') : null,
+    b.city !== undefined ? (b.city||'') : null,
+    b.state !== undefined ? (b.state||'') : null,
+    b.zip !== undefined ? (b.zip||'') : null,
+    b.mobile !== undefined ? (b.mobile||'') : null,
+    b.email2 !== undefined ? (b.email2||'') : null,
+    b.since !== undefined ? (b.since||'') : null,
+    b.tags !== undefined ? JSON.stringify(b.tags||[]) : null,
+    b.properties !== undefined ? JSON.stringify(b.properties||[]) : null,
+    b.status !== undefined ? (b.status||'Active') : null,
+    extra,
+    id, companyId
+  ).run()
   return json(c, { updated: id })
 })
 
@@ -3375,15 +3461,12 @@ app.delete('/api/clients/:id', requireAuth, async (c) => {
 app.get('/api/customers/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const id = c.req.param('id')
+  await ensurePortfolioSchema(c.env.DB)
   const row: any = await c.env.DB.prepare(
     'SELECT * FROM clients WHERE id = ? AND company_id = ?'
   ).bind(id, companyId).first()
   if (!row) return c.json({ ok: false, error: 'Not found' }, 404)
-  return json(c, {
-    ...row,
-    tags: JSON.parse(row.tags || '[]'),
-    properties: JSON.parse(row.properties || '[]'),
-  })
+  return json(c, _unpackClientRow(row))
 })
 
 // PUT /api/customers/:id — update a client with all fields
@@ -3391,6 +3474,14 @@ app.put('/api/customers/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const id = c.req.param('id')
   const b: any = await c.req.json()
+  await ensurePortfolioSchema(c.env.DB)
+  let extra = _packClientExtra(b)
+  if (extra !== null) {
+    try {
+      const prev: any = await c.env.DB.prepare('SELECT extra FROM clients WHERE id=? AND company_id=?').bind(id, companyId).first()
+      if (prev?.extra) extra = JSON.stringify({ ...JSON.parse(prev.extra), ...JSON.parse(extra) })
+    } catch {}
+  }
   await c.env.DB.prepare(`
     UPDATE clients SET
       name=COALESCE(?,name), phone=COALESCE(?,phone), email=COALESCE(?,email),
@@ -3399,6 +3490,7 @@ app.put('/api/customers/:id', requireAuth, async (c) => {
       state=COALESCE(?,state), zip=COALESCE(?,zip), mobile=COALESCE(?,mobile),
       email2=COALESCE(?,email2), since=COALESCE(?,since),
       tags=COALESCE(?,tags), properties=COALESCE(?,properties), status=COALESCE(?,status),
+      extra=COALESCE(?,extra),
       updated_at=datetime('now')
     WHERE id=? AND company_id=?
   `).bind(
@@ -3408,6 +3500,7 @@ app.put('/api/customers/:id', requireAuth, async (c) => {
     b.tags !== undefined ? JSON.stringify(b.tags) : null,
     b.properties !== undefined ? JSON.stringify(b.properties) : null,
     b.status||null,
+    extra,
     id, companyId
   ).run()
   return json(c, { updated: id })
@@ -3434,6 +3527,38 @@ app.post('/api/customers/:id/notes', requireAuth, async (c) => {
     `INSERT INTO customer_notes (id, client_id, company_id, note, type, created_by) VALUES (?,?,?,?,?,?)`
   ).bind(id, clientId, companyId, b.note || '', b.type || 'customer', repId).run()
   return json(c, { id }, 201)
+})
+
+// GET /api/payments — list payments (optionally filtered by client) for the
+// client portfolio page and financial views. Joins invoice numbers for display.
+app.get('/api/payments', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const clientId  = c.req.query('client_id')
+  const limit     = Math.min(Number(c.req.query('limit') || 200), 500)
+  let q = `SELECT p.*, COALESCE(NULLIF(p.invoice_number,''), i.invoice_number) AS invoice_number_display
+           FROM payments p LEFT JOIN invoices i ON i.id = p.invoice_id
+           WHERE p.company_id = ?`
+  const params: any[] = [companyId]
+  if (clientId) { q += ` AND p.client_id = ?`; params.push(clientId) }
+  q += ` ORDER BY p.created_at DESC LIMIT ?`
+  params.push(limit)
+  const rows = await c.env.DB.prepare(q).bind(...params).all()
+  return json(c, rows.results || [])
+})
+
+// GET /api/customers/:id/media — site photos linked to this client across all
+// jobs (project_media rows carry client_id). Thumbnails render via the staff
+// media route /api/admin/portal/media/:id.
+app.get('/api/customers/:id/media', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const clientId  = c.req.param('id')
+  const rows = await c.env.DB.prepare(
+    `SELECT m.id, m.work_order_id, m.file_name, m.kind, m.caption, m.created_at, w.title AS wo_title, w.wo_number
+     FROM project_media m LEFT JOIN work_orders w ON w.id = m.work_order_id
+     WHERE m.company_id = ? AND m.client_id = ? AND m.kind = 'photo'
+     ORDER BY m.created_at DESC LIMIT 60`
+  ).bind(companyId, clientId).all()
+  return json(c, rows.results || [])
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -6192,11 +6317,13 @@ app.get('/api/estimates', requireAuth, async (c) => {
   const offset  = Number(c.req.query('offset') || 0)
 
   const oppId   = c.req.query('opp_id')
+  const estClientId = c.req.query('client_id')
   let q = `SELECT * FROM estimates WHERE company_id = ?`
   const params: any[] = [companyId]
   if (status) { q += ` AND status = ?`; params.push(status) }
   if (repId)  { q += ` AND rep_id = ?`; params.push(repId) }
   if (oppId)  { q += ` AND opp_id = ?`; params.push(oppId) }
+  if (estClientId) { q += ` AND client_id = ?`; params.push(estClientId) }
   if (search) { q += ` AND (client_name LIKE ? OR est_number LIKE ? OR title LIKE ?)`; const s = `%${search}%`; params.push(s,s,s) }
   q += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
   params.push(limit, offset)
@@ -9053,6 +9180,7 @@ app.post('/api/auth/resend-verification', requireAuth, async (c) => {
 app.get('/api/recurring-plans', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await ensurePortfolioSchema(db)
   const activeOnly = c.req.query('active')
   let sql = `SELECT * FROM recurring_plans WHERE company_id=? ORDER BY name ASC`
   if (activeOnly === '1') sql = `SELECT * FROM recurring_plans WHERE company_id=? AND is_active=1 ORDER BY name ASC`
@@ -9074,6 +9202,7 @@ app.get('/api/recurring-plans/:id', requireAuth, async (c) => {
 app.post('/api/recurring-plans', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await ensurePortfolioSchema(db)
   const body = await c.req.json() as any
   const { name, description, frequency, frequency_unit, price, visit_duration_minutes, services_included, is_active } = body
   if (!name || !frequency || !price) return c.json({ error: 'name, frequency, price required' }, 400)
@@ -9109,6 +9238,7 @@ app.put('/api/recurring-plans/:id', requireAuth, async (c) => {
 app.get('/api/recurring-subscriptions', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await ensurePortfolioSchema(db)
   const status   = c.req.query('status')
   const upcoming = c.req.query('upcoming') // '1' = only next 30 days
   let sql = `
@@ -9130,6 +9260,7 @@ app.get('/api/recurring-subscriptions', requireAuth, async (c) => {
 app.get('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
+  await ensurePortfolioSchema(db)
   const subId = parseInt(c.req.param('id'))
   const sub = await db.prepare(`
     SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price as plan_price,
@@ -11886,8 +12017,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b010">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b010">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b012">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b012">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11910,10 +12041,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260731b010"></script>
-  <script src="/js/client_portal.js?v=20260731b010"></script>
-  <script src="/js/platform_core.js?v=20260731b010"></script>
-  <script src="/js/client_portal.js?v=20260731b010"></script>  <script>
+  <script src="/js/platform_core.js?v=20260731b012"></script>
+  <script src="/js/client_portal.js?v=20260731b012"></script>
+  <script src="/js/platform_core.js?v=20260731b012"></script>
+  <script src="/js/client_portal.js?v=20260731b012"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12547,12 +12678,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260731b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b010">
-  <link rel="stylesheet" href="/js/premium.css?v=20260731b010">
-  <link rel="stylesheet" href="/js/styles.css?v=20260731b010">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b010">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b012">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b012">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b012">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b012">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b012">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b012">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13111,84 +13242,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260731b010"></script>
-<script src="/js/sales-process.js?v=20260731b010"></script>
-<script src="/js/richtext.js?v=20260731b010"></script>
-<script src="/js/db.js?v=20260731b010"></script>
-<script src="/js/data.js?v=20260731b010"></script>
-<script src="/js/reps.js?v=20260731b010"></script>
-<script src="/js/record-page.js?v=20260731b010"></script>
-<script src="/js/academy.js?v=20260731b010"></script>
-<script src="/js/task_engine.js?v=20260731b010"></script>
-<script src="/js/gw_i18n.js?v=20260731b010"></script>
-<script src="/js/app_premium.js?v=20260731b010"></script>
-<script src="/js/estimates.js?v=20260731b010"></script>
-<script src="/js/multiday.js?v=20260731b010"></script>
-<script src="/js/proposals.js?v=20260731b010"></script>
-<script src="/js/pricing.js?v=20260731b010"></script>
-<script src="/js/invoices.js?v=20260731b010"></script>
-<script src="/js/csv_import.js?v=20260731b010"></script>
-<script src="/js/onboarding.js?v=20260731b010"></script>
-<script src="/js/gw_copilot.js?v=20260731b010"></script>
-<script src="/js/groundwork_ai.js?v=20260731b010"></script>
-<script src="/js/recurring_plans.js?v=20260731b010"></script>
-<script src="/js/reviews.js?v=20260731b010"></script>
-<script src="/js/stripe.js?v=20260731b010"></script>
-<script src="/js/email.js?v=20260731b010"></script>
-<script src="/js/notifications.js?v=20260731b010"></script>
-<script src="/js/integrations.js?v=20260731b010"></script>
-<script src="/js/sms.js?v=20260731b010"></script>
-<script src="/js/calendar_sync.js?v=20260731b010"></script>
-<script src="/js/ai_followup.js?v=20260731b010"></script>
-<script src="/js/user_management.js?v=20260731b010"></script>
-<script src="/js/platform_admin.js?v=20260731b010"></script>
-<script src="/js/time_tracker.js?v=20260731b010"></script>
-<script src="/js/field_workday.js?v=20260731b010"></script>
-<script src="/js/platform_core.js?v=20260731b010"></script>
-<script src="/js/approval_engine.js?v=20260731b010"></script>
-<script src="/js/automation_engine.js?v=20260731b010"></script>
-<script src="/js/client_portal.js?v=20260731b010"></script>
-<script src="/js/field_mode.js?v=20260731b010"></script>
-<script src="/js/assets_hub.js?v=20260731b010"></script>
-<script src="/js/gw-icons.js?v=20260731b010"></script>
-<script src="/js/sales-process.js?v=20260731b010"></script>
-<script src="/js/richtext.js?v=20260731b010"></script>
-<script src="/js/db.js?v=20260731b010"></script>
-<script src="/js/data.js?v=20260731b010"></script>
-<script src="/js/reps.js?v=20260731b010"></script>
-<script src="/js/record-page.js?v=20260731b010"></script>
-<script src="/js/academy.js?v=20260731b010"></script>
-<script src="/js/task_engine.js?v=20260731b010"></script>
-<script src="/js/gw_i18n.js?v=20260731b010"></script>
-<script src="/js/app_premium.js?v=20260731b010"></script>
-<script src="/js/estimates.js?v=20260731b010"></script>
-<script src="/js/multiday.js?v=20260731b010"></script>
-<script src="/js/proposals.js?v=20260731b010"></script>
-<script src="/js/pricing.js?v=20260731b010"></script>
-<script src="/js/invoices.js?v=20260731b010"></script>
-<script src="/js/csv_import.js?v=20260731b010"></script>
-<script src="/js/onboarding.js?v=20260731b010"></script>
-<script src="/js/gw_copilot.js?v=20260731b010"></script>
-<script src="/js/groundwork_ai.js?v=20260731b010"></script>
-<script src="/js/recurring_plans.js?v=20260731b010"></script>
-<script src="/js/reviews.js?v=20260731b010"></script>
-<script src="/js/stripe.js?v=20260731b010"></script>
-<script src="/js/email.js?v=20260731b010"></script>
-<script src="/js/notifications.js?v=20260731b010"></script>
-<script src="/js/integrations.js?v=20260731b010"></script>
-<script src="/js/sms.js?v=20260731b010"></script>
-<script src="/js/calendar_sync.js?v=20260731b010"></script>
-<script src="/js/ai_followup.js?v=20260731b010"></script>
-<script src="/js/user_management.js?v=20260731b010"></script>
-<script src="/js/platform_admin.js?v=20260731b010"></script>
-<script src="/js/time_tracker.js?v=20260731b010"></script>
-<script src="/js/field_workday.js?v=20260731b010"></script>
-<script src="/js/platform_core.js?v=20260731b010"></script>
-<script src="/js/approval_engine.js?v=20260731b010"></script>
-<script src="/js/automation_engine.js?v=20260731b010"></script>
-<script src="/js/client_portal.js?v=20260731b010"></script>
-<script src="/js/field_mode.js?v=20260731b010"></script>
-<script src="/js/assets_hub.js?v=20260731b010"></script><script>
+<script src="/js/gw-icons.js?v=20260731b012"></script>
+<script src="/js/sales-process.js?v=20260731b012"></script>
+<script src="/js/richtext.js?v=20260731b012"></script>
+<script src="/js/db.js?v=20260731b012"></script>
+<script src="/js/data.js?v=20260731b012"></script>
+<script src="/js/reps.js?v=20260731b012"></script>
+<script src="/js/record-page.js?v=20260731b012"></script>
+<script src="/js/academy.js?v=20260731b012"></script>
+<script src="/js/task_engine.js?v=20260731b012"></script>
+<script src="/js/gw_i18n.js?v=20260731b012"></script>
+<script src="/js/app_premium.js?v=20260731b012"></script>
+<script src="/js/estimates.js?v=20260731b012"></script>
+<script src="/js/multiday.js?v=20260731b012"></script>
+<script src="/js/proposals.js?v=20260731b012"></script>
+<script src="/js/pricing.js?v=20260731b012"></script>
+<script src="/js/invoices.js?v=20260731b012"></script>
+<script src="/js/csv_import.js?v=20260731b012"></script>
+<script src="/js/onboarding.js?v=20260731b012"></script>
+<script src="/js/gw_copilot.js?v=20260731b012"></script>
+<script src="/js/groundwork_ai.js?v=20260731b012"></script>
+<script src="/js/recurring_plans.js?v=20260731b012"></script>
+<script src="/js/reviews.js?v=20260731b012"></script>
+<script src="/js/stripe.js?v=20260731b012"></script>
+<script src="/js/email.js?v=20260731b012"></script>
+<script src="/js/notifications.js?v=20260731b012"></script>
+<script src="/js/integrations.js?v=20260731b012"></script>
+<script src="/js/sms.js?v=20260731b012"></script>
+<script src="/js/calendar_sync.js?v=20260731b012"></script>
+<script src="/js/ai_followup.js?v=20260731b012"></script>
+<script src="/js/user_management.js?v=20260731b012"></script>
+<script src="/js/platform_admin.js?v=20260731b012"></script>
+<script src="/js/time_tracker.js?v=20260731b012"></script>
+<script src="/js/field_workday.js?v=20260731b012"></script>
+<script src="/js/platform_core.js?v=20260731b012"></script>
+<script src="/js/approval_engine.js?v=20260731b012"></script>
+<script src="/js/automation_engine.js?v=20260731b012"></script>
+<script src="/js/client_portal.js?v=20260731b012"></script>
+<script src="/js/field_mode.js?v=20260731b012"></script>
+<script src="/js/assets_hub.js?v=20260731b012"></script>
+<script src="/js/gw-icons.js?v=20260731b012"></script>
+<script src="/js/sales-process.js?v=20260731b012"></script>
+<script src="/js/richtext.js?v=20260731b012"></script>
+<script src="/js/db.js?v=20260731b012"></script>
+<script src="/js/data.js?v=20260731b012"></script>
+<script src="/js/reps.js?v=20260731b012"></script>
+<script src="/js/record-page.js?v=20260731b012"></script>
+<script src="/js/academy.js?v=20260731b012"></script>
+<script src="/js/task_engine.js?v=20260731b012"></script>
+<script src="/js/gw_i18n.js?v=20260731b012"></script>
+<script src="/js/app_premium.js?v=20260731b012"></script>
+<script src="/js/estimates.js?v=20260731b012"></script>
+<script src="/js/multiday.js?v=20260731b012"></script>
+<script src="/js/proposals.js?v=20260731b012"></script>
+<script src="/js/pricing.js?v=20260731b012"></script>
+<script src="/js/invoices.js?v=20260731b012"></script>
+<script src="/js/csv_import.js?v=20260731b012"></script>
+<script src="/js/onboarding.js?v=20260731b012"></script>
+<script src="/js/gw_copilot.js?v=20260731b012"></script>
+<script src="/js/groundwork_ai.js?v=20260731b012"></script>
+<script src="/js/recurring_plans.js?v=20260731b012"></script>
+<script src="/js/reviews.js?v=20260731b012"></script>
+<script src="/js/stripe.js?v=20260731b012"></script>
+<script src="/js/email.js?v=20260731b012"></script>
+<script src="/js/notifications.js?v=20260731b012"></script>
+<script src="/js/integrations.js?v=20260731b012"></script>
+<script src="/js/sms.js?v=20260731b012"></script>
+<script src="/js/calendar_sync.js?v=20260731b012"></script>
+<script src="/js/ai_followup.js?v=20260731b012"></script>
+<script src="/js/user_management.js?v=20260731b012"></script>
+<script src="/js/platform_admin.js?v=20260731b012"></script>
+<script src="/js/time_tracker.js?v=20260731b012"></script>
+<script src="/js/field_workday.js?v=20260731b012"></script>
+<script src="/js/platform_core.js?v=20260731b012"></script>
+<script src="/js/approval_engine.js?v=20260731b012"></script>
+<script src="/js/automation_engine.js?v=20260731b012"></script>
+<script src="/js/client_portal.js?v=20260731b012"></script>
+<script src="/js/field_mode.js?v=20260731b012"></script>
+<script src="/js/assets_hub.js?v=20260731b012"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
