@@ -189,10 +189,15 @@ The old separate Estimates and Proposals pages are merged into one document syst
   Est. Value (`jobValue`) is editable in two places — an "Est. Value ($)" field in the
   Contact & Opportunity form and a click-to-edit stat in the left-rail Figures grid
   (`window._gwSetLeadValue` persists via `_d1SaveOpp` and refreshes the Commission figure
-  in place, since `estCommission` is driven by `jobValue`). The Pipeline page shows an
-  "Open Pipeline Value" strip (`_gwDivisionValueStrip`): grand total of open-lead value
+  in place). Won leads switch that stat to an editable **Sold @** amount — the final
+  price that then drives the final commission (`gwLeadBaseValue`: sold amount for won
+  leads, estimate otherwise). Commission previews use the ASSIGNED rep's plan, and
+  unknown plan ids fall back to the default plan instead of silently showing $0.
+  The Pipeline page shows an "Open Pipeline Value" strip (`_gwDivisionValueStrip`):
+  grand total of OPEN-lead value (won/lost excluded — they have left the pipeline)
   plus one clickable tile per company division (`gwClassifyDivision` + `gwDivisions()`),
-  which toggles the existing division filter.
+  which toggles the existing division filter. Pipeline cards show the value in a fixed
+  spot (right side of the stage row, a muted dash when unset).
 - **Expanded +New menu (August 2026)**: `_gwBuildNewMenu` now also offers New Estimate
   (admin + sales), and for admins: New Invoice, Record Payment (invoice picker
   `_invPaymentPicker`), New Asset, and New Employee (invite form). Items route through

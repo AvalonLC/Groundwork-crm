@@ -419,9 +419,15 @@ function logRepActivity(repId, type, data) {
  *             ruleApplied: string, retentionBonus: number }}
  */
 function calculateCommission({ planId = 'ryan', workType = 'landscape', leadSource = 'company_lead', jobValue = 0, collected = false, approved = true, preview = false }) {
-  // Load admin-overridden rules if present, else use default plan
+  // Load admin-overridden rules if present, else use default plan.
+  // Unknown plan ids (e.g. 'admin', 'standard' — reps created before a plan
+  // was configured) fall back to the default 'ryan' plan instead of silently
+  // returning $0, so commission previews always correspond to the job value.
   const override = loadActiveCommissionRules();
-  const plan = (override && override.plans && override.plans[planId]) ? override.plans[planId] : COMMISSION_PLANS[planId];
+  const plan = (override && override.plans && override.plans[planId]) ? override.plans[planId]
+    : (COMMISSION_PLANS[planId]
+      || (override && override.plans && override.plans.ryan)
+      || COMMISSION_PLANS.ryan);
   if (!plan) return { amount: 0, rate: 0, cap: null, capApplied: false, requiresApproval: false, approvalReason: '', note: 'No commission plan found', ruleApplied: 'none', retentionBonus: 0 };
 
   // Collection gate — skip only for UI preview mode

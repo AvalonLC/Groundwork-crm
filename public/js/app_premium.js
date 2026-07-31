@@ -556,23 +556,34 @@ function statusCssClass(status){
   };
   return map[status] || 'pending';
 }
+// Which dollar figure drives a lead's money displays and commission:
+// won leads use the final Sold @ amount (falling back to the estimate),
+// everything else uses the Est. Value (jobValue).
+function gwLeadBaseValue(opp){
+  const isWon = (typeof gwSalesIs === 'function') && gwSalesIs(opp,'won');
+  if (isWon && Number(opp?.soldAmount || 0) > 0) return Number(opp.soldAmount);
+  return Number(opp?.jobValue || 0);
+}
 function estCommission(opp){
   // Delegate to the master engine (COMM-08: no page-level hardcoded math)
   if (typeof window.estimateCommission === 'function') {
-    const rep = window.getCurrentRep ? window.getCurrentRep() : null;
-    const planId = rep?.commissionPlan || 'ryan';
+    // Use the ASSIGNED rep's plan — an admin viewing a rep's lead must see
+    // that rep's commission, not one keyed to the viewer's own plan.
+    const assigned = (window.REPS || []).find(r => r.id === opp?.repId)
+      || (window.getCurrentRep ? window.getCurrentRep() : null);
+    const planId = assigned?.commissionPlan || 'ryan';
     const result = window.estimateCommission({
       planId,
       workType:   opp?.workType   || 'landscape',
       leadSource: opp?.leadSource || 'company_lead',
-      jobValue:   Number(opp?.jobValue || 0),
+      jobValue:   gwLeadBaseValue(opp),
       collected:  !!opp?.collected,
       approved:   !!opp?.commissionApproved
     });
     return result.amount;
   }
   // Fallback before reps.js loads
-  const val = Number(opp?.jobValue || 0);
+  const val = gwLeadBaseValue(opp);
   if (!val) return 0;
   const rates = { landscape:.06, maintenance_onetime:.04, maintenance_recurring:.20, hardscape:.06, drainage:.06, design_build:.06 };
   return val * (rates[opp?.workType] || .06);
@@ -3295,7 +3306,15 @@ function oppCard(o){
       <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
       ${gwScorePill(o)}
     </div>
-    ${gwStageChip(o)}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:18px">
+      <span>${gwStageChip(o)}</span>
+      ${(function(){
+        const v = gwLeadBaseValue(o);
+        return v > 0
+          ? `<span class="opp-value" style="margin-left:auto;flex-shrink:0;white-space:nowrap">${money(v)}</span>`
+          : `<span class="opp-value" style="margin-left:auto;flex-shrink:0;color:#9AA79A;font-weight:500" title="No estimated value set">—</span>`;
+      })()}
+    </div>
     <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')}${o.address ? ` · ${escapeHtml(o.address)}` : ''}</p>
     <div class="opp-meta">
       ${badge(o.status||'New Lead')}
@@ -3305,7 +3324,6 @@ function oppCard(o){
         if (nu) return `<span class="opp-next" title="${escapeHtml(nu.title)}">Next Up: ${escapeHtml(nu.label)}${nu.date ? ' · ' + prettyDate(nu.date) : ''}</span>`;
         return o.nextFollowUp ? `<span class="opp-next">Next Up: Follow up · ${prettyDate(o.nextFollowUp)}</span>` : '';
       })()}
-      ${o.jobValue ? `<span class="opp-value">${money(Number(o.jobValue))}</span>` : ''}
       ${repObj
         ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40;margin-left:auto">${escapeHtml(repObj.name)}</span>`
         : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22);margin-left:auto">Unassigned</span>`}
@@ -3553,7 +3571,7 @@ function pipeline(selectedId){
                     <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
                     ${o._needsRestaging ? `<div class="gw-pipe-badge gw-pipe-badge--overdue" style="margin:6px 0">Original stage: ${escapeHtml(o.status||'(blank)')}</div>` : ''}
                     <div class="gw-pipe-card-bottom">
-                      ${o.jobValue ? `<span class="gw-pipe-card-val">${money(Number(o.jobValue))}</span>` : ''}
+                      ${(function(){ const v = gwLeadBaseValue(o); return v > 0 ? `<span class="gw-pipe-card-val">${money(v)}</span>` : `<span class="gw-pipe-card-val" style="color:#9AA79A;font-weight:500">—</span>`; })()}
                       ${o.nextFollowUp ? `<span class="gw-pipe-card-date" style="display:inline-flex;align-items:center;gap:4px">${(typeof gwIcon==='function')?gwIcon('calendar',12):''} ${prettyDate(o.nextFollowUp)}</span>` : ''}
                       ${repObj ? `<span class="gw-pipe-card-rep" style="color:${repObj.color||'#4D8A86'}">${escapeHtml(repObj.name.split(' ')[0])}</span>` : ''}
                     </div>
@@ -5861,7 +5879,7 @@ function opportunityDetail(id){
           <div class="ld-stat-chips">
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 11V5l5-3 5 3v6H9V8H5v3H2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>','Stage',escapeHtml(o.status||'New Lead'))}
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Rep',escapeHtml(_repName))}
-            ${o.jobValue ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Value',money(Number(o.jobValue)),'green') : ''}
+            ${gwLeadBaseValue(o) ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',_isSold ? 'Sold @' : 'Value',money(gwLeadBaseValue(o)),'green') : ''}
             ${_estComm > 0 ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12L7 2l5 10M4.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>','Commission',money(_estComm),'blue') : ''}
             ${(function(){
               const _sc = gwLeadScore(o);
@@ -6320,9 +6338,9 @@ function opportunityDetail(id){
             Figures
           </div>
           <div class="rp-micro-grid">
-            <div class="rp-micro-stat" onclick="window._gwFigEditValue('${o.id}')" title="Click to edit the estimated lead value" style="cursor:pointer">
-              <div class="rp-micro-stat-val${o.jobValue?' accent-green':''}" id="gwFigVal_${o.id}">${o.jobValue ? money(Number(o.jobValue)) : '—'}</div>
-              <div class="rp-micro-stat-label">Est. Value <svg width="9" height="9" viewBox="0 0 14 14" fill="none" style="vertical-align:baseline;opacity:.55"><path d="M10 2l2 2-7.5 7.5L2 12l.5-2.5L10 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
+            <div class="rp-micro-stat" onclick="window._gwFigEditValue('${o.id}')" title="${_isSold ? 'Click to edit the final sold amount' : 'Click to edit the estimated lead value'}" style="cursor:pointer">
+              <div class="rp-micro-stat-val${gwLeadBaseValue(o)?' accent-green':''}" id="gwFigVal_${o.id}">${gwLeadBaseValue(o) ? money(gwLeadBaseValue(o)) : '—'}</div>
+              <div class="rp-micro-stat-label">${_isSold ? 'Sold @' : 'Est. Value'} <svg width="9" height="9" viewBox="0 0 14 14" fill="none" style="vertical-align:baseline;opacity:.55"><path d="M10 2l2 2-7.5 7.5L2 12l.5-2.5L10 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
             </div>
             <div class="rp-micro-stat">
               <div class="rp-micro-stat-val${_estComm>0?' accent-green':''}" id="gwFigComm_${o.id}">${_estComm > 0 ? money(_estComm) : '—'}</div>
@@ -7407,35 +7425,41 @@ function setOppField(id,field,value){
 // setOppField, then refreshes the Figures rail stats in place so the
 // commission recalculation is visible immediately (no full re-render,
 // which would wipe unsaved form fields).
-window._gwSetLeadValue = function(id, raw){
+window._gwSetLeadValue = function(id, raw, field){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o) return;
+  // Won leads edit the final Sold @ amount; open leads edit the estimate.
+  const f = field || (((typeof gwSalesIs === 'function') && gwSalesIs(o,'won')) ? 'soldAmount' : 'jobValue');
   const num = Math.max(0, parseFloat(String(raw==null?'':raw).replace(/[^0-9.]/g,'')) || 0);
-  if (Number(o.jobValue||0) === num) { _gwRefreshLeadValueUI(o); return; }
-  o.jobValue = num;
+  if (Number(o[f]||0) === num) { _gwRefreshLeadValueUI(o); return; }
+  o[f] = num;
   o.updatedAt = new Date().toISOString();
   saveState();
   _d1SaveOpp(o);
   _gwRefreshLeadValueUI(o);
-  showToast(num > 0 ? 'Lead value updated — commission recalculated' : 'Lead value cleared');
+  showToast(num > 0
+    ? (f === 'soldAmount' ? 'Sold amount updated — final commission recalculated' : 'Lead value updated — commission recalculated')
+    : (f === 'soldAmount' ? 'Sold amount cleared' : 'Lead value cleared'));
 };
 function _gwRefreshLeadValueUI(o){
   let comm = 0;
   try { comm = (typeof estCommission === 'function') ? estCommission(o) : 0; } catch(e){}
+  const base = (typeof gwLeadBaseValue === 'function') ? gwLeadBaseValue(o) : Number(o.jobValue||0);
   const valEl = document.getElementById('gwFigVal_'+o.id);
-  if (valEl){ valEl.textContent = o.jobValue ? money(Number(o.jobValue)) : '—'; valEl.classList.toggle('accent-green', !!o.jobValue); }
+  if (valEl){ valEl.textContent = base ? money(base) : '—'; valEl.classList.toggle('accent-green', !!base); }
   const commEl = document.getElementById('gwFigComm_'+o.id);
   if (commEl){ commEl.textContent = comm > 0 ? money(comm) : '—'; commEl.classList.toggle('accent-green', comm > 0); }
   const input = document.getElementById('gwLeadValueInput_'+o.id);
   if (input && document.activeElement !== input) input.value = o.jobValue ? Number(o.jobValue) : '';
 }
-// Click-to-edit for the Figures rail "Est. Value" stat
+// Click-to-edit for the Figures rail value stat (Est. Value / Sold @)
 window._gwFigEditValue = function(id){
   const o = state.opportunities.find(x=>x.id===id); if(!o) return;
   const el = document.getElementById('gwFigVal_'+id); if(!el) return;
   if (el.querySelector('input')) return;
-  const cur = o.jobValue ? Number(o.jobValue) : '';
-  el.innerHTML = `<input type="text" inputmode="decimal" value="${cur}" aria-label="Estimated lead value"
+  const isWon = (typeof gwSalesIs === 'function') && gwSalesIs(o,'won');
+  const cur = isWon ? (Number(o.soldAmount||0) || Number(o.jobValue||0) || '') : (o.jobValue ? Number(o.jobValue) : '');
+  el.innerHTML = `<input type="text" inputmode="decimal" value="${cur}" aria-label="${isWon ? 'Final sold amount' : 'Estimated lead value'}"
     style="width:100%;max-width:110px;font:inherit;font-weight:inherit;padding:2px 6px;border:1px solid #C9D6C8;border-radius:6px;text-align:center;background:#fff"
     onkeydown="if(event.key==='Enter'){this.blur()}"
     onblur="window._gwSetLeadValue('${id}', this.value)">`;
@@ -12215,6 +12239,8 @@ function confirmMarkSold(oppId) {
   o.expectedStart   = document.getElementById('sm_startdate')?.value || '';
   o.updatedAt       = new Date().toISOString();
   saveState();
+  // Write-through to D1 so sold amount/date/division persist across devices
+  if (typeof _d1SaveOpp === 'function') _d1SaveOpp(o);
   closeMarkSoldModal();
   showToast(`${o.client} marked as sold — $${amount.toLocaleString()}`);
   show('pipeline', oppId);

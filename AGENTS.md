@@ -169,14 +169,25 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   Persisted via `_estApplyExtFields`; normalized in `_estNormalize`;
   `_estAiApply` defaults AI quotes to `total_only`. Internal views (Pricing
   Workbench, detail page) must always stay itemized.
-- LEAD VALUE / COMMISSION COUPLING: `opp.jobValue` (server column `job_value`)
-  drives `estCommission(opp)` → `window.estimateCommission`. Edits go through
-  `window._gwSetLeadValue(id, raw)` (app_premium.js), which coerces to Number,
-  write-throughs via `_d1SaveOpp`, and updates `#gwFigVal_<id>` /
-  `#gwFigComm_<id>` in place — do NOT full re-render on value edit (wipes
-  unsaved form fields). The Overview form input intentionally has NO `name`
-  attribute so the generic string autosave skips it. Pipeline division totals
-  come from `_gwDivisionValueStrip` (open leads, `gwClassifyDivision`).
+- LEAD VALUE / COMMISSION COUPLING: `gwLeadBaseValue(opp)` is the single
+  source for a lead's money figure — won leads use `soldAmount` (server
+  `sold_amount`, falling back to `jobValue`), open leads use `jobValue`
+  (`job_value`). It feeds `estCommission(opp)` → `window.estimateCommission`,
+  card values, the hero Value/Sold @ chip, and the Figures rail. Commission
+  plan resolution: estCommission uses the ASSIGNED rep's plan (opp.repId →
+  REPS), never the viewer's; `calculateCommission` (reps.js) falls back to
+  the default 'ryan' plan for unknown plan ids ('admin', 'standard') — never
+  restore the old silent-$0 behavior. Edits go through
+  `window._gwSetLeadValue(id, raw)` (field-aware: soldAmount when won),
+  which coerces to Number, write-throughs via `_d1SaveOpp`, and updates
+  `#gwFigVal_<id>` / `#gwFigComm_<id>` in place — do NOT full re-render on
+  value edit (wipes unsaved form fields). `confirmMarkSold` MUST keep its
+  `_d1SaveOpp(o)` write-through. The Overview form input intentionally has
+  NO `name` attribute so the generic string autosave skips it. Pipeline
+  division totals come from `_gwDivisionValueStrip` (OPEN leads only via
+  `gwSalesIsOpen` — won/lost are excluded by design). Pipeline cards render
+  the value in a FIXED spot (right side of the stage-chip row, `—` when
+  unset) — keep it position-stable.
 - +NEW MENU: `_gwBuildNewMenu` items for cross-module creation use
   `window._gwNavThen(view, fnName, arg)` — navigate first, then poll up to 3s
   for the module to register its entry point (`_estNewEstimate`,
