@@ -15552,6 +15552,139 @@ h1.pl-title,
   border-color: #fff;
   color: #113931;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SITE-WIDE "GREEN HERO" HEADER — promoted from .gw-report-shell-only to the
+   default treatment for every .rp-header across the app (My Day, Pipeline,
+   Clients, Estimates, Invoices, Assets, Operations, Financial Reports, etc.)
+   so every page shares the same premium look instead of a plain white/no
+   header on most pages and a green hero on a handful of report pages.
+   Opt a specific header out with class="rp-header rp-header--plain".
+   ══════════════════════════════════════════════════════════════════════════ */
+.rp-header:not(.rp-header--plain) {
+  background: var(--gw-report-hero, linear-gradient(135deg, #103c34 0%, #1a5a4f 54%, #2b7568 100%));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 22px;
+  box-shadow: 0 24px 52px rgba(17, 57, 49, .18);
+  padding: 26px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.rp-header:not(.rp-header--plain)::after {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -120px;
+  width: 280px;
+  height: 280px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,255,255,.16), transparent 68%);
+  pointer-events: none;
+}
+.rp-header:not(.rp-header--plain) .rp-header-left,
+.rp-header:not(.rp-header--plain) .rp-header-actions { position: relative; z-index: 1; }
+.rp-header:not(.rp-header--plain) .eyebrow {
+  color: rgba(160, 211, 203, .95) !important;
+  letter-spacing: .16em;
+}
+.rp-header:not(.rp-header--plain) .rp-title { color: #fff !important; }
+.rp-header:not(.rp-header--plain) .rp-subtitle { color: rgba(255,255,255,.72) !important; }
+.rp-header:not(.rp-header--plain) .cd-back-btn,
+.rp-header:not(.rp-header--plain) .cl-back-btn { color: rgba(255,255,255,.75) !important; }
+.rp-header:not(.rp-header--plain) .rp-header-actions .rp-btn {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.18);
+  color: #fff;
+  box-shadow: none;
+}
+.rp-header:not(.rp-header--plain) .rp-header-actions .rp-btn:hover { background: rgba(255,255,255,.18); }
+.rp-header:not(.rp-header--plain) .rp-header-actions .rp-btn--primary {
+  background: #fff;
+  border-color: #fff;
+  color: #113931;
+}
+/* Generic (non-.rp-btn) buttons dropped straight into a green header —
+   e.g. plain <button class="primary-btn">/<button class="secondary-btn">
+   used on a few older pages — get the same translucent white treatment. */
+.rp-header:not(.rp-header--plain) .rp-header-actions button:not(.rp-btn):not(.rp-btn--primary) {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.18);
+  color: #fff;
+}
+.rp-header:not(.rp-header--plain) .rp-header-actions button:not(.rp-btn):not(.rp-btn--primary):hover {
+  background: rgba(255,255,255,.18);
+}
+
+/* ── Same "green hero" treatment for the other two header component
+   families used on non-report pages: .pl-page-header (My Day, Pipeline,
+   Clients) and .gwp-header (Financial Reports Hub). Kept as separate
+   selectors (not merged into .rp-header) since their internal class names
+   (.pl-title/.gwp-title etc.) differ. ── */
+.pl-page-header,
+.gwp-header {
+  background: var(--gw-report-hero, linear-gradient(135deg, #103c34 0%, #1a5a4f 54%, #2b7568 100%));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 22px;
+  box-shadow: 0 24px 52px rgba(17, 57, 49, .18);
+  padding: 22px 26px;
+  position: relative;
+  overflow: hidden;
+}
+.pl-page-header::after,
+.gwp-header::after {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -110px;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,255,255,.16), transparent 68%);
+  pointer-events: none;
+}
+.pl-page-header > *,
+.gwp-header > * { position: relative; z-index: 1; }
+.pl-title, .gwp-title { color: #fff !important; }
+.pl-subtitle, .gwp-subtitle { color: rgba(255,255,255,.72) !important; }
+.pl-page-header .cl-back-btn { color: rgba(255,255,255,.75) !important; }
+
+/* Buttons + pills inside a .pl-page-header (My Day / Pipeline / Clients) */
+.pl-page-header .primary-btn,
+.pl-page-header .secondary-btn {
+  background: rgba(255,255,255,.14) !important;
+  border: 1px solid rgba(255,255,255,.22) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.pl-page-header .primary-btn:hover,
+.pl-page-header .secondary-btn:hover { background: rgba(255,255,255,.22) !important; }
+.pl-page-header .gw-myday-modes {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.2);
+}
+.pl-page-header .gw-myday-mode-pill { color: rgba(255,255,255,.75); }
+.pl-page-header .gw-myday-mode-pill:hover { background: rgba(255,255,255,.14); color: #fff; }
+.pl-page-header .gw-myday-mode-pill--on {
+  background: #fff; color: #113931;
+  border-color: #fff;
+}
+
+/* Buttons inside a .gwp-header (Financial Reports Hub) */
+.gwp-header-actions .gwp-btn-ghost {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.2);
+  color: #fff;
+}
+.gwp-header-actions .gwp-btn-ghost:hover { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.3); }
+.gwp-header-actions .gwp-btn-primary {
+  background: #fff;
+  border-color: #fff;
+  color: #113931;
+}
+.gwp-header-actions .gwp-btn-primary:hover { background: rgba(255,255,255,.88); }
+
 .gw-report-grid {
   display: grid;
   gap: 14px;
@@ -15636,18 +15769,11 @@ h1.pl-title,
 .gw-list-shell > .rp-header,
 .gw-ops-header,
 .gw-list-header {
-  background: #fff !important;
-  border: 1px solid rgba(26, 71, 64, .10) !important;
-  border-radius: 18px !important;
-  box-shadow: 0 14px 34px rgba(17, 57, 49, .07) !important;
+  /* Same green hero as the rest of the site (see the site-wide .rp-header
+     rule above) — just re-centered with the ops/list shell's max-width. */
   margin: 0 auto 18px !important;
   max-width: 1200px;
-  padding: 22px 24px !important;
 }
-.gw-ops-shell .rp-title,
-.gw-list-shell .rp-title { color: var(--gw-ink, #1F2A2B) !important; }
-.gw-ops-shell .rp-subtitle,
-.gw-list-shell .rp-subtitle { color: var(--gw-muted, #6F7E6A) !important; }
 .gw-ops-shell .rp-card,
 .gw-list-shell > div[style*="border:1px solid"],
 .gw-list-shell .rp-empty-state {
