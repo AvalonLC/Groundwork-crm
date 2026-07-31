@@ -1007,7 +1007,13 @@ function _renderLoginHTML(brand) {
       if (d1Clients && d1Clients.length > 0) {
         const localClients = JSON.parse(localStorage.getItem('avalonClientsV1') || '[]');
         const d1Ids = new Set(d1Clients.map(c => c.id));
-        const localOnly = localClients.filter(c => !d1Ids.has(c.id));
+        // Drop cached junk rows (HTML fragments from the old CSV parser) so
+        // rows deleted from D1 can never resurrect via localStorage write-through.
+        const _junkClientName = (n) => {
+          const s = String(n || '');
+          return !s.trim() || /<[a-z!/]|&[a-z]+;|<\/p>|href=/i.test(s) || s.trim().split(/\s+/).length > 12;
+        };
+        const localOnly = localClients.filter(c => !d1Ids.has(c.id) && !_junkClientName(c.name));
         const merged = d1Clients.map(dc => {
           const lc = localClients.find(l => l.id === dc.id);
           // D1 now returns rich columns (street/city/tags/properties) plus
