@@ -123,30 +123,46 @@ window._csvHandleFile = function(file) {
 
 /* ── CSV parser (handles quotes, commas inside quotes, CRLF) ────────────────── */
 function _csvParse(text) {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  function parseLine(line) {
-    const fields = []; let field = ''; let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i+1] === '"') { field += '"'; i++; }
-        else { inQuotes = !inQuotes; }
-      } else if (ch === ',' && !inQuotes) { fields.push(field.trim()); field = ''; }
-      else { field += ch; }
-    }
-    fields.push(field.trim());
-    return fields;
-  }
-  const headers = parseLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+  // Quote-aware record parser: quoted fields may contain commas AND newlines
+  // (e.g. Homeworks exports embed multi-line HTML in Notes). Splitting by
+  // newline first shredded those fields into junk rows — never do that.
+  const records = (window._gwParseCsvRecords || _csvParseRecordsFallback)(text);
+  const clean = (v) => (window._gwCleanImportText
+    ? window._gwCleanImportText(v)
+    : String(v == null ? '' : v).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim());
+  if (!records.length) return { headers: [], rows: [] };
+  const headers = records[0].map(h => clean(h));
   const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const values = parseLine(lines[i]);
+  for (let i = 1; i < records.length; i++) {
+    if (!records[i].join('').trim()) continue;
     const row = {};
-    headers.forEach((h, idx) => { row[h] = (values[idx]||'').replace(/^"|"$/g, '').trim(); });
+    headers.forEach((h, idx) => { row[h] = clean(records[i][idx]); });
     rows.push(row);
   }
   return { headers, rows };
+}
+
+// Standalone fallback if app_premium.js has not defined _gwParseCsvRecords
+function _csvParseRecordsFallback(text) {
+  const records = []; let row = []; let field = ''; let inQ = false;
+  const s = String(text || '').replace(/^\uFEFF/, '');
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') { if (s[i+1] === '"') { field += '"'; i++; } else { inQ = false; } }
+      else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i+1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.length > 1 || row[0].trim() !== '') records.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.length > 1 || row[0].trim() !== '') records.push(row);
+  return records;
 }
 
 window._csvReset = function() {
@@ -327,8 +343,16 @@ async function _csvGoStep3() {
     showToast('Please map the "Name" column — it is required', 'error'); return;
   }
 
-  // Build mapped rows from raw
-  _csvState.mappedRows = _csvState.rawRows.map(raw => _csvBuildRow(raw)).filter(r => r.name);
+  // Build mapped rows from raw; drop rows whose "name" is clearly shredded
+  // prose or leftover HTML rather than an actual client name.
+  const _csvJunkName = (n) => {
+    const s = String(n || '');
+    if (!s.trim()) return true;
+    if (/<[a-z!/]|&[a-z]+;|<\/p>|href=/i.test(s)) return true;
+    if (s.trim().split(/\s+/).length > 12) return true;
+    return false;
+  };
+  _csvState.mappedRows = _csvState.rawRows.map(raw => _csvBuildRow(raw)).filter(r => !_csvJunkName(r.name));
 
   const body = document.getElementById('csvModalBody');
   if (!body) return;

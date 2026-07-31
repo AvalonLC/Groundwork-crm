@@ -3863,11 +3863,47 @@ function saveClients(list) {
 function clientId() { return 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
 function propId()   { return 'pr_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
 
+// ── CSV hardening helpers ────────────────────────────────────────────────────
+// Quote-aware record splitter: a quoted field may contain commas AND newlines
+// (Homeworks exports embed multi-line HTML in Notes). Splitting by newline
+// before parsing quotes shredded those fields into junk "clients".
+function parseCsvRecords(text) {
+  const records = []; let row = []; let field = ''; let inQ = false;
+  const s = String(text || '').replace(/^\uFEFF/, '');
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') { if (s[i+1] === '"') { field += '"'; i++; } else { inQ = false; } }
+      else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i+1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.length > 1 || row[0].trim() !== '') records.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.length > 1 || row[0].trim() !== '') records.push(row);
+  return records;
+}
+window._gwParseCsvRecords = parseCsvRecords;
+// Strip HTML tags/entities from an imported cell value.
+function gwCleanImportText(v) {
+  let s = String(v == null ? '' : v);
+  s = s.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
+       .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/g, "'");
+  s = s.replace(/<[^>]*>/g, ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+window._gwCleanImportText = gwCleanImportText;
+
 // ── Parse a Homeworks-style CSV row into our client schema ──────────────────
 function parseClientCsv(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = parseCsvRow(lines[0]);
+  const records = parseCsvRecords(text);
+  if (records.length < 2) return [];
+  const headers = records[0].map(h => h.trim());
   const idx = h => headers.findIndex(x => x.toLowerCase().trim() === h.toLowerCase().trim());
   const iName=idx('Name'), iFirst=idx('First Name'), iLast=idx('Last Name'),
         iType=idx('Type'), iStatus=idx('Status'), iEmail=idx('Email'),
@@ -3877,11 +3913,13 @@ function parseClientCsv(text) {
         iTags=idx('Tags'), iNotes=idx('Notes'), iHwId=idx('Client ID'),
         iCompany=idx('Customer Company Name');
   const clients = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const r = parseCsvRow(lines[i]);
-    const name = (r[iName]||r[iCompany]||'').trim();
+  for (let i = 1; i < records.length; i++) {
+    const r = records[i];
+    if (!r.join('').trim()) continue;
+    const name = gwCleanImportText(r[iName]||r[iCompany]||'');
     if (!name) continue;
+    // Guard: skip rows that are clearly shredded prose, not client names
+    if (/<[a-z!/]|&[a-z]+;|<\/p>/i.test((r[iName]||'')) && name.split(' ').length > 8) continue;
     // Map Homeworks type → our type
     const rawType = (r[iType]||'').trim();
     let type = 'Residential';
@@ -3895,27 +3933,27 @@ function parseClientCsv(text) {
     // Parse tags — include 'Annual Maintenance Client' etc.
     const rawTags = (r[iTags]||'').trim();
     const tags = rawTags ? rawTags.split(',').map(t=>t.trim()).filter(Boolean) : [];
-    // Strip HTML from notes
-    const rawNotes = (r[iNotes]||'').trim().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    // Strip HTML from notes (keep full text, collapse whitespace)
+    const rawNotes = gwCleanImportText(r[iNotes]||'');
     clients.push({
       id: clientId(),
       name,
-      firstName: (r[iFirst]||'').trim(),
-      lastName:  (r[iLast]||'').trim(),
-      company:   (r[iCompany]||'').trim(),
+      firstName: gwCleanImportText(r[iFirst]||''),
+      lastName:  gwCleanImportText(r[iLast]||''),
+      company:   gwCleanImportText(r[iCompany]||''),
       type, status,
-      email:   (r[iEmail]||'').trim(),
-      phone:   (r[iPhone]||'').trim(),
-      mobile:  (r[iMobile]||'').trim(),
-      street:  (r[iStreet]||'').trim(),
-      street2: (r[iStreet2]||'').trim(),
-      city:    (r[iCity]||'').trim(),
-      state:   (r[iState]||'').trim(),
-      zip:     (r[iZip]||'').trim(),
-      since:   (r[iSince]||'').trim(),
+      email:   gwCleanImportText(r[iEmail]||''),
+      phone:   gwCleanImportText(r[iPhone]||''),
+      mobile:  gwCleanImportText(r[iMobile]||''),
+      street:  gwCleanImportText(r[iStreet]||''),
+      street2: gwCleanImportText(r[iStreet2]||''),
+      city:    gwCleanImportText(r[iCity]||''),
+      state:   gwCleanImportText(r[iState]||''),
+      zip:     gwCleanImportText(r[iZip]||''),
+      since:   gwCleanImportText(r[iSince]||''),
       tags,
       notes:   rawNotes,
-      homeworksId: (r[iHwId]||'').trim(),
+      homeworksId: gwCleanImportText(r[iHwId]||''),
       properties: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
