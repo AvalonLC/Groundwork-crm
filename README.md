@@ -599,3 +599,7 @@ Each client page now shows the full portfolio:
 - **Recurring & Projections**: active subscriptions plus revenue projection card (monthly run rate, 12-month, 3-year).
 - **Extended contact card**: office phone, CC emails, mailing address vs service address, main POC, billing contact, site contact, payment method — all editable in the client form and persisted in `clients.extra` JSON (see `CLIENT_EXTRA_FIELDS` in src/index.tsx).
 - Migration `0055_client_portfolio.sql` adds `opportunities.client_id`, `clients.extra`, and fixes `recurring_plans` drift (`frequency_unit`, `visit_duration_minutes`, `services_included` — previously every recurring-subscriptions request returned 500). Self-heals in prod via `ensurePortfolioSchema`.
+
+### Client Page Inline Editing & Quick Create (update)
+- Contact Info is now edited directly in place (lead-style): click any field, type, and it autosaves — no separate Edit modal.
+- Green create buttons under each section: Schedule Job, New Lead (creates the lead with client info prefilled and opens the lead view), New Estimate / New Invoice (builders prefilled with the client), Record Payment (picks from open invoices), Add Property, Upload Photos (direct client photo upload via `POST /api/customers/:id/photos`).

@@ -10116,8 +10116,39 @@ h1.pl-title,
 
 /* Info grid */
 .cd-info-grid { display: flex; flex-direction: column; gap: 8px; }
-.cd-info-row { display: flex; gap: 12px; align-items: baseline; }
+.cd-info-row { display: flex; gap: 12px; align-items: center; }
 .cd-info-lbl { font-size: 11px; font-weight: 600; color: var(--gw-text-muted); width: 72px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .04em; }
+
+/* Inline-editable contact fields (lead-style: edit in place, autosave) */
+.cd-inline-input {
+  flex: 1; min-width: 0;
+  font-size: 13px; color: #233123;
+  background: transparent;
+  border: 1px solid transparent; border-radius: 6px;
+  padding: 4px 8px; margin: -4px 0;
+  transition: border-color .15s, background .15s;
+  font-family: inherit;
+}
+.cd-inline-input:hover { border-color: var(--gw-border, #E5E7EB); background: #FAFAF7; }
+.cd-inline-input:focus {
+  outline: none; border-color: #2D7A55; background: #fff;
+  box-shadow: 0 0 0 2px rgba(45,122,85,.12);
+}
+.cd-inline-input::placeholder { color: #B8BDB4; font-style: italic; }
+.cd-inline-select { cursor: pointer; appearance: auto; }
+
+/* Green create buttons under each client-page section */
+.cd-add-btn-row { margin-top: 12px; }
+.cd-add-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #2D7A55; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 8px 14px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+  transition: background .15s, transform .1s;
+}
+.cd-add-btn:hover { background: #236343; }
+.cd-add-btn:active { transform: scale(.98); }
 .cd-info-val { font-size: 13px; color: var(--gw-text); }
 .cd-link { color: var(--gw-pine-500, #2D7A55); text-decoration: none; }
 .cd-link:hover { text-decoration: underline; }

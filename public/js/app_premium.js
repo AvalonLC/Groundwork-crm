@@ -4641,6 +4641,46 @@ async function customerDetail(clientId) {
       <div class="cd-note-meta">${escapeHtml(n.created_by||'Admin')} · ${n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
     </div>`).join('') || '';
 
+  // ── Inline-editable contact rows (lead-style: edit in place, autosave) ──
+  const _cid = client.id;
+  const _iv = (v) => escapeHtml(v == null ? '' : String(v));
+  const _irow = (lbl, field, val, ph, type) => `<div class="cd-info-row">
+      <span class="cd-info-lbl">${lbl}</span>
+      <input class="cd-inline-input" type="${type||'text'}" name="${field}" value="${_iv(val)}" placeholder="${ph||'Add '+lbl.toLowerCase()}"
+        oninput="_cdInlineSave('${_cid}','${field}',this.value)" onblur="_cdInlineSave('${_cid}','${field}',this.value,true)">
+    </div>`;
+  const _isel = (lbl, field, val, opts) => `<div class="cd-info-row">
+      <span class="cd-info-lbl">${lbl}</span>
+      <select class="cd-inline-input cd-inline-select" name="${field}" onchange="_cdInlineSave('${_cid}','${field}',this.value,true)">
+        <option value="">—</option>
+        ${opts.map(o=>`<option value="${_iv(o)}" ${String(val||'')===o?'selected':''}>${_iv(o)}</option>`).join('')}
+      </select>
+    </div>`;
+  const _ccEmailsVal = Array.isArray(client.ccEmails) ? client.ccEmails.join(', ') : String(client.ccEmails||'');
+  const contactRowsHtml = [
+    _irow('Name','name',client.name),
+    _isel('Type','type',client.type,['Residential','Commercial','HOA','Vendor']),
+    _irow('Company','company',client.company),
+    _irow('Phone','phone',client.phone,'','tel'),
+    _irow('Mobile','mobile',client.mobile,'','tel'),
+    _irow('Office Phone','phone2',client.phone2,'','tel'),
+    _irow('Email','email',client.email,'','email'),
+    _irow('CC Email','email2',client.email2,'','email'),
+    _irow('CC Emails','ccEmails',_ccEmailsVal,'comma-separated'),
+    _irow('Street','street',client.street || (!client.city && client.address) || ''),
+    _irow('City','city',client.city),
+    _irow('State','state',client.state),
+    _irow('ZIP','zip',client.zip),
+    _irow('Mailing Street','mailingStreet',client.mailingStreet),
+    _irow('Mailing City','mailingCity',client.mailingCity),
+    _irow('Mailing State','mailingState',client.mailingState),
+    _irow('Mailing ZIP','mailingZip',client.mailingZip),
+    _irow('Main POC','poc',client.poc),
+    _irow('Billing Contact','billingContact',client.billingContact),
+    _irow('Site Contact','siteContact',client.siteContact),
+    _isel('Payment Method','paymentMethod',client.paymentMethod,['Check','ACH','Credit Card','Cash','Autopay','Net 30','Other']),
+  ].join('');
+
   // ── Render ────────────────────────────────────────────────────────────────
   view.innerHTML = `
   <div class="cd-shell">
@@ -4682,10 +4722,6 @@ async function customerDetail(clientId) {
         <button class="rp-btn" onclick="window.print()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           Print
-        </button>
-        <button class="rp-btn" onclick="_cdEditClient('${client.id}')">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Edit
         </button>
         <button class="rp-btn" style="color:var(--gw-danger,#dc2626)" onclick="_cdDeleteClient('${client.id}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
@@ -4735,66 +4771,13 @@ async function customerDetail(clientId) {
         <!-- Contact Info -->
         <section class="cd-section">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Contact Info</h2>
-            <button class="rp-btn-sm" onclick="_cdEditClient('${client.id}')">Edit</button>
+            <h2 class="cd-section-title">Contact Info
+              <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(click any field to edit — saves automatically)</span>
+            </h2>
+            <span id="cdAutosaveInd" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
           </div>
-          <div class="cd-info-grid">
-            ${client.phone||client.mobile ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Phone</span>
-              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.phone||client.mobile||'')}">${escapeHtml(client.phone||client.mobile||'')}</a>
-            </div>` : ''}
-            ${client.mobile && client.phone && client.mobile!==client.phone ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Mobile</span>
-              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.mobile)}">${escapeHtml(client.mobile)}</a>
-            </div>` : ''}
-            ${client.email ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Email</span>
-              <button class="cd-info-val cd-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>${escapeHtml(client.email)}</button>
-            </div>` : ''}
-            ${client.email2 ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">CC Email</span>
-              <button class="cd-info-val cd-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email2)}',toName:'${escapeHtml(client.name||'')}'})"}>${escapeHtml(client.email2)}</button>
-            </div>` : ''}
-            ${addr ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Address</span>
-              <a class="cd-info-val cd-link" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">${escapeHtml(addr)}</a>
-            </div>` : ''}
-            ${client.type ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Type</span>
-              <span class="cd-info-val">${clientTypeBadge(client.type)}</span>
-            </div>` : ''}
-            ${client.company && client.company!==client.name ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Company</span>
-              <span class="cd-info-val">${escapeHtml(client.company)}</span>
-            </div>` : ''}
-            ${client.phone2 ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Office Phone</span>
-              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.phone2)}">${escapeHtml(client.phone2)}</a>
-            </div>` : ''}
-            ${(Array.isArray(client.ccEmails)?client.ccEmails:String(client.ccEmails||'').split(',').map(s=>s.trim()).filter(Boolean)).length ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">CC Emails</span>
-              <span class="cd-info-val">${(Array.isArray(client.ccEmails)?client.ccEmails:String(client.ccEmails||'').split(',').map(s=>s.trim()).filter(Boolean)).map(e=>escapeHtml(e)).join('<br>')}</span>
-            </div>` : ''}
-            ${[client.mailingStreet,client.mailingCity,client.mailingState,client.mailingZip].filter(Boolean).length ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Mailing Address</span>
-              <span class="cd-info-val">${escapeHtml([client.mailingStreet,client.mailingCity,client.mailingState,client.mailingZip].filter(Boolean).join(', '))}</span>
-            </div>` : ''}
-            ${client.poc ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Main POC</span>
-              <span class="cd-info-val">${escapeHtml(client.poc)}</span>
-            </div>` : ''}
-            ${client.billingContact ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Billing Contact</span>
-              <span class="cd-info-val">${escapeHtml(client.billingContact)}</span>
-            </div>` : ''}
-            ${client.siteContact ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Site Contact</span>
-              <span class="cd-info-val">${escapeHtml(client.siteContact)}</span>
-            </div>` : ''}
-            ${client.paymentMethod ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Payment Method</span>
-              <span class="cd-info-val">${escapeHtml(client.paymentMethod)}</span>
-            </div>` : ''}
+          <div class="cd-info-grid" id="cdInlineForm">
+            ${contactRowsHtml}
           </div>
           ${tags.length ? `<div class="cd-tags" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
             ${tags.map(t=>`<span class="cl-tag">${escapeHtml(t)}</span>`).join('')}
@@ -4823,7 +4806,6 @@ async function customerDetail(clientId) {
         <section class="cd-section">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Jobs</h2>
-            <button class="rp-btn-sm" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule Job</button>
           </div>
           <div class="cd-tab-bar" id="cd-jobs-tabs">
             <button class="cd-tab active" data-filter="all"    onclick="_cdJobTab(this,'all')">All (${totalJobs})</button>
@@ -4835,6 +4817,7 @@ async function customerDetail(clientId) {
           ${workOrders.length >= 20 ? `
           <div style="text-align:center;padding:10px 0">
             <button class="rp-btn-sm" onclick="_cdLoadMoreJobs('${client.id}')">Load more jobs</button>
+            <button class="cd-add-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule Job</button>
           </div>` : ''}
         </section>
 
@@ -4844,9 +4827,9 @@ async function customerDetail(clientId) {
             <h2 class="cd-section-title">Leads &amp; Opportunities
               ${pipelineValue ? `<span style="font-size:11px;font-weight:600;color:#2D7A55;margin-left:8px">$${pipelineValue.toLocaleString()} open pipeline</span>` : ''}
             </h2>
-            <button class="rp-btn-sm" onclick="show('lead')">+ New Opportunity</button>
           </div>
           ${oppRows}
+          <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewLeadForClient('${client.id}')">+ New Lead</button></div>
         </section>
 
         <!-- Financials: Estimates / Invoices / Payments -->
@@ -4870,6 +4853,7 @@ async function customerDetail(clientId) {
                 <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(e.status||'draft')}</span>
                 <span class="cd-wo-amt">${Number(e.total) ? '$'+Number(e.total).toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</span>
               </div>`).join('') : '<p class="sb-empty-note" style="padding:12px 0">No estimates yet.</p>'}
+            <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewEstimateForClient('${client.id}')">+ New Estimate</button></div>
           </div>
           <div id="cd-fin-invoices" style="display:none">
             ${cdInvoices.length ? cdInvoices.slice(0,15).map(i=>{
@@ -4882,6 +4866,7 @@ async function customerDetail(clientId) {
                 <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(i.status||'draft')}</span>
                 <span class="cd-wo-amt" ${bal>0?'style="color:#B4552E;font-weight:700"':''}>${bal>0 ? '$'+bal.toLocaleString('en-US',{minimumFractionDigits:2})+' due' : (Number(i.total)?'$'+Number(i.total).toLocaleString('en-US',{minimumFractionDigits:2}):'—')}</span>
               </div>`;}).join('') : '<p class="sb-empty-note" style="padding:12px 0">No invoices yet.</p>'}
+            <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewInvoiceForClient('${client.id}')">+ New Invoice</button></div>
           </div>
           <div id="cd-fin-payments" style="display:none">
             ${cdPayments.length ? cdPayments.slice(0,15).map(p=>`
@@ -4892,6 +4877,7 @@ async function customerDetail(clientId) {
                 <span class="ops-ready-badge ops-ready" style="font-size:10px">${escapeHtml(p.status||'succeeded')}</span>
                 <span class="cd-wo-amt" style="color:#2D7A55;font-weight:700">$${(Number(p.amount)||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
               </div>`).join('') : '<p class="sb-empty-note" style="padding:12px 0">No payments recorded yet.</p>'}
+            <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdRecordPaymentForClient('${client.id}')">+ Record Payment</button></div>
           </div>
         </section>
 
@@ -4899,7 +4885,6 @@ async function customerDetail(clientId) {
         <section class="cd-section">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Properties</h2>
-            <button class="rp-btn-sm" onclick="showAddProperty('${client.id}')">+ Add Property</button>
           </div>
           ${(client.properties||[]).length ? (client.properties||[]).map(p=>{
             const pAddr = [p.street,p.city,p.state,p.zip].filter(Boolean).join(', ') || p.address || '';
@@ -4916,6 +4901,7 @@ async function customerDetail(clientId) {
                  Map
               </a>
             </div>`;}).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
+          <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="showAddProperty('${client.id}')">+ Add Property</button></div>
         </section>
 
         <!-- Site Photos -->
@@ -4928,7 +4914,11 @@ async function customerDetail(clientId) {
               <a href="/api/admin/portal/media/${m.id}" target="_blank" rel="noopener" title="${escapeHtml([m.caption,m.wo_number||m.wo_title].filter(Boolean).join(' — '))}" style="display:block;border-radius:8px;overflow:hidden;border:1px solid var(--gw-border);aspect-ratio:1;background:#f0f2ef">
                 <img src="/api/admin/portal/media/${m.id}" loading="lazy" alt="${escapeHtml(m.caption||m.file_name||'Site photo')}" style="width:100%;height:100%;object-fit:cover">
               </a>`).join('')}
-          </div>` : '<p class="sb-empty-note">No site photos yet. Photos crews attach to jobs for this client appear here automatically.</p>'}
+          </div>` : '<p class="sb-empty-note">No site photos yet. Photos crews attach to jobs for this client appear here automatically, or upload directly below.</p>'}
+          <div class="cd-add-btn-row">
+            <button class="cd-add-btn" onclick="_cdUploadPhotos('${client.id}')">+ Upload Photos</button>
+            <input type="file" id="cdPhotoInput" accept="image/*" multiple style="display:none">
+          </div>
         </section>
 
       </div>
@@ -4995,9 +4985,9 @@ async function customerDetail(clientId) {
               <span>Schedule a Job</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>
-            <button class="cd-quick-btn" onclick="show('lead')">
+            <button class="cd-quick-btn" onclick="_cdNewLeadForClient('${client.id}')">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              <span>New Opportunity</span>
+              <span>New Lead</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>
             ${client.phone||client.mobile ? `
@@ -5067,6 +5057,180 @@ window._cdFinTab = function(btn, which) {
     const el = document.getElementById('cd-fin-' + k);
     if (el) el.style.display = (k === which) ? '' : 'none';
   });
+};
+
+// ── Inline autosave for client contact fields (lead-style editing) ──────────
+const _cdInlineTimers = {};
+window._cdInlineSave = function(clientId, field, value, immediate) {
+  clearTimeout(_cdInlineTimers[field]);
+  const run = async () => {
+    const val = String(value == null ? '' : value).trim();
+    if (field === 'name' && !val) return; // never blank the client name
+    // Update local cache so page nav / sync shows the change instantly
+    try {
+      const list = loadClients();
+      const lc = list.find(c => c.id === clientId);
+      if (lc) {
+        if (String(lc[field] == null ? '' : (field==='ccEmails' && Array.isArray(lc[field]) ? lc[field].join(', ') : lc[field])) === val) return;
+        lc[field] = field === 'ccEmails' ? val.split(',').map(s=>s.trim()).filter(Boolean) : val;
+        lc.updatedAt = new Date().toISOString();
+        localStorage.setItem('avalonClientsV1', JSON.stringify(list));
+      }
+    } catch(_) {}
+    // Persist to D1 (partial update; server merges extra JSON)
+    const payload = { [field]: field === 'ccEmails' ? val.split(',').map(s=>s.trim()).filter(Boolean) : val };
+    try {
+      await fetch(`/api/customers/${clientId}`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      // Live-update the hero name if the name field changed
+      if (field === 'name') {
+        const h = document.querySelector('.cd-hero h1, .cd-hero-name, .cd-client-name');
+        if (h) h.textContent = val;
+      }
+      const ind = document.getElementById('cdAutosaveInd');
+      if (ind) {
+        ind.style.opacity = '1';
+        clearTimeout(ind._fadeTimer);
+        ind._fadeTimer = setTimeout(() => { ind.style.opacity = '0'; }, 1800);
+      }
+    } catch(_) {
+      if (typeof showToast === 'function') showToast('Save failed — check connection', 'error');
+    }
+  };
+  if (immediate) run(); else _cdInlineTimers[field] = setTimeout(run, 600);
+};
+
+// ── Create a lead for this client and jump straight to the lead view ────────
+window._cdNewLeadForClient = function(clientId) {
+  const list = loadClients();
+  const client = list.find(c => c.id === clientId);
+  if (!client) { if (typeof showToast === 'function') showToast('Client not found', 'error'); show('lead'); return; }
+  const stages = getPipelineStages();
+  const addr = [client.street, client.city, client.state, client.zip].filter(Boolean).join(', ') || client.address || '';
+  const opp = {
+    id: uid('opp'),
+    client: client.name || '',
+    clientId: client.id,
+    clientType: client.type || 'Residential',
+    email: client.email || '',
+    phone: client.phone || client.mobile || '',
+    address: addr,
+    source: 'Client Page',
+    status: stages[0] || 'Lead Intake / Rapport',
+    repId: (typeof currentRep !== 'undefined' && currentRep) ? currentRep.id : '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  state.opportunities.unshift(opp);
+  saveState();
+  _d1SaveOpp(opp);
+  if (typeof showToast === 'function') showToast(`New lead created for ${client.name}`, 'success');
+  if (typeof opportunityDetail === 'function') opportunityDetail(opp.id);
+  else show('pipeline', opp.id);
+};
+
+// ── New estimate prefilled with this client ─────────────────────────────────
+window._cdNewEstimateForClient = async function(clientId) {
+  if (typeof estimateBuilder !== 'function') { show('estimates'); return; }
+  const list = loadClients();
+  const client = list.find(c => c.id === clientId);
+  await estimateBuilder(); // fresh draft
+  if (client && typeof _estDraft !== 'undefined' && _estDraft) {
+    const addr = [client.street, client.city, client.state, client.zip].filter(Boolean).join(', ') || client.address || '';
+    _estDraft.client_id = client.id;
+    _estDraft.client_name = client.name || '';
+    _estDraft.client_email = client.email || '';
+    _estDraft.client_phone = client.phone || client.mobile || '';
+    _estDraft.client_address = addr;
+    _estDraft.property_addr = addr;
+    if (typeof _estRenderBuilder === 'function') _estRenderBuilder();
+    if (typeof showToast === 'function') showToast(`New estimate started for ${client.name}`, 'success');
+  }
+};
+
+// ── New invoice prefilled with this client ──────────────────────────────────
+window._cdNewInvoiceForClient = function(clientId) {
+  if (typeof _invOpenBuilder !== 'function') { show('invoices'); return; }
+  _invOpenBuilder(null);
+  // Builder loads clients async — poll for the select, then preselect
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    const sel = document.getElementById('invClientId');
+    if (sel) {
+      clearInterval(timer);
+      if ([...sel.options].some(o => o.value === clientId)) {
+        sel.value = clientId;
+        if (typeof _invOnClientChange === 'function') _invOnClientChange();
+      }
+    } else if (tries > 40) clearInterval(timer);
+  }, 250);
+};
+
+// ── Record a payment against one of this client's open invoices ─────────────
+window._cdRecordPaymentForClient = async function(clientId) {
+  let invoices = [];
+  try {
+    const r = await fetch(`/api/invoices?client_id=${clientId}&limit=100`, { credentials: 'include' });
+    const d = await r.json();
+    invoices = (d.data || d) || [];
+    if (!Array.isArray(invoices)) invoices = [];
+  } catch(_) {}
+  const payable = invoices.filter(i => (Number(i.balance_due) || 0) > 0 && !['void','voided','draft'].includes(String(i.status||'').toLowerCase()));
+  if (!payable.length) {
+    if (typeof showToast === 'function') showToast('No open invoices with a balance — create an invoice first', 'info');
+    return;
+  }
+  if (payable.length === 1 && typeof _invRecordPaymentModal === 'function') {
+    _invRecordPaymentModal(payable[0].id);
+    return;
+  }
+  // Multiple open invoices: small picker
+  document.getElementById('cd-pay-picker')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'cd-pay-picker';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,30,25,.45);z-index:9000;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:420px;width:92%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px;color:#233123">Record Payment</div>
+    <div style="font-size:12px;color:#6B7280;margin-bottom:12px">Choose which invoice this payment applies to:</div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto">
+      ${payable.map(i => `
+        <button style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;background:#fff;cursor:pointer;text-align:left;font-size:13px"
+          onclick="document.getElementById('cd-pay-picker').remove(); if (window._invRecordPaymentModal) _invRecordPaymentModal('${i.id}');">
+          <span style="font-weight:600;color:#233123">${escapeHtml(i.invoice_number || 'Invoice')}</span>
+          <span style="color:#B4552E;font-weight:700">$${(Number(i.balance_due)||0).toLocaleString('en-US',{minimumFractionDigits:2})} due</span>
+        </button>`).join('')}
+    </div>
+    <button style="margin-top:12px;background:none;border:none;color:#6B7280;cursor:pointer;font-size:12px" onclick="document.getElementById('cd-pay-picker').remove()">Cancel</button>
+  </div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+};
+
+// ── Upload site photos directly for this client ─────────────────────────────
+window._cdUploadPhotos = function(clientId) {
+  const input = document.getElementById('cdPhotoInput');
+  if (!input) return;
+  input.onchange = async () => {
+    const files = [...(input.files || [])];
+    if (!files.length) return;
+    if (typeof showToast === 'function') showToast(`Uploading ${files.length} photo${files.length>1?'s':''}…`, 'info');
+    let ok = 0, fail = 0;
+    for (const f of files) {
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        const r = await fetch(`/api/customers/${clientId}/photos`, { method: 'POST', credentials: 'include', body: fd });
+        if (r.ok) ok++; else fail++;
+      } catch(_) { fail++; }
+    }
+    if (typeof showToast === 'function') showToast(fail ? `${ok} uploaded, ${fail} failed` : `${ok} photo${ok>1?'s':''} uploaded`, fail ? 'error' : 'success');
+    if (ok) customerDetail(clientId); // refresh to show new photos
+  };
+  input.click();
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
