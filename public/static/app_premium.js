@@ -4076,7 +4076,7 @@ function clients(selectedId) {
         </svg>
         <input id="clientSearchInput" class="cl-search-input" type="search" placeholder="Search clients, addresses, emails…"
           value="${escapeHtml(window._clientSearch||'')}"
-          oninput="window._clientSearch=this.value;show('clients')">
+          oninput="window._gwSearchInput('_clientSearch', this, 'clients')">
       </div>
       <div class="pl-filter-divider"></div>
       <div class="pl-filter-group">
@@ -12559,23 +12559,96 @@ function buildSearchIndex(){
   return items;
 }
 const searchIndex = buildSearchIndex();
+
+// Live CRM records (clients, properties, leads, team) are rebuilt on every
+// keystroke so newly created records are searchable immediately. Static
+// content (scripts, forms, templates, training) comes from searchIndex.
+function buildLiveSearchItems(){
+  const items = [];
+  try {
+    (typeof loadClients === 'function' ? loadClients() : []).forEach(c => {
+      items.push({
+        type: 'Client',
+        title: c.name || c.company || 'Client',
+        text: [c.company, c.email, c.phone, c.mobile, c.street, c.city, c.address, (c.tags||[]).join(' ')].filter(Boolean).join(' '),
+        action: () => show('clients', c.id)
+      });
+      (c.properties || []).forEach(p => {
+        if (!p || (!p.address && !p.label)) return;
+        items.push({
+          type: 'Property',
+          title: p.label || p.address,
+          text: [p.address, p.notes, c.name, c.company].filter(Boolean).join(' '),
+          action: () => show('clients', c.id)
+        });
+      });
+    });
+  } catch(e) {}
+  try {
+    (state.opportunities || []).forEach(o => {
+      items.push({
+        type: 'Lead',
+        title: o.client || 'Lead',
+        text: [o.project, o.address, o.email, o.phone, o.status, o.serviceLine, o.source].filter(Boolean).join(' '),
+        action: () => show('pipeline', o.id)
+      });
+    });
+  } catch(e) {}
+  try {
+    (window.REPS || []).forEach(r => {
+      if (!r || !r.name) return;
+      items.push({
+        type: 'Team',
+        title: r.name,
+        text: [r.email, r.phone, r.role].filter(Boolean).join(' '),
+        action: () => show('team')
+      });
+    });
+  } catch(e) {}
+  return items;
+}
+
 searchInput.addEventListener('input',()=>{
   const q=searchInput.value.trim().toLowerCase();
   if(q.length<2){ searchResults.hidden=true; return; }
-  const results=searchIndex.filter(item=>`${item.title} ${item.text} ${item.type}`.toLowerCase().includes(q)).slice(0,10);
-  searchResults.innerHTML = results.length ? results.map((r,i)=>`<button class="result" data-i="${i}"><div class="result-type">${escapeHtml(r.type)}</div><div class="result-title">${escapeHtml(r.title)}</div><div class="result-text">${escapeHtml(r.text.slice(0,160))}...</div></button>`).join('') : '<div class="result-text" style="padding:12px;">No results found.</div>';
+  const pool = buildLiveSearchItems().concat(searchIndex);
+  const results = pool.filter(item=>`${item.title} ${item.text} ${item.type}`.toLowerCase().includes(q)).slice(0,10);
+  searchResults.innerHTML = results.length ? results.map((r,i)=>`<button class="result" data-i="${i}"><div class="result-type">${escapeHtml(r.type)}</div><div class="result-title">${escapeHtml(r.title)}</div><div class="result-text">${escapeHtml((r.text||'').slice(0,160))}${(r.text||'').length>160?'...':''}</div></button>`).join('') : '<div class="result-text" style="padding:12px;">No results found.</div>';
   searchResults.hidden=false;
-  [...searchResults.querySelectorAll('.result')].forEach((btn, i) => {
+  [...searchResults.querySelectorAll('.result')].forEach(btn => {
     btn.addEventListener('click', () => {
       searchResults.hidden = true;
       searchInput.value = '';
-      searchIndex[Number(btn.dataset.i)].action();
+      // Index into the FILTERED results array (indexing searchIndex by the
+      // filtered position was the old wrong-result bug).
+      const hit = results[Number(btn.dataset.i)];
+      if (hit) hit.action();
     });
   });
 });
 document.addEventListener('click', e => {
   if (!e.target.closest('.search-wrap')) searchResults.hidden = true;
 });
+
+// ── Debounced page-search helper ─────────────────────────────────────────────
+// The old pattern oninput="window._x=this.value;show('clients')" re-rendered
+// the whole page on every keystroke, destroying the input and dropping
+// keyboard focus — search bars only accepted one character at a time. This
+// debounces the re-render and restores focus + caret to the rebuilt input.
+window._gwSearchInput = function(stateKey, el, rerender){
+  window[stateKey] = el.value;
+  const id = el.id;
+  clearTimeout(window._gwSearchInputT);
+  window._gwSearchInputT = setTimeout(() => {
+    if (typeof window[rerender] === 'function') window[rerender]();
+    else show(rerender);
+    const fresh = id ? document.getElementById(id) : null;
+    if (fresh && document.activeElement !== fresh) {
+      fresh.focus();
+      try { const n = fresh.value.length; fresh.setSelectionRange(n, n); } catch(e) {}
+    }
+  }, 250);
+};
 
 const sidebarScrim = document.getElementById('sidebarScrim');
 function openSidebar()  { sidebar.classList.add('open');    if (sidebarScrim) sidebarScrim.classList.add('visible'); }
@@ -19662,8 +19735,8 @@ function properties() {
     </header>
 
     <div style="margin-bottom:16px">
-      <input type="search" placeholder="Search properties, addresses, clients…" value="${escapeHtml(window._propSearch||'')}"
-        oninput="window._propSearch=this.value;properties()"
+      <input id="propSearchInput" type="search" placeholder="Search properties, addresses, clients…" value="${escapeHtml(window._propSearch||'')}"
+        oninput="window._gwSearchInput('_propSearch', this, 'properties')"
         style="width:100%;max-width:360px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink)">
     </div>
 
@@ -20266,8 +20339,8 @@ function payments() {
       </div>
     </div>
 
-    <input type="search" placeholder="Search payments…" value="${escapeHtml(window._paySearch||'')}"
-      oninput="window._paySearch=this.value;payments()"
+    <input id="paySearchInput" type="search" placeholder="Search payments…" value="${escapeHtml(window._paySearch||'')}"
+      oninput="window._gwSearchInput('_paySearch', this, 'payments')"
       style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
 
     <div class="gw-report-card gw-report-panel">
@@ -21214,8 +21287,8 @@ function toolsConsumables() {
       </div>
     </header>
 
-    <input type="search" placeholder="Search tools and consumables…" value="${escapeHtml(window._toolSearch||'')}"
-      oninput="window._toolSearch=this.value;toolsConsumables()"
+    <input id="toolSearchInput" type="search" placeholder="Search tools and consumables…" value="${escapeHtml(window._toolSearch||'')}"
+      oninput="window._gwSearchInput('_toolSearch', this, 'toolsConsumables')"
       style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
 
     ${mobileBody}
