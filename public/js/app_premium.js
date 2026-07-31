@@ -4685,6 +4685,7 @@ async function customerDetail(clientId) {
   view.innerHTML = `
   <div class="cd-shell">
 
+    <div class="cd-hero-card">
     <!-- ══ Page Header ══ -->
     <div class="cd-page-header">
       <div class="cd-page-header-left">
@@ -4761,28 +4762,91 @@ async function customerDetail(clientId) {
         <span class="cd-stat-lbl">Outstanding</span>
       </div>
     </div>
+    </div>
 
-    <!-- ══ Body: Left + Right ══ -->
-    <div class="cd-body">
-
-      <!-- ── LEFT COLUMN ── -->
-      <div class="cd-left">
+    <!-- ══ Client Overview Grid ══ -->
+    <div class="cd-grid">
 
         <!-- Contact Info -->
-        <section class="cd-section">
+        <section class="cd-section cd-span-2">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Contact Info
               <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(click any field to edit — saves automatically)</span>
             </h2>
             <span id="cdAutosaveInd" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
           </div>
-          <div class="cd-info-grid" id="cdInlineForm">
+          <div class="cd-info-grid cd-info-grid--2col" id="cdInlineForm">
             ${contactRowsHtml}
           </div>
           ${tags.length ? `<div class="cd-tags" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
             ${tags.map(t=>`<span class="cl-tag">${escapeHtml(t)}</span>`).join('')}
             <button class="cd-tag-add-btn" onclick="_cdAddTag('${client.id}')">+ Tag</button>
           </div>` : `<button class="cd-tag-add-btn" style="margin-top:10px" onclick="_cdAddTag('${client.id}')">+ Add Tag</button>`}
+        </section>
+
+        <!-- Quick Actions -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Quick Actions</h2>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="cd-quick-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>Schedule a Job</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <button class="cd-quick-btn" onclick="_cdNewLeadForClient('${client.id}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <span>New Lead</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            ${client.phone||client.mobile ? `
+            <button class="cd-quick-btn" onclick="_cdSendSms('${escapeHtml(client.phone||client.mobile||'')}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <span>Send SMS</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>` : ''}
+            ${client.email ? `
+            <button class="cd-quick-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+              <span>Send Email</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>` : ''}
+            <button class="cd-quick-btn" onclick="_cdSendPortalLink('${client.id}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>Send Portal Link</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <!-- Customer Portal -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Customer Portal</h2>
+          </div>
+          <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
+            One-click link lets this client view their jobs, photos, invoices, and pay online — all without logging in.
+          </p>
+          <div id="cd-portal-url-block" style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gw-text-muted);word-break:break-all;margin-bottom:12px;font-family:monospace">
+            ${location.origin}/portal?client=${client.id}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdSendPortalLink('${client.id}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              Copy Link
+            </button>
+            ${client.phone||client.mobile ? `
+            <button class="rp-btn" onclick="_cdSharePortalViaSms('${client.id}','${escapeHtml(client.phone||client.mobile||'')}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              SMS
+            </button>` : ''}
+            ${client.email ? `
+            <button class="rp-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}',subject:'Your Customer Portal',body:'Hi ${escapeHtml(client.name||'')},\\n\\nHere is a link to access your customer portal:\\n'+location.origin+'/portal?client=${client.id}'})">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+              Email
+            </button>` : ''}
+          </div>
         </section>
 
         <!-- Internal Notes -->
@@ -4802,8 +4866,56 @@ async function customerDetail(clientId) {
           <button class="rp-btn rp-btn--primary" onclick="_cdSaveNote('${client.id}')">+ Save Note</button>
         </section>
 
-        <!-- Jobs -->
+        <!-- Recurring Services & Revenue Projections -->
         <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Recurring &amp; Projections</h2>
+          </div>
+          ${_activeSubs.length ? `
+            ${_activeSubs.map(s=>{
+              const price = Number(s.custom_price)||Number(s.plan_price)||0;
+              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--gw-border)">
+                <div>
+                  <div style="font-weight:600;font-size:13px">${escapeHtml(s.plan_name||'Recurring plan')}</div>
+                  <div style="font-size:11px;color:var(--gw-text-muted)">Every ${Number(s.frequency)||1} ${escapeHtml(s.frequency_unit||'month')}${(Number(s.frequency)||1)>1?'s':''}${s.next_visit_date ? ' · Next: '+_p5FmtDate(s.next_visit_date) : ''}</div>
+                </div>
+                <span style="font-weight:700;font-size:13px;color:#2D7A55">$${price.toLocaleString()}</span>
+              </div>`;}).join('')}
+            <div style="background:var(--gw-bg-app,#f4f6f8);border-radius:10px;padding:12px 14px;margin-top:12px">
+              <div style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Revenue Projection</div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Monthly run rate</span><strong>$${(_subAnnual/12).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Next 12 months</span><strong style="color:#2D7A55">$${_subAnnual.toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>3-year value</span><strong>$${(_subAnnual*3).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+            </div>`
+          : '<p class="sb-empty-note">No recurring plans. Put this client on a recurring service plan to see revenue projections here.</p>'}
+        </section>
+
+        <!-- Activity Timeline -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">Activity Timeline</h2>
+          </div>
+          <div id="cd-timeline" class="cd-timeline">
+            ${workOrders.length ? workOrders.slice(0,10).map(wo=>`
+              <div class="cd-timeline-item" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer" title="Open job ${escapeHtml(wo.wo_number||wo.id)}">
+                <div class="cd-tl-dot ${_p6WOStatusClass(wo.status)}"></div>
+                <div class="cd-tl-content">
+                  <div class="cd-tl-title">${escapeHtml(wo.wo_number||'Job')} — ${escapeHtml(wo.title||wo.type||'Service')}</div>
+                  <div class="cd-tl-meta">
+                    ${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : ''}
+                    ${wo.scheduled_date ? ' · ' : ''}
+                    <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
+                  </div>
+                  ${Number(wo.amount_est)||Number(wo.amount_actual) ? `<div class="cd-tl-amt">$${(Number(wo.amount_actual)||Number(wo.amount_est)||0).toFixed(2)}</div>` : ''}
+                </div>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.3;flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+              </div>`).join('')
+            : '<p class="sb-empty-note">No activity yet.</p>'}
+          </div>
+        </section>
+
+        <!-- Jobs -->
+        <section class="cd-section cd-span-2">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Jobs</h2>
           </div>
@@ -4833,7 +4945,7 @@ async function customerDetail(clientId) {
         </section>
 
         <!-- Financials: Estimates / Invoices / Payments -->
-        <section class="cd-section">
+        <section class="cd-section cd-span-2">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Financials
               ${outstanding>0 ? `<span style="font-size:11px;font-weight:600;color:#B4552E;margin-left:8px">$${outstanding.toLocaleString('en-US',{minimumFractionDigits:2})} outstanding</span>` : ''}
@@ -4905,7 +5017,7 @@ async function customerDetail(clientId) {
         </section>
 
         <!-- Site Photos -->
-        <section class="cd-section">
+        <section class="cd-section cd-span-2">
           <div class="cd-section-head">
             <h2 class="cd-section-title">Site Photos ${cdMedia.length ? `<span style="font-size:11px;font-weight:400;color:var(--gw-text-muted)">(${cdMedia.length})</span>` : ''}</h2>
           </div>
@@ -4921,125 +5033,6 @@ async function customerDetail(clientId) {
           </div>
         </section>
 
-      </div>
-
-      <!-- ── RIGHT COLUMN ── -->
-      <div class="cd-right">
-
-        <!-- Activity Timeline -->
-        <section class="cd-section">
-          <div class="cd-section-head">
-            <h2 class="cd-section-title">Activity Timeline</h2>
-          </div>
-          <div id="cd-timeline" class="cd-timeline">
-            ${workOrders.length ? workOrders.slice(0,10).map(wo=>`
-              <div class="cd-timeline-item" onclick="_sbOpenVisitModal('${wo.id}')" style="cursor:pointer" title="Open job ${escapeHtml(wo.wo_number||wo.id)}">
-                <div class="cd-tl-dot ${_p6WOStatusClass(wo.status)}"></div>
-                <div class="cd-tl-content">
-                  <div class="cd-tl-title">${escapeHtml(wo.wo_number||'Job')} — ${escapeHtml(wo.title||wo.type||'Service')}</div>
-                  <div class="cd-tl-meta">
-                    ${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : ''}
-                    ${wo.scheduled_date ? ' · ' : ''}
-                    <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" style="font-size:10px">${_p6WOStatusLabel(wo.status)}</span>
-                  </div>
-                  ${Number(wo.amount_est)||Number(wo.amount_actual) ? `<div class="cd-tl-amt">$${(Number(wo.amount_actual)||Number(wo.amount_est)||0).toFixed(2)}</div>` : ''}
-                </div>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.3;flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
-              </div>`).join('')
-            : '<p class="sb-empty-note">No activity yet.</p>'}
-          </div>
-        </section>
-
-        <!-- Recurring Services & Revenue Projections -->
-        <section class="cd-section">
-          <div class="cd-section-head">
-            <h2 class="cd-section-title">Recurring &amp; Projections</h2>
-          </div>
-          ${_activeSubs.length ? `
-            ${_activeSubs.map(s=>{
-              const price = Number(s.custom_price)||Number(s.plan_price)||0;
-              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--gw-border)">
-                <div>
-                  <div style="font-weight:600;font-size:13px">${escapeHtml(s.plan_name||'Recurring plan')}</div>
-                  <div style="font-size:11px;color:var(--gw-text-muted)">Every ${Number(s.frequency)||1} ${escapeHtml(s.frequency_unit||'month')}${(Number(s.frequency)||1)>1?'s':''}${s.next_visit_date ? ' · Next: '+_p5FmtDate(s.next_visit_date) : ''}</div>
-                </div>
-                <span style="font-weight:700;font-size:13px;color:#2D7A55">$${price.toLocaleString()}</span>
-              </div>`;}).join('')}
-            <div style="background:var(--gw-bg-app,#f4f6f8);border-radius:10px;padding:12px 14px;margin-top:12px">
-              <div style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Revenue Projection</div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Monthly run rate</span><strong>$${(_subAnnual/12).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Next 12 months</span><strong style="color:#2D7A55">$${_subAnnual.toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>3-year value</span><strong>$${(_subAnnual*3).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
-            </div>`
-          : '<p class="sb-empty-note">No recurring plans. Put this client on a recurring service plan to see revenue projections here.</p>'}
-        </section>
-
-        <!-- Quick Actions -->
-        <section class="cd-section">
-          <div class="cd-section-head">
-            <h2 class="cd-section-title">Quick Actions</h2>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="cd-quick-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              <span>Schedule a Job</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
-            <button class="cd-quick-btn" onclick="_cdNewLeadForClient('${client.id}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              <span>New Lead</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
-            ${client.phone||client.mobile ? `
-            <button class="cd-quick-btn" onclick="_cdSendSms('${escapeHtml(client.phone||client.mobile||'')}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              <span>Send SMS</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>` : ''}
-            ${client.email ? `
-            <button class="cd-quick-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-              <span>Send Email</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>` : ''}
-            <button class="cd-quick-btn" onclick="_cdSendPortalLink('${client.id}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              <span>Send Portal Link</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
-          </div>
-        </section>
-
-        <!-- Customer Portal -->
-        <section class="cd-section">
-          <div class="cd-section-head">
-            <h2 class="cd-section-title">Customer Portal</h2>
-          </div>
-          <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
-            One-click link lets this client view their jobs, photos, invoices, and pay online — all without logging in.
-          </p>
-          <div id="cd-portal-url-block" style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gw-text-muted);word-break:break-all;margin-bottom:12px;font-family:monospace">
-            ${location.origin}/portal?client=${client.id}
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdSendPortalLink('${client.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-              Copy Link
-            </button>
-            ${client.phone||client.mobile ? `
-            <button class="rp-btn" onclick="_cdSharePortalViaSms('${client.id}','${escapeHtml(client.phone||client.mobile||'')}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              SMS
-            </button>` : ''}
-            ${client.email ? `
-            <button class="rp-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}',subject:'Your Customer Portal',body:'Hi ${escapeHtml(client.name||'')},\\n\\nHere is a link to access your customer portal:\\n'+location.origin+'/portal?client=${client.id}'})">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-              Email
-            </button>` : ''}
-          </div>
-        </section>
-
-      </div>
     </div>
   </div>`;
 

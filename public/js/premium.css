@@ -10051,15 +10051,26 @@ h1.pl-title,
 /* CUSTOMER DETAIL PAGE                                                       */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 .cd-shell {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 24px 20px;
+  padding: 24px 20px 48px;
+}
+
+/* Hero card — wraps page header + stats bar in one elevated, high-end panel */
+.cd-hero-card {
+  background: linear-gradient(135deg, #FFFFFF 0%, var(--gw-bg-surface, #FDFCF9) 55%, var(--gw-pine-50, #F3FAF6) 100%);
+  border: 1px solid var(--gw-border);
+  border-radius: var(--gw-r-2xl, 24px);
+  box-shadow: var(--gw-shadow-card);
+  padding: 22px 26px 0;
+  margin-bottom: 20px;
+  overflow: hidden;
 }
 
 /* Page header */
 .cd-page-header {
   display: flex; justify-content: space-between; align-items: flex-start;
-  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 18px; flex-wrap: wrap; gap: 12px;
 }
 .cd-page-header-left { display: flex; align-items: center; gap: 14px; }
 .cd-back-btn {
@@ -10067,57 +10078,98 @@ h1.pl-title,
   font-size: 12px; font-weight: 600; color: var(--gw-text-muted);
 }
 .cd-avatar {
-  width: 48px; height: 48px; border-radius: 50%;
-  background: var(--gw-pine-500, #2D7A55);
-  color: #fff; font-size: 20px; font-weight: 800;
+  width: 52px; height: 52px; border-radius: 16px;
+  background: linear-gradient(135deg, var(--gw-pine-600, #2D7A55), var(--gw-teal-500, #4D8A86));
+  color: #fff; font-size: 21px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 8px 18px rgba(45,122,85,.22);
 }
 .cd-title-block { display: flex; flex-direction: column; gap: 3px; }
-.cd-name { font-size: 22px; font-weight: 800; color: var(--gw-text); margin: 0; }
+.cd-name { font-size: 23px; font-weight: 800; letter-spacing: -.02em; color: var(--gw-text); margin: 0; }
 .cd-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--gw-text-muted); }
 .cd-since { font-size: 11px; }
 .cd-page-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-/* Stats bar */
+/* Stats bar — sits inside the hero card, separated by a hairline */
 .cd-stats-bar {
-  display: flex; gap: 0; background: var(--gw-surface-1, #fff);
-  border: 1px solid var(--gw-border); border-radius: 10px;
-  overflow: hidden; margin-bottom: 20px;
+  display: flex; gap: 0;
+  border-top: 1px solid var(--gw-border);
+  margin: 0 -26px; padding: 14px 26px 4px;
 }
 .cd-stat {
   flex: 1; display: flex; flex-direction: column; align-items: center;
-  padding: 14px 10px;
+  padding: 6px 10px;
   border-right: 1px solid var(--gw-border);
   text-align: center;
 }
 .cd-stat:last-child { border-right: none; }
-.cd-stat-val { font-size: 18px; font-weight: 800; color: var(--gw-text); }
+.cd-stat-val { font-size: 19px; font-weight: 800; color: var(--gw-text); letter-spacing: -.01em; }
 .cd-stat-val--green { color: var(--gw-success, #2D7A55); }
 .cd-stat-val--blue { color: #3b82f6; }
-.cd-stat-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--gw-text-muted); margin-top: 2px; }
+.cd-stat-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--gw-text-muted); margin-top: 3px; }
 
-/* Body layout */
-.cd-body { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
-.cd-left { display: flex; flex-direction: column; gap: 16px; }
-.cd-right { display: flex; flex-direction: column; gap: 16px; }
-
-/* Sections */
-.cd-section {
-  background: var(--gw-surface-1, #fff);
-  border: 1px solid var(--gw-border);
-  border-radius: 10px; padding: 16px 18px;
+/* Body layout — compact bento-style grid so cards sit side-by-side instead
+   of one long stacked column. Cards declare width via cd-span-2 (2 of 3
+   columns) or default to a single column; the grid fills row by row. */
+.cd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
 }
+.cd-span-2 { grid-column: span 2; }
+@media (max-width: 1100px) {
+  .cd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cd-span-2 { grid-column: span 2; }
+}
+@media (max-width: 680px) {
+  .cd-grid { grid-template-columns: 1fr; }
+  .cd-span-2 { grid-column: span 1; }
+}
+
+/* Sections — premium card treatment matching the rest of the app */
+.cd-section {
+  background: var(--gw-bg-surface-2, #fff);
+  border: 1px solid var(--gw-border);
+  border-radius: var(--gw-r-lg, 16px);
+  box-shadow: var(--gw-shadow-card);
+  padding: 16px 18px;
+  container-type: inline-size;
+  transition: box-shadow .15s, border-color .15s;
+}
+.cd-section:hover { box-shadow: var(--gw-shadow-md); border-color: var(--gw-border-strong); }
 .cd-section-head {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 12px; gap: 8px;
 }
-.cd-section-title { font-size: 14px; font-weight: 700; color: var(--gw-text); margin: 0; }
+.cd-section-title {
+  font-size: 11.5px; font-weight: 800; color: var(--gw-text-muted);
+  text-transform: uppercase; letter-spacing: .07em; margin: 0;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.cd-section-title::before {
+  content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 2px;
+  background: linear-gradient(135deg, var(--gw-pine-600, #2D7A55), var(--gw-teal-500, #4D8A86));
+  flex-shrink: 0;
+}
+/* Inline hint text / dynamic amounts inside titles should stay normal-case */
+.cd-section-title > span { text-transform: none; letter-spacing: normal; }
+#cdAutosaveInd { text-transform: none; letter-spacing: normal; }
 
-/* Info grid */
-.cd-info-grid { display: flex; flex-direction: column; gap: 8px; }
+/* Info grid — 2-column layout on wider cards (e.g. Contact Info spans 2) */
+.cd-info-grid { display: flex; flex-direction: column; gap: 7px; }
 .cd-info-row { display: flex; gap: 12px; align-items: center; }
 .cd-info-lbl { font-size: 11px; font-weight: 600; color: var(--gw-text-muted); width: 72px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .04em; }
+.cd-info-grid--2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 20px;
+  align-content: start;
+}
+@container (max-width: 480px) {
+  .cd-info-grid--2col { grid-template-columns: 1fr; }
+}
 
 /* Inline-editable contact fields (lead-style: edit in place, autosave) */
 .cd-inline-input {
@@ -10235,13 +10287,18 @@ h1.pl-title,
 .cd-tl-meta { font-size: 11px; color: var(--gw-text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 .cd-tl-amt { font-size: 12px; font-weight: 700; color: var(--gw-text); margin-top: 3px; }
 
+/* Job/estimate/invoice/payment rows collapse based on their own card width
+   (container query) rather than the viewport — cards are narrower now that
+   they sit side-by-side in the bento grid. */
+@container (max-width: 480px) {
+  .cd-wo-row { grid-template-columns: 60px 1fr 68px; }
+  .cd-wo-date, .cd-wo-amt { display: none; }
+}
+
 /* Responsive */
 @media (max-width: 900px) {
-  .cd-body { grid-template-columns: 1fr; }
   .cd-stats-bar { flex-wrap: wrap; }
-  .cd-stat { min-width: 30%; }
-  .cd-wo-row { grid-template-columns: 70px 1fr 70px; }
-  .cd-wo-date, .cd-wo-amt { display: none; }
+  .cd-stat { min-width: 30%; border-right: none; }
 }
 @media (max-width: 600px) {
   .cd-page-header { flex-direction: column; }
