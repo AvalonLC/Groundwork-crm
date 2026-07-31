@@ -19,6 +19,7 @@ import mig0042 from '../migrations/0042_portal_identity.sql?raw'
 import mig0043 from '../migrations/0043_project_updates.sql?raw'
 import mig0044 from '../migrations/0044_portal_payments.sql?raw'
 import mig0045 from '../migrations/0045_multiday_jobs.sql?raw'
+import mig0056 from '../migrations/0056_portal_preview.sql?raw'
 
 type Env = { Bindings: { DB: D1Database; MEDIA: R2Bucket; SENDGRID_API_KEY?: string } }
 
@@ -29,10 +30,10 @@ let _portalSchemaOk = false
 async function ensurePortalSchema(db: D1Database): Promise<void> {
   if (_portalSchemaOk) return
   try {
-    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v5' LIMIT 1").first<any>()
+    const flag = await db.prepare("SELECT value FROM settings WHERE key = '_schema_portal_v6' LIMIT 1").first<any>()
     if (flag) { _portalSchemaOk = true; return }
   } catch (_) {}
-  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043], ['0044_portal_payments.sql', mig0044], ['0045_multiday_jobs.sql', mig0045]]
+  const migs: Array<[string, string]> = [['0041_properties.sql', mig0041], ['0042_portal_identity.sql', mig0042], ['0043_project_updates.sql', mig0043], ['0044_portal_payments.sql', mig0044], ['0045_multiday_jobs.sql', mig0045], ['0056_portal_preview.sql', mig0056]]
   for (const [name, sql] of migs) {
     // Strip inline "--" comments too: 0042 has comments containing ';' which
     // would otherwise break statement splitting (no '--' inside literals here).
@@ -52,7 +53,7 @@ async function ensurePortalSchema(db: D1Database): Promise<void> {
     } catch (_) {}
   }
   try {
-    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v5', ?, datetime('now'))").bind(new Date().toISOString()).run()
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('_schema_portal_v6', ?, datetime('now'))").bind(new Date().toISOString()).run()
   } catch (_) {}
   _portalSchemaOk = true
 }
@@ -110,6 +111,20 @@ export const PORTAL_ROLE_PRESETS: Record<string, Record<string, boolean>> = {
   read_only:     { view_projects: true, view_estimates: true, approve_estimates: false, view_billing: true, make_payments: false, view_payment_history: true, manage_payment_methods: false, manage_autopay: false, view_documents: true, manage_contacts: false },
 }
 
+// Staff "Preview Portal" permission set — deliberately stricter than the
+// read_only client role. Staff previewing a client's portal can see the
+// general shape of their account (projects, estimates, invoice/balance
+// totals, documents) but never payment history, saved payment methods, or
+// anything that could resemble bank/card details — that stays private to the
+// client per their own login, even from Avalon staff. No actions of any kind
+// are permitted (approvals, payments, autopay, contact changes).
+export const PORTAL_PREVIEW_PERMISSIONS: Record<string, boolean> = {
+  view_projects: true, view_estimates: true, approve_estimates: false,
+  view_billing: true, make_payments: false, view_payment_history: false,
+  manage_payment_methods: false, manage_autopay: false,
+  view_documents: true, manage_contacts: false,
+}
+
 function resolvePermissions(role: string, permsJson: string): Record<string, boolean> {
   const preset = PORTAL_ROLE_PRESETS[role] || PORTAL_ROLE_PRESETS.read_only
   let custom: any = {}
@@ -126,6 +141,7 @@ export type PortalScope = {
   propertyIds: string[]              // union of accessible property ids
   companyId: string
   can: (perm: string, clientId?: string) => boolean
+  isPreview?: boolean                 // true for staff "Preview Portal" sessions (see 0056)
 }
 
 async function resolveScope(db: D1Database, portalUserId: string): Promise<PortalScope | null> {
@@ -161,9 +177,39 @@ async function resolveScope(db: D1Database, portalUserId: string): Promise<Porta
   return {
     user, memberships: mems, clientIds, propertyIds,
     companyId: user.company_id,
+    isPreview: false,
     can(perm: string, clientId?: string) {
       const pool = clientId ? mems.filter(m => m.client_id === clientId) : mems
       return pool.some(m => !!m.resolved_permissions[perm])
+    }
+  }
+}
+
+// Builds a locked-down PortalScope for a staff "Preview Portal" session (see
+// migration 0056). Does not require the client to have any portal_users row —
+// staff can preview before a client has ever been invited.
+async function buildPreviewScope(db: D1Database, sess: any): Promise<PortalScope | null> {
+  const client: any = await db.prepare(
+    `SELECT id, name, company_id FROM clients WHERE id=? AND company_id=? LIMIT 1`
+  ).bind(sess.preview_client_id, sess.preview_company_id).first()
+  if (!client) return null
+  const propRows = (await db.prepare(`SELECT id FROM properties WHERE client_id=? AND active=1`).bind(client.id).all()).results as any[] || []
+  const propertyIds = propRows.map((r: any) => r.id)
+  const perms = PORTAL_PREVIEW_PERMISSIONS
+  const membership = {
+    id: 'preview', client_id: client.id, client_name: client.name, role: 'read_only',
+    all_properties: 1, property_ids: propertyIds, resolved_permissions: perms
+  }
+  return {
+    user: { id: 'preview:' + sess.preview_rep_id, name: 'Staff Preview', email: '', phone: '' },
+    memberships: [membership],
+    clientIds: [client.id],
+    propertyIds,
+    companyId: client.company_id,
+    isPreview: true,
+    can(perm: string, clientId?: string) {
+      if (clientId && clientId !== client.id) return false
+      return !!perms[perm]
     }
   }
 }
@@ -173,6 +219,7 @@ const PORTAL_COOKIE = 'gw_portal_session'
 const SESSION_MAX_AGE_DAYS = 30
 const SESSION_IDLE_DAYS = 7
 const MAX_SESSIONS_PER_USER = 10
+const PREVIEW_MAX_AGE_HOURS = 2
 
 // D1-backed sliding-window rate limiter (keyed via settings table).
 // Returns true when the request is allowed.
@@ -198,6 +245,25 @@ export async function requirePortalAuth(c: any, next: any) {
   const db = c.env.DB as D1Database
   const sess: any = await db.prepare(`SELECT * FROM portal_sessions WHERE token=? LIMIT 1`).bind(token).first()
   if (!sess) return c.json({ error: 'Session expired' }, 401)
+
+  if (sess.is_preview) {
+    // Preview sessions are short-lived regardless of idle activity.
+    const ageMs = Date.now() - new Date(sess.created_at.replace(' ', 'T') + 'Z').getTime()
+    if (isFinite(ageMs) && ageMs > PREVIEW_MAX_AGE_HOURS * 36e5) {
+      await db.prepare(`DELETE FROM portal_sessions WHERE token=?`).bind(token).run()
+      return c.json({ error: 'Preview session expired' }, 401)
+    }
+    const scope = await buildPreviewScope(db, sess)
+    if (!scope) {
+      await db.prepare(`DELETE FROM portal_sessions WHERE token=?`).bind(token).run()
+      return c.json({ error: 'This client is no longer available to preview' }, 401)
+    }
+    await db.prepare(`UPDATE portal_sessions SET last_seen_at=datetime('now') WHERE token=?`).bind(token).run()
+    c.set('portalScope', scope)
+    c.set('portalUserId', scope.user.id)
+    return next()
+  }
+
   const ageMs = Date.now() - new Date(sess.created_at.replace(' ', 'T') + 'Z').getTime()
   if (isFinite(ageMs) && ageMs > SESSION_MAX_AGE_DAYS * 864e5) {
     await db.prepare(`DELETE FROM portal_sessions WHERE token=?`).bind(token).run()
@@ -342,6 +408,7 @@ export function registerPortal(app: Hono<any>, deps: {
     const co: any = await db.prepare(`SELECT name, logo_url, brand_color, phone, website FROM companies WHERE id=? LIMIT 1`).bind(s.companyId).first()
     return c.json({
       ok: true,
+      preview: !!s.isPreview,
       user: { id: s.user.id, name: s.user.name, email: s.user.email, phone: s.user.phone },
       memberships: s.memberships.map(m => ({ client_id: m.client_id, client_name: m.client_name, role: m.role, permissions: m.resolved_permissions })),
       properties: props,
@@ -439,6 +506,7 @@ export function registerPortal(app: Hono<any>, deps: {
   app.put('/api/portal/account', requirePortalAuth, async (c) => {
     const db = c.env.DB as D1Database
     const s: PortalScope = c.var.portalScope
+    if (s.isPreview) return c.json({ error: 'Not available in preview mode' }, 403)
     const b: any = await c.req.json().catch(() => ({}))
     const updates: string[] = []; const vals: any[] = []
     if (typeof b.name === 'string' && b.name.trim()) { updates.push('name=?'); vals.push(b.name.trim().slice(0, 120)) }
@@ -1310,16 +1378,25 @@ export function registerPortal(app: Hono<any>, deps: {
 
   // ══ INTERNAL ADMIN APIS (staff auth) ══════════════════════════════════════
 
-  // GET /api/admin/portal/users — all portal users for the company
+  // GET /api/admin/portal/users — all portal users for the company, or (with
+  // ?client_id=) just the users who have a membership on one specific client.
   app.get('/api/admin/portal/users', deps.requireStaffAuth, async (c) => {
     const db = c.env.DB as D1Database
     const companyId = c.var.companyId as string
+    const clientFilter = c.req.query('client_id') || ''
     const users = (await db.prepare(
-      `SELECT id, contact_id, email, name, phone, status, invite_sent_at, invite_expires_at,
-              activated_at, last_login_at, created_at,
-              CASE WHEN invite_token != '' THEN 1 ELSE 0 END as has_pending_invite
-       FROM portal_users WHERE company_id=? ORDER BY created_at DESC`
-    ).bind(companyId).all()).results as any[] || []
+      clientFilter
+        ? `SELECT u.id, u.contact_id, u.email, u.name, u.phone, u.status, u.invite_sent_at, u.invite_expires_at,
+                  u.activated_at, u.last_login_at, u.created_at,
+                  CASE WHEN u.invite_token != '' THEN 1 ELSE 0 END as has_pending_invite
+           FROM portal_users u
+           WHERE u.company_id=? AND EXISTS (SELECT 1 FROM portal_memberships m WHERE m.portal_user_id=u.id AND m.client_id=?)
+           ORDER BY u.created_at DESC`
+        : `SELECT id, contact_id, email, name, phone, status, invite_sent_at, invite_expires_at,
+                  activated_at, last_login_at, created_at,
+                  CASE WHEN invite_token != '' THEN 1 ELSE 0 END as has_pending_invite
+           FROM portal_users WHERE company_id=? ORDER BY created_at DESC`
+    ).bind(...(clientFilter ? [companyId, clientFilter] : [companyId])).all()).results as any[] || []
     for (const u of users) {
       u.memberships = (await db.prepare(
         `SELECT m.id, m.client_id, m.role, m.all_properties, m.active, c.name as client_name
@@ -1327,6 +1404,26 @@ export function registerPortal(app: Hono<any>, deps: {
       ).bind(u.id).all()).results || []
     }
     return c.json({ ok: true, data: users })
+  })
+
+  // POST /api/admin/portal/preview/:clientId — start a locked-down, read-only
+  // "Preview Portal" session for a specific client. No password, no existing
+  // portal_users row required. See migration 0056 + PORTAL_PREVIEW_PERMISSIONS.
+  app.post('/api/admin/portal/preview/:clientId', deps.requireStaffAuth, async (c) => {
+    const db = c.env.DB as D1Database
+    const companyId = c.var.companyId as string
+    const repId = c.var.repId as string
+    const clientId = c.req.param('clientId')
+    const client: any = await db.prepare(`SELECT id, name FROM clients WHERE id=? AND company_id=?`).bind(clientId, companyId).first()
+    if (!client) return c.json({ error: 'Client not found' }, 404)
+    const token = pUid() + pUid()
+    await db.prepare(
+      `INSERT INTO portal_sessions (token, portal_user_id, ip, user_agent, is_preview, preview_client_id, preview_company_id, preview_rep_id)
+       VALUES (?,?,?,?,1,?,?,?)`
+    ).bind(token, 'preview_' + repId, clientIp(c), (c.req.header('user-agent') || '').slice(0, 300), clientId, companyId, repId).run()
+    setCookie(c, PORTAL_COOKIE, token, { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: PREVIEW_MAX_AGE_HOURS * 3600 })
+    await portalAudit(db, { companyId, actorType: 'staff', repId, clientId, eventType: 'portal_preview_started', entityType: 'client', entityId: clientId, entityLabel: client.name, ip: clientIp(c) })
+    return c.json({ ok: true, url: '/portal/home' })
   })
 
   // GET /api/admin/portal/clients/:id/properties — for the invite form
@@ -1638,6 +1735,10 @@ function portalShellPage(): string {
   @media(min-width:600px){.gwp-user .un{display:block}}
   .gwp-logout{background:none;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-weight:600;color:var(--muted);padding:7px 14px;cursor:pointer;font-family:inherit}
   .gwp-logout:hover{border-color:var(--brand);color:var(--brand)}
+  .gwp-preview-bar{background:#1F2A2B;color:#fff;font-size:12.5px;font-weight:600;padding:9px 20px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;text-align:center;position:sticky;top:60px;z-index:19}
+  .gwp-preview-bar b{color:#F2C879}
+  .gwp-preview-bar button{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:7px;font-size:12px;font-weight:700;padding:5px 12px;cursor:pointer;font-family:inherit}
+  .gwp-preview-bar button:hover{background:rgba(255,255,255,.24)}
   .gwp-layout{display:flex;max-width:1160px;margin:0 auto;min-height:calc(100vh - 60px)}
   .gwp-nav{width:210px;flex-shrink:0;padding:24px 14px;display:none;flex-direction:column;gap:2px}
   @media(min-width:820px){.gwp-nav{display:flex}}
@@ -1792,17 +1893,20 @@ function portalShellPage(): string {
   };
   function api(url,opts){opts=opts||{};opts.credentials='same-origin';if(opts.body){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(opts.body)}
     return fetch(url,opts).then(function(r){if(r.status===401){location.href='/portal/login';throw new Error('unauthorized')}return r.json()})}
-  function navHtml(cls){return NAV.map(function(n){return '<a href="#'+n.id+'" class="'+(VIEW===n.id?'active':'')+'" data-v="'+n.id+'">'+ICONS[n.id]+'<span>'+n.label+'</span></a>'}).join('')}
+  function navHtml(cls){return NAV.filter(function(n){return !(ME&&ME.preview&&n.id==='account')}).map(function(n){return '<a href="#'+n.id+'" class="'+(VIEW===n.id?'active':'')+'" data-v="'+n.id+'">'+ICONS[n.id]+'<span>'+n.label+'</span></a>'}).join('')}
   function shell(inner){
     var brand=ME.company||{};
     document.documentElement.style.setProperty('--brand',brand.brand_color||'#2D7A55');
     root.innerHTML=
       '<header class="gwp-topbar"><div class="gwp-brand">'+(brand.logo_url?'<img src="'+esc(brand.logo_url)+'" alt="">':'')+'<span class="co">'+esc(brand.name||'Client Portal')+'</span></div>'+
       '<div class="gwp-user"><span class="un">'+esc(ME.user.name)+'</span><button class="gwp-logout" id="btn-logout">Sign Out</button></div></header>'+
+      (ME.preview?'<div class="gwp-preview-bar"><span><b>Staff Preview</b> &mdash; read-only view. Payment details are hidden and no actions will be sent to the client.</span><button id="btn-exit-preview">Exit Preview</button></div>':'')+
       '<div class="gwp-layout"><nav class="gwp-nav" id="side-nav">'+navHtml()+'</nav>'+
       '<main class="gwp-main" id="view-main">'+inner+'</main></div>'+
       '<nav class="gwp-tabbar" id="tab-nav">'+navHtml()+'</nav>';
     document.getElementById('btn-logout').onclick=function(){api('/api/portal/auth/logout',{method:'POST'}).then(function(){location.href='/portal/login'})};
+    var exitBtn=document.getElementById('btn-exit-preview');
+    if(exitBtn)exitBtn.onclick=function(){api('/api/portal/auth/logout',{method:'POST'}).then(function(){window.close();setTimeout(function(){location.href='/'},250)})};
   }
   function comingSoon(title,desc){return '<h2 class="gwp-h">'+title+'</h2><p class="gwp-hs">'+desc+'</p><div class="gwp-empty">This section is being rolled out. Check back soon — your '+title.toLowerCase()+' will appear here.</div>'}
   function can(p){return (ME.memberships||[]).some(function(m){return m.permissions&&m.permissions[p]})}

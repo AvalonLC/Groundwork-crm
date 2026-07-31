@@ -4514,10 +4514,10 @@ async function customerDetail(clientId) {
 
   // ── Fetch all data in parallel ────────────────────────────────────────────
   let client = null, workOrders = [], customerNotes = [];
-  let cdEstimates = [], cdInvoices = [], cdPayments = [], cdSubs = [], cdMedia = [];
+  let cdEstimates = [], cdInvoices = [], cdPayments = [], cdSubs = [], cdMedia = [], cdPortalUsers = [];
   const _cdJ = (u) => fetch(u, { credentials:'include' }).then(r=>r.json()).catch(()=>null);
   try {
-    const [cr, wr, nr, er, ir, pr, sr, mr] = await Promise.all([
+    const [cr, wr, nr, er, ir, pr, sr, mr, por] = await Promise.all([
       fetch(`/api/customers/${resolvedId}`, { credentials:'include' }).then(r=>r.json()),
       fetch(`/api/work-orders?client_id=${resolvedId}&limit=200`, { credentials:'include' }).then(r=>r.json()),
       fetch(`/api/customers/${resolvedId}/notes`, { credentials:'include' }).then(r=>r.json()),
@@ -4526,6 +4526,7 @@ async function customerDetail(clientId) {
       _cdJ(`/api/payments?client_id=${resolvedId}&limit=100`),
       _cdJ(`/api/recurring-subscriptions`),
       _cdJ(`/api/customers/${resolvedId}/media`),
+      _cdJ(`/api/admin/portal/users?client_id=${resolvedId}`),
     ]);
     client = cr.data || cr;
     workOrders = wr.data || [];
@@ -4535,6 +4536,7 @@ async function customerDetail(clientId) {
     cdPayments  = (pr && (pr.data || pr)) || []; if (!Array.isArray(cdPayments))  cdPayments  = [];
     cdSubs      = (Array.isArray(sr) ? sr : (sr && sr.data) || []).filter(s => s.client_id === resolvedId);
     cdMedia     = (mr && (mr.data || mr)) || []; if (!Array.isArray(cdMedia))     cdMedia     = [];
+    cdPortalUsers = (por && (por.data || por)) || []; if (!Array.isArray(cdPortalUsers)) cdPortalUsers = [];
   } catch(e) {
     // Fallback to localStorage
     client = (loadClients()||[]).find(c => c.id === resolvedId);
@@ -4622,6 +4624,86 @@ async function customerDetail(clientId) {
       ${sub ? `<p class="cd-empty-sub">${sub}</p>` : ''}
       ${ctaHtml ? `<div class="cd-empty-cta">${ctaHtml}</div>` : ''}
     </div>`;
+
+  // ── Customer Portal card ─────────────────────────────────────────────────
+  // Reflects the REAL, secure, password-protected portal system (portal.tsx /
+  // /portal/login), never the deprecated `/portal?client=` token scaffold.
+  // Staff always get a "Preview Portal" action (works even with no account
+  // yet) via a locked-down, read-only staff session — never the client's own
+  // password-authenticated login.
+  const _cdPortalUser = cdPortalUsers.find(u => (u.memberships||[]).some(m => m.client_id === client.id)) || null;
+  const _cdPortalExtra = cdPortalUsers.length > 1 ? cdPortalUsers.length - 1 : 0;
+  function _cdPortalCard() {
+    const previewBtn = `<button class="rp-btn" style="flex:1" onclick="_cdPreviewClientPortal('${client.id}')" title="Opens a read-only staff preview in a new tab — no password needed, no payment details shown">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      Preview Portal
+    </button>`;
+    if (!_cdPortalUser) {
+      return `
+        <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
+          This client doesn't have portal access yet. Invite them to a secure, password-protected portal where they can view jobs, estimates, invoices, and pay online.
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdInvitePortal('${client.id}','${escapeHtml(client.name||'')}','${escapeHtml(client.email||'')}','${escapeHtml(client.phone||client.mobile||'')}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Invite to Portal
+          </button>
+          ${previewBtn}
+        </div>`;
+    }
+    const u = _cdPortalUser;
+    const roleInfo = (typeof GW_PORTAL_ROLES !== 'undefined' && GW_PORTAL_ROLES[(u.memberships.find(m=>m.client_id===client.id)||{}).role]) || {};
+    if (u.status === 'invited') {
+      const expired = u.invite_expires_at && new Date(u.invite_expires_at.replace(' ','T')+'Z').getTime() < Date.now();
+      return `
+        <div style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+            <span style="font-weight:600">${escapeHtml(u.name)}</span>
+            <span style="font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;background:${expired?'rgba(200,90,80,.15);color:#D07A72':'rgba(77,138,186,.15);color:#5B9BD1'}">${expired?'Invite Expired':'Invite Pending'}</span>
+          </div>
+          <div style="color:var(--gw-text-muted);font-size:12px">${escapeHtml(u.email)}${roleInfo.label ? ' · ' + escapeHtml(roleInfo.label) : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdResendPortalInvite('${u.id}','${client.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m0 0L7 16l-4 4 4-11L19 4z"/></svg>
+            ${expired ? 'Resend Invite' : 'Resend / Copy Link'}
+          </button>
+          ${previewBtn}
+        </div>`;
+    }
+    if (u.status === 'disabled') {
+      return `
+        <div style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-weight:600">${escapeHtml(u.name)}</span>
+            <span style="font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;background:rgba(200,90,80,.15);color:#D07A72">Access Disabled</span>
+          </div>
+          <div style="color:var(--gw-text-muted);font-size:12px">${escapeHtml(u.email)}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdReactivatePortalAccess('${u.id}','${client.id}')">Reactivate Access</button>
+          ${previewBtn}
+        </div>`;
+    }
+    // active
+    const lastLogin = u.last_login_at ? (typeof _relTime==='function' ? _relTime(u.last_login_at.replace(' ','T')+'Z') : u.last_login_at) : 'Never signed in';
+    return `
+      <div style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <span style="font-weight:600">${escapeHtml(u.name)}</span>
+          <span style="font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;background:rgba(61,169,116,.15);color:#3DA974">Active</span>
+        </div>
+        <div style="color:var(--gw-text-muted);font-size:12px">${escapeHtml(u.email)}${roleInfo.label ? ' · ' + escapeHtml(roleInfo.label) : ''} · Last sign-in: ${escapeHtml(lastLogin)}</div>
+        ${_cdPortalExtra ? `<div style="color:var(--gw-text-muted);font-size:11px;margin-top:2px">+${_cdPortalExtra} more portal user${_cdPortalExtra>1?'s':''} on this account</div>` : ''}
+      </div>
+      <p style="font-size:11.5px;color:var(--gw-text-muted);margin:0 0 10px;line-height:1.5">
+        Signs in at <code style="background:var(--gw-bg-app,#f4f6f8);padding:1px 5px;border-radius:4px">${location.origin}/portal/login</code> with their own password — Avalon staff never see or need it.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${previewBtn}
+        <button class="rp-btn" onclick="_cdDisablePortalAccess('${u.id}','${escapeHtml(u.email)}','${client.id}')">Disable Access</button>
+      </div>`;
+  }
 
   // ── Helper: build a job row ───────────────────────────────────────────────
   function _cdWoRow(wo) {
@@ -4839,9 +4921,9 @@ async function customerDetail(clientId) {
               <span>Send Email</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>` : ''}
-            <button class="cd-quick-btn" onclick="_cdSendPortalLink('${client.id}')">
+            <button class="cd-quick-btn" onclick="${_cdPortalUser ? `_cdPreviewClientPortal('${client.id}')` : `_cdInvitePortal('${client.id}','${escapeHtml(client.name||'')}','${escapeHtml(client.email||'')}','${escapeHtml(client.phone||client.mobile||'')}')`}">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              <span>Send Portal Link</span>
+              <span>${_cdPortalUser ? 'Preview Portal' : 'Invite to Portal'}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
             </button>
           </div>
@@ -4852,28 +4934,7 @@ async function customerDetail(clientId) {
           <div class="cd-section-head">
             <h2 class="cd-section-title">${_cdSecIcon('portal')}Customer Portal</h2>
           </div>
-          <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
-            One-click link lets this client view their jobs, photos, invoices, and pay online — all without logging in.
-          </p>
-          <div id="cd-portal-url-block" style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gw-text-muted);word-break:break-all;margin-bottom:12px;font-family:monospace">
-            ${location.origin}/portal?client=${client.id}
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdSendPortalLink('${client.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-              Copy Link
-            </button>
-            ${client.phone||client.mobile ? `
-            <button class="rp-btn" onclick="_cdSharePortalViaSms('${client.id}','${escapeHtml(client.phone||client.mobile||'')}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              SMS
-            </button>` : ''}
-            ${client.email ? `
-            <button class="rp-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}',subject:'Your Customer Portal',body:'Hi ${escapeHtml(client.name||'')},\\n\\nHere is a link to access your customer portal:\\n'+location.origin+'/portal?client=${client.id}'})">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-              Email
-            </button>` : ''}
-          </div>
+          ${_cdPortalCard()}
         </section>
 
         <!-- Internal Notes -->
@@ -5520,11 +5581,53 @@ window._cdNewJobForClient = function(clientId, clientName) {
   _sbOpenNewVisit(null, null, clientId, clientName);
 };
 
-// Share portal link via SMS
-window._cdSharePortalViaSms = function(clientId, phone) {
-  const link = `${location.origin}/portal?client=${clientId}`;
-  const msg = `Hi! Here's a link to your customer portal where you can view your jobs, photos, and invoices: ${link}`;
-  _gwOpenMessageModal({ type:'sms', to: phone, body: msg });
+// Invite a client to the real, password-protected portal (or edit an
+// existing invite's client/role) from the client detail page. Refreshes the
+// client detail view instead of navigating to the portal admin screen.
+window._cdInvitePortal = function(clientId, name, email, phone) {
+  if (typeof _portalInviteModal !== 'function') { showToast('Portal module failed to load — refresh and try again','error'); return; }
+  _portalInviteModal({ clientId, name, email, phone, onDone: () => customerDetail(clientId) });
+};
+
+// Staff "Preview Portal": opens a locked-down, read-only preview of this
+// client's portal in a new tab. No client password needed; payment/card
+// details are hidden and no actions can be taken from a preview session.
+window._cdPreviewClientPortal = async function(clientId) {
+  try {
+    const r = await fetch(`/api/admin/portal/preview/${clientId}`, { method:'POST', credentials:'include' });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Could not start preview');
+    window.open(d.url, '_blank', 'noopener');
+  } catch(e) { showToast('Failed to start preview: ' + (e.message||'Unknown error'), 'error'); }
+};
+
+window._cdResendPortalInvite = async function(userId, clientId) {
+  try {
+    const d = await _portalApi(`/api/admin/portal/users/${userId}/resend`, { method:'POST' });
+    if (d.email_sent) { showToast('Invitation email re-sent.','success'); }
+    else if (d.invite_link) {
+      try { await navigator.clipboard.writeText(d.invite_link); showToast('New invite link copied to clipboard.','success'); }
+      catch(_) { showToast('New invite link: ' + d.invite_link, 'info'); }
+    }
+    customerDetail(clientId);
+  } catch(e) { showToast('Failed: ' + (e.message||'Unknown error'), 'error'); }
+};
+
+window._cdDisablePortalAccess = async function(userId, email, clientId) {
+  if (!confirm(`Disable portal access for ${email}? They will be signed out immediately.`)) return;
+  try {
+    await _portalApi(`/api/admin/portal/users/${userId}/disable`, { method:'POST' });
+    showToast('Portal access disabled.','success');
+    customerDetail(clientId);
+  } catch(e) { showToast('Failed: ' + (e.message||'Unknown error'), 'error'); }
+};
+
+window._cdReactivatePortalAccess = async function(userId, clientId) {
+  try {
+    const d = await _portalApi(`/api/admin/portal/users/${userId}/reactivate`, { method:'POST' });
+    showToast(d.status === 'active' ? 'User reactivated.' : 'Set back to invited — resend the invite so they can activate.','success');
+    customerDetail(clientId);
+  } catch(e) { showToast('Failed: ' + (e.message||'Unknown error'), 'error'); }
 };
 
 // Load more jobs (fetches from D1 with offset)
@@ -5605,13 +5708,6 @@ window._cdAddTag = function(clientId) {
 window._cdSendSms = function(phone, prefillBody) {
   if (!phone) { showToast('No phone number on file','error'); return; }
   _gwOpenMessageModal({ type:'sms', to: phone, body: prefillBody||'' });
-};
-
-window._cdSendPortalLink = function(clientId) {
-  const link = `${location.origin}/portal?client=${clientId}`;
-  navigator.clipboard?.writeText(link)
-    .then(()=>showToast('Portal link copied to clipboard','success'))
-    .catch(()=>showToast('Portal link: '+link,'info'));
 };
 
 // ── Add property modal ──────────────────────────────────────────────────────
