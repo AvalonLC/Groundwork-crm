@@ -12171,6 +12171,15 @@ window._gwAiLeadImport = function() {
   modal.id = 'gwAiLeadModal';
   modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   modal.innerHTML = `
+<style>
+  /* .um-input is styled for the dark user-management page (light cream text).
+     This modal has a light card, so re-pin readable colors here. */
+  #gwAiLeadModal .um-input{color:#233123 !important;background:#FFFFFF !important;border:1px solid #C9D6C8 !important}
+  #gwAiLeadModal .um-input::placeholder{color:#9AA79A}
+  #gwAiLeadModal .um-input:focus{border-color:#2D7A55 !important}
+  #gwAiLeadModal #gwAiLeadText{color:#233123}
+  #gwAiLeadModal #gwAiLeadText::placeholder{color:#9AA79A}
+</style>
 <div class="gw-modal-card" style="width:min(680px,100%);max-height:92vh;overflow-y:auto">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
     <div>
