@@ -1120,6 +1120,62 @@ function _invCreateOverlay(id) {
   return o;
 }
 
+/* ── Payment picker — global "+New > Record Payment" entry point ──────────────
+   Lists invoices with an outstanding balance; clicking one opens the existing
+   Record Payment modal for that invoice. */
+window._invPaymentPicker = async function() {
+  const overlay = _invCreateOverlay('inv-pay-picker-overlay');
+  overlay.innerHTML = `<div class="inv-modal" style="max-width:560px">
+    <div class="inv-modal-header">
+      <div class="inv-modal-title">${gwIcon('payment',17,'#1C3A2B')} Record a Payment</div>
+      <button class="inv-modal-close" onclick="document.getElementById('inv-pay-picker-overlay').remove()">&times;</button>
+    </div>
+    <div class="inv-modal-body" id="invPayPickerBody">
+      <div class="inv-loading">${gwIcon('hourglass',20,'#9CA3AF')}&ensp;Loading open invoices…</div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  let invoices = [];
+  try {
+    const r = await fetch('/api/invoices?limit=500', { credentials:'include' });
+    if (r.ok) invoices = await r.json();
+  } catch(e) {}
+  if (!Array.isArray(invoices)) invoices = invoices?.data || [];
+
+  const payable = invoices
+    .filter(inv => ['sent','viewed','partial'].includes(inv.status) || _invIsOverdue(inv))
+    .filter(inv => Number(inv.balance_due || 0) > 0)
+    .sort((a,b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'));
+
+  const body = document.getElementById('invPayPickerBody');
+  if (!body) return;
+  if (!payable.length) {
+    body.innerHTML = `<div class="inv-empty-state" style="padding:28px 12px;text-align:center">
+      <p style="margin:0 0 6px;font-weight:600;color:#1C3A2B">No invoices are awaiting payment</p>
+      <p style="margin:0 0 16px;font-size:13px;color:#6F7E6A">Payments are recorded against a sent invoice. Create and send an invoice first.</p>
+      <button class="inv-btn-primary" onclick="document.getElementById('inv-pay-picker-overlay').remove();_invOpenBuilder(null)">${gwIcon('invoice',13,'#fff')} New Invoice</button>
+    </div>`;
+    return;
+  }
+  body.innerHTML = `
+    <p style="margin:0 0 12px;font-size:13px;color:#6F7E6A">Pick the invoice this payment applies to:</p>
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto">
+      ${payable.map(inv => `
+        <button type="button" onclick="document.getElementById('inv-pay-picker-overlay').remove();_invRecordPaymentModal('${inv.id}')"
+          style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 14px;border:1px solid #E4EAE3;border-radius:10px;background:#fff;cursor:pointer">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:#1C3A2B;font-size:14px">${_invEsc(inv.invoice_number || 'Invoice')} · ${_invEsc(inv.client_name || '—')}</div>
+            <div style="font-size:12px;color:#6F7E6A;margin-top:2px">${_invBadge(_invIsOverdue(inv) ? 'overdue' : inv.status)}${inv.due_date ? ` &ensp;Due ${_invDate(inv.due_date)}` : ''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:700;color:#1C3A2B">${_invFmt(inv.balance_due)}</div>
+            <div style="font-size:11px;color:#6F7E6A">balance due</div>
+          </div>
+        </button>`).join('')}
+    </div>`;
+};
+
 /* ══════════════════════════════════════════════════════════════════════════════
    CSS — matches Estimates design language
 ══════════════════════════════════════════════════════════════════════════════ */

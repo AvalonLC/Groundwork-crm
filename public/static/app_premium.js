@@ -3354,6 +3354,43 @@ function gwNextUpForOpp(o){
 }
 window.gwNextUpForOpp = gwNextUpForOpp;
 
+// ── Pipeline value by division ────────────────────────────────────────────────
+// Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
+// Tiles are clickable — they toggle the existing division filter.
+function _gwDivisionValueStrip(baseOpps, activeCat){
+  const open = baseOpps.filter(o => gwSalesIsOpen(o));
+  const totals = {}, counts = {};
+  gwDivisions().forEach(d => { totals[d.key] = 0; counts[d.key] = 0; });
+  open.forEach(o => {
+    const k = gwClassifyDivision(o);
+    if (!(k in totals)) { totals[k] = 0; counts[k] = 0; }
+    totals[k] += Number(o.jobValue||0);
+    counts[k] += 1;
+  });
+  const grand = open.reduce((a,o) => a + Number(o.jobValue||0), 0);
+  const noValue = open.filter(o => !Number(o.jobValue||0)).length;
+  return `<section class="card app-card" id="gw-division-value-strip" style="margin-top:12px;padding:12px 16px">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
+      <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 16px 6px 4px;border-right:1px solid #E4EAE3;min-width:150px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">Open Pipeline Value</div>
+        <div style="font-size:20px;font-weight:700;color:#1C3A2B">${money(grand)}</div>
+        <div style="font-size:11px;color:#6F7E6A">${open.length} open lead${open.length===1?'':'s'}${noValue ? ` · ${noValue} missing a value` : ''}</div>
+      </div>
+      ${gwDivisions().map(d => {
+        const active = activeCat === d.key;
+        return `<button type="button" onclick="window._pipelineCatFilter='${active ? 'all' : d.key}';show('pipeline')"
+          title="${active ? 'Click to clear the division filter' : 'Click to filter the pipeline to ' + escapeHtml(d.label)}"
+          style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 14px;border-radius:10px;cursor:pointer;text-align:left;min-width:130px;background:${active ? (d.color||'#2D7A55')+'14' : 'transparent'};border:1px solid ${active ? (d.color||'#2D7A55')+'66' : '#E4EAE3'}">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">
+            <span style="width:8px;height:8px;border-radius:50%;background:${d.color||'#2D7A55'};flex-shrink:0"></span>${escapeHtml(d.label)}
+          </div>
+          <div style="font-size:17px;font-weight:700;color:${d.color||'#1C3A2B'}">${money(totals[d.key]||0)}</div>
+          <div style="font-size:11px;color:#6F7E6A">${counts[d.key]||0} lead${(counts[d.key]||0)===1?'':'s'}</div>
+        </button>`;
+      }).join('')}
+    </div>
+  </section>`;
+}
 function pipeline(selectedId){
   if(selectedId){ return opportunityDetail(selectedId); }
 
@@ -3370,6 +3407,9 @@ function pipeline(selectedId){
     (o.assignedToRepId && o.assignedToRepId !== o.repId && o.assignedToRepId === activeRepFilter)
   );
   if (activeTypeFilter !== 'all') opps = opps.filter(o => o.clientType === activeTypeFilter);
+  // Snapshot before the division filter so the per-division value strip can
+  // always show every division's total (respecting rep/client filters).
+  const _divBaseOpps = opps;
   if (activeCatFilter !== 'all') {
     opps = opps.filter(o => gwClassifyDivision(o) === activeCatFilter);
   }
@@ -3484,6 +3524,8 @@ function pipeline(selectedId){
     </div>` : ''}
 
     ${statCards()}
+
+    ${_gwDivisionValueStrip(_divBaseOpps, activeCatFilter)}
 
     ${window.innerWidth <= 768
       ? /* ── Mobile: flat sorted list grouped by status ── */ `
@@ -5899,6 +5941,7 @@ function opportunityDetail(id){
             ${inputEdit('urgency','Urgency / Timing',o.urgency)}
             ${inputEdit('decisionMaker','Decision-Maker(s)',o.decisionMaker)}
             ${inputEdit('budget','Budget Range',o.budget)}
+            <label><span>Est. Value ($)</span><input id="gwLeadValueInput_${o.id}" type="text" inputmode="decimal" placeholder="e.g. 7500" value="${o.jobValue ? Number(o.jobValue) : ''}" onchange="window._gwSetLeadValue('${o.id}', this.value)" title="Estimated dollar value of this lead — drives the commission figure"></label>
           </div>
         </form>
       </div>
@@ -6277,12 +6320,12 @@ function opportunityDetail(id){
             Figures
           </div>
           <div class="rp-micro-grid">
-            <div class="rp-micro-stat">
-              <div class="rp-micro-stat-val${o.jobValue?' accent-green':''}">${o.jobValue ? money(Number(o.jobValue)) : '—'}</div>
-              <div class="rp-micro-stat-label">Est. Value</div>
+            <div class="rp-micro-stat" onclick="window._gwFigEditValue('${o.id}')" title="Click to edit the estimated lead value" style="cursor:pointer">
+              <div class="rp-micro-stat-val${o.jobValue?' accent-green':''}" id="gwFigVal_${o.id}">${o.jobValue ? money(Number(o.jobValue)) : '—'}</div>
+              <div class="rp-micro-stat-label">Est. Value <svg width="9" height="9" viewBox="0 0 14 14" fill="none" style="vertical-align:baseline;opacity:.55"><path d="M10 2l2 2-7.5 7.5L2 12l.5-2.5L10 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
             </div>
             <div class="rp-micro-stat">
-              <div class="rp-micro-stat-val${_estComm>0?' accent-green':''}">${_estComm > 0 ? money(_estComm) : '—'}</div>
+              <div class="rp-micro-stat-val${_estComm>0?' accent-green':''}" id="gwFigComm_${o.id}">${_estComm > 0 ? money(_estComm) : '—'}</div>
               <div class="rp-micro-stat-label">Commission</div>
             </div>
             <div class="rp-micro-stat">
@@ -7359,6 +7402,46 @@ function setOppField(id,field,value){
   const headerFields = ['status','repId','commissionApproved','collected'];
   if (headerFields.includes(field)) { show('pipeline', id); }
 }
+// ── Editable lead value (Est. Value) — drives commission ─────────────────────
+// Persists opp.jobValue as a Number via the same write-through path as
+// setOppField, then refreshes the Figures rail stats in place so the
+// commission recalculation is visible immediately (no full re-render,
+// which would wipe unsaved form fields).
+window._gwSetLeadValue = function(id, raw){
+  const o = state.opportunities.find(x=>x.id===id);
+  if(!o) return;
+  const num = Math.max(0, parseFloat(String(raw==null?'':raw).replace(/[^0-9.]/g,'')) || 0);
+  if (Number(o.jobValue||0) === num) { _gwRefreshLeadValueUI(o); return; }
+  o.jobValue = num;
+  o.updatedAt = new Date().toISOString();
+  saveState();
+  _d1SaveOpp(o);
+  _gwRefreshLeadValueUI(o);
+  showToast(num > 0 ? 'Lead value updated — commission recalculated' : 'Lead value cleared');
+};
+function _gwRefreshLeadValueUI(o){
+  let comm = 0;
+  try { comm = (typeof estCommission === 'function') ? estCommission(o) : 0; } catch(e){}
+  const valEl = document.getElementById('gwFigVal_'+o.id);
+  if (valEl){ valEl.textContent = o.jobValue ? money(Number(o.jobValue)) : '—'; valEl.classList.toggle('accent-green', !!o.jobValue); }
+  const commEl = document.getElementById('gwFigComm_'+o.id);
+  if (commEl){ commEl.textContent = comm > 0 ? money(comm) : '—'; commEl.classList.toggle('accent-green', comm > 0); }
+  const input = document.getElementById('gwLeadValueInput_'+o.id);
+  if (input && document.activeElement !== input) input.value = o.jobValue ? Number(o.jobValue) : '';
+}
+// Click-to-edit for the Figures rail "Est. Value" stat
+window._gwFigEditValue = function(id){
+  const o = state.opportunities.find(x=>x.id===id); if(!o) return;
+  const el = document.getElementById('gwFigVal_'+id); if(!el) return;
+  if (el.querySelector('input')) return;
+  const cur = o.jobValue ? Number(o.jobValue) : '';
+  el.innerHTML = `<input type="text" inputmode="decimal" value="${cur}" aria-label="Estimated lead value"
+    style="width:100%;max-width:110px;font:inherit;font-weight:inherit;padding:2px 6px;border:1px solid #C9D6C8;border-radius:6px;text-align:center;background:#fff"
+    onkeydown="if(event.key==='Enter'){this.blur()}"
+    onblur="window._gwSetLeadValue('${id}', this.value)">`;
+  const inp = el.querySelector('input');
+  if (inp) { inp.focus(); inp.select(); }
+};
 function duplicateOpportunity(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o) return;
@@ -12309,6 +12392,22 @@ if (_newBtn && _newDrop) {
 // ── Role-aware +New menu builder ─────────────────────────────────────────────
 // Called after login to tailor the +New dropdown to the user's role.
 // Field roles get a focused create set; office/sales roles get the full set.
+// Navigate to a view, then invoke a creation function once its module has
+// registered it on window (modules attach their entry points at load/render
+// time, so poll briefly instead of assuming it exists immediately).
+window._gwNavThen = function(view, fnName, arg) {
+  window._closeNewMenu && window._closeNewMenu();
+  show(view);
+  let tries = 0;
+  const t = setInterval(function() {
+    tries++;
+    if (typeof window[fnName] === 'function') {
+      clearInterval(t);
+      try { arg === undefined ? window[fnName]() : window[fnName](arg); } catch(e) { console.warn('[_gwNavThen]', fnName, e); }
+    } else if (tries > 30) { clearInterval(t); }
+  }, 100);
+};
+
 window._gwBuildNewMenu = function() {
   const drop = document.getElementById('topbarNewDropdown');
   if (!drop) return;
@@ -12333,14 +12432,36 @@ window._gwBuildNewMenu = function() {
       <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
         Add Client
+      </button>
+      <button class="tnd-item" onclick="window._gwNavThen('estimates','_estNewEstimate')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 1.5h7L13 4.5V14.5H3V1.5z"/><path d="M5.5 8h5M5.5 11h3"/></svg>
+        New Estimate
       </button>`;
   }
   if (isAdmin) {
     html += `
+      <div class="tnd-section-label">Financial</div>
+      <button class="tnd-item" onclick="window._gwNavThen('invoices','_invOpenBuilder',null)" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 1.5h10v13l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2v-11.8z"/><path d="M5.5 5.5h5M5.5 8.5h5"/></svg>
+        New Invoice
+      </button>
+      <button class="tnd-item" onclick="window._gwNavThen('invoices','_invPaymentPicker')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 6.5h13"/><path d="M4 10h3"/></svg>
+        Record Payment
+      </button>
       <div class="tnd-section-label">Operations</div>
       <button class="tnd-item" onclick="window._closeNewMenu();show('scheduleBoard');setTimeout(()=>window._sbOpenNewVisit&&window._sbOpenNewVisit(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="2" x2="5" y2="5"/><line x1="11" y1="2" x2="11" y2="5"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
         Schedule Visit
+      </button>
+      <button class="tnd-item" onclick="window._gwNavThen('assetsHub','_ahNewAsset')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5l4 4-7 7-4-4 7-7z"/><path d="M2.5 9.5l-1 4.5 4.5-1"/><path d="M11 6l-4.5 4.5"/></svg>
+        New Asset
+      </button>
+      <div class="tnd-section-label">Team</div>
+      <button class="tnd-item" onclick="window._gwNavThen('userManagement','_umOpenInviteForm')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5.5" r="2.8"/><path d="M1.5 14c0-2.7 2-4.3 4.5-4.3s4.5 1.6 4.5 4.3"/><path d="M12.5 5v4M10.5 7h4"/></svg>
+        New Employee
       </button>`;
   }
   if (isForeman) {

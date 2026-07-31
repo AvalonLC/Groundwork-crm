@@ -169,6 +169,20 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   Persisted via `_estApplyExtFields`; normalized in `_estNormalize`;
   `_estAiApply` defaults AI quotes to `total_only`. Internal views (Pricing
   Workbench, detail page) must always stay itemized.
+- LEAD VALUE / COMMISSION COUPLING: `opp.jobValue` (server column `job_value`)
+  drives `estCommission(opp)` → `window.estimateCommission`. Edits go through
+  `window._gwSetLeadValue(id, raw)` (app_premium.js), which coerces to Number,
+  write-throughs via `_d1SaveOpp`, and updates `#gwFigVal_<id>` /
+  `#gwFigComm_<id>` in place — do NOT full re-render on value edit (wipes
+  unsaved form fields). The Overview form input intentionally has NO `name`
+  attribute so the generic string autosave skips it. Pipeline division totals
+  come from `_gwDivisionValueStrip` (open leads, `gwClassifyDivision`).
+- +NEW MENU: `_gwBuildNewMenu` items for cross-module creation use
+  `window._gwNavThen(view, fnName, arg)` — navigate first, then poll up to 3s
+  for the module to register its entry point (`_estNewEstimate`,
+  `_invOpenBuilder`, `_invPaymentPicker` in invoices.js, `_ahNewAsset`,
+  `_umOpenInviteForm`). Keep role gates: estimate = admin/sales; invoice,
+  payment, asset, employee = admin (admin includes office_manager).
 
 ## Tests
 

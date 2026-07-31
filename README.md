@@ -185,6 +185,19 @@ The old separate Estimates and Proposals pages are merged into one document syst
   public tokenized portal page (`/estimates/portal/:token`). Toggle lives in the builder's
   Line Items section; applying an AI quote defaults to `total_only`. The Pricing Workbench
   and internal detail views always stay fully itemized.
+- **Editable lead value + division pipeline totals (August 2026)**: every lead's
+  Est. Value (`jobValue`) is editable in two places — an "Est. Value ($)" field in the
+  Contact & Opportunity form and a click-to-edit stat in the left-rail Figures grid
+  (`window._gwSetLeadValue` persists via `_d1SaveOpp` and refreshes the Commission figure
+  in place, since `estCommission` is driven by `jobValue`). The Pipeline page shows an
+  "Open Pipeline Value" strip (`_gwDivisionValueStrip`): grand total of open-lead value
+  plus one clickable tile per company division (`gwClassifyDivision` + `gwDivisions()`),
+  which toggles the existing division filter.
+- **Expanded +New menu (August 2026)**: `_gwBuildNewMenu` now also offers New Estimate
+  (admin + sales), and for admins: New Invoice, Record Payment (invoice picker
+  `_invPaymentPicker`), New Asset, and New Employee (invite form). Items route through
+  `window._gwNavThen(view, fnName, arg)`, which navigates then polls briefly for the
+  module's entry point before invoking it.
 - **Convert to Job / Event**: accepted estimates get a "Convert to Job" button (also in the
   ⋯ menus) → `POST /api/estimates/:id/convert-to-job` creates a work order (409 with a link
   if already converted). The detail view shows "View Work Order" once linked.
