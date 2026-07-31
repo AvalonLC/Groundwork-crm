@@ -17,6 +17,7 @@ import mig0031 from '../migrations/0031_assets_hub.sql?raw'
 import mig0032 from '../migrations/0032_proposals_payments_google.sql?raw'
 import mig0033 from '../migrations/0033_email_templates.sql?raw'
 import mig0034 from '../migrations/0034_price_book_estimate_merge.sql?raw'
+import mig0054 from '../migrations/0054_estimate_price_display.sql?raw'
 import mig0035 from '../migrations/0035_calendar_sync.sql?raw'
 import mig0036 from '../migrations/0036_ai_usage.sql?raw'
 import mig0037 from '../migrations/0037_platform_demos_pricing.sql?raw'
@@ -420,6 +421,16 @@ async function ensurePriceBookSchema(db: D1Database): Promise<void> {
   }
   try {
     await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0034_price_book_estimate_merge.sql', '0034_price_book_estimate_merge.sql').run()
+  } catch {}
+  // 0054: client-facing price display mode (total_only vs itemized)
+  for (const stmt of mig0054.split('\n').filter(l => !l.trim().startsWith('--')).join('\n').split(';').map(x => x.trim()).filter(Boolean)) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensurePriceBookSchema 0054 err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0054_estimate_price_display.sql', '0054_estimate_price_display.sql').run()
   } catch {}
   _priceBookSchemaOk = true
 }
@@ -6333,6 +6344,7 @@ async function _estApplyExtFields(db: D1Database, id: string, companyId: string,
   if (b.cost_data !== undefined)      push('cost_data', JSON.stringify(b.cost_data || {}))
   if (b.recurring_data !== undefined) push('recurring_data', JSON.stringify(b.recurring_data || {}))
   if (b.ai_meta !== undefined)        push('ai_meta', JSON.stringify(b.ai_meta || {}))
+  if (b.price_display !== undefined)  push('price_display', b.price_display === 'total_only' ? 'total_only' : 'itemized')
   if (!sets.length) return
   try {
     await ensurePriceBookSchema(db)
@@ -7328,6 +7340,63 @@ async function _aiCreds(db: D1Database, companyId: string, env: any): Promise<{ 
   return { apiKey, baseUrl, model, keySource, aiEnabled }
 }
 
+// Parse a JSON object out of an AI chat completion, tolerating markdown fences
+// AND truncated output (the model ran out of tokens / the response was cut).
+// Salvage strategy: strip fences, find the first '{', then re-balance any
+// unterminated string/brackets so JSON.parse can succeed on a partial draft.
+function _aiParseJson(rawIn: string): any {
+  let raw = String(rawIn || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+  const start = raw.indexOf('{')
+  if (start === -1) throw new Error('No JSON in AI response')
+  const end = raw.lastIndexOf('}')
+  if (end > start) {
+    try { return JSON.parse(raw.slice(start, end + 1)) } catch { /* fall through to salvage */ }
+  }
+  let out = ''
+  let inStr = false, escaped = false
+  const stack: string[] = []
+  for (const ch of raw.slice(start)) {
+    if (escaped) { escaped = false; out += ch; continue }
+    if (inStr) {
+      if (ch === '\\') { escaped = true; out += ch; continue }
+      if (ch === '"') inStr = false
+      out += ch
+      continue
+    }
+    if (ch === '"') { inStr = true; out += ch; continue }
+    if (ch === '{' || ch === '[') { stack.push(ch); out += ch; continue }
+    if (ch === '}' || ch === ']') { stack.pop(); out += ch; continue }
+    out += ch
+  }
+  if (escaped) out = out.slice(0, -1)           // dangling backslash
+  if (inStr) out += '"'                          // close unterminated string
+  out = out.replace(/,\s*$/, '')                 // trailing comma before we close up
+  while (stack.length) { const o = stack.pop(); out += o === '{' ? '}' : ']' }
+  return JSON.parse(out)
+}
+
+// Call the chat-completions API tuned for FAST structured output. gpt-5-family
+// models default to heavy reasoning + verbose prose, which pushed 3-tier quote
+// generations past Cloudflare's 100s edge timeout (the browser saw a dead
+// request even though the worker finished). reasoning_effort:'low' +
+// response_format:json_object cuts completion size/time by ~3x. If the
+// configured model rejects those params (custom BYOK models), retry once bare.
+async function _aiChatJson(baseUrl: string, apiKey: string, model: string, messages: any[]): Promise<any> {
+  const call = async (extra: any) => fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages, ...extra }),
+  })
+  const fast: any = { response_format: { type: 'json_object' } }
+  if (/^(gpt-5|o\d)/i.test(model)) fast.reasoning_effort = 'low'
+  let r = await call(fast)
+  if (r.status === 400) {
+    // Model may not support response_format / reasoning_effort — plain retry
+    r = await call({})
+  }
+  return r
+}
+
 // Record one metered AI action. Never throws — metering must not break the feature.
 async function _logAiUsage(db: D1Database, companyId: string, repId: string, feature: string, model: string, usage: any, keySource: string): Promise<void> {
   try {
@@ -7449,17 +7518,10 @@ Rules:
 - Never invent client personal details not provided. Keep the overview grounded in the actual notes.`
 
   try {
-    const r = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: sys },
-          { role: 'user', content: `Draft the proposal from this lead context:\n\n${context}` },
-        ],
-      }),
-    })
+    const r = await _aiChatJson(baseUrl, apiKey, model, [
+      { role: 'system', content: sys },
+      { role: 'user', content: `Draft the proposal from this lead context:\n\n${context}` },
+    ])
     if (!r.ok) {
       const errText = await r.text().catch(() => '')
       console.error('[ai/generate-proposal] upstream', r.status, errText.slice(0, 300))
@@ -7467,12 +7529,9 @@ Rules:
     }
     const j: any = await r.json()
     await _logAiUsage(db, companyId, c.var.repId as string, 'proposal', model, j?.usage, keySource)
-    let raw = j?.choices?.[0]?.message?.content || ''
-    // Strip accidental markdown fences and extract the JSON object
-    raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-    const start = raw.indexOf('{'); const end = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('No JSON in AI response')
-    const draft = JSON.parse(raw.slice(start, end + 1))
+    const raw = j?.choices?.[0]?.message?.content || ''
+    // Fence-tolerant + truncation-tolerant parse (salvages partial drafts)
+    const draft = _aiParseJson(raw)
 
     // Sanitize to the exact shapes the builder expects (8 block types)
     const S = (v: any) => String(v ?? '')
@@ -7724,17 +7783,10 @@ Rules:
   }
 
   try {
-    const r = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: sys + marketNote },
-          { role: 'user', content: `Build the tiered quote from this context:\n\n${context}` },
-        ],
-      }),
-    })
+    const r = await _aiChatJson(baseUrl, apiKey, model, [
+      { role: 'system', content: sys + marketNote },
+      { role: 'user', content: `Build the tiered quote from this context:\n\n${context}` },
+    ])
     if (!r.ok) {
       const errText = await r.text().catch(() => '')
       console.error('[ai/generate-quote] upstream', r.status, errText.slice(0, 300))
@@ -7742,11 +7794,9 @@ Rules:
     }
     const j: any = await r.json()
     await _logAiUsage(db, companyId, c.var.repId as string, 'quote', model, j?.usage, keySource)
-    let raw = j?.choices?.[0]?.message?.content || ''
-    raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-    const start = raw.indexOf('{'); const end = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('No JSON in AI response')
-    const draft = JSON.parse(raw.slice(start, end + 1))
+    const raw = j?.choices?.[0]?.message?.content || ''
+    // Fence-tolerant + truncation-tolerant parse (salvages partial drafts)
+    const draft = _aiParseJson(raw)
 
     // Sanitize + re-verify price book references (AI must not drift stored costs)
     const pbById = new Map(priceBook.map((p: any) => [p.id, p]))
@@ -10333,7 +10383,22 @@ app.get('/estimates/portal/:token', async (c) => {
       <div><div class="portal-label">Valid Until</div><div class="portal-value">${est.valid_until ? new Date(est.valid_until).toLocaleDateString() : '30 days'}</div></div>
     </div>
 
-    ${lineItems.length ? `
+    ${lineItems.length ? (est.price_display === 'total_only' ? `
+    <div class="portal-section">
+      <div style="text-align:center;padding:6px 0 14px">
+        <div style="font-size:12px;color:#9CA3AF;letter-spacing:.05em;text-transform:uppercase;font-weight:600;margin-bottom:4px">Total Investment</div>
+        <div style="font-size:32px;font-weight:800;color:#111827">$${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+      <div class="portal-label" style="margin-bottom:10px">What's Included</div>
+      ${lineItems.map((li: any) => `
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #F3F4F6">
+        <span style="color:${company?.brand_color || '#2D7A55'};font-weight:800;line-height:1.4">&#10003;</span>
+        <div>
+          <div style="font-size:14px;color:#111827;font-weight:600">${li.name||li.description||'Service'}</div>
+          ${li.desc ? `<div style="font-size:12.5px;color:#6B7280;margin-top:2px">${li.desc}</div>` : ''}
+        </div>
+      </div>`).join('')}
+    </div>` : `
     <div class="portal-section">
       <div class="portal-label" style="margin-bottom:12px">Line Items</div>
       <table>
@@ -10356,7 +10421,7 @@ app.get('/estimates/portal/:token', async (c) => {
           <div class="total-val">$${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
         </div>
       </div>
-    </div>` : ''}
+    </div>`) : ''}
 
     ${est.notes ? `
     <div class="portal-section">
@@ -11743,8 +11808,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b016">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b016">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b002">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -11767,10 +11832,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260730b016"></script>
-  <script src="/js/client_portal.js?v=20260730b016"></script>
-  <script src="/js/platform_core.js?v=20260730b016"></script>
-  <script src="/js/client_portal.js?v=20260730b016"></script>  <script>
+  <script src="/js/platform_core.js?v=20260731b002"></script>
+  <script src="/js/client_portal.js?v=20260731b002"></script>
+  <script src="/js/platform_core.js?v=20260731b002"></script>
+  <script src="/js/client_portal.js?v=20260731b002"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12404,12 +12469,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b016">
-  <link rel="stylesheet" href="/js/styles.css?v=20260730b016">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b016">
-  <link rel="stylesheet" href="/js/premium.css?v=20260730b016">
-  <link rel="stylesheet" href="/js/styles.css?v=20260730b016">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260730b016">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260731b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260731b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260731b002">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -12968,84 +13033,84 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260730b016"></script>
-<script src="/js/sales-process.js?v=20260730b016"></script>
-<script src="/js/richtext.js?v=20260730b016"></script>
-<script src="/js/db.js?v=20260730b016"></script>
-<script src="/js/data.js?v=20260730b016"></script>
-<script src="/js/reps.js?v=20260730b016"></script>
-<script src="/js/record-page.js?v=20260730b016"></script>
-<script src="/js/academy.js?v=20260730b016"></script>
-<script src="/js/task_engine.js?v=20260730b016"></script>
-<script src="/js/gw_i18n.js?v=20260730b016"></script>
-<script src="/js/app_premium.js?v=20260730b016"></script>
-<script src="/js/estimates.js?v=20260730b016"></script>
-<script src="/js/multiday.js?v=20260730b016"></script>
-<script src="/js/proposals.js?v=20260730b016"></script>
-<script src="/js/pricing.js?v=20260730b016"></script>
-<script src="/js/invoices.js?v=20260730b016"></script>
-<script src="/js/csv_import.js?v=20260730b016"></script>
-<script src="/js/onboarding.js?v=20260730b016"></script>
-<script src="/js/gw_copilot.js?v=20260730b016"></script>
-<script src="/js/groundwork_ai.js?v=20260730b016"></script>
-<script src="/js/recurring_plans.js?v=20260730b016"></script>
-<script src="/js/reviews.js?v=20260730b016"></script>
-<script src="/js/stripe.js?v=20260730b016"></script>
-<script src="/js/email.js?v=20260730b016"></script>
-<script src="/js/notifications.js?v=20260730b016"></script>
-<script src="/js/integrations.js?v=20260730b016"></script>
-<script src="/js/sms.js?v=20260730b016"></script>
-<script src="/js/calendar_sync.js?v=20260730b016"></script>
-<script src="/js/ai_followup.js?v=20260730b016"></script>
-<script src="/js/user_management.js?v=20260730b016"></script>
-<script src="/js/platform_admin.js?v=20260730b016"></script>
-<script src="/js/time_tracker.js?v=20260730b016"></script>
-<script src="/js/field_workday.js?v=20260730b016"></script>
-<script src="/js/platform_core.js?v=20260730b016"></script>
-<script src="/js/approval_engine.js?v=20260730b016"></script>
-<script src="/js/automation_engine.js?v=20260730b016"></script>
-<script src="/js/client_portal.js?v=20260730b016"></script>
-<script src="/js/field_mode.js?v=20260730b016"></script>
-<script src="/js/assets_hub.js?v=20260730b016"></script>
-<script src="/js/gw-icons.js?v=20260730b016"></script>
-<script src="/js/sales-process.js?v=20260730b016"></script>
-<script src="/js/richtext.js?v=20260730b016"></script>
-<script src="/js/db.js?v=20260730b016"></script>
-<script src="/js/data.js?v=20260730b016"></script>
-<script src="/js/reps.js?v=20260730b016"></script>
-<script src="/js/record-page.js?v=20260730b016"></script>
-<script src="/js/academy.js?v=20260730b016"></script>
-<script src="/js/task_engine.js?v=20260730b016"></script>
-<script src="/js/gw_i18n.js?v=20260730b016"></script>
-<script src="/js/app_premium.js?v=20260730b016"></script>
-<script src="/js/estimates.js?v=20260730b016"></script>
-<script src="/js/multiday.js?v=20260730b016"></script>
-<script src="/js/proposals.js?v=20260730b016"></script>
-<script src="/js/pricing.js?v=20260730b016"></script>
-<script src="/js/invoices.js?v=20260730b016"></script>
-<script src="/js/csv_import.js?v=20260730b016"></script>
-<script src="/js/onboarding.js?v=20260730b016"></script>
-<script src="/js/gw_copilot.js?v=20260730b016"></script>
-<script src="/js/groundwork_ai.js?v=20260730b016"></script>
-<script src="/js/recurring_plans.js?v=20260730b016"></script>
-<script src="/js/reviews.js?v=20260730b016"></script>
-<script src="/js/stripe.js?v=20260730b016"></script>
-<script src="/js/email.js?v=20260730b016"></script>
-<script src="/js/notifications.js?v=20260730b016"></script>
-<script src="/js/integrations.js?v=20260730b016"></script>
-<script src="/js/sms.js?v=20260730b016"></script>
-<script src="/js/calendar_sync.js?v=20260730b016"></script>
-<script src="/js/ai_followup.js?v=20260730b016"></script>
-<script src="/js/user_management.js?v=20260730b016"></script>
-<script src="/js/platform_admin.js?v=20260730b016"></script>
-<script src="/js/time_tracker.js?v=20260730b016"></script>
-<script src="/js/field_workday.js?v=20260730b016"></script>
-<script src="/js/platform_core.js?v=20260730b016"></script>
-<script src="/js/approval_engine.js?v=20260730b016"></script>
-<script src="/js/automation_engine.js?v=20260730b016"></script>
-<script src="/js/client_portal.js?v=20260730b016"></script>
-<script src="/js/field_mode.js?v=20260730b016"></script>
-<script src="/js/assets_hub.js?v=20260730b016"></script><script>
+<script src="/js/gw-icons.js?v=20260731b002"></script>
+<script src="/js/sales-process.js?v=20260731b002"></script>
+<script src="/js/richtext.js?v=20260731b002"></script>
+<script src="/js/db.js?v=20260731b002"></script>
+<script src="/js/data.js?v=20260731b002"></script>
+<script src="/js/reps.js?v=20260731b002"></script>
+<script src="/js/record-page.js?v=20260731b002"></script>
+<script src="/js/academy.js?v=20260731b002"></script>
+<script src="/js/task_engine.js?v=20260731b002"></script>
+<script src="/js/gw_i18n.js?v=20260731b002"></script>
+<script src="/js/app_premium.js?v=20260731b002"></script>
+<script src="/js/estimates.js?v=20260731b002"></script>
+<script src="/js/multiday.js?v=20260731b002"></script>
+<script src="/js/proposals.js?v=20260731b002"></script>
+<script src="/js/pricing.js?v=20260731b002"></script>
+<script src="/js/invoices.js?v=20260731b002"></script>
+<script src="/js/csv_import.js?v=20260731b002"></script>
+<script src="/js/onboarding.js?v=20260731b002"></script>
+<script src="/js/gw_copilot.js?v=20260731b002"></script>
+<script src="/js/groundwork_ai.js?v=20260731b002"></script>
+<script src="/js/recurring_plans.js?v=20260731b002"></script>
+<script src="/js/reviews.js?v=20260731b002"></script>
+<script src="/js/stripe.js?v=20260731b002"></script>
+<script src="/js/email.js?v=20260731b002"></script>
+<script src="/js/notifications.js?v=20260731b002"></script>
+<script src="/js/integrations.js?v=20260731b002"></script>
+<script src="/js/sms.js?v=20260731b002"></script>
+<script src="/js/calendar_sync.js?v=20260731b002"></script>
+<script src="/js/ai_followup.js?v=20260731b002"></script>
+<script src="/js/user_management.js?v=20260731b002"></script>
+<script src="/js/platform_admin.js?v=20260731b002"></script>
+<script src="/js/time_tracker.js?v=20260731b002"></script>
+<script src="/js/field_workday.js?v=20260731b002"></script>
+<script src="/js/platform_core.js?v=20260731b002"></script>
+<script src="/js/approval_engine.js?v=20260731b002"></script>
+<script src="/js/automation_engine.js?v=20260731b002"></script>
+<script src="/js/client_portal.js?v=20260731b002"></script>
+<script src="/js/field_mode.js?v=20260731b002"></script>
+<script src="/js/assets_hub.js?v=20260731b002"></script>
+<script src="/js/gw-icons.js?v=20260731b002"></script>
+<script src="/js/sales-process.js?v=20260731b002"></script>
+<script src="/js/richtext.js?v=20260731b002"></script>
+<script src="/js/db.js?v=20260731b002"></script>
+<script src="/js/data.js?v=20260731b002"></script>
+<script src="/js/reps.js?v=20260731b002"></script>
+<script src="/js/record-page.js?v=20260731b002"></script>
+<script src="/js/academy.js?v=20260731b002"></script>
+<script src="/js/task_engine.js?v=20260731b002"></script>
+<script src="/js/gw_i18n.js?v=20260731b002"></script>
+<script src="/js/app_premium.js?v=20260731b002"></script>
+<script src="/js/estimates.js?v=20260731b002"></script>
+<script src="/js/multiday.js?v=20260731b002"></script>
+<script src="/js/proposals.js?v=20260731b002"></script>
+<script src="/js/pricing.js?v=20260731b002"></script>
+<script src="/js/invoices.js?v=20260731b002"></script>
+<script src="/js/csv_import.js?v=20260731b002"></script>
+<script src="/js/onboarding.js?v=20260731b002"></script>
+<script src="/js/gw_copilot.js?v=20260731b002"></script>
+<script src="/js/groundwork_ai.js?v=20260731b002"></script>
+<script src="/js/recurring_plans.js?v=20260731b002"></script>
+<script src="/js/reviews.js?v=20260731b002"></script>
+<script src="/js/stripe.js?v=20260731b002"></script>
+<script src="/js/email.js?v=20260731b002"></script>
+<script src="/js/notifications.js?v=20260731b002"></script>
+<script src="/js/integrations.js?v=20260731b002"></script>
+<script src="/js/sms.js?v=20260731b002"></script>
+<script src="/js/calendar_sync.js?v=20260731b002"></script>
+<script src="/js/ai_followup.js?v=20260731b002"></script>
+<script src="/js/user_management.js?v=20260731b002"></script>
+<script src="/js/platform_admin.js?v=20260731b002"></script>
+<script src="/js/time_tracker.js?v=20260731b002"></script>
+<script src="/js/field_workday.js?v=20260731b002"></script>
+<script src="/js/platform_core.js?v=20260731b002"></script>
+<script src="/js/approval_engine.js?v=20260731b002"></script>
+<script src="/js/automation_engine.js?v=20260731b002"></script>
+<script src="/js/client_portal.js?v=20260731b002"></script>
+<script src="/js/field_mode.js?v=20260731b002"></script>
+<script src="/js/assets_hub.js?v=20260731b002"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

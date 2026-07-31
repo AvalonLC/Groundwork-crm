@@ -75,6 +75,7 @@ function _estNormalize(est) {
   if (!est.recurring_data || typeof est.recurring_data !== 'object') est.recurring_data = {};
   if (!est.mode) est.mode = 'simple';
   if (!est.doc_type) est.doc_type = 'onetime';
+  if (est.price_display !== 'total_only') est.price_display = 'itemized';
   return est;
 }
 
@@ -944,6 +945,7 @@ async function estimateBuilder(id) {
     attachments: [],
     customer_notes: '', internal_notes: '', terms: '',
     mode: 'simple', doc_type: 'onetime', overview: '', tiers: [],
+    price_display: 'itemized',
     cost_data: {}, recurring_data: {},
   };
   if (!Array.isArray(_estDraft.payment_schedule)) _estDraft.payment_schedule = [];
@@ -1236,6 +1238,19 @@ function _estRenderBuilder() {
           Add line item
         </button>
         <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px">${(typeof gwIcon==='function')?gwIcon('idea',12,'currentColor'):''} Start typing an item name to pull it from your <b>price book</b> — cost and man-hours auto-fill into the Pricing Workbench. Use <a href="javascript:void(0)" onclick="_estSetBuilderTab('workbench')" style="color:var(--gw-action,#2D7A55);font-weight:700">the workbench</a> to price this job, then push the total back here.</div>
+
+        <!-- Customer price view: itemized table vs one total + included-scope list.
+             Internal views (Pricing Workbench, detail page) always stay itemized. -->
+        <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--gw-border-soft,#EAE6DC);border-radius:10px;background:var(--gw-bg,#FAF9F5)">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="font-size:12.5px;font-weight:800">Customer price view</div>
+            <div style="display:inline-flex;border:1px solid var(--gw-border,#DDD8CE);border-radius:8px;overflow:hidden">
+              <button type="button" id="est-pd-itemized" onclick="_estSetPriceDisplay('itemized')" style="border:none;cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;${est.price_display !== 'total_only' ? 'background:var(--gw-action,#2D7A55);color:#fff' : 'background:transparent;color:var(--gw-text,#2F3B33)'}">Itemized prices</button>
+              <button type="button" id="est-pd-total" onclick="_estSetPriceDisplay('total_only')" style="border:none;cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;${est.price_display === 'total_only' ? 'background:var(--gw-action,#2D7A55);color:#fff' : 'background:transparent;color:var(--gw-text,#2F3B33)'}">Total only</button>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:var(--gw-text-subtle,#8A948C);margin-top:6px" id="est-pd-hint">${est.price_display === 'total_only' ? 'The customer sees ONE list price with a checklist of what\u2019s included (descriptions only, no per-line pricing). Your Pricing Workbench and internal views stay fully itemized.' : 'The customer sees each line item with its own price. Switch to \u201CTotal only\u201D to present a single list price with the scope items listed underneath.'}</div>
+        </div>
       </section>
 
       ${est.mode === 'advanced' ? `
@@ -2118,7 +2133,25 @@ function _estPortalContentHtml(est, brand, interactive) {
         </div>
       </div>` : ''}
 
-      ${est.line_items.length ? `
+      ${est.line_items.length ? (est.price_display === 'total_only' ? `
+      <!-- Customer view (Total only): ONE list price + description-only checklist
+           of the included scope items. No per-line pricing is exposed. -->
+      <div class="est-portal-section">
+        <h3 class="est-portal-section-title">Your Investment</h3>
+        <div style="text-align:center;border:1.5px solid ${companyColor};border-radius:14px;padding:20px 16px;margin-bottom:16px;background:linear-gradient(180deg, ${companyColor}0D 0%, transparent 100%)">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C);margin-bottom:6px">Total Investment</div>
+          <div style="font-size:32px;font-weight:900;color:${companyColor};line-height:1.1">${_estFmt(total)}</div>
+        </div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gw-text-subtle,#8A948C);margin-bottom:8px">What's Included</div>
+        ${est.line_items.map(li => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--gw-border-soft,#F0EEE8)">
+          <span style="color:${companyColor};font-weight:900;line-height:1.45;flex:none">&#10003;</span>
+          <div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--gw-text,#2F3B33)">${_estEsc(li.name || li.description || '—')}</div>
+            ${li.desc ? `<div style="font-size:12px;color:var(--gw-text-subtle,#6F7E6A);margin-top:2px;line-height:1.5">${_estEsc(li.desc)}</div>` : ''}
+          </div>
+        </div>`).join('')}
+      </div>` : `
       <div class="est-portal-section">
         <h3 class="est-portal-section-title">Pricing Breakdown</h3>
         <!-- Customer view: Item → Qty → Total only (no rate) -->
@@ -2138,7 +2171,7 @@ function _estPortalContentHtml(est, brand, interactive) {
             <div class="est-portal-li-num est-portal-li-total">${_estFmt(Number(li.qty||1)*Number(li.rate||li.unit||0))}</div>
           </div>`).join('')}
         </div>
-      </div>` : ''}
+      </div>`) : ''}
 
       ${est.attachments.length ? `
       <div class="est-portal-section">
@@ -2495,8 +2528,25 @@ function _estSetDocType(t) {
   }
   _estRenderBuilder();
 }
+function _estSetPriceDisplay(v) {
+  if (!_estDraft) return;
+  _estDraft.price_display = v === 'total_only' ? 'total_only' : 'itemized';
+  // In-place toggle refresh (avoid full rebuild so unsaved typing survives)
+  const on  = 'border:none;cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;background:var(--gw-action,#2D7A55);color:#fff';
+  const off = 'border:none;cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;background:transparent;color:var(--gw-text,#2F3B33)';
+  const bi = document.getElementById('est-pd-itemized');
+  const bt = document.getElementById('est-pd-total');
+  if (bi) bi.style.cssText = _estDraft.price_display === 'itemized' ? on : off;
+  if (bt) bt.style.cssText = _estDraft.price_display === 'total_only' ? on : off;
+  const hint = document.getElementById('est-pd-hint');
+  if (hint) hint.textContent = _estDraft.price_display === 'total_only'
+    ? 'The customer sees ONE list price with a checklist of what\u2019s included (descriptions only, no per-line pricing). Your Pricing Workbench and internal views stay fully itemized.'
+    : 'The customer sees each line item with its own price. Switch to \u201CTotal only\u201D to present a single list price with the scope items listed underneath.';
+  if (typeof _estPvQueue === 'function') _estPvQueue();
+}
 window._estSetMode = _estSetMode;
 window._estSetDocType = _estSetDocType;
+window._estSetPriceDisplay = _estSetPriceDisplay;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // OPTION TIERS (Advanced mode) — Good / Better / Best
@@ -3129,9 +3179,15 @@ function _estAiApply() {
   }
   _estDraft.ai_meta = d.ai_meta || { generated: true, at: new Date().toISOString() };
 
+  // AI quotes default to the client-friendly presentation: one list price with
+  // the included scope listed underneath (no per-line pricing). The full
+  // breakdown stays in the Pricing Workbench; the rep can switch back to
+  // "Itemized prices" in the Line Items section at any time.
+  _estDraft.price_display = 'total_only';
+
   document.getElementById('est-ai-modal')?.remove();
   _estRenderBuilder();
-  if (typeof showToast === 'function') showToast('AI quote applied — review every number before sending', 'success');
+  if (typeof showToast === 'function') showToast('AI quote applied — customer view set to "Total only" (switch back under Line Items). Review every number before sending', 'success');
 }
 window._estOpenAiGen = _estOpenAiGen;
 window._estAiRun = _estAiRun;

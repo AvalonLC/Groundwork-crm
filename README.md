@@ -174,6 +174,17 @@ The old separate Estimates and Proposals pages are merged into one document syst
   market rates, and drafts a tiered quote with email/SMS copy. **Review-before-apply** — nothing
   changes until you click Apply. Requires the company `openai_api_key`
   (Integrations → Admin Setup); returns a graceful `no_api_key` message otherwise.
+  AI calls run through `_aiChatJson` (JSON response format + low reasoning effort on
+  gpt-5/o-family, with a bare retry for BYOK models that reject those params) and
+  `_aiParseJson` (fence- and truncation-tolerant salvage parser), which fixed multi-tier
+  (2/3-option) generations that previously timed out or returned unparseable drafts.
+- **Customer price view (August 2026)**: each estimate has `price_display`
+  (`itemized` default | `total_only`, migration 0054). "Total only" shows the client ONE
+  list-price callout plus a description-only checklist of included scope items — no
+  per-line pricing — on both the in-app portal preview (`_estPortalContentHtml`) and the
+  public tokenized portal page (`/estimates/portal/:token`). Toggle lives in the builder's
+  Line Items section; applying an AI quote defaults to `total_only`. The Pricing Workbench
+  and internal detail views always stay fully itemized.
 - **Convert to Job / Event**: accepted estimates get a "Convert to Job" button (also in the
   ⋯ menus) → `POST /api/estimates/:id/convert-to-job` creates a work order (409 with a link
   if already converted). The detail view shows "View Work Order" once linked.

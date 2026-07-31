@@ -152,6 +152,23 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   surfaced in a factor breakdown (rail card + pill tooltip). Pipeline sort
   default is `priority` (score desc). If you add signals, keep the factor
   list transparent and never let an open lead hit 0 or 100.
+- AI STRUCTURED-OUTPUT CONTRACT (`src/index.tsx`): all JSON-drafting AI
+  endpoints (generate-quote, generate-proposal) MUST call `_aiChatJson`
+  (adds `response_format: json_object`; adds `reasoning_effort: 'low'` only
+  for gpt-5/o-family models; retries once WITHOUT extras on HTTP 400 so BYOK
+  custom models keep working) and parse with `_aiParseJson` (strips fences,
+  salvages truncated JSON by closing unterminated strings/brackets). Never
+  regress to raw `JSON.parse(indexOf('{')..lastIndexOf('}'))` — multi-tier
+  quotes previously produced ~10k completion tokens and timed out or
+  truncated, breaking 2/3-option generation.
+- CUSTOMER PRICE VIEW (`estimates.price_display`, migration 0054, ensured by
+  `ensurePriceBookSchema`): `'itemized'` | `'total_only'`. `total_only`
+  renders ONE total callout + description-only included-scope checklist in
+  BOTH renderers — `_estPortalContentHtml` (estimates.js) and the server
+  portal page `/estimates/portal/:token` (index.tsx); keep them in sync.
+  Persisted via `_estApplyExtFields`; normalized in `_estNormalize`;
+  `_estAiApply` defaults AI quotes to `total_only`. Internal views (Pricing
+  Workbench, detail page) must always stay itemized.
 
 ## Tests
 
