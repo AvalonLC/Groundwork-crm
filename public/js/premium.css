@@ -15628,7 +15628,7 @@ h1.pl-title,
   border: 1px solid rgba(255, 255, 255, .12);
   border-radius: 22px;
   box-shadow: 0 24px 52px rgba(17, 57, 49, .18);
-  padding: 22px 26px;
+  padding: 26px 28px;
   position: relative;
   overflow: hidden;
 }
@@ -15646,8 +15646,22 @@ h1.pl-title,
 }
 .pl-page-header > *,
 .gwp-header > * { position: relative; z-index: 1; }
-.pl-title, .gwp-title { color: #fff !important; }
-.pl-subtitle, .gwp-subtitle { color: rgba(255,255,255,.72) !important; }
+/* Scoped (not bare .pl-title/.gwp-title) so specificity (3 classes) reliably
+   beats the older "SECTION 36-B" rule (.view .pl-title { color:#0F1C14
+   !important; }, 2 classes) that otherwise forces the title dark/black on
+   green .pl-page-header pages like My Day, Pipeline, and Clients. */
+.pl-page-header .pl-page-title .pl-title,
+.pl-page-header h1.pl-title,
+.gwp-header .gwp-header-left .gwp-title,
+.gwp-header h1.gwp-title {
+  color: #fff !important;
+}
+.pl-page-header .pl-page-title .pl-subtitle,
+.pl-page-header .pl-subtitle,
+.gwp-header .gwp-header-left .gwp-subtitle,
+.gwp-header .gwp-subtitle {
+  color: rgba(255,255,255,.82) !important;
+}
 .pl-page-header .cl-back-btn { color: rgba(255,255,255,.75) !important; }
 
 /* Buttons + pills inside a .pl-page-header (My Day / Pipeline / Clients) */
