@@ -706,7 +706,7 @@ function fallbackCopy(text){
       gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
       gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard workspace tabs
-      today:'My Day', myDashboard:'My Day', teamView:'Team',
+      today:'Command Center', myDashboard:'Command Center', teamView:'Team',
       revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
       financialReports:'Financial Snapshot', opsReports:'Operations Snapshot',
       teamReports:'Team',
@@ -858,15 +858,18 @@ function gwDashboard(tab) {
     return;
   }
 
-  // Non-field roles: full dashboard tab set
+  // Non-field roles: single Command Center landing page — Business Pulse /
+  // Financial Snapshot / Operations Snapshot are no longer separate top-level
+  // tabs (they overlapped heavily with Command Center's own widgets and made
+  // the Dashboard section feel repetitive). They still exist as drill-down
+  // detail pages, reachable only via "Full report" links on the relevant
+  // Command Center widget (Pipeline → Business Pulse, Financial Pulse →
+  // Financial Snapshot, Today's Jobs → Operations Snapshot).
   if (!tab || tab === 'gwDashboard' || tab === 'fieldDashboard') tab = 'today';
   const dashTabs = [
-    {id:'today',           label:'My Day'},
-    {id:'salesReports',    label:'Business Pulse'},
-    {id:'financialReports',label:'Financial Snapshot'},
-    {id:'opsReports',      label:'Operations Snapshot'},
+    {id:'today', label:'Command Center'},
   ];
-  _gwSetHeader('Dashboard', dashTabs, tab);
+  _gwSetHeader('Dashboard', dashTabs, dashTabs.some(t=>t.id===tab) ? tab : 'today');
   if (tab === 'today')            today();
   else if (tab === 'salesReports')    (typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
   else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
@@ -1231,10 +1234,7 @@ function _gwApplyFieldNavFilters() {
     } else if (!dashPanel.innerHTML.trim() || dashPanel.innerHTML.includes('fieldDashboard')) {
       // Restore full set for non-field roles in case it was trimmed
       _gwSetHeader('Dashboard', [
-        {id:'today',            label:'My Day'},
-        {id:'salesReports',     label:'Business Pulse'},
-        {id:'financialReports', label:'Financial Snapshot'},
-        {id:'opsReports',       label:'Operations Snapshot'},
+        {id:'today', label:'Command Center'},
       ], null);
     }
   }
@@ -1270,10 +1270,7 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
   // so default to the full set and let _gwApplyFieldNavFilters() (called from
   // _updateSidebarRep after bootstrap) trim it down for field roles.
   _gwSetHeader('Dashboard', [
-    {id:'today',            label:'My Day'},
-    {id:'salesReports',     label:'Business Pulse'},
-    {id:'financialReports', label:'Financial Snapshot'},
-    {id:'opsReports',       label:'Operations Snapshot'},
+    {id:'today', label:'Command Center'},
   ], null);
 
   // Sales — Templates/Sequences/Talk Tracks/Playbooks/AI Assist live inside
@@ -1456,7 +1453,7 @@ function show(viewName='today', param){
       gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
       gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard
-      today:'My Day', myDashboard:'My Day', teamView:'Team',
+      today:'Command Center', myDashboard:'Command Center', teamView:'Team',
       revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
       financialReports:'Financial Snapshot', opsReports:'Operations Snapshot', teamReports:'Team',
       // Learning
@@ -1544,7 +1541,7 @@ function show(viewName='today', param){
     portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Operations',
   };
   const _wsTabDefs = {
-    Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
+    Dashboard:  [{id:'today',label:'Command Center'}],
     Sales:      [{id:'pipeline',label:'Pipeline'},{id:'process',label:'Sales Process'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
@@ -2110,7 +2107,7 @@ function _gwTodayRenderMobile(opts) {
     <div class="gwtd-header">
       <div class="gwtd-header-top">
         <div class="gwtd-title-group">
-          <h1 class="gwtd-title">My Day</h1>
+          <h1 class="gwtd-title">Command Center</h1>
           <span class="gwtd-date">${dateStr}</span>
         </div>
       </div>
@@ -2280,7 +2277,7 @@ const _GW_MYDAY_MODES = [
   { id:'custom', label:'My Layout', icon:'star',
     desc:'Your own saved widget layout',
     caps: _GW_MYDAY_DEFAULT_CAPS },
-  { id:'curated', label:'My Day', icon:'dashboard',
+  { id:'curated', label:'Command Center', icon:'dashboard',
     desc:'A calm, curated view — today\'s jobs, tasks, calendar and pipeline at a glance',
     order:['pipeStrip','jobsToday','tasks','calendar','pipeChart'],
     spans:{ pipeStrip:6, jobsToday:6, tasks:2, calendar:2, pipeChart:2 },
@@ -2452,7 +2449,7 @@ function _gwMyDayRenderWidget(id, ctx, layout, editing){
         <button onclick="gwMyDaySpanCycle('${id}')" title="Cycle width (or drag the right edge)">${_GW_MYDAY_SPAN_LABEL[span] || ''} width</button>
         <button onclick="gwMyDayDensityCycle('${id}')" title="Change content density">${density[0].toUpperCase()+density.slice(1)}</button>
         ${h ? `<button onclick="gwMyDayResetHeight('${id}')" title="Reset to automatic height">Auto height</button>` : ''}
-        <button class="gw-myday-remove-btn" onclick="gwMyDayToggleHide('${id}')" title="Remove from My Day (find it again in the widget library)">\u00D7 Remove</button>
+        <button class="gw-myday-remove-btn" onclick="gwMyDayToggleHide('${id}')" title="Remove from Command Center (find it again in the widget library)">\u00D7 Remove</button>
       </span>
     </div>` : '';
   const grips = editing ? `
@@ -2479,7 +2476,7 @@ function _gwMyDayLibraryPanel(ctx, layout){
   return `<div class="gw-myday-library" id="gw-myday-library">
     <div class="gw-myday-lib-head">
       <strong>Widget Library</strong>
-      <span class="muted" style="font-size:12px">Add or remove widgets from your My Day screen</span>
+      <span class="muted" style="font-size:12px">Add or remove widgets from your Command Center screen</span>
     </div>
     <div class="gw-myday-lib-grid">${items}</div>
   </div>`;
@@ -2494,13 +2491,13 @@ window.gwMyDayCustomize = function(){
 };
 window.gwMyDayDone = function(){
   window._gwMyDayEditing = false; window._gwMyDayLibOpen = false; _gwTodayRender();
-  if (typeof showToast === 'function') showToast('My Day layout saved');
+  if (typeof showToast === 'function') showToast('Command Center layout saved');
 };
 window.gwMyDayReset = function(){
   try { localStorage.removeItem(_gwMyDayLayoutKey()); } catch(e) {}
   _gwMyDaySaveLayout(_gwMyDayCurLayout());
   _gwTodayRender();
-  if (typeof showToast === 'function') showToast('My Day layout reset to default');
+  if (typeof showToast === 'function') showToast('Command Center layout reset to default');
 };
 window.gwMyDayToggleLib = function(){
   window._gwMyDayLibOpen = !window._gwMyDayLibOpen; _gwTodayRender();
@@ -2554,13 +2551,34 @@ function _gwMyDayMasonry(){
   const grid = document.getElementById('gw-myday-grid');
   if (!grid || window.innerWidth <= 768) return;
   const ROW = 4, GAP = 28; // ROW must match grid-auto-rows; GAP = vertical breathing room
+  // IMPORTANT — two things must both happen, in this order, for every widget:
+  //   1) Reset el.style.gridRow to 'auto' BEFORE measuring. `.gw-myday-grid`
+  //      uses align-items:stretch, so a widget with an explicit multi-row
+  //      span has its wrapper (`el`) stretched to that span's full height;
+  //      `.gw-myday-widget-body` has `min-height:100%` (of `el`), so if we
+  //      read the body's height WITHOUT resetting el's span first, we read
+  //      back the *previous* pass's stretched height (inflated by its own
+  //      min-height), compute an even larger span from it, which inflates
+  //      min-height further, which the ResizeObserver below detects as a
+  //      "resize" and re-measures again — an infinite growth feedback loop
+  //      (this is what made every widget balloon into a huge empty box).
+  //      Resetting to 'auto' first collapses `el` back to a single 4px
+  //      track, making the body's min-height:100% negligible (~4px) so the
+  //      read that follows reflects the body's true content-driven height.
+  //   2) Measure `.gw-myday-widget-body.scrollHeight`, NOT `el`'s own
+  //      bounding rect. Even reset to 'auto', `el` itself is stretch-sized
+  //      to the fixed 4px track (CSS grid-auto-rows:4px is a hard length,
+  //      not content-sized) — content overflows the 4px box visually but
+  //      el.getBoundingClientRect().height still reports ~4px. The body is
+  //      a normal block child (not itself grid-stretched) so its scrollHeight
+  //      reflects its real natural content height.
   grid.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
     const body = el.querySelector('.gw-myday-widget-body');
     if (!body) return;
-    // measure natural content height (bar + body + grips)
     el.style.gridRow = 'auto';
-    const h = el.getBoundingClientRect().height;
-    if (h > 0) el.style.gridRow = 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW));
+    const bar = el.querySelector('.gw-myday-widget-bar');
+    const h = body.scrollHeight + (bar ? bar.getBoundingClientRect().height : 0);
+    el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
   });
   // watch for async content arriving (calendar, reviews, jobs, AR…) → re-pack
   if (window._gwMyDayRO) { try { window._gwMyDayRO.disconnect(); } catch(e) {} }
@@ -2573,11 +2591,12 @@ function _gwMyDayMasonry(){
         const g = document.getElementById('gw-myday-grid');
         if (!g) { try { window._gwMyDayRO.disconnect(); } catch(e) {} return; }
         g.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
-          const cur = el.style.gridRow;
+          const b = el.querySelector('.gw-myday-widget-body');
+          if (!b) return;
           el.style.gridRow = 'auto';
-          const h = el.getBoundingClientRect().height;
-          const next = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : cur;
-          el.style.gridRow = next;
+          const barEl = el.querySelector('.gw-myday-widget-bar');
+          const h = b.scrollHeight + (barEl ? barEl.getBoundingClientRect().height : 0);
+          el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
         });
       }, 120);
     });
@@ -2784,7 +2803,7 @@ function _gwMyDayLoadOwnerWidgets(rep){
 
         m.innerHTML = `<section class="card${cap ? ' w-fixed-h' : ''}"><div class="section-head"><h2>Today's Jobs</h2>
           ${todayJobs.length ? `<span class="badge">${todayJobs.length}</span>` : ''}
-          <button class="secondary-btn small" onclick="show('scheduleBoard')" style="margin-left:auto;font-size:11px">Schedule</button></div>
+          <span style="margin-left:auto;display:flex;gap:6px"><button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule</button><button class="secondary-btn small" onclick="show('opsReports')" style="font-size:11px">Full report</button></span></div>
           <div class="${useCap ? 'list-cap' : ''}">
             ${todayJobsV.length ? todayJobsV.map(row).join('') : (todayJobs.length ? '' : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`)}
             ${upcomingV.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcomingV.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
@@ -2995,7 +3014,7 @@ function _gwTodayRender() {
     const trendBadge = wonTrendPct === null ? '' : `<span style="font-size:13px;font-weight:700;color:${wonTrendPct>=0?'var(--gw-emerald)':'var(--gw-rose)'}">${wonTrendPct>=0?'+':''}${wonTrendPct}%</span>`;
 
     return `<section class="card gw-pipe-chart">
-      <div class="section-head"><h2>Pipeline</h2><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">See all</button></div>
+      <div class="section-head"><h2>Pipeline</h2><span style="display:flex;gap:6px"><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">Pipeline board</button><button class="secondary-btn small" onclick="show('salesReports')" style="font-size:11px">Full report</button></span></div>
       <div class="pipe-num">${_fmt(_pipeVal)} ${trendBadge}</div>
       <div class="pipe-lbl">Open across ${_open.length} lead${_open.length===1?'':'s'}</div>
       <svg class="pipe-spark" viewBox="0 0 220 40" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#2D7A55" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3051,12 +3070,12 @@ function _gwTodayRender() {
   const _heroBlock = `
     <div class="pl-page-header">
       <div class="pl-page-title">
-        <h1 class="pl-title">My Day</h1>
+        <h1 class="pl-title">Command Center</h1>
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
         ${_modeBar}
-        ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize My Day widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
+        ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize Command Center widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
       </div>
     </div>`;
 
@@ -3104,7 +3123,7 @@ function _gwTodayRender() {
   const _libOpen = _editing && !!window._gwMyDayLibOpen;
   const _editBar = _editing ? `
     <div class="gw-myday-edit-banner">
-      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag to reorder, choose a supported width and detail level, or remove what you do not need. Saved across your devices.</span>
+      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize Command Center</strong> — drag to reorder, choose a supported width and detail level, or remove what you do not need. Saved across your devices.</span>
       <span class="gw-myday-edit-banner-btns">
         <button class="secondary-btn small${_libOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayToggleLib()">${_libOpen ? 'Close Library' : '+ Widget Library'}</button>
         <button class="secondary-btn small" onclick="gwMyDayReset()">Reset to Default</button>
@@ -20115,7 +20134,7 @@ function _glCrmModules() {
     { id:'crm01', title:'The 5-Workspace Model', type:'Overview', duration:'4 min',
       content:`<p>Groundwork is organized into five workspaces, each with its own job. Understanding the structure helps you navigate faster and use the right tool for the right task.</p>
       <ul>
-        <li><strong>Dashboard</strong> — Your home base. My Day shows your tasks, pipeline stats, and (for admins) a financial pulse. Business Pulse, Financial Snapshot, and Operations Snapshot give you a cross-sectional view of the business.</li>
+        <li><strong>Dashboard</strong> — Your home base. Command Center shows your tasks, pipeline, jobs, calendar and (for admins) a financial pulse in one glanceable view. Each widget links out to a deeper report (Business Pulse, Financial Snapshot, Operations Snapshot) when you need the full detail.</li>
         <li><strong>Sales</strong> — Pipeline, Leads, Clients, Properties, Estimates, and team tools. This is where deals live and move.</li>
         <li><strong>Financial</strong> — Invoices, Payments, Deposits, Statements. The money side of completed and in-progress work.</li>
         <li><strong>Operations</strong> — Schedule, Dispatch, Work Orders, Resources. Field execution from scheduling to completion.</li>
@@ -20128,7 +20147,7 @@ function _glCrmModules() {
       <h3>Moving through stages</h3>
       <p>Drag or update the status as the deal progresses: Initial Inquiry → Discovery → Site Walk → Proposal Sent → Follow-Up → Closed Won/Lost.</p>
       <h3>Proposal workflow</h3>
-      <p>Once you've done the site walk and built the estimate, attach it to the lead and update the status to "Proposal Sent." This triggers the Proposals Out count on the My Day pipeline strip and the Business Pulse report.</p>
+      <p>Once you've done the site walk and built the estimate, attach it to the lead and update the status to "Proposal Sent." This triggers the Proposals Out count on the Command Center pipeline strip and the Business Pulse report.</p>
       <h3>Won vs Lost</h3>
       <p>Always close out leads — don't leave them in limbo. A lost lead with a reason tells you more than a forgotten lead in the pipeline.</p>` },
     { id:'crm03', title:'Clients, Properties & History', type:'Walkthrough', duration:'5 min',
@@ -20157,12 +20176,12 @@ function _glCrmModules() {
       <p>Operations → Schedule shows all work orders in a calendar view. Field supervisors use this daily to see what's happening and where.</p>
       <h3>Completing a Work Order</h3>
       <p>Update the status to Completed when the job is done. This populates the Operations Snapshot with today's completed jobs and feeds the productivity metrics for the field team.</p>` },
-    { id:'crm06', title:'Tasks & My Day', type:'Walkthrough', duration:'5 min',
-      content:`<p>Tasks in Groundwork are follow-up items tied to a rep, a record, or standalone. They show up in My Day so nothing falls through the cracks.</p>
+    { id:'crm06', title:'Tasks & Command Center', type:'Walkthrough', duration:'5 min',
+      content:`<p>Tasks in Groundwork are follow-up items tied to a rep, a record, or standalone. They show up on Command Center so nothing falls through the cracks.</p>
       <h3>Creating a task</h3>
-      <p>From My Day → + New Task, or from inside any lead/client record via the Tasks panel. Set a type (follow up, call, site visit, proposal, etc.), due date, and assignee.</p>
-      <h3>My Day layout</h3>
-      <p>My Day shows: the pipeline strip at the top (open leads, proposals, pipeline value, won MTD), your task workspace in the main column, and a financial pulse on the right side (admin/OM roles only).</p>
+      <p>From Command Center → + New Task, or from inside any lead/client record via the Tasks panel. Set a type (follow up, call, site visit, proposal, etc.), due date, and assignee.</p>
+      <h3>Command Center layout</h3>
+      <p>Command Center shows: the pipeline strip at the top (open leads, proposals, pipeline value, won MTD), today's jobs, your tasks, your calendar, and a pipeline chart — plus a financial pulse for admin/OM roles. Each of those widgets links to its own full report for deeper detail.</p>
       <h3>Overdue tasks</h3>
       <p>Tasks past their due date show in red. The Team View (Sales → Team) lets managers see task overdue counts across the whole team so nothing gets buried.</p>` },
     { id:'crm07', title:'Reports & Data Reads', type:'Walkthrough', duration:'5 min',
@@ -22170,7 +22189,7 @@ function salesReports() {
   <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Dashboard · Business Pulse</div>
+        <div class="eyebrow"><a href="javascript:void(0)" onclick="show('today')" style="color:inherit;text-decoration:none">Command Center</a> · Business Pulse</div>
         <h1 class="rp-title">Sales Performance</h1>
         <p class="rp-subtitle">Pipeline · close rates · rep performance · lead sources</p>
       </div>
@@ -22434,7 +22453,7 @@ function financialReports() {
   <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Dashboard · Financial Snapshot</div>
+        <div class="eyebrow"><a href="javascript:void(0)" onclick="show('today')" style="color:inherit;text-decoration:none">Command Center</a> · Financial Snapshot</div>
         <h1 class="rp-title">Financial Snapshot</h1>
         <p class="rp-subtitle">Estimates · invoices · payments · budget vs actual</p>
       </div>
@@ -22567,7 +22586,7 @@ function opsReports() {
   <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
-        <div class="eyebrow">Dashboard · Operations Snapshot</div>
+        <div class="eyebrow"><a href="javascript:void(0)" onclick="show('today')" style="color:inherit;text-decoration:none">Command Center</a> · Operations Snapshot</div>
         <h1 class="rp-title">Operations Snapshot</h1>
         <p class="rp-subtitle">Today's jobs · upcoming · schedule health</p>
       </div>

@@ -14644,8 +14644,13 @@ h1.pl-title,
   grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-auto-rows: 4px;
   grid-auto-flow: row dense;
-  gap: 18px;
-  align-items: start;
+  /* column-gap real; row-gap 0 — vertical breathing room is baked into each
+     widget's masonry row-span by JS (content height + GAP, see
+     _gwMyDayMasonry()) rather than via CSS row-gap, so it stays exact at any
+     row-span size. */
+  column-gap: 28px;
+  row-gap: 0;
+  align-items: stretch;
 }
 /* edit mode: keep source order (no dense back-fill) so drag-reorder is predictable */
 .gw-myday-grid--edit { grid-auto-flow: row; }
@@ -14750,9 +14755,8 @@ h1.pl-title,
    4) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── 1. Spacing: column gap real; row gap 0 — the vertical gap is baked into
-   each widget's masonry row-span by JS (content height + 28px breathing room) ── */
-.gw-myday-grid { gap: 28px !important; row-gap: 0 !important; }
+/* ── 1. Spacing: column-gap/row-gap now set once on the base .gw-myday-grid
+   rule (Section 39) — see comment there. ── */
 .gw-myday-widget { position: relative; }
 /* cards inside widgets: kill stray top margins so gap is the only spacing */
 .gw-myday-widget-body > .card,
@@ -16085,16 +16089,22 @@ h1.pl-title,
 .sb-lane-crew-name i { display:block; width:76px; height:3px; margin-top:3px; overflow:hidden; border-radius:99px; background:var(--gw-border); }
 .sb-lane-crew-name i b { display:block; height:100%; background:var(--gw-pine-500); border-radius:inherit; }
 
-/* My Day professional structured dashboard */
-.gw-myday-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-  grid-auto-rows: auto !important;
-  grid-auto-flow: row !important;
-  gap: 20px !important;
-  align-items: stretch !important;
-}
+/* My Day professional structured dashboard
+   (grid-template-columns/gap/align-items now set once on the base .gw-myday-grid
+   rule above — this block previously redeclared them with !important and, more
+   importantly, forced grid-auto-rows:auto + grid-auto-flow:row, which fought the
+   masonry engine's 4px fine-grained rows + dense packing and caused large dead
+   vertical gaps between widgets. Removed; base rule is now the single source
+   of truth for row sizing.
+   IMPORTANT: grid-row must NOT be forced to auto with !important here — the
+   masonry JS (_gwMyDayMasonry()) sets each widget's grid-row via inline style
+   ("span N") after measuring its real height. An !important CSS rule always
+   beats an inline style regardless of specificity, so the previous
+   `grid-row: auto !important` silently nullified every widget's computed
+   span — with dense packing and no span info, widgets could be placed into
+   overlapping cells (the visible widget-overlap bug). No CSS grid-row rule
+   at all for .gw-myday-widget → the JS inline style is free to apply. */
 .gw-myday-widget {
-  grid-row: auto !important;
   align-self: stretch;
   min-width: 0;
 }
@@ -16129,15 +16139,24 @@ h1.pl-title,
   letter-spacing: -.015em;
   text-transform: none;
 }
-/* Record-list widgets must never collapse into unusable one-character columns. */
+/* Fallback minimum widths (record-list widgets must never collapse into
+   unusable one-character columns). NOT !important: every widget already
+   gets its real column span as an inline style from _gwMyDaySpanOf()
+   (custom layout choice, or the active day-mode's `spans` config — e.g.
+   curated mode's tasks:2/calendar:2/pipeChart:2 side-by-side row). An
+   !important rule here would always beat that inline span regardless of
+   which mode is active, which is exactly what caused My Tasks to render at
+   a fixed span 4 (overlapping Pipeline Chart) instead of curated mode's
+   configured span 2. These rules now only apply on the rare path where no
+   inline grid-column was set. */
 .gw-myday-widget[data-widget-id="recent"],
 .gw-myday-widget[data-widget-id="staleLeads"],
-.gw-myday-widget[data-widget-id="recentWins"] { grid-column: span 3 !important; }
-.gw-myday-widget[data-widget-id="tasks"] { grid-column: span 4 !important; }
-.gw-myday-widget[data-widget-id="calendar"] { grid-column: span 2 !important; }
+.gw-myday-widget[data-widget-id="recentWins"] { grid-column: span 3; }
+.gw-myday-widget[data-widget-id="tasks"] { grid-column: span 4; }
+.gw-myday-widget[data-widget-id="calendar"] { grid-column: span 2; }
 .gw-myday-widget[data-widget-id="pipeStrip"],
 .gw-myday-widget[data-widget-id="activity"],
-.gw-myday-widget[data-widget-id="reviews"] { grid-column: span 6 !important; }
+.gw-myday-widget[data-widget-id="reviews"] { grid-column: span 6; }
 .gw-myday-widget-body h2,
 .gw-myday-widget-body h3,
 .gw-myday-widget-body .mini-row > *,

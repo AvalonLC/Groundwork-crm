@@ -667,3 +667,75 @@ consistent overflow pattern so widget cards never grow or scroll.
   `GET /api/google/status`), which isn't available in this dev environment.
   Recommended follow-up: verify with a real connected Google account, or
   add a small D1-seeding test harness against the `calendar_events` table.
+
+## Command Center Rename + Nav Consolidation + Masonry Grid Bug Fixes (2026-08-03)
+
+Follow-up to the entry above. Two threads, done together per explicit
+request: (1) consolidate My Day + the 3 separate report pages into one
+"Command Center" hub with drill-down links, and (2) fix a "blank spaces /
+missing widgets" layout bug reported live in production.
+
+**IA consolidation — Command Center:**
+- Renamed the `curated` My Day mode (and all page titles/headers/toasts) from
+  "My Day" to **"Command Center"** — same underlying `today` route, no
+  routing changes, only display labels.
+- Removed `salesReports` (Business Pulse) / `financialReports` (Financial
+  Snapshot) / `opsReports` (Operations Snapshot) as **top-level Dashboard
+  nav tabs** — they had confirmed real data overlap with My Day's own
+  widgets (pipeline funnel, budget vs actual, work orders), which is what
+  produced the "same 3-4 pages, messy" feeling reported by the user. The
+  three pages/routes/functions themselves are fully intact and unchanged —
+  only removed from the top-level tab list in all 4 places it was defined
+  (`gwDashboard()`, `_gwApplyFieldNavFilters()`, `_gwInitAllPanels()`,
+  `_wsTabDefs.Dashboard`).
+- Added contextual **"Full report" drill-down buttons** instead: Pipeline
+  Chart widget → Business Pulse, Today's Jobs widget → Operations Snapshot,
+  Financial Pulse's existing "Full View" button → Financial Snapshot.
+- Added a **"Command Center ›" breadcrumb back-link** to all 3 detail pages'
+  header eyebrows so users can return to the hub in one click.
+
+**Masonry grid bug fixes (root cause: `!important` beats inline styles):**
+The live "blank spaces, no blocks where there should be" symptom traced to
+three separate CSS bugs in `public/js/premium.css`, all variants of the same
+mistake — an `!important` CSS rule always wins over an inline `style="..."`
+regardless of selector specificity, and the My Day layout engine
+(`_gwMyDayMasonry()` in `app_premium.js`) depends entirely on being able to
+set each widget's real height via inline `style="grid-row:span N"`:
+1. Three competing `.gw-myday-grid` rule blocks fought over
+   `grid-auto-rows`/`grid-auto-flow`/`gap` — the last `!important` block won
+   and forced `grid-auto-rows:auto` + `grid-auto-flow:row`, breaking the
+   masonry engine's 4px fine-grained row assumption and causing large dead
+   vertical gaps. Consolidated into one base rule.
+2. `.gw-myday-widget { grid-row: auto !important; }` silently nullified
+   every widget's JS-computed row span, and widget-id-specific
+   `grid-column: span N !important;` rules (for `tasks`, `recent`,
+   `staleLeads`, `recentWins`, `calendar`, `pipeStrip`, `activity`,
+   `reviews`) nullified each day-mode's configured column span — this is
+   what caused My Tasks to render at a hardcoded span 4 and visually overlap
+   the Pipeline Chart widget instead of curated mode's configured span 2.
+   Fixed by dropping `!important` from both (kept the mobile `≤768px`
+   breakpoint override, which correctly still uses `!important` since the
+   masonry JS intentionally bails out below that width).
+3. The masonry measurement function itself (`_gwMyDayMasonry()`) measured
+   the outer `.gw-myday-widget` wrapper's `getBoundingClientRect().height`
+   after resetting its `grid-row` to `auto` — but the grid's
+   `align-items:stretch` plus the fixed `grid-auto-rows:4px` track meant the
+   wrapper always measured ~4px regardless of real content, so every widget
+   got the same fallback span and taller content (e.g. Pipeline Snapshot's
+   stat values, Financial Pulse tiles) was visually clipped. Fixed by
+   measuring `.gw-myday-widget-body.scrollHeight` (the content-sized child,
+   unaffected by grid stretching) instead, while still resetting the
+   wrapper's `grid-row` to `auto` first each pass — omitting that reset
+   caused a second bug, a runaway growth feedback loop, since the body's
+   `min-height:100%` (of the wrapper) would otherwise inflate on every
+   `ResizeObserver` tick.
+- **Verified** via Playwright (login + live D1 data) across all 5 day-modes
+  (`curated`/`field`/`office`/`sales`/`focus`): zero widget overlaps, zero
+  clipped content, stable widget heights across repeated 2s/5s/10s
+  re-measurements (no growth-loop regression), and tight masonry packing
+  with no dead vertical gaps.
+- **Not done in this pass**: the deeper visual "hub" redesign the user also
+  asked for (hero KPI styling / zone grouping to feel more like a true
+  command-center dashboard rather than a grid of small widgets) — the IA
+  consolidation and both rounds of grid bug fixes above were prioritized
+  first since they were reported as active defects. Recommended follow-up.
