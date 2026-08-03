@@ -932,3 +932,60 @@ that the duplicate-`<script>` fix is live (`db.js` tag appears exactly
 once) and that `salesReports`/`financialReports`/`opsReports` no longer
 appear anywhere in the deployed `app_premium.js` except as migration-
 lineage comments.
+
+## Command Center Widget Fit: Row-Height Matching + Lone-Widget Widening (2026-08-03)
+
+Follow-up polish requested after the rebuild above went live and the user
+reviewed real tenant data in production: "*the widgets don't fit together
+well... everything is a different size, height or shape.*" Diagnosed as a
+side effect of the existing masonry-packing engine (`_gwMyDayMasonry()`),
+which sizes every widget purely to its own content — so two widgets sharing
+a visual row (e.g. Financial Pulse vs. Money Owed, My Tasks vs. My
+Calendar) could end up wildly different heights, with dead space under the
+shorter one.
+
+**Fix — `_gwMyDayMasonry()` made row-aware (no change to the layout model,
+widget registry `span` values, or any customization UI):**
+- CSS `grid-auto-flow` changed from `row dense` → `row` (plain) so widget
+  placement stays 100% predictable left-to-right/top-to-bottom — `dense`
+  would silently reorder widgets into earlier gaps, which is incompatible
+  with computing row membership in JS.
+- The masonry pass now: (1) measures every widget's natural content height
+  as before, (2) walks widgets in DOM order replicating the browser's own
+  column-wrapping (using each widget's registry `span`, read via
+  `data-widget-id` — not the mutated inline style, to stay stable across
+  repeated re-packs) to group them into the same visual "rows" the grid
+  actually places them into, (3) stretches every widget in a row to the
+  **tallest sibling in that row** via `grid-row: span N`, so paired
+  widgets now read as one even, aligned unit. Rows are still packed
+  independently of each other — no dead space was reintroduced between
+  different rows, only widgets sharing a row get matched.
+- **Lone-in-row widening**: a widget left without a same-row partner at its
+  designed span (e.g. "Needs Follow-Up," "Recently Updated," "Crew Hours
+  Today" — nothing else fit alongside them at their span) is now widened
+  to fill the row's full 6 columns instead of leaving empty space beside
+  it (`el.style.gridColumn = 'span 6'` for lone rows with `rowUsed < 6`).
+- Verified the existing accordion-expand (`gwMyDayAccordionToggle`) and its
+  ResizeObserver-triggered re-pack still correctly re-stretch a widget's
+  row-partner when the accordion opens/closes (e.g. opening Pipeline's
+  "View trend" now also grows "Daily Sales Start-Up" beside it to match).
+
+**Verified via Playwright** (sandbox only — pre-deploy visual check
+requested by the user before production rollout):
+- Screenshotted the full Command Center for `office_manager`
+  (`admin@avalon-lc.com`) — confirmed Financial Pulse/Money Owed and My
+  Tasks/My Calendar pairs now render at matching heights with no dead
+  space; confirmed lone widgets (Needs Follow-Up, Recently Updated, Crew
+  Hours Today) now span the full row width.
+- Accordion toggle ("View trend") re-tested post-fix: opens correctly and
+  its row-partner ("Daily Sales Start-Up") grows to match the new height.
+- Add Widget popover re-tested post-fix: opens correctly via
+  `gwMyDayAddWidgetToggle()`, no errors.
+- Re-ran the full multi-role regression (admin / office_manager / rep /
+  foreman-field): zero page errors on any role; only the same pre-existing
+  expected pre-auth 401s/404s seen in every prior pass; admin still lands
+  on the platform overview, rep still has no Financial zone (and its lone
+  "Needs Follow-Up" widget correctly widens to full row width), foreman
+  still bypasses Command Center entirely for the untouched
+  `fieldDashboard`.
+- `node -c public/js/app_premium.js` clean.

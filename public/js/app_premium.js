@@ -2422,16 +2422,26 @@ function _gwMyDayScratchLoad(){
   try { return localStorage.getItem('gw-myday-scratch-' + ((r && r.id) || 'anon')) || ''; } catch(e) { return ''; }
 }
 /* ── Masonry packing: measure each widget, set grid-row span so the packed
-   grid (grid-auto-rows:4px + dense flow) fits everything tightly with no
-   dead vertical space. Re-packs automatically when async widgets load.
+   grid (grid-auto-rows:4px) fits everything tightly with no dead vertical
+   space BETWEEN rows, while widgets sharing the same visual row are
+   stretched to match each other's height (the "fit together evenly within
+   groupings" pass). Re-packs automatically when async widgets load.
    Operates on EVERY `.gw-myday-grid` on the page, not just one by id — the
    zone-grouped view renders one grid per zone section (id="gw-myday-grid"
    only on the first, class shared by all) so each zone packs its own
-   widgets independently. */
+   widgets independently.
+
+   Row grouping: CSS uses `grid-auto-flow: row` (NOT `dense` — dense would
+   reshuffle widgets into earlier gaps and break this row math, which
+   assumes strict DOM order). With 6 columns, a widget's `grid-column: span
+   N` fills left-to-right and wraps to a new row only when the next widget
+   would overflow the remaining columns — so we can replicate that same
+   left-to-right wrapping in JS purely from each widget's declared span,
+   without needing to read layout back from the DOM. */
 function _gwMyDayMasonry(){
   const grids = document.querySelectorAll('.gw-myday-grid');
   if (!grids.length || window.innerWidth <= 768) return;
-  const ROW = 4, GAP = 18; // ROW must match grid-auto-rows; GAP = vertical breathing room (density pass: 28→18)
+  const ROW = 4, GAP = 18, COLS = 6; // ROW must match grid-auto-rows; GAP = vertical breathing room (density pass: 28→18)
   // IMPORTANT — two things must both happen, in this order, for every widget:
   //   1) Reset el.style.gridRow to 'auto' BEFORE measuring. `.gw-myday-grid`
   //      uses align-items:stretch, so a widget with an explicit multi-row
@@ -2454,12 +2464,55 @@ function _gwMyDayMasonry(){
   //      a normal block child (not itself grid-stretched) so its scrollHeight
   //      reflects its real natural content height.
   const _packGrid = (grid) => {
-    grid.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
+    const items = Array.from(grid.querySelectorAll(':scope > .gw-myday-widget'));
+    // 1) Reset + measure every widget's own natural content height first.
+    //    Span is read from the widget REGISTRY via data-widget-id, not from
+    //    el.style.gridColumn — step 4 below may widen a lone widget's own
+    //    inline grid-column to fill its row, and if a later re-pack (async
+    //    content, resize, accordion toggle) read span back from that
+    //    already-widened style, the row math would drift on every pass.
+    //    The registry's `span` is the one stable source of truth.
+    const meas = items.map(el => {
       const body = el.querySelector('.gw-myday-widget-body');
-      if (!body) return;
+      if (!body) return null;
+      const wid = el.getAttribute('data-widget-id');
+      const wDef = (typeof _GW_MYDAY_WIDGETS !== 'undefined') && _GW_MYDAY_WIDGETS.find(x => x.id === wid);
+      const span = (wDef && wDef.span) || parseInt(el.style.gridColumn.replace(/[^\d]/g, ''), 10) || 1;
+      // Reset BOTH row and column to the widget's true registry span before
+      // measuring — a prior pass may have widened this widget to fill a
+      // lone row (step 4 below); measuring at that stale, wider width would
+      // read back a reflowed (often shorter) content height and drift the
+      // math on every subsequent pack.
       el.style.gridRow = 'auto';
-      const h = body.scrollHeight;
-      el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
+      el.style.gridColumn = 'span ' + span;
+      return { el, body, span, h: body.scrollHeight };
+    });
+    // 2) Walk items in DOM order, replicating the browser's left-to-right
+    //    `grid-auto-flow: row` wrapping using each widget's column span, to
+    //    group widgets into the same "rows" the grid will actually place
+    //    them into.
+    const rows = [];
+    let row = [], used = 0;
+    meas.forEach(m => {
+      if (!m) return;
+      if (used + m.span > COLS) { if (row.length) rows.push(row); row = []; used = 0; }
+      row.push(m); used += m.span;
+    });
+    if (row.length) rows.push(row);
+    // 3) Within each row, stretch every widget to the tallest sibling's
+    //    height. Rows are still independently sized (row-to-row packing is
+    //    unaffected) — only widgets sharing a row get matched to each other.
+    // 4) A widget left alone in its row (no partner to fit beside it at its
+    //    designed span) is widened to the row's full remaining width instead
+    //    of leaving dead space beside it — e.g. "Needs Follow-Up" (span 3)
+    //    with nothing else fitting alongside it now fills all 6 columns.
+    rows.forEach(r => {
+      const maxH = Math.max(...r.map(m => m.h));
+      const rowUsed = r.reduce((s, m) => s + m.span, 0);
+      r.forEach(m => {
+        m.el.style.gridRow = maxH > 0 ? 'span ' + Math.max(1, Math.ceil((maxH + GAP) / ROW)) : 'auto';
+        m.el.style.gridColumn = (r.length === 1 && rowUsed < COLS) ? ('span ' + COLS) : ('span ' + m.span);
+      });
     });
   };
   grids.forEach(_packGrid);
