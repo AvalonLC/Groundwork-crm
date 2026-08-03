@@ -2241,25 +2241,59 @@ function _gwTodayRenderMobile(opts) {
 const _GW_MYDAY_SPANS = [1, 2, 3, 4, 5, 6];
 const _GW_MYDAY_SPAN_LABEL = { 1:'\u2159', 2:'\u2153', 3:'\u00BD', 4:'\u2154', 5:'\u215A', 6:'Full' };
 const _GW_MYDAY_WIDGETS = [
-  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip },
-  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value with a 4-week trend line and stage breakdown chart', span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.pipeChartHtml },
-  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
-  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>` },
-  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
-  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>` },
-  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>` },
-  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml },
-  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>' },
-  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml },
-  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml },
-  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads with no activity in 7+ days',             span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.staleLeadsHtml },
-  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml },
+  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip, zone:'hero' },
+  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value with a 4-week trend line and stage breakdown chart', span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.pipeChartHtml, zone:'sales' },
+  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
+  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
+  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap, zone:'financial' },
+  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
+  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>`, zone:'sales' },
+  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml, zone:'sales' },
+  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>', zone:'sales' },
+  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml, zone:'personal' },
+  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
+  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads with no activity in 7+ days',             span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.staleLeadsHtml, zone:'sales' },
+  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml, zone:'sales' },
   // ── Owner-operator widgets (async — loaded after render) ──────────────────
-  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from My Day', span:2, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
-  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>` },
-  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:2, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
-  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue and paid-this-month invoice totals', span:2, allowed:c=>c.showFin,     defaultOff:true, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
+  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from My Day', span:2, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
+  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:2, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue and paid-this-month invoice totals', span:2, allowed:c=>c.showFin,     defaultOff:true, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'financial' },
 ];
+
+/* ── Zone grouping metadata — used only for VIEW rendering of preset day
+   modes (curated/office/sales/field/focus), never for the custom "My
+   Layout" mode or while editing (those always keep the flat single-grid
+   layout so drag/resize/DnD logic — which assumes one #gw-myday-grid — is
+   completely untouched). Groups widgets into visually distinct sections
+   (colored header + icon + "Full report" drill-down) so Command Center
+   reads as a hub of the 3 report areas (Business Pulse / Financial
+   Snapshot / Operations Snapshot) rather than a flat pile of small cards.
+   'hero' (pipeStrip) is rendered standalone above all zones, full width,
+   outside the masonry grid entirely (it already sizes itself naturally).
+   'personal' has no drill-down report (My Tasks/Calendar/etc. aren't a
+   report page) but still gets its own titled section for visual parity. */
+const _GW_MYDAY_ZONES = {
+  sales:      { label:'Sales & Pipeline', icon:'pipeline', accent:'var(--gw-sky, #4D8A86)',    report:'salesReports',      reportLabel:'Business Pulse' },
+  financial:  { label:'Financial',        icon:'dollar',   accent:'var(--gw-pine, #113931)',   report:'financialReports',  reportLabel:'Financial Snapshot' },
+  operations: { label:'Operations',       icon:'wrench',   accent:'var(--gw-emerald, #2D7A55)',report:'opsReports',        reportLabel:'Operations Snapshot' },
+  personal:   { label:'My Work',          icon:'user',     accent:'var(--gw-amber, #8B6914)',  report:null,                reportLabel:'' },
+};
+/* Group an ordered list of widget ids into {zoneKey, ids:[...]} buckets,
+   preserving first-seen zone order (so the mode's own widget ordering
+   drives which zone appears first — no hardcoded zone sequence). Widgets
+   tagged zone:'hero' are excluded (rendered standalone, see above). */
+function _gwMyDayGroupByZone(ids){
+  const buckets = []; const seen = {};
+  ids.forEach(id => {
+    const w = _GW_MYDAY_WIDGETS.find(x => x.id === id);
+    if (!w || w.zone === 'hero') return; // hero widgets rendered standalone, not in a zone
+    const zone = w.zone || 'personal';
+    if (!seen[zone]) { seen[zone] = { zoneKey: zone, ids: [] }; buckets.push(seen[zone]); }
+    seen[zone].ids.push(id);
+  });
+  return buckets;
+}
 
 /* ── My Day "Day Modes" — preset widget templates ────────────────────────────
    An owner-operator's day isn't always the same day: some days they're on the
@@ -2546,10 +2580,16 @@ function _gwMyDayScratchLoad(){
 }
 /* ── Masonry packing: measure each widget, set grid-row span so the packed
    grid (grid-auto-rows:4px + dense flow) fits everything tightly with no
-   dead vertical space. Re-packs automatically when async widgets load. ── */
+   dead vertical space. Re-packs automatically when async widgets load.
+   Operates on EVERY `.gw-myday-grid` on the page, not just one by id —
+   the zone-grouped view (see _gwMyDayGroupByZone) renders one grid per
+   zone section (id="gw-myday-grid" only on the first, class shared by all)
+   so each zone packs its own widgets independently. The flat/custom-layout
+   and edit-mode paths still render exactly one grid, so behavior there is
+   unchanged. ── */
 function _gwMyDayMasonry(){
-  const grid = document.getElementById('gw-myday-grid');
-  if (!grid || window.innerWidth <= 768) return;
+  const grids = document.querySelectorAll('.gw-myday-grid');
+  if (!grids.length || window.innerWidth <= 768) return;
   const ROW = 4, GAP = 28; // ROW must match grid-auto-rows; GAP = vertical breathing room
   // IMPORTANT — two things must both happen, in this order, for every widget:
   //   1) Reset el.style.gridRow to 'auto' BEFORE measuring. `.gw-myday-grid`
@@ -2572,14 +2612,17 @@ function _gwMyDayMasonry(){
   //      el.getBoundingClientRect().height still reports ~4px. The body is
   //      a normal block child (not itself grid-stretched) so its scrollHeight
   //      reflects its real natural content height.
-  grid.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
-    const body = el.querySelector('.gw-myday-widget-body');
-    if (!body) return;
-    el.style.gridRow = 'auto';
-    const bar = el.querySelector('.gw-myday-widget-bar');
-    const h = body.scrollHeight + (bar ? bar.getBoundingClientRect().height : 0);
-    el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
-  });
+  const _packGrid = (grid) => {
+    grid.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
+      const body = el.querySelector('.gw-myday-widget-body');
+      if (!body) return;
+      el.style.gridRow = 'auto';
+      const bar = el.querySelector('.gw-myday-widget-bar');
+      const h = body.scrollHeight + (bar ? bar.getBoundingClientRect().height : 0);
+      el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
+    });
+  };
+  grids.forEach(_packGrid);
   // watch for async content arriving (calendar, reviews, jobs, AR…) → re-pack
   if (window._gwMyDayRO) { try { window._gwMyDayRO.disconnect(); } catch(e) {} }
   if (typeof ResizeObserver !== 'undefined') {
@@ -2588,19 +2631,14 @@ function _gwMyDayMasonry(){
       if (pending) return;
       pending = setTimeout(() => {
         pending = null;
-        const g = document.getElementById('gw-myday-grid');
-        if (!g) { try { window._gwMyDayRO.disconnect(); } catch(e) {} return; }
-        g.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
-          const b = el.querySelector('.gw-myday-widget-body');
-          if (!b) return;
-          el.style.gridRow = 'auto';
-          const barEl = el.querySelector('.gw-myday-widget-bar');
-          const h = b.scrollHeight + (barEl ? barEl.getBoundingClientRect().height : 0);
-          el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
-        });
+        const gs = document.querySelectorAll('.gw-myday-grid');
+        if (!gs.length) { try { window._gwMyDayRO.disconnect(); } catch(e) {} return; }
+        gs.forEach(_packGrid);
       }, 120);
     });
-    grid.querySelectorAll(':scope > .gw-myday-widget .gw-myday-widget-body').forEach(b => window._gwMyDayRO.observe(b));
+    grids.forEach(grid => {
+      grid.querySelectorAll(':scope > .gw-myday-widget .gw-myday-widget-body').forEach(b => window._gwMyDayRO.observe(b));
+    });
   }
 }
 window.addEventListener('resize', () => {
@@ -2949,23 +2987,28 @@ function _gwTodayRender() {
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
 
+  // Hero KPI band: same 4 real figures as before, restyled with an icon +
+  // accent color per tile so the top of Command Center reads as a proper
+  // hub summary strip rather than a plain stat row. No new data — this is a
+  // pure presentation upgrade over the existing Pipeline Snapshot numbers.
+  const _gi2 = (n) => (typeof gwIcon==='function') ? gwIcon(n, 17, 'currentColor') : '';
   const _pipeStrip = _isField ? '' : `
     <div class="gw-today-pipe-strip">
-      <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Open pipeline">
-        <span class="gw-today-pipe-label">Open Leads</span>
-        <span class="gw-today-pipe-val">${_open.length}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--sky" onclick="show('pipeline')" title="Open pipeline">
+        <span class="gw-today-pipe-ic">${_gi2('leads')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Open Leads</span><span class="gw-today-pipe-val">${_open.length}</span></span>
       </div>
-      <div class="gw-today-pipe-cell" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
-        <span class="gw-today-pipe-label">Proposals Out</span>
-        <span class="gw-today-pipe-val">${_propo.length}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--amber" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
+        <span class="gw-today-pipe-ic">${_gi2('estimate')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Proposals Out</span><span class="gw-today-pipe-val">${_propo.length}</span></span>
       </div>
-      <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Pipeline value">
-        <span class="gw-today-pipe-label">Pipeline Value</span>
-        <span class="gw-today-pipe-val gw-today-pipe-val--money">${_fmt(_pipeVal)}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--pine" onclick="show('pipeline')" title="Pipeline value">
+        <span class="gw-today-pipe-ic">${_gi2('revenue')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Pipeline Value</span><span class="gw-today-pipe-val gw-today-pipe-val--money">${_fmt(_pipeVal)}</span></span>
       </div>
-      <div class="gw-today-pipe-cell" title="Won this month">
-        <span class="gw-today-pipe-label">Won MTD</span>
-        <span class="gw-today-pipe-val gw-today-pipe-val--won">${_wonMTD.length} · ${_fmt(_wonMTDVal)}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--emerald" title="Won this month">
+        <span class="gw-today-pipe-ic">${_gi2('won')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Won MTD</span><span class="gw-today-pipe-val gw-today-pipe-val--won">${_wonMTD.length} · ${_fmt(_wonMTDVal)}</span></span>
       </div>
     </div>`;
 
@@ -3119,7 +3162,6 @@ function _gwTodayRender() {
     recentWinsHtml: _recentWinsHtml,
   };
   const _layout = _gwMyDayResolveLayout(_wCtx);
-  const _widgetsHtml = _layout.order.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, _editing)).join('');
   const _libOpen = _editing && !!window._gwMyDayLibOpen;
   const _editBar = _editing ? `
     <div class="gw-myday-edit-banner">
@@ -3132,12 +3174,50 @@ function _gwTodayRender() {
     </div>
     ${_libOpen ? _gwMyDayLibraryPanel(_wCtx, _layout) : ''}` : '';
 
+  // ── Zone-grouped layout (view mode only, preset day-modes only) ───────────
+  // "My Layout" (custom) keeps the exact flat, single-grid, drag/resize UX
+  // it always had — grouping would fight the user's own manual arrangement.
+  // Editing also always uses the flat grid (drag-reorder assumes one grid).
+  // Every preset mode (Command Center/Field/Office/Sales/Focus) groups its
+  // widgets into visually distinct zone sections instead, each its own
+  // titled card-strip with a "Full report" drill-down where one exists —
+  // this is what makes Command Center read as a hub of the underlying
+  // report areas rather than a flat pile of same-weight widgets.
+  let _gridsHtml;
+  if (!_editing && _curModeId !== 'custom') {
+    const _visibleIds = _layout.order.filter(id => !_layout.hidden.includes(id));
+    // Hero-zone widgets (currently just pipeStrip) render standalone, full
+    // width, above the zone sections — they're already their own compact
+    // strip, not a masonry-packed card, so they don't belong inside a grid.
+    const _heroIds = _visibleIds.filter(id => { const w = _GW_MYDAY_WIDGETS.find(x=>x.id===id); return w && w.zone === 'hero'; });
+    const _heroWidgetsHtml = _heroIds.map(id => (_GW_MYDAY_WIDGETS.find(x=>x.id===id).render(_wCtx) || '')).join('');
+    const _zoneBuckets = _gwMyDayGroupByZone(_visibleIds);
+    let _firstGrid = true;
+    const _zonesHtml = _zoneBuckets.map(bucket => {
+      const z = _GW_MYDAY_ZONES[bucket.zoneKey] || _GW_MYDAY_ZONES.personal;
+      const html = bucket.ids.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, false)).join('');
+      if (!html.trim()) return '';
+      const gridId = _firstGrid ? ' id="gw-myday-grid"' : '';
+      _firstGrid = false;
+      return `<section class="gw-myday-zone" style="--gw-zone-accent:${z.accent}">
+        <div class="gw-myday-zone-head">
+          <span class="gw-myday-zone-ic">${(typeof gwIcon==='function') ? gwIcon(z.icon, 15, 'currentColor') : ''}</span>
+          <h3 class="gw-myday-zone-title">${escapeHtml(z.label)}</h3>
+          ${z.report ? `<button class="gw-myday-zone-link" onclick="show('${z.report}')">${escapeHtml(z.reportLabel)} <span class="gw-myday-zone-link-ic">${(typeof gwIcon==='function') ? gwIcon('chevron_right', 12, 'currentColor') : ''}</span></button>` : ''}
+        </div>
+        <div class="gw-myday-grid"${gridId}>${html}</div>
+      </section>`;
+    }).join('');
+    _gridsHtml = `${_heroWidgetsHtml}${_zonesHtml}`;
+  } else {
+    const _widgetsHtml = _layout.order.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, _editing)).join('');
+    _gridsHtml = `<div id="gw-myday-grid" class="gw-myday-grid${_editing ? ' gw-myday-grid--edit' : ''}">${_widgetsHtml}</div>`;
+  }
+
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}
     ${_editBar}
-    <div id="gw-myday-grid" class="gw-myday-grid${_editing ? ' gw-myday-grid--edit' : ''}">
-      ${_widgetsHtml}
-    </div>
+    ${_gridsHtml}
   `;
   wireChecks();
   if (_editing) _gwMyDayBindDnD();

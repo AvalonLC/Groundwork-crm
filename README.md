@@ -739,3 +739,54 @@ set each widget's real height via inline `style="grid-row:span N"`:
   command-center dashboard rather than a grid of small widgets) — the IA
   consolidation and both rounds of grid bug fixes above were prioritized
   first since they were reported as active defects. Recommended follow-up.
+
+## Visual Hub Pass: Hero KPI Band + Zone-Grouped Command Center (2026-08-03)
+
+Follow-up to the entry above, delivering the "recommended follow-up" flagged
+there. Two parts, both requested together: (a) elevate the Pipeline Snapshot
+stat strip into a true hero KPI band, and (b) group Command Center's widgets
+into visually distinct zones so the page reads as a hub of the underlying
+report pages rather than a flat pile of same-weight widgets.
+
+**(a) Hero KPI band:**
+- Redesigned the Pipeline Snapshot strip (Open Leads / Proposals Out /
+  Pipeline Value / Won MTD) from a plain bordered-divider stat row into
+  icon-chip cards, each with its own color accent (sky/amber/pine/emerald)
+  and an inline SVG icon (via `gwIcon()`) on a colored chip background.
+- Renders full-width, standalone, above all zone sections (see below) — it's
+  a compact KPI strip, not a masonry-packed card.
+
+**(b) Zone-grouped layout:**
+- Added a `zone` tag (`hero`/`sales`/`financial`/`operations`/`personal`) to
+  every widget in `_GW_MYDAY_WIDGETS`, plus a `_GW_MYDAY_ZONES` config
+  (label, icon, accent color, and — where one exists — the report route to
+  drill into) for `sales` → Business Pulse, `financial` → Financial
+  Snapshot, `operations` → Operations Snapshot, and a `personal` "My Work"
+  zone with no report link.
+- Command Center's **preset day-modes** (curated/field/office/sales/focus),
+  in view mode, now render widgets grouped under titled
+  `<section class="gw-myday-zone">` blocks — colored header border, icon
+  chip, and (for zones with a report) a "Full report ›" button that
+  navigates straight to the matching report page.
+- The custom **"My Layout"** mode and **edit mode** are both intentionally
+  untouched — they keep the original flat single-grid layout exactly as
+  before, so drag-and-drop reordering (which assumes one grid) needed no
+  changes.
+- The masonry engine (`_gwMyDayMasonry()`) was rewritten to pack **every**
+  `.gw-myday-grid` on the page (one per zone) via `querySelectorAll`
+  instead of assuming a single global grid, while preserving the exact
+  reset-before-measure sequence from the prior bug fix (see entry above) so
+  the previously-fixed runaway-growth-loop bug does not recur per-grid.
+- **Verified** via Playwright (login + live D1 data): zero widget overlaps
+  and zero clipped content across curated/office/sales/field/focus + custom
+  + edit mode; zero widget-height growth across repeated timepoints in a
+  mode with async widgets (finance/AR snapshot); correct drill-down
+  navigation from a zone's "Full report" button; and confirmed the separate
+  mobile renderer (`_gwTodayRenderMobile()`, ≤768px) is completely
+  unaffected by all of the above (fresh page load at 400px shows zero
+  zones, original mobile header layout intact).
+- **Known verification gap**: the intermediate `900px`/`1100px` CSS
+  breakpoints for `.gw-myday-grid` were not explicitly screenshot-tested
+  against the new per-zone multi-grid structure (only full desktop width
+  and mobile were). Low risk since those overrides are class-based and
+  apply per-grid automatically, but not visually re-confirmed.

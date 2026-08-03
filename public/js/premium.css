@@ -8485,32 +8485,56 @@ h1.pl-title,
    PHASE B — My Day view: pipeline strip, two-column layout, finance snap card
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Pipeline stat strip ──────────────────────────────────────────────────── */
+/* ── Pipeline stat strip → Command Center hero KPI band ──────────────────────
+   Same 4 real figures as before (Open Leads / Proposals Out / Pipeline Value
+   / Won MTD), restyled as a proper hero band: each tile gets an icon chip in
+   its own accent color plus a soft tinted top edge, so the top of Command
+   Center reads as a hub summary rather than a plain stat row. Pure
+   presentation — no new data, no grid/masonry changes. */
 .gw-today-pipe-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
-  background: var(--gw-surface, #ffffff);
-  border: 1px solid var(--gw-line, #E2EAE9);
-  border-radius: var(--gw-r-lg, 12px);
-  overflow: hidden;
+  gap: 14px;
   margin-bottom: 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.04);
 }
 .gw-today-pipe-cell {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 14px 16px;
-  gap: 4px;
+  gap: 12px;
+  padding: 16px 18px;
   cursor: pointer;
-  transition: background .15s;
-  border-right: 1px solid var(--gw-line, #E2EAE9);
-  text-align: center;
+  text-align: left;
+  background: var(--gw-surface, #ffffff);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: var(--gw-r-lg, 14px);
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  transition: box-shadow .15s, transform .15s, border-color .15s;
+  position: relative;
+  overflow: hidden;
 }
-.gw-today-pipe-cell:last-child { border-right: 0; }
-.gw-today-pipe-cell:hover { background: var(--gw-bg2, #F5F8F7); }
+.gw-today-pipe-cell:before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+}
+.gw-today-pipe-cell:hover { box-shadow: 0 6px 18px rgba(15,28,20,.09); transform: translateY(-1px); }
+.gw-today-pipe-ic {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+}
+.gw-today-pipe-cell--sky:before, .gw-today-pipe-cell--sky .gw-today-pipe-ic     { background: var(--gw-sky, #4D8A86); }
+.gw-today-pipe-cell--amber:before, .gw-today-pipe-cell--amber .gw-today-pipe-ic { background: var(--gw-amber, #8B6914); }
+.gw-today-pipe-cell--pine:before, .gw-today-pipe-cell--pine .gw-today-pipe-ic   { background: var(--gw-pine, #113931); }
+.gw-today-pipe-cell--emerald:before, .gw-today-pipe-cell--emerald .gw-today-pipe-ic { background: var(--gw-emerald, #2D7A55); }
+.gw-today-pipe-ic { color: #fff; opacity: .92; }
+.gw-today-pipe-cell > div,
+.gw-today-pipe-cell .gw-today-pipe-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gw-today-pipe-label {
   font-size: 11px;
   font-weight: 700;
@@ -8519,21 +8543,16 @@ h1.pl-title,
   color: var(--gw-muted, #5E6E6F);
 }
 .gw-today-pipe-val {
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--gw-ink, #1F2A2B);
   line-height: 1.15;
 }
-.gw-today-pipe-val--money { font-size: 18px; color: var(--gw-pine, #4D8A86); }
-.gw-today-pipe-val--won   { font-size: 16px; color: #2D7A55; }
+.gw-today-pipe-val--money { font-size: 19px; color: var(--gw-pine, #113931); }
+.gw-today-pipe-val--won   { font-size: 16px; color: var(--gw-emerald, #2D7A55); }
 
 @media (max-width: 680px) {
-  .gw-today-pipe-strip { grid-template-columns: repeat(2, 1fr); }
-  .gw-today-pipe-cell:nth-child(2) { border-right: 0; }
-  .gw-today-pipe-cell:nth-child(2n) { border-right: 0; }
-  .gw-today-pipe-cell { border-bottom: 1px solid var(--gw-line, #E2EAE9); }
-  .gw-today-pipe-cell:nth-child(3),
-  .gw-today-pipe-cell:nth-child(4) { border-bottom: 0; }
+  .gw-today-pipe-strip { grid-template-columns: repeat(2, 1fr); gap: 10px; }
 }
 
 /* ── Two-column My Day grid ───────────────────────────────────────────────── */
@@ -14668,6 +14687,62 @@ h1.pl-title,
   .gw-myday-widget { grid-column: span 1 !important; grid-row: auto !important; }
 }
 
+/* ── Command Center zone sections ─────────────────────────────────────────
+   Groups the flat widget pile into visually distinct sections (Sales &
+   Pipeline / Financial / Operations / My Work) so preset day-modes read as
+   a hub of the underlying report areas rather than a uniform grid of
+   same-weight cards. Each zone is its own titled strip with a colored icon
+   chip (--gw-zone-accent, set inline per zone) and, where a report page
+   exists, a "Full report" drill-down link. Only used for preset modes in
+   view mode — see _gwTodayRender's zone-grouping branch; "My Layout"
+   (custom) and edit mode always keep the original flat single-grid. */
+.gw-myday-zone { margin-bottom: 30px; }
+.gw-myday-zone:last-child { margin-bottom: 0; }
+.gw-myday-zone-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--gw-zone-accent, var(--gw-line, #E2EAE9));
+}
+.gw-myday-zone-ic {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--gw-zone-accent, var(--gw-sky, #4D8A86));
+  color: #fff;
+}
+.gw-myday-zone-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--gw-ink, #1F2A2B);
+  flex: 1;
+  letter-spacing: -.01em;
+}
+.gw-myday-zone-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gw-zone-accent, var(--gw-sky, #4D8A86));
+  padding: 4px 2px;
+  white-space: nowrap;
+}
+.gw-myday-zone-link:hover { text-decoration: underline; }
+.gw-myday-zone-link-ic { display: inline-flex; }
+@media (max-width: 768px) {
+  .gw-myday-zone { margin-bottom: 22px; }
+}
+
 /* ── Customize (edit) mode ── */
 .gw-myday-edit-banner {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
@@ -14977,15 +15052,11 @@ h1.pl-title,
    flex wrapping instead of window media queries.
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* Pipeline Snapshot: cells reflow into as many columns as fit (min 130px each) */
+/* Pipeline Snapshot hero tiles: reflow into as many columns as fit (min
+   150px each) — each tile is now its own bordered/shadowed card (see the
+   hero KPI band rules above), so no divider-border hack is needed here. */
 .gw-myday-widget-body .gw-today-pipe-strip {
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-}
-/* borders that work at any wrap count: each cell draws bottom+right, the
-   strip's overflow:hidden clips the outermost ones via -1px margins */
-.gw-myday-widget-body .gw-today-pipe-cell {
-  border-bottom: 1px solid var(--gw-line, #E2EAE9);
-  margin-bottom: -1px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 /* Generic inner grids (stats, forms, 2/3/4-col cards) reflow inside widgets */
