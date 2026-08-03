@@ -904,9 +904,24 @@ account, live local D1 data):
   `/api/calendar/sync` — both return 404 by design when a tenant hasn't
   connected Google Calendar; confirmed identical in the pre-rebuild commit,
   not a regression).
-- Only tested as `office_manager` role this pass — **admin/field/rep-role
-  regression testing not yet done**, recommended before wider rollout.
+- Also verified across **admin**, **rep**, and **foreman (field role)**
+  accounts in a follow-up pass:
+  - **admin** (`tyler@avalon-lc.com`): full Command Center, all 4 zones
+    (Sales & Pipeline / Financial / Operations / My Work), 5-chip hero band,
+    zero unexpected errors.
+  - **rep** (`ryan@avalon-lc.com`): Command Center renders correctly with
+    **no Financial zone** (matches `showFin: isAdmin||isOM` gating) — Sales
+    & Pipeline (including the rep's own "Weekly Activity Targets" widget) +
+    Operations + My Work only.
+  - **foreman** (field role, temp test account): correctly bypassed the
+    rebuilt Command Center entirely and routed straight to the separate,
+    intentionally-untouched **`fieldDashboard`** view — confirming the
+    "fieldDashboard stays untouched" requirement holds. Sidebar nav still
+    shows the single consolidated "Command Center" label.
+  - All three roles: zero "already declared" or unexpected console errors;
+    only the same pre-existing pre-auth 401s / unconnected-Google-Calendar
+    404s seen in the office_manager pass.
 
-**Not yet done:** production deploy to `groundwork-crm.com` (still serving
-the pre-rebuild commit as of this entry) and multi-role Playwright coverage
-beyond `office_manager`.
+**Production deploy:** not yet done — `groundwork-crm.com` still serves the
+pre-rebuild commit as of this entry. Recommended next step once ready to
+ship.
