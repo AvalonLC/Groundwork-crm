@@ -922,6 +922,13 @@ account, live local D1 data):
     only the same pre-existing pre-auth 401s / unconnected-Google-Calendar
     404s seen in the office_manager pass.
 
-**Production deploy:** not yet done — `groundwork-crm.com` still serves the
-pre-rebuild commit as of this entry. Recommended next step once ready to
-ship.
+**Deployed to production** via `wrangler pages deploy` (BYOK, Tyler's
+Cloudflare account) — live at https://groundwork-crm.com and
+https://www.groundwork-crm.com. Verified post-deploy with a fresh
+Playwright console capture directly against production: identical clean
+signature to the pre-deploy sandbox check (only the 4 expected pre-auth
+401s, zero "already declared" or other JS errors). Confirmed via `curl`
+that the duplicate-`<script>` fix is live (`db.js` tag appears exactly
+once) and that `salesReports`/`financialReports`/`opsReports` no longer
+appear anywhere in the deployed `app_premium.js` except as migration-
+lineage comments.
