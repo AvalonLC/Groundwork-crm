@@ -163,8 +163,7 @@ window.gwDivisionLabel = gwDivisionLabel;
 const _VIEW_WORKSPACE_MAP = {
   // Dashboard workspace
   today:'gwDashboard', myDashboard:'gwDashboard',
-  revenueAdmin:'gwDashboard', salesReports:'gwDashboard',
-  financialReports:'gwDashboard', opsReports:'gwDashboard',
+  revenueAdmin:'gwDashboard',
   fieldDashboard:'gwDashboard',
   // Sales workspace
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', customerDetail:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
@@ -407,7 +406,7 @@ const DEFAULT_NAV_PERMS = {
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-    'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+    'revenueAdmin','teamReports',
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
@@ -421,7 +420,7 @@ const DEFAULT_NAV_PERMS = {
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-    'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+    'revenueAdmin','teamReports',
     'settings','userManagement','integrations','manager','pricing',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
@@ -442,7 +441,7 @@ const DEFAULT_NAV_PERMS = {
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView',
     'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
+    'teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
     'userManagement','gwFieldReports','gwAARTemplate','gwAARReview'],
   // Foreman: field lead — full operations hub, crew/dispatch oversight, time approval
   foreman: ['gwDashboard','gwOperations',
@@ -707,8 +706,7 @@ function fallbackCopy(text){
       gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard workspace tabs
       today:'Command Center', myDashboard:'Command Center', teamView:'Team',
-      revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
-      financialReports:'Financial Snapshot', opsReports:'Operations Snapshot',
+      revenueAdmin:'Business Pulse',
       teamReports:'Team',
       // Sales workspace tabs
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
@@ -858,22 +856,17 @@ function gwDashboard(tab) {
     return;
   }
 
-  // Non-field roles: single Command Center landing page — Business Pulse /
-  // Financial Snapshot / Operations Snapshot are no longer separate top-level
-  // tabs (they overlapped heavily with Command Center's own widgets and made
-  // the Dashboard section feel repetitive). They still exist as drill-down
-  // detail pages, reachable only via "Full report" links on the relevant
-  // Command Center widget (Pipeline → Business Pulse, Financial Pulse →
-  // Financial Snapshot, Today's Jobs → Operations Snapshot).
+  // Non-field roles: single Command Center landing page. Business Pulse /
+  // Financial Snapshot / Operations Snapshot report pages have been retired —
+  // their content now lives inline as Command Center widgets (accordion-expand
+  // sections, Add-Widget-only widgets like Rep Leaderboard / Budget vs Actual /
+  // Operations deeper detail).
   if (!tab || tab === 'gwDashboard' || tab === 'fieldDashboard') tab = 'today';
   const dashTabs = [
     {id:'today', label:'Command Center'},
   ];
   _gwSetHeader('Dashboard', dashTabs, dashTabs.some(t=>t.id===tab) ? tab : 'today');
   if (tab === 'today')            today();
-  else if (tab === 'salesReports')    (typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
-  else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
-  else if (tab === 'opsReports')      (typeof opsReports==='function') ? opsReports() : _gwTabStub('Operations Snapshot');
   else today();
 }
 window.gwDashboard = gwDashboard;
@@ -1454,8 +1447,7 @@ function show(viewName='today', param){
       gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard
       today:'Command Center', myDashboard:'Command Center', teamView:'Team',
-      revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
-      financialReports:'Financial Snapshot', opsReports:'Operations Snapshot', teamReports:'Team',
+      revenueAdmin:'Business Pulse', teamReports:'Team',
       // Learning
       academy:'Sales Academy', learnEstimating:'Estimating 101', learnFinancial:'Financial Literacy', learnCrmGuide:'CRM Guide',
       // Sales
@@ -1510,8 +1502,7 @@ function show(viewName='today', param){
   const _wsHeaderMap = {
     // Dashboard workspace tab aliases
     today:'Dashboard', myDashboard:'Dashboard',
-    revenueAdmin:'Dashboard', salesReports:'Dashboard',
-    financialReports:'Dashboard', opsReports:'Dashboard',
+    revenueAdmin:'Dashboard',
     // Sales workspace tab aliases
     pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales', teamReports:'Sales',
     // Learning workspace tab aliases
@@ -1657,9 +1648,7 @@ function show(viewName='today', param){
     crewView:           ()   => crewView(),
     toolsConsumables:   ()   => (typeof window.assetsHub==='function') ? window.assetsHub('inventory') : toolsConsumables(),
     // Reports
-    salesReports:       ()   => salesReports(),
-    financialReports:   ()   => financialReports(),
-    opsReports:         ()   => opsReports(),
+
     teamReports:        ()   => teamReports(),
     // Settings
     systemConfig:       ()   => settings('company'),
@@ -1727,6 +1716,11 @@ function show(viewName='today', param){
     gwAudit:      ()  => gwAuditTab(),
     gwAccessModes:(s) => gwAccessModes(s),
     // Learning track views — must be in routes so show('learnEstimating') etc.
+    // resolve correctlysources:  (s) => gwResources(s),
+    gwAdminWorkflow: (s) => gwAdminWorkflow(s),
+    gwAudit:      ()  => gwAuditTab(),
+    gwAccessModes:(s) => gwAccessModes(s),
+    // Learning track views — must be in routes so show('learnEstimating') etc.
     // resolve correctly on reload (hash restore) and after _glMarkDone re-render
     academy:         () => gwLearning('academy'),
     learnEstimating: () => learnEstimating(),
@@ -1735,7 +1729,7 @@ function show(viewName='today', param){
   };
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
-  const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports'];
+  const dashAliases = ['myDashboard','revenueAdmin'];
   const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','proposals','communications','textMessages','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
     'process','forms','scripts','emailTemplates','objections','calculator'];
@@ -2058,7 +2052,7 @@ function _gwTodayFinanceSnap() {
     return `<div class="gw-today-fin-card">
       <div class="gw-today-fin-head">
         <span class="gw-today-fin-title">Financial Pulse</span>
-        <button class="gw-today-fin-link" onclick="show('financialReports')">Full View</button>
+        <button class="gw-today-fin-link" onclick="show('financialHub')">Full View</button>
       </div>
       <div class="gw-today-fin-kpis">
         <div class="gw-today-fin-kpi">
@@ -2161,7 +2155,7 @@ function _gwTodayRenderMobile(opts) {
         <div class="gw-today-fin-card" style="opacity:.6">
           <div class="gw-today-fin-head">
             <span class="gw-today-fin-title">Financial Pulse</span>
-            <button class="gw-today-fin-link" onclick="show('financialReports')">Full View</button>
+            <button class="gw-today-fin-link" onclick="show('financialHub')">Full View</button>
           </div>
           <div style="padding:12px 0;color:#9CA3AF;font-size:13px">Loading financial data…</div>
         </div>
@@ -2234,50 +2228,48 @@ function _gwTodayRenderMobile(opts) {
   }
 }
 
-/* ── My Day customizable widgets (Apple-widget style) ────────────────────────
-   Each dashboard section is a "widget": add/remove from a widget library,
-   reorder (drag or arrows), resize width (drag right edge, snaps to grid
-   columns) and height (drag bottom edge, free). Layout persists per-user. */
-const _GW_MYDAY_SPANS = [1, 2, 3, 4, 5, 6];
-const _GW_MYDAY_SPAN_LABEL = { 1:'\u2159', 2:'\u2153', 3:'\u00BD', 4:'\u2154', 5:'\u215A', 6:'Full' };
+/* ── Command Center widgets ───────────────────────────────────────────────
+   Single canonical layout for everyone — no presets, no custom "modes", no
+   edit-mode/drag/resize. Every widget has a fixed span (design decision,
+   not user-resizable) and a fixed zone. Users can only reorder-free / add /
+   remove via "+ Add Widget" (order + hidden persisted per-user). Deep report
+   content that used to live on separate pages (Business Pulse / Financial
+   Snapshot / Operations Snapshot) is migrated in as accordion-expand-in-place
+   sections inside the relevant widget, or as its own Add-Widget-only item. */
 const _GW_MYDAY_WIDGETS = [
-  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip, zone:'hero' },
-  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value with a 4-week trend line and stage breakdown chart', span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.pipeChartHtml, zone:'sales' },
-  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
-  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
-  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap, zone:'financial' },
+  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD, close likelihood', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip, zone:'hero' },
+  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value trend, stage breakdown, funnel and lead-source detail', span:3, allowed:c=>!c.isField, render:c=>c.pipeChartHtml, zone:'sales' },
   { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
   { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>`, zone:'sales' },
   { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml, zone:'sales' },
   { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>', zone:'sales' },
+  { id:'repLeaderboard', label:'Rep Leaderboard',       desc:'Compact rep performance ranking — open, won, pipeline $, close %', span:3, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:c=>c.repLeaderboardHtml, zone:'sales' },
+  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads sitting late in their stage (needs attention)',        span:3, allowed:c=>!c.isField, render:c=>c.staleLeadsHtml, zone:'sales' },
+  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml, zone:'sales' },
+  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:3, allowed:c=>c.showFin,         render:c=>c.finSnap, zone:'financial' },
+  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue, paid-this-month, and an aging breakdown', span:3, allowed:c=>c.showFin, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'financial' },
+  { id:'budgetVsActual', label:'Budget vs Actual',      desc:'Annual budget vs actual with per-division progress and margin', span:6, allowed:c=>c.showFin, defaultOff:true, render:c=>c.budgetVsActualHtml, zone:'financial' },
+  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from Command Center', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
+  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:3, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'opsDeeper',    label:'Upcoming Schedule (7 Days)', desc:'Jobs scheduled in the next 7 days, plus capacity outlook', span:6, allowed:c=>!c.isField, defaultOff:true, render:c=>c.opsDeeperHtml, zone:'operations' },
+  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
+  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
   { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml, zone:'personal' },
   { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
-  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads with no activity in 7+ days',             span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.staleLeadsHtml, zone:'sales' },
-  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml, zone:'sales' },
-  // ── Owner-operator widgets (async — loaded after render) ──────────────────
-  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from My Day', span:2, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
-  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
-  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:2, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
-  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue and paid-this-month invoice totals', span:2, allowed:c=>c.showFin,     defaultOff:true, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'financial' },
 ];
 
-/* ── Zone grouping metadata — used only for VIEW rendering of preset day
-   modes (curated/office/sales/field/focus), never for the custom "My
-   Layout" mode or while editing (those always keep the flat single-grid
-   layout so drag/resize/DnD logic — which assumes one #gw-myday-grid — is
-   completely untouched). Groups widgets into visually distinct sections
-   (colored header + icon + "Full report" drill-down) so Command Center
-   reads as a hub of the 3 report areas (Business Pulse / Financial
-   Snapshot / Operations Snapshot) rather than a flat pile of small cards.
+/* ── Zone grouping metadata — groups the flat widget list into visually
+   distinct sections (Sales & Pipeline / Financial / Operations / My Work).
    'hero' (pipeStrip) is rendered standalone above all zones, full width,
    outside the masonry grid entirely (it already sizes itself naturally).
-   'personal' has no drill-down report (My Tasks/Calendar/etc. aren't a
-   report page) but still gets its own titled section for visual parity. */
+   No "Full report" drill-down links — those pages no longer exist; deep
+   content lives inline in the relevant widget via accordion-expand. */
 const _GW_MYDAY_ZONES = {
-  sales:      { label:'Sales & Pipeline', icon:'pipeline', accent:'var(--gw-sky, #4D8A86)',    report:'salesReports',      reportLabel:'Business Pulse' },
-  financial:  { label:'Financial',        icon:'dollar',   accent:'var(--gw-pine, #113931)',   report:'financialReports',  reportLabel:'Financial Snapshot' },
-  operations: { label:'Operations',       icon:'wrench',   accent:'var(--gw-emerald, #2D7A55)',report:'opsReports',        reportLabel:'Operations Snapshot' },
-  personal:   { label:'My Work',          icon:'user',     accent:'var(--gw-amber, #8B6914)',  report:null,                reportLabel:'' },
+  sales:      { label:'Sales & Pipeline', icon:'pipeline', accent:'var(--gw-sky, #4D8A86)' },
+  financial:  { label:'Financial',        icon:'dollar',   accent:'var(--gw-pine, #113931)' },
+  operations: { label:'Operations',       icon:'wrench',   accent:'var(--gw-emerald, #2D7A55)' },
+  personal:   { label:'My Work',          icon:'user',     accent:'var(--gw-amber, #8B6914)' },
 };
 /* Group an ordered list of widget ids into {zoneKey, ids:[...]} buckets,
    preserving first-seen zone order (so the mode's own widget ordering
@@ -2295,122 +2287,43 @@ function _gwMyDayGroupByZone(ids){
   return buckets;
 }
 
-/* ── My Day "Day Modes" — preset widget templates ────────────────────────────
-   An owner-operator's day isn't always the same day: some days they're on the
-   tools (need time clock + job lineup), some days they're running the office
-   (need financials + receivables). Modes are one-click preset layouts; the
-   user's own custom layout ("My Layout") is stored separately and never
-   touched by switching modes.
-   Each preset also carries `caps` — the max rows a list-style widget (jobs /
-   tasks / calendar) shows before collapsing into a "+N more" line. This keeps
-   every widget a fixed, predictable height no matter how busy the day is —
-   caps are tuned per role since a foreman's day is job-heavy while a sales
-   rep's day is task/calendar-heavy. */
-const _GW_MYDAY_DEFAULT_CAPS = { jobsToday:4, tasks:4, calendar:4 };
-const _GW_MYDAY_MODES = [
-  { id:'custom', label:'My Layout', icon:'star',
-    desc:'Your own saved widget layout',
-    caps: _GW_MYDAY_DEFAULT_CAPS },
-  { id:'curated', label:'Command Center', icon:'dashboard',
-    desc:'A calm, curated view — today\'s jobs, tasks, calendar and pipeline at a glance',
-    order:['pipeStrip','jobsToday','tasks','calendar','pipeChart'],
-    spans:{ pipeStrip:6, jobsToday:6, tasks:2, calendar:2, pipeChart:2 },
-    caps: { jobsToday:4, tasks:4, calendar:4 } },
-  { id:'field',  label:'Field Day', icon:'wrench',
-    desc:'On the tools today — time clock, job lineup, tasks and crew hours',
-    order:['clock','jobsToday','tasks','crewHours'],
-    spans:{ clock:2, jobsToday:4, tasks:4, crewHours:2 },
-    caps: { jobsToday:6, tasks:3, calendar:3 } },
-  { id:'office', label:'Office Day', icon:'reports',
-    desc:'Running the business — financial pulse, money owed, follow-ups and wins',
-    order:['pipeStrip','finance','arSnapshot','tasks','staleLeads','recentWins'],
-    spans:{ pipeStrip:6, finance:3, arSnapshot:3, tasks:4, staleLeads:2, recentWins:6 },
-    caps: { jobsToday:3, tasks:4, calendar:4 } },
-  { id:'sales',  label:'Sales Day', icon:'call',
-    desc:'Filling the pipeline — leads, proposals, daily start-up and activity targets',
-    order:['pipeStrip','tasks','checklist','recent','staleLeads','activity'],
-    spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 },
-    caps: { jobsToday:3, tasks:5, calendar:5 } },
-  { id:'focus', label:'Focus', icon:'target',
-    desc:'Only the work that needs attention now — tasks, calendar and jobs',
-    order:['tasks','calendar','jobsToday'],
-    spans:{ tasks:4, calendar:2, jobsToday:6 },
-    caps: { jobsToday:6, tasks:6, calendar:6 } },
-];
-/* Read the active mode's caps (falls back to the global default for any
-   widget id the mode doesn't specify, and for 'custom'/unknown modes). */
-function _gwMyDayCapsForMode(modeId){
-  const mode = _GW_MYDAY_MODES.find(m => m.id === modeId);
-  return Object.assign({}, _GW_MYDAY_DEFAULT_CAPS, (mode && mode.caps) || {});
-}
-function _gwMyDayModeKey(){
-  let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
-  return 'gw-myday-mode-' + ((r && r.id) || 'anon');
-}
-function _gwMyDayGetMode(){
-  try {
-    const m = localStorage.getItem(_gwMyDayModeKey());
-    if (_GW_MYDAY_MODES.some(x => x.id === m)) return m;
-    // No mode saved yet. If this person has never touched My Day at all (no
-    // saved custom layout either), give them the new curated default instead
-    // of the old bare "My Layout" — this only affects first-time/no-history
-    // users, so anyone with an existing custom layout keeps seeing it exactly
-    // as before.
-    const hasExistingLayout = !!localStorage.getItem(_gwMyDayLayoutKey());
-    return hasExistingLayout ? 'custom' : 'curated';
-  } catch(e) { return 'custom'; }
-}
-window.gwMyDaySetMode = function(id){
-  if (!_GW_MYDAY_MODES.some(x => x.id === id)) return;
-  try { localStorage.setItem(_gwMyDayModeKey(), id); } catch(e) {}
-  _gwMyDayPersistLayout();
-  window._gwMyDayEditing = false; window._gwMyDayLibOpen = false;
-  _gwTodayRender();
-  const m = _GW_MYDAY_MODES.find(x => x.id === id);
-  if (typeof showToast === 'function' && m) showToast(id === 'custom' ? 'Back to your layout' : m.label + ' mode');
-};
+/* ── Command Center layout model — order + hidden only ───────────────────
+   No presets/modes, no custom-vs-preset branching, no spans/heights/
+   densities, no drag-and-drop. Every widget renders at its fixed `span`
+   (from _GW_MYDAY_WIDGETS) always inside its zone. Users can reorder
+   widgets is NOT supported (DnD was cut) — order comes from the widget
+   registry's own definition order, with `hidden` (via Add/Remove Widget)
+   as the only per-user customization axis, persisted to localStorage +
+   D1 (debounced) exactly as before. */
 function _gwMyDayLayoutKey(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
   return 'gw-myday-layout-' + ((r && r.id) || 'anon');
 }
 function _gwMyDayResolveLayout(ctx){
   const avail = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => w.id);
-  // ── Day mode templates: preset order/spans, everything else hidden ────────
-  const modeId = _gwMyDayGetMode();
-  if (modeId !== 'custom' && !window._gwMyDayEditing) {
-    const mode = _GW_MYDAY_MODES.find(m => m.id === modeId);
-    if (mode) {
-      const order  = mode.order.filter(id => avail.includes(id));
-      avail.forEach(id => { if (!order.includes(id)) order.push(id); });
-      const hidden = avail.filter(id => !mode.order.includes(id));
-      return { order, hidden, spans: Object.assign({}, mode.spans), heights: {}, mode: modeId, caps: _gwMyDayCapsForMode(modeId) };
-    }
-  }
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || 'null'); } catch(e) {}
-  const order = [];
-  if (saved && Array.isArray(saved.order)) saved.order.forEach(id => { if (avail.includes(id)) order.push(id); });
-  avail.forEach(id => { if (!order.includes(id)) order.push(id); });
-  // hidden: default = library widgets marked defaultOff (until the user makes a choice)
+  // Order always follows the registry's own definition order (no reordering
+  // UI) — this keeps zone grouping predictable and avoids stale saved orders
+  // drifting out of sync with newly added widgets.
+  const order = avail.slice();
+  // hidden: default = widgets marked defaultOff, until the user makes a choice
   let hidden;
   if (saved && Array.isArray(saved.hidden)) {
     hidden = saved.hidden.filter(id => avail.includes(id));
-    // widgets added to the library after the user saved: respect their defaultOff
+    // widgets added to the registry after the user saved: respect their defaultOff
     _GW_MYDAY_WIDGETS.forEach(w => {
-      if (w.defaultOff && avail.includes(w.id) && !(saved.seen||[]).includes(w.id) && !hidden.includes(w.id) && !(saved.order||[]).includes(w.id)) hidden.push(w.id);
+      if (w.defaultOff && avail.includes(w.id) && !(saved.seen||[]).includes(w.id) && !hidden.includes(w.id)) hidden.push(w.id);
     });
   } else {
     hidden = _GW_MYDAY_WIDGETS.filter(w => w.defaultOff && avail.includes(w.id)).map(w => w.id);
   }
-  const spans   = (saved && saved.spans   && typeof saved.spans   === 'object') ? saved.spans   : {};
-  const heights = (saved && saved.heights && typeof saved.heights === 'object') ? saved.heights : {};
-  const densities = (saved && saved.densities && typeof saved.densities === 'object') ? saved.densities : {};
-  return { order, hidden, spans, heights, densities, caps: _gwMyDayCapsForMode('custom') };
+  return { order, hidden };
 }
 function _gwMyDaySaveLayout(l){
   try {
     const seen = _GW_MYDAY_WIDGETS.map(w => w.id); // mark all current widgets as seen
-    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans, heights: l.heights || {}, densities:l.densities || {}, seen }));
+    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ hidden: l.hidden, seen }));
   } catch(e) {}
   _gwMyDayPersistLayout();
 }
@@ -2421,7 +2334,6 @@ function _gwMyDayRemoteKey(){
 function _gwMyDayPersistLayout(){
   let layout = {};
   try { layout = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || '{}'); } catch(e) {}
-  layout.mode = _gwMyDayGetMode();
   clearTimeout(window._gwMyDayPersistTimer);
   window._gwMyDayPersistTimer = setTimeout(() => fetch('/api/settings', {
     method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
@@ -2436,10 +2348,9 @@ function _gwMyDayHydrateLayout(){
     const settings = (j && (j.data ?? j)) || {};
     if (settings[key]) {
       const remote = JSON.parse(settings[key]);
-      const mode = remote.mode;
-      delete remote.mode;
+      delete remote.mode; // legacy field from the old modes system — ignore if present
+      delete remote.order; delete remote.spans; delete remote.heights; delete remote.densities;
       localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify(remote));
-      if (_GW_MYDAY_MODES.some(m=>m.id===mode)) localStorage.setItem(_gwMyDayModeKey(), mode);
     }
     window._gwMyDayHydrated = key;
     window._gwMyDayHydrating = '';
@@ -2456,112 +2367,44 @@ function _gwMyDayCurLayout(){
   const activityHtml = (typeof renderTodayActivityWidget === 'function') ? renderTodayActivityWidget() : '';
   return _gwMyDayResolveLayout({ rep, isAdmin, isOM, isField, showFin: isAdmin || isOM, activityHtml });
 }
-function _gwMyDaySpanOf(id, layout){
-  const w = _GW_MYDAY_WIDGETS.find(x => x.id === id);
-  const s = Number(layout.spans[id]);
-  return (_GW_MYDAY_SPANS.includes(s)) ? s : (w ? w.span : 6);
-}
-function _gwMyDayDensityOf(id, layout){
-  const density = layout.densities && layout.densities[id];
-  return ['compact','standard','expanded'].includes(density) ? density : 'standard';
-}
-function _gwMyDayRenderWidget(id, ctx, layout, editing){
+function _gwMyDayRenderWidget(id, ctx, layout){
   const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return '';
-  if (layout.hidden.includes(id)) return ''; // removed widgets live in the library panel
+  if (layout.hidden.includes(id)) return ''; // removed widgets live in the Add Widget popover
   const html = w.render(ctx) || '';
-  if (!html && !editing) return '';
-  const span = _gwMyDaySpanOf(id, layout);
-  const density = _gwMyDayDensityOf(id, layout);
-  const h = Number(layout.heights && layout.heights[id]);
-  const hStyle = (h && h >= 120) ? `height:${h}px;overflow-y:auto;` : '';
-  const bar = editing ? `
-    <div class="gw-myday-widget-bar">
-      <span class="gw-myday-widget-name"><span class="gw-myday-drag-dots">\u28FF</span>${w.label}</span>
-      <span class="gw-myday-widget-btns">
-        <button onclick="gwMyDayMove('${id}',-1)" title="Move earlier">\u2190</button>
-        <button onclick="gwMyDayMove('${id}',1)" title="Move later">\u2192</button>
-        <button onclick="gwMyDaySpanCycle('${id}')" title="Cycle width (or drag the right edge)">${_GW_MYDAY_SPAN_LABEL[span] || ''} width</button>
-        <button onclick="gwMyDayDensityCycle('${id}')" title="Change content density">${density[0].toUpperCase()+density.slice(1)}</button>
-        ${h ? `<button onclick="gwMyDayResetHeight('${id}')" title="Reset to automatic height">Auto height</button>` : ''}
-        <button class="gw-myday-remove-btn" onclick="gwMyDayToggleHide('${id}')" title="Remove from Command Center (find it again in the widget library)">\u00D7 Remove</button>
-      </span>
-    </div>` : '';
-  const grips = editing ? `
-    <div class="gw-myday-grip gw-myday-grip--e"  data-grip="e"  data-widget-id="${id}" title="Drag to resize width"></div>
-    <div class="gw-myday-grip gw-myday-grip--s"  data-grip="s"  data-widget-id="${id}" title="Drag to resize height"></div>
-    <div class="gw-myday-grip gw-myday-grip--se" data-grip="se" data-widget-id="${id}" title="Drag to resize"></div>` : '';
-  return `<div class="gw-myday-widget gw-myday-widget--${density}${editing ? ' gw-myday-widget--edit' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true" tabindex="0"' : ''}>
-    ${bar}
-    <div class="gw-myday-widget-body" style="${hStyle}">${html || `<div class="gw-myday-placeholder">${w.label} \u2014 nothing to show right now</div>`}</div>
-    ${grips}
+  if (!html) return '';
+  return `<div class="gw-myday-widget" data-widget-id="${id}" style="grid-column:span ${w.span}">
+    <div class="gw-myday-widget-body">${html}</div>
+    <button class="gw-myday-widget-remove" onclick="gwMyDayToggleHide('${id}')" title="Remove ${escapeHtml(w.label)} from Command Center">${(typeof gwIcon==='function') ? gwIcon('close', 12, 'currentColor') : '\u00D7'}</button>
   </div>`;
 }
-function _gwMyDayLibraryPanel(ctx, layout){
+/* "+ Add Widget" popover — replaces edit-mode/customize/library-panel. Lists
+   every allowed widget with an Add/Remove toggle. No drag, no resize, no
+   separate editing state — this is just a togglable overlay. */
+function _gwMyDayAddWidgetPopover(ctx, layout){
   const items = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => {
     const onScreen = !layout.hidden.includes(w.id);
     return `<div class="gw-myday-lib-item${onScreen ? ' gw-myday-lib-item--on' : ''}">
       <div class="gw-myday-lib-info">
-        <strong>${w.label}</strong>
-        <span>${w.desc || ''}</span>
+        <strong>${escapeHtml(w.label)}</strong>
+        <span>${escapeHtml(w.desc || '')}</span>
       </div>
       <button class="${onScreen ? 'gw-myday-lib-remove' : 'gw-myday-lib-add'}" onclick="gwMyDayToggleHide('${w.id}')">${onScreen ? 'Remove' : '+ Add'}</button>
     </div>`;
   }).join('');
-  return `<div class="gw-myday-library" id="gw-myday-library">
+  return `<div class="gw-myday-library" id="gw-myday-add-widget-popover">
     <div class="gw-myday-lib-head">
-      <strong>Widget Library</strong>
-      <span class="muted" style="font-size:12px">Add or remove widgets from your Command Center screen</span>
+      <strong>Add Widget</strong>
+      <span class="muted" style="font-size:12px">Add or remove widgets from your Command Center</span>
+      <button class="secondary-btn small" style="margin-left:auto" onclick="gwMyDayAddWidgetClose()">Done</button>
     </div>
     <div class="gw-myday-lib-grid">${items}</div>
   </div>`;
 }
-window.gwMyDayCustomize = function(){
-  // Customizing always edits YOUR layout — presets are fixed templates.
-  if (_gwMyDayGetMode() !== 'custom') {
-    try { localStorage.setItem(_gwMyDayModeKey(), 'custom'); } catch(e) {}
-    if (typeof showToast === 'function') showToast('Editing your own layout (presets are fixed)');
-  }
-  window._gwMyDayEditing = true; _gwTodayRender();
+window.gwMyDayAddWidgetToggle = function(){
+  window._gwMyDayAddWidgetOpen = !window._gwMyDayAddWidgetOpen; _gwTodayRender();
 };
-window.gwMyDayDone = function(){
-  window._gwMyDayEditing = false; window._gwMyDayLibOpen = false; _gwTodayRender();
-  if (typeof showToast === 'function') showToast('Command Center layout saved');
-};
-window.gwMyDayReset = function(){
-  try { localStorage.removeItem(_gwMyDayLayoutKey()); } catch(e) {}
-  _gwMyDaySaveLayout(_gwMyDayCurLayout());
-  _gwTodayRender();
-  if (typeof showToast === 'function') showToast('Command Center layout reset to default');
-};
-window.gwMyDayToggleLib = function(){
-  window._gwMyDayLibOpen = !window._gwMyDayLibOpen; _gwTodayRender();
-};
-window.gwMyDayMove = function(id, dir){
-  const l = _gwMyDayCurLayout();
-  const i = l.order.indexOf(id); if (i < 0) return;
-  const j = i + (dir < 0 ? -1 : 1);
-  if (j < 0 || j >= l.order.length) return;
-  l.order.splice(j, 0, l.order.splice(i, 1)[0]);
-  _gwMyDaySaveLayout(l); _gwTodayRender();
-};
-window.gwMyDaySpanCycle = function(id){
-  const l = _gwMyDayCurLayout();
-  const cur = _gwMyDaySpanOf(id, l);
-  l.spans[id] = _GW_MYDAY_SPANS[(_GW_MYDAY_SPANS.indexOf(cur) + 1) % _GW_MYDAY_SPANS.length];
-  _gwMyDaySaveLayout(l); _gwTodayRender();
-};
-window.gwMyDayDensityCycle = function(id){
-  const l = _gwMyDayCurLayout();
-  const options = ['compact','standard','expanded'];
-  const current = _gwMyDayDensityOf(id, l);
-  l.densities = l.densities || {};
-  l.densities[id] = options[(options.indexOf(current) + 1) % options.length];
-  _gwMyDaySaveLayout(l); _gwTodayRender();
-};
-window.gwMyDayResetHeight = function(id){
-  const l = _gwMyDayCurLayout();
-  if (l.heights) delete l.heights[id];
-  _gwMyDaySaveLayout(l); _gwTodayRender();
+window.gwMyDayAddWidgetClose = function(){
+  window._gwMyDayAddWidgetOpen = false; _gwTodayRender();
 };
 window.gwMyDayToggleHide = function(id){
   const l = _gwMyDayCurLayout();
@@ -2581,16 +2424,14 @@ function _gwMyDayScratchLoad(){
 /* ── Masonry packing: measure each widget, set grid-row span so the packed
    grid (grid-auto-rows:4px + dense flow) fits everything tightly with no
    dead vertical space. Re-packs automatically when async widgets load.
-   Operates on EVERY `.gw-myday-grid` on the page, not just one by id —
-   the zone-grouped view (see _gwMyDayGroupByZone) renders one grid per
-   zone section (id="gw-myday-grid" only on the first, class shared by all)
-   so each zone packs its own widgets independently. The flat/custom-layout
-   and edit-mode paths still render exactly one grid, so behavior there is
-   unchanged. ── */
+   Operates on EVERY `.gw-myday-grid` on the page, not just one by id — the
+   zone-grouped view renders one grid per zone section (id="gw-myday-grid"
+   only on the first, class shared by all) so each zone packs its own
+   widgets independently. */
 function _gwMyDayMasonry(){
   const grids = document.querySelectorAll('.gw-myday-grid');
   if (!grids.length || window.innerWidth <= 768) return;
-  const ROW = 4, GAP = 28; // ROW must match grid-auto-rows; GAP = vertical breathing room
+  const ROW = 4, GAP = 18; // ROW must match grid-auto-rows; GAP = vertical breathing room (density pass: 28→18)
   // IMPORTANT — two things must both happen, in this order, for every widget:
   //   1) Reset el.style.gridRow to 'auto' BEFORE measuring. `.gw-myday-grid`
   //      uses align-items:stretch, so a widget with an explicit multi-row
@@ -2617,8 +2458,7 @@ function _gwMyDayMasonry(){
       const body = el.querySelector('.gw-myday-widget-body');
       if (!body) return;
       el.style.gridRow = 'auto';
-      const bar = el.querySelector('.gw-myday-widget-bar');
-      const h = body.scrollHeight + (bar ? bar.getBoundingClientRect().height : 0);
+      const h = body.scrollHeight;
       el.style.gridRow = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : 'auto';
     });
   };
@@ -2645,92 +2485,18 @@ window.addEventListener('resize', () => {
   clearTimeout(window._gwMyDayResizeT);
   window._gwMyDayResizeT = setTimeout(_gwMyDayMasonry, 180);
 });
-
-function _gwMyDayBindDnD(){
-  const grid = document.getElementById('gw-myday-grid'); if (!grid) return;
-  let dragId = null;
-  grid.querySelectorAll('.gw-myday-widget').forEach(el => {
-    el.addEventListener('keydown', e => {
-      if (!e.altKey || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
-      e.preventDefault();
-      gwMyDayMove(el.dataset.widgetId, ['ArrowLeft','ArrowUp'].includes(e.key) ? -1 : 1);
-    });
-    el.addEventListener('dragstart', e => {
-      if (window._gwMyDayResizing) { e.preventDefault(); return; }
-      dragId = el.dataset.widgetId;
-      e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', dragId); } catch(err) {}
-      setTimeout(() => el.classList.add('gw-myday-dragging'), 0);
-    });
-    el.addEventListener('dragend', () => {
-      el.classList.remove('gw-myday-dragging');
-      grid.querySelectorAll('.gw-myday-drop-target').forEach(x => x.classList.remove('gw-myday-drop-target'));
-    });
-    el.addEventListener('dragover', e => {
-      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-      if (el.dataset.widgetId !== dragId) el.classList.add('gw-myday-drop-target');
-    });
-    el.addEventListener('dragleave', () => el.classList.remove('gw-myday-drop-target'));
-    el.addEventListener('drop', e => {
-      e.preventDefault();
-      const targetId = el.dataset.widgetId;
-      if (!dragId || dragId === targetId) return;
-      const l = _gwMyDayCurLayout();
-      const from = l.order.indexOf(dragId), to = l.order.indexOf(targetId);
-      if (from < 0 || to < 0) return;
-      l.order.splice(to, 0, l.order.splice(from, 1)[0]);
-      _gwMyDaySaveLayout(l); _gwTodayRender();
-    });
-  });
-  _gwMyDayBindResize(grid);
-}
-function _gwMyDayBindResize(grid){
-  // Drag grips: east = width (snaps to grid columns), south = height (free px)
-  const GAP = 28; // must match .gw-myday-grid column gap
-  grid.querySelectorAll('.gw-myday-grip').forEach(grip => {
-    grip.addEventListener('mousedown', e => {
-      e.preventDefault(); e.stopPropagation();
-      const mode = grip.dataset.grip;                       // 'e' | 's' | 'se'
-      const id   = grip.dataset.widgetId;
-      const el   = grid.querySelector(`.gw-myday-widget[data-widget-id="${id}"]`);
-      if (!el) return;
-      const body = el.querySelector('.gw-myday-widget-body');
-      window._gwMyDayResizing = true;
-      el.draggable = false;
-      el.classList.add('gw-myday-resizing');
-      const colW    = (grid.clientWidth - GAP * 5) / 6;     // width of one grid column
-      const startX  = e.clientX, startY = e.clientY;
-      const startW  = el.getBoundingClientRect().width;
-      const startH  = body.getBoundingClientRect().height;
-      let   newSpan = null, newH = null;
-      const onMove = ev => {
-        if (mode === 'e' || mode === 'se') {
-          const w = startW + (ev.clientX - startX);
-          newSpan = Math.max(1, Math.min(6, Math.round((w + GAP) / (colW + GAP))));
-          el.style.gridColumn = 'span ' + newSpan;
-        }
-        if (mode === 's' || mode === 'se') {
-          newH = Math.max(120, Math.round(startH + (ev.clientY - startY)));
-          body.style.height = newH + 'px';
-          body.style.overflowY = 'auto';
-        }
-      };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        el.classList.remove('gw-myday-resizing');
-        el.draggable = true;
-        setTimeout(() => { window._gwMyDayResizing = false; }, 50);
-        const l = _gwMyDayCurLayout();
-        if (newSpan) l.spans[id] = newSpan;
-        if (newH)    { l.heights = l.heights || {}; l.heights[id] = newH; }
-        if (newSpan || newH) { _gwMyDaySaveLayout(l); _gwTodayRender(); }
-      };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
-}
+/* ── Accordion-expand-in-place — shared toggle for all migrated deep report
+   content (funnel/trend/sources, rep leaderboard detail, AR aging, budget
+   detail). Keeps everything on the single Command Center view instead of
+   linking out to a separate page or opening a modal. */
+window.gwMyDayAccordionToggle = function(id){
+  const body = document.getElementById(id);
+  const btn = document.querySelector(`[data-accordion-toggle="${id}"]`);
+  if (!body) return;
+  const isOpen = body.classList.toggle('gw-accordion-body--open');
+  if (btn) btn.classList.toggle('gw-accordion-toggle--open', isOpen);
+  requestAnimationFrame(_gwMyDayMasonry);
+};
 
 /* ── Owner-operator My Day widget loaders (async, mount-guarded) ───────────── */
 function _gwMyDayLoadOwnerWidgets(rep){
@@ -2763,7 +2529,7 @@ function _gwMyDayLoadOwnerWidgets(rep){
         ${entry ? `
           <div class="gw-myday-clock gw-myday-clock--in">
             <div class="gw-myday-clock-live"><span class="gw-myday-clock-dot"></span>Clocked in · ${el(entry.job_type || 'General Work')}</div>
-            <div class="gw-myday-clock-timer" id="gw-myday-clock-elapsed">--:--:--</div>
+            <div class="gw-myday-clock-timer" id="gw-myday-clock-elapsed">--:--:-day-clock-elapsed">--:--:--</div>
             <button class="gw-myday-clock-btn gw-myday-clock-btn--out" onclick="_gwMyDayClockOut()">Clock Out</button>
           </div>` : `
           <div class="gw-myday-clock">
@@ -2841,7 +2607,7 @@ function _gwMyDayLoadOwnerWidgets(rep){
 
         m.innerHTML = `<section class="card${cap ? ' w-fixed-h' : ''}"><div class="section-head"><h2>Today's Jobs</h2>
           ${todayJobs.length ? `<span class="badge">${todayJobs.length}</span>` : ''}
-          <span style="margin-left:auto;display:flex;gap:6px"><button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule</button><button class="secondary-btn small" onclick="show('opsReports')" style="font-size:11px">Full report</button></span></div>
+          <span style="margin-left:auto;display:flex;gap:6px"><button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule</button></span></div>
           <div class="${useCap ? 'list-cap' : ''}">
             ${todayJobsV.length ? todayJobsV.map(row).join('') : (todayJobs.length ? '' : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`)}
             ${upcomingV.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcomingV.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
@@ -2878,7 +2644,9 @@ function _gwMyDayLoadOwnerWidgets(rep){
       }).catch(()=>{});
   }
 
-  // 4) Money Owed (A/R) — outstanding / overdue / paid MTD
+  // 4) Money Owed (A/R) — outstanding / overdue / paid MTD, with an aging
+  // breakdown (0-30 / 31-60 / 61-90 / 90+) migrated in as an accordion-
+  // expand-in-place detail section instead of a separate report page.
   const arMount = document.getElementById('gw-myday-ar-mount');
   if (arMount) {
     fetch('/api/invoices?limit=500', { credentials:'include' })
@@ -2893,8 +2661,31 @@ function _gwMyDayLoadOwnerWidgets(rep){
         const odAmt   = overdue.reduce((s,i) => s + Number(i.balance_due != null ? i.balance_due : i.total || 0), 0);
         const paidMTD = invs.filter(i => i.status === 'paid' && (i.paid_at||'').slice(0,7) === mo)
                             .reduce((s,i) => s + Number(i.amount_paid || i.total || 0), 0);
+
+        // Aging buckets (days past due date) across all open invoices
+        const buckets = [{label:'0-30', min:0, max:30, val:0, cnt:0}, {label:'31-60', min:31, max:60, val:0, cnt:0}, {label:'61-90', min:61, max:90, val:0, cnt:0}, {label:'90+', min:91, max:Infinity, val:0, cnt:0}];
+        open.forEach(i => {
+          const due = i.due_date;
+          const bal = Number(i.balance_due != null ? i.balance_due : i.total || 0);
+          const daysPast = due ? Math.floor((new Date(today).getTime() - new Date(due).getTime()) / 86400000) : 0;
+          const b = buckets.find(bk => daysPast >= bk.min && daysPast <= bk.max) || buckets[0];
+          b.val += bal; b.cnt += 1;
+        });
+        const agingMax = Math.max(1, ...buckets.map(b=>b.val));
+        const agingRows = buckets.map(b => `
+          <div style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+              <span style="font-weight:600">${b.label} days</span>
+              <span style="color:var(--gw-muted)">${_fmt$(b.val)} · ${b.cnt} invoice${b.cnt===1?'':'s'}</span>
+            </div>
+            <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${Math.max(2,Math.round(b.val/agingMax*100))}%;background:${b.min>=61?'#C97B6A':b.min>=31?'#8B6914':'var(--gw-pine,#4D8A86)'};border-radius:3px"></div>
+            </div>
+          </div>`).join('');
+
+        const accordionId = 'gw-ar-accordion-detail';
         m.innerHTML = `<section class="card"><div class="section-head"><h2>Money Owed</h2>
-          <button class="secondary-btn small" onclick="show('invoices')" style="font-size:11px">Invoices</button></div>
+          <span style="display:flex;gap:6px"><button class="secondary-btn small gw-accordion-toggle" data-accordion-toggle="${accordionId}" onclick="gwMyDayAccordionToggle('${accordionId}')" style="font-size:11px">Aging</button><button class="secondary-btn small" onclick="show('invoices')" style="font-size:11px">Invoices</button></span></div>
           <div class="gw-myday-ar-grid">
             <div class="gw-myday-ar-cell" onclick="show('invoices')">
               <span class="gw-myday-ar-label">Outstanding</span>
@@ -2910,6 +2701,49 @@ function _gwMyDayLoadOwnerWidgets(rep){
               <span class="gw-myday-ar-label">Paid this month</span>
               <span class="gw-myday-ar-val">${_fmt$(paidMTD)}</span>
             </div>
+          </div>
+          <div id="${accordionId}" class="gw-accordion-body">
+            <h4 style="margin:14px 0 10px;font-size:11px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Aging Breakdown</h4>
+            ${agingRows}
+          </div>
+        </section>`;
+      }).catch(()=>{});
+  }
+
+  // 5) Upcoming Schedule (7 Days) — Add-Widget-only, migrated from opsReports.
+  // Shows work orders scheduled in the next 7 days, plus the weeks-booked-out
+  // capacity placeholder.
+  const opsDeeperMount = document.getElementById('gw-myday-opsdeeper-mount');
+  if (opsDeeperMount) {
+    const today = todayISO();
+    const next7 = new Date(Date.now() + 7*86400000).toISOString().slice(0,10);
+    fetch(`/api/work-orders?date_from=${today}&date_to=${next7}&limit=100`, { credentials:'include' })
+      .then(r=>r.json()).then(j => {
+        const m = document.getElementById('gw-myday-opsdeeper-mount'); if (!m) return;
+        const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+        const wos = ((j.ok && j.data) || []).filter(w => w.scheduled_date > today && !['cancelled','completed'].includes(w.status))
+          .sort((a,b) => (a.scheduled_date||'').localeCompare(b.scheduled_date||''));
+        const row = w => `<tr style="border-bottom:1px solid var(--gw-line)">
+          <td style="padding:8px 12px;font-weight:600;font-size:12px">${el(w.client_name || w.title || w.wo_number)}</td>
+          <td style="padding:8px 8px;font-size:11px;color:var(--gw-muted)">${el(w.crew_name||'—')}</td>
+          <td style="padding:8px 8px;font-size:11px;color:var(--gw-muted)">${el(w.scheduled_date)}</td>
+          <td style="padding:8px 8px"><span style="font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86)">${el((w.status||'').replace('-',' '))}</span></td>
+        </tr>`;
+        m.innerHTML = `<section class="card"><div class="section-head"><h2>Upcoming Schedule (7 Days)</h2>
+          <button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule Board</button></div>
+          ${wos.length ? `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+              <th style="text-align:left;padding:7px 12px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
+              <th style="text-align:left;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
+              <th style="text-align:left;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
+              <th style="text-align:left;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
+            </tr></thead>
+            <tbody>${wos.map(row).join('')}</tbody>
+          </table>` : `<div class="gw-myday-placeholder">No jobs scheduled in the next 7 days.</div>`}
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 4px 2px;border-top:1px solid var(--gw-line);margin-top:12px">
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.5"/><path d="M9 5v4l2.5 2.5" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:11px;color:var(--gw-muted)">Weeks Booked Out — coming soon. Once budgeted hours are attached to estimates and work orders, this will show weeks of capacity booked out based on your team's weekly hour budget.</div>
           </div>
         </section>`;
       }).catch(()=>{});
@@ -2959,14 +2793,11 @@ function _gwTodayRender() {
   const _isField  = _todayRep && (_GW_FIELD_ROLES || ['foreman','laborer','field_supervisor']).includes(_todayRep.role);
   const _showFin  = _isAdmin || _isOM;
 
-  // Resolve the active day-mode + its widget caps early — needed by the
-  // task workspace (rendered synchronously below) and by the Jobs/Calendar
-  // widgets (rendered async via _gwMyDayLoadOwnerWidgets / calendar_sync.js,
-  // which read the window._gwMyDayCaps global) so every "+N more" cap
-  // reflects the actual active mode, not a stale or missing value.
-  const _curModeId = _gwMyDayGetMode();
-  const _curCaps = _gwMyDayCapsForMode(_curModeId);
-  window._gwMyDayCaps = _curCaps;
+  // Fixed caps for list-style widgets (jobs / tasks) — the old per-mode caps
+  // no longer apply since there's a single canonical layout, but the "+N
+  // more" collapse behavior itself is still worth keeping so widget height
+  // stays predictable regardless of how busy the day is.
+  window._gwMyDayCaps = { jobsToday: 4, tasks: 4, calendar: 4 };
 
   // Unsynced banner
   const _localOnlyOpps = state.opportunities.filter(o => !o._fromD1);
@@ -2987,13 +2818,31 @@ function _gwTodayRender() {
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
 
-  // Hero KPI band: same 4 real figures as before, restyled with an icon +
-  // accent color per tile so the top of Command Center reads as a proper
-  // hub summary strip rather than a plain stat row. No new data — this is a
-  // pure presentation upgrade over the existing Pipeline Snapshot numbers.
+  // Avg Close Likelihood — 5th hero tile. Aggregates gwLeadScore() across
+  // every open lead (skip pinned won/lost, they don't apply to open leads
+  // anyway) and reuses gwScorePill()'s factor-breakdown tooltip pattern for
+  // each lead in the "why" list, summarized into one hero-level tooltip.
+  const _scoreEntries = _open.map(o => ({ o, r: gwLeadScore(o) }));
+  const _avgScore = _scoreEntries.length
+    ? Math.round(_scoreEntries.reduce((s,e)=>s+e.r.score,0) / _scoreEntries.length)
+    : null;
+  const _scoreBand = _avgScore === null ? '' : _avgScore >= 70 ? 'gw-today-pipe-cell--emerald' : _avgScore >= 40 ? 'gw-today-pipe-cell--amber' : 'gw-today-pipe-cell--rose';
+  // Tooltip: top 3 leads most dragging the average down + top 3 driving it up,
+  // so the hero tile is legible at a glance without opening the pipeline.
+  const _sortedByScore = _scoreEntries.slice().sort((a,b)=>a.r.score-b.r.score);
+  const _lowest = _sortedByScore.slice(0,3);
+  const _highest = _sortedByScore.slice(-3).reverse();
+  const _scoreTooltipLines = [];
+  if (_lowest.length) _scoreTooltipLines.push('Lowest:', ..._lowest.map(e => `  ${e.r.score}% — ${e.o.client||'Unnamed Lead'}`));
+  if (_highest.length) _scoreTooltipLines.push('Highest:', ..._highest.map(e => `  ${e.r.score}% — ${e.o.client||'Unnamed Lead'}`));
+  const _scoreTooltip = 'Groundwork AI avg close likelihood across ' + _open.length + ' open lead' + (_open.length===1?'':'s') + '\n' + _scoreTooltipLines.join('\n');
+
+  // Hero KPI band: 4 real pipeline figures + 1 AI close-likelihood figure,
+  // each with an icon + accent color so the top of Command Center reads as
+  // a proper hub summary strip rather than a plain stat row.
   const _gi2 = (n) => (typeof gwIcon==='function') ? gwIcon(n, 17, 'currentColor') : '';
   const _pipeStrip = _isField ? '' : `
-    <div class="gw-today-pipe-strip">
+    <div class="gw-today-pipe-strip gw-today-pipe-strip--five">
       <div class="gw-today-pipe-cell gw-today-pipe-cell--sky" onclick="show('pipeline')" title="Open pipeline">
         <span class="gw-today-pipe-ic">${_gi2('leads')}</span>
         <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Open Leads</span><span class="gw-today-pipe-val">${_open.length}</span></span>
@@ -3010,14 +2859,19 @@ function _gwTodayRender() {
         <span class="gw-today-pipe-ic">${_gi2('won')}</span>
         <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Won MTD</span><span class="gw-today-pipe-val gw-today-pipe-val--won">${_wonMTD.length} · ${_fmt(_wonMTDVal)}</span></span>
       </div>
+      <div class="gw-today-pipe-cell ${_scoreBand}" onclick="show('pipeline')" title="${escapeHtml(_scoreTooltip)}">
+        <span class="gw-today-pipe-ic">${_gi2('target')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Avg Close Likelihood</span><span class="gw-today-pipe-val">${_avgScore===null?'—':_avgScore+'%'}</span></span>
+      </div>
     </div>`;
 
-  // Pipeline chart widget — real trend + stage breakdown, no fabricated numbers.
-  // Trend: actual won $ per week for the last 4 weeks (from real closedDate/
-  // updatedAt timestamps). Stage bar: actual $ distribution of today's open
-  // pipeline across its current stage labels (works with or without a
-  // published sales process, since it groups on the raw status field every
-  // opportunity always has).
+  // Pipeline chart widget — real trend + stage breakdown, no fabricated
+  // numbers. Trend: actual won $ per week for the last 4 weeks. Stage bar:
+  // actual $ distribution of today's open pipeline. The funnel/monthly-trend/
+  // lead-source detail that used to live on the separate Sales Performance
+  // report page is migrated in here as an accordion-expand-in-place section
+  // ("View trend & funnel") instead of a "Full report" link to a page that
+  // no longer exists.
   const _pipeChartHtml = _isField ? '' : (function(){
     const weeks = [0,0,0,0]; // oldest → newest, each = won $ that week
     _won.forEach(o => {
@@ -3056,8 +2910,86 @@ function _gwTodayRender() {
     const wonTrendPct = weeks[0] > 0 ? Math.round(((weeks[3]-weeks[0])/weeks[0])*100) : null;
     const trendBadge = wonTrendPct === null ? '' : `<span style="font-size:13px;font-weight:700;color:${wonTrendPct>=0?'var(--gw-emerald)':'var(--gw-rose)'}">${wonTrendPct>=0?'+':''}${wonTrendPct}%</span>`;
 
+    // Accordion detail: 6-month won trend + full pipeline funnel + lead
+    // sources — migrated from the old separate Sales Performance report page.
+    const monthMap = {};
+    _won.forEach(o=>{const m=(o.closedDate||o.createdAt||'').slice(0,7);if(m)monthMap[m]=(monthMap[m]||0)+Number(o.jobValue||0);});
+    const months6 = [];
+    for(let i=5;i>=0;i--){const d=new Date();d.setMonth(d.getMonth()-i);months6.push(d.toISOString().slice(0,7));}
+    const maxMonthVal = Math.max(1,...months6.map(m=>monthMap[m]||0));
+    const mtd = todayISO().slice(0,7);
+    const FUNNEL = [
+      {label:'Intake',                 semantic:'intake'},
+      {label:'Qualification',          semantic:'active_qualification'},
+      {label:'Consultation',           semantic:'consultation'},
+      {label:'Estimate Development',   semantic:'estimate_development'},
+      {label:'Proposal / Presentation',semantic:'proposal_presentation'},
+      {label:'Decision',               semantic:'decision'},
+      {label:'Won',                    semantic:'won'},
+      {label:'Lost',                   semantic:'lost'},
+    ];
+    const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(o=>GWSalesProcess.is(o,f.semantic)).length));
+    const funnelRows = FUNNEL.map(f=>{
+      const cnt = opps.filter(o=>GWSalesProcess.is(o,f.semantic)).length;
+      if(!cnt) return '';
+      const pct = Math.max(4, Math.round((cnt/funnelMax)*100));
+      const bar = f.semantic==='won' ? 'background:#2D7A55' : f.semantic==='lost' ? 'background:#A05050' : 'background:var(--gw-pine,#4D8A86)';
+      return `<div style="margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600;color:var(--gw-ink)">${escapeHtml(f.label)}</span>
+          <span style="color:var(--gw-muted)">${cnt}</span>
+        </div>
+        <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;${bar};border-radius:3px;transition:width .4s"></div>
+        </div>
+      </div>`;
+    }).join('');
+    const sourceMap = {};
+    opps.forEach(o=>{ const s=o.leadSource||o.source||'Unknown'; sourceMap[s]=(sourceMap[s]||0)+1; });
+    const sources = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const sourceRows = sources.length ? sources.map(([src,cnt])=>{
+      const pct=opps.length?Math.round((cnt/opps.length)*100):0;
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600">${escapeHtml(String(src).slice(0,36))}</span>
+          <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
+        </div>
+        <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
+        </div>
+      </div>`;
+    }).join('') : `<p style="color:var(--gw-muted);font-size:13px">Add lead source data when creating leads to see breakdown here.</p>`;
+
+    const accordionId = 'gw-pipe-accordion-detail';
+    const detailHtml = `
+      <div id="${accordionId}" class="gw-accordion-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+          <div>
+            <h4 style="margin:0 0 10px;font-size:12px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Pipeline Funnel</h4>
+            ${funnelRows}
+          </div>
+          <div>
+            <h4 style="margin:0 0 10px;font-size:12px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Won Revenue — Last 6 Months</h4>
+            <div style="display:flex;align-items:flex-end;gap:8px;height:70px;margin-bottom:16px">
+              ${months6.map(m=>{
+                const v=monthMap[m]||0;
+                const h=Math.max(4,Math.round((v/maxMonthVal)*70));
+                const isNow=m===mtd;
+                return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+                  <div style="font-size:9px;font-weight:700;color:#2D7A55;white-space:nowrap">${v?_fmt(v).replace(/,000$/,'k'):''}</div>
+                  <div style="width:100%;height:${h}px;background:${isNow?'#2D7A55':'#4D8A8680'};border-radius:3px 3px 0 0;min-height:4px"></div>
+                  <div style="font-size:9px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
+                </div>`;
+              }).join('')}
+            </div>
+            <h4 style="margin:0 0 10px;font-size:12px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Lead Sources</h4>
+            ${sourceRows}
+          </div>
+        </div>
+      </div>`;
+
     return `<section class="card gw-pipe-chart">
-      <div class="section-head"><h2>Pipeline</h2><span style="display:flex;gap:6px"><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">Pipeline board</button><button class="secondary-btn small" onclick="show('salesReports')" style="font-size:11px">Full report</button></span></div>
+      <div class="section-head"><h2>Pipeline</h2><span style="display:flex;gap:6px"><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">Pipeline board</button><button class="secondary-btn small gw-accordion-toggle" data-accordion-toggle="${accordionId}" onclick="gwMyDayAccordionToggle('${accordionId}')" style="font-size:11px">View trend</button></span></div>
       <div class="pipe-num">${_fmt(_pipeVal)} ${trendBadge}</div>
       <div class="pipe-lbl">Open across ${_open.length} lead${_open.length===1?'':'s'}</div>
       <svg class="pipe-spark" viewBox="0 0 220 40" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#2D7A55" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3065,14 +2997,131 @@ function _gwTodayRender() {
       <div class="pipe-stage-bar">${barSegs || '<i style="width:100%;background:var(--gw-line-strong)"></i>'}</div>
       <div class="pipe-legend">${legendRows || '<div class="gw-myday-placeholder" style="padding:8px 0">No open leads right now.</div>'}</div>
       <div class="pipe-mini-row"><span>${_wonMTD.length} won MTD</span><span>${_fmt(_wonMTDVal)} won</span></div>
+      ${detailHtml}
     </section>`;
   })();
+
+  // Rep Leaderboard — compact rep performance ranking, migrated from the
+  // old Sales Performance report's rep table. Add-Widget-only (admin/OM),
+  // not part of the default layout.
+  const _repLeaderboardHtml = (function(){
+    if (!_showFin) return '';
+    const reps = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
+    const mtd = todayISO().slice(0,7);
+    const rows = reps.map(r=>{
+      const mine    = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
+      const mWon    = mine.filter(o=>GWSalesProcess.isWon(o));
+      const mOpen   = mine.filter(o=>GWSalesProcess.isOpen(o));
+      const mLost   = mine.filter(o=>GWSalesProcess.isLost(o));
+      const mPipe   = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
+      const mWonVal = mWon.reduce((s,o)=>s+Number(o.jobValue||0),0);
+      const mClosed = mWon.length + mLost.length;
+      const mRate   = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
+      const mMTD    = mWon.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd).length;
+      const rateColor = mRate >= 50 ? '#2D7A55' : mRate >= 25 ? '#8B6914' : 'var(--gw-muted)';
+      return { r, mine, mOpen, mWon, mWonVal, mPipe, mRate, mMTD, rateColor };
+    }).sort((a,b)=>b.mWonVal-a.mWonVal);
+    const bodyRows = rows.map(x=>`
+      <tr style="border-bottom:1px solid var(--gw-line)">
+        <td style="padding:8px 12px;font-weight:700;font-size:12px">${escapeHtml(x.r.name)}</td>
+        <td style="padding:8px 8px;text-align:center;font-size:12px">${x.mOpen.length}</td>
+        <td style="padding:8px 8px;text-align:center;color:#2D7A55;font-weight:700;font-size:12px">${x.mWon.length}</td>
+        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--gw-pine-600)">${_fmt(x.mPipe)}</td>
+        <td style="padding:8px 8px;text-align:center;font-size:12px;font-weight:700;color:${x.rateColor}">${x.mRate}%</td>
+      </tr>`).join('');
+    return `<section class="card gw-rep-leaderboard">
+      <div class="section-head"><h2>Rep Leaderboard</h2><span style="font-size:11px;color:var(--gw-muted)">${reps.length} member${reps.length!==1?'s':''}</span></div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:340px">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:7px 12px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Rep</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won</th>
+            <th style="text-align:right;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Close %</th>
+          </tr></thead>
+          <tbody>${bodyRows||`<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gw-muted);font-style:italic;font-size:12px">No team members configured.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>`;
+  })();
+
+  // Budget vs Actual — migrated from financialReports' fyBlock. Add-Widget-
+  // only (admin/OM), not part of the default layout.
+  const _budgetVsActualHtml = (function(){
+    if (!_showFin) return '';
+    try {
+      const fy = (typeof getResolvedFY==='function') ? getResolvedFY() : null;
+      if (!fy || !fy.annual) return '';
+      const a = fy.annual;
+      const varColor = a.ytdVariance>=0?'#2D7A55':'#C97B6A';
+      const varSign  = a.ytdVariance>=0?'+':'';
+      const pct = a.budgetedRevenue>0?Math.min(100,Math.round(a.actualRevenue/a.budgetedRevenue*100)):0;
+      const divs = fy.divisions||{};
+      const divKeys = Object.keys(divs).filter(k=>divs[k]);
+      const divCells = divKeys.map(k=>{
+        const d=divs[k]; const label=k.charAt(0).toUpperCase()+k.slice(1);
+        const dpct=d.target>0?Math.min(100,Math.round((d.actual||0)/d.target*100)):0;
+        const gm = d.grossMarginPct!=null?Math.round(d.grossMarginPct*100):null;
+        return `<tr style="border-bottom:1px solid var(--gw-line)">
+          <td style="padding:8px 12px;font-weight:600;font-size:12px">${escapeHtml(label)}</td>
+          <td style="padding:8px;text-align:right;font-weight:700;color:var(--gw-pine,#4D8A86);font-size:12px">${_fmt(d.actual||0)}</td>
+          <td style="padding:8px;text-align:right;color:var(--gw-muted);font-size:12px">${_fmt(d.target||0)}</td>
+          <td style="padding:8px;text-align:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="flex:1;height:5px;background:var(--gw-line);border-radius:3px;overflow:hidden"><div style="height:100%;width:${dpct}%;background:var(--gw-pine,#4D8A86);border-radius:3px"></div></div>
+              <span style="font-size:10px;font-weight:700;color:var(--gw-muted);white-space:nowrap">${dpct}%</span>
+            </div>
+          </td>
+          <td style="padding:8px;text-align:center;font-size:11px;font-weight:700;color:${gm!=null&&gm<(d.grossMarginFloor||0)*100?'#C97B6A':'#2D7A55'}">${gm!=null?gm+'%':'—'}</td>
+        </tr>`;
+      }).join('');
+      return `<section class="card gw-budget-vs-actual">
+        <div class="section-head">
+          <h2>Budget vs Actual — ${escapeHtml(fy.budgetVersion||'FY')}</h2>
+          <button class="secondary-btn small" onclick="show('revenueAdmin')" style="font-size:11px">Manage Budget</button>
+        </div>
+        <div class="fr-budget-grid fr-budget-inner">
+          ${[
+            {label:'YTD Actual',val:_fmt(a.actualRevenue),color:'var(--gw-pine,#4D8A86)'},
+            {label:'Annual Budget',val:_fmt(a.budgetedRevenue),color:'var(--gw-ink)'},
+            {label:'YTD Variance',val:varSign+_fmt(a.ytdVariance),color:varColor},
+            {label:'Needed / Month',val:_fmt(a.avgNeededPerMonth),color:'#8B6914'}
+          ].map(k=>`
+          <div style="background:var(--gw-surface-2);border-radius:8px;padding:10px">
+            <div style="font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${k.label}</div>
+            <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
+          </div>`).join('')}
+        </div>
+        <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:var(--gw-pine,#4D8A86);border-radius:4px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-bottom:14px">${pct}% of annual target · ${a.monthsLeft||0} months remaining</div>
+        ${divCells ? `
+        <div class="fr-budget-table-wrap"><table class="fr-panel-table" style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:7px 12px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Division</th>
+            <th style="text-align:right;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Actual</th>
+            <th style="text-align:right;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Target</th>
+            <th style="padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Progress</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">GM %</th>
+          </tr></thead>
+          <tbody>${divCells}</tbody>
+        </table></div>` : ''}
+      </section>`;
+    } catch(_) { return ''; }
+  })();
+
+  // Upcoming Schedule (7 Days) — migrated from opsReports. Add-Widget-only,
+  // not part of the default layout. Loaded async since it needs work-order
+  // data from the API (same pattern as Today's Jobs / Crew Hours).
+  const _opsDeeperHtml = _isField ? '' : `<div id="gw-myday-opsdeeper-mount"><section class="card"><div class="section-head"><h2>Upcoming Schedule (7 Days)</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`;
 
   // Finance snap — always compute so mobile path can use it regardless of role
   const _finSnap = _gwTodayFinanceSnap();
 
   // Task workspace (from cache — loaded async below)
-  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep, _curCaps.tasks);
+  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep, window._gwMyDayCaps.tasks);
 
   // Recently Updated leads
   const recent = [...opps].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
@@ -3097,19 +3146,11 @@ function _gwTodayRender() {
     return;
   }
 
-  // Day-mode switcher (owner-operator presets) — field roles keep their own dashboard
-  const _curMode = _curModeId;
-  const _modeBar = _isField ? '' : `
-    <div class="gw-myday-modes" role="tablist" aria-label="My Day layout mode">
-      ${_GW_MYDAY_MODES.map(m => `
-        <button class="gw-myday-mode-pill${_curMode === m.id ? ' gw-myday-mode-pill--on' : ''}"
-          role="tab" aria-selected="${_curMode === m.id}"
-          onclick="gwMyDaySetMode('${m.id}')" title="${escapeHtml(m.desc || '')}">
-          <span class="gw-myday-mode-ic">${(typeof gwIcon==='function') ? gwIcon(m.icon, 13, 'currentColor') : ''}</span>${m.label}
-        </button>`).join('')}
-    </div>`;
-
-  // Hero header
+  // Hero header — title, date/rep line, single "+ Add Widget" button.
+  // Replaces the old mode-switcher pill bar and Customize/edit-mode button
+  // entirely — there's only one canonical layout now, and customization is
+  // a simple add/remove popover, not a whole editing mode.
+  const _addOpen = !!window._gwMyDayAddWidgetOpen;
   const _heroBlock = `
     <div class="pl-page-header">
       <div class="pl-page-title">
@@ -3117,15 +3158,12 @@ function _gwTodayRender() {
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
-        ${_modeBar}
-        ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize Command Center widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
+        <button class="secondary-btn small${_addOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayAddWidgetToggle()" title="Add or remove Command Center widgets">${(typeof gwIcon==='function') ? gwIcon('plus', 13, 'currentColor') : ''} Add Widget</button>
       </div>
     </div>`;
 
-  // ── Widget grid (customizable: order / visibility / size per user) ───────
-  const _editing = !!window._gwMyDayEditing;
-
-  // Extra library widgets content
+  // Extra widget content computed inline (small enough not to need their own
+  // named builder functions)
   const _quickActionsHtml = `<section class="card"><div class="section-head"><h2>Quick Actions</h2></div>
     <div class="gw-myday-qa-grid">
       <button onclick="show('lead')">${(typeof gwIcon==='function')?gwIcon('leads',15):''} New Lead</button>
@@ -3138,11 +3176,20 @@ function _gwTodayRender() {
   const _scratchpadHtml = `<section class="card"><div class="section-head"><h2>Scratchpad</h2></div>
     <textarea class="gw-myday-scratch" placeholder="Jot quick notes here — saved automatically, just for you…"
       oninput="gwMyDayScratchSave(this)">${escapeHtml(_gwMyDayScratchLoad())}</textarea></section>`;
-  const _staleCutoff = new Date(Date.now() - 7*86400000).toISOString();
-  const _staleLeads = _open.filter(o => (o.updatedAt || o.createdAt || '') < _staleCutoff)
-    .sort((a,b) => (a.updatedAt||'').localeCompare(b.updatedAt||'')).slice(0,6);
+
+  // Needs Follow-Up — sorts by gwStageClock()'s "late" urgency band instead
+  // of generic 7-day staleness, so this surfaces leads that are actually
+  // overdue relative to their own stage's expected duration (a lead that's
+  // 10 days old but only 2 days into a 14-day-expected stage is fine; one
+  // that's 10 days into a 3-day-expected stage needs attention).
+  const _staleLeads = _open
+    .map(o => ({ o, clock: gwStageClock(o) }))
+    .filter(x => x.clock.level === 'late')
+    .sort((a,b) => b.clock.ratio - a.clock.ratio)
+    .slice(0,6)
+    .map(x => x.o);
   const _staleLeadsHtml = `<section class="card"><div class="section-head"><h2>Needs Follow-Up</h2>${_staleLeads.length ? `<span class="badge warn-badge">${_staleLeads.length}</span>` : ''}</div>
-    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No stale leads — everything has recent activity.</div>`}</section>`;
+    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No leads sitting late in their stage — everything's on pace.</div>`}</section>`;
   const _recentWins = _won.slice().sort((a,b)=>(b.closedDate||b.updatedAt||'').localeCompare(a.closedDate||a.updatedAt||'')).slice(0,5);
   const _recentWinsHtml = `<section class="card"><div class="section-head"><h2>Recent Wins</h2></div>
     ${_recentWins.length ? _recentWins.map(oppMini).join('') : `<div class="gw-myday-placeholder">No wins yet — go close one!</div>`}</section>`;
@@ -3160,67 +3207,43 @@ function _gwTodayRender() {
     scratchpadHtml: _scratchpadHtml,
     staleLeadsHtml: _staleLeadsHtml,
     recentWinsHtml: _recentWinsHtml,
+    repLeaderboardHtml: _repLeaderboardHtml,
+    budgetVsActualHtml: _budgetVsActualHtml,
+    opsDeeperHtml: _opsDeeperHtml,
   };
   const _layout = _gwMyDayResolveLayout(_wCtx);
-  const _libOpen = _editing && !!window._gwMyDayLibOpen;
-  const _editBar = _editing ? `
-    <div class="gw-myday-edit-banner">
-      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize Command Center</strong> — drag to reorder, choose a supported width and detail level, or remove what you do not need. Saved across your devices.</span>
-      <span class="gw-myday-edit-banner-btns">
-        <button class="secondary-btn small${_libOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayToggleLib()">${_libOpen ? 'Close Library' : '+ Widget Library'}</button>
-        <button class="secondary-btn small" onclick="gwMyDayReset()">Reset to Default</button>
-        <button class="primary-btn small" onclick="gwMyDayDone()">Done</button>
-      </span>
-    </div>
-    ${_libOpen ? _gwMyDayLibraryPanel(_wCtx, _layout) : ''}` : '';
 
-  // ── Zone-grouped layout (view mode only, preset day-modes only) ───────────
-  // "My Layout" (custom) keeps the exact flat, single-grid, drag/resize UX
-  // it always had — grouping would fight the user's own manual arrangement.
-  // Editing also always uses the flat grid (drag-reorder assumes one grid).
-  // Every preset mode (Command Center/Field/Office/Sales/Focus) groups its
-  // widgets into visually distinct zone sections instead, each its own
-  // titled card-strip with a "Full report" drill-down where one exists —
-  // this is what makes Command Center read as a hub of the underlying
-  // report areas rather than a flat pile of same-weight widgets.
-  let _gridsHtml;
-  if (!_editing && _curModeId !== 'custom') {
-    const _visibleIds = _layout.order.filter(id => !_layout.hidden.includes(id));
-    // Hero-zone widgets (currently just pipeStrip) render standalone, full
-    // width, above the zone sections — they're already their own compact
-    // strip, not a masonry-packed card, so they don't belong inside a grid.
-    const _heroIds = _visibleIds.filter(id => { const w = _GW_MYDAY_WIDGETS.find(x=>x.id===id); return w && w.zone === 'hero'; });
-    const _heroWidgetsHtml = _heroIds.map(id => (_GW_MYDAY_WIDGETS.find(x=>x.id===id).render(_wCtx) || '')).join('');
-    const _zoneBuckets = _gwMyDayGroupByZone(_visibleIds);
-    let _firstGrid = true;
-    const _zonesHtml = _zoneBuckets.map(bucket => {
-      const z = _GW_MYDAY_ZONES[bucket.zoneKey] || _GW_MYDAY_ZONES.personal;
-      const html = bucket.ids.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, false)).join('');
-      if (!html.trim()) return '';
-      const gridId = _firstGrid ? ' id="gw-myday-grid"' : '';
-      _firstGrid = false;
-      return `<section class="gw-myday-zone" style="--gw-zone-accent:${z.accent}">
-        <div class="gw-myday-zone-head">
-          <span class="gw-myday-zone-ic">${(typeof gwIcon==='function') ? gwIcon(z.icon, 15, 'currentColor') : ''}</span>
-          <h3 class="gw-myday-zone-title">${escapeHtml(z.label)}</h3>
-          ${z.report ? `<button class="gw-myday-zone-link" onclick="show('${z.report}')">${escapeHtml(z.reportLabel)} <span class="gw-myday-zone-link-ic">${(typeof gwIcon==='function') ? gwIcon('chevron_right', 12, 'currentColor') : ''}</span></button>` : ''}
-        </div>
-        <div class="gw-myday-grid"${gridId}>${html}</div>
-      </section>`;
-    }).join('');
-    _gridsHtml = `${_heroWidgetsHtml}${_zonesHtml}`;
-  } else {
-    const _widgetsHtml = _layout.order.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, _editing)).join('');
-    _gridsHtml = `<div id="gw-myday-grid" class="gw-myday-grid${_editing ? ' gw-myday-grid--edit' : ''}">${_widgetsHtml}</div>`;
-  }
+  // ── Zone-grouped layout — the single canonical view for everyone. Hero
+  // widgets (pipeStrip) render standalone, full width, above the zone
+  // sections. Every other widget groups into its zone's own titled section.
+  const _visibleIds = _layout.order.filter(id => !_layout.hidden.includes(id));
+  const _heroIds = _visibleIds.filter(id => { const w = _GW_MYDAY_WIDGETS.find(x=>x.id===id); return w && w.zone === 'hero'; });
+  const _heroWidgetsHtml = _heroIds.map(id => (_GW_MYDAY_WIDGETS.find(x=>x.id===id).render(_wCtx) || '')).join('');
+  const _zoneBuckets = _gwMyDayGroupByZone(_visibleIds);
+  let _firstGrid = true;
+  const _zonesHtml = _zoneBuckets.map(bucket => {
+    const z = _GW_MYDAY_ZONES[bucket.zoneKey] || _GW_MYDAY_ZONES.personal;
+    const html = bucket.ids.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout)).join('');
+    if (!html.trim()) return '';
+    const gridId = _firstGrid ? ' id="gw-myday-grid"' : '';
+    _firstGrid = false;
+    return `<section class="gw-myday-zone" style="--gw-zone-accent:${z.accent}">
+      <div class="gw-myday-zone-head">
+        <span class="gw-myday-zone-ic">${(typeof gwIcon==='function') ? gwIcon(z.icon, 15, 'currentColor') : ''}</span>
+        <h3 class="gw-myday-zone-title">${escapeHtml(z.label)}</h3>
+      </div>
+      <div class="gw-myday-grid"${gridId}>${html}</div>
+    </section>`;
+  }).join('');
+  const _gridsHtml = `${_heroWidgetsHtml}${_zonesHtml}`;
+  const _addWidgetPopoverHtml = _addOpen ? _gwMyDayAddWidgetPopover(_wCtx, _layout) : '';
 
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}
-    ${_editBar}
+    ${_addWidgetPopoverHtml}
     ${_gridsHtml}
   `;
   wireChecks();
-  if (_editing) _gwMyDayBindDnD();
   // Masonry pack: measure widgets → tight grid with no dead vertical space
   requestAnimationFrame(_gwMyDayMasonry);
   // Async: load reviews widget for admin/OM
@@ -3232,8 +3255,7 @@ function _gwTodayRender() {
 
   // Load tasks from D1 async, then re-render the task workspace in place.
   // Guard: skip the re-fetch if a task was just completed within the last 3s —
-  // the completion handler already removed the row from the DOM and patched the
-  // cache. Re-fetching immediately can race with the D1 write and bring the
+  // the completion handler already removed the row from the DOM . Re-fetching immediately can race with the D1 write and bring the
   // completed task back as 'open'.
   const _msSinceComplete = window._gwTaskLastCompletedAt ? (Date.now() - window._gwTaskLastCompletedAt) : Infinity;
   if (window.gwTask && _todayRep && _msSinceComplete > 3000) {
@@ -5411,6 +5433,7 @@ window._cdInlineSave = function(clientId, field, value, immediate) {
         if (String(lc[field] == null ? '' : (field==='ccEmails' && Array.isArray(lc[field]) ? lc[field].join(', ') : lc[field])) === val) return;
         lc[field] = field === 'ccEmails' ? val.split(',').map(s=>s.trim()).filter(Boolean) : val;
         lc.updatedAt = new Date().toISOString();
+    Date().toISOString();
         localStorage.setItem('avalonClientsV1', JSON.stringify(list));
       }
     } catch(_) {}
@@ -7091,22 +7114,13 @@ function opportunityDetail(id){
        </div>`
     : '';
 
-  // ── ASSEMBLE: full page HTML ───────────────────────────────────────────────
+  // ── ASSEMBLE: full page HTML ───────────────────────────────────└�──
   view.innerHTML = `
   <!-- ══ RECORD PAGE SHELL ════════════════════════════════════════════════ -->
   <div class="rp-shell">
 
     <!-- Command bar (appears on scroll) -->
-    <div class="rp-command" id="rpCommandBar">
-      ${_cmdBarHtml}
-    </div>
-
-    <!-- 2-column body (left panel hidden at <1280px) -->
-    <div class="rp-body">
-
-      <!-- LEFT PANEL -->
-      <aside class="rp-left" aria-label="Lead overview">
-        <div class="rp-left-hero">
+    <divero">
           <div class="rp-left-avatar">${(o.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
           <div class="rp-left-name">${escapeHtml(o.client||'Unnamed Lead')}</div>
           <div class="rp-left-sub">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</div>
@@ -13764,7 +13778,7 @@ window.exportAsCSV = function(title, buildDataFn) {
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = title.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.csv';
+  a.download = title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '.csv';
   a.click();
   URL.revokeObjectURL(a.href);
   document.getElementById('exportModalOverlay')?.remove();
@@ -22189,557 +22203,6 @@ function toolsConsumables() {
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────
-function salesReports() {
-  window._currentView = 'salesReports';
-  activateNav('salesReports');
-  const opps   = state.opportunities || [];
-  const reps   = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
-  const today  = todayISO();
-  const mtd    = today.slice(0,7); // YYYY-MM
-
-  // Core metrics
-  const wonOpps   = opps.filter(o => GWSalesProcess.isWon(o));
-  const lostOpps  = opps.filter(o => GWSalesProcess.isLost(o));
-  const openOpps  = opps.filter(o => GWSalesProcess.isOpen(o));
-  const proposalOpps = opps.filter(o => GWSalesProcess.isProposal(o));
-  const closedAll = wonOpps.concat(lostOpps);
-  const closeRate = closedAll.length ? Math.round((wonOpps.length/closedAll.length)*100) : 0;
-  const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const wonTotal  = wonOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const avgDeal   = wonOpps.length ? wonTotal/wonOpps.length : 0;
-
-  // MTD won
-  const wonMTD    = wonOpps.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd);
-  const wonMTDVal = wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
-
-  // Pipeline funnel stages
-  const FUNNEL = [
-    {label:'Intake',                 semantic:'intake'},
-    {label:'Qualification',          semantic:'active_qualification'},
-    {label:'Consultation',           semantic:'consultation'},
-    {label:'Estimate Development',   semantic:'estimate_development'},
-    {label:'Proposal / Presentation',semantic:'proposal_presentation'},
-    {label:'Decision',               semantic:'decision'},
-    {label:'Won',                    semantic:'won'},
-    {label:'Lost',                   semantic:'lost'},
-  ];
-  const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(o=>GWSalesProcess.is(o,f.semantic)).length));
-
-  // Lead source breakdown
-  const sourceMap = {};
-  opps.forEach(o=>{ const s=o.leadSource||o.source||'Unknown'; sourceMap[s]=(sourceMap[s]||0)+1; });
-  const sources = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
-
-  // Monthly closed trend (last 6 months)
-  const monthMap = {};
-  wonOpps.forEach(o=>{const m=(o.closedDate||o.createdAt||'').slice(0,7);if(m)monthMap[m]=(monthMap[m]||0)+Number(o.jobValue||0);});
-  const months6 = [];
-  for(let i=5;i>=0;i--){const d=new Date();d.setMonth(d.getMonth()-i);months6.push(d.toISOString().slice(0,7));}
-  const maxMonthVal = Math.max(1,...months6.map(m=>monthMap[m]||0));
-
-  // Rep performance table
-  const repRows = reps.map(r=>{
-    const mine    = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
-    const mWon    = mine.filter(o=>GWSalesProcess.isWon(o));
-    const mOpen   = mine.filter(o=>GWSalesProcess.isOpen(o));
-    const mLost   = mine.filter(o=>GWSalesProcess.isLost(o));
-    const mPipe   = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
-    const mWonVal = mWon.reduce((s,o)=>s+Number(o.jobValue||0),0);
-    const mClosed = mWon.length + mLost.length;
-    const mRate   = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
-    const mMTD    = mWon.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd).length;
-    const rateColor = mRate >= 50 ? '#2D7A55' : mRate >= 25 ? '#8B6914' : 'var(--gw-muted)';
-    return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:11px 14px">
-        <span style="font-weight:700;font-size:13px">${escapeHtml(r.name)}</span>
-        <div style="font-size:10px;color:var(--gw-muted);margin-top:1px">${escapeHtml((window._gwRoles||[]).find(d=>d.id===r.role)?.label||r.role||'Rep')}</div>
-      </td>
-      <td style="padding:11px 10px;text-align:center;font-weight:600">${mine.length}</td>
-      <td style="padding:11px 10px;text-align:center">${mOpen.length}</td>
-      <td style="padding:11px 10px;text-align:center;color:var(--gw-pine-600);font-weight:700">${proposalOpps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id).length}</td>
-      <td style="padding:11px 10px;text-align:center;color:#2D7A55;font-weight:700">${mWon.length}</td>
-      <td style="padding:11px 10px;text-align:right;font-weight:700;color:var(--gw-pine-600)">${_p5Money(mWonVal)}</td>
-      <td style="padding:11px 10px;text-align:right;color:var(--gw-muted)">${_p5Money(mPipe)}</td>
-      <td style="padding:11px 10px;text-align:center;color:${rateColor};font-weight:700">${mRate}%</td>
-      <td style="padding:11px 10px;text-align:center;color:#4D8A86;font-weight:${mMTD?'700':'400'}">${mMTD||'—'}</td>
-    </tr>`;
-  }).join('');
-
-  view.innerHTML = `
-  <div class="rp-shell gw-report-shell">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <div class="eyebrow"><a href="javascript:void(0)" onclick="show('today')" style="color:inherit;text-decoration:none">Command Center</a> · Business Pulse</div>
-        <h1 class="rp-title">Sales Performance</h1>
-        <p class="rp-subtitle">Pipeline · close rates · rep performance · lead sources</p>
-      </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('lead')">+ New Lead</button>
-      </div>
-    </header>
-
-    <!-- KPI Row — 5 cards -->
-    <div class="gw-report-grid gw-report-grid--five">
-      ${[
-        {label:'Total Leads',    val:opps.length,           color:'var(--gw-ink)'},
-        {label:'Open Leads',     val:openOpps.length,       color:'var(--gw-ink)'},
-        {label:'Proposals Out',  val:proposalOpps.length,   color:'var(--gw-pine,#4D8A86)'},
-        {label:'Close Rate',     val:closeRate+'%',         color:closeRate>=50?'#2D7A55':closeRate>=25?'#8B6914':'#C97B6A'},
-        {label:'Avg Deal Size',  val:_p5Money(avgDeal),     color:'#5B7FA6'}
-      ].map(k=>`
-      <div class="gw-report-card">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">${k.label}</div>
-        <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Secondary row: Pipeline $ + Won total + Won MTD -->
-    <div class="gw-report-grid gw-report-grid--three">
-      <div class="gw-report-card">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Pipeline Value (Open)</div>
-        <div style="font-size:24px;font-weight:800;color:var(--gw-pine,#4D8A86)">${_p5Money(pipeVal)}</div>
-      </div>
-      <div class="gw-report-card">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Total Won Revenue</div>
-        <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonTotal)}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonOpps.length} deal${wonOpps.length!==1?'s':''} closed</div>
-      </div>
-      <div class="gw-report-card">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Won This Month</div>
-        <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonMTDVal)}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonMTD.length} deal${wonMTD.length!==1?'s':''}</div>
-      </div>
-    </div>
-
-    <div class="gw-report-grid gw-report-grid--two">
-      <!-- Pipeline Funnel -->
-      <div class="gw-report-card">
-        <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
-        ${FUNNEL.map(f=>{
-          const cnt = opps.filter(o=>GWSalesProcess.is(o,f.semantic)).length;
-          if(!cnt) return '';
-          const pct = Math.max(4, Math.round((cnt/funnelMax)*100));
-          const bar = f.semantic==='won' ? 'background:#2D7A55' : f.semantic==='lost' ? 'background:#A05050' : 'background:var(--gw-pine,#4D8A86)';
-          return `<div style="margin-bottom:9px">
-            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-              <span style="font-weight:600;color:var(--gw-ink)">${escapeHtml(f.label)}</span>
-              <span style="color:var(--gw-muted)">${cnt}</span>
-            </div>
-            <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
-              <div style="height:100%;width:${pct}%;${bar};border-radius:3px;transition:width .4s"></div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-
-      <!-- Monthly Won Trend (6 months) + Lead Sources -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="gw-report-card" style="flex:0 0 auto">
-          <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Won Revenue — Last 6 Months</h3>
-          <div style="display:flex;align-items:flex-end;gap:8px;height:80px">
-            ${months6.map(m=>{
-              const v=monthMap[m]||0;
-              const h=Math.max(4,Math.round((v/maxMonthVal)*80));
-              const isNow=m===mtd;
-              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
-                <div style="font-size:9px;font-weight:700;color:#2D7A55;white-space:nowrap">${v?_p5Money(v).replace('$','$').replace(/,000$/,'k'):''}</div>
-                <div style="width:100%;height:${h}px;background:${isNow?'#2D7A55':'#4D8A8680'};border-radius:3px 3px 0 0;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
-              </div>`;
-            }).join('')}
-          </div>
-        </div>
-        <div class="gw-report-card" style="flex:1">
-          <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Lead Sources</h3>
-          ${sources.length
-            ? sources.map(([src,cnt])=>{
-                const pct=opps.length?Math.round((cnt/opps.length)*100):0;
-                return `<div style="margin-bottom:8px">
-                  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-                    <span style="font-weight:600">${escapeHtml(src.slice(0,36))}</span>
-                    <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
-                </div>
-                <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
-                  <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
-                </div>
-              </div>`;
-            }).join('')
-          : `<p style="color:var(--gw-muted);font-size:13px">Add lead source data when creating leads to see breakdown here.</p>`}
-        </div>
-      </div>
-    </div>
-
-    <!-- Rep Performance Table -->
-    <div class="gw-report-card gw-report-panel">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Rep Performance</h3>
-        <span style="font-size:11px;color:var(--gw-muted)">${reps.length} member${reps.length!==1?'s':''}</span>
-      </div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:680px">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:10px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Rep</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Total</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Proposals</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won</th>
-            <th style="text-align:right;padding:10px 8px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won $</th>
-            <th style="text-align:right;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Close %</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em">Won MTD</th>
-          </tr></thead>
-          <tbody>${repRows||`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No team members configured.</td></tr>`}</tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
-}
-
-function financialReports() {
-  // Financial Snapshot — estimates, invoices, payments. No leads, no missions.
-  window._currentView = 'financialReports';
-  activateNav('financialReports');
-  const fmt = n => (n==null?'—':Number(n).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}));
-
-  // Pull from localStorage (same stores as Financial workspace)
-  let payments_data=[], deps=[], ests=[], invs=[];
-  try { payments_data=JSON.parse(localStorage.getItem('avalonPayments')||'[]'); } catch(_){}
-  try { deps=JSON.parse(localStorage.getItem('avalonDeposits')||'[]'); } catch(_){}
-  try { ests=JSON.parse(localStorage.getItem('avalonEstimates')||'[]'); } catch(_){}
-  try { invs=JSON.parse(localStorage.getItem('avalonInvoices')||'[]'); } catch(_){}
-
-  // Also pull from state if available
-  if (!ests.length && state.estimates) ests = state.estimates;
-  if (!invs.length && state.invoices)  invs = state.invoices;
-
-  const today = todayISO();
-  const mtd   = today.slice(0,7);
-
-  // Estimates
-  const estOpen     = ests.filter(e=>!['approved','rejected','invoiced'].includes(e.status));
-  const estApproved = ests.filter(e=>e.status==='approved');
-  const estTotal    = ests.reduce((s,e)=>s+Number(e.total||e.amount||0),0);
-  const estOpenVal  = estOpen.reduce((s,e)=>s+Number(e.total||e.amount||0),0);
-
-  // Invoices
-  const invUnpaid   = invs.filter(i=>!['paid','voided'].includes(i.status));
-  const invOverdue  = invUnpaid.filter(i=>i.dueDate && i.dueDate < today);
-  const invPaidMTD  = invs.filter(i=>i.status==='paid' && (i.paidDate||i.updatedAt||'').slice(0,7)===mtd);
-  const invOutstanding = invUnpaid.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
-  const invOverdueVal  = invOverdue.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
-  const invPaidMTDVal  = invPaidMTD.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
-
-  // Payments
-  const totalPaid     = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
-  const paidMTD       = payments_data.filter(p=>(p.date||p.createdAt||'').slice(0,7)===mtd);
-  const paidMTDVal    = paidMTD.reduce((s,p)=>s+Number(p.amount||0),0);
-
-  // Deposits
-  const depHeld       = deps.filter(d=>!d.applied);
-  const depHeldVal    = depHeld.reduce((s,d)=>s+Number(d.amount||0),0);
-
-  // Budget metrics (from revenueAdmin)
-  let fyBlock = '';
-  try {
-    const fy = (typeof getResolvedFY==='function') ? getResolvedFY() : null;
-    if (fy && fy.annual) {
-      const a = fy.annual;
-      const varColor = a.ytdVariance>=0?'#2D7A55':'#C97B6A';
-      const varSign  = a.ytdVariance>=0?'+':'';
-      const pct = a.budgetedRevenue>0?Math.min(100,Math.round(a.actualRevenue/a.budgetedRevenue*100)):0;
-      const divs = fy.divisions||{};
-      const divKeys = Object.keys(divs).filter(k=>divs[k]);
-      const divCells = divKeys.map(k=>{
-        const d=divs[k]; const label=k.charAt(0).toUpperCase()+k.slice(1);
-        const dpct=d.target>0?Math.min(100,Math.round((d.actual||0)/d.target*100)):0;
-        const gm = d.grossMarginPct!=null?Math.round(d.grossMarginPct*100):null;
-        return `<tr style="border-bottom:1px solid var(--gw-line)">
-          <td style="padding:10px 14px;font-weight:600">${escapeHtml(label)}</td>
-          <td style="padding:10px;text-align:right;font-weight:700;color:var(--gw-pine,#4D8A86)">${fmt(d.actual||0)}</td>
-          <td style="padding:10px;text-align:right;color:var(--gw-muted)">${fmt(d.target||0)}</td>
-          <td style="padding:10px;text-align:center">
-            <div style="display:flex;align-items:center;gap:6px">
-              <div style="flex:1;height:5px;background:var(--gw-line);border-radius:3px;overflow:hidden"><div style="height:100%;width:${dpct}%;background:var(--gw-pine,#4D8A86);border-radius:3px"></div></div>
-              <span style="font-size:10px;font-weight:700;color:var(--gw-muted);white-space:nowrap">${dpct}%</span>
-            </div>
-          </td>
-          <td style="padding:10px;text-align:center;font-size:11px;font-weight:700;color:${gm!=null&&gm<(d.grossMarginFloor||0)*100?'#C97B6A':'#2D7A55'}">${gm!=null?gm+'%':'—'}</td>
-          <td style="padding:10px;text-align:right;color:${(d.remaining||0)>0?'var(--gw-muted)':'#2D7A55'};font-size:12px">${fmt(Math.max(0,d.remaining||0))}</td>
-        </tr>`;
-      }).join('');
-      fyBlock = `
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;margin-bottom:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <h3 style="margin:0;font-size:14px;font-weight:800">Budget vs Actual — ${fy.budgetVersion||'FY'}</h3>
-          <button class="rp-btn" onclick="show('revenueAdmin')">Manage Budget</button>
-        </div>
-        <div class="fr-budget-grid fr-budget-inner">
-          ${[
-            {label:'YTD Actual',val:fmt(a.actualRevenue),color:'var(--gw-pine,#4D8A86)'},
-            {label:'Annual Budget',val:fmt(a.budgetedRevenue),color:'var(--gw-ink)'},
-            {label:'YTD Variance',val:varSign+fmt(a.ytdVariance),color:varColor},
-            {label:'Needed / Month',val:fmt(a.avgNeededPerMonth),color:'#8B6914'}
-          ].map(k=>`
-          <div style="background:var(--gw-surface-2);border-radius:8px;padding:12px">
-            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${k.label}</div>
-            <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
-          </div>`).join('')}
-        </div>
-        <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden;margin-bottom:6px">
-          <div style="height:100%;width:${pct}%;background:var(--gw-pine,#4D8A86);border-radius:4px;transition:width .4s"></div>
-        </div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-bottom:16px">${pct}% of annual target · ${a.monthsLeft||0} months remaining</div>
-        ${divCells ? `
-        <div class="fr-budget-table-wrap"><table class="fr-panel-table" style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Division</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Actual</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Target</th>
-            <th style="padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Progress</th>
-            <th style="text-align:center;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">GM %</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Remaining</th>
-          </tr></thead>
-          <tbody>${divCells}</tbody>
-        </table></div>` : ''}
-      </div>`;
-    }
-  } catch(_) {}
-
-  // Recent payment rows
-  const recentPmts = [...payments_data].sort((a,b)=>(b.date||b.createdAt||'').localeCompare(a.date||a.createdAt||'')).slice(0,8);
-  const pmtRows = recentPmts.map(p=>`<tr style="border-bottom:1px solid var(--gw-line)">
-    <td style="padding:9px 14px;font-weight:600">${escapeHtml(p.clientName||p.client||'—')}</td>
-    <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.method||p.type||'—')}</td>
-    <td style="padding:9px 10px;text-align:right;font-weight:700;color:#2D7A55">${fmt(p.amount)}</td>
-    <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(p.date||p.createdAt)}</td>
-  </tr>`).join('');
-
-  // Recent invoice rows
-  const recentInvs = [...invs].sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||'')).slice(0,8);
-  const invRows = recentInvs.map(i=>{
-    const isPaid = i.status==='paid';
-    const isOvd  = !isPaid && i.dueDate && i.dueDate < today;
-    const sColor = isPaid?'#2D7A55':isOvd?'#C97B6A':'var(--gw-muted)';
-    return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:9px 14px;font-weight:600">${escapeHtml(i.clientName||i.client||'—')}</td>
-      <td style="padding:9px 10px;text-align:right;font-weight:700">${fmt(i.total||i.amount)}</td>
-      <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(i.dueDate)}</td>
-      <td style="padding:9px 10px"><span style="font-size:11px;font-weight:700;color:${sColor}">${escapeHtml(i.status||'open')}</span></td>
-    </tr>`;
-  }).join('');
-
-  view.innerHTML = `
-  <div class="rp-shell gw-report-shell">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <div class="eyebrow"><a href="javascript:void(0)" onclick="show('today')" style="color:inherit;text-decoration:none">Command Center</a> · Financial Snapshot</div>
-        <h1 class="rp-title">Financial Snapshot</h1>
-        <p class="rp-subtitle">Estimates · invoices · payments · budget vs actual</p>
-      </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('financialHub')">Financial Hub</button>
-        <button class="rp-btn" onclick="show('revenueAdmin')">Budget Admin</button>
-      </div>
-    </header>
-
-    <!-- Primary KPIs: invoices + payments -->
-    <div class="fr-kpi-grid">
-      ${[
-        {label:'Outstanding Invoices', val:fmt(invOutstanding),   sub:`${invUnpaid.length} unpaid`,       color:'var(--gw-ink)'},
-        {label:'Overdue',              val:fmt(invOverdueVal),    sub:`${invOverdue.length} invoices`,    color:invOverdueVal?'#C97B6A':'var(--gw-muted)'},
-        {label:'Collected MTD',        val:fmt(paidMTDVal),       sub:`${paidMTD.length} payments`,       color:'#2D7A55'},
-        {label:'Total Collected',      val:fmt(totalPaid),        sub:'all time',                          color:'#2D7A55'},
-      ].map(k=>`
-      <div class="fr-kpi-card">
-        <div class="fr-kpi-card-label">${k.label}</div>
-        <div class="fr-kpi-card-val" style="color:${k.color}">${k.val}</div>
-        <div class="fr-kpi-card-sub">${k.sub}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Secondary: estimates + deposits -->
-    <div class="fr-kpi-grid" style="margin-bottom:20px">
-      ${[
-        {label:'Open Estimates',  val:fmt(estOpenVal),  sub:`${estOpen.length} pending`,     color:'var(--gw-pine,#4D8A86)'},
-        {label:'Approved',        val:fmt(estApproved.reduce((s,e)=>s+Number(e.total||e.amount||0),0)),  sub:`${estApproved.length} estimates`, color:'#2D7A55'},
-        {label:'Est. Total Sent', val:fmt(estTotal),    sub:`${ests.length} total`,           color:'var(--gw-ink)'},
-        {label:'Deposits Held',   val:fmt(depHeldVal),  sub:`${depHeld.length} unapplied`,   color:'#8B6914'},
-      ].map(k=>`
-      <div class="fr-kpi-card">
-        <div class="fr-kpi-card-label">${k.label}</div>
-        <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
-        <div class="fr-kpi-card-sub">${k.sub}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Budget vs Actual block (from revenueAdmin data) -->
-    ${fyBlock}
-
-    <!-- Invoices + Payments side by side -->
-    <div class="fr-panel-grid">
-      <div class="gw-report-card gw-report-panel">
-        <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-          <h3 style="margin:0;font-size:14px;font-weight:800">Recent Invoices</h3>
-          <button class="rp-btn" onclick="show('invoices')" style="font-size:11px;padding:4px 10px">All Invoices</button>
-        </div>
-        <table class="fr-panel-table" style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Amount</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Due</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
-          </tr></thead>
-          <tbody>${invRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No invoices yet.</td></tr>`}</tbody>
-        </table>
-      </div>
-      <div class="gw-report-card gw-report-panel">
-        <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-          <h3 style="margin:0;font-size:14px;font-weight:800">Recent Payments</h3>
-          <button class="rp-btn" onclick="show('payments')" style="font-size:11px;padding:4px 10px">All Payments</button>
-        </div>
-        <table class="fr-panel-table" style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Method</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase">Amount</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
-          </tr></thead>
-          <tbody>${pmtRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No payments recorded.</td></tr>`}</tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
-}
-
-function opsReports() {
-  // Operations Snapshot — today's jobs, upcoming, weeks booked.
-  window._currentView = 'opsReports';
-  activateNav('opsReports');
-  const wos    = state.workOrders || [];
-  const today  = todayISO();
-  const fmt    = n => Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
-
-  // Today's jobs
-  const todayWOs     = wos.filter(w => w.scheduledDate === today || w.date === today);
-  const todayDone    = todayWOs.filter(w => w.status === 'completed');
-  const todayPending = todayWOs.filter(w => w.status !== 'completed');
-
-  // This week
-  const weekStart = (()=>{ const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); })();
-  const weekEnd   = (()=>{ const d=new Date(); d.setDate(d.getDate()+(6-d.getDay())); return d.toISOString().slice(0,10); })();
-  const thisWeekWOs = wos.filter(w=>{ const dt=w.scheduledDate||w.date||''; return dt>=weekStart&&dt<=weekEnd; });
-  const thisWeekDone = thisWeekWOs.filter(w=>w.status==='completed');
-
-  // Upcoming (next 7 days after today)
-  const next7 = (()=>{ const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
-  const upcomingWOs = wos.filter(w=>{ const dt=w.scheduledDate||w.date||''; return dt>today&&dt<=next7; })
-    .sort((a,b)=>(a.scheduledDate||a.date||'').localeCompare(b.scheduledDate||b.date||''));
-
-  // All open work orders (not completed)
-  const openWOs      = wos.filter(w=>w.status!=='completed'&&w.status!=='cancelled');
-  const completedAll = wos.filter(w=>w.status==='completed');
-  const totalVal     = wos.reduce((s,w)=>s+Number(w.jobValue||w.value||0),0);
-
-  // Status breakdown
-  const statusMap = {};
-  wos.forEach(w=>{ const s=w.status||'unknown'; statusMap[s]=(statusMap[s]||0)+1; });
-
-  // WO row helper
-  function woRow(w, showDate) {
-    const isCompleted = w.status==='completed';
-    const isOverdue   = !isCompleted && (w.scheduledDate||w.date||'') < today;
-    const statColor   = isCompleted ? '#2D7A55' : isOverdue ? '#C97B6A' : 'var(--gw-pine,#4D8A86)';
-    const dateStr     = showDate ? _p5FmtDate(w.scheduledDate||w.date) : '';
-    return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:9px 14px">
-        <div style="font-weight:600;font-size:13px">${escapeHtml(w.title||_p6WONum(w)||'Work Order')}</div>
-        <div style="font-size:11px;color:var(--gw-muted)">${escapeHtml(w.client||w.clientName||'')}</div>
-      </td>
-      <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(w.crew||w.foreman||'—')}</td>
-      ${showDate?`<td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${dateStr}</td>`:''}
-      <td style="padding:9px 10px"><span style="font-size:11px;font-weight:700;color:${statColor}">${escapeHtml(w.status||'—')}</span></td>
-    </tr>`;
-  }
-
-  view.innerHTML = `
-  <div class="rp-shell gw-report-shell">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <div class="eyebrow"><a href="javascript:void(0)" onclick="show('today')" style="color:inherit;text-decoration:none">Command Center</a> · Operations Snapshot</div>
-        <h1 class="rp-title">Operations Snapshot</h1>
-        <p class="rp-subtitle">Today's jobs · upcoming · schedule health</p>
-      </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule Board</button>
-        <button class="rp-btn" onclick="show('workOrderList')">All Work Orders</button>
-      </div>
-    </header>
-
-    <!-- KPIs -->
-    <div class="gw-report-grid gw-report-grid--five">
-      ${[
-        {label:"Today's Jobs",      val:todayWOs.length,      sub:`${todayDone.length} done · ${todayPending.length} pending`,  color:'var(--gw-ink)'},
-        {label:'This Week',         val:thisWeekWOs.length,   sub:`${thisWeekDone.length} completed`,                           color:'var(--gw-pine,#4D8A86)'},
-        {label:'Open WOs',          val:openWOs.length,       sub:'not yet completed',                                           color:'var(--gw-ink)'},
-        {label:'Upcoming (7 days)', val:upcomingWOs.length,   sub:'scheduled ahead',                                            color:'#8B6914'},
-        {label:'Completed Total',   val:completedAll.length,  sub:'all time',                                                    color:'#2D7A55'},
-      ].map(k=>`
-      <div class="gw-report-card">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
-        <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Today's Work Orders -->
-    <div class="gw-report-card gw-report-panel" style="margin-bottom:20px">
-      <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Today's Jobs</h3>
-        <span style="font-size:11px;color:var(--gw-muted)">${today}</span>
-      </div>
-      ${todayWOs.length ? `
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-          <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew / Lead</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
-        </tr></thead>
-        <tbody>${todayWOs.map(w=>woRow(w,false)).join('')}</tbody>
-      </table>` :
-      `<div style="padding:32px;text-align:center;color:var(--gw-muted);font-size:13px">No work orders scheduled for today. <button class="rp-btn" style="margin-left:12px" onclick="show('scheduleBoard')">View Schedule</button></div>`}
-    </div>
-
-    <!-- Upcoming next 7 days -->
-    <div class="gw-report-card gw-report-panel" style="margin-bottom:20px">
-      <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line)">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Upcoming — Next 7 Days</h3>
-      </div>
-      ${upcomingWOs.length ? `
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-          <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
-        </tr></thead>
-        <tbody>${upcomingWOs.map(w=>woRow(w,true)).join('')}</tbody>
-      </table>` :
-      `<div style="padding:28px;text-align:center;color:var(--gw-muted);font-size:13px">No jobs scheduled in the next 7 days.</div>`}
-    </div>
-
-    <!-- Note: Weeks Booked Out calculation -->
-    <div class="gw-report-card" style="display:flex;align-items:center;gap:14px">
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.5"/><path d="M9 5v4l2.5 2.5" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--gw-ink)">Weeks Booked Out — coming soon</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Once budgeted hours are attached to estimates and work orders, this will show weeks of capacity booked out based on your team's weekly hour budget.</div>
-      </div>
-      <button class="rp-btn" style="margin-left:auto;white-space:nowrap" onclick="show('workOrderList')">View All WOs</button>
-    </div>
-  </div>`;
-}
-
 function teamReports() {
   window._currentView = 'teamReports';
   activateNav('teamReports');
@@ -22789,7 +22252,7 @@ function teamReports() {
       </div>
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('teamView')">Team Overview</button>
-        <button class="rp-btn" onclick="show('salesReports')">Business Pulse</button>
+        <button class="rp-btn" onclick="show('today')">Command Center</button>
       </div>
     </header>
 

@@ -54,7 +54,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'revenueAdmin','teamReports',
       'settings','userManagement','integrations','manager','systemConfig','systemTemplates',
       'opsHub','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
     capabilities: {
@@ -92,7 +92,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'revenueAdmin','teamReports',
       'settings','integrations','manager','approvalQueue','auditLog','portalAdmin','automationCenter'],
     capabilities: {
       can_create_lead: true, can_edit_lead: true,
@@ -122,7 +122,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail',
       'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
-      'timeTracker','opsReports','teamReports','approvalQueue','fieldMode','userManagement'],
+      'timeTracker','teamReports','approvalQueue','fieldMode','userManagement'],
     capabilities: {
       can_create_lead: false, can_edit_lead: false,
       can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
@@ -203,7 +203,7 @@ const _UM_ROLE_DEFS_DEFAULT = [
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail',
       'assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
-      'timeTracker','opsReports','teamReports','approvalQueue','fieldMode'],
+      'timeTracker','teamReports','approvalQueue','fieldMode'],
     capabilities: {
       can_create_lead: false, can_edit_lead: false,
       can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
@@ -573,9 +573,6 @@ const UM_ALL_VIEWS = [
 
   // ── REPORTS ────────────────────────────────────────────────────────────────
   { key:'revenueAdmin',       label:'Revenue',                 hub:'Reports',     kind:'report' },
-  { key:'salesReports',       label:'Sales',                   hub:'Reports',     kind:'report' },
-  { key:'financialReports',   label:'Financial',               hub:'Reports',     kind:'report' },
-  { key:'opsReports',         label:'Operations',              hub:'Reports',     kind:'report' },
   { key:'teamReports',        label:'Team',                    hub:'Reports',     kind:'report' },
 
   // ── SETTINGS ───────────────────────────────────────────────────────────────
@@ -2071,7 +2068,7 @@ function umRenderRoles(container) {
       'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','sequences','talkTracks','playbooks','aiAssist','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
       'financialHub','invoices','payments','deposits','statements','financialActivity',
       'scheduleBoard','dispatchBoard','recurringServices','crewView','workOrderList','workOrderDetail','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-      'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+      'revenueAdmin','teamReports',
       'settings','userManagement','integrations','manager'],
     rep: ['today','myDashboard',
       'pipeline','lead','clients','properties','estimates','communications','automations','templates','campaigns','sequences','talkTracks','playbooks','aiAssist','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
@@ -2080,14 +2077,14 @@ function umRenderRoles(container) {
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-      'opsReports','teamReports'],
+      'teamReports'],
     laborer: ['today','scheduleBoard','workOrderList','timeTracker'],
     // Legacy alias — kept so old D1 rows with field_supervisor still resolve
     field_supervisor: ['today','myDashboard',
       'scheduleBoard','dispatchBoard','recurringServices','crewView',
       'workOrderList','workOrderDetail','assetList','assetDetail',
       'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-      'opsReports','teamReports'],
+      'teamReports'],
     view_only: ['today','pipeline']
   };
 

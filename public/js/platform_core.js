@@ -67,9 +67,6 @@ window.GW_VIEWS = {
   timeTracker:        { label:'Time Tracker',       hub:'operations', kind:'tool' },
   // Reports
   revenueAdmin:       { label:'Revenue',            hub:'reports',   kind:'report' },
-  salesReports:       { label:'Sales Reports',      hub:'reports',   kind:'report' },
-  financialReports:   { label:'Financial Reports',  hub:'reports',   kind:'report' },
-  opsReports:         { label:'Operations Reports', hub:'reports',   kind:'report' },
   teamReports:        { label:'Team Reports',       hub:'reports',   kind:'report' },
   // Settings
   settings:           { label:'General Settings',   hub:'settings',  kind:'page' },

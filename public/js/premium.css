@@ -8532,7 +8532,17 @@ h1.pl-title,
 .gw-today-pipe-cell--amber:before, .gw-today-pipe-cell--amber .gw-today-pipe-ic { background: var(--gw-amber, #8B6914); }
 .gw-today-pipe-cell--pine:before, .gw-today-pipe-cell--pine .gw-today-pipe-ic   { background: var(--gw-pine, #113931); }
 .gw-today-pipe-cell--emerald:before, .gw-today-pipe-cell--emerald .gw-today-pipe-ic { background: var(--gw-emerald, #2D7A55); }
+.gw-today-pipe-cell--rose:before, .gw-today-pipe-cell--rose .gw-today-pipe-ic   { background: var(--gw-rose, #8B3A2A); }
 .gw-today-pipe-ic { color: #fff; opacity: .92; }
+
+/* 5th hero chip (Avg Close Likelihood) — same tile grid, one extra column */
+.gw-today-pipe-strip--five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .gw-today-pipe-strip--five { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .gw-today-pipe-strip--five { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
 .gw-today-pipe-cell > div,
 .gw-today-pipe-cell .gw-today-pipe-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gw-today-pipe-label {
@@ -14666,18 +14676,61 @@ h1.pl-title,
   /* column-gap real; row-gap 0 — vertical breathing room is baked into each
      widget's masonry row-span by JS (content height + GAP, see
      _gwMyDayMasonry()) rather than via CSS row-gap, so it stays exact at any
-     row-span size. */
-  column-gap: 28px;
+     row-span size. Density pass: 28px → 18px to match JS GAP constant and
+     the tighter Command Center rebuild. */
+  column-gap: 18px;
   row-gap: 0;
   align-items: stretch;
 }
-/* edit mode: keep source order (no dense back-fill) so drag-reorder is predictable */
-.gw-myday-grid--edit { grid-auto-flow: row; }
 .gw-myday-widget { min-width: 0; }
 .gw-myday-widget-body { min-width: 0; overflow-x: auto; }
 .gw-myday-widget-body > .card,
 .gw-myday-widget-body > section.card { margin-top: 0 !important; height: 100%; }
 .gw-myday-widget-body > .gw-today-pipe-strip { margin-bottom: 0; }
+
+/* ── Widget hover-remove "×" — Command Center rebuild: no drag/resize, just
+   an Add-Widget popover + a small hover-only remove button per widget. ── */
+.gw-myday-widget { position: relative; }
+.gw-myday-widget-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gw-surface, #fff);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  color: var(--gw-muted, #5E6E6F);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, background .15s, color .15s;
+  z-index: 5;
+}
+.gw-myday-widget:hover .gw-myday-widget-remove { opacity: 1; }
+.gw-myday-widget-remove:hover { background: var(--gw-rose, #8B3A2A); color: #fff; }
+
+/* ── Accordion-expand-in-place — shared pattern for all migrated deep report
+   content (pipeline funnel/trend/sources, A/R aging). Collapsed by default;
+   toggled via gwMyDayAccordionToggle(id), no separate page/modal. ── */
+.gw-accordion-body {
+  display: none;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+}
+.gw-accordion-body--open { display: block; animation: gwAccordionIn .18s ease; }
+@keyframes gwAccordionIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.gw-accordion-toggle:after {
+  content: '▾';
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 9px;
+  transition: transform .15s;
+}
+.gw-accordion-toggle--open:after { transform: rotate(180deg); }
 
 /* NOTE: no desktop breakpoint overrides here — the user controls widget
    sizes; forcing spans with !important at <=1100px silently broke resizing.
@@ -14743,73 +14796,6 @@ h1.pl-title,
   .gw-myday-zone { margin-bottom: 22px; }
 }
 
-/* ── Customize (edit) mode ── */
-.gw-myday-edit-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  flex-wrap: wrap;
-  background: #EDF5F4;
-  border: 1.5px dashed var(--gw-pine, #4D8A86);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 18px;
-  font-size: 13.5px;
-  color: var(--gw-ink, #1F2A2B);
-}
-.gw-myday-edit-banner svg { vertical-align: -3px; }
-.gw-myday-edit-banner-btns { display: flex; gap: 8px; }
-
-.gw-myday-widget--edit {
-  border: 1.5px dashed rgba(77,138,134,.55);
-  border-radius: 14px;
-  padding: 6px;
-  background: rgba(77,138,134,.03);
-  cursor: grab;
-  transition: border-color .15s, box-shadow .15s, transform .15s;
-  animation: gw-myday-wiggle 3.2s ease-in-out infinite;
-}
-.gw-myday-widget--edit:nth-child(2n) { animation-delay: -1.1s; }
-.gw-myday-widget--edit:nth-child(3n) { animation-delay: -2.2s; }
-@keyframes gw-myday-wiggle {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(.14deg); }
-  75% { transform: rotate(-.14deg); }
-}
-.gw-myday-widget--edit:active { cursor: grabbing; }
-.gw-myday-widget--edit .gw-myday-widget-body { pointer-events: none; opacity: .82; }
-.gw-myday-widget--hidden { opacity: .45; }
-.gw-myday-widget--hidden .gw-myday-widget-body { filter: grayscale(.6); }
-
-.gw-myday-widget-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 4px 6px 8px;
-}
-.gw-myday-widget-name {
-  font-size: 12.5px; font-weight: 700; color: var(--gw-pine, #4D8A86);
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.gw-myday-drag-dots { font-size: 13px; color: rgba(77,138,134,.7); letter-spacing: 1px; }
-.gw-myday-widget-btns { display: inline-flex; gap: 4px; }
-.gw-myday-widget-btns button {
-  background: #fff;
-  border: 1px solid var(--gw-line, #DCE6E4);
-  border-radius: 7px;
-  padding: 3px 9px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--gw-ink, #1F2A2B);
-  cursor: pointer;
-  transition: background .12s, border-color .12s;
-}
-.gw-myday-widget-btns button:hover { background: #EDF5F4; border-color: var(--gw-pine, #4D8A86); }
-.gw-myday-widget-btns .gw-myday-show-btn { background: var(--gw-pine, #4D8A86); color: #fff; border-color: var(--gw-pine, #4D8A86); }
-
-/* drag states */
-.gw-myday-dragging { opacity: .35; }
-.gw-myday-drop-target {
-  border-color: var(--gw-pine, #4D8A86) !important;
-  box-shadow: 0 0 0 3px rgba(77,138,134,.22);
-}
-
 .gw-myday-placeholder {
   padding: 22px 16px;
   text-align: center;
@@ -14818,21 +14804,19 @@ h1.pl-title,
   background: var(--gw-bg2, #F5F8F7);
   border-radius: 10px;
 }
-.gw-myday-customize-btn svg { vertical-align: -2px; }
 
 /* Very wide screens: keep content readable but fluid — cards inside stretch */
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SECTION 40 — MY DAY WIDGETS v2
    1) Bigger breathing room between widgets (never touching)
-   2) Drag-resize grips: right edge = width, bottom edge = height, corner = both
-   3) Widget Library panel (add / remove widgets)
-   4) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
+   2) Widget Library panel (add / remove widgets) — drag/resize removed in the
+      Command Center rebuild (single canonical layout, no edit mode)
+   3) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
 ══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── 1. Spacing: column-gap/row-gap now set once on the base .gw-myday-grid
    rule (Section 39) — see comment there. ── */
-.gw-myday-widget { position: relative; }
 /* cards inside widgets: kill stray top margins so gap is the only spacing */
 .gw-myday-widget-body > .card,
 .gw-myday-widget-body > section.card { margin: 0 !important; }
@@ -14840,47 +14824,7 @@ h1.pl-title,
 .gw-myday-widget-body[style*="height"] > .card,
 .gw-myday-widget-body[style*="height"] > section.card { min-height: 100%; }
 
-/* ── 2. Resize grips (visible only in customize mode) ── */
-.gw-myday-grip { position: absolute; z-index: 5; }
-.gw-myday-grip--e {
-  top: 10px; bottom: 22px; right: -4px; width: 10px;
-  cursor: ew-resize;
-}
-.gw-myday-grip--s {
-  left: 10px; right: 22px; bottom: -4px; height: 10px;
-  cursor: ns-resize;
-}
-.gw-myday-grip--se {
-  right: -4px; bottom: -4px; width: 20px; height: 20px;
-  cursor: nwse-resize;
-}
-.gw-myday-grip--e::after {
-  content: ''; position: absolute; top: 50%; right: 3px; transform: translateY(-50%);
-  width: 4px; height: 34px; border-radius: 4px;
-  background: rgba(77,138,134,.45); opacity: 0; transition: opacity .15s;
-}
-.gw-myday-grip--s::after {
-  content: ''; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
-  width: 34px; height: 4px; border-radius: 4px;
-  background: rgba(77,138,134,.45); opacity: 0; transition: opacity .15s;
-}
-.gw-myday-grip--se::after {
-  content: ''; position: absolute; right: 4px; bottom: 4px; width: 10px; height: 10px;
-  border-right: 3px solid rgba(77,138,134,.65); border-bottom: 3px solid rgba(77,138,134,.65);
-  border-radius: 0 0 4px 0; opacity: 0; transition: opacity .15s;
-}
-.gw-myday-widget--edit:hover .gw-myday-grip::after,
-.gw-myday-widget--edit.gw-myday-resizing .gw-myday-grip::after { opacity: 1; }
-.gw-myday-resizing { animation: none !important; }
-.gw-myday-resizing,
-.gw-myday-resizing * { user-select: none !important; }
-.gw-myday-resizing { outline: 2px solid var(--gw-pine, #4D8A86); outline-offset: 2px; border-radius: 14px; }
-
-/* remove button styling */
-.gw-myday-widget-btns .gw-myday-remove-btn { color: #8B3A2A; border-color: #EBD3CC; }
-.gw-myday-widget-btns .gw-myday-remove-btn:hover { background: #FAE8E4; border-color: #C97B6A; }
-
-/* ── 3. Widget Library panel ── */
+/* ── 2. Widget Library panel ── */
 .gw-myday-library {
   background: var(--gw-surface, #fff);
   border: 1.5px dashed rgba(77,138,134,.5);

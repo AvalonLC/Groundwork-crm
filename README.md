@@ -790,3 +790,123 @@ report pages rather than a flat pile of same-weight widgets.
   against the new per-zone multi-grid structure (only full desktop width
   and mobile were). Low risk since those overrides are class-based and
   apply per-grid automatically, but not visually re-confirmed.
+
+## Command Center Rebuild: Single Canonical Layout, Report Pages Retired (2026-08-03)
+
+Full rebuild of Command Center per direct user sign-off ("go with your
+recommendations and implement the full thing now"), replacing the
+preset-day-mode / edit-mode / drag-and-drop system from the entries above
+with **one canonical layout for everyone**.
+
+**Layout:**
+- Header simplified to: title, date/rep line, single **"+ Add Widget"**
+  button. No modes, no edit-mode toggle, no day-mode picker.
+- Hero band gained a **5th chip — Avg Close Likelihood**, computed via
+  `gwLeadScore()`, alongside the existing Open Leads / Proposals Out /
+  Pipeline Value / Won MTD chips. New `.gw-today-pipe-strip--five` CSS grid
+  (5 cols desktop → 3 at ≤900px → 2 at ≤680px) plus a rose color variant for
+  the low-score band.
+- Zones unchanged in concept (Sales & Pipeline / Financial / Operations /
+  My Work) but every widget now renders at a **fixed span from a single
+  registry** (`_GW_MYDAY_WIDGETS`) — no per-mode spans/heights/order,
+  reordering is not supported (drag-and-drop cut entirely).
+- **Needs Follow-Up** upgraded to sort by `gwStageClock()`'s "late" urgency
+  band (stage-relative overdue, not just calendar age) and is a **default**
+  Sales & Pipeline widget.
+- **Rep Leaderboard** (new) and **Budget vs Actual** (new) are
+  **Add-Widget-only** — hidden by default, role-gated (admin/office_manager
+  for Rep Leaderboard), surfaced only via the picker.
+- Deep content that used to live on the report pages now expands **in
+  place via accordion** instead of a modal/page: Pipeline Chart's "View
+  trend" and Money Owed's "Aging" both toggle a `.gw-accordion-body` with a
+  chevron rotation and a short reveal animation
+  (`window.gwMyDayAccordionToggle(id)`).
+- Operations zone gained an Add-Widget-only "Upcoming Schedule (7 Days)"
+  deeper-content widget (`opsDeeper`).
+
+**Customization model — replaced entirely:**
+- No presets, no modes, no edit-mode banner/state.
+- **"+ Add Widget"** opens a popover (`_gwMyDayAddWidgetPopover`) listing
+  every widget allowed for the current role with an Add/Remove toggle.
+- Each on-screen widget gets a small **hover-only "×"** in its top-right
+  corner (`.gw-myday-widget-remove`, opacity 0→1 on `:hover`) to remove it
+  — same popover to re-add.
+- Drag-and-drop, resize grips, and all related CSS/state (`.gw-myday-grip--*`,
+  `.gw-myday-resizing`, `.gw-myday-drop-target`, `.gw-myday-dragging`, the
+  old edit-mode banner/bar/name/wiggle-animation classes) removed.
+
+**Report pages deleted outright:**
+- `salesReports()`, `financialReports()`, `opsReports()` and every line of
+  wiring that referenced them are gone — nav-permission arrays (admin /
+  office_manager / division_manager / foreman / field_supervisor, in both
+  `app_premium.js` and `user_management.js` and both `defaultNavPerms`
+  blocks in `src/index.tsx`), `_VIEW_WORKSPACE_MAP`, `_wsHeaderMap`,
+  `_viewLabels`, `dashAliases`, the `p7Route` dispatch table, the
+  `gwDashboard()` tab fallthrough, and the `GW_VIEWS` registry in
+  `platform_core.js`. Their content now lives inline as Command Center
+  widgets (with accordion-expand for anything that was "deep").
+- Copy cleanup: "Business Pulse" / "Financial Snapshot" / "Operations
+  Snapshot" removed from labels, tooltips, and Spanish i18n
+  (`gw_i18n.js`); added a `'Command Center': 'Centro de Comando'` entry.
+
+**Nav:**
+- Dashboard's collapsible workspace-group (chevron + subtabs) replaced with
+  a single top-level **"Command Center"** nav button (`show('today')`) in
+  `src/index.tsx`. Verified backward-compatible — `activateNav()` and
+  `_gwApplyFieldNavFilters()` both null-guard on the now-absent subtabs
+  container.
+
+**Density pass:**
+- `.gw-myday-grid` column-gap tightened 28px → 18px to match the JS `GAP`
+  constant; tighter CSS `minmax()` widths throughout.
+
+**Incidental fixes found and fixed along the way (unrelated to this
+rebuild, pre-existing corruption from earlier sessions):**
+- Four separate syntax/logic corruptions in `app_premium.js` (a stray dead
+  `const objective : '';` statement, a mangled CSV-export filename line, a
+  corrupted save-button template string, and ~13 lines of garbled
+  duplicated trailing fragments at EOF) and one in `user_management.js` (a
+  duplicated/mangled role-change audit block) — all found via iterative
+  `node -c` syntax-check passes and fixed; `node -c` is clean on all four
+  touched JS files.
+- A **critical** bug in `src/index.tsx`: an entire ~39-tag block of
+  `<script src="...">` elements was duplicated verbatim, causing every
+  script's top-level `const`/`let`/`var` declarations to execute twice →
+  20 distinct "Identifier X has already been declared" runtime errors.
+  Not visible via `node -c` (this is HTML/TSX markup, not standalone JS);
+  caught via Playwright console capture and confirmed fixed the same way
+  (0 "already declared" errors post-fix, only expected 401s remain).
+- A widget-registry regression introduced mid-rebuild: `Needs Follow-Up`
+  had inherited a stale `defaultOff:true` flag from the old registry,
+  which — combined with the new spec (only Rep Leaderboard and Budget vs
+  Actual are meant to be Add-Widget-only) — meant it was silently hidden
+  by default. Caught during this pass's Playwright verification (comparing
+  the rendered Add-Widget popover against the confirmed spec) and fixed by
+  removing the flag; confirmed via re-test that it now renders by default
+  in the Sales & Pipeline zone.
+
+**Verified via Playwright** (login as a real tenant `office_manager`
+account, live local D1 data):
+- Command Center (`#gwDashboard` / `today` view) renders with the 5-chip
+  hero band, zone-grouped Sales & Pipeline / Financial / Operations / My
+  Work sections, and correct default widget visibility (Rep Leaderboard
+  and Budget vs Actual absent by default; Needs Follow-Up present).
+- Accordion toggle ("View trend") confirmed to open
+  `.gw-accordion-body--open` on click.
+- Hover-remove "×" confirmed to go from `opacity:0` to `opacity:1` on
+  widget hover.
+- Add Widget popover confirmed to open and list all widgets with correct
+  Add/Remove state matching what's on screen.
+- Zero "already declared" or other JS errors on the unauthenticated
+  landing page or post-login Command Center; the only console errors
+  present are expected pre-auth 401s (`/api/auth/me` before login) and
+  two pre-existing, unrelated 404s (`/api/google/refresh`,
+  `/api/calendar/sync` — both return 404 by design when a tenant hasn't
+  connected Google Calendar; confirmed identical in the pre-rebuild commit,
+  not a regression).
+- Only tested as `office_manager` role this pass — **admin/field/rep-role
+  regression testing not yet done**, recommended before wider rollout.
+
+**Not yet done:** production deploy to `groundwork-crm.com` (still serving
+the pre-rebuild commit as of this entry) and multi-role Playwright coverage
+beyond `office_manager`.

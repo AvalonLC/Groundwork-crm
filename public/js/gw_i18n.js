@@ -72,9 +72,8 @@ const _GW_ES = {
 
   // ── Dashboard subtabs ──────────────────────────────────────────────────────
   'My Day':              'Mi Día',
+  'Command Center':      'Centro de Comando',
   'Business Pulse':      'Pulso del Negocio',
-  'Financial Snapshot':  'Resumen Financiero',
-  'Operations Snapshot': 'Resumen de Operaciones',
   'Team':                'Equipo',
 
   // ── Sales subtabs ──────────────────────────────────────────────────────────
