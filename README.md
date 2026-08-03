@@ -997,3 +997,68 @@ requested by the user before production rollout):
   on the platform overview, rep still has no Financial zone, foreman still
   bypasses Command Center entirely for the untouched `fieldDashboard`.
 - `node -c public/js/app_premium.js` clean.
+
+## Command Center: Whole-Sheet Visual Consistency Pass (2026-08-03)
+
+Follow-up to the row-height-matching fix above. User reviewed the live,
+corrected Command Center and reported it still felt inconsistent: "*every
+widget being a different size and shape just continues to throw the
+professionalism of the command center off*," with screenshots of Sales &
+Pipeline, Financial, and Operations zones. Row-height-matching alone wasn't
+enough — two further problems were identified:
+
+1. **Operations zone width mismatch.** With "Time Clock" hidden (a
+   per-user Add Widget choice), "Today's Jobs" (registry `span:4`, ~67%
+   width) and "Crew Hours Today" (registry `span:3`, ~50% width) each sat
+   alone in their own row at *different* widths, leaving different amounts
+   of dead space beside each — a jagged, staircase-like right edge.
+2. **Internal density mismatch even at matched widths/heights.** Pipeline
+   Chart (dense chart + breakdown) vs. Needs Follow-Up (2 short list
+   items) and Financial Pulse (dense KPI grid + progress bars) vs. Money
+   Owed (3 full-width, mostly-empty stacked blocks) matched their outer
+   box size but read as completely different "shapes" of widget internally.
+
+**Fix (two parts, both implemented):**
+
+- **Part A — Operations zone spans:** `crewHours` registry span changed
+  from `3` → `6` (full row width). It's an admin/OM-only widget that
+  doesn't naturally pair with anything else in the zone, so it now owns
+  its row cleanly instead of sitting at an odd half-width. Its render was
+  redesigned from a narrow vertical list (`.gw-myday-crew-row`) into a
+  wrapping grid of compact chip-cards (`.gw-myday-crew-grid` /
+  `.gw-myday-crew-chip`, visually matching the Money Owed cell language)
+  so it stays content-dense at full width regardless of crew size, plus a
+  header badge showing total hours + live count.
+- **Part B — Internal density parity:**
+  - Money Owed (A/R): `.gw-myday-ar-grid` changed from a stacked
+    `flex-direction:column` list to a 3-across `grid-template-columns:
+    repeat(3,1fr)` layout, matching Financial Pulse's denser KPI-grid feel
+    instead of full-width blocks with mostly-empty horizontal space.
+  - Empty-state placeholders (Needs Follow-Up, Today's Jobs) gained a new
+    `.gw-myday-placeholder--empty` variant: centered icon (`success` /
+    `calendar`) + message, `flex:1` so it expands to fill whatever extra
+    height row-matching gives it (via a `:has()` rule making the parent
+    `.card` a flex column) — turning what used to be a small message
+    floating in a big empty void into an intentionally centered "all
+    clear" state.
+
+**Verified via Playwright** (sandbox render pre-install, per user request):
+- Measured widget bounding boxes directly (`getBoundingClientRect()`) for
+  the office_manager role: confirmed Crew Hours Today now renders at full
+  1112px row width (matching Reviews/Money Owed row) instead of the
+  previous ~547px half-width bar; confirmed Financial Pulse / Money Owed
+  both render at matched 488px height with the new 3-across A/R layout.
+- Screenshotted full Command Center for `admin` and `office_manager` —
+  visually confirmed Operations zone no longer has a staggered right edge,
+  Money Owed reads as a dense 3-cell row instead of 3 stacked mostly-empty
+  blocks, and empty-state cards center their icon+message in the available
+  height instead of floating near the top with dead space below.
+- Re-ran full multi-role regression (admin / office_manager / rep /
+  foreman-field): zero non-expected console errors on every role (only
+  the same pre-existing pre-auth 401s and the expected 403s on
+  admin/OM-gated endpoints — `crewHours`/`finance` — when logged in as
+  `rep`/`foreman`, consistent with every prior regression pass).
+- `node -c public/js/app_premium.js` clean.
+- Local D1 test credentials (temporary PINs for jen/tyler/ryan, temp
+  `rep_fieldtest01` foreman record) fully reverted and verified back to
+  original state after testing.

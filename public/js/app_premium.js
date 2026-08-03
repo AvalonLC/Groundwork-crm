@@ -2251,7 +2251,7 @@ const _GW_MYDAY_WIDGETS = [
   { id:'budgetVsActual', label:'Budget vs Actual',      desc:'Annual budget vs actual with per-division progress and margin', span:6, allowed:c=>c.showFin, defaultOff:true, render:c=>c.budgetVsActualHtml, zone:'financial' },
   { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from Command Center', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
   { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
-  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:3, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
   { id:'opsDeeper',    label:'Upcoming Schedule (7 Days)', desc:'Jobs scheduled in the next 7 days, plus capacity outlook', span:6, allowed:c=>!c.isField, defaultOff:true, render:c=>c.opsDeeperHtml, zone:'operations' },
   { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
   { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
@@ -2672,7 +2672,7 @@ function _gwMyDayLoadOwnerWidgets(rep){
           ${todayJobs.length ? `<span class="badge">${todayJobs.length}</span>` : ''}
           <span style="margin-left:auto;display:flex;gap:6px"><button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule</button></span></div>
           <div class="${useCap ? 'list-cap' : ''}">
-            ${todayJobsV.length ? todayJobsV.map(row).join('') : (todayJobs.length ? '' : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`)}
+            ${todayJobsV.length ? todayJobsV.map(row).join('') : (todayJobs.length ? '' : `<div class="gw-myday-placeholder gw-myday-placeholder--empty">${(typeof gwIcon==='function')?gwIcon('calendar',22,'#8FA0A0'):''}<span>No jobs scheduled today.</span></div>`)}
             ${upcomingV.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcomingV.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
           </div>
           ${moreLink}
@@ -2690,19 +2690,33 @@ function _gwMyDayLoadOwnerWidgets(rep){
         const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
         const reps = (j.ok && j.data) || [];
         const fmtH = min => (min/60).toFixed(1) + 'h';
-        const rows = reps.map(r => {
+        // Full-row-width (span 6) widget — a narrow stacked list here reads
+        // as a mostly-empty bar (this is exactly what the user flagged as
+        // "wasteful"). Instead lay reps out as a wrapping grid of compact
+        // chip-cards (same visual language as the Money Owed cells below,
+        // for zone-wide consistency) so the widget fills its width with
+        // actual content density regardless of crew size.
+        const totalMin = reps.reduce((s,r) => {
+          const liveMin = (r.entries||[]).reduce((s2,e) => s2 + (e.clock_out ? 0 : Math.floor((Date.now()-new Date(e.clock_in).getTime())/60000)), 0);
+          return s + (r.total_min||0) + liveMin;
+        }, 0);
+        const liveCount = reps.filter(r => (r.entries||[]).some(e => !e.clock_out)).length;
+        const chips = reps.map(r => {
           const live = (r.entries||[]).some(e => !e.clock_out);
           const liveMin = (r.entries||[]).reduce((s,e) => s + (e.clock_out ? 0 : Math.floor((Date.now()-new Date(e.clock_in).getTime())/60000)), 0);
-          return `<div class="gw-myday-crew-row">
+          return `<div class="gw-myday-crew-chip${live ? ' gw-myday-crew-chip--live' : ''}">
             <span class="gw-myday-crew-dot" style="background:${el(r.rep_color||'#4D8A86')}"></span>
-            <strong>${el(r.rep_name)}</strong>
+            <span class="gw-myday-crew-chip-name">${el(r.rep_name)}</span>
             ${live ? '<span class="gw-myday-crew-live">● live</span>' : ''}
             <span class="gw-myday-crew-hrs">${fmtH((r.total_min||0) + liveMin)}</span>
           </div>`;
         }).join('');
         m.innerHTML = `<section class="card"><div class="section-head"><h2>Crew Hours Today</h2>
-          <button class="secondary-btn small" onclick="show('gwTimesheetAdmin')" style="font-size:11px">Review</button></div>
-          ${rows || `<div class="gw-myday-placeholder">No hours logged yet today.</div>`}
+          ${reps.length ? `<span class="badge">${fmtH(totalMin)} total${liveCount ? ` · ${liveCount} live` : ''}</span>` : ''}
+          <span style="margin-left:auto"><button class="secondary-btn small" onclick="show('gwTimesheetAdmin')" style="font-size:11px">Review</button></span></div>
+          <div class="gw-myday-crew-grid">
+            ${chips || `<div class="gw-myday-placeholder">No hours logged yet today.</div>`}
+          </div>
         </section>`;
       }).catch(()=>{});
   }
@@ -3252,7 +3266,7 @@ function _gwTodayRender() {
     .slice(0,6)
     .map(x => x.o);
   const _staleLeadsHtml = `<section class="card"><div class="section-head"><h2>Needs Follow-Up</h2>${_staleLeads.length ? `<span class="badge warn-badge">${_staleLeads.length}</span>` : ''}</div>
-    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No leads sitting late in their stage — everything's on pace.</div>`}</section>`;
+    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder gw-myday-placeholder--empty">${(typeof gwIcon==='function')?gwIcon('success',22,'#2D9F63'):''}<span>No leads sitting late in their stage — everything's on pace.</span></div>`}</section>`;
   const _recentWins = _won.slice().sort((a,b)=>(b.closedDate||b.updatedAt||'').localeCompare(a.closedDate||a.updatedAt||'')).slice(0,5);
   const _recentWinsHtml = `<section class="card"><div class="section-head"><h2>Recent Wins</h2></div>
     ${_recentWins.length ? _recentWins.map(oppMini).join('') : `<div class="gw-myday-placeholder">No wins yet — go close one!</div>`}</section>`;

@@ -14811,6 +14811,31 @@ h1.pl-title,
   background: var(--gw-bg2, #F5F8F7);
   border-radius: 10px;
 }
+/* Row-height matching can stretch a widget well past its own natural
+   content height when a taller sibling shares its row — an empty-state
+   placeholder just sitting near the top of that extra space looks like
+   dead whitespace. This variant grows to fill the available height and
+   centers an icon + message so the extra room reads as an intentional
+   "all clear" state instead of a layout gap. */
+.gw-myday-placeholder--empty {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; min-height: 90px; padding: 28px 20px;
+}
+.gw-myday-placeholder--empty span { max-width: 240px; line-height: 1.5; }
+/* .card is a normal block by default — flex:1 above only expands the
+   placeholder to fill leftover row-matched height if its card parent is
+   itself a flex column. Not a direct-child :has() since some widgets nest
+   the placeholder inside an extra wrapper div (e.g. Today's Jobs' list
+   container), so match at any depth. */
+.gw-myday-widget-body > .card:has(.gw-myday-placeholder--empty),
+.gw-myday-widget-body > section.card:has(.gw-myday-placeholder--empty) {
+  display: flex; flex-direction: column;
+}
+.gw-myday-widget-body > .card:has(.gw-myday-placeholder--empty) > div:has(.gw-myday-placeholder--empty),
+.gw-myday-widget-body > section.card:has(.gw-myday-placeholder--empty) > div:has(.gw-myday-placeholder--empty) {
+  display: flex; flex-direction: column; flex: 1;
+}
 
 /* Very wide screens: keep content readable but fluid — cards inside stretch */
 
@@ -14966,20 +14991,33 @@ h1.pl-title,
 }
 
 /* ── Crew Hours widget ──────────────────────────────────────────────────── */
-.gw-myday-crew-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 6px; border-bottom: 1px solid var(--gw-line, #EDF2F1); font-size: 13px;
+/* Full-row-width (span 6) widget — wraps reps as compact chip-cards (same
+   visual language as .gw-myday-ar-cell) instead of a narrow stacked list,
+   so the widget stays content-dense at full width regardless of crew size. */
+.gw-myday-crew-grid {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;
 }
-.gw-myday-crew-row:last-child { border-bottom: none; }
+.gw-myday-crew-chip {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--gw-bg2, #F5F8F7);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 10px; padding: 9px 12px; font-size: 13px;
+  flex: 1 1 160px; min-width: 160px;
+}
+.gw-myday-crew-chip--live { background: #F0F7F3; border-color: #CBE3D6; }
 .gw-myday-crew-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.gw-myday-crew-row strong { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gw-ink, #1F2A2B); }
+.gw-myday-crew-chip-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gw-ink, #1F2A2B); font-weight: 700; }
 .gw-myday-crew-live { font-size: 10px; font-weight: 800; color: #2D9F63; }
 .gw-myday-crew-hrs { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gw-ink, #1F2A2B); }
 
 /* ── Money Owed (A/R) widget ────────────────────────────────────────────── */
-.gw-myday-ar-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+/* 3-across dense grid (matches Financial Pulse's KPI-grid density) instead
+   of full-width stacked blocks — full-width rows of small left-aligned text
+   left ~85% of each block visually empty next to Financial Pulse's denser
+   layout when the two shared a row. */
+.gw-myday-ar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }
 .gw-myday-ar-cell {
-  display: flex; flex-direction: column; gap: 1px;
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
   background: var(--gw-bg2, #F5F8F7);
   border: 1px solid var(--gw-line, #E2EAE9);
   border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: border-color .12s;
