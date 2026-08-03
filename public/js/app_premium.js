@@ -2499,19 +2499,29 @@ function _gwMyDayMasonry(){
       row.push(m); used += m.span;
     });
     if (row.length) rows.push(row);
-    // 3) Within each row, stretch every widget to the tallest sibling's
-    //    height. Rows are still independently sized (row-to-row packing is
-    //    unaffected) — only widgets sharing a row get matched to each other.
-    // 4) A widget left alone in its row (no partner to fit beside it at its
-    //    designed span) is widened to the row's full remaining width instead
-    //    of leaving dead space beside it — e.g. "Needs Follow-Up" (span 3)
-    //    with nothing else fitting alongside it now fills all 6 columns.
+    // 3) Every widget's OWN height must always be set explicitly, even when
+    //    alone in its row — `grid-row: auto` with a fixed `grid-auto-rows:
+    //    4px` does NOT size the track to content (that's the entire reason
+    //    this pass measures and sets an explicit span in the first place;
+    //    leaving it 'auto' collapses the widget to a single 4px track).
+    //    Widgets sharing a row are additionally raised to match the
+    //    TALLEST sibling in that row, so paired widgets read as one even
+    //    unit — but a widget alone in its row keeps its OWN natural height
+    //    (not stretched to some other row's tallest widget) and its own
+    //    designed (registry) width. It is NOT force-widened to fill the
+    //    row: auto-widening a lone, lightly-populated widget (e.g. "Crew
+    //    Hours Today" showing one name + hours, or "Today's Jobs" showing
+    //    "No jobs scheduled today") to a full 6-column bar just turns a
+    //    compact card into a mostly-empty stretch of whitespace — the
+    //    opposite of "fit together well, not wasteful". Users control
+    //    which widgets are on screen (via Add Widget / hover-remove), so
+    //    whether a widget ends up paired or alone is a direct result of
+    //    their own choices, not something this pass should paper over by
+    //    force-stretching it.
     rows.forEach(r => {
       const maxH = Math.max(...r.map(m => m.h));
-      const rowUsed = r.reduce((s, m) => s + m.span, 0);
       r.forEach(m => {
         m.el.style.gridRow = maxH > 0 ? 'span ' + Math.max(1, Math.ceil((maxH + GAP) / ROW)) : 'auto';
-        m.el.style.gridColumn = (r.length === 1 && rowUsed < COLS) ? ('span ' + COLS) : ('span ' + m.span);
       });
     });
   };

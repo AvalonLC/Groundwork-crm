@@ -933,7 +933,7 @@ once) and that `salesReports`/`financialReports`/`opsReports` no longer
 appear anywhere in the deployed `app_premium.js` except as migration-
 lineage comments.
 
-## Command Center Widget Fit: Row-Height Matching + Lone-Widget Widening (2026-08-03)
+## Command Center Widget Fit: Row-Height Matching for Paired Widgets (2026-08-03)
 
 Follow-up polish requested after the rebuild above went live and the user
 reviewed real tenant data in production: "*the widgets don't fit together
@@ -955,16 +955,24 @@ widget registry `span` values, or any customization UI):**
   column-wrapping (using each widget's registry `span`, read via
   `data-widget-id` — not the mutated inline style, to stay stable across
   repeated re-packs) to group them into the same visual "rows" the grid
-  actually places them into, (3) stretches every widget in a row to the
-  **tallest sibling in that row** via `grid-row: span N`, so paired
-  widgets now read as one even, aligned unit. Rows are still packed
+  actually places them into, (3) sets every widget's `grid-row` explicitly
+  to the **tallest sibling in its row** (`grid-row: span N`), so widgets
+  sharing a row now read as one even, aligned unit. Rows are still packed
   independently of each other — no dead space was reintroduced between
   different rows, only widgets sharing a row get matched.
-- **Lone-in-row widening**: a widget left without a same-row partner at its
-  designed span (e.g. "Needs Follow-Up," "Recently Updated," "Crew Hours
-  Today" — nothing else fit alongside them at their span) is now widened
-  to fill the row's full 6 columns instead of leaving empty space beside
-  it (`el.style.gridColumn = 'span 6'` for lone rows with `rowUsed < 6`).
+- **Explicitly did NOT widen lone widgets to fill their row.** An earlier
+  version of this fix force-widened any widget without a same-row partner
+  (e.g. "Crew Hours Today," "Today's Jobs") to a full 6-column bar to
+  avoid leaving empty space beside it — caught in Playwright visual review
+  (matching the tenant's own follow-up: "why is Crew Hours so long... it
+  will never need to be that long... it feels like a lot of waste") that
+  this made lightly-populated widgets *worse*, stretching a one-line card
+  into a mostly-empty full-width bar. Reverted before this ever reached
+  production: a widget alone in its row now keeps both its own natural
+  content height AND its own designed (registry) width — no forced
+  widening in either dimension. Which widgets end up paired vs. alone in a
+  row is a direct consequence of the user's own Add Widget / hover-remove
+  choices, not something this pass overrides.
 - Verified the existing accordion-expand (`gwMyDayAccordionToggle`) and its
   ResizeObserver-triggered re-pack still correctly re-stretch a widget's
   row-partner when the accordion opens/closes (e.g. opening Pipeline's
@@ -972,20 +980,20 @@ widget registry `span` values, or any customization UI):**
 
 **Verified via Playwright** (sandbox only — pre-deploy visual check
 requested by the user before production rollout):
-- Screenshotted the full Command Center for `office_manager`
-  (`admin@avalon-lc.com`) — confirmed Financial Pulse/Money Owed and My
-  Tasks/My Calendar pairs now render at matching heights with no dead
-  space; confirmed lone widgets (Needs Follow-Up, Recently Updated, Crew
-  Hours Today) now span the full row width.
+- Screenshotted the full Command Center for `admin`
+  (`tyler@avalon-lc.com`) in both the default state (Time Clock + Today's
+  Jobs paired, matching height) and with Time Clock hidden (matching the
+  user's own screenshots) — confirmed Financial Pulse/Money Owed now match
+  heights; confirmed Today's Jobs and Crew Hours Today, each alone in
+  their row once Time Clock is hidden, now stay at their own compact,
+  content-sized height/width instead of stretching to fill the row.
 - Accordion toggle ("View trend") re-tested post-fix: opens correctly and
   its row-partner ("Daily Sales Start-Up") grows to match the new height.
-- Add Widget popover re-tested post-fix: opens correctly via
-  `gwMyDayAddWidgetToggle()`, no errors.
+- Add Widget popover / hover-remove re-tested post-fix: toggling widgets
+  on/off (incl. Time Clock) re-renders and re-packs correctly, no errors.
 - Re-ran the full multi-role regression (admin / office_manager / rep /
   foreman-field): zero page errors on any role; only the same pre-existing
   expected pre-auth 401s/404s seen in every prior pass; admin still lands
-  on the platform overview, rep still has no Financial zone (and its lone
-  "Needs Follow-Up" widget correctly widens to full row width), foreman
-  still bypasses Command Center entirely for the untouched
-  `fieldDashboard`.
+  on the platform overview, rep still has no Financial zone, foreman still
+  bypasses Command Center entirely for the untouched `fieldDashboard`.
 - `node -c public/js/app_premium.js` clean.
