@@ -87,7 +87,10 @@ groundwork-crm/
 │   │   ├── field_mode.js      # Field mode (standalone)
 │   │   ├── gw_i18n.js         # EN/ES translation engine
 │   │   └── ...
-│   └── static/            # Source copies of public/js files (edit here)
+│   └── static/            # LEGACY/unused — not served by src/index.tsx (only
+│                           #   `/js/*` is registered via serveStatic). Do not
+│                           #   edit files here; they are stale copies left
+│                           #   over from an earlier refactor. Edit `public/js/`.
 ├── migrations/            # D1 SQL migrations (0001_*.sql … 0029_*.sql)
 ├── scripts/
 │   └── bump-version.js    # Auto-increments ?v= cache-bust version on build
@@ -603,3 +606,64 @@ Each client page now shows the full portfolio:
 ### Client Page Inline Editing & Quick Create (update)
 - Contact Info is now edited directly in place (lead-style): click any field, type, and it autosaves — no separate Edit modal.
 - Green create buttons under each section: Schedule Job, New Lead (creates the lead with client info prefilled and opens the lead view), New Estimate / New Invoice (builders prefilled with the client), Record Payment (picks from open invoices), Add Property, Upload Photos (direct client photo upload via `POST /api/customers/:id/photos`).
+
+## My Day — Curated Mode, Pipeline Chart & "+N More" Capping (added 2026-08-03)
+
+My Day gained a new default layout ("My Day" / `curated` mode) designed for
+owner-operators who want a calm, glanceable start to the day instead of a
+long scrolling dashboard — plus a real-data Pipeline chart widget and a
+consistent overflow pattern so widget cards never grow or scroll.
+
+- **New `curated` day-mode** (`_GW_MYDAY_MODES` in `public/js/app_premium.js`)
+  sits alongside the existing Field/Office/Sales/Focus presets and the
+  bespoke "My Layout" (custom) mode. It surfaces Pipeline Snapshot, Today's
+  Jobs, My Tasks, My Calendar, and the new Pipeline Chart in a fixed
+  2-up grid.
+- **Default for first-time users only** — `_gwMyDayGetMode()` now defaults
+  anyone with **no saved mode AND no saved custom layout** into `curated`.
+  Anyone who has ever customized My Day (a `gw-myday-layout-*` key already
+  exists in their browser) keeps landing on their own layout exactly as
+  before — this only changes the experience for brand-new / never-touched
+  accounts. Verified live: an account with a pre-existing saved layout
+  resolves to `custom` and is unaffected; a fresh account resolves to
+  `curated`.
+- **Pipeline Chart widget** (`pipeChart`, `_pipeChartHtml`) — sparkline of
+  real pipeline value over the last 4 weeks (bucketed from each open lead's
+  `closedDate`/`updatedAt`/`createdAt`), a stage-breakdown bar + legend from
+  real `status` grouping, and a won-MTD figure. No fabricated data: the
+  week-over-week trend badge only renders when there's a real prior-week
+  baseline to compare against.
+- **"+N more" capping pattern** — replaces scrollbars/growing cards on the
+  three list-style widgets (My Tasks, Today's Jobs, My Calendar). Each
+  widget caps its visible rows to the active mode's per-widget limit
+  (`_GW_MYDAY_DEFAULT_CAPS` / each mode's own `caps`, e.g. curated =
+  `{jobsToday:4, tasks:4, calendar:4}`), collapsing the remainder into a
+  "N more — view all" link that expands the same card in place (no
+  separate filtered list page exists for any of the three, so in-place
+  expand is the real destination, not a placeholder). Each widget tracks
+  its own expand flag (`window._gwMyDayTasksExpanded` /
+  `_gwMyDayJobsExpanded` / `_gwMyDayCalExpanded`) so expanding one never
+  affects the others. My Tasks caps in priority order (overdue → due today
+  → upcoming → no date); Today's Jobs and My Calendar cap today's items
+  first, then upcoming/all-day.
+- **Shared caps handoff**: caps for the active mode are resolved once per
+  render at the top of `_gwTodayRender()` and published to
+  `window._gwMyDayCaps` so the async/mount-based Jobs and Calendar widgets
+  (and the async task-reload callback) read the same values as the
+  synchronous My Tasks render.
+- **CSS**: new `.w-fixed-h` / `.list-cap` / `.more-link` / `.gw-pipe-chart`
+  + `.pipe-*` classes live in `public/js/premium.css` (the real served
+  stylesheet — see the note above about `public/static/` being unused).
+- **Verified** via a live login + screenshot pass (Playwright): curated
+  mode auto-applies for a no-history account, the Pipeline chart renders
+  correct real D1-derived figures, and both My Tasks and Today's Jobs
+  correctly cap at 4 visible rows with an accurate hidden count once
+  seeded past the cap — including a full expand → "Show less" → re-collapse
+  round trip.
+- **Known verification gap**: the My Calendar widget's capping code path
+  mirrors the same pattern as Tasks/Jobs but could not be exercised live in
+  this sandbox — it only renders once a real Google Calendar OAuth
+  connection exists (`isGoogleConnected()` + server-side
+  `GET /api/google/status`), which isn't available in this dev environment.
+  Recommended follow-up: verify with a real connected Google account, or
+  add a small D1-seeding test harness against the `calendar_events` table.

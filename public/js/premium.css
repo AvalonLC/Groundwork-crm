@@ -15040,6 +15040,77 @@ h1.pl-title,
   .gw-myday-widget-body h2 { font-size: 15px; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 42 — MY DAY: "+N MORE" CAPPING + PIPELINE CHART (curated mode)
+   Fixed-height widget cards (My Tasks / Today's Jobs / My Calendar) so a
+   light day and a packed day render the exact same card shape — overflow
+   past the mode's cap collapses into a quiet "+N more" row that expands the
+   same card in place, never a scrollbar or a growing card.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Fixed-height card + capped list body ─────────────────────────────────── */
+.w-fixed-h { display: flex; flex-direction: column; }
+.w-fixed-h .section-head { flex-shrink: 0; }
+.list-cap { flex: 1; min-height: 0; overflow: hidden; }
+
+/* "+N more / Show less" link — sits below the capped list, above the card edge */
+.more-link {
+  flex-shrink: 0;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+  font-size: 12px; font-weight: 700;
+  color: var(--gw-pine-muted, #2D7A55);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 5px;
+  transition: color .12s;
+}
+.more-link:hover { color: var(--gw-pine, #4D8A86); }
+.more-link svg { flex-shrink: 0; }
+
+/* My Tasks / Today's Jobs / My Calendar cards get a calm fixed height when
+   capped, so all three sit level with each other in the curated layout —
+   auto height (uncapped, e.g. Focus/custom modes) is untouched. */
+.gw-myday-widget-body > .w-fixed-h,
+.gw-myday-widget-body > section.w-fixed-h { height: 380px; }
+.gw-myday-widget-body > .w-fixed-h .gw-cal-md-list.list-cap,
+.gw-myday-widget-body > .w-fixed-h .gw-task-workspace.list-cap { padding-bottom: 2px; }
+
+/* ── Pipeline Chart widget: sparkline + stage breakdown, real D1 data ──────── */
+.gw-pipe-chart { display: flex; flex-direction: column; }
+.pipe-num { font-size: 24px; font-weight: 800; color: var(--gw-ink, #1F2A2B); letter-spacing: -.02em; margin-top: 4px; }
+.pipe-lbl { font-size: 11.5px; color: var(--gw-muted, #5E6E6F); font-weight: 600; margin-top: 2px; }
+.pipe-spark { display: block; width: 100%; height: 40px; margin: 12px 0 4px; flex-shrink: 0; }
+.pipe-spark-foot {
+  display: flex; justify-content: space-between;
+  font-size: 10.5px; color: var(--gw-subtle, #6F7E6A); font-weight: 600;
+  margin-top: -2px;
+}
+.pipe-stage-bar {
+  height: 9px; border-radius: 5px; overflow: hidden; display: flex;
+  margin: 16px 0 10px;
+  background: var(--gw-line-strong, #C8D8D3);
+}
+.pipe-stage-bar > i { display: block; height: 100%; }
+.pipe-legend { display: flex; flex-direction: column; gap: 6px; }
+.pipe-legend-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; color: var(--gw-ink-2, #1E3326); font-weight: 600;
+}
+.pipe-legend-row .k { display: flex; align-items: center; gap: 6px; }
+.pipe-legend-row .k i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pipe-legend-row .v { color: var(--gw-muted, #5E6E6F); font-weight: 700; }
+.pipe-mini-row {
+  display: flex; justify-content: space-between;
+  font-size: 11.5px; color: var(--gw-muted, #5E6E6F); font-weight: 600;
+  margin-top: auto; padding-top: 10px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+}
+
+@container (max-width: 260px) {
+  .pipe-num { font-size: 19px; }
+  .pipe-legend-row { font-size: 10.5px; }
+}
+
 /* ── General Settings tab: organized layout (all viewports) ──────────────── */
 .gw-settings-sect {
   display: flex;

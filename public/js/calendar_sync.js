@@ -148,8 +148,25 @@
       let evs = [];
       try { evs = await gwCalTodayEvents(); } catch (e) {}
       const now = new Date();
-      const allDay = evs.filter(ev => ev.all_day);
-      const timed = evs.filter(ev => !ev.all_day);
+      const allDayAll = evs.filter(ev => ev.all_day);
+      const timedAll = evs.filter(ev => !ev.all_day);
+
+      // Fixed-height cap: same "+N more" pattern as My Tasks / Today's Jobs —
+      // this card's height shouldn't depend on how full today's calendar is.
+      // There's no filtered "today's events" full-list page (Expand routes
+      // to the full month/week calendar in Integrations), so overflow
+      // expands this same card in place instead.
+      const cap = window._gwMyDayCaps && window._gwMyDayCaps.calendar;
+      const expanded = !!window._gwMyDayCalExpanded;
+      const useCap = Number.isFinite(cap) && cap > 0 && !expanded;
+      let allDay = allDayAll, timed = timedAll, hiddenCount = 0;
+      if (useCap) {
+        let remaining = cap;
+        allDay = allDayAll.slice(0, remaining);
+        remaining -= allDay.length;
+        timed = timedAll.slice(0, Math.max(0, remaining));
+        hiddenCount = (allDayAll.length + timedAll.length) - (allDay.length + timed.length);
+      }
 
       let rows = '';
       if (!evs.length) {
@@ -182,15 +199,20 @@
         }).join('');
       }
 
+      const moreLink = hiddenCount > 0
+        ? '<div class="more-link" onclick="window._gwMyDayCalExpanded=true;gwCalRenderMyDayWidget()">' + (typeof gwIcon === 'function' ? gwIcon('chevronDown', 12) : '▾') + ' ' + hiddenCount + ' more event' + (hiddenCount === 1 ? '' : 's') + ' — view all</div>'
+        : (expanded && cap ? '<div class="more-link" onclick="window._gwMyDayCalExpanded=false;gwCalRenderMyDayWidget()">Show less</div>' : '');
+
       const syncInfo = window._gwCalLastSync;
       m.innerHTML =
-        '<section class="card">' +
+        '<section class="card' + (cap ? ' w-fixed-h' : '') + '">' +
         '<div class="section-head"><h2>My Calendar — Today</h2>' +
         '<div style="display:flex;gap:6px;align-items:center">' +
         '<button class="secondary-btn small" style="font-size:11px" onclick="gwCalMyDayRefresh()" title="Pull the latest from Google Calendar">↻ Sync</button>' +
         '<button class="secondary-btn small" style="font-size:11px" onclick="gwCalOpenFull()">Expand</button>' +
         '</div></div>' +
-        '<div class="gw-cal-md-list">' + rows + '</div>' +
+        '<div class="gw-cal-md-list' + (useCap ? ' list-cap' : '') + '">' + rows + '</div>' +
+        moreLink +
         (syncInfo && syncInfo.syncedAt ? '<div style="font-size:10.5px;color:var(--gw-text-muted,#94a3b8);padding:6px 2px 0;text-align:right">Synced ' + new Date(syncInfo.syncedAt).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) + (syncInfo.matched ? ' · ' + syncInfo.matched + ' linked to leads' : '') + '</div>' : '') +
         '</section>';
     };

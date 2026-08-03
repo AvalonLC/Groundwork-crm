@@ -1970,7 +1970,7 @@ window._gwTodayRefreshIfActive = function() {
 };
 
 // ── Today: render task sections from cache ────────────────────────────────────
-function _gwTodayRenderTaskWorkspace(rep) {
+function _gwTodayRenderTaskWorkspace(rep, cap) {
   if (!window.gwTask || !rep) return '';
   const today  = todayISO();
   const repId  = rep.id;
@@ -1982,20 +1982,44 @@ function _gwTodayRenderTaskWorkspace(rep) {
   const noDue      = (window.gwTask.openForUser(repId)).filter(t => !t.due_date);
   const allOpen = [...overdue, ...dueToday, ...upcoming, ...noDue];
 
-  function mkSection(label, tasks, emptyMsg, addlClass) {
-    if (!tasks.length) return `<div class="gw-today-section-empty">${emptyMsg||''}</div>`;
+  // Fixed-height widget mode (My Day card): cap total visible rows so the
+  // card height never depends on how many tasks exist today — the remainder
+  // collapses into a "+N more" row that expands the same card in place
+  // (there's no separate full task-list page yet, so this is the real,
+  // functional destination rather than a placeholder link).
+  const expanded = !!window._gwMyDayTasksExpanded;
+  const useCap = Number.isFinite(cap) && cap > 0 && !expanded;
+  let overdueV = overdue, dueTodayV = dueToday, upcomingV = upcoming, noDueV = noDue, hiddenCount = 0;
+  if (useCap) {
+    let remaining = cap;
+    const take = (arr) => { const t = arr.slice(0, remaining); remaining -= t.length; return t; };
+    overdueV  = take(overdue);
+    dueTodayV = take(dueToday);
+    upcomingV = take(upcoming);
+    noDueV    = take(noDue);
+    hiddenCount = allOpen.length - (overdueV.length + dueTodayV.length + upcomingV.length + noDueV.length);
+  }
+
+  function mkSection(tasks) {
+    if (!tasks.length) return '';
     return tasks.map(t => window.gwTask.renderRow(t, { showRecord: true, showCompleteBtn: true, showEditBtn: true, showArchiveBtn: false })).join('');
   }
 
-  const overdueHtml   = overdue.length   ? `<div class="gw-today-group-label gw-today-group-label--overdue">Overdue (${overdue.length})</div>${mkSection('Overdue',overdue)}` : '';
-  const todayHtml     = dueToday.length  ? `<div class="gw-today-group-label gw-today-group-label--today">Due Today (${dueToday.length})</div>${mkSection('Due Today',dueToday)}` : '';
-  const upcomingHtml  = upcoming.length  ? `<div class="gw-today-group-label">Upcoming</div>${mkSection('Upcoming',upcoming)}` : '';
-  const noDueHtml     = noDue.length     ? `<div class="gw-today-group-label">No Date</div>${mkSection('No Date',noDue)}` : '';
+  const overdueHtml   = overdueV.length   ? `<div class="gw-today-group-label gw-today-group-label--overdue">Overdue (${overdue.length})</div>${mkSection(overdueV)}` : '';
+  const todayHtml     = dueTodayV.length  ? `<div class="gw-today-group-label gw-today-group-label--today">Due Today (${dueToday.length})</div>${mkSection(dueTodayV)}` : '';
+  const upcomingHtml  = upcomingV.length  ? `<div class="gw-today-group-label">Upcoming</div>${mkSection(upcomingV)}` : '';
+  const noDueHtml     = noDueV.length     ? `<div class="gw-today-group-label">No Date</div>${mkSection(noDueV)}` : '';
 
   const emptyAll = !allOpen.length
     ? `<div class="gw-task-empty" style="padding:24px 0">No tasks scheduled — add one to get started.</div>` : '';
 
-  return `<section class="card app-card" style="grid-column:1/-1">
+  const moreLink = hiddenCount > 0
+    ? `<div class="more-link" onclick="window._gwMyDayTasksExpanded=true;_gwTodayRender()">${(typeof gwIcon==='function')?gwIcon('chevronDown',12):'▾'} ${hiddenCount} more task${hiddenCount===1?'':'s'} — view all</div>`
+    : (expanded && cap ? `<div class="more-link" onclick="window._gwMyDayTasksExpanded=false;_gwTodayRender()">Show less</div>` : '');
+
+  const bodyClass = useCap ? 'gw-task-workspace list-cap' : 'gw-task-workspace';
+
+  return `<section class="card app-card${cap ? ' w-fixed-h' : ''}" style="${cap ? '' : 'grid-column:1/-1'}">
     <div class="section-head">
       <h2>My Tasks</h2>
       <div style="display:flex;align-items:center;gap:8px">
@@ -2004,9 +2028,10 @@ function _gwTodayRenderTaskWorkspace(rep) {
         <button class="secondary-btn small" onclick="window._gwTodayNewTask()">+ Add Task</button>
       </div>
     </div>
-    <div class="gw-task-workspace">
+    <div class="${bodyClass}">
       ${overdueHtml}${todayHtml}${upcomingHtml}${noDueHtml}${emptyAll}
     </div>
+    ${moreLink}
   </section>`;
 }
 
@@ -2201,7 +2226,7 @@ function _gwTodayRenderMobile(opts) {
     window.gwTask.loadToday().then(function() {
       const ws = document.querySelector('.gw-task-workspace');
       if (!ws) return;
-      const newSection = _gwTodayRenderTaskWorkspace(rep);
+      const newSection = _gwTodayRenderTaskWorkspace(rep, window._gwMyDayCaps && window._gwMyDayCaps.tasks);
       const sectionEl = ws.closest('section.app-card');
       if (sectionEl) {
         const tmp = document.createElement('div');
@@ -2219,7 +2244,8 @@ function _gwTodayRenderMobile(opts) {
 const _GW_MYDAY_SPANS = [1, 2, 3, 4, 5, 6];
 const _GW_MYDAY_SPAN_LABEL = { 1:'\u2159', 2:'\u2153', 3:'\u00BD', 4:'\u2154', 5:'\u215A', 6:'Full' };
 const _GW_MYDAY_WIDGETS = [
-  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField,        render:c=>c.pipeStrip },
+  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip },
+  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value with a 4-week trend line and stage breakdown chart', span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.pipeChartHtml },
   { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
   { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>` },
   { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
@@ -2243,27 +2269,49 @@ const _GW_MYDAY_WIDGETS = [
    tools (need time clock + job lineup), some days they're running the office
    (need financials + receivables). Modes are one-click preset layouts; the
    user's own custom layout ("My Layout") is stored separately and never
-   touched by switching modes. */
+   touched by switching modes.
+   Each preset also carries `caps` — the max rows a list-style widget (jobs /
+   tasks / calendar) shows before collapsing into a "+N more" line. This keeps
+   every widget a fixed, predictable height no matter how busy the day is —
+   caps are tuned per role since a foreman's day is job-heavy while a sales
+   rep's day is task/calendar-heavy. */
+const _GW_MYDAY_DEFAULT_CAPS = { jobsToday:4, tasks:4, calendar:4 };
 const _GW_MYDAY_MODES = [
   { id:'custom', label:'My Layout', icon:'star',
-    desc:'Your own saved widget layout' },
+    desc:'Your own saved widget layout',
+    caps: _GW_MYDAY_DEFAULT_CAPS },
+  { id:'curated', label:'My Day', icon:'dashboard',
+    desc:'A calm, curated view — today\'s jobs, tasks, calendar and pipeline at a glance',
+    order:['pipeStrip','jobsToday','tasks','calendar','pipeChart'],
+    spans:{ pipeStrip:6, jobsToday:6, tasks:2, calendar:2, pipeChart:2 },
+    caps: { jobsToday:4, tasks:4, calendar:4 } },
   { id:'field',  label:'Field Day', icon:'wrench',
     desc:'On the tools today — time clock, job lineup, tasks and crew hours',
     order:['clock','jobsToday','tasks','crewHours'],
-    spans:{ clock:2, jobsToday:4, tasks:4, crewHours:2 } },
+    spans:{ clock:2, jobsToday:4, tasks:4, crewHours:2 },
+    caps: { jobsToday:6, tasks:3, calendar:3 } },
   { id:'office', label:'Office Day', icon:'reports',
     desc:'Running the business — financial pulse, money owed, follow-ups and wins',
     order:['pipeStrip','finance','arSnapshot','tasks','staleLeads','recentWins'],
-    spans:{ pipeStrip:6, finance:3, arSnapshot:3, tasks:4, staleLeads:2, recentWins:6 } },
+    spans:{ pipeStrip:6, finance:3, arSnapshot:3, tasks:4, staleLeads:2, recentWins:6 },
+    caps: { jobsToday:3, tasks:4, calendar:4 } },
   { id:'sales',  label:'Sales Day', icon:'call',
     desc:'Filling the pipeline — leads, proposals, daily start-up and activity targets',
     order:['pipeStrip','tasks','checklist','recent','staleLeads','activity'],
-    spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 } },
+    spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 },
+    caps: { jobsToday:3, tasks:5, calendar:5 } },
   { id:'focus', label:'Focus', icon:'target',
     desc:'Only the work that needs attention now — tasks, calendar and jobs',
     order:['tasks','calendar','jobsToday'],
-    spans:{ tasks:4, calendar:2, jobsToday:6 } },
+    spans:{ tasks:4, calendar:2, jobsToday:6 },
+    caps: { jobsToday:6, tasks:6, calendar:6 } },
 ];
+/* Read the active mode's caps (falls back to the global default for any
+   widget id the mode doesn't specify, and for 'custom'/unknown modes). */
+function _gwMyDayCapsForMode(modeId){
+  const mode = _GW_MYDAY_MODES.find(m => m.id === modeId);
+  return Object.assign({}, _GW_MYDAY_DEFAULT_CAPS, (mode && mode.caps) || {});
+}
 function _gwMyDayModeKey(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
   return 'gw-myday-mode-' + ((r && r.id) || 'anon');
@@ -2271,7 +2319,14 @@ function _gwMyDayModeKey(){
 function _gwMyDayGetMode(){
   try {
     const m = localStorage.getItem(_gwMyDayModeKey());
-    return _GW_MYDAY_MODES.some(x => x.id === m) ? m : 'custom';
+    if (_GW_MYDAY_MODES.some(x => x.id === m)) return m;
+    // No mode saved yet. If this person has never touched My Day at all (no
+    // saved custom layout either), give them the new curated default instead
+    // of the old bare "My Layout" — this only affects first-time/no-history
+    // users, so anyone with an existing custom layout keeps seeing it exactly
+    // as before.
+    const hasExistingLayout = !!localStorage.getItem(_gwMyDayLayoutKey());
+    return hasExistingLayout ? 'custom' : 'curated';
   } catch(e) { return 'custom'; }
 }
 window.gwMyDaySetMode = function(id){
@@ -2297,7 +2352,7 @@ function _gwMyDayResolveLayout(ctx){
       const order  = mode.order.filter(id => avail.includes(id));
       avail.forEach(id => { if (!order.includes(id)) order.push(id); });
       const hidden = avail.filter(id => !mode.order.includes(id));
-      return { order, hidden, spans: Object.assign({}, mode.spans), heights: {}, mode: modeId };
+      return { order, hidden, spans: Object.assign({}, mode.spans), heights: {}, mode: modeId, caps: _gwMyDayCapsForMode(modeId) };
     }
   }
   let saved = null;
@@ -2319,7 +2374,7 @@ function _gwMyDayResolveLayout(ctx){
   const spans   = (saved && saved.spans   && typeof saved.spans   === 'object') ? saved.spans   : {};
   const heights = (saved && saved.heights && typeof saved.heights === 'object') ? saved.heights : {};
   const densities = (saved && saved.densities && typeof saved.densities === 'object') ? saved.densities : {};
-  return { order, hidden, spans, heights, densities };
+  return { order, hidden, spans, heights, densities, caps: _gwMyDayCapsForMode('custom') };
 }
 function _gwMyDaySaveLayout(l){
   try {
@@ -2693,7 +2748,26 @@ function _gwMyDayLoadOwnerWidgets(rep){
         const wos = ((j.ok && j.data) || []).filter(w => !['cancelled','completed'].includes(w.status))
           .sort((a,b) => (a.scheduled_date||'').localeCompare(b.scheduled_date||'') || (a.scheduled_time||'').localeCompare(b.scheduled_time||''));
         const todayJobs = wos.filter(w => w.scheduled_date === today);
-        const upcoming  = wos.filter(w => w.scheduled_date > today).slice(0, 4);
+        const upcomingAll = wos.filter(w => w.scheduled_date > today);
+
+        // Fixed-height cap: like My Tasks, cap total visible rows so this
+        // card's height never depends on how busy the day is — overflow
+        // collapses into a "+N more" row that expands the same card in
+        // place (there is no separate "all jobs" page — Schedule shows the
+        // whole board, not a filtered today/upcoming list).
+        const cap = window._gwMyDayCaps && window._gwMyDayCaps.jobsToday;
+        const expanded = !!window._gwMyDayJobsExpanded;
+        const useCap = Number.isFinite(cap) && cap > 0 && !expanded;
+        let todayJobsV = todayJobs, upcomingV = upcomingAll.slice(0, 4), hiddenCount = 0;
+        if (useCap) {
+          let remaining = cap;
+          todayJobsV = todayJobs.slice(0, remaining);
+          remaining -= todayJobsV.length;
+          upcomingV = upcomingAll.slice(0, Math.max(0, remaining));
+          const totalAll = todayJobs.length + upcomingAll.length;
+          hiddenCount = totalAll - (todayJobsV.length + upcomingV.length);
+        }
+
         const row = w => `
           <div class="gw-myday-job-row" onclick="show('workOrderDetail','${el(w.id)}')">
             <span class="gw-myday-job-dot" style="background:${el(w.crew_color || '#4D8A86')}"></span>
@@ -2703,11 +2777,19 @@ function _gwMyDayLoadOwnerWidgets(rep){
             </div>
             <span class="gw-myday-job-status gw-myday-job-status--${el(w.status)}">${el((w.status||'').replace('-',' '))}</span>
           </div>`;
-        m.innerHTML = `<section class="card"><div class="section-head"><h2>Today's Jobs</h2>
+
+        const moreLink = hiddenCount > 0
+          ? `<div class="more-link" onclick="window._gwMyDayJobsExpanded=true;_gwMyDayLoadOwnerWidgets(window.getCurrentRep?window.getCurrentRep():null)">${(typeof gwIcon==='function')?gwIcon('chevronDown',12):'▾'} ${hiddenCount} more job${hiddenCount===1?'':'s'} — view all</div>`
+          : (expanded && cap ? `<div class="more-link" onclick="window._gwMyDayJobsExpanded=false;_gwMyDayLoadOwnerWidgets(window.getCurrentRep?window.getCurrentRep():null)">Show less</div>` : '');
+
+        m.innerHTML = `<section class="card${cap ? ' w-fixed-h' : ''}"><div class="section-head"><h2>Today's Jobs</h2>
           ${todayJobs.length ? `<span class="badge">${todayJobs.length}</span>` : ''}
           <button class="secondary-btn small" onclick="show('scheduleBoard')" style="margin-left:auto;font-size:11px">Schedule</button></div>
-          ${todayJobs.length ? todayJobs.map(row).join('') : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`}
-          ${upcoming.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcoming.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
+          <div class="${useCap ? 'list-cap' : ''}">
+            ${todayJobsV.length ? todayJobsV.map(row).join('') : (todayJobs.length ? '' : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`)}
+            ${upcomingV.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcomingV.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
+          </div>
+          ${moreLink}
         </section>`;
       }).catch(()=>{});
   }
@@ -2820,6 +2902,15 @@ function _gwTodayRender() {
   const _isField  = _todayRep && (_GW_FIELD_ROLES || ['foreman','laborer','field_supervisor']).includes(_todayRep.role);
   const _showFin  = _isAdmin || _isOM;
 
+  // Resolve the active day-mode + its widget caps early — needed by the
+  // task workspace (rendered synchronously below) and by the Jobs/Calendar
+  // widgets (rendered async via _gwMyDayLoadOwnerWidgets / calendar_sync.js,
+  // which read the window._gwMyDayCaps global) so every "+N more" cap
+  // reflects the actual active mode, not a stale or missing value.
+  const _curModeId = _gwMyDayGetMode();
+  const _curCaps = _gwMyDayCapsForMode(_curModeId);
+  window._gwMyDayCaps = _curCaps;
+
   // Unsynced banner
   const _localOnlyOpps = state.opportunities.filter(o => !o._fromD1);
   const _unsyncedBanner = _localOnlyOpps.length > 0 ? `
@@ -2859,11 +2950,67 @@ function _gwTodayRender() {
       </div>
     </div>`;
 
+  // Pipeline chart widget — real trend + stage breakdown, no fabricated numbers.
+  // Trend: actual won $ per week for the last 4 weeks (from real closedDate/
+  // updatedAt timestamps). Stage bar: actual $ distribution of today's open
+  // pipeline across its current stage labels (works with or without a
+  // published sales process, since it groups on the raw status field every
+  // opportunity always has).
+  const _pipeChartHtml = _isField ? '' : (function(){
+    const weeks = [0,0,0,0]; // oldest → newest, each = won $ that week
+    _won.forEach(o => {
+      const raw = o.closedDate || o.updatedAt || o.createdAt;
+      if (!raw) return;
+      const t = new Date(String(raw).includes('T') ? raw : String(raw).replace(' ','T') + 'Z').getTime();
+      if (isNaN(t)) return;
+      const daysAgo = Math.floor((Date.now() - t) / 86400000);
+      if (daysAgo < 0 || daysAgo >= 28) return;
+      const wk = 3 - Math.floor(daysAgo / 7); // 3 = this week, 0 = 3 weeks ago
+      weeks[wk] += Number(o.jobValue || o.soldAmount || 0);
+    });
+    const maxW = Math.max(1, ...weeks);
+    const pts = weeks.map((v,i) => {
+      const x = (i / (weeks.length - 1)) * 220;
+      const y = 34 - (v / maxW) * 28;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+
+    // Stage breakdown of current open pipeline, by raw status label
+    const stageTotals = {};
+    _open.forEach(o => {
+      const key = o.status || 'Unstaged';
+      stageTotals[key] = (stageTotals[key] || 0) + Number(o.jobValue || 0);
+    });
+    const stageColors = ['var(--gw-sky)', '#7FB0AB', 'var(--gw-amber)', 'var(--gw-emerald)'];
+    const stageEntries = Object.entries(stageTotals).sort((a,b) => b[1]-a[1]);
+    const top = stageEntries.slice(0, 3);
+    const otherVal = stageEntries.slice(3).reduce((s,[,v]) => s+v, 0);
+    if (otherVal > 0) top.push(['Other', otherVal]);
+    const stageTotal = Math.max(1, top.reduce((s,[,v]) => s+v, 0));
+    const barSegs = top.map(([,v], i) => `<i style="width:${(v/stageTotal*100).toFixed(1)}%;background:${stageColors[i]||'#C8D8D3'}"></i>`).join('');
+    const legendRows = top.map(([label,v], i) => `
+      <div class="pipe-legend-row"><span class="k"><i style="background:${stageColors[i]||'#C8D8D3'}"></i>${escapeHtml(label)}</span><span class="v">${_fmt(v)}</span></div>`).join('');
+
+    const wonTrendPct = weeks[0] > 0 ? Math.round(((weeks[3]-weeks[0])/weeks[0])*100) : null;
+    const trendBadge = wonTrendPct === null ? '' : `<span style="font-size:13px;font-weight:700;color:${wonTrendPct>=0?'var(--gw-emerald)':'var(--gw-rose)'}">${wonTrendPct>=0?'+':''}${wonTrendPct}%</span>`;
+
+    return `<section class="card gw-pipe-chart">
+      <div class="section-head"><h2>Pipeline</h2><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">See all</button></div>
+      <div class="pipe-num">${_fmt(_pipeVal)} ${trendBadge}</div>
+      <div class="pipe-lbl">Open across ${_open.length} lead${_open.length===1?'':'s'}</div>
+      <svg class="pipe-spark" viewBox="0 0 220 40" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#2D7A55" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="pipe-spark-foot"><span>4 wks ago</span><span>This week</span></div>
+      <div class="pipe-stage-bar">${barSegs || '<i style="width:100%;background:var(--gw-line-strong)"></i>'}</div>
+      <div class="pipe-legend">${legendRows || '<div class="gw-myday-placeholder" style="padding:8px 0">No open leads right now.</div>'}</div>
+      <div class="pipe-mini-row"><span>${_wonMTD.length} won MTD</span><span>${_fmt(_wonMTDVal)} won</span></div>
+    </section>`;
+  })();
+
   // Finance snap — always compute so mobile path can use it regardless of role
   const _finSnap = _gwTodayFinanceSnap();
 
   // Task workspace (from cache — loaded async below)
-  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep);
+  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep, _curCaps.tasks);
 
   // Recently Updated leads
   const recent = [...opps].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
@@ -2889,7 +3036,7 @@ function _gwTodayRender() {
   }
 
   // Day-mode switcher (owner-operator presets) — field roles keep their own dashboard
-  const _curMode = _gwMyDayGetMode();
+  const _curMode = _curModeId;
   const _modeBar = _isField ? '' : `
     <div class="gw-myday-modes" role="tablist" aria-label="My Day layout mode">
       ${_GW_MYDAY_MODES.map(m => `
@@ -2941,6 +3088,7 @@ function _gwTodayRender() {
   const _wCtx = {
     rep: _todayRep, isAdmin: _isAdmin, isOM: _isOM, isField: _isField, showFin: _showFin,
     pipeStrip: _pipeStrip,
+    pipeChartHtml: _pipeChartHtml,
     taskWorkspace: _taskWorkspace,
     finSnap: _finSnap,
     checklistHtml: renderChecklist(data.checklists.find(c=>c.id==='daily'), true),
@@ -2993,7 +3141,7 @@ function _gwTodayRender() {
     window.gwTask.loadToday().then(function() {
       const ws = document.querySelector('.gw-task-workspace');
       if (!ws) return; // view changed
-      const newSection = _gwTodayRenderTaskWorkspace(_todayRep);
+      const newSection = _gwTodayRenderTaskWorkspace(_todayRep, window._gwMyDayCaps && window._gwMyDayCaps.tasks);
       const sectionEl = ws.closest('section.app-card');
       if (sectionEl) {
         const tmp = document.createElement('div');
