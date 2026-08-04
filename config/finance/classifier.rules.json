@@ -10,7 +10,9 @@
 
   "stage2_keyword_rules": [
     { "id": "payroll-keyword", "keywords": ["payroll", "adp", "gusto", "paychex"], "category": "payroll", "confidence": "medium", "placeholder": true },
-    { "id": "insurance-keyword", "keywords": ["insurance", "premium"], "category": "insurance", "confidence": "low", "placeholder": true }
+    { "id": "insurance-keyword", "keywords": ["insurance", "premium"], "category": "insurance", "confidence": "low", "placeholder": true },
+    { "id": "bank-fee-keyword", "keywords": ["monthly service fee", "overdraft fee", "wire transfer fee"], "category": "bank_fees", "confidence": "high", "placeholder": true },
+    { "id": "owner-draw-keyword", "keywords": ["owner draw", "distribution to owner", "member draw"], "category": "owner_draw", "confidence": "high", "placeholder": true }
   ],
 
   "stage3_amount_review_rules": [
