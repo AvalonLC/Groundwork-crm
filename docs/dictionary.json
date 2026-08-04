@@ -1,0 +1,24 @@
+{
+  "note": "First-draft simple-mode vocabulary map — invented, not derived from any evidence in the repo. See docs/spec/DICTIONARY.md Derivation confidence. Tyler should edit this file directly; src/ui/vocabulary.ts just reads it.",
+  "terms": {
+    "burdened rate": "true hourly cost",
+    "burden multiplier": "cost markup",
+    "overhead absorption": "overhead caught up",
+    "overhead recovery": "overhead caught up",
+    "absorbed cost": "full cost per hour",
+    "required bill rate": "what to charge",
+    "margin": "profit",
+    "overhead pool": "shared costs",
+    "allocation driver": "how costs are split",
+    "classification finding": "needs a look",
+    "materiality threshold": "worth reviewing",
+    "resolved rate": "your rate",
+    "recovery snapshot": "how we're tracking",
+    "restated target": "this year's goal",
+    "action item: collect": "money to collect",
+    "action item: bill": "needs an invoice",
+    "action item: pay": "needs to be paid",
+    "action item: fix": "something's off",
+    "action item: decide": "needs your decision"
+  }
+}
