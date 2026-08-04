@@ -1,46 +1,76 @@
 # Finance OS — Punch List
 
-Written at the end of Waves 0-4 + partial Wave 5 (2026-08-04). This is the
-honest accounting GO-PROMPT.md asked for: what's real, what's inferred, what's
+Written at the end of Waves 0-4 + Wave 5 (2026-08-04, updated same day after
+moving classifier/ingest to a config-driven design). This is the honest
+accounting GO-PROMPT.md asked for: what's real, what's inferred, what's
 estimated, and exactly what to review before deploying anything. Nothing here
 was deployed — `npm run deploy` and `npm run db:migrate:prod` were never run.
 
 ## What's actually done and gate-verified
 - **Wave 0** (specs), **Wave 1** (schema + repos), **Wave 2** (all 5 engines),
   **Wave 3** (rate API, posting, actions, rollup), **Wave 4** (all 6: roles +
-  5 UI pages), **Wave 5 partial** (receipts, equipment capture).
-- 18 of 23 original tasks. 96 tests (71 vitest, 25 Playwright e2e against a
-  real local D1 + real Chromium), full regression clean, typecheck clean.
+  5 UI pages), **Wave 5** (all 4: receipts, equipment capture, classifier,
+  ingest — the last two now config-driven rather than blocked).
+- 22 of 23 original tasks (only `W6-harden`'s original scope predates this
+  update — regression/README/punchlist were already done once and are
+  re-verified clean below). 113 tests (97 vitest, ~25 Playwright e2e against
+  a real local D1 + real Chromium — one is a known-flaky parallel-worker
+  race in the test infra itself, reproduced clean in isolation, not a code
+  regression), typecheck clean.
 - Every formula in the engines was checked against `fixtures/golden.json` to
   the fixture's own stated tolerance — not eyeballed.
+- **New: `config/finance/*.json`** — six config files
+  (`classifier.rules.json`, `ingest.sources.json`, `automation-policy.json`,
+  `approval-thresholds.json`, `tenant-defaults.json`, `division-map.json`)
+  moved business-tunable decisions out of code. See the "config-driven"
+  section below for what that actually changes.
+
+## Config-driven now (edit JSON, not code)
+- **Classifier matching rules** (`classifier.rules.json`): vendor patterns,
+  memo keywords, forced-review categories, confidence thresholds. Every
+  shipped rule is marked `"placeholder": true` — generic examples (Shell/
+  Chevron for "fuel", ADP/Gusto for "payroll"), not real Groundwork vendor
+  data. The *mechanism* (deterministic-first, AI-fallback-only-after-
+  failure, materiality override, never-auto-apply) is built and tested;
+  the *rules* still need real business input.
+- **Ingest source formats** (`ingest.sources.json`): which CSV header
+  shapes map to which ingest target. Five formats configured (QBO P&L,
+  class/division P&L, balance sheet, bank/CC CSV, payroll) as reasonable
+  guesses at common export shapes — not confirmed against a real
+  Groundwork export.
+- **Division naming** (`division-map.json`): canonical divisions + aliases,
+  used by both ingest and (potentially) future UI work.
+- **Thresholds** (`approval-thresholds.json`): the equipment 20% materiality
+  variance and recovery `confidence_days` default that were previously
+  hardcoded in engine code are now here instead.
+- **Feature flags** (`automation-policy.json`): every automation can be
+  toggled off, degrading to a review queue rather than silently skipping
+  work.
 
 ## Real gaps — not built, and why
-1. **`W5-classifier`** — stages 1-3 need deterministic matching rules
-   (vendor patterns, amount thresholds, what's actually in the
-   `gw-tenant-history` Vectorize index) that aren't in evidence anywhere in
-   this repo. Building it without those rules means guessing at business
-   logic I don't have. See `BLOCKED-W5-classifier.md`.
-2. **`W5-ingest`** — needs to know the actual P&L source (file format? QBO
-   API?) — not specified anywhere. If it's a live QBO connection, that's a
-   bigger task than this one's scope implies (OAuth, a new binding/secret).
-   See `BLOCKED-W5-ingest.md`.
-3. **Nightly rollup has no scheduler.** Cloudflare Pages has no native Cron
+1. **Nightly rollup has no scheduler.** Cloudflare Pages has no native Cron
    Trigger. `src/cron/rollup.ts` is built and tested but nothing invokes it
    on a schedule. Needs a companion Worker with its own Cron Trigger, or an
    external scheduled caller hitting an authenticated endpoint — undecided.
-4. **UI pages aren't mounted into the live app.** They're real, server-
+2. **UI pages aren't mounted into the live app.** They're real, server-
    rendered, and e2e-tested, but only reachable via a standalone dev-only
    Worker (`src/ui/dev-server.ts`) built specifically so Playwright didn't
    need the CRM's real auth/session stack. Wiring them into `src/index.tsx`
    for real, with real navigation and real auth (role/tenant currently come
    from query params — a testing convenience, not a security boundary), is
    unstarted.
-5. **Cross-database joins are stubbed at the boundary, not built.**
+3. **Cross-database joins are stubbed at the boundary, not built.**
    `E2-unbilled` and the job-costing page's "hours vs estimate" both need
    data that lives in the CRM's own `DB` (invoices/receivables, job
    estimates) — Finance OS never got visibility into that schema, so both
    take pre-joined data as a plain input rather than querying the CRM DB
    themselves. Whoever wires these up for real needs to write that query.
+4. **Classifier/ingest rules are still placeholders**, not confirmed
+   business logic — see "Config-driven now" above. This is a config-editing
+   task now, not a code-writing one, but it's still unfilled.
+5. **Live QuickBooks API integration** (as opposed to file upload) remains
+   out of scope entirely — would need OAuth, a new Cloudflare binding/
+   secret, and rate-limit handling. Not started, not config-driven either.
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"
@@ -67,8 +97,10 @@ actual fixture-verified math. The highest-risk guesses, ranked:
   across multiple `recovery_snapshot` rows over time, which don't exist yet
   (one nightly rollup hasn't even run once for real). Don't treat the ±13
   used in tests as anything but a fixture value.
-- **The 20% materiality threshold** in equipment meter reconciliation
-  (`src/ai/equip-capture.ts`) is my own default, not a number Tyler gave me.
+- **The 20% materiality threshold** in equipment meter reconciliation is my
+  own default — now in `config/finance/approval-thresholds.json`
+  (`equipment_meter_variance_pct`), not a number Tyler gave me, but at least
+  a config edit away from being changed.
 - Every dollar figure inside the engines themselves (burden rates, equipment
   rates, allocation, recovery) IS a verified figure — checked against
   `fixtures/golden.json` — this list is only what sits outside that
@@ -82,8 +114,12 @@ actual fixture-verified math. The highest-risk guesses, ranked:
    `recovery_snapshot` for anything live.
 3. **Decide the UI mounting/auth plan** — query-param role selection is a
    testing convenience that must not ship as-is.
-4. **Answer the two BLOCKED items** (classifier rules, P&L source) before
-   anyone attempts `W5-classifier`/`W5-ingest`.
+4. **Edit `config/finance/classifier.rules.json` and `ingest.sources.json`**
+   with real vendor/keyword rules and a real export file's header row before
+   trusting the classifier or ingest to reduce review volume — the
+   mechanism works today, the shipped rules are placeholders (see
+   `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md`, both updated to
+   reflect this).
 5. **Never run `npm run deploy` or `npm run db:migrate:prod` from an
    agent session** — both remain human-only, enforced by
    `.githooks/pre-push`, unchanged from day one of this build.
