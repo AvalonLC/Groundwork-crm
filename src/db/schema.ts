@@ -205,3 +205,14 @@ export interface Receipt {
   action_item_id: string | null;
   created_at: string;
 }
+
+// ---- 0004_config_overrides.sql ----
+
+export interface FinanceConfigOverride {
+  id: number;
+  tenant_id: string; // '__global__' or a real tenant_id
+  config_name: string;
+  config_json: string;
+  updated_by: string | null;
+  updated_at: string;
+}

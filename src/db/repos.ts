@@ -1,9 +1,11 @@
 import type {
   ActionItem, ActionVerb, ClassificationFinding, EquipmentRateProfile,
-  JobCostLedger, LaborRateProfile, OverheadAllocation, OverheadPool,
+  FinanceConfigOverride, JobCostLedger, LaborRateProfile, OverheadAllocation, OverheadPool,
   RateConfidence, Receipt, RecoverySnapshot, TenantFinancePolicy, TimeEntry,
   WorkItem,
 } from "./schema";
+
+export const GLOBAL_CONFIG_SCOPE = "__global__";
 
 /**
  * D1-backed repository layer. See docs/spec/SCHEMA.md.
@@ -457,4 +459,55 @@ export async function insertReceipt(
     row.id, row.tenant_id, row.job_id, row.r2_key, row.content_hash, row.vendor,
     row.amount_cents, row.receipt_date, row.field_confidence, row.action_item_id,
   ).run();
+}
+
+// ---- finance_config_override ----
+// Admin-editable overrides for config/finance/*.json. Tenant-specific beats
+// global beats the static JSON default. See src/config/finance-config-runtime.ts.
+
+/** Effective override for one config, tenant-specific first, then global,
+ * else null (caller falls back to the static JSON default). */
+export async function getConfigOverride(
+  db: D1Database, tenantId: string, configName: string,
+): Promise<FinanceConfigOverride | null> {
+  const tenantSpecific = await db.prepare(
+    `SELECT * FROM finance_config_override WHERE tenant_id = ? AND config_name = ?`,
+  ).bind(tenantId, configName).first<FinanceConfigOverride>();
+  if (tenantSpecific) return tenantSpecific;
+  if (tenantId === GLOBAL_CONFIG_SCOPE) return null;
+  return db.prepare(
+    `SELECT * FROM finance_config_override WHERE tenant_id = ? AND config_name = ?`,
+  ).bind(GLOBAL_CONFIG_SCOPE, configName).first<FinanceConfigOverride>();
+}
+
+export async function upsertConfigOverride(
+  db: D1Database, tenantId: string, configName: string, configJson: string, updatedBy: string | null,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO finance_config_override (tenant_id, config_name, config_json, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(tenant_id, config_name) DO UPDATE SET
+      config_json = excluded.config_json,
+      updated_by = excluded.updated_by,
+      updated_at = datetime('now')
+  `).bind(tenantId, configName, configJson, updatedBy).run();
+}
+
+export async function deleteConfigOverride(
+  db: D1Database, tenantId: string, configName: string,
+): Promise<void> {
+  await db.prepare(
+    `DELETE FROM finance_config_override WHERE tenant_id = ? AND config_name = ?`,
+  ).bind(tenantId, configName).run();
+}
+
+/** All overrides visible to a tenant — its own plus global ones — for an
+ * admin listing page. */
+export async function listConfigOverrides(
+  db: D1Database, tenantId: string,
+): Promise<FinanceConfigOverride[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM finance_config_override WHERE tenant_id = ? OR tenant_id = ? ORDER BY config_name, tenant_id`,
+  ).bind(tenantId, GLOBAL_CONFIG_SCOPE).all<FinanceConfigOverride>();
+  return results;
 }

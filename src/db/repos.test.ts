@@ -13,6 +13,7 @@ import {
   insertActionItem, getOpenActionItems, resolveActionItem,
   insertClassificationFinding,
   insertReceipt, getReceiptByHash,
+  getConfigOverride, upsertConfigOverride, deleteConfigOverride, listConfigOverrides, GLOBAL_CONFIG_SCOPE,
 } from "./repos";
 
 const db = () => env.FINANCE_DB;
@@ -250,5 +251,56 @@ describe("receipt — dedupe by hash", () => {
     expect(found?.id).toBe("r-1");
     const notFound = await getReceiptByHash(db(), TENANT, "hash-does-not-exist");
     expect(notFound).toBeNull();
+  });
+});
+
+describe("finance_config_override — tenant beats global beats nothing", () => {
+  it("returns null when no override exists at any scope", async () => {
+    const result = await getConfigOverride(db(), "t-cfg-none", "classifier_rules");
+    expect(result).toBeNull();
+  });
+
+  it("a global override applies when no tenant-specific override exists", async () => {
+    await upsertConfigOverride(db(), GLOBAL_CONFIG_SCOPE, "automation_policy", '{"classifier_enabled":false}', "admin-1");
+    const result = await getConfigOverride(db(), "t-cfg-global", "automation_policy");
+    expect(result?.tenant_id).toBe(GLOBAL_CONFIG_SCOPE);
+    expect(result?.config_json).toContain("classifier_enabled");
+  });
+
+  it("a tenant-specific override takes precedence over a global one", async () => {
+    await upsertConfigOverride(db(), GLOBAL_CONFIG_SCOPE, "approval_thresholds", '{"default_materiality_threshold_cents":50000}', "admin-1");
+    await upsertConfigOverride(db(), "t-cfg-specific", "approval_thresholds", '{"default_materiality_threshold_cents":99999}', "admin-2");
+    const result = await getConfigOverride(db(), "t-cfg-specific", "approval_thresholds");
+    expect(result?.tenant_id).toBe("t-cfg-specific");
+    expect(result?.config_json).toContain("99999");
+  });
+
+  it("upsert replaces an existing override for the same scope, not duplicates", async () => {
+    await upsertConfigOverride(db(), "t-cfg-upsert", "division_map", '{"v":1}', "admin-1");
+    await upsertConfigOverride(db(), "t-cfg-upsert", "division_map", '{"v":2}', "admin-2");
+    const result = await getConfigOverride(db(), "t-cfg-upsert", "division_map");
+    expect(result?.config_json).toBe('{"v":2}');
+    expect(result?.updated_by).toBe("admin-2");
+    const { results } = await db().prepare(
+      `SELECT COUNT(*) as n FROM finance_config_override WHERE tenant_id = ? AND config_name = ?`,
+    ).bind("t-cfg-upsert", "division_map").all();
+    expect((results[0] as any).n).toBe(1);
+  });
+
+  it("delete removes an override, reverting to the next scope down", async () => {
+    await upsertConfigOverride(db(), "t-cfg-delete", "tenant_defaults", '{"v":1}', "admin-1");
+    await deleteConfigOverride(db(), "t-cfg-delete", "tenant_defaults");
+    const result = await getConfigOverride(db(), "t-cfg-delete", "tenant_defaults");
+    expect(result).toBeNull();
+  });
+
+  it("listConfigOverrides returns both the tenant's own and global overrides", async () => {
+    const tenantId = "t-cfg-list";
+    await upsertConfigOverride(db(), GLOBAL_CONFIG_SCOPE, "ingest_sources", '{"g":1}', "admin-1");
+    await upsertConfigOverride(db(), tenantId, "classifier_rules", '{"t":1}', "admin-1");
+    const list = await listConfigOverrides(db(), tenantId);
+    const names = list.map((o) => o.config_name);
+    expect(names).toContain("ingest_sources");
+    expect(names).toContain("classifier_rules");
   });
 });
