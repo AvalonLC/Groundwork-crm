@@ -29,25 +29,39 @@ pct_recovered 0.646193, projected_black_friday 2026-12-21, confidence_days 13.
 Writes `recovery_snapshot` (SCHEMA.md) from `time_entry` + `job_cost_ledger`, using
 `db.batch()` — forbidden: "row-by-row writes." Depends on E2-recovery and W3-posting.
 
-### Open infrastructure question — needs Tyler before W3-rollup starts
-This app deploys as **Cloudflare Pages** (`wrangler.jsonc`, `pages_build_output_dir`),
-and Pages has no native Cron Trigger support — Cron Triggers are a Workers-only
-feature. `wrangler.jsonc`'s "cron trigger" preflight check was downgraded to a SKIP
-for exactly this reason (see scripts/preflight.sh). Two honest options for W3-rollup,
-neither implemented yet:
-1. A small companion Worker (separate wrangler config) with its own Cron Trigger,
-   calling an authenticated internal endpoint on the Pages app to run the rollup.
-2. An external scheduled caller (e.g. a third-party cron service, or GitHub Actions
-   on a schedule) hitting an authenticated internal endpoint.
-Both are standard patterns; neither was chosen for you. **This needs a decision
-before W3-rollup can be built for real** — flagging rather than guessing.
+### Scheduling — scaffolded 2026-08-04, one decision remains
+Pages has no native Cron Trigger (Workers-only feature; `scripts/preflight.sh`'s
+"cron trigger" check is a SKIP for this reason). What's now built, tested, and
+NOT deployed:
+- `POST /internal/cron/rollup` (`src/api/cron-trigger.ts`), mounted at
+  `/internal/cron` — secret-header authenticated (`X-Cron-Secret`), fails
+  closed (503) if `CRON_SECRET` isn't configured. Gathers real inputs per
+  tenant (`src/cron/gather-inputs.ts`) and calls `runNightlyRollup`.
+- `workers/finance-cron/` — a scaffolded (not deployed) companion Worker
+  with a commented-out Cron Trigger, for Option A below.
+- Full instructions for both options: `workers/finance-cron/README.md`.
+
+Two options, both fully scaffolded:
+1. **Companion Worker** (`workers/finance-cron/`) — uncomment a cron schedule,
+   set the shared secret on both projects, deploy.
+2. **External scheduler** — point anything (GitHub Actions, cron-job.org, a
+   server you already run) at `POST /internal/cron/rollup` with the secret
+   header. No companion Worker needed.
+
+**The only remaining decision is which option and the actual schedule** —
+not an architecture question anymore, just a choice + a `wrangler secret put`.
 
 ## Derivation confidence
 **Confident:** every fixture figure, the weekly_recovery and pct_recovered formulas
 (both independently verified against the fixture), the time_entry-only recognition
 rule (explicit in CLAUDE.md), the "no straight-line" and "no single date" forbidden
-clauses (explicit in tasks.json).
+clauses (explicit in tasks.json), the cron-trigger endpoint's fail-closed auth.
 
-**Needs Tyler:** the cron mechanism (companion Worker vs external scheduler) — a real
-architectural gap, not a stylistic guess, and it blocks W3-rollup's actual deployment
-even though the engine logic itself (E2-recovery) doesn't depend on it.
+**Inferred, not confirmed:** `gather-inputs.ts`'s derivation of
+recovered_to_date/budgeted/absorbed from job_cost_ledger and overhead_allocation
+are reasonable proxies I built, not formulas Tyler confirmed — worth review
+before trusting the numbers for anything customer-facing (see
+docs/PUNCHLIST.md).
+
+**Needs Tyler:** which scheduling option, and the actual cron schedule/secret —
+the only remaining input, now that both paths are fully built.

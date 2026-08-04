@@ -12,7 +12,10 @@ export default defineConfig({
       miniflare: {
         // Consumed by test/apply-finance-migrations.ts. Local Miniflare D1
         // only — never touches the real database_id in wrangler.jsonc.
-        bindings: { TEST_FINANCE_MIGRATIONS: migrations }
+        // TEST_CRON_SECRET is a fixed test-only value for
+        // src/api/cron-trigger.test.ts — never the real production secret,
+        // which is never checked into this repo.
+        bindings: { TEST_FINANCE_MIGRATIONS: migrations, TEST_CRON_SECRET: "vitest-only-secret-not-real" }
       }
     })
   ],

@@ -29,6 +29,16 @@ describe("buildTenantRollup", () => {
     expect(r.pct_recovered_millionths / 1_000_000).toBeCloseTo(F.pct_recovered, 5);
     expect(r.absorption_variance_cents).toBe(50000); // absorbed 1,050,000 - budgeted 1,000,000
   });
+
+  it("RU-05 a tenant with zero hours logged gets an indeterminate projection, not a crash", () => {
+    // Previously threw RangeError: Invalid time value (division by zero
+    // inside computeRecoveryProjection) — a real bug caught while building
+    // the cron-trigger endpoint, which processes real tenants that may not
+    // have any activity yet.
+    const r = buildTenantRollup({ ...fixtureInput("t-rollup-zero-hours"), hours_per_week_hundredths: 0 });
+    expect(r.projected_black_friday).toBeNull();
+    expect(r.indeterminate_reason).toBe("no_weekly_progress");
+  });
 });
 
 describe("runNightlyRollup", () => {

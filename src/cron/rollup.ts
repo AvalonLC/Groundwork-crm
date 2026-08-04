@@ -25,7 +25,8 @@ export interface TenantRollupResult {
   blended_overhead_rate: number;
   weekly_recovery_cents: number;
   pct_recovered_millionths: number;
-  projected_black_friday: string;
+  projected_black_friday: string | null;
+  indeterminate_reason: string | null;
   confidence_days: number;
   /** absorbed - budgeted: positive = absorbing more overhead than planned. */
   absorption_variance_cents: number;
@@ -52,6 +53,7 @@ export function buildTenantRollup(input: TenantRollupInput): TenantRollupResult 
     weekly_recovery_cents: Math.round(projection.weekly_recovery * 100),
     pct_recovered_millionths: Math.round(projection.pct_recovered * 1_000_000),
     projected_black_friday: projection.projected_black_friday,
+    indeterminate_reason: projection.indeterminate_reason,
     confidence_days: projection.confidence_days,
     absorption_variance_cents: input.absorbed_overhead_cents - input.budgeted_overhead_cents,
   };

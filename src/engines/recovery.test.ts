@@ -43,7 +43,29 @@ describe("recovery projection engine", () => {
   it("RC-04 more weekly recovery pulls the projected date earlier, not later", () => {
     const slow = computeRecoveryProjection({ ...F, hours_per_week: 200 });
     const fast = computeRecoveryProjection({ ...F, hours_per_week: 500 });
-    expect(new Date(fast.projected_black_friday).getTime())
-      .toBeLessThan(new Date(slow.projected_black_friday).getTime());
+    expect(new Date(fast.projected_black_friday!).getTime())
+      .toBeLessThan(new Date(slow.projected_black_friday!).getTime());
+  });
+
+  it("RC-05 no restated_target set: indeterminate, not a crash", () => {
+    const r = computeRecoveryProjection({ ...F, restated_target: 0 });
+    expect(r.projected_black_friday).toBeNull();
+    expect(r.indeterminate_reason).toBe("no_target");
+    expect(r.pct_recovered).toBe(0);
+  });
+
+  it("RC-06 zero weekly recovery with target not yet reached: indeterminate, not a crash", () => {
+    // This is the exact bug that used to throw RangeError: Invalid time
+    // value (division by zero -> Infinity -> Invalid Date .toISOString()).
+    const r = computeRecoveryProjection({ ...F, hours_per_week: 0 });
+    expect(r.weekly_recovery).toBe(0);
+    expect(r.projected_black_friday).toBeNull();
+    expect(r.indeterminate_reason).toBe("no_weekly_progress");
+  });
+
+  it("RC-07 already fully recovered: projected date is as_of itself, not a crash", () => {
+    const r = computeRecoveryProjection({ ...F, recovered_to_date: F.restated_target * 1.1 });
+    expect(r.projected_black_friday).toBe(F.as_of);
+    expect(r.indeterminate_reason).toBe("already_recovered");
   });
 });
