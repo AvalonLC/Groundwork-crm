@@ -26,6 +26,7 @@ import mig0040 from '../migrations/0040_onboarding_buildout.sql?raw'
 // ── Finance OS sub-routers (see CLAUDE.md, docs/spec/API.md, docs/spec/ACTIONS.md) ──
 import { ratesRouter } from './api/rates'
 import { actionsRouter } from './api/actions'
+import { financeUiRouter } from './ui/mount'
 
 
 type Bindings = { DB: D1Database; FINANCE_DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -33,9 +34,13 @@ type Variables = { repId: string; companyId: string; role: string; isSuperAdmin:
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
-// ── Finance OS routes — mounted, not inlined; see src/api/rates.ts, src/api/actions.ts ──
+// ── Finance OS routes — mounted, not inlined; see src/api/rates.ts, src/api/actions.ts, src/ui/mount.ts ──
 app.route('/internal/rates', ratesRouter)
 app.route('/internal/actions', actionsRouter)
+// requireAuth is a hoisted function declaration (defined further below in
+// this file) — referencing it here, before its textual definition, is safe.
+app.use('/finance/*', requireAuth)
+app.route('/finance', financeUiRouter)
 
 // ── CORS + middleware ─────────────────────────────────────────────────────────
 app.use('/api/*', cors())
