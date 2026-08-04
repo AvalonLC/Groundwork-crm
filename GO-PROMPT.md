@@ -7,7 +7,7 @@ Your screenshot showed three things that must change first:
 **1. You launched claude in your home directory.** Claude's own tip flagged this.
 Relaunch inside the repo:
 ```bash
-cd "/Users/tylerjohnson/Desktop/Groundwork CRM/Groundwork-crm : REPO"
+cd "/Users/tylerjohnson/Desktop/Groundwork CRM/Groundwork-crm-REPO"
 claude
 ```
 
