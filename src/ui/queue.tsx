@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getOpenActionItems } from "../db/repos";
-import { readPageArgs, Page, Term } from "./layout";
+import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
 
 export type QueueBindings = { FINANCE_DB: D1Database };
 
@@ -12,7 +12,7 @@ export type QueueBindings = { FINANCE_DB: D1Database };
  * rule 4 — every number's confidence must be visible, not just returned
  * by the API).
  */
-export const queueRouter = new Hono<{ Bindings: QueueBindings }>();
+export const queueRouter = new Hono<{ Bindings: QueueBindings; Variables: FinanceAuthVars }>();
 
 queueRouter.get("/", async (c) => {
   const { tenant_id, vocab } = readPageArgs(c);

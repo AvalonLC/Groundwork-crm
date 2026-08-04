@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getLatestRecoverySnapshot, getOpenActionItems } from "../db/repos";
 import type { ActionVerb } from "../db/schema";
-import { readPageArgs, Page, Term } from "./layout";
+import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
 
 export type MoneyLoopBindings = { FINANCE_DB: D1Database };
 
@@ -13,7 +13,7 @@ const VERBS: ActionVerb[] = ["collect", "bill", "pay", "fix", "decide"];
  * "Runway hero" content is a documented guess (UI-MONEYLOOP.md flagged this
  * in wave 0) — rendered here as the recovery snapshot summary.
  */
-export const moneyLoopRouter = new Hono<{ Bindings: MoneyLoopBindings }>();
+export const moneyLoopRouter = new Hono<{ Bindings: MoneyLoopBindings; Variables: FinanceAuthVars }>();
 
 moneyLoopRouter.get("/", async (c) => {
   const { tenant_id, vocab } = readPageArgs(c);

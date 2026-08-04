@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term } from "./layout";
+import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
 
 export type BudgetBindings = { FINANCE_DB: D1Database };
 
@@ -13,7 +13,7 @@ export type BudgetBindings = { FINANCE_DB: D1Database };
  * fabricating wizard steps with no evidence behind them. Gated entirely
  * behind can_see_budget_rates (owner only per docs/spec/ROLES.md).
  */
-export const budgetRouter = new Hono<{ Bindings: BudgetBindings }>();
+export const budgetRouter = new Hono<{ Bindings: BudgetBindings; Variables: FinanceAuthVars }>();
 
 budgetRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);

@@ -1,7 +1,7 @@
 import { getTenantFinancePolicy, insertActionItem, insertClassificationFinding } from "../db/repos";
 import type { Cents, RateConfidence } from "../db/schema";
 import {
-  automationPolicy, classifierRules, compiledVendorPatternRules, confidenceAtLeast,
+  automationPolicy, classifierRules, confidenceAtLeast, type ClassifierRules,
 } from "../config/finance-config";
 
 /**
@@ -14,6 +14,12 @@ import {
  * before stages 1-3 have failed"), and its suggestion is attached to the
  * review item, never auto-applied (forbidden: "auto-posting on model
  * self-reported confidence").
+ *
+ * classifyDeterministic/decide take `rules` as a parameter (defaulting to
+ * the static config) rather than importing the module-level singleton
+ * directly — this is what lets classifyTransaction pass an admin-edited
+ * override (src/config/finance-config-runtime.ts) through to pure,
+ * DB-free, fully unit-testable functions.
  */
 
 export interface TransactionInput {
@@ -34,39 +40,48 @@ export interface DeterministicDecision {
   review_reason: string | null;
 }
 
+let compiledCache: { rules: ClassifierRules; compiled: { rule: ClassifierRules["stage1_vendor_patterns"][number]; regex: RegExp }[] } | null = null;
+function compileVendorPatterns(rules: ClassifierRules) {
+  if (compiledCache?.rules === rules) return compiledCache.compiled;
+  const compiled = rules.stage1_vendor_patterns.map((rule) => ({ rule, regex: new RegExp(rule.pattern, "i") }));
+  compiledCache = { rules, compiled };
+  return compiled;
+}
+
 /** Pure — no DB, no I/O. Stages 1 and 2 only; stage 3 here means "no
  * deterministic match, always review" (the amount-based force-review check
  * happens in classifyTransaction, which has the tenant's materiality
  * threshold from the DB, not just the static config default). */
-export function classifyDeterministic(input: TransactionInput): DeterministicDecision {
+export function classifyDeterministic(input: TransactionInput, rules: ClassifierRules = classifierRules): DeterministicDecision {
   if (!automationPolicy.classifier_enabled) {
-    return decide(null, "low", 3, null);
+    return decide(null, "low", 3, null, rules);
   }
 
   if (input.vendor) {
-    for (const { rule, regex } of compiledVendorPatternRules()) {
-      if (regex.test(input.vendor)) return decide(rule.category, rule.confidence, 1, rule.id);
+    for (const { rule, regex } of compileVendorPatterns(rules)) {
+      if (regex.test(input.vendor)) return decide(rule.category, rule.confidence, 1, rule.id, rules);
     }
   }
 
   if (input.memo) {
     const memoLower = input.memo.toLowerCase();
-    for (const rule of classifierRules.stage2_keyword_rules) {
+    for (const rule of rules.stage2_keyword_rules) {
       if (rule.keywords.some((k) => memoLower.includes(k.toLowerCase()))) {
-        return decide(rule.category, rule.confidence, 2, rule.id);
+        return decide(rule.category, rule.confidence, 2, rule.id, rules);
       }
     }
   }
 
-  return decide(null, "low", 3, null);
+  return decide(null, "low", 3, null, rules);
 }
 
 function decide(
   category: string | null, confidence: RateConfidence, stage: 1 | 2 | 3, ruleId: string | null,
+  rules: ClassifierRules,
 ): DeterministicDecision {
-  const forcedReview = category !== null && classifierRules.forced_review_categories.includes(category);
+  const forcedReview = category !== null && rules.forced_review_categories.includes(category);
   const belowThreshold = category === null
-    || !confidenceAtLeast(confidence, classifierRules.confidence_thresholds.auto_categorize_min);
+    || !confidenceAtLeast(confidence, rules.confidence_thresholds.auto_categorize_min);
   const requiresReview = forcedReview || belowThreshold;
 
   return {
@@ -96,15 +111,19 @@ export interface ClassifyResult {
  * check -> AI fallback (only if still unresolved) -> classification_finding
  * -> action_item(verb='decide') when review is needed. `aiClassify` is
  * injected the same way receipts.ts injects OCR extraction — the actual
- * model call has little logic of its own worth testing here.
+ * model call has little logic of its own worth testing here. `rules`
+ * defaults to the static config but the caller (e.g. an HTTP route with
+ * access to finance-config-runtime's getEffectiveConfig) can pass an
+ * admin-edited override.
  */
 export async function classifyTransaction(
   db: D1Database,
   input: TransactionInput,
   reviewOwnerId: string,
   aiClassify?: (input: TransactionInput) => Promise<AiSuggestion | null>,
+  rules: ClassifierRules = classifierRules,
 ): Promise<ClassifyResult> {
-  const decision = classifyDeterministic(input);
+  const decision = classifyDeterministic(input, rules);
 
   const policy = await getTenantFinancePolicy(db, input.tenant_id);
   const materialityThreshold = policy?.materiality_threshold_cents ?? Number.MAX_SAFE_INTEGER;
@@ -114,7 +133,7 @@ export async function classifyTransaction(
   let aiSuggestion: AiSuggestion | null = null;
   if (needsReview && automationPolicy.classifier_ai_fallback_enabled && aiClassify) {
     const suggestion = await aiClassify(input);
-    if (suggestion && confidenceAtLeast(suggestion.confidence, classifierRules.confidence_thresholds.stage4_fallback_min)) {
+    if (suggestion && confidenceAtLeast(suggestion.confidence, rules.confidence_thresholds.stage4_fallback_min)) {
       aiSuggestion = suggestion;
     }
   }

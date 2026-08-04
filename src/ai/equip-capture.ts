@@ -1,5 +1,6 @@
 import { insertClassificationFinding } from "../db/repos";
 import type { Cents, RateConfidence } from "../db/schema";
+import { approvalThresholds } from "../config/finance-config";
 
 const ZERO_CENTS = 0 as Cents;
 
@@ -44,17 +45,24 @@ export interface MeterReconciliation {
   materially_divergent: boolean;
 }
 
-const MATERIALITY_THRESHOLD = 0.20; // 20% off the rate profile's assumption
-
-/** Pure. True-ups actual machine-hour pace against the rate profile's
- * annual_machine_hours assumption. */
-export function reconcileMeterReading(r: Tier2MeterReading): MeterReconciliation {
+/**
+ * Pure. True-ups actual machine-hour pace against the rate profile's
+ * annual_machine_hours assumption. `materialityThreshold` defaults to
+ * config/finance/approval-thresholds.json's equipment_meter_variance_pct —
+ * takes a parameter (rather than reading the config module singleton
+ * directly) so a DB-aware caller can pass an admin-edited override without
+ * this function itself needing DB access.
+ */
+export function reconcileMeterReading(
+  r: Tier2MeterReading,
+  materialityThreshold: number = approvalThresholds.equipment_meter_variance_pct,
+): MeterReconciliation {
   const projectedAnnualHours = (r.meter_hours / r.period_days) * 365;
   const variancePct = (projectedAnnualHours - r.assumed_annual_machine_hours) / r.assumed_annual_machine_hours;
   return {
     projected_annual_hours: projectedAnnualHours,
     variance_pct: variancePct,
-    materially_divergent: Math.abs(variancePct) > MATERIALITY_THRESHOLD,
+    materially_divergent: Math.abs(variancePct) > materialityThreshold,
   };
 }
 
@@ -68,8 +76,9 @@ export interface Tier2Result {
  * no finding at all, not a low-materiality noise row. */
 export async function processTier2MeterReading(
   db: D1Database, tenantId: string, reading: Tier2MeterReading,
+  materialityThreshold: number = approvalThresholds.equipment_meter_variance_pct,
 ): Promise<Tier2Result> {
-  const reconciliation = reconcileMeterReading(reading);
+  const reconciliation = reconcileMeterReading(reading, materialityThreshold);
   if (!reconciliation.materially_divergent) return { reconciliation, finding_id: null };
 
   const findingId = `cf-equip-${reading.equipment_id}-${crypto.randomUUID().slice(0, 8)}`;

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getJobCostLedgerForJob, getWorkItem } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term } from "./layout";
+import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
 
 export type JobCostingBindings = { FINANCE_DB: D1Database };
 
@@ -14,7 +14,7 @@ export type JobCostingBindings = { FINANCE_DB: D1Database };
  * until that join exists. Margin is gated behind can_see_margin — crew
  * never sees it (CLAUDE.md), the one rule W4-roles centralizes.
  */
-export const jobCostingRouter = new Hono<{ Bindings: JobCostingBindings }>();
+export const jobCostingRouter = new Hono<{ Bindings: JobCostingBindings; Variables: FinanceAuthVars }>();
 
 jobCostingRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);

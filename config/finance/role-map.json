@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "note": "Maps the CRM's actual role strings (found in src/index.tsx's requireAuth-gated routes, e.g. role === 'office_manager') to Finance OS roles (crew | crew_lead | office | owner, docs/spec/ROLES.md). This mapping is inferred, not confirmed by Tyler — CLAUDE.md only defines crew's restrictions directly. Ambiguous CRM roles (estimator, rep) default to the MORE restrictive Finance OS role rather than over-exposing financial data. Edit this file directly to correct any mapping.",
+
+  "crm_role_to_finance_role": {
+    "admin": "owner",
+    "office_manager": "office",
+    "estimator": "office",
+    "foreman": "crew_lead",
+    "field_supervisor": "crew_lead",
+    "laborer": "crew",
+    "mechanic": "crew",
+    "view_only": "crew",
+    "rep": "crew"
+  },
+
+  "default_finance_role": "crew",
+  "super_admin_finance_role": "owner"
+}

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getLatestRecoverySnapshot, getOverheadAllocationAsOf } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term } from "./layout";
+import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
 
 export type RecoveryBindings = { FINANCE_DB: D1Database };
 
@@ -13,7 +13,7 @@ export type RecoveryBindings = { FINANCE_DB: D1Database };
  * the tenant-level date with an explicit note rather than fabricating
  * division breakdowns that don't exist upstream.
  */
-export const recoveryRouter = new Hono<{ Bindings: RecoveryBindings }>();
+export const recoveryRouter = new Hono<{ Bindings: RecoveryBindings; Variables: FinanceAuthVars }>();
 
 recoveryRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);

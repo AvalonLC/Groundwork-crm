@@ -4,7 +4,9 @@ import automationPolicyJson from "../../config/finance/automation-policy.json" w
 import approvalThresholdsJson from "../../config/finance/approval-thresholds.json" with { type: "json" };
 import tenantDefaultsJson from "../../config/finance/tenant-defaults.json" with { type: "json" };
 import divisionMapJson from "../../config/finance/division-map.json" with { type: "json" };
+import roleMapJson from "../../config/finance/role-map.json" with { type: "json" };
 import type { RateConfidence } from "../db/schema";
+import type { Role } from "../ui/roles";
 
 /**
  * Typed access to config/finance/*.json — the single place business
@@ -139,15 +141,38 @@ export interface DivisionMap {
 export const divisionMap = divisionMapJson as DivisionMap;
 
 /** Case-insensitive alias resolution — returns the canonical division name,
- * or null if nothing matches (caller applies unmapped_division_action). */
-export function resolveDivision(input: string): string | null {
+ * or null if nothing matches (caller applies unmapped_division_action).
+ * Takes `map` as a parameter (defaulting to the static config) so a
+ * DB-aware caller can pass an admin-edited override. */
+export function resolveDivision(input: string, map: DivisionMap = divisionMap): string | null {
   const needle = input.trim().toLowerCase();
-  if (divisionMap.canonical_divisions.some((d) => d.toLowerCase() === needle)) {
-    return divisionMap.canonical_divisions.find((d) => d.toLowerCase() === needle)!;
+  if (map.canonical_divisions.some((d) => d.toLowerCase() === needle)) {
+    return map.canonical_divisions.find((d) => d.toLowerCase() === needle)!;
   }
-  for (const canonical of divisionMap.canonical_divisions) {
-    const aliases = divisionMap.aliases[canonical] ?? [];
+  for (const canonical of map.canonical_divisions) {
+    const aliases = map.aliases[canonical] ?? [];
     if (aliases.some((a) => a.toLowerCase() === needle)) return canonical;
   }
   return null;
+}
+
+// ---- role-map.json ----
+
+export interface RoleMapConfig {
+  version: number;
+  crm_role_to_finance_role: Record<string, Role>;
+  default_finance_role: Role;
+  super_admin_finance_role: Role;
+}
+
+export const roleMap = roleMapJson as RoleMapConfig;
+
+/** Maps a CRM session's role string (+ isSuperAdmin flag) to a Finance OS
+ * Role. Unrecognized CRM roles fall back to default_finance_role (the most
+ * restrictive option, by design — see role-map.json's note) rather than
+ * throwing or defaulting to something permissive. */
+export function resolveFinanceRole(crmRole: string | undefined | null, isSuperAdmin: boolean): Role {
+  if (isSuperAdmin) return roleMap.super_admin_finance_role;
+  if (!crmRole) return roleMap.default_finance_role;
+  return roleMap.crm_role_to_finance_role[crmRole] ?? roleMap.default_finance_role;
 }
