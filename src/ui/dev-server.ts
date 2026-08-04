@@ -4,6 +4,7 @@ import { recoveryRouter } from "./recovery";
 import { budgetRouter } from "./budget";
 import { queueRouter } from "./queue";
 import { jobCostingRouter } from "./job-costing";
+import { configAdminRouter, configAdminApiRouter } from "./config-admin";
 
 /**
  * Standalone dev/e2e-test entry for Finance OS UI pages — NOT part of the
@@ -27,6 +28,8 @@ app.route("/recovery", recoveryRouter);
 app.route("/budget", budgetRouter);
 app.route("/queue", queueRouter);
 app.route("/job-costing", jobCostingRouter);
+app.route("/config", configAdminRouter);
+app.route("/api/config", configAdminApiRouter);
 
 // ── Test-only seeding endpoints. Only reachable on this dev-only server,
 // always against local Miniflare D1 (--local), never a real deployment. ──
@@ -34,6 +37,7 @@ const FINANCE_TABLES = [
   "action_item", "classification_finding", "receipt", "job_cost_ledger",
   "time_entry", "recovery_snapshot", "overhead_allocation", "overhead_pool",
   "equipment_rate_profile", "labor_rate_profile", "work_item", "tenant_finance_policy",
+  "finance_config_override",
 ];
 
 app.post("/test/reset", async (c) => {
