@@ -2936,7 +2936,7 @@ function _gwTodayRender() {
   const _gi2 = (n) => (typeof gwIcon==='function') ? gwIcon(n, 17, 'currentColor') : '';
   const _pipeStrip = _isField ? '' : `
     <div class="gw-today-pipe-strip gw-today-pipe-strip--five">
-      <div class="gw-today-pipe-cell gw-today-pipe-cell--neutral" onclick="show('pipeline')" title="Open pipeline">
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--sky" onclick="show('pipeline')" title="Open pipeline">
         <span class="gw-today-pipe-ic">${_gi2('leads')}</span>
         <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Open Leads</span><span class="gw-today-pipe-val">${_open.length}</span></span>
       </div>
