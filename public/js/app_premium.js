@@ -1419,6 +1419,11 @@ function show(viewName='today', param){
   // ── Reset full-width mode; pipeline() re-adds it for the kanban board ──────
   const _viewEl = document.getElementById('view');
   if (_viewEl) _viewEl.classList.remove('gw-view--full');
+  // ── Reset Command Center visual-pass scope class; _gwTodayRender() re-adds
+  //    it. Scoping the new warm/airier design language to just this class
+  //    (Option 1 of the CC design-refresh) keeps every other page on the
+  //    existing look until a separately-approved global token rollout.
+  if (_viewEl) _viewEl.classList.remove('gw-view--cc');
 
   // ── Permission gate (admin-configurable) ─────────────────
   // Platform super-admin bypasses all tenant permission gates
@@ -2864,6 +2869,12 @@ function _gwTodayRender() {
     const d = window._d1SessionRep;
     _todayRep = { id: d.id, name: d.name, role: d.role || 'admin', email: d.email, color: d.color };
   }
+  // ── Command Center visual-pass scope class (Option 1 design refresh) ──────
+  // Warm background / wider gaps / softer borders / restrained accent color
+  // live under `.gw-view--cc` in premium.css only — no shared :root tokens
+  // touched, so every other page keeps today's look until a separately-
+  // approved global rollout.
+  if (view) view.classList.add('gw-view--cc');
   _gwMyDayHydrateLayout();
   const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
   const _isOM     = _todayRep && _todayRep.role === 'office_manager';
@@ -2903,7 +2914,7 @@ function _gwTodayRender() {
   const _avgScore = _scoreEntries.length
     ? Math.round(_scoreEntries.reduce((s,e)=>s+e.r.score,0) / _scoreEntries.length)
     : null;
-  const _scoreBand = _avgScore === null ? '' : _avgScore >= 70 ? 'gw-today-pipe-cell--emerald' : _avgScore >= 40 ? 'gw-today-pipe-cell--amber' : 'gw-today-pipe-cell--rose';
+  const _scoreBand = _avgScore === null ? 'gw-today-pipe-cell--neutral' : _avgScore >= 70 ? 'gw-today-pipe-cell--emerald' : _avgScore >= 40 ? 'gw-today-pipe-cell--amber' : 'gw-today-pipe-cell--rose';
   // Tooltip: top 3 leads most dragging the average down + top 3 driving it up,
   // so the hero tile is legible at a glance without opening the pipeline.
   const _sortedByScore = _scoreEntries.slice().sort((a,b)=>a.r.score-b.r.score);
@@ -2914,21 +2925,26 @@ function _gwTodayRender() {
   if (_highest.length) _scoreTooltipLines.push('Highest:', ..._highest.map(e => `  ${e.r.score}% — ${e.o.client||'Unnamed Lead'}`));
   const _scoreTooltip = 'Groundwork AI avg close likelihood across ' + _open.length + ' open lead' + (_open.length===1?'':'s') + '\n' + _scoreTooltipLines.join('\n');
 
-  // Hero KPI band: 4 real pipeline figures + 1 AI close-likelihood figure,
-  // each with an icon + accent color so the top of Command Center reads as
-  // a proper hub summary strip rather than a plain stat row.
+  // Hero KPI band: 4 real pipeline figures + 1 AI close-likelihood figure.
+  // Restrained accent pass (Command Center visual refresh, Option 1): only
+  // tiles signaling a genuine positive/active or attention-needed STATE keep
+  // a color chip (Won MTD → green; Avg Close Likelihood → green/amber/red by
+  // score). Purely informational counts (Open Leads, Proposals Out, Pipeline
+  // Value) go neutral so color reads as signal, not decoration — matches the
+  // mockups' sparing use of the green accent instead of a different hue per
+  // tile. `--neutral` is styled only under `.gw-view--cc` in premium.css.
   const _gi2 = (n) => (typeof gwIcon==='function') ? gwIcon(n, 17, 'currentColor') : '';
   const _pipeStrip = _isField ? '' : `
     <div class="gw-today-pipe-strip gw-today-pipe-strip--five">
-      <div class="gw-today-pipe-cell gw-today-pipe-cell--sky" onclick="show('pipeline')" title="Open pipeline">
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--neutral" onclick="show('pipeline')" title="Open pipeline">
         <span class="gw-today-pipe-ic">${_gi2('leads')}</span>
         <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Open Leads</span><span class="gw-today-pipe-val">${_open.length}</span></span>
       </div>
-      <div class="gw-today-pipe-cell gw-today-pipe-cell--amber" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--neutral" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
         <span class="gw-today-pipe-ic">${_gi2('estimate')}</span>
         <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Proposals Out</span><span class="gw-today-pipe-val">${_propo.length}</span></span>
       </div>
-      <div class="gw-today-pipe-cell gw-today-pipe-cell--pine" onclick="show('pipeline')" title="Pipeline value">
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--neutral" onclick="show('pipeline')" title="Pipeline value">
         <span class="gw-today-pipe-ic">${_gi2('revenue')}</span>
         <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Pipeline Value</span><span class="gw-today-pipe-val gw-today-pipe-val--money">${_fmt(_pipeVal)}</span></span>
       </div>

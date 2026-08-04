@@ -16553,3 +16553,91 @@ h1.pl-title,
 .gw-ai-factor em.neg{color:#8B3A2A}
 .gw-ai-factor--base{color:var(--gw-text-muted,#6F7E6A)}
 .gw-ai-footnote{margin-top:10px;font-size:10.5px;color:var(--gw-text-subtle,#8A968A);line-height:1.45}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMMAND CENTER VISUAL REFRESH — Option 1 (scoped preview)
+   2026-08-04 · Premium-aesthetic pass modeled on the "Groundwork" marketing
+   mockups (warm cream bg, wider breathing room, softer/warmer borders,
+   near-flat shadows, restrained green-accent usage).
+
+   SCOPE: every rule below is namespaced under `.view.gw-view--cc` — the
+   Command Center view container only (class added/removed by
+   _gwTodayRender()/show() in app_premium.js). Nothing here touches the
+   shared :root design tokens, so every other page in the app is completely
+   unaffected. If/when this is approved for a global rollout, these values
+   move up into :root and this whole block goes away.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page background: warm cream instead of the app-wide cool mint ── */
+.view.gw-view--cc {
+  background: #F8F6F1;
+}
+
+/* ── Wider breathing room: grid gap + card padding ── */
+.view.gw-view--cc .gw-myday-grid {
+  column-gap: 24px;
+}
+.view.gw-view--cc .gw-myday-widget-body > .card,
+.view.gw-view--cc .gw-myday-widget-body > section.card,
+.view.gw-view--cc .gw-myday-widget-body > .gw-today-fin-card,
+.view.gw-view--cc .gw-myday-widget-body > div > .card {
+  padding: 22px;
+}
+.view.gw-view--cc .gw-today-pipe-cell {
+  padding: 18px 20px;
+}
+.view.gw-view--cc .gw-today-pipe-strip {
+  gap: 18px;
+}
+
+/* ── Softer, warmer card borders + near-flat shadow (mockups use almost no
+   shadow — depth comes from whitespace, not elevation) ── */
+.view.gw-view--cc .gw-myday-widget-body > .card,
+.view.gw-view--cc .gw-myday-widget-body > section.card,
+.view.gw-view--cc .gw-myday-widget-body > .gw-today-fin-card,
+.view.gw-view--cc .gw-myday-widget-body > div > .card {
+  border-color: #E7E3D9;
+  box-shadow: 0 1px 3px rgba(31,28,20,.035);
+}
+.view.gw-view--cc .gw-today-pipe-cell {
+  border-color: #E7E3D9;
+  box-shadow: none;
+}
+.view.gw-view--cc .gw-today-pipe-cell:hover {
+  box-shadow: 0 4px 12px rgba(31,28,20,.06);
+}
+
+/* ── Zone section dividers: warm neutral instead of the cool --gw-line ── */
+.view.gw-view--cc .gw-myday-zone-head {
+  border-bottom-color: #E7E3D9;
+}
+
+/* ── Bolder headline type on the page title, more like the mockups' larger
+   display type (Command Center title only — not a global h1 change) ── */
+.view.gw-view--cc .pl-title {
+  font-size: 30px;
+  letter-spacing: -.035em;
+}
+
+/* ── Restrained accent color on the hero KPI strip ─────────────────────────
+   Neutral tiles (Open Leads / Proposals Out / Pipeline Value): plain ink
+   icon chip on a soft warm-gray tint, no colored top edge — informational
+   counts don't need a hue. Green stays reserved for genuinely positive/
+   active state (Won MTD, and a healthy Avg Close Likelihood via the
+   existing --emerald/--amber/--rose score bands, unchanged). */
+.view.gw-view--cc .gw-today-pipe-cell--neutral:before,
+.view.gw-view--cc .gw-today-pipe-cell--neutral .gw-today-pipe-ic {
+  background: #EDEAE2;
+}
+.view.gw-view--cc .gw-today-pipe-cell--neutral .gw-today-pipe-ic {
+  color: #6B6557;
+  opacity: 1;
+}
+
+/* ── Widget cards: title weight nudged up slightly to match the mockups'
+   bolder section headers, still well within existing sizing so nothing
+   reflows ── */
+.view.gw-view--cc .gw-myday-widget-body .section-head h2,
+.view.gw-view--cc .gw-myday-widget-body .gw-today-fin-title {
+  font-weight: 800;
+}
