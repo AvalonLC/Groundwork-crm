@@ -12,6 +12,7 @@
     "types": ["@cloudflare/workers-types", "vitest/globals"]
   },
   "include": [
+    "src/config/**/*.ts",
     "src/db/**/*.ts",
     "src/engines/**/*.ts",
     "src/api/**/*.ts",

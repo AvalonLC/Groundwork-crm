@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "note": "Dollar/percentage thresholds that were previously hardcoded defaults inside engine code (flagged in docs/PUNCHLIST.md as 'numbers that are estimates'). Moving them here means tuning them is a config edit, not a code change. Every *_cents value is INTEGER cents, matching the DB convention throughout Finance OS.",
+
+  "default_materiality_threshold_cents": 50000,
+  "large_transaction_review_cents": 500000,
+  "equipment_meter_variance_pct": 0.20,
+  "recovery_confidence_days_default": 14,
+  "receipt_review_sla_days": 3
+}

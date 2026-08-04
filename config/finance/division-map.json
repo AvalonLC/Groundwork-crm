@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "note": "Canonical division names (matching overhead_pool/overhead_allocation and the ALLOCATION.md fixture data) plus known aliases seen in class/division P&L exports or crew-facing terminology. Add an alias here when ingest sees a division name it doesn't recognize, instead of hardcoding a mapping in code. Matching is case-insensitive.",
+
+  "canonical_divisions": ["maintenance", "hardscape", "snow", "drainage"],
+
+  "aliases": {
+    "maintenance": ["maint", "lawn maintenance", "grounds", "grounds maintenance"],
+    "hardscape": ["hard scape", "hardscaping", "patios", "hardscapes"],
+    "snow": ["snow removal", "winter services", "snow & ice"],
+    "drainage": ["drain", "french drain", "water management", "drainage systems"]
+  },
+
+  "unmapped_division_action": "flag_for_review"
+}

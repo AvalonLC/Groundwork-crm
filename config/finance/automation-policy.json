@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Global feature flags for Finance OS automation. Turning something off here degrades gracefully to a review queue, never to silent skipping — e.g. classifier_enabled: false means every transaction becomes a manual-review action_item, not that transactions go unprocessed.",
+
+  "classifier_enabled": true,
+  "classifier_ai_fallback_enabled": true,
+  "ingest_auto_detect_enabled": true,
+  "ingest_unknown_format_action": "flag_for_review",
+  "receipts_ai_extraction_enabled": true,
+  "equipcapture_tier2_reconciliation_enabled": true,
+  "auto_create_action_items": true
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "note": "Conservative placeholder defaults. Every rule marked \"placeholder\": true is a generic example, not a confirmed Groundwork business rule — see BLOCKED-W5-classifier.md. Edit this file directly to tune matching; no code change needed. Patterns are JS regex source strings (case-insensitive, applied to vendor name for stage 1 and memo/description for stage 2).",
+
+  "stage1_vendor_patterns": [
+    { "id": "fuel-generic", "pattern": "\\b(shell|chevron|exxon|bp|speedway|fuel)\\b", "category": "fuel", "confidence": "medium", "placeholder": true },
+    { "id": "materials-generic", "pattern": "\\b(home depot|lowes|supply ?co)\\b", "category": "materials", "confidence": "medium", "placeholder": true },
+    { "id": "equipment-rental-generic", "pattern": "\\b(rental|united rentals|sunbelt)\\b", "category": "equipment_rental", "confidence": "medium", "placeholder": true }
+  ],
+
+  "stage2_keyword_rules": [
+    { "id": "payroll-keyword", "keywords": ["payroll", "adp", "gusto", "paychex"], "category": "payroll", "confidence": "medium", "placeholder": true },
+    { "id": "insurance-keyword", "keywords": ["insurance", "premium"], "category": "insurance", "confidence": "low", "placeholder": true }
+  ],
+
+  "stage3_amount_review_rules": [
+    { "id": "large-txn-review", "min_cents": 500000, "action": "force_review", "reason": "amount exceeds $5,000 — always review regardless of match confidence", "placeholder": true }
+  ],
+
+  "forced_review_categories": ["owner_draw", "uncategorized", "unusual", "unknown"],
+
+  "confidence_thresholds": {
+    "note": "A stage 1/2 match at or above auto_categorize_min resolves deterministically (writes classification_finding, no human review needed) unless it also hits a forced_review_categories entry or a stage3 amount rule. Anything below that threshold, or with no match at all, becomes a review action_item(verb='decide') — the AI stage's suggestion (if enabled) is attached to that review item as a suggestion only, never auto-applied (CLAUDE.md: never auto-post on model self-reported confidence alone). stage4_fallback_min is the floor below which the AI's suggestion isn't even attached — too low-confidence to be useful context for the reviewer.",
+    "auto_categorize_min": "high",
+    "stage4_fallback_min": "medium"
+  }
+}

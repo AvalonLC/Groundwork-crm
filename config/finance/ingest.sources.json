@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "note": "Config-driven format detection for financial file uploads. Add a source definition here to support a new export format without touching code — src/ai/ingest.ts only knows how to read this shape, not any specific vendor's export format. detect.required_headers are matched case-insensitively, order-independent, against the uploaded file's header row. When no source matches, the fallback applies (flag for review, never guess a mapping).",
+
+  "sources": [
+    {
+      "id": "qbo_pnl_export",
+      "label": "QuickBooks P&L Export (CSV)",
+      "format": "csv",
+      "target": "pnl_line",
+      "detect": { "required_headers": ["Account", "Total"] },
+      "column_map": { "account": "Account", "amount": "Total" }
+    },
+    {
+      "id": "qbo_class_pnl_export",
+      "label": "QuickBooks Class/Division P&L Export (CSV)",
+      "format": "csv",
+      "target": "pnl_line_by_division",
+      "detect": { "required_headers": ["Class", "Account", "Total"] },
+      "column_map": { "division": "Class", "account": "Account", "amount": "Total" }
+    },
+    {
+      "id": "balance_sheet_export",
+      "label": "QuickBooks Balance Sheet Export (CSV)",
+      "format": "csv",
+      "target": "balance_sheet_line",
+      "detect": { "required_headers": ["Account", "Balance"] },
+      "column_map": { "account": "Account", "amount": "Balance" }
+    },
+    {
+      "id": "bank_csv_generic",
+      "label": "Bank/Credit Card CSV (generic)",
+      "format": "csv",
+      "target": "bank_transaction",
+      "detect": { "required_headers": ["Date", "Description", "Amount"] },
+      "column_map": { "date": "Date", "description": "Description", "amount": "Amount" }
+    },
+    {
+      "id": "payroll_export_generic",
+      "label": "Payroll Export (generic — ADP/Gusto-style)",
+      "format": "csv",
+      "target": "payroll_line",
+      "detect": { "required_headers": ["Employee", "Pay Date", "Gross Pay"] },
+      "column_map": { "employee": "Employee", "date": "Pay Date", "amount": "Gross Pay" }
+    }
+  ],
+
+  "fallback": {
+    "target": "unknown_format",
+    "action": "flag_for_review",
+    "reason": "no source definition's required_headers matched the uploaded file's header row"
+  }
+}
