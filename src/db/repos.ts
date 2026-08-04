@@ -310,6 +310,19 @@ export async function getOverheadAllocationAsOf(
   return results;
 }
 
+/** Most recent allocation for a division as of a given date (periodic, not
+ * effective-dated the way rate profiles are — allocations get recomputed on
+ * a cadence, not superseded row-by-row). */
+export async function getLatestOverheadAllocationForDivision(
+  db: D1Database, tenantId: string, division: string, asOfDate: string,
+): Promise<OverheadAllocation | null> {
+  return db.prepare(`
+    SELECT * FROM overhead_allocation
+    WHERE tenant_id = ? AND division = ? AND as_of <= ?
+    ORDER BY as_of DESC LIMIT 1
+  `).bind(tenantId, division, asOfDate).first<OverheadAllocation>();
+}
+
 // ---- recovery_snapshot ----
 
 /** Nightly rollup only (W3-rollup); replaces same-day snapshot if re-run. */

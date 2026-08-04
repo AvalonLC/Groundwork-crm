@@ -6,26 +6,38 @@ import type { RateConfidence } from "../db/schema";
 
 export type RatesBindings = { FINANCE_DB: D1Database };
 
-export const ratesRouter = new Hono<{ Bindings: RatesBindings }>();
+export interface ResolvedLaborRate {
+  resolved_rate: number; // ten-thousandths
+  burden_multiplier: number;
+  confidence: RateConfidence;
+  stale_components: string[];
+  requires_review: boolean;
+  publishable: boolean;
+  resolved_scope: string;
+  effective_from: string;
+}
+
+export interface ResolvedEquipmentRate {
+  ownership_rate: number; // ten-thousandths
+  operating_rate: number; // ten-thousandths
+  total_rate: number; // ten-thousandths
+  confidence: RateConfidence;
+  effective_from: string;
+}
 
 /**
  * See docs/spec/API.md. The ONLY legitimate entry point into the burden
  * engine — no other module computes its own labor arithmetic (CLAUDE.md).
  * Re-resolves on every call using work_date; never caches across dates
  * (forbidden clause) since an effective-dated profile can change underneath
- * a cached value.
+ * a cached value. Shared by the HTTP route below and by posting.ts, so both
+ * paths go through identical logic rather than posting.ts reimplementing it.
  */
-ratesRouter.post("/resolve", async (c) => {
-  const body = await c.req.json<{
-    tenant_id: string; employee_id: string; work_date: string;
-    crew_id?: string; role?: string;
-  }>();
-  const { tenant_id, employee_id, work_date, crew_id, role } = body;
-  if (!tenant_id || !employee_id || !work_date) {
-    return c.json({ error: "tenant_id, employee_id, work_date are required" }, 400);
-  }
-
-  const db = c.env.FINANCE_DB;
+export async function resolveLaborRate(
+  db: D1Database,
+  args: { tenant_id: string; employee_id: string; work_date: string; crew_id?: string; role?: string },
+): Promise<ResolvedLaborRate | null> {
+  const { tenant_id, employee_id, work_date, crew_id, role } = args;
 
   // BH-06 cascade: employee -> crew -> role -> tenant, each hop downgrading
   // confidence. First match wins.
@@ -43,10 +55,7 @@ ratesRouter.post("/resolve", async (c) => {
     profile = await getLaborRateAsOf(db, tenant_id, a.scope, a.scopeId, work_date);
     if (profile) { confidence = a.confidence; break; }
   }
-
-  if (!profile) {
-    return c.json({ error: "no labor rate profile resolves for this employee/date", confidence: "none" }, 404);
-  }
+  if (!profile) return null;
 
   const policy = await getTenantFinancePolicy(db, tenant_id);
   const equipmentEngineActive = policy?.equipment_engine_active === 1;
@@ -70,10 +79,8 @@ ratesRouter.post("/resolve", async (c) => {
   if (burden.suspect) staleComponents.push("utilization");
   if (burden.config_warning) staleComponents.push("multiplier");
 
-  // Never returned without confidence (forbidden: "returning a number
-  // without confidence").
-  return c.json({
-    resolved_rate: Math.round(burden.burdened_rate * 10000), // ten-thousandths
+  return {
+    resolved_rate: Math.round(burden.burdened_rate * 10000),
     burden_multiplier: burden.burden_multiplier,
     confidence,
     stale_components: staleComponents,
@@ -81,21 +88,15 @@ ratesRouter.post("/resolve", async (c) => {
     publishable: burden.publishable,
     resolved_scope: profile.scope,
     effective_from: profile.effective_from,
-  });
-});
+  };
+}
 
-ratesRouter.post("/equipment", async (c) => {
-  const body = await c.req.json<{ tenant_id: string; equipment_id: string; work_date: string }>();
-  const { tenant_id, equipment_id, work_date } = body;
-  if (!tenant_id || !equipment_id || !work_date) {
-    return c.json({ error: "tenant_id, equipment_id, work_date are required" }, 400);
-  }
-
-  const db = c.env.FINANCE_DB;
-  const profile = await getEquipmentRateAsOf(db, tenant_id, equipment_id, work_date);
-  if (!profile) {
-    return c.json({ error: "no equipment rate profile resolves for this equipment/date", confidence: "none" }, 404);
-  }
+export async function resolveEquipmentRate(
+  db: D1Database,
+  args: { tenant_id: string; equipment_id: string; work_date: string },
+): Promise<ResolvedEquipmentRate | null> {
+  const profile = await getEquipmentRateAsOf(db, args.tenant_id, args.equipment_id, args.work_date);
+  if (!profile) return null;
 
   const rate = computeEquipmentRate({
     purchase_price: profile.purchase_price_cents / 100,
@@ -112,13 +113,44 @@ ratesRouter.post("/equipment", async (c) => {
     lube_pct_of_fuel: profile.lube_pct_of_fuel / 10000,
   });
 
-  // Ownership and operating stay separate in the response — never merged
-  // (same rule as the engine itself).
-  return c.json({
+  return {
     ownership_rate: Math.round(rate.ownership_rate * 10000),
     operating_rate: Math.round(rate.operating_rate * 10000),
     total_rate: Math.round(rate.total_rate * 10000),
-    confidence: "high" as RateConfidence,
+    confidence: "high",
     effective_from: profile.effective_from,
-  });
+  };
+}
+
+export const ratesRouter = new Hono<{ Bindings: RatesBindings }>();
+
+ratesRouter.post("/resolve", async (c) => {
+  const body = await c.req.json<{
+    tenant_id: string; employee_id: string; work_date: string;
+    crew_id?: string; role?: string;
+  }>();
+  if (!body.tenant_id || !body.employee_id || !body.work_date) {
+    return c.json({ error: "tenant_id, employee_id, work_date are required" }, 400);
+  }
+
+  const result = await resolveLaborRate(c.env.FINANCE_DB, body);
+  if (!result) {
+    // Never falls back to a guessed rate (forbidden: "returning a number
+    // without confidence").
+    return c.json({ error: "no labor rate profile resolves for this employee/date", confidence: "none" }, 404);
+  }
+  return c.json(result);
+});
+
+ratesRouter.post("/equipment", async (c) => {
+  const body = await c.req.json<{ tenant_id: string; equipment_id: string; work_date: string }>();
+  if (!body.tenant_id || !body.equipment_id || !body.work_date) {
+    return c.json({ error: "tenant_id, equipment_id, work_date are required" }, 400);
+  }
+
+  const result = await resolveEquipmentRate(c.env.FINANCE_DB, body);
+  if (!result) {
+    return c.json({ error: "no equipment rate profile resolves for this equipment/date", confidence: "none" }, 404);
+  }
+  return c.json(result);
 });
