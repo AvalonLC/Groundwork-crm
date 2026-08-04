@@ -61,6 +61,14 @@ export async function getLaborRateAsOf(
   `).bind(tenantId, scope, scopeId, asOfDate, asOfDate).first<LaborRateProfile>();
 }
 
+/** All currently-open (effective_to IS NULL) labor rate profiles for a tenant. */
+export async function listCurrentLaborRates(db: D1Database, tenantId: string): Promise<LaborRateProfile[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM labor_rate_profile WHERE tenant_id = ? AND effective_to IS NULL ORDER BY scope, scope_id`,
+  ).bind(tenantId).all<LaborRateProfile>();
+  return results;
+}
+
 export async function insertLaborRateProfile(
   db: D1Database, row: Omit<LaborRateProfile, "id" | "created_at">,
 ): Promise<void> {
@@ -126,6 +134,14 @@ export async function getEquipmentRateAsOf(
       AND (effective_to IS NULL OR effective_to > ?)
     ORDER BY effective_from DESC LIMIT 1
   `).bind(tenantId, equipmentId, asOfDate, asOfDate).first<EquipmentRateProfile>();
+}
+
+/** All currently-open (effective_to IS NULL) equipment rate profiles for a tenant. */
+export async function listCurrentEquipmentRates(db: D1Database, tenantId: string): Promise<EquipmentRateProfile[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM equipment_rate_profile WHERE tenant_id = ? AND effective_to IS NULL ORDER BY equipment_id`,
+  ).bind(tenantId).all<EquipmentRateProfile>();
+  return results;
 }
 
 export async function insertEquipmentRateProfile(
@@ -274,6 +290,15 @@ export async function getJobCostLedgerForJob(
 }
 
 // ---- overhead_pool / overhead_allocation ----
+
+/** Every overhead_pool row for a tenant — the "driver map" (which pool uses
+ * which allocation driver, per division). */
+export async function listOverheadPools(db: D1Database, tenantId: string): Promise<OverheadPool[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM overhead_pool WHERE tenant_id = ? ORDER BY division, pool_type`,
+  ).bind(tenantId).all<OverheadPool>();
+  return results;
+}
 
 export async function insertOverheadPool(
   db: D1Database, row: Omit<OverheadPool, "id" | "created_at">,
