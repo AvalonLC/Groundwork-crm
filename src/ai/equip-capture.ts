@@ -1,5 +1,7 @@
 import { insertClassificationFinding } from "../db/repos";
-import type { RateConfidence } from "../db/schema";
+import type { Cents, RateConfidence } from "../db/schema";
+
+const ZERO_CENTS = 0 as Cents;
 
 /**
  * See docs/spec/EQUIPMENT.md. Two tiers. Neither introduces new tables —
@@ -78,7 +80,7 @@ export async function processTier2MeterReading(
     subject_id: reading.equipment_id,
     stage_reached: 1,
     confidence: "high",
-    materiality_cents: 0,
+    materiality_cents: ZERO_CENTS,
     proposed_change: JSON.stringify(reconciliation),
     action_item_id: null,
   });
