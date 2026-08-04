@@ -442,3 +442,51 @@ Edit `public/js/gw_i18n.js`:
 - **Getting Started panel** (onboarding.js): each undone item now has a green "✨ Show me" tour button above the existing CTA; footer button opens the AI chat. Version `v20260718t26`.
 - Script tag added after onboarding.js in index.tsx (`gw_copilot.js?v=20260718t26`).
 - E2E-verified: 10 tours registered, cl_client tour navigates + spotlights "+ Add Client" with pulse ring, chat opens with 4 chips, chip launches tour, GS panel shows Show-me/Ask-AI. Deployed `71d77e1`, prod-verified.
+
+## Finance OS — Waves 0-4 + partial Wave 5 (added 2026-08-04)
+A separate cost-accounting layer added inside this repo — job costing, overhead
+recovery, and an AI-assisted action queue, built against its own `FINANCE_DB`
+D1 database (`groundwork`), isolated from this CRM's own `DB`. Full build
+contract in `CLAUDE.md`, task graph in `tasks.json`, specs in `docs/spec/`,
+honest gap accounting in `docs/PUNCHLIST.md`.
+
+- **Schema** (`migrations/finance/`): 12 tables, money as INTEGER cents, rates
+  as INTEGER ten-thousandths. Labor/equipment rate profiles are immutable +
+  effective-dated — recalibration inserts a new row and closes the prior one,
+  never an UPDATE to a rate value.
+- **Engines** (`src/engines/`): burdened-hour rate (the equipment double-count
+  guard — BH-13 — is the one number this whole layer exists to get right),
+  equipment ownership/operating split, multi-driver overhead allocation,
+  recovery projection, unbilled-work detection. All pure functions, fixture-
+  verified against `fixtures/golden.json`.
+- **API** (`src/api/`, mounted at `/internal/rates` and `/internal/actions`):
+  rate resolution (employee → crew → role → tenant cascade, confidence
+  attached to every response), two-line cost posting (write-once — a second
+  post attempt is a no-op, proven by a dedicated immutability test), and the
+  five-verb action queue (`collect`/`bill`/`pay`/`fix`/`decide`).
+- **Nightly rollup** (`src/cron/rollup.ts`): writes `recovery_snapshot`. Not
+  yet wired to an actual schedule — Cloudflare Pages has no native Cron
+  Trigger; needs a companion Worker or an external scheduled caller hitting
+  an authenticated endpoint (undecided, see `docs/spec/RECOVERY.md`).
+- **UI** (`src/ui/`): five pages (Money Loop, Overhead Recovery, Budget &
+  Rates, Work Queue, Job Costing) plus role-based visibility (crew never
+  sees margin/wage/rate) and a simple/advanced vocabulary toggle. Not yet
+  mounted into the live app or wired to real auth — currently served by a
+  standalone dev-only Worker (`src/ui/dev-server.ts`) for e2e testing.
+  `docs/dictionary.json`'s simple-mode wording and 3 of the 4 role
+  definitions (only "crew" is grounded in evidence) are first drafts for
+  Tyler to correct, not confirmed contracts.
+- **AI** (`src/ai/`): receipt pipeline (R2 storage, dedupe by content hash,
+  field-level confidence) and two-tier equipment capture (crew-attach +
+  meter-photo reconciliation) are built. The classifier and P&L ingest are
+  **not built** — both need real business rules (deterministic matching
+  logic, P&L source format) that aren't in evidence anywhere in this repo;
+  see `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md`.
+- **Testing**: `npm test` (vitest + `@cloudflare/vitest-pool-workers`, real
+  local D1) and `npm run e2e` (Playwright, real Chromium, real local D1) —
+  96 tests total. `npm run preflight` / `bash scripts/harness-selftest.sh`
+  verify the build contract itself.
+- **Never run**: `npm run deploy`, `npm run db:migrate:prod`, or any
+  `--remote` wrangler command against this or the CRM's production
+  database — enforced by `.githooks/pre-push`, and nothing in this build
+  ever did.

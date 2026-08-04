@@ -32,3 +32,6 @@ jobs:
           ! git ls-files | grep -qx 'node_modules' || exit 1
       - run: npm run typecheck
       - run: npm test
+      - name: install Playwright chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run e2e
