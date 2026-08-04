@@ -47,6 +47,7 @@ chk "gate-for returns a command"    "node scripts/gate-for.js E2-burden | grep -
 chk "coverage verifier exits clean on no-op" "node scripts/verify-gate-coverage.js W1-repos"
 
 say "5. LIVE DRY RUN: real runner, noop driver, real gate  (no tokens)"
+mkdir -p logs
 # Satisfy every wave BELOW the dry-run wave, derived from tasks.json so this
 # never breaks again when a wave is added.
 DRY_WAVE=2

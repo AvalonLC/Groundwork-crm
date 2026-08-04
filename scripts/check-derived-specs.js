@@ -1,6 +1,10 @@
 import fs from "node:fs";
 const t = JSON.parse(fs.readFileSync("tasks.json","utf8"));
-const files = [...new Set(t.tasks.flatMap(k => k.spec_ref ? [k.spec_ref] : []))];
+// Only check files W0-specs actually derives (its files_owned), not every spec_ref
+// in the graph — BH-TESTS.md is pre-written evidence, not a derived spec, and has
+// no "## Derivation confidence" section by design.
+const w0 = t.tasks.find(k => k.id === "W0-specs");
+const files = w0 ? w0.files_owned : [];
 const bad = [];
 for (const f of files) {
   const s = fs.readFileSync(f, "utf8");
