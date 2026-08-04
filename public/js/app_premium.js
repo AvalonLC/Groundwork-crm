@@ -7191,13 +7191,22 @@ function opportunityDetail(id){
        </div>`
     : '';
 
-  // ── ASSEMBLE: full page HTML ───────────────────────────────────└�──
+  // ── ASSEMBLE: full page HTML ───────────────────────────────────────────────
   view.innerHTML = `
   <!-- ══ RECORD PAGE SHELL ════════════════════════════════════════════════ -->
   <div class="rp-shell">
 
     <!-- Command bar (appears on scroll) -->
-    <divero">
+    <div class="rp-command" id="rpCommandBar">
+      ${_cmdBarHtml}
+    </div>
+
+    <!-- 2-column body (left panel hidden at <1280px) -->
+    <div class="rp-body">
+
+      <!-- LEFT PANEL -->
+      <aside class="rp-left" aria-label="Lead overview">
+        <div class="rp-left-hero">
           <div class="rp-left-avatar">${(o.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
           <div class="rp-left-name">${escapeHtml(o.client||'Unnamed Lead')}</div>
           <div class="rp-left-sub">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</div>

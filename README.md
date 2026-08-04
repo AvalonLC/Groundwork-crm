@@ -1062,3 +1062,67 @@ enough — two further problems were identified:
 - Local D1 test credentials (temporary PINs for jen/tyler/ryan, temp
   `rep_fieldtest01` foreman record) fully reverted and verified back to
   original state after testing.
+
+## Lead Detail Page: Fixed Corrupted Layout from Earlier Command Center Rebuild (2026-08-04)
+
+User reported: "*my leads are messed up now*," with a screenshot showing a
+lead detail page squeezed into a narrow ~25-30% width column, ~70-75%
+empty space to the right, and a status badge (e.g. "Fresh Inquiry")
+floating in isolation, disconnected from its card.
+
+**Root cause found via git archaeology** (`git log -S"divero" -- public/js/app_premium.js`):
+an earlier Command Center rebuild commit (`90f4ac2`, "Command Center
+rebuild: single canonical layout, delete report pages, accordion-expand,
+Add Widget popover") contained a botched find/replace that silently
+corrupted the `opportunityDetail()` function's HTML template in
+`app_premium.js`. Four nested opening tags —
+
+```html
+<div class="rp-command" id="rpCommandBar">${_cmdBarHtml}</div>
+<div class="rp-body">
+  <aside class="rp-left" aria-label="Lead overview">
+    <div class="rp-left-hero">
+```
+
+— were deleted and replaced with a malformed fragment (`<divero">`), while
+every corresponding **closing** tag further down the template was left
+untouched. The browser silently auto-corrected the broken markup into a
+collapsed/flattened DOM, which is what produced the narrow-column squeeze
+and the orphaned floating badge (actually the command-bar content,
+`_cmdBarHtml`, no longer wrapped in its intended `.rp-command` container).
+This bug shipped invisibly in every deploy since `90f4ac2` — it only
+became obvious once a user opened a lead detail page and looked closely.
+
+**Fix:** restored the four missing opening tags in `opportunityDetail()`'s
+`view.innerHTML` template so the tag structure matches its (already-intact)
+closing tags again, giving back the intended 3-column layout (left contact
+panel / center workspace / right AI+financials rail).
+
+**Verified:**
+- Reproduced the exact bug pre-fix via Playwright screenshot against a
+  real lead ("John Smith") — matched the user's report precisely.
+- `node -c public/js/app_premium.js` clean before and after.
+- Rebuilt, restarted, re-tested via full UI click-through (login → Sales
+  → Pipeline → click lead card) rather than direct hash navigation, to
+  match real user flow.
+- Confirmed fixed: `.rp-shell` now renders at full 1112px content width
+  with `.rp-left` (280px) / `.rp-center` (464px) / `.rp-rail` (320px)
+  properly distributed side-by-side; no floating badge; right rail shows
+  Groundwork AI, Tasks, Stage Checklist, Financials, and Payment Schedule
+  cards as designed.
+
+**Sales Process page — could not reproduce.** The same message also said
+the Sales Process (stage-editing) page felt "*tiny and scrunched*." After
+applying the Lead Detail fix above, the Sales Process page was tested via
+full UI navigation (Sales → Sales Process) and rendered correctly at full
+width in every test: `.spb-heading`/`.spb-panel` measured 1112px (same
+content-area width as the fixed Lead Detail page), stage cards
+well-proportioned, no cramped Entry/Exit Guidance fields. No bug was found
+here — it's possible this was a transient rendering artifact from the same
+underlying corrupted-DOM issue, a narrower browser window at the time the
+report was made, or something not reproducible in this environment. Flagged
+to the user to re-check after this deploy and report back with a fresh
+screenshot if it's still an issue.
+
+**Command Center** — user explicitly asked to defer ("*I'm gonna sleep on
+it and look at it later*"); no changes made this pass.
