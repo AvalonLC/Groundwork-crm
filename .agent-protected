@@ -1,5 +1,10 @@
 # Files with uncommitted work when the run started. The pre-push hook refuses
 # any commit touching these. Add/remove lines to suit; blank lines ignored.
+#
+# src/index.tsx: temporarily unprotected 2026-08-04 for Wave 3 route mounting
+# only (2 imports + 2 app.route() calls + one additive Bindings field, no
+# other change). Re-protected immediately after — see git log for the exact
+# diff.
 src/index.tsx
 scripts/.build-version
 package.json

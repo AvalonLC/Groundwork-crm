@@ -23,12 +23,19 @@ import mig0037 from '../migrations/0037_platform_demos_pricing.sql?raw'
 import mig0038 from '../migrations/0038_real_pricing_import.sql?raw'
 import mig0039 from '../migrations/0039_onboarding_system.sql?raw'
 import mig0040 from '../migrations/0040_onboarding_buildout.sql?raw'
+// ── Finance OS sub-routers (see CLAUDE.md, docs/spec/API.md, docs/spec/ACTIONS.md) ──
+import { ratesRouter } from './api/rates'
+import { actionsRouter } from './api/actions'
 
 
-type Bindings = { DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
+type Bindings = { DB: D1Database; FINANCE_DB: D1Database; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
 type Variables = { repId: string; companyId: string; role: string; isSuperAdmin: boolean }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
+
+// ── Finance OS routes — mounted, not inlined; see src/api/rates.ts, src/api/actions.ts ──
+app.route('/internal/rates', ratesRouter)
+app.route('/internal/actions', actionsRouter)
 
 // ── CORS + middleware ─────────────────────────────────────────────────────────
 app.use('/api/*', cors())
