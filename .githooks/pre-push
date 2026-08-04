@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Blocks the only irreversible mistake an agent could make.
+set -uo pipefail
+RANGE="origin/main..HEAD"
+git rev-parse --verify origin/main >/dev/null 2>&1 || RANGE="HEAD"
+
+# --- production deploy guards, matched to THIS repo's package.json ---
+if git diff "$RANGE" -- . | grep -nE '^\+.*wrangler.*--remote'; then
+  echo "PRE-PUSH BLOCKED: 'wrangler --remote' added. Humans run remote, not agents."; exit 1
+fi
+if git diff "$RANGE" -- . | grep -nE '^\+.*(npm run deploy|npm run db:migrate:prod)'; then
+  echo "PRE-PUSH BLOCKED: a production deploy/migrate command was added to source."
+  echo "  This repo deploys straight to groundwork-crm.com with no staging step."
+  echo "  Only Tyler runs: npm run deploy | npm run db:migrate:prod"; exit 1
+fi
+if git diff "$RANGE" -- . | grep -nE '^\+.*wrangler (pages )?deploy'; then
+  echo "PRE-PUSH BLOCKED: 'wrangler deploy' added. Deploys are Tyler-only."; exit 1
+fi
+if git diff "$RANGE" -- package.json | grep -nE '^\-.*"(deploy|db:migrate:prod)"'; then
+  echo "PRE-PUSH BLOCKED: an existing deploy script was modified/removed."; exit 1
+fi
+if git diff "$RANGE" -- . | grep -nE '^\+.*DB_PROD'; then
+  echo "PRE-PUSH BLOCKED: DB_PROD referenced in source."; exit 1
+fi
+if git diff "$RANGE" -- src/engines/burden.test.ts | grep -qE '^-'; then
+  echo "PRE-PUSH BLOCKED: burden.test.ts is read-only (BH-13 guard)."; exit 1
+fi
+if git diff "$RANGE" -- . | grep -nE '^\+.*(39\.49|\b2\.61\b)'; then
+  echo "PRE-PUSH BLOCKED: 39.49 / 2.61 are the known-bad equipment figures. Use 40.62 / 1.4797."; exit 1
+fi
+if git diff "$RANGE" -- migrations/ | grep -niE '^\+.*(REAL|FLOAT|DOUBLE)'; then
+  echo "PRE-PUSH BLOCKED: floating point in a migration. Money is INTEGER cents."; exit 1
+fi
+if git diff "$RANGE" -- . | grep -nE '^\+.*(it|test)\.(skip|todo)\('; then
+  echo "PRE-PUSH BLOCKED: skipped test added."; exit 1
+fi
+# Protect Tyler's pre-existing in-progress work from being swept into a commit.
+if [ -f .agent-protected ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if git diff "$RANGE" --name-only -- "$f" 2>/dev/null | grep -q .; then
+      echo "PRE-PUSH BLOCKED: '$f' is listed in .agent-protected and was modified."
+      echo "  That file had uncommitted work before the run started."; exit 1
+    fi
+  done < .agent-protected
+fi
+if git ls-files | grep -qx 'node_modules'; then
+  echo "PRE-PUSH BLOCKED: node_modules is tracked. Run: git rm --cached node_modules"; exit 1
+fi
+echo "pre-push checks passed"

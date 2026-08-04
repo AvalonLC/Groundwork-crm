@@ -13,15 +13,42 @@
     "nodejs_compat"
   ],
 
-  // ── D1 Database ─────────────────────────────────────────────────────────────
-  // Production database UUID lives in Tyler@avalon-lc.com's Cloudflare account.
-  // Run `wrangler d1 list` to verify the UUID if you recreate the project.
+  // ── D1 Databases ────────────────────────────────────────────────────────────
+  // Both databases live in Tyler@avalon-lc.com's Cloudflare account.
+  // Run `wrangler d1 list` to verify UUIDs if you recreate the project.
   // Local dev: `npm run dev:local` uses --local flag (SQLite on disk, no UUID needed).
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "avalon-sales-hub-production",
       "database_id": "a09eba8e-6c21-4ec3-a257-70a94b6e2aeb"
+    },
+    {
+      "binding": "FINANCE_DB",
+      "database_name": "groundwork",
+      "database_id": "3c2f1d32-e9cf-4885-b01b-020129871240",
+      "migrations_dir": "migrations/finance"
     }
-  ]
+  ],
+
+  // ── Vectorize: Finance OS classifier stage 3 ──────────────────────────────────
+  "vectorize": [
+    {
+      "binding": "VEC",
+      "index_name": "gw-tenant-history"
+    }
+  ],
+
+  // ── R2: Finance OS receipt images + hash dedupe ───────────────────────────────
+  "r2_buckets": [
+    {
+      "binding": "RECEIPTS",
+      "bucket_name": "gw-receipts"
+    }
+  ],
+
+  // ── Workers AI: Finance OS classifier stage 4 + OCR + embeddings ─────────────
+  "ai": {
+    "binding": "AI"
+  }
 }

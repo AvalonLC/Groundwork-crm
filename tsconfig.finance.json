@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types", "vitest/globals"]
+  },
+  "include": [
+    "src/db/**/*.ts",
+    "src/engines/**/*.ts",
+    "src/api/**/*.ts",
+    "src/cron/**/*.ts",
+    "src/ai/**/*.ts",
+    "src/ui/**/*.tsx",
+    "src/ui/**/*.ts",
+    "scripts/**/*.js"
+  ]
+}

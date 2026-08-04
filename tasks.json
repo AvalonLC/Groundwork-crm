@@ -1,0 +1,542 @@
+{
+  "project": "groundwork-finance-os",
+  "contract": "CLAUDE.md",
+  "fixtures": "fixtures/golden.json",
+  "waves": [
+    {
+      "id": 0,
+      "name": "specs",
+      "parallel": false,
+      "max_agents": 1,
+      "max_agents_pro": 1
+    },
+    {
+      "id": 1,
+      "name": "spine",
+      "parallel": true,
+      "max_agents": 4,
+      "max_agents_pro": 2
+    },
+    {
+      "id": 2,
+      "name": "engines",
+      "parallel": true,
+      "max_agents": 5,
+      "max_agents_pro": 2
+    },
+    {
+      "id": 3,
+      "name": "posting",
+      "parallel": true,
+      "max_agents": 4,
+      "max_agents_pro": 2
+    },
+    {
+      "id": 4,
+      "name": "ui",
+      "parallel": true,
+      "max_agents": 6,
+      "max_agents_pro": 2
+    },
+    {
+      "id": 5,
+      "name": "ai-io",
+      "parallel": true,
+      "max_agents": 4,
+      "max_agents_pro": 2
+    },
+    {
+      "id": 6,
+      "name": "harden",
+      "parallel": false,
+      "max_agents": 1,
+      "max_agents_pro": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "W0-specs",
+      "wave": 0,
+      "deps": [],
+      "title": "Derive every stub spec file from repo evidence; never invent numbers",
+      "spec_ref": "docs/spec/BH-TESTS.md",
+      "files_owned": [
+        "docs/spec/SCHEMA.md",
+        "docs/spec/API.md",
+        "docs/spec/POSTING.md",
+        "docs/spec/ACTIONS.md",
+        "docs/spec/ALLOCATION.md",
+        "docs/spec/RECOVERY.md",
+        "docs/spec/UNBILLED.md",
+        "docs/spec/EQUIPMENT.md",
+        "docs/spec/CLASSIFIER.md",
+        "docs/spec/RECEIPTS.md",
+        "docs/spec/INGEST.md",
+        "docs/spec/ROLES.md",
+        "docs/spec/UI-MONEYLOOP.md",
+        "docs/spec/UI-RECOVERY.md",
+        "docs/spec/UI-BUDGET.md",
+        "docs/spec/UI-QUEUE.md",
+        "docs/spec/UI-JOBCOST.md",
+        "docs/spec/DICTIONARY.md"
+      ],
+      "files_readonly": [
+        "CLAUDE.md",
+        "tasks.json",
+        "fixtures/golden.json",
+        "src/engines/burden.test.ts"
+      ],
+      "gate": "node scripts/check-specrefs.js && node scripts/check-derived-specs.js",
+      "forbidden": [
+        "inventing a monetary figure not present in fixtures/golden.json",
+        "writing a spec without a '## Derivation confidence' section",
+        "claiming a spec is authoritative when it was inferred"
+      ],
+      "max_attempts": 3,
+      "on_fail": "write BLOCKED-W0-specs.md listing which specs lack evidence and STOP"
+    },
+    {
+      "id": "W1-schema",
+      "wave": 1,
+      "deps": [
+        "W0-specs"
+      ],
+      "title": "12 core tables as numbered D1 migrations, money as INTEGER cents",
+      "spec_ref": "docs/spec/SCHEMA.md",
+      "files_owned": [
+        "migrations/finance/0001_spine.sql",
+        "migrations/finance/0002_rates.sql",
+        "migrations/finance/0003_action.sql",
+        "src/db/schema.ts"
+      ],
+      "files_readonly": [
+        "CLAUDE.md",
+        "fixtures/golden.json"
+      ],
+      "gate": "npm run db:reset && npm run typecheck",
+      "forbidden": [
+        "REAL or FLOAT for any money column",
+        "wrangler --remote",
+        "omitting tenant_id from any table"
+      ],
+      "max_attempts": 5
+    },
+    {
+      "id": "W1-repos",
+      "wave": 1,
+      "deps": [
+        "W0-specs"
+      ],
+      "title": "Repository layer with round-trip tests; rate rows immutable",
+      "spec_ref": "docs/spec/SCHEMA.md",
+      "files_owned": [
+        "src/db/repos.ts",
+        "src/db/repos.test.ts"
+      ],
+      "gate": "npm test -- src/db/repos.test.ts",
+      "forbidden": [
+        "UPDATE on any *_rate_profile table"
+      ],
+      "max_attempts": 5
+    },
+    {
+      "id": "E2-burden",
+      "wave": 2,
+      "deps": [
+        "W1-schema"
+      ],
+      "title": "Burdened-hour engine \u2014 pure function, no DB",
+      "spec_ref": "docs/spec/BH-TESTS.md",
+      "files_owned": [
+        "src/engines/burden.ts",
+        "src/engines/types.ts"
+      ],
+      "files_readonly": [
+        "src/engines/burden.test.ts",
+        "fixtures/golden.json"
+      ],
+      "fixture_key": "burden_labor_no_equipment",
+      "gate": "npm test -- src/engines/burden.test.ts",
+      "gate_must_include": [
+        "BH-01",
+        "BH-03",
+        "BH-04",
+        "BH-05",
+        "BH-13",
+        "BH-14"
+      ],
+      "forbidden": [
+        "ANY database call inside the engine",
+        "including equipment cost when equipment_engine_active is true",
+        "modifying burden.test.ts \u2014 it is pre-written and read-only",
+        "using 39.49 or 2.61 as any expected value"
+      ],
+      "max_attempts": 6,
+      "on_fail": "write BLOCKED-E2-burden.md with the failing assertion and STOP"
+    },
+    {
+      "id": "E2-equipment",
+      "wave": 2,
+      "deps": [
+        "W1-schema"
+      ],
+      "title": "Equipment rate engine \u2014 ownership/operating split",
+      "spec_ref": "docs/spec/EQUIPMENT.md",
+      "files_owned": [
+        "src/engines/equipment.ts",
+        "src/engines/equipment.test.ts"
+      ],
+      "fixture_key": "equipment_rate",
+      "gate": "npm test -- src/engines/equipment.test.ts",
+      "forbidden": [
+        "merging ownership and operating into one rate",
+        "DB calls in the engine"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "E2-allocation",
+      "wave": 2,
+      "deps": [
+        "W1-schema"
+      ],
+      "title": "Overhead pools + multi-driver allocation + division rates",
+      "spec_ref": "docs/spec/ALLOCATION.md",
+      "files_owned": [
+        "src/engines/allocation.ts",
+        "src/engines/allocation.test.ts"
+      ],
+      "fixture_key": "overhead_allocation",
+      "gate": "npm test -- src/engines/allocation.test.ts",
+      "forbidden": [
+        "revenue driving more than 10% of total pool",
+        "leaving any pool unallocated"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "E2-recovery",
+      "wave": 2,
+      "deps": [
+        "W1-schema"
+      ],
+      "title": "Recovery projection \u2014 restated target, Black Friday date, seasonal curve",
+      "spec_ref": "docs/spec/RECOVERY.md",
+      "files_owned": [
+        "src/engines/recovery.ts",
+        "src/engines/recovery.test.ts"
+      ],
+      "fixture_key": "recovery",
+      "gate": "npm test -- src/engines/recovery.test.ts",
+      "forbidden": [
+        "recognizing recovery from invoice, deposit, or payment events",
+        "straight-line target instead of restated actuals",
+        "returning a single date without a confidence range"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "E2-unbilled",
+      "wave": 2,
+      "deps": [
+        "W1-schema"
+      ],
+      "title": "Unbilled-work detector \u2014 completed work_items with no receivable",
+      "spec_ref": "docs/spec/UNBILLED.md",
+      "files_owned": [
+        "src/engines/unbilled.ts",
+        "src/engines/unbilled.test.ts"
+      ],
+      "gate": "npm test -- src/engines/unbilled.test.ts",
+      "max_attempts": 5
+    },
+    {
+      "id": "W3-rateapi",
+      "wave": 3,
+      "deps": [
+        "E2-burden",
+        "E2-equipment",
+        "E2-allocation"
+      ],
+      "title": "/internal/rates/resolve + /internal/rates/equipment, cascade + confidence",
+      "spec_ref": "docs/spec/API.md",
+      "files_owned": [
+        "src/api/rates.ts",
+        "src/api/rates.test.ts"
+      ],
+      "gate": "npm test -- src/api/rates.test.ts",
+      "forbidden": [
+        "caching a rate across work dates",
+        "returning a number without confidence"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "W3-posting",
+      "wave": 3,
+      "deps": [
+        "W3-rateapi"
+      ],
+      "title": "Two-line cost posting; resolved_rate written once, never recomputed",
+      "spec_ref": "docs/spec/POSTING.md",
+      "files_owned": [
+        "src/api/posting.ts",
+        "src/api/posting.test.ts"
+      ],
+      "gate": "npm test -- src/api/posting.test.ts",
+      "gate_must_include": [
+        "immutability"
+      ],
+      "forbidden": [
+        "recomputing resolved_rate on read",
+        "retroactive recost without an explicit job"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "W3-rollup",
+      "wave": 3,
+      "deps": [
+        "E2-recovery",
+        "W3-posting"
+      ],
+      "title": "Nightly cron rollup -> recovery_snapshot, absorption variance",
+      "spec_ref": "docs/spec/RECOVERY.md",
+      "files_owned": [
+        "src/cron/rollup.ts",
+        "src/cron/rollup.test.ts"
+      ],
+      "gate": "npm test -- src/cron/rollup.test.ts",
+      "forbidden": [
+        "row-by-row writes \u2014 use db.batch()"
+      ],
+      "max_attempts": 5
+    },
+    {
+      "id": "W3-actions",
+      "wave": 3,
+      "deps": [
+        "W1-schema"
+      ],
+      "title": "action_item + five-verb constraint + SLA clock",
+      "spec_ref": "docs/spec/ACTIONS.md",
+      "files_owned": [
+        "src/api/actions.ts",
+        "src/api/actions.test.ts"
+      ],
+      "gate": "npm test -- src/api/actions.test.ts",
+      "forbidden": [
+        "any verb outside {collect,bill,pay,fix,decide}",
+        "an action without owner_id or sla_due"
+      ],
+      "max_attempts": 5
+    },
+    {
+      "id": "W4-moneyloop",
+      "wave": 4,
+      "deps": [
+        "W3-rateapi",
+        "W3-actions"
+      ],
+      "title": "Money Loop depth 1+2 \u2014 runway hero, five verb tiles, verb lanes",
+      "spec_ref": "docs/spec/UI-MONEYLOOP.md",
+      "files_owned": [
+        "src/ui/money-loop.tsx",
+        "src/ui/money-loop.e2e.ts"
+      ],
+      "gate": "npm run e2e -- money-loop",
+      "forbidden": [
+        "rendering margin or wage for crew role",
+        "accounting vocabulary in simple mode"
+      ],
+      "max_attempts": 5
+    },
+    {
+      "id": "W4-recovery-ui",
+      "wave": 4,
+      "deps": [
+        "W3-rollup"
+      ],
+      "title": "Overhead Recovery page \u2014 thermometer, division dates, absorption",
+      "spec_ref": "docs/spec/UI-RECOVERY.md",
+      "files_owned": [
+        "src/ui/recovery.tsx",
+        "src/ui/recovery.e2e.ts"
+      ],
+      "gate": "npm run e2e -- recovery",
+      "max_attempts": 5
+    },
+    {
+      "id": "W4-budget-ui",
+      "wave": 4,
+      "deps": [
+        "E2-allocation"
+      ],
+      "title": "Budget & Rates page \u2014 6-step build, driver map, both rate types",
+      "spec_ref": "docs/spec/UI-BUDGET.md",
+      "files_owned": [
+        "src/ui/budget.tsx",
+        "src/ui/budget.e2e.ts"
+      ],
+      "gate": "npm run e2e -- budget",
+      "max_attempts": 5
+    },
+    {
+      "id": "W4-queue-ui",
+      "wave": 4,
+      "deps": [
+        "W3-actions"
+      ],
+      "title": "Work Queue \u2014 SLA clocks, AI first-pass, confidence panel",
+      "spec_ref": "docs/spec/UI-QUEUE.md",
+      "files_owned": [
+        "src/ui/queue.tsx",
+        "src/ui/queue.e2e.ts"
+      ],
+      "gate": "npm run e2e -- queue",
+      "max_attempts": 5
+    },
+    {
+      "id": "W4-jobcost-ui",
+      "wave": 4,
+      "deps": [
+        "W3-posting"
+      ],
+      "title": "Job Costing \u2014 live margin, hours vs estimate, applied overhead",
+      "spec_ref": "docs/spec/UI-JOBCOST.md",
+      "files_owned": [
+        "src/ui/job-costing.tsx",
+        "src/ui/job-costing.e2e.ts"
+      ],
+      "gate": "npm run e2e -- job-costing",
+      "max_attempts": 5
+    },
+    {
+      "id": "W4-roles",
+      "wave": 4,
+      "deps": [
+        "W3-rateapi"
+      ],
+      "title": "Four role templates + simple/advanced vocabulary toggle",
+      "spec_ref": "docs/spec/ROLES.md",
+      "files_owned": [
+        "src/ui/roles.ts",
+        "src/ui/vocabulary.ts",
+        "src/ui/roles.e2e.ts",
+        "docs/dictionary.json"
+      ],
+      "gate": "npm run e2e -- roles",
+      "gate_must_include": [
+        "crew-cannot-see-margin"
+      ],
+      "max_attempts": 5
+    },
+    {
+      "id": "W5-classifier",
+      "wave": 5,
+      "deps": [
+        "W1-repos"
+      ],
+      "title": "Classifier stages 1-3 deterministic + stage 4 LLM + calibration table",
+      "spec_ref": "docs/spec/CLASSIFIER.md",
+      "files_owned": [
+        "src/ai/classify.ts",
+        "src/ai/classify.test.ts",
+        "src/ai/calibration.ts"
+      ],
+      "gate": "npm test -- src/ai/classify.test.ts",
+      "gate_must_include": [
+        "stages-1-3-hit-rate",
+        "materiality-override"
+      ],
+      "forbidden": [
+        "calling a model before stages 1-3 have failed",
+        "auto-posting on model self-reported confidence",
+        "auto-posting any row over tenant materiality"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "W5-receipts",
+      "wave": 5,
+      "deps": [
+        "W1-repos"
+      ],
+      "title": "Receipt pipeline \u2014 R2 store, field-level confidence, dedupe by hash",
+      "spec_ref": "docs/spec/RECEIPTS.md",
+      "files_owned": [
+        "src/ai/receipts.ts",
+        "src/ai/receipts.test.ts"
+      ],
+      "gate": "npm test -- src/ai/receipts.test.ts",
+      "forbidden": [
+        "routing a bookkeeping question to a crew role"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "W5-ingest",
+      "wave": 5,
+      "deps": [
+        "W1-repos"
+      ],
+      "title": "P&L ingest + AI normalization + reclassification proposals + gap report",
+      "spec_ref": "docs/spec/INGEST.md",
+      "files_owned": [
+        "src/ai/ingest.ts",
+        "src/ai/ingest.test.ts"
+      ],
+      "gate": "npm test -- src/ai/ingest.test.ts",
+      "forbidden": [
+        "auto-approving any reclassification",
+        "posting to the GL"
+      ],
+      "max_attempts": 6
+    },
+    {
+      "id": "W5-equipcapture",
+      "wave": 5,
+      "deps": [
+        "E2-equipment",
+        "W3-posting"
+      ],
+      "title": "Tier-1 crew-attached machine capture + tier-2 meter photo",
+      "spec_ref": "docs/spec/EQUIPMENT.md",
+      "files_owned": [
+        "src/ai/equip-capture.ts",
+        "src/ai/equip-capture.test.ts"
+      ],
+      "gate": "npm test -- src/ai/equip-capture.test.ts",
+      "max_attempts": 5
+    },
+    {
+      "id": "W6-harden",
+      "wave": 6,
+      "deps": [
+        "W4-roles",
+        "W5-classifier",
+        "W5-receipts",
+        "W5-ingest",
+        "W5-equipcapture",
+        "W4-moneyloop",
+        "W4-recovery-ui",
+        "W4-budget-ui",
+        "W4-queue-ui",
+        "W4-jobcost-ui",
+        "W3-rollup"
+      ],
+      "title": "Full regression, preview deploy, changelog, honest punch list",
+      "files_owned": [
+        "README.md",
+        "docs/PUNCHLIST.md",
+        ".github/workflows/ci.yml"
+      ],
+      "gate": "npm test && npm run typecheck && npm run e2e",
+      "forbidden": [
+        "wrangler --remote against production",
+        "claiming a gap is closed when it is not"
+      ],
+      "max_attempts": 3
+    }
+  ]
+}
