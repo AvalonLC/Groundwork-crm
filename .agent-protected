@@ -1,7 +1,4 @@
 # Files with uncommitted work when the run started. The pre-push hook refuses
 # any commit touching these. Add/remove lines to suit; blank lines ignored.
 #
-src/index.tsx
 scripts/.build-version
-package.json
-package-lock.json
