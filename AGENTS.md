@@ -1,60 +1,278 @@
-# Groundwork Finance OS — Build Contract (Codex)
+# AGENTS.md — Groundwork CRM
 
-## STACK (do not substitute)
-Cloudflare Workers + D1 (SQLite) · TypeScript · Vitest · Playwright · Hono
-Migrations: numbered SQL in /migrations, applied via `wrangler d1 migrations apply`
-Match existing app conventions in /docs/conventions.md
+Briefing for AI coding agents (Codex, Claude, etc.) working on this repo.
+Read this fully before editing anything.
 
-## MONEY IS INTEGER CENTS
-Every monetary column is INTEGER cents. Every rate column is INTEGER
-ten-thousandths (e.g. $42.1002 -> 421002). Convert at the UI boundary only.
-Floats WILL fail the to-the-cent fixtures. This is not negotiable.
+## What this is
 
-## FOUR HARD RULES — violating any one fails review
-1. No write path to QuickBooks. Groundwork proposes; QBO records.
-2. Rate rows are immutable + effective-dated. Recalibration INSERTs a new row
-   and sets effective_to on the prior row. NEVER UPDATE a rate row.
-3. Overhead recovery increments ONLY from time_entry hours. Never from an
-   invoice, deposit, or payment event.
-4. `confidence` and `stale_components` travel with every returned number and
-   must render in the UI.
+Groundwork CRM — a multi-tenant SaaS CRM for field-service companies
+(landscaping, HVAC, etc.), live at https://groundwork-crm.com.
 
-## ARCHITECTURE INVARIANTS
-- 7 layers, dependency flows DOWN only:
-  input -> event spine -> rates -> job costing -> recovery -> action queue -> learning
-- ALL cost rates come from /internal/rates/resolve and /internal/rates/equipment.
-  No module computes its own labor or overhead arithmetic. Ever.
-- Every AI finding becomes an action_item with
-  verb in {collect,bill,pay,fix,decide} + owner_id + sla_due + amount_cents.
-- time_entry.resolved_rate and .applied_overhead are written ONCE at posting
-  and never recomputed.
+- **Stack**: Hono (TypeScript) on Cloudflare Pages + D1 (SQLite) + R2 (media)
+- **Backend**: `src/index.tsx` (single large Hono app), `src/portal.tsx` (client portal)
+- **Frontend**: vanilla JS bundles in `public/js/` (NO framework, NO bundler for
+  frontend code — files are served as-is). Main bundle: `public/js/app_premium.js`.
+  Icons: `public/js/gw-icons.js` (check an icon name exists before using `gwIcon()`).
+- **Build**: `npm run build` (Vite, builds `src/` into `dist/_worker.js`; also
+  auto-bumps `?v=` cache stamps referenced in `src/index.tsx`)
 
-## THE EQUIPMENT DOUBLE-COUNT (most likely bug in this project)
-labor_rate_profile.support_equipment_annual MUST be 0 whenever
-tenant_finance_policy.equipment_engine_active = true.
-- equipment_engine_active = false -> burdened rate 42.1002 (1.754x)
-- equipment_engine_active = true  -> burdened rate 40.6205 (1.693x)
-Test BH-13 asserts this. It is pre-written. Do not modify or skip it.
+## Hard rules
 
-## UI INVARIANTS
-- Two vocabularies, one dataset, per-user toggle. Simple mode is DEFAULT and
-  contains zero accounting words (see /docs/dictionary.json).
-- Crew role: never render margin, wage, or rate fields.
-- If a value can be derived, never add an input for it.
+1. **NO emojis** — not in code, UI strings, commit messages, or replies to the user.
+2. **NEVER modify `.github/workflows/deploy.yml`.**
+3. Frontend JS lives in `public/js/`. `public/static/` is a legacy mirror —
+   never edit `public/static/` directly; it is synced by copy (see workflow below).
+4. Production HTML loads scripts from the `/js/` path. When verifying production,
+   curl `https://groundwork-crm.com/js/<file>` — NOT `/static/` (stale mirror there
+   is expected).
+5. Multi-tenant: every D1 query must be scoped by company. Never leak data across
+   companies.
+6. Settings persist to D1 via `PUT /api/settings` (keys are prefixed per company);
+   selected keys hydrate to localStorage at login via the FIN_MAP bootstrap in
+   `src/index.tsx` (~line 11500). Do not store real data only in localStorage.
 
-## WORKFLOW — every task, no exceptions
-1. Read the task's spec_ref BEFORE writing code.
-2. Write the failing test FIRST, from the fixture in fixtures/golden.json.
-3. Implement until the gate command exits 0.
-4. Touch ONLY files listed in files_owned.
-5. Commit format: `[<task_id>] <what changed>` — one task, one commit.
-6. If blocked after max_attempts: write BLOCKED-<task_id>.md describing the
-   failing assertion and STOP. Do NOT invent a workaround. Do NOT widen scope.
-   Do NOT delete or skip a test to make a gate pass.
+## Standard edit-and-deploy workflow
 
-## NEVER
-- `wrangler ... --remote` (local only; humans run remote)
-- `git push --force` or any history rewrite
-- Reading or writing DB_PROD
-- npm install of a package absent from package.json without noting it in the commit
-- Editing another task's files_owned
+```bash
+# 1. Edit files in public/js/ and/or src/
+
+# 2. Sync legacy static mirror, then build
+cp -r public/js/. public/static/
+npm run build                # long-running; allow 300s
+
+# 3. Local test (PM2 app name: avalon-sales-hub, port 3000)
+fuser -k 3000/tcp 2>/dev/null; pm2 restart avalon-sales-hub; sleep 6
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000   # expect 200
+# Authenticated API test: cookie avalon_session=testtoken123
+
+# 4. Syntax check any edited JS
+node --check public/js/app_premium.js
+
+# 5. Commit and push — push to main IS the production deploy
+git add -A && git commit -m "message" && git push origin main
+
+# 6. GitHub Actions builds and deploys to Cloudflare Pages (~100 s).
+#    Verify: curl -s https://groundwork-crm.com/js/<file> | grep <new symbol>
+```
+
+If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
+`npm run build && npm run dev:local` (wrangler pages dev on port 3000, local D1).
+
+## Database (D1)
+
+- Binding: `DB`. Production DB name: `avalon-sales-hub-production`
+  (UUID in `wrangler.jsonc`, lives in the owner's Cloudflare account).
+- Local dev uses `--local` (SQLite under `.wrangler/state/`), no credentials needed.
+- Schema changes: add a new numbered file in `migrations/` (never edit old ones).
+  - Local:  `npx wrangler d1 migrations apply avalon-sales-hub-production --local`
+  - Production: applied AUTOMATICALLY by the deploy workflow on push to main
+    (the "Apply D1 migrations" step runs before the Pages deploy). No manual
+    step needed — just make sure new migrations are additive and safe to run
+    against live data (use IF NOT EXISTS, never drop or rewrite existing
+    columns without a data-preserving path).
+- Local console:
+  `npx wrangler d1 execute avalon-sales-hub-production --local --command="..."`
+
+## Deployment
+
+- GitHub repo: `AvalonLC/Groundwork-crm`, branch `main`.
+- `.github/workflows/deploy.yml` deploys `dist` to Cloudflare Pages project
+  `groundwork-crm` on every push to main, using repo secrets `CF_API_TOKEN`
+  and `CF_ACCOUNT_ID`. Do not add other deploy paths.
+
+## Groundwork Finance OS (module)
+
+A separate Finance OS layer lives inside this same repo, additive to
+everything above — see `CLAUDE.md` for its full build contract (money as
+INTEGER cents, immutable effective-dated rate profiles, the four hard
+rules, architecture invariants, workflow). Summary of how it differs from
+the rest of this app:
+
+- **Separate D1 database**: binding `FINANCE_DB` (name `groundwork`, a
+  distinct database from `DB`/`avalon-sales-hub-production`). Its own
+  migration chain lives in `migrations/finance/` (starting at `0001`,
+  never mixed with the root `migrations/` numbering above) and is applied
+  independently — `deploy.yml`'s automatic "Apply D1 migrations" step only
+  targets `avalon-sales-hub-production`, NOT `groundwork`. Production
+  Finance OS migrations are a deliberate, separate, human-run step.
+- **Routes**: `/finance/*` (UI, behind `requireAuth` + a CRM-role ->
+  Finance-role mapping in `config/finance/role-map.json`),
+  `/internal/rates`, `/internal/actions`, `/internal/cron` (its own
+  `X-Cron-Secret` header auth, not session-based).
+- **Config-driven business rules**: `config/finance/*.json` (classifier
+  rules, ingest source detectors, division map, approval thresholds,
+  automation policy, tenant defaults, role map) are Groundwork-wide
+  platform defaults; a `finance_config_override` D1 table layers
+  per-tenant overrides on top, edited live at `/finance/config`. See
+  `config/finance/README.md`.
+- **Scheduling**: `.github/workflows/finance-cron.yml` — a nightly
+  overhead-recovery rollup calling `POST /internal/cron/rollup`, separate
+  from and unrelated to `deploy.yml`. See `docs/RUNBOOK-finance-cron.md`.
+- **Tests**: `npm test` (vitest, real D1 via `@cloudflare/vitest-pool-workers`),
+  `npm run typecheck` (`tsconfig.finance.json`), `npm run e2e` (Playwright).
+  These are additive to the sales-process tests below, not a replacement.
+
+## Sales process platform (versioned)
+
+- Schema: migrations `0046`–`0052`. Core tables: `sales_processes`,
+  `sales_process_versions`, `sales_process_stages`, `sales_stage_outcomes`,
+  `sales_stage_internal_statuses`, `sales_stage_requirements`,
+  `sales_stage_guides`, `sales_process_resources`, `sales_process_automations`,
+  `sales_stage_transition_paths` (current; `sales_stage_transitions` is legacy
+  fallback), `sales_stage_assignments`, `sales_migration_mappings/history/
+  snapshots/snapshot_items`, `sales_process_publications`,
+  `sales_ai_suggestions`, `sales_academy_associations`.
+- Global template catalog is immutable (`company_id='__global__'`,
+  `is_template=1`, `is_immutable=1`). The templates endpoint returns only the
+  latest version per template; adopting a graphless superseded version
+  (e.g. `tpl_groundwork_field_service_v1`) is rejected with 409. Never edit
+  global templates — tenants get deep copies with fresh IDs on adopt.
+- Lifecycle (all `/api/sales-process/*`, admin session): draft from template
+  (`/drafts/from-template`) or from the live board
+  (`/drafts/from-current-pipeline`, imports current pipeline labels as a
+  validation-complete draft) -> validate -> migration propose ->
+  per-opportunity mapping review (`final_stage_id`, optional
+  `final_outcome_type`) -> snapshot (`migration_batch_id` in body) ->
+  snapshot approve -> publication-readiness (`?migration_batch_id=` query) ->
+  publish `{confirm:true, migration_batch_id}` -> optional rollback
+  `{confirm:true}`.
+- Publish is a FULL PIPELINE CUTOVER: it writes the published stage labels to
+  the `{companyId}:pipeline_stages` setting, migrates each mapped
+  opportunity's `status`/`pipeline_stage` text to the new labels, and captures
+  the prior setting in `impact_json.previous_pipeline_stages` (`null` if the
+  setting did not exist) plus per-opportunity prior labels in history
+  `event_json`. Rollback restores all of it exactly (deletes the setting when
+  previously absent). New leads default to the live setting's first label;
+  legacy status writes sync the stable assignment via
+  `syncPublishedStageAssignment` (classification `status_synced`) — unknown
+  labels leave assignments untouched (Needs Restaging preserved).
+- LIVE EDITING (published version, no draft cycle): `PUT /api/sales-process/
+  live/:versionId/stages` and `PUT .../live/:versionId/components/:component`
+  (internal_statuses|requirements|guides|resources|automations|academy only —
+  no transitions/outcomes). Gated on `lifecycle='published'` + admin role +
+  `content_revision` optimistic concurrency (same changes()=0 INSERT trick as
+  drafts). Stage saves cascade live: rewrite `{companyId}:pipeline_stages`
+  setting and UPDATE renamed stages' opportunities `status`/`pipeline_stage`
+  by `sales_process_stage_id`. Deleting/archiving a NON-CLOSING stage that
+  holds `sales_stage_assignments` is rejected 409 (draft flow required).
+  Occupied CLOSING stages may be archived/removed when active closing stages
+  absorb every lead by its assignment `outcome_type` (split Closed into
+  Won/Lost; preference chains won->terminal, lost->terminal,
+  disqualified->lost->terminal, nurture->terminal->lost; unmatched outcome
+  = 409). Response carries `redistributed_leads`. New active
+  stages get wired into the transition graph; orphaned transitions/outcomes
+  for removed stages are deleted. Draft routes still 404 on published
+  versions (immutability contract in the adoption integration test).
+- Canonical stage resolver: `resolveSalesOpportunityStage` in `src/index.tsx`;
+  browser mirror: `public/js/sales-process.js`. Keep them in sync.
+- Migration/publishing code must NEVER touch `gw_leads`
+  (see `docs/sales-process-dependency-inventory.md`).
+- Production publication for a live tenant is a deliberate HUMAN gate — never
+  automate adopt/review/publish against production data
+  (see `docs/sales-process-completion-matrix.md`).
+- GROUNDWORK AI LEAD SCORING (client-side, `public/js/app_premium.js`):
+  `gwStageClock(o)` = days in current stage from `stageEnteredAt` (API field
+  `sales_process_assigned_at`, a subselect on GET /api/opportunities over
+  `sales_stage_assignments.assigned_at`, which is refreshed on every stage
+  move) vs the stage's `expected_duration_days`; bands ok/watch/late (late =
+  1.75x expected) drive the follow-up urgency chips, the "Needs Follow-Up"
+  stat card and the `overdue` quick-filter. `gwLeadScore(o)` = deterministic
+  0-100 close likelihood; hard pins won=100 / lost|disqualified=0; open leads
+  clamped 3-97; baseline from stage position plus factors (stage-clock ratio,
+  process velocity, lead source, budget-vs-estimate via `gwParseBudget`,
+  estimate momentum from `linked_estimate_status`, engagement recency), all
+  surfaced in a factor breakdown (rail card + pill tooltip). Pipeline sort
+  default is `priority` (score desc). If you add signals, keep the factor
+  list transparent and never let an open lead hit 0 or 100.
+- AI STRUCTURED-OUTPUT CONTRACT (`src/index.tsx`): all JSON-drafting AI
+  endpoints (generate-quote, generate-proposal) MUST call `_aiChatJson`
+  (adds `response_format: json_object`; adds `reasoning_effort: 'low'` only
+  for gpt-5/o-family models; retries once WITHOUT extras on HTTP 400 so BYOK
+  custom models keep working) and parse with `_aiParseJson` (strips fences,
+  salvages truncated JSON by closing unterminated strings/brackets). Never
+  regress to raw `JSON.parse(indexOf('{')..lastIndexOf('}'))` — multi-tier
+  quotes previously produced ~10k completion tokens and timed out or
+  truncated, breaking 2/3-option generation.
+- CUSTOMER PRICE VIEW (`estimates.price_display`, migration 0054, ensured by
+  `ensurePriceBookSchema`): `'itemized'` | `'total_only'`. `total_only`
+  renders ONE total callout + description-only included-scope checklist in
+  BOTH renderers — `_estPortalContentHtml` (estimates.js) and the server
+  portal page `/estimates/portal/:token` (index.tsx); keep them in sync.
+  Persisted via `_estApplyExtFields`; normalized in `_estNormalize`;
+  `_estAiApply` defaults AI quotes to `total_only`. Internal views (Pricing
+  Workbench, detail page) must always stay itemized.
+- LEAD VALUE / COMMISSION COUPLING: `gwLeadBaseValue(opp)` is the single
+  source for a lead's money figure — won leads use `soldAmount` (server
+  `sold_amount`, falling back to `jobValue`), open leads use `jobValue`
+  (`job_value`). It feeds `estCommission(opp)` → `window.estimateCommission`,
+  card values, the hero Value/Sold @ chip, and the Figures rail. Commission
+  plan resolution: estCommission uses the ASSIGNED rep's plan (opp.repId →
+  REPS), never the viewer's; `calculateCommission` (reps.js) falls back to
+  the default 'ryan' plan for unknown plan ids ('admin', 'standard') — never
+  restore the old silent-$0 behavior. Edits go through
+  `window._gwSetLeadValue(id, raw)` (field-aware: soldAmount when won),
+  which coerces to Number, write-throughs via `_d1SaveOpp`, and updates
+  `#gwFigVal_<id>` / `#gwFigComm_<id>` in place — do NOT full re-render on
+  value edit (wipes unsaved form fields). `confirmMarkSold` MUST keep its
+  `_d1SaveOpp(o)` write-through. The Overview form input intentionally has
+  NO `name` attribute so the generic string autosave skips it. Pipeline
+  division totals come from `_gwDivisionValueStrip` (OPEN leads only via
+  `gwSalesIsOpen` — won/lost are excluded by design). Pipeline cards render
+  the value in a FIXED spot (right side of the stage-chip row, `—` when
+  unset) — keep it position-stable.
+- +NEW MENU: `_gwBuildNewMenu` items for cross-module creation use
+  `window._gwNavThen(view, fnName, arg)` — navigate first, then poll up to 3s
+  for the module to register its entry point (`_estNewEstimate`,
+  `_invOpenBuilder`, `_invPaymentPicker` in invoices.js, `_ahNewAsset`,
+  `_umOpenInviteForm`). Keep role gates: estimate = admin/sales; invoice,
+  payment, asset, employee = admin (admin includes office_manager).
+- AI LEAD IMPORT: `POST /api/ai/parse-lead` (index.tsx) follows the standard
+  AI pattern — `_aiCreds` -> `_aiQuotaGate` -> `_aiChatJson` -> `_logAiUsage`
+  ('lead_import') -> `_aiParseJson`. `_aiChatJson` returns the RAW fetch
+  Response: consume as `const r = await _aiChatJson(...); if (!r.ok) {...};
+  const j = await r.json()` — never destructure `{j}`. Frontend
+  (`window._gwAiLeadImport` / `_gwAiLeadParse` / `_gwAiLeadRenderPreview` /
+  `_gwAiLeadCreate` in app_premium.js, before the Mark Sold Modal block):
+  paste-or-drop email -> preview -> creates ONE client (point of contact) +
+  ONE lead per checked property linked via `clientId`. This one-client-many-
+  leads shape is the commercial multi-property architecture — do not collapse
+  multiple addresses into a single lead. D1 `clients` persists only base
+  columns (id/name/phone/email/address/type/notes/company_id); rich fields
+  (`company`, `properties[]`, `tags`, ...) are localStorage-only, so the AI
+  summary goes in `notes` and durable property data lives in the per-property
+  leads themselves. Entry points: +New menu item (admin/sales) and the Add
+  Lead hero "Import from Email (AI)" button.
+
+## Tests
+
+39 tests across 7 suites; all must pass before pushing sales-process changes:
+
+```bash
+npm run test:migrations            # needs the sqlite3 CLI (apt-get install sqlite3)
+node --test tests/sales-process-platform.test.mjs tests/sales-process-safety.test.mjs
+npm run test:sales-process-ui      # linkedom DOM proof of the admin builder
+npm run test:sales-process-transitions   # Miniflare; vite-builds dist first
+npm run test:sales-process-adoption      # Miniflare; vite-builds dist first
+npm run test:migration-review            # Miniflare; vite-builds dist first
+```
+
+Sandboxes reset: reinstall the `sqlite3` CLI if `test:migrations` fails to spawn it.
+
+## Gotchas learned the hard way
+
+- Some existing strings contain unicode (em/en dashes). If an exact-match edit
+  fails with "string not found", inspect the real bytes (grep/python) rather
+  than retrying with a guessed ASCII version.
+- `src/index.tsx` is very large (10k+ lines); grep for anchors before editing.
+- Frontend has no build step — a syntax error in `public/js/*.js` breaks the
+  live app directly. Always `node --check` after editing.
+- Divisions and lead-intake form are company-configurable: use `gwDivisions()`,
+  `gwClassifyDivision(o)`, `gwIntakeConfig()` in `app_premium.js` — never
+  hardcode division names/categories in new code.
+- The legacy work-order detail page is retired: job clicks must route to the
+  schedule board visit modal (`workOrderDetail()` is redirect-only; keep it so).
+- Onboarding wizard: `public/js/onboarding.js`, 9 steps, gated by
+  `onboarding_completed` / `onboarding_step >= 9` on the company record.
+- CLIENT PORTFOLIO (mig 0055): opportunities.client_id is the durable client->lead link (POST/PUT /api/opportunities map clientId; _mapOppFromD1 maps it back; customerDetail self-heals unlinked leads via exact-name or "Name — Site" prefix match then _d1SaveOpp). Rich client fields ride in clients.extra JSON via _packClientExtra/_unpackClientRow (CLIENT_EXTRA_FIELDS); PUT merges extra with previous so partial payloads never wipe. ensurePortfolioSchema (settings key _schema_portfolio_v1) self-heals schema, incl. recurring_plans.frequency_unit/visit_duration_minutes/services_included drift. Local migrations DB name: avalon-sales-hub-production.
+- CSV IMPORT HARDENING: never split CSV text by newline before quote parsing — quoted Notes fields contain multi-line HTML (Homeworks exports). Use window._gwParseCsvRecords (quote-aware record splitter, app_premium.js) + window._gwCleanImportText (HTML tag/entity stripper). csv_import.js _csvParse delegates to these (with local fallback) and drops junk names (HTML fragments or >12 words). The 2026-07-15 corruption (10 junk clients, deleted from prod) came from the old line-split parser.
+- CLIENT PAGE INLINE EDIT: Contact Info fields are inline inputs (cd-inline-input) that autosave via window._cdInlineSave (600ms debounce, PUT /api/customers/:id partial + localStorage cache update). PUT binds use "!== undefined" so '' clears a field; name may never be blanked. Green cd-add-btn create buttons under each section: _cdNewLeadForClient (creates opp + opens opportunityDetail), _cdNewEstimateForClient (estimateBuilder + _estDraft prefill), _cdNewInvoiceForClient (_invOpenBuilder + poll #invClientId), _cdRecordPaymentForClient (open-invoice picker -> _invRecordPaymentModal), _cdUploadPhotos (POST /api/customers/:id/photos, R2 MEDIA, project_media work_order_id='' visibility='internal').

@@ -41,3 +41,4 @@ BLOCKED-*.md
 
 # NOTE: scripts/.build-version IS committed so the version counter
 # persists across machines and doesn't reset every clone.
+core

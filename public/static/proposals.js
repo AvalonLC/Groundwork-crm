@@ -195,14 +195,14 @@ function _prRenderBuilder() {
         <div style="font-size:17px;font-weight:800">${isEdit ? `Edit ${_prEsc(p.prop_number || 'Proposal')}` : 'New Proposal'}</div>
         ${_prStatusPill(p.status)}
         <span id="pr-save-state" style="margin-left:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
-        <button class="est-btn-secondary" style="font-size:12px;padding:7px 12px;white-space:nowrap${pvOn ? ';background:var(--gw-teal,#4D8A86);color:#fff;border-color:transparent' : ''}" onclick="_prTogglePreview()" title="Show the client-facing document side-by-side, updating live as you type">${pvOn ? '✓ Live preview' : '👁 Live preview'}</button>
+        <button class="est-btn-secondary" style="font-size:12px;padding:7px 12px;white-space:nowrap${pvOn ? ';background:var(--gw-teal,#4D8A86);color:#fff;border-color:transparent' : ''}" onclick="_prTogglePreview()" title="Show the client-facing document side-by-side, updating live as you type">${pvOn ? '✓ Live preview' : `${(typeof gwIcon==='function')?gwIcon('eye',13,'currentColor'):''} Live preview`}</button>
       </div>
 
       <!-- AI draft -->
       <section style="background:linear-gradient(135deg,#113931 0%,#1E5E52 100%);border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#fff">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div>
-            <div style="font-size:13px;font-weight:800">✨ Draft with AI</div>
+            <div style="font-size:13px;font-weight:800">${(typeof gwIcon==='function')?gwIcon('sparkle',13,'currentColor'):''} Draft with AI</div>
             <div style="font-size:11.5px;opacity:.85">Writes the whole document — from priced option quotes to formal bids or planning frameworks with investment ranges — using ${p.opp_id ? "this lead's notes and history" : 'your instructions'}. You review and edit everything before sending.</div>
           </div>
           <button id="pr-ai-btn" style="background:#fff;color:#113931;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap" onclick="_prAiModal()">Draft it for me</button>
@@ -302,7 +302,7 @@ function _prRenderBuilder() {
       <section style="background:var(--gw-surface,#fff);border:1px solid var(--gw-border,#E4E0D6);border-radius:12px;padding:18px;margin-bottom:16px">
         <div style="font-size:13px;font-weight:800;margin-bottom:10px">5 · Terms &amp; Notes</div>
         <label class="est-label">Terms (shown to client)</label>
-        <textarea class="est-input" rows="3" style="resize:vertical;margin-bottom:12px" placeholder="Pricing valid through the date above. Applications weather-dependent…" oninput="_prDraft.terms=this.value">${_prEsc(p.terms)}</textarea>
+        <textarea id="pr-terms" class="est-input" rows="3" style="resize:vertical;margin-bottom:12px" placeholder="Pricing valid through the date above. Applications weather-dependent…" oninput="_prDraft.terms=this.value">${_prEsc(p.terms)}</textarea>
         <label class="est-label">Internal Notes (never shown to client)</label>
         <textarea class="est-input" rows="2" style="resize:vertical" oninput="_prDraft.internal_notes=this.value">${_prEsc(p.internal_notes)}</textarea>
       </section>
@@ -357,6 +357,10 @@ function _prRenderBuilder() {
   if (shell) {
     shell.addEventListener('input', _prPvQueue);
     shell.addEventListener('change', _prPvQueue);
+  }
+  // Rich-text Terms editor (keeps bold / bullets / headings on paste)
+  if (typeof window._gwRichAttach === 'function') {
+    window._gwRichAttach('pr-terms', { minHeight: '90px', onChange: (v) => { _prDraft.terms = v; } });
   }
   if (pvOn) _prPvRender();
 }
@@ -824,7 +828,9 @@ function _prPvFmtDate(d) {
 }
 
 function _prPvBullet(raw) {
-  const t = String(raw || '');
+  // Scrub literal "Bold lead-in:" prompt leakage from older AI drafts, then
+  // bold anything before the first colon (the intended lead-in style).
+  const t = String(raw || '').replace(/^\s*bold\s+lead[- ]?in\s*:\s*/i, '');
   const ci = t.indexOf(':');
   if (ci > 0 && ci < 90) return `<strong>${_prEsc(t.slice(0, ci))}:</strong>${_prEsc(t.slice(ci + 1))}`;
   return _prEsc(t);
@@ -919,7 +925,7 @@ function _prPvRender() {
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Inter',-apple-system,sans-serif;background:#F5F3EE;color:#1F2A2B;line-height:1.6}
   .pp-hero{background:${bc};color:#fff;padding:34px 20px 30px;text-align:center}
-  .pp-logo{height:44px;margin-bottom:12px}
+  .pp-logo{height:44px;max-width:240px;object-fit:contain;margin-bottom:12px;background:#fff;padding:8px 14px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
   .pp-hero .pp-co{font-size:11px;letter-spacing:.24em;text-transform:uppercase;opacity:.85;font-weight:600}
   .pp-hero h1{font-size:22px;font-weight:800;margin-top:8px;letter-spacing:.02em}
   .pp-hero .pp-sub{font-size:13px;opacity:.8;margin-top:5px}
@@ -988,7 +994,7 @@ function _prPvRender() {
     ${sections.map((s, si) => _prPvSectionHtml(s, si, optCount)).join('')}
     ${sched.length ? `<div class="pp-section"><h2>Payment Schedule</h2>${sched.map(sp =>
       `<div class="pp-sched-row"><span>${esc(sp.label || 'Payment')}</span><strong>${Number(sp.pct || 0)}%${total ? ' — ' + money(total * Number(sp.pct || 0) / 100) : ''}</strong></div>`).join('')}</div>` : ''}
-    ${p.terms ? `<div class="pp-section"><h2>Terms</h2><p class="pp-body-text" style="font-size:11.5px">${esc(p.terms).replace(/\n/g, '<br>')}</p></div>` : ''}
+    ${p.terms ? `<div class="pp-section"><h2>Terms</h2><div class="pp-body-text gw-rt-view" style="font-size:11.5px">${typeof window._gwRichRender==='function' ? window._gwRichRender(p.terms) : esc(p.terms).replace(/\n/g, '<br>')}</div></div>` : ''}
     <div class="pp-actions">
       <div style="font-size:13px;font-weight:600;margin-bottom:7px">Ready to move forward?</div>
       <button class="pp-accept-btn" disabled style="opacity:.55">Accept Proposal</button>
@@ -1360,13 +1366,13 @@ function _prAiModal() {
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,28,26,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.innerHTML = `
   <div style="background:#fff;border-radius:14px;max-width:540px;width:100%;padding:24px;box-shadow:0 24px 64px rgba(0,0,0,.3)" onclick="event.stopPropagation()">
-    <div style="font-size:17px;font-weight:800;margin-bottom:4px">✨ Draft this proposal with AI</div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:4px">${(typeof gwIcon==='function')?gwIcon('sparkle',15,'currentColor'):''} Draft this proposal with AI</div>
     <div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">
       The AI will use ${hasLead ? '<strong>this lead\u2019s details, notes and recent communications</strong>' : 'the client info entered above'}${hasEst ? ' plus the <strong>linked estimate\u2019s services and pricing</strong>' : ''} to write a complete draft. Nothing is sent to the client — you review and edit first.
     </div>
     <label class="est-label">Tell the AI what you want (optional but recommended)</label>
     <textarea class="est-input" id="pr-ai-instructions" rows="5" style="resize:vertical;margin-bottom:8px" placeholder="Describe the document you want — a priced quote with 2 option tiers, a formal bid with project details and signature lines, a planning framework with investment ranges, an options menu with price ranges… e.g. 'Preliminary planning framework: patio, drainage and lighting areas with investment ranges, total range callout, no fixed pricing.'"></textarea>
-    <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-bottom:16px">⚠️ Applying the draft replaces the title, overview, sections, payment schedule and terms currently in the builder. Client info is kept.</div>
+    <div style="font-size:11px;color:var(--gw-text-subtle,#8A948C);margin-bottom:16px">${(typeof gwIcon==='function')?gwIcon('warning',12,'currentColor'):''} Applying the draft replaces the title, overview, sections, payment schedule and terms currently in the builder. Client info is kept.</div>
     <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
       <span id="pr-ai-status" style="margin-right:auto;font-size:12px;color:var(--gw-text-subtle,#8A948C)"></span>
       <button class="est-btn-secondary" onclick="document.getElementById('pr-ai-modal').remove()">Cancel</button>
@@ -1406,7 +1412,7 @@ async function _prAiGenerate() {
     if (d.terms) _prDraft.terms = d.terms;
     document.getElementById('pr-ai-modal')?.remove();
     _prRenderBuilder();
-    _prToast('AI draft ready ✨ — review the options and prices, then save & send', 'success');
+    _prToast('AI draft ready — review the options and prices, then save & send', 'success');
     // Scroll to overview so the user starts reviewing at the top of the content
     setTimeout(() => document.getElementById('pr-overview')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
   } catch (e) {

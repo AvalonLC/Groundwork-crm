@@ -112,6 +112,34 @@ const _UM_ROLE_DEFS_DEFAULT = [
     scope: { sales: 'all', ops: 'all', financial: 'all', people: 'all' }
   },
 
+  // ── 5b. DIVISION MANAGER (runs a division: full ops + team oversight) ─────
+  {
+    id: 'division_manager',
+    label: 'Division Manager',
+    color: '#3A7CA5',
+    description: 'Runs a division day to day: full operations, dispatch, crew management, time approval, ops reports, and employee visibility. No sales pipeline or financial access.',
+    defaultViews: ['today','fieldDashboard','myDashboard',
+      'scheduleBoard','dispatchBoard','recurringServices','crewView',
+      'workOrderList','workOrderDetail',
+      'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','toolsConsumables',
+      'timeTracker','opsReports','teamReports','approvalQueue','fieldMode','userManagement'],
+    capabilities: {
+      can_create_lead: false, can_edit_lead: false,
+      can_create_estimate: false, can_edit_estimate: false, can_send_estimate: false,
+      can_create_invoice: false, can_send_invoice: false, can_record_payment: false,
+      can_assign_schedule: true, can_dispatch_crews: true,
+      can_edit_work_order: true, can_mark_work_order_complete: true,
+      can_edit_time: true, can_approve_time: true,
+      can_manage_assets: true, can_manage_inventory: true,
+      can_manage_users: false, can_manage_roles: false,
+      can_manage_integrations: false, can_edit_system_settings: false,
+      can_delete_leads: false,
+      can_approve_requests: true, can_manage_automations: false,
+      can_view_audit_logs: false, can_manage_portal_access: false,
+    },
+    scope: { sales: 'none', ops: 'all', financial: 'none', people: 'crew' }
+  },
+
   // ── 3. REP (full field-sales default) ─────────────────────────────────────
   {
     id: 'rep',
@@ -524,6 +552,7 @@ const UM_ALL_VIEWS = [
   { key:'deposits',           label:'Deposits',                hub:'Financial',   kind:'page'   },
   { key:'statements',         label:'Statements',              hub:'Financial',   kind:'page'   },
   { key:'financialActivity',  label:'Activity',                hub:'Financial',   kind:'page'   },
+  { key:'gwStripe',           label:'Payment Processing',      hub:'Financial',   kind:'page'   },
 
   // ── OPERATIONS ─────────────────────────────────────────────────────────────
   { key:'scheduleBoard',      label:'Calendar',                hub:'Operations',  kind:'page'   },
@@ -536,6 +565,11 @@ const UM_ALL_VIEWS = [
   { key:'inventoryList',      label:'Inventory',               hub:'Operations',  kind:'page'   },
   { key:'toolsConsumables',   label:'Tools & Consumables',     hub:'Operations',  kind:'page'   },
   { key:'timeTracker',        label:'Time Tracker',            hub:'Operations',  kind:'page'   },
+  { key:'fieldMode',          label:'Field Mode',              hub:'Operations',  kind:'page'   },
+  { key:'fieldDashboard',     label:'Field Dashboard',         hub:'Operations',  kind:'page'   },
+  { key:'approvalQueue',      label:'Approval Queue',          hub:'Operations',  kind:'page'   },
+  { key:'gwRecurringPlans',   label:'Recurring Plans',         hub:'Operations',  kind:'page'   },
+  { key:'gwFieldReports',     label:'Field Reports',           hub:'Operations',  kind:'page'   },
 
   // ── REPORTS ────────────────────────────────────────────────────────────────
   { key:'revenueAdmin',       label:'Revenue',                 hub:'Reports',     kind:'report' },
@@ -551,6 +585,9 @@ const UM_ALL_VIEWS = [
   { key:'manager',            label:'Manager Tools',           hub:'Settings',    kind:'admin'  },
   { key:'systemConfig',       label:'System Config',           hub:'Settings',    kind:'admin'  },
   { key:'systemTemplates',    label:'Templates & Automations', hub:'Settings',    kind:'admin'  },
+  { key:'automationCenter',   label:'Automation Center',       hub:'Settings',    kind:'admin'  },
+  { key:'auditLog',           label:'Audit Log',               hub:'Settings',    kind:'admin'  },
+  { key:'portalAdmin',        label:'Client Portal Admin',     hub:'Settings',    kind:'admin'  },
 ];
 
 // ── Main entry point ───────────────────────────────────────────────────────────
@@ -559,8 +596,12 @@ function userManagement(tab) {
   const viewEl = document.getElementById('view');
   if (!viewEl) return;
 
-  // Only admins can access user management
-  if (!currentRep || currentRep.role !== 'admin') {
+  // Admins get full access; office managers get the people-management tabs
+  // (users / crews / onboarding) but NOT Roles & Permissions or Audit —
+  // matching the backend, where only admins may edit nav_perms and roles.
+  const _umIsAdmin = currentRep && currentRep.role === 'admin';
+  const _umIsOM    = currentRep && currentRep.role === 'office_manager';
+  if (!currentRep || (!_umIsAdmin && !_umIsOM)) {
     viewEl.innerHTML = `
       <div style="text-align:center;padding:64px 24px;margin-top:40px">
         <div style="width:48px;height:48px;background:#FAE8E4;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A2E20" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
@@ -571,14 +612,16 @@ function userManagement(tab) {
     return;
   }
 
-  const activeTab = tab || 'users';
+  let activeTab = tab || 'users';
+  // OM cannot open admin-only tabs even via deep link
+  if (_umIsOM && (activeTab === 'roles' || activeTab === 'audit')) activeTab = 'users';
   const tabs = [
     { id:'users',      label:'Team Members' },
     { id:'crews',      label:'Crews' },
     { id:'onboarding', label:'Onboarding' },
-    { id:'roles',      label:'Roles & Permissions' },
-    { id:'audit',      label:'Login Audit' }
-  ];
+    { id:'roles',      label:'Roles & Permissions', adminOnly:true },
+    { id:'audit',      label:'Login Audit',          adminOnly:true }
+  ].filter(t => _umIsAdmin || !t.adminOnly);
 
   viewEl.innerHTML = `
 <div class="eyebrow">Admin</div>
@@ -730,7 +773,7 @@ function umRenderUsers(container) {
       <div>
         <label class="um-label">Role (Access Level) *</label>
         <select id="um-f-role" class="um-input" onchange="window._umRoleChanged(this.value)">
-          ${UM_ROLE_DEFS.map(r => `<option value="${r.id}" ${(u?.role||'rep')===r.id?'selected':''}>${r.label}</option>`).join('')}
+          ${UM_ROLE_DEFS.filter(r => r.id !== 'admin' || (window.getCurrentRep && window.getCurrentRep()?.role === 'admin') || u?.role === 'admin').map(r => `<option value="${r.id}" ${(u?.role||'rep')===r.id?'selected':''}>${r.label}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -979,7 +1022,7 @@ function umRenderUsers(container) {
       <div>
         <label class="um-label">Role (Access Level) *</label>
         <select id="inv-f-role" class="um-input" onchange="window._umInvRoleChanged(this.value)">
-          ${UM_ROLE_DEFS.map(r => `<option value="${r.id}" ${r.id==='rep'?'selected':''}>${r.label}</option>`).join('')}
+          ${UM_ROLE_DEFS.filter(r => r.id !== 'admin' || (window.getCurrentRep && window.getCurrentRep()?.role === 'admin')).map(r => `<option value="${r.id}" ${r.id==='rep'?'selected':''}>${r.label}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -2060,12 +2103,14 @@ function umRenderRoles(container) {
 
   // Role group metadata for the visual role cards
   const ROLE_GROUP = {
-    office_manager: { group: 'Management', icon: '' },
-    rep:            { group: 'Sales',      icon: '' },
-    estimator:      { group: 'Sales',      icon: '' },
-    foreman:        { group: 'Field',      icon: '' },
-    laborer:        { group: 'Field',      icon: '' },
-    view_only:      { group: 'Other',      icon: '' },
+    office_manager:   { group: 'Management', icon: '' },
+    division_manager: { group: 'Management', icon: '' },
+    rep:              { group: 'Sales',      icon: '' },
+    estimator:        { group: 'Sales',      icon: '' },
+    foreman:          { group: 'Field',      icon: '' },
+    laborer:          { group: 'Field',      icon: '' },
+    mechanic:         { group: 'Field',      icon: '' },
+    view_only:        { group: 'Other',      icon: '' },
     // Legacy fallback
     field_supervisor: { group: 'Field',   icon: '' }
   };
@@ -2208,14 +2253,23 @@ function umRenderRoles(container) {
       <!-- Role group headers -->
       <tr style="background:#F8F9FC;border-bottom:1px solid #E5E9F0">
         <th class="rp-col-view" style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.08em;background:#F8F9FC">View</th>
-        <!-- Management group -->
-        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#8B6914;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #8B691420">Mgmt</th>
-        <!-- Sales group -->
-        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #2D7A5520">Sales</th>
-        <!-- Field group -->
-        <th colspan="2" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6B5EA8;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6B5EA820">Field</th>
-        <!-- Other -->
-        <th colspan="1" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:#6F7E6A;text-transform:uppercase;letter-spacing:.08em;border-left:2px solid #6F7E6A20">Other</th>
+        ${(() => {
+          // Build group header cells dynamically from the actual role order so
+          // colspans stay correct as roles are added/removed.
+          const GROUP_STYLE = { Management:'#8B6914', Sales:'#2D7A55', Field:'#6B5EA8', Other:'#6F7E6A' };
+          const cells = [];
+          let i = 0;
+          while (i < nonAdminRoles.length) {
+            const g = (ROLE_GROUP[nonAdminRoles[i].id] || {}).group || 'Other';
+            let span = 1;
+            while (i + span < nonAdminRoles.length && ((ROLE_GROUP[nonAdminRoles[i+span].id] || {}).group || 'Other') === g) span++;
+            const col = GROUP_STYLE[g] || '#6F7E6A';
+            const label = g === 'Management' ? 'Mgmt' : g;
+            cells.push(`<th colspan="${span}" style="text-align:center;padding:8px 4px;font-size:9px;font-weight:800;color:${col};text-transform:uppercase;letter-spacing:.08em;border-left:2px solid ${col}20">${label}</th>`);
+            i += span;
+          }
+          return cells.join('');
+        })()}
       </tr>
       <!-- Role name headers -->
       <tr style="background:#fff;border-bottom:2px solid #E5E9F0">
@@ -2345,6 +2399,10 @@ function umRenderRoles(container) {
     if (!p[roleId]) p[roleId] = [...effectivePerms(roleId)];
     if (enabled) { if (!p[roleId].includes(viewKey)) p[roleId].push(viewKey); }
     else { p[roleId] = p[roleId].filter(v => v !== viewKey); }
+    // Record the view universe at save time. canViewTab() treats the saved
+    // list as authoritative for these keys (a real revoke), while views added
+    // to the app AFTER this save still fall back to role defaults.
+    p.__knownViews = UM_ALL_VIEWS.map(v => v.key);
     saveNavPerms(p);
     // Update view count badge in header + card
     const th = document.querySelector(`th[data-role="${roleId}"] .rp-view-count`);
@@ -2357,6 +2415,7 @@ function umRenderRoles(container) {
     const views   = preset === 'full' ? ALL : preset === 'none' ? [] : COMPANY;
     const p = loadNavPerms();
     p[roleId] = [...views];
+    p.__knownViews = UM_ALL_VIEWS.map(v => v.key);
     saveNavPerms(p);
     const role = umRoleDef(roleId);
     const label = preset === 'full' ? 'Full Access' : preset === 'none' ? 'No Access' : 'Company Default';

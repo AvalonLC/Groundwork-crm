@@ -1,13 +1,15 @@
 // ── Groundwork CRM — Onboarding Wizard ───────────────────────────────────────
-// 6-step modal: welcome → business profile → first client → first estimate
-//               → payment setup teaser → done/launch
+// 9-step modal: welcome → business profile + logo → divisions → intake form
+//               → first client → first estimate → team → preferences
+//               (commission / signature / workspace) → done/launch
 // Triggered: first login after signup (onboarding_completed = 0)
-// Version: 20260711p48
+// Version: 20260720
 // ─────────────────────────────────────────────────────────────────────────────
 
 /* ── Industry seed data ─────────────────────────────────────────────────────── */
 const _onbSeeds = {
   landscaping: {
+    divisions: ['Landscape','Maintenance','Snow & Ice'],
     services: ['Lawn Mowing','Mulching & Bed Cleanup','Aeration & Seeding','Fertilization','Hedge Trimming','Leaf Removal','Irrigation Check'],
     estimateTitle: 'Spring Lawn Care Package',
     pipelineLabel: 'Site Walk Scheduled',
@@ -17,6 +19,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Set up recurring mowing schedules in the Recurring Plans section — clients love the predictability.',
   },
   excavation: {
+    divisions: ['Excavation','Grading','Hauling'],
     services: ['Site Clearing','Grading & Leveling','Trenching','Foundation Digging','Driveway Grading','Pond Excavation','Retaining Wall Prep'],
     estimateTitle: 'Site Preparation — Grading & Clear',
     pipelineLabel: 'Site Assessment',
@@ -26,6 +29,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Attach equipment hour logs to work orders for accurate job costing.',
   },
   hvac: {
+    divisions: ['Service','Installation','Maintenance Plans'],
     services: ['AC Tune-Up','Furnace Inspection','Duct Cleaning','Filter Replacement','Refrigerant Recharge','System Installation','Emergency Service'],
     estimateTitle: 'HVAC Maintenance Service Call',
     pipelineLabel: 'Diagnostic Scheduled',
@@ -35,6 +39,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Sell maintenance agreements — use Recurring Plans to auto-schedule seasonal tune-ups.',
   },
   plumbing: {
+    divisions: ['Service','Installation','Emergency'],
     services: ['Drain Cleaning','Water Heater Service','Leak Detection','Fixture Installation','Re-Pipe','Sewer Line Inspection','Emergency Call'],
     estimateTitle: 'Plumbing Service Estimate',
     pipelineLabel: 'Inspection Scheduled',
@@ -44,6 +49,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Add "Service Plan" upsells on every invoice — annual agreements drive predictable revenue.',
   },
   electrical: {
+    divisions: ['Residential','Commercial','Service Calls'],
     services: ['Panel Upgrade','Outlet Installation','Lighting Install','Surge Protection','EV Charger Install','Code Compliance Work','Emergency Service'],
     estimateTitle: 'Electrical Work Estimate',
     pipelineLabel: 'Assessment Scheduled',
@@ -53,6 +59,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Track permit numbers in the Work Order notes field for quick reference.',
   },
   painting: {
+    divisions: ['Interior','Exterior','Commercial'],
     services: ['Interior Painting','Exterior Painting','Cabinet Refinishing','Deck Staining','Power Washing','Drywall Repair & Paint','Commercial Painting'],
     estimateTitle: 'Painting Estimate',
     pipelineLabel: 'Walkthrough Scheduled',
@@ -62,6 +69,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Take before/after photos on every job — attach them to the estimate for client review.',
   },
   cleaning: {
+    divisions: ['Residential','Commercial','Specialty'],
     services: ['Standard Cleaning','Deep Clean','Move-In/Move-Out','Post-Construction','Window Cleaning','Carpet Cleaning','Commercial Cleaning'],
     estimateTitle: 'Cleaning Service Estimate',
     pipelineLabel: 'Walkthrough Scheduled',
@@ -71,6 +79,7 @@ const _onbSeeds = {
     tipText: 'Pro tip: Recurring cleanings are your best retention tool — set them up in Recurring Plans.',
   },
   home_services: {
+    divisions: ['Service','Installation'],
     services: ['Initial Consultation','Service Visit','Repair Work','Maintenance Check','Installation','Emergency Call','Follow-Up Visit'],
     estimateTitle: 'Service Estimate',
     pipelineLabel: 'Site Visit Scheduled',
@@ -88,7 +97,7 @@ function _onbSeed(type) {
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let _onbState = {
   step: 0,
-  totalSteps: 6,
+  totalSteps: 9,
   companyName: '',
   businessType: 'home_services',
   ownerName: '',
@@ -103,6 +112,11 @@ let _onbState = {
   estimateValue: '',
   crewCount: 1,
   divisionCount: 1,
+  logoDataUrl: '',
+  divisions: [],          // [{label}] — named by the company
+  intakeCategories: [],   // [string] — project categories for the Add Lead form
+  commissionEnabled: false,
+  emailSignature: '',
 };
 
 /* ── Entry: check and launch ──────────────────────────────────────────────────
@@ -120,7 +134,7 @@ window.gwCheckOnboarding = async function() {
     if (!rep || rep.role !== 'admin') return;
     if (rep.company_id === 'groundwork_platform') return; // platform owner: no tenant onboarding
     // Treat missing field (undefined) as completed — only show for explicit 0
-    if (co.onboarding_completed !== 0 || co.onboarding_step >= 6 || co.phone || co.address_line1) {
+    if (co.onboarding_completed !== 0 || co.onboarding_step >= 9 || co.phone || co.address_line1) {
       // Wizard done (or existing account) → show Getting Started checklist launcher instead
       try { _gwGettingStartedInit(); } catch(e) {}
       return;
@@ -171,13 +185,16 @@ function _onbShowStep(step) {
   const steps = [
     _onbStep0_Welcome,
     _onbStep1_BusinessProfile,
-    _onbStep2_FirstClient,
-    _onbStep3_FirstEstimate,
-    _onbStep4_TeamSetup,
-    _onbStep5_Done,
+    _onbStep2_Divisions,
+    _onbStep3_IntakeForm,
+    _onbStep4_FirstClient,
+    _onbStep5_FirstEstimate,
+    _onbStep6_TeamSetup,
+    _onbStep7_Preferences,
+    _onbStep8_Done,
   ];
 
-  const fn = steps[step] || _onbStep5_Done;
+  const fn = steps[step] || _onbStep8_Done;
   overlay.innerHTML = fn();
 
   // Save progress to server (non-blocking)
@@ -231,10 +248,11 @@ function _onbStep0_Welcome() {
       <p class="onb-welcome-body">You're moments away from your first client, estimate, and invoice. Let's get your account set up — it takes about 3 minutes.</p>
     </div>
     <div class="onb-welcome-checklist">
-      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Set up your company profile</div>
-      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Add your first client</div>
-      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Send your first estimate</div>
-      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Configure your team</div>
+      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Set up your company profile and logo</div>
+      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Name your divisions</div>
+      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Customize your lead intake form</div>
+      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Add your first client and estimate</div>
+      <div class="onb-check-item">${gwIcon('check-circle',18,'#2D7A55')} Configure team, commission, and email</div>
     </div>
     <div class="onb-tip-box">${gwIcon('idea',16,'#8B6914')} ${seed.tipText}</div>
     ${_onbFooter(-1, "Let's Go", '_onbShowStep(1)')}
@@ -292,10 +310,36 @@ function _onbStep1_BusinessProfile() {
           <input class="onb-input" type="text" id="onbState" value="${_escOnb(_onbState.state)}" placeholder="VA" maxlength="2">
         </div>
       </div>
+      <div class="onb-field-group">
+        <label class="onb-label">Company Logo <span style="text-transform:none;font-weight:400">(optional — appears on estimates and invoices)</span></label>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div id="onbLogoPreview" style="width:56px;height:56px;border-radius:10px;border:1.5px dashed #D1D5DB;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F9FAFB;flex-shrink:0">
+            ${_onbState.logoDataUrl ? `<img src="${_onbState.logoDataUrl}" style="width:100%;height:100%;object-fit:contain">` : `<span style="font-size:10px;color:#9CA3AF;text-align:center;line-height:1.3">No logo</span>`}
+          </div>
+          <div style="flex:1">
+            <input type="file" id="onbLogoFile" accept="image/*" style="display:none" onchange="_onbLogoPicked(this)">
+            <button type="button" class="onb-btn-ghost" onclick="document.getElementById('onbLogoFile').click()" style="font-size:12px">Upload Logo</button>
+            <div style="font-size:11px;color:#9CA3AF;margin-top:4px">PNG or JPG, up to 500KB. You can change it anytime in Settings.</div>
+          </div>
+        </div>
+      </div>
     </div>
     ${_onbFooter(0, 'Save & Continue', '_onbSaveStep1()')}
   </div>`;
 }
+
+window._onbLogoPicked = function(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (file.size > 500 * 1024) { _onbFlash('Logo too large — max 500KB. Try a smaller image.'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    _onbState.logoDataUrl = e.target.result;
+    const prev = document.getElementById('onbLogoPreview');
+    if (prev) prev.innerHTML = '<img src="' + _onbState.logoDataUrl + '" style="width:100%;height:100%;object-fit:contain">';
+  };
+  reader.readAsDataURL(file);
+};
 
 window._onbUpdateType = function() {
   _onbState.businessType = document.getElementById('onbBusinessType')?.value || 'home_services';
@@ -314,18 +358,20 @@ window._onbSaveStep1 = async function() {
 
   // Save to D1
   try {
+    const payload = {
+      name: _onbState.companyName,
+      business_type: _onbState.businessType,
+      phone: _onbState.phone,
+      address_line1: _onbState.address,
+      address_city: _onbState.city,
+      address_state: _onbState.state,
+      onboarding_step: 2
+    };
+    if (_onbState.logoDataUrl) payload.logo_url = _onbState.logoDataUrl;
     await fetch('/api/company/branding', {
       method: 'PUT', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: _onbState.companyName,
-        business_type: _onbState.businessType,
-        phone: _onbState.phone,
-        address_line1: _onbState.address,
-        address_city: _onbState.city,
-        address_state: _onbState.state,
-        onboarding_step: 2
-      })
+      body: JSON.stringify(payload)
     });
     // Update page title / company name display
     if (window._companyName !== undefined) window._companyName = _onbState.companyName;
@@ -335,10 +381,141 @@ window._onbSaveStep1 = async function() {
   _onbShowStep(2);
 };
 
-/* ── Step 2: First Client ──────────────────────────────────────────────────── */
-function _onbStep2_FirstClient() {
+/* ── Step 2: Divisions — name and create your own ─────────────────────────── */
+function _onbStep2_Divisions() {
+  const seed = _onbSeed(_onbState.businessType);
+  const existing = _onbState.divisions && _onbState.divisions.length
+    ? _onbState.divisions.map(d => d.label || d)
+    : (seed.divisions || ['Service']);
   return `<div class="onb-modal">
     ${_onbProgressBar(2)}
+    ${_onbHeader('Your Divisions', 'Divisions organize your pipeline, schedule, and financial reports. Name as many as you need — you can change them anytime in Settings.')}
+    <div class="onb-body">
+      <div id="onbDivList">
+        ${existing.map(label => _onbDivRowHtml(label)).join('')}
+      </div>
+      <button type="button" class="onb-btn-ghost" onclick="_onbAddDivRow()" style="font-size:12px;margin-top:2px">+ Add Division</button>
+      <div class="onb-info-box" style="margin-top:14px">
+        ${gwIcon('info',14,'#5B7FA6')}
+        <span>Examples: a landscaper might use <strong>Landscape, Maintenance, Snow &amp; Ice</strong>. An HVAC company might use <strong>Service, Installation, Maintenance Plans</strong>.</span>
+      </div>
+    </div>
+    ${_onbFooter(1, 'Save Divisions', '_onbSaveStep2Divisions()', '_onbShowStep(3)')}
+  </div>`;
+}
+
+function _onbDivRowHtml(label) {
+  return '<div class="onb-div-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+    + '<input class="onb-input onb-div-name" type="text" value="' + _escOnb(label) + '" placeholder="Division name" style="flex:1">'
+    + '<button type="button" onclick="this.parentNode.remove()" style="background:none;border:1.5px solid #E5E7EB;border-radius:8px;color:#C97B6A;font-size:12px;font-weight:700;padding:8px 12px;cursor:pointer;font-family:inherit">Remove</button>'
+    + '</div>';
+}
+
+window._onbAddDivRow = function() {
+  const wrap = document.getElementById('onbDivList');
+  if (!wrap) return;
+  wrap.insertAdjacentHTML('beforeend', _onbDivRowHtml(''));
+  const rows = wrap.querySelectorAll('.onb-div-name');
+  if (rows.length) rows[rows.length - 1].focus();
+};
+
+window._onbSaveStep2Divisions = async function() {
+  const names = Array.from(document.querySelectorAll('#onbDivList .onb-div-name'))
+    .map(i => i.value.trim()).filter(Boolean);
+  if (names.length === 0) { _onbFlash('Name at least one division'); return; }
+  const palette = ['#2D7A55','#4D8A86','#5B7A9D','#8B6914','#7A4D8A','#A65B5B','#4D7A8A','#6B8A4D'];
+  const seen = {};
+  const divisions = names.map((label, i) => {
+    let key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('div_' + (i + 1));
+    if (seen[key]) key = key + '_' + (i + 1);
+    seen[key] = true;
+    return { key, label, color: palette[i % palette.length] };
+  });
+  _onbState.divisions = divisions;
+  try { localStorage.setItem('gwCompanyDivisions', JSON.stringify(divisions)); } catch(e) {}
+  // Persist to D1 settings + division_count on company record
+  try {
+    await fetch('/api/settings', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'company_divisions', value: JSON.stringify(divisions) })
+    });
+    await fetch('/api/company/branding', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ division_count: divisions.length, onboarding_step: 3 })
+    });
+  } catch(e) {}
+  _onbShowStep(3);
+};
+
+/* ── Step 3: Lead Intake Form — fit it to your business ───────────────────── */
+function _onbStep3_IntakeForm() {
+  const seed = _onbSeed(_onbState.businessType);
+  const existing = _onbState.intakeCategories && _onbState.intakeCategories.length
+    ? _onbState.intakeCategories
+    : (seed.services || []).slice(0, 6);
+  return `<div class="onb-modal">
+    ${_onbProgressBar(3)}
+    ${_onbHeader('Your Lead Intake Form', 'When a lead comes in, your reps pick a project category. Set the categories that match your business.')}
+    <div class="onb-body">
+      <div class="onb-field-group">
+        <label class="onb-label">Project Categories <span style="text-transform:none;font-weight:400">(one per line)</span></label>
+        <textarea class="onb-input" id="onbIntakeCats" rows="6" style="resize:vertical;line-height:1.6">${existing.map(_escOnb).join('\n')}</textarea>
+      </div>
+      <div class="onb-services-preview">
+        <div class="onb-services-label">${gwIcon('list',13,'#6B7280')} Suggestions for ${_onbState.businessType.replace(/_/g,' ')}:</div>
+        <div class="onb-services-chips">
+          ${(seed.services || []).map(s => `<span class="onb-service-chip" onclick="_onbAddIntakeCat('${_escOnb(s).replace(/'/g, '&#39;')}')">${_escOnb(s)}</span>`).join('')}
+        </div>
+      </div>
+      <div class="onb-info-box">
+        ${gwIcon('info',14,'#5B7FA6')}
+        <span>You can also customize work types, lead sources, and service lines later in <strong>Admin \u2192 Settings \u2192 Lead Intake Form</strong>.</span>
+      </div>
+    </div>
+    ${_onbFooter(2, 'Save Intake Form', '_onbSaveStep3Intake()', '_onbShowStep(4)')}
+  </div>`;
+}
+
+window._onbAddIntakeCat = function(cat) {
+  const ta = document.getElementById('onbIntakeCats');
+  if (!ta) return;
+  const lines = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.includes(cat)) { lines.push(cat); ta.value = lines.join('\n'); }
+};
+
+window._onbSaveStep3Intake = async function() {
+  const ta = document.getElementById('onbIntakeCats');
+  const lines = (ta ? ta.value : '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (lines.length === 0) { _onbFlash('Add at least one project category'); return; }
+  _onbState.intakeCategories = lines;
+  const cfg = {
+    categories: lines.map(l => ({ v: l, short: l })),
+    workTypes: lines.map(l => ({ v: l.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), label: l })),
+    leadSources: [],
+    serviceLines: (_onbState.divisions || []).map(d => d.label)
+  };
+  try { localStorage.setItem('gwIntakeConfig', JSON.stringify(cfg)); } catch(e) {}
+  try {
+    await fetch('/api/settings', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'company_intake_config', value: JSON.stringify(cfg) })
+    });
+    await fetch('/api/company/branding', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ onboarding_step: 4 })
+    });
+  } catch(e) {}
+  _onbShowStep(4);
+};
+
+/* ── Step 4: First Client ──────────────────────────────────────────────────── */
+function _onbStep4_FirstClient() {
+  return `<div class="onb-modal">
+    ${_onbProgressBar(4)}
     ${_onbHeader('Add Your First Client', 'You can import a full CSV list later — start with one to see how it works.')}
     <div class="onb-body">
       <div class="onb-field-group">
@@ -360,11 +537,11 @@ function _onbStep2_FirstClient() {
         <span>Already have a client list? After setup, go to <strong>Clients → Import CSV</strong> to bulk-import hundreds of clients at once.</span>
       </div>
     </div>
-    ${_onbFooter(1, 'Add Client', '_onbSaveStep2()', '_onbShowStep(3)')}
+    ${_onbFooter(3, 'Add Client', '_onbSaveStep4Client()', '_onbShowStep(5)')}
   </div>`;
 }
 
-window._onbSaveStep2 = async function() {
+window._onbSaveStep4Client = async function() {
   _onbState.clientName  = document.getElementById('onbClientName')?.value?.trim() || '';
   _onbState.clientEmail = document.getElementById('onbClientEmail')?.value?.trim() || '';
   _onbState.clientPhone = document.getElementById('onbClientPhone')?.value?.trim() || '';
@@ -388,14 +565,14 @@ window._onbSaveStep2 = async function() {
     });
     _onbState._clientId = id;
   } catch(e) {}
-  _onbShowStep(3);
+  _onbShowStep(5);
 };
 
-/* ── Step 3: First Estimate ───────────────────────────────────────────────── */
-function _onbStep3_FirstEstimate() {
+/* ── Step 5: First Estimate ───────────────────────────────────────────────── */
+function _onbStep5_FirstEstimate() {
   const seed = _onbSeed(_onbState.businessType);
   return `<div class="onb-modal">
-    ${_onbProgressBar(3)}
+    ${_onbProgressBar(5)}
     ${_onbHeader('Create Your First Estimate', 'Send a professional proposal to your first client — takes 30 seconds.')}
     <div class="onb-body">
       <div class="onb-field-group">
@@ -420,7 +597,7 @@ function _onbStep3_FirstEstimate() {
         <span>Your client gets a link to view, accept, or request changes online. You'll be notified instantly.</span>
       </div>
     </div>
-    ${_onbFooter(2, 'Create Estimate', '_onbSaveStep3()', '_onbShowStep(4)')}
+    ${_onbFooter(4, 'Create Estimate', '_onbSaveStep5Estimate()', '_onbShowStep(6)')}
   </div>`;
 }
 
@@ -429,7 +606,7 @@ window._onbSetTitle = function(title) {
   if (el) { el.value = title; _onbState.estimateTitle = title; }
 };
 
-window._onbSaveStep3 = async function() {
+window._onbSaveStep5Estimate = async function() {
   _onbState.estimateTitle = document.getElementById('onbEstTitle')?.value?.trim() || '';
   _onbState.estimateValue = document.getElementById('onbEstValue')?.value || '';
 
@@ -466,30 +643,26 @@ window._onbSaveStep3 = async function() {
     });
     _onbState._estimateId = id;
   } catch(e) {}
-  _onbShowStep(4);
+  _onbShowStep(6);
 };
 
-/* ── Step 4: Team Setup ───────────────────────────────────────────────────── */
-function _onbStep4_TeamSetup() {
+/* ── Step 6: Team Setup ───────────────────────────────────────────────────── */
+function _onbStep6_TeamSetup() {
   const seed = _onbSeed(_onbState.businessType);
   return `<div class="onb-modal">
-    ${_onbProgressBar(4)}
+    ${_onbProgressBar(6)}
     ${_onbHeader('Your Team', 'Tell us about the size of your operation — we\'ll configure Groundwork for you.')}
     <div class="onb-body">
-      <div class="onb-row2">
-        <div class="onb-field-group">
-          <label class="onb-label">Number of ${seed.crewLabel}s</label>
-          <select class="onb-select" id="onbCrewCount">
-            ${[1,2,3,4,5,'6-10','10+'].map(n => `<option value="${n}" ${_onbState.crewCount==n?'selected':''}>${n} ${seed.crewLabel}${n!==1?'s':''}</option>`).join('')}
-          </select>
-        </div>
-        <div class="onb-field-group">
-          <label class="onb-label">Service Divisions</label>
-          <select class="onb-select" id="onbDivisionCount">
-            ${[1,2,3,4,5,'5+'].map(n => `<option value="${n}" ${_onbState.divisionCount==n?'selected':''}>${n} Division${n!==1?'s':''}</option>`).join('')}
-          </select>
-        </div>
+      <div class="onb-field-group">
+        <label class="onb-label">Number of ${seed.crewLabel}s</label>
+        <select class="onb-select" id="onbCrewCount">
+          ${[1,2,3,4,5,'6-10','10+'].map(n => `<option value="${n}" ${_onbState.crewCount==n?'selected':''}>${n} ${seed.crewLabel}${n!==1?'s':''}</option>`).join('')}
+        </select>
       </div>
+      ${(_onbState.divisions || []).length ? `<div class="onb-field-group">
+        <label class="onb-label">Your Divisions</label>
+        <div class="onb-services-chips">${_onbState.divisions.map(d => `<span class="onb-service-chip" style="cursor:default">${_escOnb(d.label)}</span>`).join('')}</div>
+      </div>` : ''}
       <div class="onb-invite-note">
         <div class="onb-invite-title">${gwIcon('user-plus',16,'#2D7A55')} Invite Your Team</div>
         <p>After setup, go to <strong>Admin → User Management</strong> to invite your ${seed.crewLabel.toLowerCase()}s and office staff. They'll get an email with login instructions.</p>
@@ -517,41 +690,40 @@ function _onbStep4_TeamSetup() {
         </div>
       </div>
     </div>
-    ${_onbFooter(3, 'Continue', '_onbSaveStep4()')}
+    ${_onbFooter(5, 'Continue', '_onbSaveStep6Team()')}
   </div>`;
 }
 
-window._onbSaveStep4 = async function() {
-  _onbState.crewCount     = document.getElementById('onbCrewCount')?.value || 1;
-  _onbState.divisionCount = document.getElementById('onbDivisionCount')?.value || 1;
+window._onbSaveStep6Team = async function() {
+  _onbState.crewCount = document.getElementById('onbCrewCount')?.value || 1;
   try {
     await fetch('/api/company/branding', {
       method: 'PUT', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         crew_count:     parseInt(_onbState.crewCount) || 1,
-        division_count: parseInt(_onbState.divisionCount) || 1,
-        onboarding_step: 5
+        division_count: (_onbState.divisions || []).length || parseInt(_onbState.divisionCount) || 1,
+        onboarding_step: 7
       })
     });
   } catch(e) {}
-  // Platform-defined custom questions come before the Done screen (if any)
+  // Platform-defined custom questions come before Preferences (if any)
   const _cs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
   if (_cs.length) _onbShowCustomStep(0);
-  else _onbShowStep(5);
+  else _onbShowStep(7);
 };
 
 /* ── Custom question steps (defined in Platform Admin → Onboarding) ───────── */
 function _onbShowCustomStep(idx) {
   const customs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
   const step = customs[idx];
-  if (!step) { _onbShowStep(5); return; }
+  if (!step) { _onbShowStep(7); return; }
   let questions = []; try { questions = JSON.parse(step.fields||'[]'); } catch {}
 
   const overlay = _onbCreateOverlay();
   document.body.appendChild(overlay);
   overlay.innerHTML = `<div class="onb-modal">
-    ${_onbProgressBar(4)}
+    ${_onbProgressBar(6)}
     ${_onbHeader(step.title || 'A few quick questions', step.description || 'This helps us tailor Groundwork to your business.')}
     <div class="onb-body">
       ${questions.map((q,i) => `
@@ -562,7 +734,7 @@ function _onbShowCustomStep(idx) {
           : `<input class="onb-input" id="onbCQ_${i}" placeholder="Your answer…">`}
       </div>`).join('')}
     </div>
-    ${_onbFooter(4, idx < customs.length - 1 ? 'Continue' : 'Almost Done', `_onbSaveCustomStep(${idx})`, `_onbSkipCustomStep(${idx})`)}
+    ${_onbFooter(6, idx < customs.length - 1 ? 'Continue' : 'Almost Done', `_onbSaveCustomStep(${idx})`, `_onbSkipCustomStep(${idx})`)}
   </div>`;
 }
 
@@ -587,19 +759,91 @@ window._onbSaveCustomStep = async function(idx) {
     }
   }
   if (idx < customs.length - 1) _onbShowCustomStep(idx + 1);
-  else _onbShowStep(5);
+  else _onbShowStep(7);
 };
 window._onbSkipCustomStep = function(idx) {
   const customs = (_onbState.customSteps || []).filter(s => { try { return JSON.parse(s.fields||'[]').length > 0 } catch { return false } });
   if (idx < customs.length - 1) _onbShowCustomStep(idx + 1);
-  else _onbShowStep(5);
+  else _onbShowStep(7);
 };
 
-/* ── Step 5: Done / Launch ─────────────────────────────────────────────────── */
-function _onbStep5_Done() {
+/* ── Step 7: Preferences — commission, email signature, workspace ────────── */
+function _onbStep7_Preferences() {
+  return `<div class="onb-modal">
+    ${_onbProgressBar(7)}
+    ${_onbHeader('Your Preferences', 'Commission tracking, email signature, and workspace connection — all optional, all changeable later in Settings.')}
+    <div class="onb-body">
+      <div style="padding:14px;background:#F9FAFB;border:1.5px solid #E5E7EB;border-radius:12px;margin-bottom:14px">
+        <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer">
+          <input type="checkbox" id="onbCommissionEnabled" ${_onbState.commissionEnabled ? 'checked' : ''} style="width:18px;height:18px;margin-top:2px;accent-color:#2D7A55;cursor:pointer">
+          <span>
+            <span style="display:block;font-size:14px;font-weight:700;color:#1C3A2B">Track sales commission</span>
+            <span style="display:block;font-size:12px;color:#6B7280;margin-top:2px;line-height:1.5">Automatically calculate rep commission on sold jobs. Rates and tiers are configured in Admin → Settings → Commission Rules.</span>
+          </span>
+        </label>
+      </div>
+      <div class="onb-field-group">
+        <label class="onb-label">Email Signature <span style="text-transform:none;font-weight:400">(optional — added to emails sent from Groundwork)</span></label>
+        <textarea class="onb-input" id="onbEmailSignature" rows="4" style="resize:vertical;line-height:1.5" placeholder="Your name, company, and phone">${_escOnb(_onbState.emailSignature)}</textarea>
+      </div>
+      <div style="padding:14px;background:#F0FAF4;border:1.5px solid #A7D7BC;border-radius:12px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700;color:#1C3A2B;margin-bottom:4px">${gwIcon('email',15,'#2D7A55')} Connect Google Workspace</div>
+        <p style="font-size:12.5px;color:#374151;line-height:1.55;margin:0 0 10px">Send email and sync your calendar right from Groundwork. Connect now or later in <strong>Admin → Integrations</strong>.</p>
+        <button type="button" class="onb-btn-ghost" style="font-size:12px" onclick="_onbConnectWorkspace()">Connect Google</button>
+        <span id="onbWsStatus" style="font-size:11.5px;color:#2D7A55;font-weight:700;margin-left:8px"></span>
+      </div>
+    </div>
+    ${_onbFooter(6, 'Save & Continue', '_onbSaveStep7Preferences()', '_onbShowStep(8)')}
+  </div>`;
+}
+
+window._onbConnectWorkspace = async function() {
+  const st = document.getElementById('onbWsStatus');
+  if (typeof googleOAuthConnect === 'function') {
+    try {
+      if (st) st.textContent = 'Opening Google…';
+      await googleOAuthConnect();
+      if (st) st.textContent = (typeof isGoogleConnected === 'function' && isGoogleConnected()) ? 'Connected' : '';
+    } catch(e) { if (st) st.textContent = ''; }
+  } else {
+    if (st) st.textContent = 'Available after setup in Admin → Integrations';
+  }
+};
+
+window._onbSaveStep7Preferences = async function() {
+  _onbState.commissionEnabled = !!document.getElementById('onbCommissionEnabled')?.checked;
+  _onbState.emailSignature = document.getElementById('onbEmailSignature')?.value || '';
+  try {
+    // Commission preference — company-level setting
+    await fetch('/api/settings', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'commission_enabled', value: _onbState.commissionEnabled ? '1' : '0' })
+    });
+    try { localStorage.setItem('gwCommissionEnabled', _onbState.commissionEnabled ? '1' : '0'); } catch(e) {}
+    // Email signature — saved on the admin's own rep record
+    const rep = window._d1SessionRep;
+    if (_onbState.emailSignature && rep && rep.id) {
+      await fetch('/api/reps/' + encodeURIComponent(rep.id), {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_signature: _onbState.emailSignature })
+      });
+    }
+    await fetch('/api/company/branding', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ onboarding_step: 8 })
+    });
+  } catch(e) {}
+  _onbShowStep(8);
+};
+
+/* ── Step 8: Done / Launch ─────────────────────────────────────────────────── */
+function _onbStep8_Done() {
   const seed = _onbSeed(_onbState.businessType);
   return `<div class="onb-modal onb-done-modal">
-    ${_onbProgressBar(5)}
+    ${_onbProgressBar(8)}
     <div class="onb-done-hero">
       <div class="onb-done-icon">${gwIcon('check-circle',64,'#2D7A55')}</div>
       <h1 class="onb-done-title">You're all set!</h1>
@@ -608,7 +852,10 @@ function _onbStep5_Done() {
     <div class="onb-done-summary">
       ${_onbState.clientName ? `<div class="onb-done-item">${gwIcon('user',16,'#2D7A55')} Client <strong>${_escOnb(_onbState.clientName)}</strong> added</div>` : ''}
       ${_onbState.estimateTitle ? `<div class="onb-done-item">${gwIcon('estimate',16,'#5B7FA6')} Estimate <strong>"${_escOnb(_onbState.estimateTitle)}"</strong> created as draft</div>` : ''}
-      <div class="onb-done-item">${gwIcon('company',16,'#8B6914')} Company profile saved</div>
+      <div class="onb-done-item">${gwIcon('company',16,'#8B6914')} Company profile saved${_onbState.logoDataUrl ? ' with logo' : ''}</div>
+      ${(_onbState.divisions || []).length ? `<div class="onb-done-item">${gwIcon('building',16,'#2D7A55')} ${_onbState.divisions.length} division${_onbState.divisions.length > 1 ? 's' : ''} created: <strong>${_onbState.divisions.map(d => _escOnb(d.label)).join(', ')}</strong></div>` : ''}
+      ${(_onbState.intakeCategories || []).length ? `<div class="onb-done-item">${gwIcon('checklist',16,'#4D8A86')} Lead intake form customized (${_onbState.intakeCategories.length} categories)</div>` : ''}
+      ${_onbState.commissionEnabled ? `<div class="onb-done-item">${gwIcon('check-circle',16,'#8B6914')} Commission tracking enabled</div>` : ''}
       <div class="onb-done-item">${gwIcon('check-circle',16,'#4D8A86')} Account ready for ${seed.crewLabel.toLowerCase()} invites</div>
     </div>
     <div class="onb-done-cta">
@@ -636,17 +883,30 @@ function _onbStep5_Done() {
 }
 
 window._onbFinish = async function(view) {
-  // Mark onboarding complete
-  try {
-    await fetch('/api/company/branding', {
-      method: 'PUT', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ onboarding_completed: 1, onboarding_step: 6 })
-    });
-  } catch(e) {}
+  // Mark onboarding complete — MUST persist. Retry once on failure, verify
+  // response, and never let UI/AI side effects block or mask the save.
+  let saved = false;
+  for (let attempt = 0; attempt < 2 && !saved; attempt++) {
+    try {
+      const r = await fetch('/api/company/branding', {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboarding_completed: 1, onboarding_step: 9 })
+      });
+      saved = r.ok;
+    } catch(e) { saved = false; }
+    if (!saved && attempt === 0) await new Promise(res => setTimeout(res, 800));
+  }
+  if (!saved) {
+    // Last resort: fire-and-forget beacon-style retry after navigation, and
+    // tell the user rather than silently losing the completion.
+    try { setTimeout(() => { fetch('/api/company/branding', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ onboarding_completed: 1, onboarding_step: 9 }) }).catch(()=>{}); }, 3000); } catch(e) {}
+    try { _onbFlash('Saving your setup progress hit a network snag — retrying in the background.'); } catch(e) {}
+  }
   document.getElementById('onb-overlay')?.remove();
   if (typeof show === 'function') show(view);
-  // Hand off to the AI copilot: celebrate + surface the Getting Started launcher
+  // Side effects (celebration, launcher) are decorative — isolated so they can
+  // never block or throw into the save path above.
   try {
     if (window.gwCopilot) window.gwCopilot.confetti(36);
     setTimeout(() => { try { _gwGettingStartedInit(); } catch(e) {} }, 1500);
@@ -772,6 +1032,9 @@ function _escOnb(s) {
 Shown to tenant admins after the wizard until every item is done (or dismissed
 for the session). Items auto-detect via /api/onboarding/checklist. ────────── */
 async function _gwGettingStartedInit() {
+  // Groundwork AI orb supersedes the old floating launcher — it owns the
+  // bottom-right corner and exposes the checklist in its Setup tab.
+  if (window.gwAI && typeof window.gwAI.open === 'function') { try { window.gwAI.noteSetupPending(); } catch(e) {} return; }
   if (window._gwGSDismissed || document.getElementById('gwGSLauncher')) return;
   if (sessionStorage.getItem('gwGSDismissed')) return;
   let data;
@@ -786,7 +1049,7 @@ async function _gwGettingStartedInit() {
 
   const btn = document.createElement('button');
   btn.id = 'gwGSLauncher';
-  btn.innerHTML = `🚀 Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${data.done}/${data.total}</span>`;
+  btn.innerHTML = `${(typeof gwIcon==='function')?gwIcon('rocket',13,'currentColor'):''} Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${data.done}/${data.total}</span>`;
   btn.style.cssText = 'position:fixed;bottom:22px;right:22px;z-index:8000;background:#2D7A55;color:#fff;border:none;border-radius:26px;padding:12px 20px;font-size:13.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 24px rgba(29,58,43,.35);font-family:inherit;display:flex;align-items:center;transition:transform .15s';
   btn.onmouseover = () => btn.style.transform = 'translateY(-2px)';
   btn.onmouseout = () => btn.style.transform = '';
@@ -831,13 +1094,14 @@ async function _gwGSOpenPanel() {
         <div style="font-size:11.5px;color:#6B7280;margin-top:2px">${_escOnb(it.description||'')}</div>
       </div>
       ${!it.done ? `<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-items:stretch">
-        ${hasTour ? `<button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.startTour('${_escOnb(it.id)}')" style="background:#2D7A55;border:none;color:#fff;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✨ Show me</button>` : ''}
+        ${hasTour ? `<button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.startTour('${_escOnb(it.id)}')" style="background:#2D7A55;border:none;color:#fff;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${(typeof gwIcon==='function')?gwIcon('sparkle',12,'currentColor'):''} Show me</button>` : ''}
         ${it.view ? `<button onclick="document.getElementById('gwGSPanel').remove();if(typeof show==='function')show('${_escOnb(it.view)}')" style="background:#F0FAF4;border:1.5px solid #2D7A5533;color:#2D7A55;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${_escOnb(it.cta||'Open')}</button>` : ''}
-      </div>` : ''}
+        <button data-gs-done="${_escOnb(it.id)}" onclick="window._gwGSMarkDone('${_escOnb(it.id)}',true,this)" style="background:#fff;border:1.5px solid #D1D5DB;color:#6B7280;font-size:11px;font-weight:800;padding:6px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap">Mark done</button>
+      </div>` : (it.manual_done && !it.auto_done ? `<button data-gs-done="${_escOnb(it.id)}" onclick="window._gwGSMarkDone('${_escOnb(it.id)}',false,this)" style="background:none;border:none;color:#9CA3AF;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;text-decoration:underline;flex-shrink:0">Undo</button>` : '')}
     </div>`;}).join('')}
   </div>
   ${window.gwCopilot ? `<div style="padding:11px 16px;background:#F7F9F7;border-top:1px solid #EDEDE8">
-    <button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.openChat()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1C3A2B,#2D7A55);border:none;color:#fff;font-size:12.5px;font-weight:800;padding:11px;border-radius:11px;cursor:pointer;font-family:inherit">✨ Ask Groundwork AI — I'll walk you through it</button>
+    <button onclick="document.getElementById('gwGSPanel').remove();window.gwCopilot.openChat()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#1C3A2B,#2D7A55);border:none;color:#fff;font-size:12.5px;font-weight:800;padding:11px;border-radius:11px;cursor:pointer;font-family:inherit">${(typeof gwIcon==='function')?gwIcon('sparkle',14,'currentColor'):''} Ask Groundwork AI — I'll walk you through it</button>
   </div>` : ''}`;
   document.body.appendChild(panel);
 }
@@ -848,6 +1112,53 @@ window._gwGSDismiss = function() {
   document.getElementById('gwGSPanel')?.remove();
   document.getElementById('gwGSLauncher')?.remove();
 };
-window.gwGettingStarted = _gwGSOpenPanel;
 
-console.log('[Groundwork] onboarding.js loaded v20260718t26');
+/* Shared checklist persistence — THE canonical "Done" saver.
+   Reliable by design: optimistic UI, disabled-while-saving, one automatic
+   retry, verified server response, revert + message on true failure. Used by
+   both the legacy GS panel and the Groundwork AI Setup tab. */
+window._gwGSPersistDone = async function(stepId, done) {
+  const send = () => fetch('/api/onboarding/checklist/' + encodeURIComponent(stepId), {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ done: !!done })
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await send();
+      if (r.ok) {
+        const raw = await r.json().catch(() => null);
+        const d = raw && raw.data ? raw.data : raw;
+        // Verify the server acknowledged the exact state we asked for
+        if (d && typeof d.done === 'boolean') return d.done === !!done;
+        return true;
+      }
+    } catch(e) {}
+    if (attempt === 0) await new Promise(res => setTimeout(res, 700));
+  }
+  return false;
+};
+
+window._gwGSMarkDone = async function(stepId, done, btn) {
+  if (btn && btn.dataset.saving === '1') return; // idempotent: ignore double clicks
+  const prevLabel = btn ? btn.textContent : '';
+  if (btn) { btn.dataset.saving = '1'; btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = done ? 'Saving…' : 'Undoing…'; }
+  const ok = await window._gwGSPersistDone(stepId, done);
+  if (ok) {
+    // Re-render panel from server truth so state is verified, not assumed
+    try { await _gwGSOpenPanel(); } catch(e) {}
+    try { if (window.gwCopilot && done) window.gwCopilot.checkCelebrate(); } catch(e) {}
+    try { if (window.gwAI && window.gwAI.refreshSetup) window.gwAI.refreshSetup(); } catch(e) {}
+  } else {
+    if (btn) { btn.dataset.saving = ''; btn.disabled = false; btn.style.opacity = ''; btn.textContent = prevLabel; }
+    try { alert("Couldn't save that just now — check your connection and try again."); } catch(e) {}
+  }
+};
+
+// The orb owns Getting Started when present; legacy panel is the fallback.
+window.gwGettingStarted = function() {
+  if (window.gwAI && typeof window.gwAI.open === 'function') { window.gwAI.open('setup'); return; }
+  return _gwGSOpenPanel();
+};
+
+console.log('[Groundwork] onboarding.js loaded v20260720t30');

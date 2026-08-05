@@ -39,8 +39,15 @@
     }
   ],
 
-  // ── R2: Finance OS receipt images + hash dedupe ───────────────────────────────
+  // ── R2 Object Storage ───────────────────────────────────────────────────────
+  // MEDIA: client portal project photos and documents (created 2026-07-20).
+  // RECEIPTS: Finance OS receipt images + hash dedupe. Local dev uses --local
+  // simulation for both.
   "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "groundwork-crm-media"
+    },
     {
       "binding": "RECEIPTS",
       "bucket_name": "gw-receipts"

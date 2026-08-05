@@ -380,6 +380,38 @@ const DB = (() => {
     save(stages) { return put('/pipeline-stages', { stages }); }
   };
 
+  // Versioned sales processes. AI suggestions are drafts and publication always
+  // requires a separately validated version plus an approved mapping batch.
+  const salesProcess = {
+    get(versionId) { return get('/sales-process' + (versionId ? `?version_id=${encodeURIComponent(versionId)}` : '')); },
+    templates() { return get('/sales-process/templates'); },
+    adoptTemplate(templateVersionId, name) { return post('/sales-process/drafts/from-template', { template_version_id: templateVersionId, name }); },
+    fromCurrentPipeline(name) { return post('/sales-process/drafts/from-current-pipeline', { name }); },
+    saveStages(versionId, stages, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/stages`, { stages, content_revision: contentRevision }); },
+    saveComponents(versionId, component, items, contentRevision) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/components/${encodeURIComponent(component)}`, { items, content_revision: contentRevision }); },
+    saveLiveStages(versionId, stages, contentRevision) { return put(`/sales-process/live/${encodeURIComponent(versionId)}/stages`, { stages, content_revision: contentRevision }); },
+    saveLiveComponents(versionId, component, items, contentRevision) { return put(`/sales-process/live/${encodeURIComponent(versionId)}/components/${encodeURIComponent(component)}`, { items, content_revision: contentRevision }); },
+    createSuggestion(versionId, suggestion) { return post(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions`, suggestion); },
+    generateSuggestions(versionId, interview) { return post(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions/generate`, interview); },
+    decideSuggestion(versionId, suggestionId, decision, appliedRevision = 0) { return put(`/sales-process/drafts/${encodeURIComponent(versionId)}/ai-suggestions/${encodeURIComponent(suggestionId)}`, { decision, applied_revision: appliedRevision }); },
+    validate(versionId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/validate`, {}); },
+    inventory() { return get('/sales-process/migration/inventory'); },
+    propose(versionId) { return post('/sales-process/migration/propose', { process_version_id: versionId }); },
+    mappings(batchId) { return get(`/sales-process/migration/${encodeURIComponent(batchId)}`); },
+    approveMapping(batchId, opportunityId, finalStageId, finalOutcomeType = '') { return put(`/sales-process/migration/${encodeURIComponent(batchId)}/${encodeURIComponent(opportunityId)}`, { final_stage_id: finalStageId, final_outcome_type: finalOutcomeType }); },
+    readiness(versionId, batchId) { return get(`/sales-process/versions/${encodeURIComponent(versionId)}/publication-readiness?migration_batch_id=${encodeURIComponent(batchId)}`); },
+    captureSnapshot(versionId, batchId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/snapshots`, { migration_batch_id: batchId }); },
+    approveSnapshot(snapshotId) { return post(`/sales-process/snapshots/${encodeURIComponent(snapshotId)}/approve`, {}); },
+    preview(versionId, batchId) { return get(`/sales-process/versions/${encodeURIComponent(versionId)}/preview?migration_batch_id=${encodeURIComponent(batchId || '')}`); },
+    context(opportunityId) { return get(`/opportunities/${encodeURIComponent(opportunityId)}/sales-context`); },
+    playbook() { return get('/sales-process/playbook'); },
+    transition(opportunityId, stageId, expectedStageId, outcomeType = '', overrideReason = '') {
+      return put(`/opportunities/${encodeURIComponent(opportunityId)}/sales-stage`, { stage_id: stageId, expected_stage_id: expectedStageId, outcome_type: outcomeType, override_reason: overrideReason });
+    },
+    publish(versionId, batchId) { return post(`/sales-process/versions/${encodeURIComponent(versionId)}/publish`, { migration_batch_id: batchId, confirm: true }); },
+    rollback(publicationId) { return post(`/sales-process/publications/${encodeURIComponent(publicationId)}/rollback`, {}); }
+  };
+
   // ── NAV PERMISSIONS (per-company per-role access) ────────────────────────────
   const navPerms = {
     /** Get nav perms for this company */
@@ -418,6 +450,7 @@ const DB = (() => {
     events,
     roles,
     pipelineStages,
+    salesProcess,
     navPerms,
     activityLog,
     sync,

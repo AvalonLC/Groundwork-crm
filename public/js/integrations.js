@@ -711,7 +711,7 @@ async function integrations() {
     <span id="int-admin-creds-status" style="font-size:11px;color:#2D7A55;margin-left:10px"></span>
 
     <div style="border-top:1px solid var(--gds-line,#E0DDD5);margin:18px 0 14px"></div>
-    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">AI API Key <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables ✨ AI proposal drafting)</span></label>
+    <label style="font-size:11px;font-weight:700;color:var(--gds-muted,#5E6E6F);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">AI API Key <span style="font-weight:500;text-transform:none;letter-spacing:0">(enables AI proposal drafting)</span></label>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <input id="int-admin-ai-key" type="password"
         placeholder="sk-…"
@@ -844,7 +844,7 @@ function gwRenderAdminSetup() {
   <!-- AI API Key -->
   <section class="gw-int-panel" id="admin-ai-key-panel" style="border-radius:16px;padding:28px;min-width:0;overflow:hidden">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <span style="font-size:18px">✨</span>
+      <span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('sparkle',18,'currentColor'):''}</span>
       <div style="font-size:15px;font-weight:800;color:var(--gds-ink,#1F2A2B)">AI Setup</div>
       <span style="margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gds-muted,#5E6E6F);background:var(--gds-surface-3,#F2EFE9);border:1px solid var(--gds-line,#E0DDD5);border-radius:4px;padding:2px 7px">Admin only</span>
     </div>
@@ -1439,6 +1439,18 @@ function _buildComposeModalHTML() {
           <input type="file" id="gw-attach-input" multiple style="display:none" onchange="_gwHandleAttachments(event)">
         </label>
 
+        <!-- Insert document link (proposal / estimate / invoice) -->
+        <span style="position:relative;display:inline-flex">
+          <button type="button" id="gw-doclink-btn" onclick="_gwDocLinkToggle(event)" title="Insert a link to a proposal, estimate, or invoice"
+            style="cursor:pointer;display:flex;align-items:center;gap:5px;color:#6F7E6A;font-size:12px;padding:6px 8px;border-radius:6px;background:none;border:none;font-family:inherit;transition:background .12s"
+            onmouseover="this.style.background='var(--gw-surface-2)'" onmouseout="this.style.background='none'">
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8.5 11.5a3.5 3.5 0 0 0 5 .3l2.3-2.3a3.5 3.5 0 0 0-4.95-4.95L9.6 5.8"/><path d="M11.5 8.5a3.5 3.5 0 0 0-5-.3L4.2 10.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25"/></svg>
+            Insert document
+          </button>
+          <div id="gw-doclink-panel"
+            style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;z-index:10005;width:360px;max-width:78vw;max-height:340px;overflow-y:auto;background:var(--gw-surface-2,#1e2e2a);border:1px solid var(--gw-line,#2e4040);border-radius:10px;box-shadow:0 12px 32px #000a;padding:6px"></div>
+        </span>
+
         <div style="flex:1"></div>
         <button onclick="document.getElementById('int-compose-modal').style.display='none'" class="secondary-btn" style="padding:8px 14px">Discard</button>
       </div>
@@ -1501,6 +1513,11 @@ window.gwOpenCompose = async function(prefillTo='', prefillSubject='', prefillOp
   if (attachList) { attachList.innerHTML = ''; attachList.style.display = 'none'; }
   const attachInput = document.getElementById('gw-attach-input');
   if (attachInput) attachInput.value = '';
+
+  // ── Reset document-link picker ────────────────────────────────────────────
+  const docPanel = document.getElementById('gw-doclink-panel');
+  if (docPanel) { docPanel.style.display = 'none'; docPanel.innerHTML = ''; }
+  window._gwDocLinkSavedRange = null;
 
   // ── Reset / pre-populate Link-to-Lead picker ──────────────────────────────
   window._gwComposeLinkedOppId    = prefillOppId    || '';
@@ -1982,6 +1999,182 @@ window._gwRteInsertLink = function() {
   const url = prompt('Enter URL:', 'https://');
   if (url) document.execCommand('createLink', false, url);
 };
+
+// ── Insert-document-link picker (proposals / estimates / invoices) ──────────
+function _gwDocEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) {
+    return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch];
+  });
+}
+
+window._gwDocLinkSavedRange = null;
+
+function _gwDocLinkSaveCaret() {
+  window._gwDocLinkSavedRange = null;
+  try {
+    const editor = document.getElementById('int-email-editor');
+    const sel = window.getSelection();
+    if (editor && sel && sel.rangeCount > 0) {
+      const r = sel.getRangeAt(0);
+      if (editor.contains(r.startContainer)) window._gwDocLinkSavedRange = r.cloneRange();
+    }
+  } catch(_) {}
+}
+
+window._gwDocLinkToggle = async function(ev) {
+  if (ev) ev.stopPropagation();
+  const panel = document.getElementById('gw-doclink-panel');
+  if (!panel) return;
+  if (panel.style.display !== 'none' && panel.style.display !== '') {
+    panel.style.display = 'none';
+    return;
+  }
+  _gwDocLinkSaveCaret();
+  panel.style.display = 'block';
+  panel.innerHTML = '<div style="padding:14px;font-size:12px;color:#6F7E6A">Loading documents…</div>';
+
+  const oppId = window._gwComposeLinkedOppId || '';
+  const qs = oppId ? ('?opp_id=' + encodeURIComponent(oppId)) : '?limit=15';
+  let proposals = [], estimates = [], invoices = [];
+  try {
+    const [pr, er, ir] = await Promise.all([
+      fetch('/api/proposals' + (oppId ? qs : ''), { credentials: 'include' }).then(r => r.json()).catch(() => null),
+      fetch('/api/estimates' + qs, { credentials: 'include' }).then(r => r.json()).catch(() => null),
+      fetch('/api/invoices?limit=100', { credentials: 'include' }).then(r => r.json()).catch(() => null)
+    ]);
+    proposals = (pr && pr.data) || [];
+    estimates = (er && er.data) || [];
+    invoices  = Array.isArray(ir) ? ir : ((ir && ir.data) || []);
+  } catch(_) {}
+
+  // When a lead is linked, prefer invoices tied to that lead's estimates or matching client name
+  if (oppId) {
+    const estIds = {};
+    estimates.forEach(function(e) { if (e.id) estIds[e.id] = true; });
+    const label = (window._gwComposeLinkedOppLabel || '').toLowerCase().trim();
+    const matched = invoices.filter(function(inv) {
+      if (inv.estimate_id && estIds[inv.estimate_id]) return true;
+      if (label && inv.client_name && label.indexOf((inv.client_name || '').toLowerCase()) !== -1) return true;
+      if (label && inv.client_name && (inv.client_name || '').toLowerCase().indexOf(label.split(' — ')[0].split(' - ')[0].toLowerCase().trim()) !== -1) return true;
+      return false;
+    });
+    if (matched.length) invoices = matched;
+    else invoices = invoices.slice(0, 8);
+    proposals = proposals.slice(0, 12);
+    estimates = estimates.slice(0, 12);
+  } else {
+    proposals = proposals.slice(0, 8);
+    estimates = estimates.slice(0, 8);
+    invoices  = invoices.slice(0, 8);
+  }
+
+  const origin = location.origin;
+  const rows = [];
+
+  function section(title) {
+    rows.push('<div style="padding:8px 10px 4px;font-size:10px;font-weight:800;color:#6F7E6A;text-transform:uppercase;letter-spacing:.06em">' + title + '</div>');
+  }
+  function row(docType, token, number, client, amount, status) {
+    if (!token) {
+      rows.push('<div style="padding:7px 10px;font-size:12px;color:#6F7E6A;opacity:.65">' + _gwDocEsc(number) + ' — no share link available</div>');
+      return;
+    }
+    let url = '';
+    if (docType === 'proposal') url = origin + '/portal/proposal/' + token;
+    else if (docType === 'estimate') url = origin + '/estimates/portal/' + token;
+    else url = origin + '/invoices/portal/' + token;
+    const cta = docType === 'proposal' ? 'View Your Proposal' : (docType === 'estimate' ? 'View Your Estimate' : 'View & Pay Invoice');
+    const linkLabel = (docType === 'proposal' ? 'Proposal ' : (docType === 'estimate' ? 'Estimate ' : 'Invoice ')) + (number || '');
+    const meta = [client, amount, status].filter(Boolean).join(' · ');
+    rows.push(
+      '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px" onmouseover="this.style.background=\'var(--gw-surface-3,#263532)\'" onmouseout="this.style.background=\'none\'">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:12.5px;font-weight:700;color:var(--gw-ink,#E8E4D9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _gwDocEsc(linkLabel) + '</div>' +
+          (meta ? '<div style="font-size:11px;color:#6F7E6A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _gwDocEsc(meta) + '</div>' : '') +
+        '</div>' +
+        '<button type="button" onclick="_gwDocLinkInsert(\'' + _gwDocEsc(url) + '\',\'' + _gwDocEsc(cta) + '\',\'' + _gwDocEsc(linkLabel) + '\',\'text\')" ' +
+          'style="cursor:pointer;font-size:11px;font-weight:700;color:var(--gw-ink,#E8E4D9);background:none;border:1px solid var(--gw-line,#2e4040);border-radius:6px;padding:4px 9px">Link</button>' +
+        '<button type="button" onclick="_gwDocLinkInsert(\'' + _gwDocEsc(url) + '\',\'' + _gwDocEsc(cta) + '\',\'' + _gwDocEsc(linkLabel) + '\',\'button\')" ' +
+          'style="cursor:pointer;font-size:11px;font-weight:700;color:#fff;background:#2D7A55;border:1px solid #2D7A55;border-radius:6px;padding:4px 9px">Button</button>' +
+      '</div>'
+    );
+  }
+  function fmt(n) {
+    const v = Number(n || 0);
+    return v ? ('$' + v.toLocaleString(undefined, { maximumFractionDigits: 0 })) : '';
+  }
+
+  if (proposals.length) {
+    section('Proposals');
+    proposals.forEach(function(p) { row('proposal', p.portal_token, p.prop_number || p.title || 'Untitled', p.client_name, fmt(p.total), p.status); });
+  }
+  if (estimates.length) {
+    section('Estimates');
+    estimates.forEach(function(e) { row('estimate', e.portal_token, e.est_number || e.title || 'Untitled', e.client_name, fmt(e.total), e.status); });
+  }
+  if (invoices.length) {
+    section('Invoices');
+    invoices.forEach(function(inv) { row('invoice', inv.portal_token, inv.invoice_number || inv.title || 'Untitled', inv.client_name, fmt(inv.total), inv.status); });
+  }
+
+  if (!rows.length) {
+    panel.innerHTML = '<div style="padding:14px;font-size:12px;color:#6F7E6A">' +
+      (oppId ? 'No proposals, estimates, or invoices found for this lead yet.' : 'No documents found. Create a proposal, estimate, or invoice first.') +
+      '</div>';
+  } else {
+    const hint = oppId
+      ? '<div style="padding:6px 10px 8px;font-size:10.5px;color:#6F7E6A;border-bottom:1px solid var(--gw-line,#2e4040);margin-bottom:2px">Documents for ' + _gwDocEsc(window._gwComposeLinkedOppLabel || 'this lead') + ' — insert as a text link or a button</div>'
+      : '<div style="padding:6px 10px 8px;font-size:10.5px;color:#6F7E6A;border-bottom:1px solid var(--gw-line,#2e4040);margin-bottom:2px">Recent documents — link a lead above to narrow this list</div>';
+    panel.innerHTML = hint + rows.join('');
+  }
+};
+
+window._gwDocLinkInsert = function(url, cta, linkLabel, style) {
+  const editor = document.getElementById('int-email-editor');
+  const panel  = document.getElementById('gw-doclink-panel');
+  if (panel) panel.style.display = 'none';
+  if (!editor) return;
+
+  const brandColor = (window._scBrand && window._scBrand.brand_color) || '#2D7A55';
+  let html;
+  if (style === 'button') {
+    html = '<div style="margin:14px 0">' +
+      '<a href="' + _gwDocEsc(url) + '" target="_blank" ' +
+        'style="display:inline-block;background:' + _gwDocEsc(brandColor) + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 26px;border-radius:8px">' +
+        _gwDocEsc(cta) + '</a></div><p><br></p>';
+  } else {
+    html = '<a href="' + _gwDocEsc(url) + '" target="_blank" style="color:' + _gwDocEsc(brandColor) + ';font-weight:600">' + _gwDocEsc(linkLabel) + '</a>&nbsp;';
+  }
+
+  editor.focus();
+  try {
+    const sel = window.getSelection();
+    if (window._gwDocLinkSavedRange) {
+      sel.removeAllRanges();
+      sel.addRange(window._gwDocLinkSavedRange);
+    } else {
+      // No saved caret inside the editor — place caret at the end
+      const r = document.createRange();
+      r.selectNodeContents(editor);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    document.execCommand('insertHTML', false, html);
+  } catch(_) {
+    editor.innerHTML += html;
+  }
+  window._gwDocLinkSavedRange = null;
+};
+
+// Close the document-link panel on any outside click
+document.addEventListener('click', function(e) {
+  const panel = document.getElementById('gw-doclink-panel');
+  if (!panel || panel.style.display === 'none' || panel.style.display === '') return;
+  const btn = document.getElementById('gw-doclink-btn');
+  if (panel.contains(e.target) || (btn && btn.contains(e.target))) return;
+  panel.style.display = 'none';
+});
 
 // ── Attachment handler ────────────────────────────────────────────────────────
 window._gwHandleAttachments = function(event) {
@@ -2742,7 +2935,7 @@ async function intAdminSaveGoogleCreds() {
 }
 window.intAdminSaveGoogleCreds = intAdminSaveGoogleCreds;
 
-// ── intAdminSaveAiKey — save OpenAI API key for ✨ AI proposal drafting ────────
+// ── intAdminSaveAiKey — save OpenAI API key for AI proposal drafting ────────
 async function intAdminSaveAiKey() {
   const key = document.getElementById('int-admin-ai-key')?.value?.trim();
   if (!key) { showIntToast('Paste your AI API key first', 'warn'); return; }

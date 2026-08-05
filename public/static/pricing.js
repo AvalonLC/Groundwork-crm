@@ -24,7 +24,7 @@ async function pricing() {
         <span class="gwp-subtitle">Your master price book — every service, material, and plant with unit cost and man-hours. Powers the estimate builder and AI quotes.</span>
       </div>
       <div class="gwp-header-actions">
-        <button class="gwp-btn-ghost" onclick="_pbOpenSettings()" id="pb-settings-btn">⚙️ Job Cost Settings</button>
+        <button class="gwp-btn-ghost" onclick="_pbOpenSettings()" id="pb-settings-btn">${(typeof gwIcon==='function')?gwIcon('settings',13,'currentColor'):''} Job Cost Settings</button>
         <button class="gwp-btn-ghost" onclick="_pbOpenImport()">⬆ Import CSV / Excel</button>
         <button class="gwp-btn-ghost" onclick="_pbExport()" title="Download the whole price book as a CSV you can open in Sheets/Excel">⬇ Export CSV</button>
         <button class="gwp-btn-primary" onclick="_pbOpenItem()">+ Add Item</button>
@@ -116,8 +116,8 @@ function _pbRenderList() {
         <span style="font-size:13px;text-align:right">${Number(i.unit_time || 0)}</span>
         <span style="font-size:11px;text-align:center"><span style="padding:2px 8px;border-radius:99px;background:var(--gw-bg,#FAF9F5);border:1px solid var(--gw-border-soft,#F0EEE8)">${_pbEsc(i.item_type || 'material')}</span></span>
         <span style="text-align:right;white-space:nowrap">
-          <button onclick="_pbOpenItem('${i.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:13px;padding:3px">✏️</button>
-          <button onclick="_pbDelete('${i.id}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:13px;padding:3px">🗑</button>
+          <button onclick="_pbOpenItem('${i.id}')" title="Edit" style="background:none;border:none;cursor:pointer;font-size:13px;padding:3px;display:inline-flex">${(typeof gwIcon==='function')?gwIcon('pencil',14):''}</button>
+          <button onclick="_pbDelete('${i.id}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:13px;padding:3px;display:inline-flex">${(typeof gwIcon==='function')?gwIcon('trash',14,'currentColor'):''}</button>
         </span>
       </div>`).join('')}
     </div>
@@ -232,7 +232,7 @@ window._pbOpenImport = function() {
 
       <label style="display:block;border:2px dashed var(--gw-border,#DDD8CE);border-radius:12px;padding:26px;text-align:center;cursor:pointer;margin-bottom:12px" id="pb-imp-drop">
         <input type="file" id="pb-imp-file" accept=".csv,.xlsx,.xls" style="display:none" onchange="_pbImpFile(this.files[0])">
-        <div style="font-size:28px;margin-bottom:6px">📄</div>
+        <div style="display:flex;justify-content:center;margin-bottom:6px">${(typeof gwIcon==='function')?gwIcon('document',28,'currentColor'):''}</div>
         <div style="font-size:13.5px;font-weight:700">Click to choose a file</div>
         <div style="font-size:12px;color:var(--gw-text-subtle,#8A948C)">CSV, XLSX or XLS — up to 5,000 items</div>
       </label>
@@ -504,7 +504,7 @@ window._pbOpenSettings = async function() {
   <div id="pb-settings-modal" style="position:fixed;inset:0;background:rgba(20,26,22,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.remove()">
     <div style="background:var(--gw-surface,#fff);border-radius:14px;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-        <h2 style="font-size:17px;font-weight:800;margin:0">⚙️ Job Cost Settings</h2>
+        <h2 style="font-size:17px;font-weight:800;margin:0;display:flex;align-items:center;gap:8px">${(typeof gwIcon==='function')?gwIcon('settings',17,'currentColor'):''} Job Cost Settings</h2>
         <button onclick="document.getElementById('pb-settings-modal').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--gw-text-subtle,#8A948C)">✕</button>
       </div>
       <div style="font-size:12.5px;color:var(--gw-text-subtle,#8A948C);margin-bottom:14px">These replace your spreadsheet formulas. The estimate builder's cost engine uses them on every job.</div>

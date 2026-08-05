@@ -56,21 +56,32 @@
 
   // ══════════════════════════════════════════════════════════════════════════
   // 1. STAGE TRACKER
-  // stages: string[]   — ordered stage names
-  // current: string    — active stage value
+  // stages: string[] or normalized stage[] — ordered stages
+  // current: opportunity object or legacy active stage value
   // onStageClick: fn   — optional, receives (stageName)
   // ══════════════════════════════════════════════════════════════════════════
   R.StageTracker = function (stages, current) {
     if (!stages || !stages.length) return '';
 
-    const currentIdx = stages.indexOf(current);
-    const isSold     = current === 'Sold / Activation';
-    const isLost     = current === 'Closed Lost';
+    const published = window._gwSalesProcess && window._gwSalesProcess.process && window._gwSalesProcess.process.lifecycle === 'published';
+    const normalizedStages = published && Array.isArray(window._gwSalesProcess.stages)
+      ? window._gwSalesProcess.stages.filter(stage => stage.state !== 'archived').slice().sort((a,b) => Number(a.stage_order)-Number(b.stage_order))
+      : null;
+    const items = (normalizedStages || stages).map((stage, index) => typeof stage === 'object'
+      ? { id:String(stage.id), label:String(stage.display_name || stage.stable_key || ''), order:index }
+      : { id:String(stage), label:String(stage), order:index });
+    const semantic = window.GWSalesProcess ? window.GWSalesProcess.resolve(
+      typeof current === 'object' ? current : { status: current }
+    ) : null;
+    const isSold = semantic ? semantic.outcome === 'won' || semantic.semantic === 'won' : current === 'Sold / Activation';
+    const isLost = semantic ? semantic.outcome === 'lost' || semantic.semantic === 'lost' : current === 'Closed Lost';
+    const currentId = semantic && semantic.resolved && semantic.stage ? String(semantic.stage.id) : String(typeof current === 'object' ? current.status || '' : current || '');
+    const currentIdx = items.findIndex(stage => stage.id === currentId || stage.label === currentId);
     // For sold/lost, treat as terminal
     const effectiveIdx = isSold
-      ? stages.length
+      ? items.length
       : isLost
-        ? stages.indexOf('Closed Lost')
+        ? currentIdx
         : currentIdx;
 
     // Shorten long labels for the tracker
@@ -92,11 +103,13 @@
     };
 
     // Only show active pipeline stages (not Sold/Lost which are handled as terminal)
-    const trackStages = stages.filter(s => s !== 'Sold / Activation' && s !== 'Closed Lost');
+    const trackStages = normalizedStages
+      ? items.filter(stage => !['terminal','won','lost','disqualified'].includes(String((normalizedStages.find(item => String(item.id) === stage.id) || {}).semantic_type || '')))
+      : items.filter(stage => stage.label !== 'Sold / Activation' && stage.label !== 'Closed Lost');
 
-    const nodes = trackStages.map((s, i) => {
+    const nodes = trackStages.map((stage, i) => {
       const isDone    = i < effectiveIdx && !isLost;
-      const isCurrent = s === current && !isSold && !isLost;
+      const isCurrent = stage.id === currentId && !isSold && !isLost;
       let stateClass  = '';
       if (isDone)    stateClass = 'is-done';
       if (isCurrent) stateClass = 'is-current';
@@ -111,10 +124,11 @@
         ? `<div class="rp-stage-connector"></div>`
         : '';
 
+      const legacyClick = normalizedStages ? '' : ` onclick="setOppField&&document.getElementById('statusEdit')&&(document.getElementById('statusEdit').value=this.dataset.stage)&&setOppField"`;
       return `<div class="rp-stage-node ${stateClass}">
-        <button class="rp-stage-btn" title="${esc(s)}" onclick="setOppField&&document.getElementById('statusEdit')&&(document.getElementById('statusEdit').value=this.dataset.stage)&&setOppField" data-stage="${esc(s)}">
+        <button class="rp-stage-btn" title="${esc(stage.label)}"${legacyClick} data-stage="${esc(stage.label)}">
           <div class="rp-stage-dot">${dotIcon}</div>
-          <span class="rp-stage-label">${esc(shorten(s))}</span>
+          <span class="rp-stage-label">${esc(normalizedStages ? stage.label : shorten(stage.label))}</span>
         </button>
         ${connector}
       </div>`;

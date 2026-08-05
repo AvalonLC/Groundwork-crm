@@ -87,7 +87,10 @@ groundwork-crm/
 │   │   ├── field_mode.js      # Field mode (standalone)
 │   │   ├── gw_i18n.js         # EN/ES translation engine
 │   │   └── ...
-│   └── static/            # Source copies of public/js files (edit here)
+│   └── static/            # LEGACY/unused — not served by src/index.tsx (only
+│                           #   `/js/*` is registered via serveStatic). Do not
+│                           #   edit files here; they are stale copies left
+│                           #   over from an earlier refactor. Edit `public/js/`.
 ├── migrations/            # D1 SQL migrations (0001_*.sql … 0029_*.sql)
 ├── scripts/
 │   └── bump-version.js    # Auto-increments ?v= cache-bust version on build
@@ -174,6 +177,35 @@ The old separate Estimates and Proposals pages are merged into one document syst
   market rates, and drafts a tiered quote with email/SMS copy. **Review-before-apply** — nothing
   changes until you click Apply. Requires the company `openai_api_key`
   (Integrations → Admin Setup); returns a graceful `no_api_key` message otherwise.
+  AI calls run through `_aiChatJson` (JSON response format + low reasoning effort on
+  gpt-5/o-family, with a bare retry for BYOK models that reject those params) and
+  `_aiParseJson` (fence- and truncation-tolerant salvage parser), which fixed multi-tier
+  (2/3-option) generations that previously timed out or returned unparseable drafts.
+- **Customer price view (August 2026)**: each estimate has `price_display`
+  (`itemized` default | `total_only`, migration 0054). "Total only" shows the client ONE
+  list-price callout plus a description-only checklist of included scope items — no
+  per-line pricing — on both the in-app portal preview (`_estPortalContentHtml`) and the
+  public tokenized portal page (`/estimates/portal/:token`). Toggle lives in the builder's
+  Line Items section; applying an AI quote defaults to `total_only`. The Pricing Workbench
+  and internal detail views always stay fully itemized.
+- **Editable lead value + division pipeline totals (August 2026)**: every lead's
+  Est. Value (`jobValue`) is editable in two places — an "Est. Value ($)" field in the
+  Contact & Opportunity form and a click-to-edit stat in the left-rail Figures grid
+  (`window._gwSetLeadValue` persists via `_d1SaveOpp` and refreshes the Commission figure
+  in place). Won leads switch that stat to an editable **Sold @** amount — the final
+  price that then drives the final commission (`gwLeadBaseValue`: sold amount for won
+  leads, estimate otherwise). Commission previews use the ASSIGNED rep's plan, and
+  unknown plan ids fall back to the default plan instead of silently showing $0.
+  The Pipeline page shows an "Open Pipeline Value" strip (`_gwDivisionValueStrip`):
+  grand total of OPEN-lead value (won/lost excluded — they have left the pipeline)
+  plus one clickable tile per company division (`gwClassifyDivision` + `gwDivisions()`),
+  which toggles the existing division filter. Pipeline cards show the value in a fixed
+  spot (right side of the stage row, a muted dash when unset).
+- **Expanded +New menu (August 2026)**: `_gwBuildNewMenu` now also offers New Estimate
+  (admin + sales), and for admins: New Invoice, Record Payment (invoice picker
+  `_invPaymentPicker`), New Asset, and New Employee (invite form). Items route through
+  `window._gwNavThen(view, fnName, arg)`, which navigates then polls briefly for the
+  module's entry point before invoking it.
 - **Convert to Job / Event**: accepted estimates get a "Convert to Job" button (also in the
   ⋯ menus) → `POST /api/estimates/:id/convert-to-job` creates a work order (409 with a link
   if already converted). The detail view shows "View Work Order" once linked.
@@ -310,6 +342,21 @@ Each task's description carries a type-specific hint the rep (and the AI drafter
 - **Metering**: every AI call inserts a row into `ai_usage` (migration 0036, auto-creates in prod via `ensureAiSchema`): company, rep, feature, model, prompt/completion/total tokens, key_source (`platform`/`byok`/`env`). 30-day platform-key usage shows per tenant in the panel; `GET /api/admin/ai/usage?company_id=&days=` returns detail rows for billing.
 - **Tenant-side key entry**: companies who bring their own key use Integrations → Admin Setup tab (visible whether or not Google is connected).
 
+## Multi-Day Jobs — Daily AI Checklists + Auto-Published Portal Updates (added 2026-07-20)
+
+Jobs (work orders) can be marked multi-day. Each internal "day" gets an AI-generated end-of-day yes/no checklist; crews must attach a photo to every answer, and completing a day auto-publishes a client portal update composed by Groundwork AI with all the day's photos.
+
+- **Schema**: migration `0045_multiday_jobs.sql` — `work_orders.is_multiday` / `total_days` columns + `wo_days` table (per-day scope, questions JSON, status, `update_id` link to the published portal update). Self-heals in prod via `_schema_multiday_v1` flag (index.tsx) and `_schema_portal_v5` (portal.tsx) — no remote wrangler migration needed.
+- **API** (src/index.tsx):
+  - `POST /api/work-orders/:id/multiday` — body `{total_days (2-30), start_date?, day_scopes?}`. One AI call generates 3-6 photo-verifiable yes/no questions per day (feature `multiday_questions`); graceful fallback questions when AI unavailable. Re-running setup never overwrites days that are in progress or completed.
+  - `GET /api/work-orders/:id/days` — day list with parsed questions.
+  - `POST /api/work-orders/:id/days/:n/answer` — `{question_index, answer, photo_media_id}`. Photo is REQUIRED and must exist in `project_media` for that job; questions must be answered strictly in order; completed days reject changes (409).
+  - `POST /api/work-orders/:id/days/:n/complete` — rejects if any question unanswered; AI composes the client update title/body (feature `multiday_update`, deterministic fallback); INSERTs a published `project_updates` row, attaches all answered-question photos, marks the day completed, appends a WO timeline event, emails active portal users, and flips the WO to `completed` when the last day finishes.
+- **Frontend** (`public/js/multiday.js`, mounted in the visit modal in app_premium.js):
+  - Staff: "Multi-Day Job" section in the scheduled-job modal — enable multi-day, set day count + per-day scopes, see per-day progress badges (PENDING / n-of-m ANSWERED / PUBLISHED).
+  - Crew: "Start Day" opens a fullscreen popup — one question at a time; the YES/NO buttons stay disabled until a photo is uploaded (camera capture supported); finishing all questions shows a Complete Day screen that triggers the AI publish.
+- Photos reuse the Release 1 portal media pipeline (`POST /api/admin/portal/projects/:woId/media`, R2-backed, 15 MB limit).
+
 ## Environment variables / secrets
 
 | Variable | Where to set | Purpose |
@@ -443,6 +490,642 @@ Edit `public/js/gw_i18n.js`:
 - Script tag added after onboarding.js in index.tsx (`gw_copilot.js?v=20260718t26`).
 - E2E-verified: 10 tours registered, cl_client tour navigates + spotlights "+ Add Client" with pulse ring, chat opens with 4 chips, chip launches tour, GS panel shows Show-me/Ask-AI. Deployed `71d77e1`, prod-verified.
 
+## Groundwork AI Assistant + Done-Bug Fix (T30)
+- **Done bug fixed** (Getting Started checklist): root cause was an orphaned endpoint — `POST /api/onboarding/checklist/:stepId` existed but NO client ever called it; the GS panel rendered no "Mark done" control, so manual completion was impossible. Fixes:
+  - `onboarding.js`: "Mark done" button on every undone item + "Undo" on manually-done items, wired through `window._gwGSPersistDone` (optimistic UI, disabled-while-saving, auto-retry once, server-truth re-render, revert + message on real failure). `_onbFinish` wizard-completion save now retries (2 attempts + delayed background retry) and side effects (confetti, launcher) can no longer block/mask the save.
+  - `src/index.tsx` checklist GET: manual marks now ALWAYS count (`done = auto_done || manual_done`) — previously a manual mark on an auto-detected item was silently discarded. Response now includes `auto_done`/`manual_done` per item.
+- **Groundwork AI** (`public/js/groundwork_ai.js`, v20260720t30): persistent floating orb bottom-right (56px, brand gradient, sparkle icon, unread high-priority badge, thinking pulse, keyboard/ARIA accessible, z 8500 below tours) + 420px right-side panel with tabs:
+  - **Home** — What I see (company/view/pipeline pulse) · What I suggest (top 3 cards) · What I can do (quick actions)
+  - **Suggestions** — all recommendation cards (priority chip, "Why it matters" expand, action buttons)
+  - **Coach** — manager-level risk signals (invoices, stagnation, stale/estimates) + compounding-habit tips + "Ask the coach"
+  - **Setup** — Getting Started checklist lives here now (working Mark done/Undo, Show-me tours); admin-only tab
+  - **Chat** — context-aware (`{question, view, oppId}`); renders tour-offer buttons; graceful `no_api_key` state
+  - Action dispatcher: `open_lead` → `show('pipeline', id)`, `open_view`, `create_task` (POST /api/tasks, due tomorrow, toast), `draft_email` → `gwAiFollowupOpen`, `start_tour` → `gwCopilot.startTour`. Old `#gwGSLauncher` suppressed when orb present; `window.gwGettingStarted()` routes to orb Setup tab. Platform-account guard uses SERVER-resolved company (context endpoint) so impersonation works.
+- **Backend** (src/index.tsx, before demo-request block):
+  - `gwAssistSignals(db, companyId, repId, role)` — deterministic signal engine, 7 signals: overdue follow-ups, stale leads (14d), no-next-step, estimates sent/viewed 5d+ unanswered, overdue tasks, overdue invoices (mgr), stage stagnation (mgr). Every query binds server-derived companyId; non-managers get rep-scoped opp/task queries; bind counts trimmed to match placeholders (D1 rejects extras). Cards: `{id,type,priority,title,summary,why,action_kind,action_payload,actions[]}`, high→low, max 10.
+  - `GET /api/ai/assistant/context` — no-LLM snapshot `{company, company_id, business_type, role, ai_enabled, pipeline{open,value}, setup_total, recommendations}` — Suggestions/Coach/Home work with zero AI key.
+  - `POST /api/ai/assistant` — context-aware chat; oppId tenant-ownership validated before lead + last-6-comms context is included; deterministic signals embedded in prompt; `_aiCreds`/`_aiQuotaGate`/`_logAiUsage` (feature `assistant`); `{answer, tour}` with fence-strip + `^cl_[a-z_]+$` validation.
+- E2E-verified (Playwright, impersonated avalon): orb mounts + persists across views, 10 real recommendation cards, Done click persists server-side AND across full refresh, undo works, quick action navigates + closes panel, gwGettingStarted opens Setup tab, Escape closes, zero page errors. Tenant safety spot-checked (foreign oppId ignored; empty-tenant context clean).
+
+## Groundwork AI Follow-Ups (T31)
+- **Server-side snooze**: `POST /api/ai/assistant/snooze` `{recId, days?|clear}` — per-rep, per-company map in settings key `gwai_snooze_<companyId>_<repId>` (expired entries pruned on read, 1-90 day clamp, recId format-validated). Context endpoint filters snoozed recs and returns `snoozed` count. Each suggestion card has a "Snooze 7d" link (fade-out + toast + server persist + revert on failure).
+- **Tunable thresholds**: `GW_ASSIST_DEFAULTS` (fu_high_days 7, stale_days 14, stale_high_value 5000, est_days 5, est_high_total 3000, inv_high_owed 2000, stag_days 21, stag_min_deals 3) with per-company JSON override in settings key `gwai_thresholds_<companyId>` — tune without redeploy. Numeric-validated; stagnation title derives weeks from the setting.
+- **Mobile/field positioning**: at <=768px the orb lifts to `bottom:calc(82px + safe-area)` (clear of `#gw-mobile-nav` 68px bar) and shrinks to 50px; toasts lift to 150px on mobile.
+- **Public demo-request page**: `GET /demo-request` — branded standalone form (name/email required, company/phone/message optional, honeypot `website_url`, client+server validation, success state). `?embed=1` strips chrome for iframe embedding on groundwork-crm.info. Posts to existing `/api/public/demo-request` (rate limit 3/email/day intact).
+- Verified: snooze persist/clear/injection-guard via curl + Playwright (card count 10→9, server context confirms, cleanup restores); threshold override (stale_days=9999 → 0 stale recs) applied and reverted; demo page 200 + live submit 200 (test row deleted); full T30 E2E regression suite still ALL PASSED.
+
+## Client Portal Release 1 (T36 — Sessions A/B/C, 2026-07-19/20)
+
+Client-facing portal at `/portal/*` with a fully separate auth world from staff sessions.
+
+- **Session A — Foundation**: portal user identity (`portal_users`, `portal_memberships`, `property_access`, `portal_sessions` via migrations 0041/0042), invite/accept/login/reset lifecycle, role presets (account_admin, billing, project, approver, read_only), staff admin UI (Portal Admin) for inviting/managing portal users, full audit trail (`actor_type='portal'`).
+- **Session B — Core Records**: estimates review/approve/decline (approve flips work-order holds to scheduled + notifies staff), billing (invoices with payments, payment history, Pay link), documents (proposals). Property-level scoping via `propOk`, explicit column allowlists.
+- **Session C — Projects**: work-order-backed project tracking (`portal_visible` flag, phase mapping scheduled/in_progress/completed), staff-published daily updates (`project_updates`), R2-backed photo galleries (`project_media`, bucket `groundwork-crm-media`, binding `MEDIA`). Staff publish updates + upload photos from the schedule-board visit modal or work order detail page; clients see a timeline with lightbox galleries. Migration 0043 (applied in prod via runtime schema self-heal v3 — wrangler remote D1 apply is blocked by token permissions).
+
+- **Session D — Hardening**: D1-backed sliding-window rate limits on login/reset/accept-invite (fail-open), 7-day idle session timeout + 30-day absolute + 10-session cap per user, password change revokes other sessions, security headers on portal pages (X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy) and no-store on portal APIs, client email notifications on daily-update publish (with staff opt-out checkbox), Active Projects dashboard card, mobile CSS pass (safe-area tabbar, scrollable line-item tables, sub-640px tuning).
+
+Key routes: `/portal/login`, `/portal/home` (SPA: Home/Projects/Estimates/Billing/Documents/Account), portal APIs under `/api/portal/*`, staff admin APIs under `/api/admin/portal/*`.
+
+## Client Portal Release 2 — Payments, Autopay & Contacts (T36, 2026-07-20)
+
+Builds on the existing Stripe Connect integration (platform-level Stripe Customer per client in `clients.stripe_customer_id`, off-session PaymentIntents with `transfer_data[destination]` routing to the connected account, hosted Checkout on the connected account for card-not-on-file payments).
+
+- **Payment methods** (`manage_payment_methods`): Billing tab "Payment Methods" — list saved cards/ACH, add via Stripe Checkout setup mode (redirect + `?pm_added=1` return), remove (detach with customer-ownership check; disables autopay if it pointed at the removed method). APIs: `GET/POST(setup)/DELETE /api/portal/payment-methods*`.
+- **Autopay** (`manage_autopay`): per-client config in new `client_autopay` table (enabled, chosen saved method, optional per-invoice cap). When staff sends an invoice (`POST /api/invoices/:id/send`), the open balance is charged automatically to the client's chosen method (best-effort, never blocks the send; respects the cap; response includes an `autopay` result object). Staff gets an in-app notification when clients change autopay.
+- **Deposits & invoice payments from the portal** (`make_payments`): estimate detail shows a deposit pay box for approved estimates with an unpaid deposit — pay with a saved method (immediate off-session charge) or by card via hosted Checkout (return handled by `verify-deposit`, which validates the Checkout session's PaymentIntent metadata against the estimate before marking `deposit_paid`). Invoice detail also offers "Pay with a saved method" alongside the existing hosted pay link. Payment attempts are rate-limited (10/10min per user). All successes write to `payments`, update estimate/invoice state, audit log, and notify staff.
+- **Contact management** (`manage_contacts`): Account view "Contacts" card — list/add/edit/remove (soft-delete) `client_contacts` rows scoped to manageable clients only. Contacts linked to an active portal login cannot be removed from the portal.
+- **Migration 0044** (`clients.stripe_customer_id` + `client_autopay`) ships via the runtime schema self-heal, flag bumped to `_schema_portal_v4` (wrangler remote D1 apply remains blocked by token permissions).
+- Everything degrades gracefully when `STRIPE_SECRET_KEY` is absent or the company is not Stripe-connected (503 / "not available" — no crashes).
+
+## Company Customization (July 2026)
+- **Custom Divisions**: Companies name and create any number of divisions (Settings > System Config > Divisions, with color pickers). All dashboards, pipeline analytics, financial planning, month drill-downs, CSV import/export and filters are driven by the configured divisions. Renaming preserves historical data; legacy Avalon data classifies via keyword bridges.
+- **Custom Lead Intake Form**: Categories (with optional `Value | Short` labels), work types, lead sources and service lines are editable in Settings > System Config > Lead Intake Form. The new-lead and edit-lead forms render from this config.
+- **Storage**: D1 settings keys `company_divisions` and `company_intake_config`, hydrated to localStorage (`gwCompanyDivisions` / `gwIntakeConfig`) at login.
+- **Onboarding (9 steps)**: Welcome > Business Profile (incl. logo upload) > Name Your Divisions > Lead Intake Setup > First Client > First Estimate > Team Setup > Preferences (commission opt-in, email signature, Google Workspace connect) > Done.
+- **Legacy Work Order Detail page retired**: every job click routes to the Schedule board and opens the visit modal (single source of truth for job details).
+
+## Versioned Sales Process Platform (July 2026)
+
+Full versioned, migration-safe sales process engine replacing the legacy fixed pipeline labels. Shipped across migrations `0046`–`0052` and the July 2026 sales-process continuation (PR #19 lineage, merged to main).
+
+### Concepts
+- **Immutable global template catalog**: 5 curated templates owned by `company_id='__global__'` (`tpl_groundwork_field_service_v2`, `tpl_design_build_v1`, `tpl_maintenance_v1`, `tpl_fast_turn_v1`, `tpl_commercial_bid_v1`). The template list endpoint returns only the latest version per template; superseded graphless versions (e.g. groundwork v1) are hidden and adoption of them is rejected with 409.
+- **Copy-on-adopt**: adopting a template deep-copies stages, outcomes, internal statuses, requirements, guides, resources, automations, transition paths and academy associations into a tenant-owned draft with fresh IDs and remapped relationships.
+- **Optimistic concurrency**: drafts carry `content_revision`; stale writes are rejected.
+- **Migration review**: proposing a migration builds a mapping batch for every open opportunity (approved legacy mappings auto-approve; ambiguous/conflicting ones require per-opportunity review with `final_stage_id` and optional `final_outcome_type`).
+- **Snapshots + approval + readiness gates**: a publication requires an approved snapshot of the migration batch and a passing publication-readiness check (validation, no pending mappings, no snapshot drift, no stale mappings).
+- **Atomic publish + rollback (full pipeline cutover)**: publish flips the prior published version to superseded, writes `sales_stage_assignments`, sets `opportunities.sales_process_stage_id` and history in one batch. Publish is also a real cutover of the legacy pipeline: it writes the published stage labels into the `{companyId}:pipeline_stages` setting (board columns change immediately), moves every mapped opportunity's `status`/`pipeline_stage` text to its new stage label, and captures the prior setting (`impact_json.previous_pipeline_stages`, `null` if it did not exist) plus each opportunity's prior labels (history `event_json.previous_status`/`previous_pipeline_stage`). Rollback restores the setting exactly (deleting it if it was absent) and every opportunity's prior labels alongside the snapshot restore. New leads default to the first label of the live `pipeline_stages` setting, and legacy status writes (board drag-and-drop, lead form, record edits) keep the published stable assignment in sync via `syncPublishedStageAssignment` (classification `status_synced`); unknown labels leave the assignment untouched so Needs Restaging semantics are preserved. `gw_leads` is never read or written by any of this.
+
+### API lifecycle (all under `/api/sales-process`, admin session required)
+`POST /drafts/from-template` (or `POST /drafts/from-current-pipeline` to import the live board's stage labels as a validation-complete draft with inferred semantics, guaranteed intake/won/lost stages and an open transition graph) -> `POST /versions/:id/validate` -> `POST /migration/propose` -> `PUT /migration/:batchId/:oppId` -> `POST /versions/:id/snapshots` -> `POST /snapshots/:id/approve` -> `GET /versions/:id/publication-readiness?migration_batch_id=X` -> `POST /versions/:id/publish {confirm:true, migration_batch_id}` -> optional `POST /publications/:id/rollback {confirm:true}`.
+
+### Live editing of the published process (August 2026)
+Admins can edit the live process directly without a draft/publish cycle:
+- `PUT /live/:versionId/stages` — rename, reorder, add, or archive stages on the published version. Applies immediately: the `{companyId}:pipeline_stages` setting is rewritten (board columns follow) and every lead in a renamed stage carries the new `status`/`pipeline_stage` label (keyed by `sales_process_stage_id`, so assignments stay stable). New active stages are wired into the transition graph; new terminal stages get an outcome. Non-closing stages holding leads cannot be deleted or archived (409 with guidance to move leads on the board or start a draft). Closing stages CAN be split live: archive the closing stage and add active stages typed won/lost (and so on) — each lead moves to the stage matching its assignment `outcome_type` (preference chains: won->terminal, lost->terminal, disqualified->lost->terminal, nurture->terminal->lost); if any outcome has no home the save is rejected 409. The response includes `redistributed_leads`. Guarded by `content_revision` optimistic concurrency.
+- `PUT /live/:versionId/components/:component` — live edits for internal statuses, qualification fields, call guides, automations, email templates, and Academy associations. Transitions and outcomes remain draft-only.
+Structural restructures (mass lead moves, removing occupied stages) still use the full draft -> lead review -> publish flow. Draft endpoints continue to return 404 for published versions.
+
+### Frontend
+- **Sales Process Builder** view in `public/js/app_premium.js`, surfaced as the second Sales workspace tab ("Sales Process") plus an admin-only "Customize Stages" shortcut on the Pipeline board header. Start screen offers "Use my current pipeline" (imports live stage labels via `POST /api/sales-process/drafts/from-current-pipeline`) or a Groundwork template. Drafts use a 3-step wizard (Design Stages / Move Your Leads / Go Live); published processes show a 2-step layout (Edit Stages / History & Rollback) with live editing enabled — stage and component saves route to the `/live/` endpoints and refresh `window._gwPipelineStages` from the response. Stage editing uses labeled cards (name, friendly stage type, typical days, milestone, entry/exit guidance, status) with per-panel directions. Advanced tools dropdown covers overview, internal statuses, qualification fields, call guides, automations, email templates and Academy (the former Checklists and AI Assistant pages were removed). Post-publish the client refreshes `window._gwPipelineStages` from the publish response; post-rollback it re-fetches `DB.pipelineStages.list()`.
+- Shared stage resolver `public/js/sales-process.js` (browser) mirrors the canonical server resolver `resolveSalesOpportunityStage` in `src/index.tsx`. Record pages use the StageTracker conversion.
+
+### Tests (39 total across 7 suites)
+`npm run test:migrations` (needs the `sqlite3` CLI), `node --test tests/sales-process-platform.test.mjs tests/sales-process-safety.test.mjs` (platform + safety), `npm run test:sales-process-ui` (linkedom DOM proof), plus 3 Miniflare integration suites: `npm run test:sales-process-transitions`, `test:sales-process-adoption`, `test:migration-review` (these `vite build` first and import `dist/_worker.js`).
+
+### Deliberate human gate
+Publishing a sales process for a live tenant (including Avalon) is intentionally NOT automatable: an authenticated admin must adopt, review mappings, approve the snapshot and publish through the Sales Process Builder UI in production. See `docs/sales-process-completion-matrix.md` and `docs/sales-process-dependency-inventory.md`.
+
+### Groundwork AI close likelihood + time-in-stage (August 2026)
+The pipeline's follow-up signal is time-in-stage, not the old next-follow-up "OVERDUE" badge, and every open lead carries a running 0-100% close-likelihood score:
+- **Time-in-stage clock** (`gwStageClock` in `public/js/app_premium.js`): days since the lead entered its current stage (from `sales_stage_assignments.assigned_at`, exposed as `sales_process_assigned_at` on `GET /api/opportunities` and mapped to `stageEnteredAt`) compared to the stage's `expected_duration_days`. Bands: `ok` (< expected), `watch` (1-1.75x), `late` (>= 1.75x, "follow up"). Cards show a "Nd in stage" chip; the board's "Needs Follow-Up" stat card and `overdue` quick-filter use the `late` band; the mini-row dot escalates by band.
+- **Groundwork AI score** (`gwLeadScore`): deterministic heuristic recomputed live on every render. Hard pins: won = 100%, lost/disqualified = 0%. Open leads: baseline from stage progression (15% intake to 85% closing) adjusted by six transparent factors — time sitting in the current stage vs expected, velocity through the process so far (created-at vs cumulative expected durations), lead source quality (existing client +12, referral +10, website +3, cold -6), budget vs estimate fit (parses free-text `budget_range` against `estimate_amount`/`job_value`), estimate momentum (accepted +18 ... declined -18, sourced from the linked estimates table via `linked_estimate_status`), and engagement recency. Clamped 3-97 so only real outcomes reach the poles. Every factor is listed with its +/- contribution in the pill tooltip and in the "Groundwork AI" card at the top of the lead detail right rail (score, meter, clock line, factor breakdown).
+- **Prioritization**: the Pipeline sort defaults to "Priority" (score descending); "Sitting Longest" sorts by stage-clock ratio. Lead detail hero shows "Close Likelihood" and "In Stage" stat chips.
+
+## AI Lead Import + Commercial Multi-Property Accounts (August 2026)
+
+Fast lead creation from raw email text, with first-class support for commercial property-manager accounts (one point of contact, many properties/bids underneath).
+
+- **Entry points**: "+New" menu -> "AI Lead Import" (admin/sales), and the Add Lead page hero's "Import from Email (AI)" button. Both open `window._gwAiLeadImport()` in `public/js/app_premium.js`.
+- **Step 1 — drop box**: paste any email text into the textarea or drag/drop a downloaded `.eml` / `.txt` file (read client-side via FileReader, capped at 60k chars). "Read with Groundwork AI" posts to the backend.
+- **Backend**: `POST /api/ai/parse-lead` (src/index.tsx, session required) — `_aiCreds` -> `_aiQuotaGate` -> `_aiChatJson` (raw fetch Response; check `r.ok` then `r.json()`) -> `_logAiUsage(..., 'lead_import', ...)` -> `_aiParseJson`. The prompt extracts the prospective contact (never the recipient), company, phone (cell preferred), email, `client_type` (Commercial for property-management firms), EVERY property address with its site-specific notes (max 25), `contract_hint` (annual | multi_year | one_time | unknown), urgency/meeting plan, and a summary note. Returns sanitized JSON only.
+- **Step 2 — preview**: editable contact fields, rep assignment, client type; a "Multi-property account — 1 contact, N sites" badge with the contract hint; per-property checkbox rows (label, address, site notes all editable); urgency callout and summary preview. Button reads "Create Account + N Property Leads" when multiple sites are checked.
+- **Create**: one Commercial client record (found by name match in `loadClients()` or created — tagged `Multi-Property` when N>1, AI summary stored in `notes` since D1 `clients` persists base columns only; the `properties` array lives in the client payload/localStorage) plus **one lead per checked property**, each named `Contact — Site label`, linked via `clientId`, `source:'Email'`, `leadSource:'company_lead'`, first pipeline stage, its own value/bid, and an auto-note combining the AI summary with the site notes (persisted via `_d1SaveNote`). Multi-property lands on the Pipeline; single property opens the new lead.
+- **Why one-lead-per-property**: each site carries its own bid, value, stage and commission math independently, while the client record shows the whole portfolio (client page already lists linked leads via `clientId`).
+- Validated end-to-end against a real commercial email (3 properties + per-site notes extracted correctly, ~8s, ~1.3k tokens).
+
+## Client Portfolio (Client Detail Page)
+Each client page now shows the full portfolio:
+- **Leads & Opportunities**: every lead grouped Open / Won / Lost-Archived, linked via the new `opportunities.client_id` column (with name/prefix-match self-heal for older leads), plus open pipeline value chip.
+- **Financials tabs**: Estimates, Invoices (balance-due highlighted), Payments (with invoice number), filtered per client via `GET /api/estimates?client_id=`, `GET /api/invoices?client_id=`, and the new `GET /api/payments?client_id=`.
+- **Outstanding balance** stat (sum of unpaid invoice balances).
+- **Site Photos** grid from project media (`GET /api/customers/:id/media`).
+- **Recurring & Projections**: active subscriptions plus revenue projection card (monthly run rate, 12-month, 3-year).
+- **Extended contact card**: office phone, CC emails, mailing address vs service address, main POC, billing contact, site contact, payment method — all editable in the client form and persisted in `clients.extra` JSON (see `CLIENT_EXTRA_FIELDS` in src/index.tsx).
+- Migration `0055_client_portfolio.sql` adds `opportunities.client_id`, `clients.extra`, and fixes `recurring_plans` drift (`frequency_unit`, `visit_duration_minutes`, `services_included` — previously every recurring-subscriptions request returned 500). Self-heals in prod via `ensurePortfolioSchema`.
+
+### Client Page Inline Editing & Quick Create (update)
+- Contact Info is now edited directly in place (lead-style): click any field, type, and it autosaves — no separate Edit modal.
+- Green create buttons under each section: Schedule Job, New Lead (creates the lead with client info prefilled and opens the lead view), New Estimate / New Invoice (builders prefilled with the client), Record Payment (picks from open invoices), Add Property, Upload Photos (direct client photo upload via `POST /api/customers/:id/photos`).
+
+## My Day — Curated Mode, Pipeline Chart & "+N More" Capping (added 2026-08-03)
+
+My Day gained a new default layout ("My Day" / `curated` mode) designed for
+owner-operators who want a calm, glanceable start to the day instead of a
+long scrolling dashboard — plus a real-data Pipeline chart widget and a
+consistent overflow pattern so widget cards never grow or scroll.
+
+- **New `curated` day-mode** (`_GW_MYDAY_MODES` in `public/js/app_premium.js`)
+  sits alongside the existing Field/Office/Sales/Focus presets and the
+  bespoke "My Layout" (custom) mode. It surfaces Pipeline Snapshot, Today's
+  Jobs, My Tasks, My Calendar, and the new Pipeline Chart in a fixed
+  2-up grid.
+- **Default for first-time users only** — `_gwMyDayGetMode()` now defaults
+  anyone with **no saved mode AND no saved custom layout** into `curated`.
+  Anyone who has ever customized My Day (a `gw-myday-layout-*` key already
+  exists in their browser) keeps landing on their own layout exactly as
+  before — this only changes the experience for brand-new / never-touched
+  accounts. Verified live: an account with a pre-existing saved layout
+  resolves to `custom` and is unaffected; a fresh account resolves to
+  `curated`.
+- **Pipeline Chart widget** (`pipeChart`, `_pipeChartHtml`) — sparkline of
+  real pipeline value over the last 4 weeks (bucketed from each open lead's
+  `closedDate`/`updatedAt`/`createdAt`), a stage-breakdown bar + legend from
+  real `status` grouping, and a won-MTD figure. No fabricated data: the
+  week-over-week trend badge only renders when there's a real prior-week
+  baseline to compare against.
+- **"+N more" capping pattern** — replaces scrollbars/growing cards on the
+  three list-style widgets (My Tasks, Today's Jobs, My Calendar). Each
+  widget caps its visible rows to the active mode's per-widget limit
+  (`_GW_MYDAY_DEFAULT_CAPS` / each mode's own `caps`, e.g. curated =
+  `{jobsToday:4, tasks:4, calendar:4}`), collapsing the remainder into a
+  "N more — view all" link that expands the same card in place (no
+  separate filtered list page exists for any of the three, so in-place
+  expand is the real destination, not a placeholder). Each widget tracks
+  its own expand flag (`window._gwMyDayTasksExpanded` /
+  `_gwMyDayJobsExpanded` / `_gwMyDayCalExpanded`) so expanding one never
+  affects the others. My Tasks caps in priority order (overdue → due today
+  → upcoming → no date); Today's Jobs and My Calendar cap today's items
+  first, then upcoming/all-day.
+- **Shared caps handoff**: caps for the active mode are resolved once per
+  render at the top of `_gwTodayRender()` and published to
+  `window._gwMyDayCaps` so the async/mount-based Jobs and Calendar widgets
+  (and the async task-reload callback) read the same values as the
+  synchronous My Tasks render.
+- **CSS**: new `.w-fixed-h` / `.list-cap` / `.more-link` / `.gw-pipe-chart`
+  + `.pipe-*` classes live in `public/js/premium.css` (the real served
+  stylesheet — see the note above about `public/static/` being unused).
+- **Verified** via a live login + screenshot pass (Playwright): curated
+  mode auto-applies for a no-history account, the Pipeline chart renders
+  correct real D1-derived figures, and both My Tasks and Today's Jobs
+  correctly cap at 4 visible rows with an accurate hidden count once
+  seeded past the cap — including a full expand → "Show less" → re-collapse
+  round trip.
+- **Known verification gap**: the My Calendar widget's capping code path
+  mirrors the same pattern as Tasks/Jobs but could not be exercised live in
+  this sandbox — it only renders once a real Google Calendar OAuth
+  connection exists (`isGoogleConnected()` + server-side
+  `GET /api/google/status`), which isn't available in this dev environment.
+  Recommended follow-up: verify with a real connected Google account, or
+  add a small D1-seeding test harness against the `calendar_events` table.
+
+## Command Center Rename + Nav Consolidation + Masonry Grid Bug Fixes (2026-08-03)
+
+Follow-up to the entry above. Two threads, done together per explicit
+request: (1) consolidate My Day + the 3 separate report pages into one
+"Command Center" hub with drill-down links, and (2) fix a "blank spaces /
+missing widgets" layout bug reported live in production.
+
+**IA consolidation — Command Center:**
+- Renamed the `curated` My Day mode (and all page titles/headers/toasts) from
+  "My Day" to **"Command Center"** — same underlying `today` route, no
+  routing changes, only display labels.
+- Removed `salesReports` (Business Pulse) / `financialReports` (Financial
+  Snapshot) / `opsReports` (Operations Snapshot) as **top-level Dashboard
+  nav tabs** — they had confirmed real data overlap with My Day's own
+  widgets (pipeline funnel, budget vs actual, work orders), which is what
+  produced the "same 3-4 pages, messy" feeling reported by the user. The
+  three pages/routes/functions themselves are fully intact and unchanged —
+  only removed from the top-level tab list in all 4 places it was defined
+  (`gwDashboard()`, `_gwApplyFieldNavFilters()`, `_gwInitAllPanels()`,
+  `_wsTabDefs.Dashboard`).
+- Added contextual **"Full report" drill-down buttons** instead: Pipeline
+  Chart widget → Business Pulse, Today's Jobs widget → Operations Snapshot,
+  Financial Pulse's existing "Full View" button → Financial Snapshot.
+- Added a **"Command Center ›" breadcrumb back-link** to all 3 detail pages'
+  header eyebrows so users can return to the hub in one click.
+
+**Masonry grid bug fixes (root cause: `!important` beats inline styles):**
+The live "blank spaces, no blocks where there should be" symptom traced to
+three separate CSS bugs in `public/js/premium.css`, all variants of the same
+mistake — an `!important` CSS rule always wins over an inline `style="..."`
+regardless of selector specificity, and the My Day layout engine
+(`_gwMyDayMasonry()` in `app_premium.js`) depends entirely on being able to
+set each widget's real height via inline `style="grid-row:span N"`:
+1. Three competing `.gw-myday-grid` rule blocks fought over
+   `grid-auto-rows`/`grid-auto-flow`/`gap` — the last `!important` block won
+   and forced `grid-auto-rows:auto` + `grid-auto-flow:row`, breaking the
+   masonry engine's 4px fine-grained row assumption and causing large dead
+   vertical gaps. Consolidated into one base rule.
+2. `.gw-myday-widget { grid-row: auto !important; }` silently nullified
+   every widget's JS-computed row span, and widget-id-specific
+   `grid-column: span N !important;` rules (for `tasks`, `recent`,
+   `staleLeads`, `recentWins`, `calendar`, `pipeStrip`, `activity`,
+   `reviews`) nullified each day-mode's configured column span — this is
+   what caused My Tasks to render at a hardcoded span 4 and visually overlap
+   the Pipeline Chart widget instead of curated mode's configured span 2.
+   Fixed by dropping `!important` from both (kept the mobile `≤768px`
+   breakpoint override, which correctly still uses `!important` since the
+   masonry JS intentionally bails out below that width).
+3. The masonry measurement function itself (`_gwMyDayMasonry()`) measured
+   the outer `.gw-myday-widget` wrapper's `getBoundingClientRect().height`
+   after resetting its `grid-row` to `auto` — but the grid's
+   `align-items:stretch` plus the fixed `grid-auto-rows:4px` track meant the
+   wrapper always measured ~4px regardless of real content, so every widget
+   got the same fallback span and taller content (e.g. Pipeline Snapshot's
+   stat values, Financial Pulse tiles) was visually clipped. Fixed by
+   measuring `.gw-myday-widget-body.scrollHeight` (the content-sized child,
+   unaffected by grid stretching) instead, while still resetting the
+   wrapper's `grid-row` to `auto` first each pass — omitting that reset
+   caused a second bug, a runaway growth feedback loop, since the body's
+   `min-height:100%` (of the wrapper) would otherwise inflate on every
+   `ResizeObserver` tick.
+- **Verified** via Playwright (login + live D1 data) across all 5 day-modes
+  (`curated`/`field`/`office`/`sales`/`focus`): zero widget overlaps, zero
+  clipped content, stable widget heights across repeated 2s/5s/10s
+  re-measurements (no growth-loop regression), and tight masonry packing
+  with no dead vertical gaps.
+- **Not done in this pass**: the deeper visual "hub" redesign the user also
+  asked for (hero KPI styling / zone grouping to feel more like a true
+  command-center dashboard rather than a grid of small widgets) — the IA
+  consolidation and both rounds of grid bug fixes above were prioritized
+  first since they were reported as active defects. Recommended follow-up.
+
+## Visual Hub Pass: Hero KPI Band + Zone-Grouped Command Center (2026-08-03)
+
+Follow-up to the entry above, delivering the "recommended follow-up" flagged
+there. Two parts, both requested together: (a) elevate the Pipeline Snapshot
+stat strip into a true hero KPI band, and (b) group Command Center's widgets
+into visually distinct zones so the page reads as a hub of the underlying
+report pages rather than a flat pile of same-weight widgets.
+
+**(a) Hero KPI band:**
+- Redesigned the Pipeline Snapshot strip (Open Leads / Proposals Out /
+  Pipeline Value / Won MTD) from a plain bordered-divider stat row into
+  icon-chip cards, each with its own color accent (sky/amber/pine/emerald)
+  and an inline SVG icon (via `gwIcon()`) on a colored chip background.
+- Renders full-width, standalone, above all zone sections (see below) — it's
+  a compact KPI strip, not a masonry-packed card.
+
+**(b) Zone-grouped layout:**
+- Added a `zone` tag (`hero`/`sales`/`financial`/`operations`/`personal`) to
+  every widget in `_GW_MYDAY_WIDGETS`, plus a `_GW_MYDAY_ZONES` config
+  (label, icon, accent color, and — where one exists — the report route to
+  drill into) for `sales` → Business Pulse, `financial` → Financial
+  Snapshot, `operations` → Operations Snapshot, and a `personal` "My Work"
+  zone with no report link.
+- Command Center's **preset day-modes** (curated/field/office/sales/focus),
+  in view mode, now render widgets grouped under titled
+  `<section class="gw-myday-zone">` blocks — colored header border, icon
+  chip, and (for zones with a report) a "Full report ›" button that
+  navigates straight to the matching report page.
+- The custom **"My Layout"** mode and **edit mode** are both intentionally
+  untouched — they keep the original flat single-grid layout exactly as
+  before, so drag-and-drop reordering (which assumes one grid) needed no
+  changes.
+- The masonry engine (`_gwMyDayMasonry()`) was rewritten to pack **every**
+  `.gw-myday-grid` on the page (one per zone) via `querySelectorAll`
+  instead of assuming a single global grid, while preserving the exact
+  reset-before-measure sequence from the prior bug fix (see entry above) so
+  the previously-fixed runaway-growth-loop bug does not recur per-grid.
+- **Verified** via Playwright (login + live D1 data): zero widget overlaps
+  and zero clipped content across curated/office/sales/field/focus + custom
+  + edit mode; zero widget-height growth across repeated timepoints in a
+  mode with async widgets (finance/AR snapshot); correct drill-down
+  navigation from a zone's "Full report" button; and confirmed the separate
+  mobile renderer (`_gwTodayRenderMobile()`, ≤768px) is completely
+  unaffected by all of the above (fresh page load at 400px shows zero
+  zones, original mobile header layout intact).
+- **Known verification gap**: the intermediate `900px`/`1100px` CSS
+  breakpoints for `.gw-myday-grid` were not explicitly screenshot-tested
+  against the new per-zone multi-grid structure (only full desktop width
+  and mobile were). Low risk since those overrides are class-based and
+  apply per-grid automatically, but not visually re-confirmed.
+
+## Command Center Rebuild: Single Canonical Layout, Report Pages Retired (2026-08-03)
+
+Full rebuild of Command Center per direct user sign-off ("go with your
+recommendations and implement the full thing now"), replacing the
+preset-day-mode / edit-mode / drag-and-drop system from the entries above
+with **one canonical layout for everyone**.
+
+**Layout:**
+- Header simplified to: title, date/rep line, single **"+ Add Widget"**
+  button. No modes, no edit-mode toggle, no day-mode picker.
+- Hero band gained a **5th chip — Avg Close Likelihood**, computed via
+  `gwLeadScore()`, alongside the existing Open Leads / Proposals Out /
+  Pipeline Value / Won MTD chips. New `.gw-today-pipe-strip--five` CSS grid
+  (5 cols desktop → 3 at ≤900px → 2 at ≤680px) plus a rose color variant for
+  the low-score band.
+- Zones unchanged in concept (Sales & Pipeline / Financial / Operations /
+  My Work) but every widget now renders at a **fixed span from a single
+  registry** (`_GW_MYDAY_WIDGETS`) — no per-mode spans/heights/order,
+  reordering is not supported (drag-and-drop cut entirely).
+- **Needs Follow-Up** upgraded to sort by `gwStageClock()`'s "late" urgency
+  band (stage-relative overdue, not just calendar age) and is a **default**
+  Sales & Pipeline widget.
+- **Rep Leaderboard** (new) and **Budget vs Actual** (new) are
+  **Add-Widget-only** — hidden by default, role-gated (admin/office_manager
+  for Rep Leaderboard), surfaced only via the picker.
+- Deep content that used to live on the report pages now expands **in
+  place via accordion** instead of a modal/page: Pipeline Chart's "View
+  trend" and Money Owed's "Aging" both toggle a `.gw-accordion-body` with a
+  chevron rotation and a short reveal animation
+  (`window.gwMyDayAccordionToggle(id)`).
+- Operations zone gained an Add-Widget-only "Upcoming Schedule (7 Days)"
+  deeper-content widget (`opsDeeper`).
+
+**Customization model — replaced entirely:**
+- No presets, no modes, no edit-mode banner/state.
+- **"+ Add Widget"** opens a popover (`_gwMyDayAddWidgetPopover`) listing
+  every widget allowed for the current role with an Add/Remove toggle.
+- Each on-screen widget gets a small **hover-only "×"** in its top-right
+  corner (`.gw-myday-widget-remove`, opacity 0→1 on `:hover`) to remove it
+  — same popover to re-add.
+- Drag-and-drop, resize grips, and all related CSS/state (`.gw-myday-grip--*`,
+  `.gw-myday-resizing`, `.gw-myday-drop-target`, `.gw-myday-dragging`, the
+  old edit-mode banner/bar/name/wiggle-animation classes) removed.
+
+**Report pages deleted outright:**
+- `salesReports()`, `financialReports()`, `opsReports()` and every line of
+  wiring that referenced them are gone — nav-permission arrays (admin /
+  office_manager / division_manager / foreman / field_supervisor, in both
+  `app_premium.js` and `user_management.js` and both `defaultNavPerms`
+  blocks in `src/index.tsx`), `_VIEW_WORKSPACE_MAP`, `_wsHeaderMap`,
+  `_viewLabels`, `dashAliases`, the `p7Route` dispatch table, the
+  `gwDashboard()` tab fallthrough, and the `GW_VIEWS` registry in
+  `platform_core.js`. Their content now lives inline as Command Center
+  widgets (with accordion-expand for anything that was "deep").
+- Copy cleanup: "Business Pulse" / "Financial Snapshot" / "Operations
+  Snapshot" removed from labels, tooltips, and Spanish i18n
+  (`gw_i18n.js`); added a `'Command Center': 'Centro de Comando'` entry.
+
+**Nav:**
+- Dashboard's collapsible workspace-group (chevron + subtabs) replaced with
+  a single top-level **"Command Center"** nav button (`show('today')`) in
+  `src/index.tsx`. Verified backward-compatible — `activateNav()` and
+  `_gwApplyFieldNavFilters()` both null-guard on the now-absent subtabs
+  container.
+
+**Density pass:**
+- `.gw-myday-grid` column-gap tightened 28px → 18px to match the JS `GAP`
+  constant; tighter CSS `minmax()` widths throughout.
+
+**Incidental fixes found and fixed along the way (unrelated to this
+rebuild, pre-existing corruption from earlier sessions):**
+- Four separate syntax/logic corruptions in `app_premium.js` (a stray dead
+  `const objective : '';` statement, a mangled CSV-export filename line, a
+  corrupted save-button template string, and ~13 lines of garbled
+  duplicated trailing fragments at EOF) and one in `user_management.js` (a
+  duplicated/mangled role-change audit block) — all found via iterative
+  `node -c` syntax-check passes and fixed; `node -c` is clean on all four
+  touched JS files.
+- A **critical** bug in `src/index.tsx`: an entire ~39-tag block of
+  `<script src="...">` elements was duplicated verbatim, causing every
+  script's top-level `const`/`let`/`var` declarations to execute twice →
+  20 distinct "Identifier X has already been declared" runtime errors.
+  Not visible via `node -c` (this is HTML/TSX markup, not standalone JS);
+  caught via Playwright console capture and confirmed fixed the same way
+  (0 "already declared" errors post-fix, only expected 401s remain).
+- A widget-registry regression introduced mid-rebuild: `Needs Follow-Up`
+  had inherited a stale `defaultOff:true` flag from the old registry,
+  which — combined with the new spec (only Rep Leaderboard and Budget vs
+  Actual are meant to be Add-Widget-only) — meant it was silently hidden
+  by default. Caught during this pass's Playwright verification (comparing
+  the rendered Add-Widget popover against the confirmed spec) and fixed by
+  removing the flag; confirmed via re-test that it now renders by default
+  in the Sales & Pipeline zone.
+
+**Verified via Playwright** (login as a real tenant `office_manager`
+account, live local D1 data):
+- Command Center (`#gwDashboard` / `today` view) renders with the 5-chip
+  hero band, zone-grouped Sales & Pipeline / Financial / Operations / My
+  Work sections, and correct default widget visibility (Rep Leaderboard
+  and Budget vs Actual absent by default; Needs Follow-Up present).
+- Accordion toggle ("View trend") confirmed to open
+  `.gw-accordion-body--open` on click.
+- Hover-remove "×" confirmed to go from `opacity:0` to `opacity:1` on
+  widget hover.
+- Add Widget popover confirmed to open and list all widgets with correct
+  Add/Remove state matching what's on screen.
+- Zero "already declared" or other JS errors on the unauthenticated
+  landing page or post-login Command Center; the only console errors
+  present are expected pre-auth 401s (`/api/auth/me` before login) and
+  two pre-existing, unrelated 404s (`/api/google/refresh`,
+  `/api/calendar/sync` — both return 404 by design when a tenant hasn't
+  connected Google Calendar; confirmed identical in the pre-rebuild commit,
+  not a regression).
+- Also verified across **admin**, **rep**, and **foreman (field role)**
+  accounts in a follow-up pass:
+  - **admin** (`tyler@avalon-lc.com`): full Command Center, all 4 zones
+    (Sales & Pipeline / Financial / Operations / My Work), 5-chip hero band,
+    zero unexpected errors.
+  - **rep** (`ryan@avalon-lc.com`): Command Center renders correctly with
+    **no Financial zone** (matches `showFin: isAdmin||isOM` gating) — Sales
+    & Pipeline (including the rep's own "Weekly Activity Targets" widget) +
+    Operations + My Work only.
+  - **foreman** (field role, temp test account): correctly bypassed the
+    rebuilt Command Center entirely and routed straight to the separate,
+    intentionally-untouched **`fieldDashboard`** view — confirming the
+    "fieldDashboard stays untouched" requirement holds. Sidebar nav still
+    shows the single consolidated "Command Center" label.
+  - All three roles: zero "already declared" or unexpected console errors;
+    only the same pre-existing pre-auth 401s / unconnected-Google-Calendar
+    404s seen in the office_manager pass.
+
+**Deployed to production** via `wrangler pages deploy` (BYOK, Tyler's
+Cloudflare account) — live at https://groundwork-crm.com and
+https://www.groundwork-crm.com. Verified post-deploy with a fresh
+Playwright console capture directly against production: identical clean
+signature to the pre-deploy sandbox check (only the 4 expected pre-auth
+401s, zero "already declared" or other JS errors). Confirmed via `curl`
+that the duplicate-`<script>` fix is live (`db.js` tag appears exactly
+once) and that `salesReports`/`financialReports`/`opsReports` no longer
+appear anywhere in the deployed `app_premium.js` except as migration-
+lineage comments.
+
+## Command Center Widget Fit: Row-Height Matching for Paired Widgets (2026-08-03)
+
+Follow-up polish requested after the rebuild above went live and the user
+reviewed real tenant data in production: "*the widgets don't fit together
+well... everything is a different size, height or shape.*" Diagnosed as a
+side effect of the existing masonry-packing engine (`_gwMyDayMasonry()`),
+which sizes every widget purely to its own content — so two widgets sharing
+a visual row (e.g. Financial Pulse vs. Money Owed, My Tasks vs. My
+Calendar) could end up wildly different heights, with dead space under the
+shorter one.
+
+**Fix — `_gwMyDayMasonry()` made row-aware (no change to the layout model,
+widget registry `span` values, or any customization UI):**
+- CSS `grid-auto-flow` changed from `row dense` → `row` (plain) so widget
+  placement stays 100% predictable left-to-right/top-to-bottom — `dense`
+  would silently reorder widgets into earlier gaps, which is incompatible
+  with computing row membership in JS.
+- The masonry pass now: (1) measures every widget's natural content height
+  as before, (2) walks widgets in DOM order replicating the browser's own
+  column-wrapping (using each widget's registry `span`, read via
+  `data-widget-id` — not the mutated inline style, to stay stable across
+  repeated re-packs) to group them into the same visual "rows" the grid
+  actually places them into, (3) sets every widget's `grid-row` explicitly
+  to the **tallest sibling in its row** (`grid-row: span N`), so widgets
+  sharing a row now read as one even, aligned unit. Rows are still packed
+  independently of each other — no dead space was reintroduced between
+  different rows, only widgets sharing a row get matched.
+- **Explicitly did NOT widen lone widgets to fill their row.** An earlier
+  version of this fix force-widened any widget without a same-row partner
+  (e.g. "Crew Hours Today," "Today's Jobs") to a full 6-column bar to
+  avoid leaving empty space beside it — caught in Playwright visual review
+  (matching the tenant's own follow-up: "why is Crew Hours so long... it
+  will never need to be that long... it feels like a lot of waste") that
+  this made lightly-populated widgets *worse*, stretching a one-line card
+  into a mostly-empty full-width bar. Reverted before this ever reached
+  production: a widget alone in its row now keeps both its own natural
+  content height AND its own designed (registry) width — no forced
+  widening in either dimension. Which widgets end up paired vs. alone in a
+  row is a direct consequence of the user's own Add Widget / hover-remove
+  choices, not something this pass overrides.
+- Verified the existing accordion-expand (`gwMyDayAccordionToggle`) and its
+  ResizeObserver-triggered re-pack still correctly re-stretch a widget's
+  row-partner when the accordion opens/closes (e.g. opening Pipeline's
+  "View trend" now also grows "Daily Sales Start-Up" beside it to match).
+
+**Verified via Playwright** (sandbox only — pre-deploy visual check
+requested by the user before production rollout):
+- Screenshotted the full Command Center for `admin`
+  (`tyler@avalon-lc.com`) in both the default state (Time Clock + Today's
+  Jobs paired, matching height) and with Time Clock hidden (matching the
+  user's own screenshots) — confirmed Financial Pulse/Money Owed now match
+  heights; confirmed Today's Jobs and Crew Hours Today, each alone in
+  their row once Time Clock is hidden, now stay at their own compact,
+  content-sized height/width instead of stretching to fill the row.
+- Accordion toggle ("View trend") re-tested post-fix: opens correctly and
+  its row-partner ("Daily Sales Start-Up") grows to match the new height.
+- Add Widget popover / hover-remove re-tested post-fix: toggling widgets
+  on/off (incl. Time Clock) re-renders and re-packs correctly, no errors.
+- Re-ran the full multi-role regression (admin / office_manager / rep /
+  foreman-field): zero page errors on any role; only the same pre-existing
+  expected pre-auth 401s/404s seen in every prior pass; admin still lands
+  on the platform overview, rep still has no Financial zone, foreman still
+  bypasses Command Center entirely for the untouched `fieldDashboard`.
+- `node -c public/js/app_premium.js` clean.
+
+## Command Center: Whole-Sheet Visual Consistency Pass (2026-08-03)
+
+Follow-up to the row-height-matching fix above. User reviewed the live,
+corrected Command Center and reported it still felt inconsistent: "*every
+widget being a different size and shape just continues to throw the
+professionalism of the command center off*," with screenshots of Sales &
+Pipeline, Financial, and Operations zones. Row-height-matching alone wasn't
+enough — two further problems were identified:
+
+1. **Operations zone width mismatch.** With "Time Clock" hidden (a
+   per-user Add Widget choice), "Today's Jobs" (registry `span:4`, ~67%
+   width) and "Crew Hours Today" (registry `span:3`, ~50% width) each sat
+   alone in their own row at *different* widths, leaving different amounts
+   of dead space beside each — a jagged, staircase-like right edge.
+2. **Internal density mismatch even at matched widths/heights.** Pipeline
+   Chart (dense chart + breakdown) vs. Needs Follow-Up (2 short list
+   items) and Financial Pulse (dense KPI grid + progress bars) vs. Money
+   Owed (3 full-width, mostly-empty stacked blocks) matched their outer
+   box size but read as completely different "shapes" of widget internally.
+
+**Fix (two parts, both implemented):**
+
+- **Part A — Operations zone spans:** `crewHours` registry span changed
+  from `3` → `6` (full row width). It's an admin/OM-only widget that
+  doesn't naturally pair with anything else in the zone, so it now owns
+  its row cleanly instead of sitting at an odd half-width. Its render was
+  redesigned from a narrow vertical list (`.gw-myday-crew-row`) into a
+  wrapping grid of compact chip-cards (`.gw-myday-crew-grid` /
+  `.gw-myday-crew-chip`, visually matching the Money Owed cell language)
+  so it stays content-dense at full width regardless of crew size, plus a
+  header badge showing total hours + live count.
+- **Part B — Internal density parity:**
+  - Money Owed (A/R): `.gw-myday-ar-grid` changed from a stacked
+    `flex-direction:column` list to a 3-across `grid-template-columns:
+    repeat(3,1fr)` layout, matching Financial Pulse's denser KPI-grid feel
+    instead of full-width blocks with mostly-empty horizontal space.
+  - Empty-state placeholders (Needs Follow-Up, Today's Jobs) gained a new
+    `.gw-myday-placeholder--empty` variant: centered icon (`success` /
+    `calendar`) + message, `flex:1` so it expands to fill whatever extra
+    height row-matching gives it (via a `:has()` rule making the parent
+    `.card` a flex column) — turning what used to be a small message
+    floating in a big empty void into an intentionally centered "all
+    clear" state.
+
+**Verified via Playwright** (sandbox render pre-install, per user request):
+- Measured widget bounding boxes directly (`getBoundingClientRect()`) for
+  the office_manager role: confirmed Crew Hours Today now renders at full
+  1112px row width (matching Reviews/Money Owed row) instead of the
+  previous ~547px half-width bar; confirmed Financial Pulse / Money Owed
+  both render at matched 488px height with the new 3-across A/R layout.
+- Screenshotted full Command Center for `admin` and `office_manager` —
+  visually confirmed Operations zone no longer has a staggered right edge,
+  Money Owed reads as a dense 3-cell row instead of 3 stacked mostly-empty
+  blocks, and empty-state cards center their icon+message in the available
+  height instead of floating near the top with dead space below.
+- Re-ran full multi-role regression (admin / office_manager / rep /
+  foreman-field): zero non-expected console errors on every role (only
+  the same pre-existing pre-auth 401s and the expected 403s on
+  admin/OM-gated endpoints — `crewHours`/`finance` — when logged in as
+  `rep`/`foreman`, consistent with every prior regression pass).
+- `node -c public/js/app_premium.js` clean.
+- Local D1 test credentials (temporary PINs for jen/tyler/ryan, temp
+  `rep_fieldtest01` foreman record) fully reverted and verified back to
+  original state after testing.
+
+## Lead Detail Page: Fixed Corrupted Layout from Earlier Command Center Rebuild (2026-08-04)
+
+User reported: "*my leads are messed up now*," with a screenshot showing a
+lead detail page squeezed into a narrow ~25-30% width column, ~70-75%
+empty space to the right, and a status badge (e.g. "Fresh Inquiry")
+floating in isolation, disconnected from its card.
+
+**Root cause found via git archaeology** (`git log -S"divero" -- public/js/app_premium.js`):
+an earlier Command Center rebuild commit (`90f4ac2`, "Command Center
+rebuild: single canonical layout, delete report pages, accordion-expand,
+Add Widget popover") contained a botched find/replace that silently
+corrupted the `opportunityDetail()` function's HTML template in
+`app_premium.js`. Four nested opening tags —
+
+```html
+<div class="rp-command" id="rpCommandBar">${_cmdBarHtml}</div>
+<div class="rp-body">
+  <aside class="rp-left" aria-label="Lead overview">
+    <div class="rp-left-hero">
+```
+
+— were deleted and replaced with a malformed fragment (`<divero">`), while
+every corresponding **closing** tag further down the template was left
+untouched. The browser silently auto-corrected the broken markup into a
+collapsed/flattened DOM, which is what produced the narrow-column squeeze
+and the orphaned floating badge (actually the command-bar content,
+`_cmdBarHtml`, no longer wrapped in its intended `.rp-command` container).
+This bug shipped invisibly in every deploy since `90f4ac2` — it only
+became obvious once a user opened a lead detail page and looked closely.
+
+**Fix:** restored the four missing opening tags in `opportunityDetail()`'s
+`view.innerHTML` template so the tag structure matches its (already-intact)
+closing tags again, giving back the intended 3-column layout (left contact
+panel / center workspace / right AI+financials rail).
+
+**Verified:**
+- Reproduced the exact bug pre-fix via Playwright screenshot against a
+  real lead ("John Smith") — matched the user's report precisely.
+- `node -c public/js/app_premium.js` clean before and after.
+- Rebuilt, restarted, re-tested via full UI click-through (login → Sales
+  → Pipeline → click lead card) rather than direct hash navigation, to
+  match real user flow.
+- Confirmed fixed: `.rp-shell` now renders at full 1112px content width
+  with `.rp-left` (280px) / `.rp-center` (464px) / `.rp-rail` (320px)
+  properly distributed side-by-side; no floating badge; right rail shows
+  Groundwork AI, Tasks, Stage Checklist, Financials, and Payment Schedule
+  cards as designed.
+
+**Sales Process page — could not reproduce.** The same message also said
+the Sales Process (stage-editing) page felt "*tiny and scrunched*." After
+applying the Lead Detail fix above, the Sales Process page was tested via
+full UI navigation (Sales → Sales Process) and rendered correctly at full
+width in every test: `.spb-heading`/`.spb-panel` measured 1112px (same
+content-area width as the fixed Lead Detail page), stage cards
+well-proportioned, no cramped Entry/Exit Guidance fields. No bug was found
+here — it's possible this was a transient rendering artifact from the same
+underlying corrupted-DOM issue, a narrower browser window at the time the
+report was made, or something not reproducible in this environment. Flagged
+to the user to re-check after this deploy and report back with a fresh
+screenshot if it's still an issue.
+
+**Command Center** — user explicitly asked to defer ("*I'm gonna sleep on
+it and look at it later*"); no changes made this pass.
 ## Finance OS (added 2026-08-04)
 A separate cost-accounting layer inside this repo — job costing, overhead
 recovery, and an AI-assisted action queue, built against its own `FINANCE_DB`

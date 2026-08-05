@@ -357,7 +357,7 @@
       } catch(e) { toast('Error: ' + e.message); }
     };
     window._gwDeleteTenant = async function(id, name) {
-      const typed = prompt(`⚠️ PERMANENTLY DELETE "${name}" and ALL its data?\n\nThis cannot be undone. Reps, leads, estimates, invoices, settings — everything will be erased.\n\nType the company ID to confirm:\n${id}`);
+      const typed = prompt(`WARNING — PERMANENTLY DELETE "${name}" and ALL its data?\n\nThis cannot be undone. Reps, leads, estimates, invoices, settings — everything will be erased.\n\nType the company ID to confirm:\n${id}`);
       if (typed === null) return;
       if (typed.trim() !== id) { toast('Company ID did not match — deletion cancelled'); return; }
       try {
@@ -1253,7 +1253,7 @@
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <input id="gwPS-ai-key" class="um-input" type="password" placeholder="sk-…" style="max-width:340px;font-family:monospace">
             <button onclick="window._gwSaveAiKey()" style="padding:10px 18px;background:#4D8A86;border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save Master Key</button>
-            <button id="gwPS-ai-test-btn" onclick="window._gwTestAiKey()" ${d.platform_key_set?'':'disabled'} style="padding:10px 18px;background:${d.platform_key_set?'#2D7A55':'#3a4a48'};border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:${d.platform_key_set?'pointer':'not-allowed'}">⚡ Test AI</button>
+            <button id="gwPS-ai-test-btn" onclick="window._gwTestAiKey()" ${d.platform_key_set?'':'disabled'} style="padding:10px 18px;background:${d.platform_key_set?'#2D7A55':'#3a4a48'};border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:${d.platform_key_set?'pointer':'not-allowed'}">${(typeof gwIcon==='function')?gwIcon('lightning',13,'#fff'):''} Test AI</button>
           </div>
           <div id="gwPS-ai-test-result" style="margin-top:10px"></div>
           <div style="font-size:11px;color:#6F7E6A;margin-top:8px;line-height:1.6">
@@ -1318,7 +1318,7 @@
       } catch(e) {
         out.innerHTML = `<div style="font-size:13px;color:#C97B6A">✗ ${esc(e.message)}</div>`;
       }
-      if (btn) { btn.disabled = false; btn.textContent = '⚡ Test AI'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = ((typeof gwIcon==='function')?gwIcon('lightning',13,'#fff'):'') + ' Test AI'; }
     };
     window._gwToggleAi = async function(companyId, enabled, el) {
       try {
@@ -2200,7 +2200,7 @@
                 <div style="font-size:10.5px;color:#6F7E6A">Interactive demo — nothing is saved</div>
               </div>
               <div style="display:flex;gap:6px">
-                ${[['playbook','Playbook'],['wizard','Wizard'],['checklist','Checklist'],['copilot','✨ Copilot']].map(([id,l])=>`
+                ${[['playbook','Playbook'],['wizard','Wizard'],['checklist','Checklist'],['copilot','Copilot']].map(([id,l])=>`
                 <button onclick="window._gwOnbPvMode('${id}')" id="gwPvTab_${id}" style="padding:6px 12px;border-radius:9px;border:1px solid var(--line,#e5e5e0);background:transparent;color:#6F7E6A;font-size:11.5px;font-weight:800;cursor:pointer">${l}</button>`).join('')}
               </div>
             </div>
@@ -2274,7 +2274,7 @@
 
     function pvWizMock(id) {
       const inp = (label, val) => `<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;color:#374151;margin-bottom:4px">${label}</label><input value="${val}" disabled style="width:100%;padding:9px 10px;border:1.5px solid #E5E7EB;border-radius:9px;font-size:12.5px;background:#F9FAFB;color:#6B7280;box-sizing:border-box"></div>`;
-      if (id === 'wz_welcome')  return `<div style="text-align:center;padding:10px 0"><div style="font-size:40px">👋</div><div style="font-size:12.5px;color:#6B7280;margin-top:8px;line-height:1.5">A quick setup gets your whole business into Groundwork — clients, pricing, and your first estimate. Takes about 2 minutes.</div></div>`;
+      if (id === 'wz_welcome')  return `<div style="text-align:center;padding:10px 0"><div style="display:flex;justify-content:center">${(typeof gwIcon==='function')?gwIcon('wave',40,'#2D7A55'):''}</div><div style="font-size:12.5px;color:#6B7280;margin-top:8px;line-height:1.5">A quick setup gets your whole business into Groundwork — clients, pricing, and your first estimate. Takes about 2 minutes.</div></div>`;
       if (id === 'wz_profile')  return inp('Company name','Acme Landscaping') + inp('Industry','Landscaping &amp; Lawn Care') + inp('Business phone','(555) 201-8890');
       if (id === 'wz_client')   return inp('Client name','Riverside HOA') + inp('Client phone','(555) 318-2244');
       if (id === 'wz_estimate') return inp('Estimate title','Spring Cleanup — Riverside HOA') + inp('Amount','$2,450.00');
@@ -2369,7 +2369,7 @@
         </div>
       </div>
       <div style="text-align:right;margin-top:12px">
-        <span style="display:inline-flex;align-items:center;background:#2D7A55;color:#fff;border-radius:26px;padding:11px 18px;font-size:12.5px;font-weight:800;box-shadow:0 6px 24px rgba(29,58,43,.35)">🚀 Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${done}/${items.length}</span></span>
+        <span style="display:inline-flex;align-items:center;background:#2D7A55;color:#fff;border-radius:26px;padding:11px 18px;font-size:12.5px;font-weight:800;box-shadow:0 6px 24px rgba(29,58,43,.35);gap:7px">${(typeof gwIcon==='function')?gwIcon('rocket',13,'#fff'):''} Getting Started <span style="background:#fff;color:#2D7A55;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px">${done}/${items.length}</span></span>
         <div style="font-size:10.5px;color:#4A5546;margin-top:6px;font-weight:600">↑ the floating launcher pinned bottom-right of the tenant dashboard</div>
       </div>`;
     }
@@ -2392,7 +2392,7 @@
 
       <!-- Tour picker -->
       <select onchange="window._gwOnbPvCpTour(this.value)" style="width:100%;padding:9px 10px;border:1.5px solid #B8B4A8;border-radius:10px;font-size:12.5px;font-weight:700;color:#374151;background:#fff;margin-bottom:12px">
-        ${tourKeys.map(k=>`<option value="${esc(k)}" ${k===pvS.cpTour?'selected':''}>✨ ${esc(tours[k].label||k)}</option>`).join('')}
+        ${tourKeys.map(k=>`<option value="${esc(k)}" ${k===pvS.cpTour?'selected':''}>${esc(tours[k].label||k)}</option>`).join('')}
       </select>
 
       <!-- Simulated dimmed app with spotlight -->
@@ -2416,15 +2416,15 @@
         <!-- Tour card -->
         <div style="margin:0 12px 12px;background:#fff;border-radius:13px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.35)">
           <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:10px 14px;display:flex;align-items:center;gap:8px">
-            <span style="font-size:14px">✨</span>
+            <span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('sparkle',14,'#fff'):''}</span>
             <span style="flex:1;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.04em">GROUNDWORK GUIDE · ${idx+1} OF ${steps.length||1}</span>
             <span style="color:rgba(255,255,255,.75);font-size:13px">✕</span>
           </div>
           <div style="padding:12px 14px 4px">
             <div style="font-size:13.5px;font-weight:800;color:#1F2937">${esc(step.title||'')}</div>
             <div style="font-size:11.5px;color:#4B5563;margin-top:4px;line-height:1.5">${esc(step.body||'')}</div>
-            ${step.tip?`<div style="margin-top:8px;background:#F0FAF4;border:1px solid #2D7A5526;border-radius:8px;padding:7px 10px;font-size:10.5px;color:#1F5138;line-height:1.45"><b>💡 Pro tip:</b> ${esc(step.tip)}</div>`:''}
-            ${step.clickToAdvance?`<div style="margin-top:8px;font-size:10.5px;font-weight:700;color:#8B6914">👆 User clicks the highlighted button to do it for real — tour advances automatically.</div>`:''}
+            ${step.tip?`<div style="margin-top:8px;background:#F0FAF4;border:1px solid #2D7A5526;border-radius:8px;padding:7px 10px;font-size:10.5px;color:#1F5138;line-height:1.45"><b>${(typeof gwIcon==='function')?gwIcon('idea',11,'currentColor'):''} Pro tip:</b> ${esc(step.tip)}</div>`:''}
+            ${step.clickToAdvance?`<div style="margin-top:8px;font-size:10.5px;font-weight:700;color:#8B6914">${(typeof gwIcon==='function')?gwIcon('pointer',11,'currentColor'):''} User clicks the highlighted button to do it for real — tour advances automatically.</div>`:''}
             ${step.view?`<div style="margin-top:8px;font-size:10px;color:#9CA3AF">auto-navigates to <b>${esc(step.view)}</b></div>`:''}
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px 12px">
@@ -2441,11 +2441,11 @@
       <!-- Real AI chat test -->
       <div style="background:#fff;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.14);overflow:hidden">
         <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:11px 14px;display:flex;align-items:center;gap:8px">
-          <span style="font-size:15px">✨</span>
+          <span style="display:inline-flex">${(typeof gwIcon==='function')?gwIcon('sparkle',15,'#fff'):''}</span>
           <div style="flex:1"><div style="font-size:12.5px;font-weight:800;color:#fff">Groundwork AI — live test</div><div style="font-size:9.5px;color:rgba(255,255,255,.8)">Hits the real /api/ai/copilot endpoint (metered as your platform account)</div></div>
         </div>
         <div id="gwPvCpMsgs" style="max-height:200px;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:#FAFAF8;min-height:60px">
-          ${(pvS.cpMsgs||[]).map(m=>`<div style="max-width:88%;padding:8px 11px;border-radius:${m.role==='ai'?'4px 12px 12px 12px':'12px 4px 12px 12px'};font-size:11.5px;line-height:1.5;white-space:pre-wrap;${m.role==='ai'?'background:#fff;border:1px solid #EDEDE8;color:#1F2937;align-self:flex-start':'background:#2D7A55;color:#fff;align-self:flex-end'}">${esc(m.text)}${m.tour?`<div style="margin-top:6px;font-size:10.5px;font-weight:800;color:#2D7A55">↳ would offer tour: ✨ ${esc((tours[m.tour]&&tours[m.tour].label)||m.tour)}</div>`:''}</div>`).join('')
+          ${(pvS.cpMsgs||[]).map(m=>`<div style="max-width:88%;padding:8px 11px;border-radius:${m.role==='ai'?'4px 12px 12px 12px':'12px 4px 12px 12px'};font-size:11.5px;line-height:1.5;white-space:pre-wrap;${m.role==='ai'?'background:#fff;border:1px solid #EDEDE8;color:#1F2937;align-self:flex-start':'background:#2D7A55;color:#fff;align-self:flex-end'}">${esc(m.text)}${m.tour?`<div style="margin-top:6px;font-size:10.5px;font-weight:800;color:#2D7A55">↳ would offer tour: ${esc((tours[m.tour]&&tours[m.tour].label)||m.tour)}</div>`:''}</div>`).join('')
           || '<div style="font-size:11px;color:#9CA3AF;text-align:center;padding:14px 6px">Ask what a new user might ask — e.g. "How do I import my clients?" or "How do I get paid faster?"</div>'}
         </div>
         <div style="display:flex;gap:6px;padding:10px 12px;border-top:1px solid #F3F4F6">
@@ -2471,7 +2471,7 @@
         const d = await apiPost('/api/ai/copilot', { question: q, view: 'gwDashboard', checklist });
         pvS.cpMsgs.push({ role: 'ai', text: d.answer || '(no answer)', tour: d.tour || null });
       } catch(e) {
-        pvS.cpMsgs.push({ role: 'ai', text: '⚠ ' + (e.message || 'AI request failed') + ' — check the platform OpenAI key in Platform Settings.' });
+        pvS.cpMsgs.push({ role: 'ai', text: 'Error: ' + (e.message || 'AI request failed') + ' — check the platform OpenAI key in Platform Settings.' });
       }
       pvS.cpBusy = false;
       pvCopilot();

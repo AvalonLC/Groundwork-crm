@@ -2,12 +2,12 @@
   "name": "groundwork-crm",
   "type": "module",
   "scripts": {
-    "build":       "node scripts/bump-version.js && vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json",
-    "dev":         "vite",
-    "dev:local":   "wrangler pages dev dist --d1=DB --local --ip 0.0.0.0 --port 3000",
-    "preview":     "wrangler pages dev dist --ip 0.0.0.0 --port 3000",
-    "deploy":      "npm run build && wrangler pages deploy dist --project-name groundwork-crm",
-    "cf-typegen":  "wrangler types --env-interface CloudflareBindings",
+    "build": "node scripts/bump-version.js && vite build && cp -r public/js/. dist/js/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/js/*\"]}' > dist/_routes.json",
+    "dev": "vite",
+    "dev:local": "wrangler pages dev dist --d1=DB --local --ip 0.0.0.0 --port 3000",
+    "preview": "wrangler pages dev dist --ip 0.0.0.0 --port 3000",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name groundwork-crm",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
     "db:migrate:prod":  "wrangler d1 migrations apply avalon-sales-hub-production",
     "test":        "vitest run",
@@ -17,7 +17,12 @@
     "preflight":   "bash scripts/preflight.sh",
     "db:local":    "wrangler d1 migrations apply groundwork --local",
     "db:reset":    "rm -rf .wrangler/state && npm run db:local",
-    "validate:finance-config": "node scripts/validate-finance-config.js"
+    "validate:finance-config": "node scripts/validate-finance-config.js",
+    "test:migrations": "node --test tests/clean-migrations.test.mjs",
+    "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs",
+    "test:sales-process-transitions": "vite build && node --test tests/sales-process-transitions.integration.test.mjs",
+    "test:sales-process-adoption": "vite build && node --test tests/sales-process-template-adoption.integration.test.mjs",
+    "test:sales-process-ui": "node --test tests/sales-process-admin-ui.test.mjs"
   },
   "dependencies": {
     "hono": "^4.12.23"
@@ -25,6 +30,7 @@
   "devDependencies": {
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.25.2",
+    "linkedom": "^0.18.13",
     "vite": "^6.3.5",
     "wrangler": "^4.4.0",
     "@cloudflare/workers-types": "^4.20260101.0",
@@ -32,5 +38,8 @@
     "typescript": "^5.7.0",
     "vitest": "^4.1.0",
     "@cloudflare/vitest-pool-workers": "^0.20.1"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

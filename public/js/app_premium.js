@@ -22,13 +22,148 @@ function getPipelineStages() {
   ];
 }
 window.getPipelineStages = getPipelineStages;
+
+// ── Company-Configurable Divisions ───────────────────────────────────────────
+// Each company names and creates its own divisions (any number).
+// Stored in D1 setting `company_divisions` (JSON array of {key,label,color}),
+// hydrated into localStorage `gwCompanyDivisions` on login (bootstrap in index.tsx).
+// gwDivisions() is the single source of truth — no view should hardcode
+// landscape/maintenance/snow lists.
+const GW_DEFAULT_DIVISIONS = [
+  { key: 'landscape',   label: 'Landscape',   color: '#2D7A55' },
+  { key: 'maintenance', label: 'Maintenance', color: '#4D8A86' },
+  { key: 'snow',        label: 'Snow & Ice',  color: '#5B7A9D' }
+];
+function gwDivisions() {
+  try {
+    const raw = localStorage.getItem('gwCompanyDivisions');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const cleaned = arr
+          .filter(d => d && d.key && d.label)
+          .map(d => ({
+            key: String(d.key),
+            label: String(d.label),
+            color: d.color || '#2D7A55'
+          }));
+        if (cleaned.length > 0) return cleaned;
+      }
+    }
+  } catch (e) { /* fall through to default */ }
+  return GW_DEFAULT_DIVISIONS.map(d => ({ ...d }));
+}
+function gwDivisionKeys()   { return gwDivisions().map(d => d.key); }
+function gwDivisionLabels() { const m = {}; gwDivisions().forEach(d => m[d.key] = d.label); return m; }
+function gwDivisionColors() { const m = {}; gwDivisions().forEach(d => m[d.key] = d.color); return m; }
+function gwDivisionLabel(key) {
+  const d = gwDivisions().find(x => x.key === key);
+  if (d) return d.label;
+  return key ? String(key).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+}
+// Generic division icon (SVG path) used where per-division icons are needed
+function gwDivisionIcon(color) {
+  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="' + (color || '#2D7A55') + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+}
+// Classify a lead/opportunity into one of the company's divisions.
+// 1) explicit o.division match  2) keyword match on category/workType/serviceLine
+// against each division's key + label words  3) fallback to first division.
+function gwClassifyDivision(o) {
+  const divs = gwDivisions();
+  if (!o) return divs[0].key;
+  const explicit = (o.division || '').toLowerCase();
+  if (explicit) {
+    const hit = divs.find(d => d.key.toLowerCase() === explicit || d.label.toLowerCase() === explicit);
+    if (hit) return hit.key;
+  }
+  const hay = ((o.projectCategory || '') + ' ' + (o.workType || '') + ' ' + (o.serviceLine || '')).toLowerCase();
+  if (hay.trim()) {
+    for (const d of divs) {
+      const words = (d.key + ' ' + d.label).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);
+      if (words.some(w => hay.includes(w))) return d.key;
+    }
+    // legacy keyword bridges (existing tenant data uses these categories)
+    const bridges = { snow: ['snow', 'ice', 'plow'], maintenance: ['mainten', 'mowing', 'recurring'],
+      landscape: ['landscape', 'hardscape', 'drainage', 'design', 'irrigat', 'lighting', 'enhancement'] };
+    for (const d of divs) {
+      const b = bridges[d.key];
+      if (b && b.some(w => hay.includes(w))) return d.key;
+    }
+  }
+  return divs[0].key;
+}
+window.gwClassifyDivision = gwClassifyDivision;
+window.gwDivisions = gwDivisions;
+window.gwDivisionKeys = gwDivisionKeys;
+
+// ── Company-Configurable Lead Intake Form ────────────────────────────────────
+// Each company tailors the lead intake form to its business model.
+// Stored in D1 setting `company_intake_config` (JSON), hydrated into
+// localStorage `gwIntakeConfig` on login.
+// Shape: { categories: [{v, short}], workTypes: [{v, label}],
+//          leadSources: [string], serviceLines: [string] }
+const GW_DEFAULT_INTAKE = {
+  categories: [
+    { v: 'Landscape / Enhancement', short: 'Landscape' },
+    { v: 'Maintenance - Recurring',  short: 'Recurring Maint.' },
+    { v: 'Maintenance - One Time',   short: 'One-Time Maint.' },
+    { v: 'Hardscape',                short: 'Hardscape' },
+    { v: 'Drainage',                 short: 'Drainage' },
+    { v: 'Design / Build',           short: 'Design / Build' },
+    { v: 'Irrigation',               short: 'Irrigation' },
+    { v: 'Outdoor Lighting',         short: 'Lighting' },
+    { v: 'Other',                    short: 'Other' }
+  ],
+  workTypes: [
+    { v: 'landscape',             label: 'Landscape' },
+    { v: 'maintenance_onetime',   label: 'Maintenance - One Time' },
+    { v: 'maintenance_recurring', label: 'Maintenance - Recurring' },
+    { v: 'maintenance_upsell',    label: 'Maintenance - Upsell' },
+    { v: 'hardscape',             label: 'Hardscape' },
+    { v: 'drainage',              label: 'Drainage' },
+    { v: 'design_build',          label: 'Design / Build' }
+  ],
+  leadSources: null,   // null = use data.leadSources defaults
+  serviceLines: null   // null = use data.serviceLines defaults
+};
+function gwIntakeConfig() {
+  let cfg = null;
+  try {
+    const raw = localStorage.getItem('gwIntakeConfig');
+    if (raw) cfg = JSON.parse(raw);
+  } catch (e) { cfg = null; }
+  const out = {
+    categories: GW_DEFAULT_INTAKE.categories.map(c => ({ ...c })),
+    workTypes: GW_DEFAULT_INTAKE.workTypes.map(w => ({ ...w })),
+    leadSources: (window.AVALON_DATA && window.AVALON_DATA.leadSources) ? window.AVALON_DATA.leadSources.slice() : [],
+    serviceLines: (window.AVALON_DATA && window.AVALON_DATA.serviceLines) ? window.AVALON_DATA.serviceLines.slice() : []
+  };
+  if (cfg && typeof cfg === 'object') {
+    if (Array.isArray(cfg.categories) && cfg.categories.length > 0) {
+      out.categories = cfg.categories.filter(c => c && c.v).map(c => ({ v: String(c.v), short: String(c.short || c.v) }));
+    }
+    if (Array.isArray(cfg.workTypes) && cfg.workTypes.length > 0) {
+      out.workTypes = cfg.workTypes.filter(w => w && w.v).map(w => ({ v: String(w.v), label: String(w.label || w.v) }));
+    }
+    if (Array.isArray(cfg.leadSources) && cfg.leadSources.length > 0) {
+      out.leadSources = cfg.leadSources.map(String);
+    }
+    if (Array.isArray(cfg.serviceLines) && cfg.serviceLines.length > 0) {
+      out.serviceLines = cfg.serviceLines.map(String);
+    }
+  }
+  return out;
+}
+window.gwIntakeConfig = gwIntakeConfig;
+window.gwDivisionLabels = gwDivisionLabels;
+window.gwDivisionColors = gwDivisionColors;
+window.gwDivisionLabel = gwDivisionLabel;
 // navItems re-queried each call so dynamically added platform nav buttons are included
 // Map legacy/alias view names to their parent workspace for nav highlighting
 const _VIEW_WORKSPACE_MAP = {
   // Dashboard workspace
   today:'gwDashboard', myDashboard:'gwDashboard',
-  revenueAdmin:'gwDashboard', salesReports:'gwDashboard',
-  financialReports:'gwDashboard', opsReports:'gwDashboard',
+  revenueAdmin:'gwDashboard',
   fieldDashboard:'gwDashboard',
   // Sales workspace
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', customerDetail:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
@@ -141,7 +276,16 @@ const DEFAULT_STATE = {
 let state = loadState();
 
 function loadState(){
-  try { return {...DEFAULT_STATE, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) || {})}; }
+  try {
+    const s = {...DEFAULT_STATE, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) || {})};
+    // Purge stale WO-NEW stubs the retired legacy detail page used to create —
+    // they were never real jobs and shadow D1-backed work orders.
+    if (Array.isArray(s.workOrders)) {
+      const cleaned = s.workOrders.filter(w => !(w && w.woNumber === 'WO-NEW' && !w.clientName && !w.date));
+      if (cleaned.length !== s.workOrders.length) s.workOrders = cleaned;
+    }
+    return s;
+  }
   catch(e){ return structuredClone(DEFAULT_STATE); }
 }
 function saveState(){
@@ -256,13 +400,13 @@ const DEFAULT_NAV_PERMS = {
   admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates','proposals',
-    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-    'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+    'revenueAdmin','teamReports',
     'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
@@ -270,13 +414,13 @@ const DEFAULT_NAV_PERMS = {
   office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin',
     'today','myDashboard','teamView',
     'pipeline','lead','clients','properties','estimates','proposals',
-    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
-    'revenueAdmin','salesReports','financialReports','opsReports','teamReports',
+    'revenueAdmin','teamReports',
     'settings','userManagement','integrations','manager','pricing',
     'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode',
     'gwFieldReports','gwAARTemplate','gwAARReview'],
@@ -284,7 +428,7 @@ const DEFAULT_NAV_PERMS = {
   rep: ['gwDashboard','gwSales','gwLearning',
     'today','myDashboard',
     'pipeline','lead','clients','properties','estimates','proposals',
-    'communications','templates','sequences','talkTracks','playbooks','aiAssist',
+    'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai',
     'academy','learnEstimating','learnFinancial','learnCrmGuide'],
   // Estimator: quote/pricing specialist + learning
@@ -297,7 +441,7 @@ const DEFAULT_NAV_PERMS = {
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView',
     'workOrderList','workOrderDetail','assetsHub','assetList','assetDetail',
     'maintenanceQueue','inventoryList','toolsConsumables','timeTracker',
-    'opsReports','teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
+    'teamReports','approvalQueue','fieldMode','gwTimesheetAdmin',
     'userManagement','gwFieldReports','gwAARTemplate','gwAARReview'],
   // Foreman: field lead — full operations hub, crew/dispatch oversight, time approval
   foreman: ['gwDashboard','gwOperations',
@@ -364,11 +508,21 @@ function canViewTab(viewName) {
   // Admin always has full access (no permission gate for admin role)
   if (rep.role === 'admin') return true;
   const perms = loadNavPerms();
-  // Check cached/D1-sourced perms first, then always supplement with DEFAULT_NAV_PERMS
-  // so newly-added views are never blocked by a stale cached permission set.
-  const cachedAllowed  = perms[rep.role] || [];
+  const savedAllowed   = perms[rep.role];
   const defaultAllowed = DEFAULT_NAV_PERMS[rep.role] || [];
-  if (cachedAllowed.includes(viewName) || defaultAllowed.includes(viewName)) return true;
+  if (Array.isArray(savedAllowed)) {
+    // A saved permission set exists for this role — it is AUTHORITATIVE, so
+    // unchecking a view in Settings genuinely revokes it. Defaults only
+    // supplement for view keys the app added after the save (not present in
+    // the editor's known-view universe at save time), so upgrades never lock
+    // people out of brand-new features.
+    if (savedAllowed.includes(viewName)) return true;
+    const knownAtSave = Array.isArray(perms.__knownViews) ? perms.__knownViews : null;
+    if (knownAtSave && !knownAtSave.includes(viewName) && defaultAllowed.includes(viewName)) return true;
+    if (!knownAtSave && defaultAllowed.includes(viewName)) return true; // legacy saves: old permissive behavior
+  } else if (defaultAllowed.includes(viewName)) {
+    return true;
+  }
   // For custom roles not in DEFAULT_NAV_PERMS, check D1-sourced role permissions
   if (window._gwRoles) {
     const roleDef = window._gwRoles.find(r => r.id === rep.role);
@@ -401,23 +555,34 @@ function statusCssClass(status){
   };
   return map[status] || 'pending';
 }
+// Which dollar figure drives a lead's money displays and commission:
+// won leads use the final Sold @ amount (falling back to the estimate),
+// everything else uses the Est. Value (jobValue).
+function gwLeadBaseValue(opp){
+  const isWon = (typeof gwSalesIs === 'function') && gwSalesIs(opp,'won');
+  if (isWon && Number(opp?.soldAmount || 0) > 0) return Number(opp.soldAmount);
+  return Number(opp?.jobValue || 0);
+}
 function estCommission(opp){
   // Delegate to the master engine (COMM-08: no page-level hardcoded math)
   if (typeof window.estimateCommission === 'function') {
-    const rep = window.getCurrentRep ? window.getCurrentRep() : null;
-    const planId = rep?.commissionPlan || 'ryan';
+    // Use the ASSIGNED rep's plan — an admin viewing a rep's lead must see
+    // that rep's commission, not one keyed to the viewer's own plan.
+    const assigned = (window.REPS || []).find(r => r.id === opp?.repId)
+      || (window.getCurrentRep ? window.getCurrentRep() : null);
+    const planId = assigned?.commissionPlan || 'ryan';
     const result = window.estimateCommission({
       planId,
       workType:   opp?.workType   || 'landscape',
       leadSource: opp?.leadSource || 'company_lead',
-      jobValue:   Number(opp?.jobValue || 0),
+      jobValue:   gwLeadBaseValue(opp),
       collected:  !!opp?.collected,
       approved:   !!opp?.commissionApproved
     });
     return result.amount;
   }
   // Fallback before reps.js loads
-  const val = Number(opp?.jobValue || 0);
+  const val = gwLeadBaseValue(opp);
   if (!val) return 0;
   const rates = { landscape:.06, maintenance_onetime:.04, maintenance_recurring:.20, hardscape:.06, drainage:.06, design_build:.06 };
   return val * (rates[opp?.workType] || .06);
@@ -540,9 +705,8 @@ function fallbackCopy(text){
       gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
       gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard workspace tabs
-      today:'My Day', myDashboard:'My Day', teamView:'Team',
-      revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
-      financialReports:'Financial Snapshot', opsReports:'Operations Snapshot',
+      today:'Command Center', myDashboard:'Command Center', teamView:'Team',
+      revenueAdmin:'Business Pulse',
       teamReports:'Team',
       // Sales workspace tabs
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
@@ -692,19 +856,17 @@ function gwDashboard(tab) {
     return;
   }
 
-  // Non-field roles: full dashboard tab set
+  // Non-field roles: single Command Center landing page. Business Pulse /
+  // Financial Snapshot / Operations Snapshot report pages have been retired —
+  // their content now lives inline as Command Center widgets (accordion-expand
+  // sections, Add-Widget-only widgets like Rep Leaderboard / Budget vs Actual /
+  // Operations deeper detail).
   if (!tab || tab === 'gwDashboard' || tab === 'fieldDashboard') tab = 'today';
   const dashTabs = [
-    {id:'today',           label:'My Day'},
-    {id:'salesReports',    label:'Business Pulse'},
-    {id:'financialReports',label:'Financial Snapshot'},
-    {id:'opsReports',      label:'Operations Snapshot'},
+    {id:'today', label:'Command Center'},
   ];
-  _gwSetHeader('Dashboard', dashTabs, tab);
+  _gwSetHeader('Dashboard', dashTabs, dashTabs.some(t=>t.id===tab) ? tab : 'today');
   if (tab === 'today')            today();
-  else if (tab === 'salesReports')    (typeof salesReports==='function') ? salesReports() : _gwTabStub('Business Pulse');
-  else if (tab === 'financialReports')(typeof financialReports==='function') ? financialReports() : _gwTabStub('Financial Snapshot');
-  else if (tab === 'opsReports')      (typeof opsReports==='function') ? opsReports() : _gwTabStub('Operations Snapshot');
   else today();
 }
 window.gwDashboard = gwDashboard;
@@ -712,12 +874,13 @@ window.gwDashboard = gwDashboard;
 // ── Sales workspace ───────────────────────────────────────────────────────────
 // Communications hub tabs — Templates / Sequences / Talk Tracks / Playbooks /
 // AI Assist are merged into the single Communications page as internal tabs.
-const _GW_COMMS_HUB_TABS = ['communications','templates','sequences','talkTracks','playbooks','aiAssist'];
+const _GW_COMMS_HUB_TABS = ['communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist'];
 
 function gwSales(tab) {
   tab = tab || 'pipeline';
   _gwSetHeader('Sales', [
     {id:'pipeline',       label:'Pipeline'},
+    {id:'process',        label:'Sales Process'},
     {id:'lead',           label:'Leads'},
     {id:'clients',        label:'Clients'},
     {id:'properties',     label:'Properties'},
@@ -732,6 +895,7 @@ function gwSales(tab) {
   else if (tab === 'estimates')      (typeof estimates==='function') ? estimates() : ((typeof estimateDetail==='function') ? estimateDetail() : _gwTabStub('Estimates'));
   else if (tab === 'proposals')      (typeof proposals==='function') ? proposals() : _gwTabStub('Proposals');
   else if (_GW_COMMS_HUB_TABS.includes(tab)) communicationsHub(tab);
+  else if (tab === 'process')        process('builder');
   else if (tab === 'gwRecords')      lead();
   else pipeline();
 }
@@ -754,6 +918,7 @@ function communicationsHub(section) {
     canViewTab(t.id) || (t.alts || []).some(a => canViewTab(a));
   const HUB_TABS = [
     {id:'communications', label:'Inbox',       icon:_gi('comms')},
+    {id:'textMessages',   label:'Text Messages', icon:_gi('message'),  alts:['communications']},
     {id:'templates',      label:'Templates',   icon:_gi('note'),       alts:['emailTemplates']},
     {id:'sequences',      label:'Sequences',   icon:_gi('automation'), alts:['automations','campaigns']},
     {id:'talkTracks',     label:'Talk Tracks', icon:_gi('call'),       alts:['scripts','objections']},
@@ -790,6 +955,7 @@ function communicationsHub(section) {
   // Render the selected section — each fn writes view.innerHTML; the patched
   // setter re-injects the hub bar at the top automatically.
   if (section === 'communications')  (typeof communicationsBoard==='function') ? communicationsBoard() : _gwTabStub('Communications');
+  else if (section === 'textMessages') (typeof smsCenter==='function') ? smsCenter() : _gwTabStub('Text Messages');
   else if (section === 'templates')  (typeof templates==='function') ? templates() : _gwTabStub('Templates');
   else if (section === 'sequences')  (typeof sequences==='function') ? sequences() : _gwTabStub('Sequences');
   else if (section === 'talkTracks') (typeof talkTracks==='function') ? talkTracks() : _gwTabStub('Talk Tracks');
@@ -1061,10 +1227,7 @@ function _gwApplyFieldNavFilters() {
     } else if (!dashPanel.innerHTML.trim() || dashPanel.innerHTML.includes('fieldDashboard')) {
       // Restore full set for non-field roles in case it was trimmed
       _gwSetHeader('Dashboard', [
-        {id:'today',            label:'My Day'},
-        {id:'salesReports',     label:'Business Pulse'},
-        {id:'financialReports', label:'Financial Snapshot'},
-        {id:'opsReports',       label:'Operations Snapshot'},
+        {id:'today', label:'Command Center'},
       ], null);
     }
   }
@@ -1100,16 +1263,14 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
   // so default to the full set and let _gwApplyFieldNavFilters() (called from
   // _updateSidebarRep after bootstrap) trim it down for field roles.
   _gwSetHeader('Dashboard', [
-    {id:'today',            label:'My Day'},
-    {id:'salesReports',     label:'Business Pulse'},
-    {id:'financialReports', label:'Financial Snapshot'},
-    {id:'opsReports',       label:'Operations Snapshot'},
+    {id:'today', label:'Command Center'},
   ], null);
 
   // Sales — Templates/Sequences/Talk Tracks/Playbooks/AI Assist live inside
   // the Communications hub now (internal tabs), so they're not sidebar items.
   _gwSetHeader('Sales', [
     {id:'pipeline',       label:'Pipeline'},
+    {id:'process',        label:'Sales Process'},
     {id:'lead',           label:'Leads'},
     {id:'clients',        label:'Clients'},
     {id:'properties',     label:'Properties'},
@@ -1258,6 +1419,11 @@ function show(viewName='today', param){
   // ── Reset full-width mode; pipeline() re-adds it for the kanban board ──────
   const _viewEl = document.getElementById('view');
   if (_viewEl) _viewEl.classList.remove('gw-view--full');
+  // ── Reset Command Center visual-pass scope class; _gwTodayRender() re-adds
+  //    it. Scoping the new warm/airier design language to just this class
+  //    (Option 1 of the CC design-refresh) keeps every other page on the
+  //    existing look until a separately-approved global token rollout.
+  if (_viewEl) _viewEl.classList.remove('gw-view--cc');
 
   // ── Permission gate (admin-configurable) ─────────────────
   // Platform super-admin bypasses all tenant permission gates
@@ -1285,14 +1451,13 @@ function show(viewName='today', param){
       gwDashboard:'Dashboard', gwSales:'Sales', gwFinancial:'Financial',
       gwOperations:'Operations', gwLearning:'Learning', gwAdmin:'Admin',
       // Dashboard
-      today:'My Day', myDashboard:'My Day', teamView:'Team',
-      revenueAdmin:'Business Pulse', salesReports:'Business Pulse',
-      financialReports:'Financial Snapshot', opsReports:'Operations Snapshot', teamReports:'Team',
+      today:'Command Center', myDashboard:'Command Center', teamView:'Team',
+      revenueAdmin:'Business Pulse', teamReports:'Team',
       // Learning
       academy:'Sales Academy', learnEstimating:'Estimating 101', learnFinancial:'Financial Literacy', learnCrmGuide:'CRM Guide',
       // Sales
       pipeline:'Pipeline', lead:'Leads', clients:'Clients', properties:'Properties',
-      estimates:'Estimates', proposals:'Proposals', communications:'Communications', automations:'Sequences',
+      estimates:'Estimates', proposals:'Proposals', communications:'Communications', textMessages:'Text Messages', automations:'Sequences',
       templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
       playbooks:'Playbooks', aiAssist:'AI Assist',
       campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
@@ -1342,13 +1507,12 @@ function show(viewName='today', param){
   const _wsHeaderMap = {
     // Dashboard workspace tab aliases
     today:'Dashboard', myDashboard:'Dashboard',
-    revenueAdmin:'Dashboard', salesReports:'Dashboard',
-    financialReports:'Dashboard', opsReports:'Dashboard',
+    revenueAdmin:'Dashboard',
     // Sales workspace tab aliases
     pipeline:'Sales', lead:'Sales', clients:'Sales', properties:'Sales', teamView:'Sales', teamReports:'Sales',
     // Learning workspace tab aliases
     academy:'Learning', learnEstimating:'Learning', learnFinancial:'Learning', learnCrmGuide:'Learning',
-    estimates:'Sales', proposals:'Sales', communications:'Sales', templates:'Sales',
+    estimates:'Sales', proposals:'Sales', communications:'Sales', textMessages:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
     automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
     scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
@@ -1373,8 +1537,8 @@ function show(viewName='today', param){
     portalAdmin:'Admin', automationCenter:'Admin', fieldMode:'Operations',
   };
   const _wsTabDefs = {
-    Dashboard:  [{id:'today',label:'My Day'},{id:'salesReports',label:'Business Pulse'},{id:'financialReports',label:'Financial Snapshot'},{id:'opsReports',label:'Operations Snapshot'}],
-    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
+    Dashboard:  [{id:'today',label:'Command Center'}],
+    Sales:      [{id:'pipeline',label:'Pipeline'},{id:'process',label:'Sales Process'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [
@@ -1403,7 +1567,7 @@ function show(viewName='today', param){
       else if (viewName === 'teamReports')_tabHighlight = 'teamView';
       else if (['assetDetail','assetList','maintenanceQueue','inventoryList','toolsConsumables','materialAllocation'].includes(viewName)) _tabHighlight = 'assetsHub';
       // Communications-hub sections + their legacy aliases highlight the Communications tab
-      else if (['templates','sequences','talkTracks','playbooks','aiAssist',
+      else if (['textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
                 'automations','campaigns','scripts','objections','emailTemplates','ai'].includes(viewName)) _tabHighlight = 'communications';
       _gwSetHeader(_wsName, _wsTabDefs[_wsName], _tabHighlight);
       // Clear any stale sub-header
@@ -1489,9 +1653,7 @@ function show(viewName='today', param){
     crewView:           ()   => crewView(),
     toolsConsumables:   ()   => (typeof window.assetsHub==='function') ? window.assetsHub('inventory') : toolsConsumables(),
     // Reports
-    salesReports:       ()   => salesReports(),
-    financialReports:   ()   => financialReports(),
-    opsReports:         ()   => opsReports(),
+
     teamReports:        ()   => teamReports(),
     // Settings
     systemConfig:       ()   => settings('company'),
@@ -1534,6 +1696,7 @@ function show(viewName='today', param){
   // legacy detail pages directly so nothing breaks.
   const commsHubRoute = {
     communications: ()   => communicationsHub('communications'),
+    textMessages:   ()   => communicationsHub('textMessages'),
     templates:      ()   => communicationsHub('templates'),
     emailTemplates: ()   => communicationsHub('templates'),
     automations:    ()   => communicationsHub('sequences'),
@@ -1541,7 +1704,7 @@ function show(viewName='today', param){
     scripts:        ()   => communicationsHub('talkTracks'),
     objections:     ()   => communicationsHub('talkTracks'),
     ai:             ()   => communicationsHub('aiAssist'),
-    process:        (p)  => p ? process(p) : communicationsHub('playbooks'),
+    process:        (p)  => p ? process(p) : gwSales('process'),
     forms:          (id) => id ? forms(id) : communicationsHub('playbooks'),
   };
   // ── Workspace hub routes ──────────────────────────────────────────────────
@@ -1558,6 +1721,11 @@ function show(viewName='today', param){
     gwAudit:      ()  => gwAuditTab(),
     gwAccessModes:(s) => gwAccessModes(s),
     // Learning track views — must be in routes so show('learnEstimating') etc.
+    // resolve correctlysources:  (s) => gwResources(s),
+    gwAdminWorkflow: (s) => gwAdminWorkflow(s),
+    gwAudit:      ()  => gwAuditTab(),
+    gwAccessModes:(s) => gwAccessModes(s),
+    // Learning track views — must be in routes so show('learnEstimating') etc.
     // resolve correctly on reload (hash restore) and after _glMarkDone re-render
     academy:         () => gwLearning('academy'),
     learnEstimating: () => learnEstimating(),
@@ -1566,8 +1734,8 @@ function show(viewName='today', param){
   };
   // ── Legacy alias routing — old view names open correct workspace + tab ─────
   // Dashboard aliases
-  const dashAliases = ['myDashboard','revenueAdmin','salesReports','financialReports','opsReports'];
-  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','proposals','communications','templates',
+  const dashAliases = ['myDashboard','revenueAdmin'];
+  const salesAliases = ['lead','clients','properties','teamView','teamReports','estimates','proposals','communications','textMessages','templates',
     'sequences','talkTracks','playbooks','aiAssist','automations','campaigns',
     'process','forms','scripts','emailTemplates','objections','calculator'];
   const finAliases   = ['invoices','payments','deposits','statements','financialActivity'];
@@ -1731,10 +1899,10 @@ window._updateSidebarRep = function updateSidebarRep() {
 };
 
 function statCards(){
-  const openOpps = state.opportunities.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-  const proposalOpps = state.opportunities.filter(o=>['Proposal / Estimate Sent','Proposal Sent','Follow-Up'].includes(o.status));
-  const overdueOpps = state.opportunities.filter(o=>o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status));
-  const soldOpps = state.opportunities.filter(o=>o.status==='Sold / Activation');
+  const openOpps = state.opportunities.filter(o=>gwSalesIsOpen(o));
+  const proposalOpps = state.opportunities.filter(o=>gwSalesIs(o,'proposal_presentation'));
+  const overdueOpps = state.opportunities.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
+  const soldOpps = state.opportunities.filter(o=>gwSalesIs(o,'won'));
   return `<div class="grid grid-4 stat-grid">
     <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
       <span>Open</span><strong>${openOpps.length}</strong>
@@ -1742,8 +1910,8 @@ function statCards(){
     <article class="stat dash-card-clickable" title="Click to filter: Proposals" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" style="cursor:pointer">
       <span>Proposals</span><strong>${proposalOpps.length}</strong>
     </article>
-    <article class="stat ${overdueOpps.length?'bad':''} dash-card-clickable" title="Click to filter: Overdue" onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="cursor:pointer">
-      <span>Overdue</span><strong>${overdueOpps.length}</strong>
+    <article class="stat ${overdueOpps.length?'bad':''} dash-card-clickable" title="Click to filter: leads sitting past their stage's expected duration" onclick="window._pipelineStatusFilter='overdue';show('pipeline')" style="cursor:pointer">
+      <span>Needs Follow-Up</span><strong>${overdueOpps.length}</strong>
     </article>
     <article class="stat dash-card-clickable" title="Click to filter: Sold" onclick="window._pipelineStatusFilter='sold';show('pipeline')" style="cursor:pointer">
       <span>Sold</span><strong>${soldOpps.length}</strong>
@@ -1760,16 +1928,16 @@ function buildSuggestedActions(currentRep){
     : state.opportunities;
   const _today = todayISO();
   const staleOpps = myOpps.filter(o =>
-    !['Sold / Activation','Closed Lost'].includes(o.status) &&
+    gwSalesIsOpen(o) &&
     o.updatedAt && Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) >= 7
   ).slice(0,3);
   const noNextStep = myOpps.filter(o =>
-    !['Sold / Activation','Closed Lost'].includes(o.status) && !o.nextFollowUp
+    gwSalesIsOpen(o) && !o.nextFollowUp
   ).slice(0,2);
   const proposalsPending = myOpps.filter(o =>
-    ['Proposal / Estimate Sent','Proposal Sent'].includes(o.status)
+    gwSalesIs(o,'proposal_presentation')
   ).slice(0,3);
-  const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && !['Sold / Activation','Closed Lost'].includes(o.status)) : [];
+  const unassigned = (!isRep) ? state.opportunities.filter(o => !o.repId && gwSalesIsOpen(o)) : [];
 
   if(staleOpps.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="10" r="6" stroke="#8B6914" stroke-width="1.5"/><path d="M9 7v4l2 1.5" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 2h6" stroke="#8B6914" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg>',title:`${staleOpps.length} stale lead${staleOpps.length>1?'s':''} with no recent activity`,cta:'Review',onclick:`show('pipeline')`});
   if(proposalsPending.length) suggestions.push({icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="11" rx="1.5" stroke="#4D8A86" stroke-width="1.5"/><path d="M2 8h14" stroke="#4D8A86" stroke-width="1.3" opacity=".5"/><path d="M6 2v4M12 2v4" stroke="#4D8A86" stroke-width="1.4" stroke-linecap="round" opacity=".6"/><circle cx="13" cy="13" r="2.5" fill="#C97B6A" stroke="#113931" stroke-width="1"/><path d="M13 11.5v1.5M13 14h.01" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/></svg>',title:`${proposalsPending.length} proposal${proposalsPending.length>1?'s':''} awaiting a decision — follow up`,cta:'Open Proposals',onclick:`window._pipelineStatusFilter='proposals';show('pipeline')`});
@@ -1798,7 +1966,7 @@ window._gwTodayRefreshIfActive = function() {
 };
 
 // ── Today: render task sections from cache ────────────────────────────────────
-function _gwTodayRenderTaskWorkspace(rep) {
+function _gwTodayRenderTaskWorkspace(rep, cap) {
   if (!window.gwTask || !rep) return '';
   const today  = todayISO();
   const repId  = rep.id;
@@ -1810,20 +1978,44 @@ function _gwTodayRenderTaskWorkspace(rep) {
   const noDue      = (window.gwTask.openForUser(repId)).filter(t => !t.due_date);
   const allOpen = [...overdue, ...dueToday, ...upcoming, ...noDue];
 
-  function mkSection(label, tasks, emptyMsg, addlClass) {
-    if (!tasks.length) return `<div class="gw-today-section-empty">${emptyMsg||''}</div>`;
+  // Fixed-height widget mode (My Day card): cap total visible rows so the
+  // card height never depends on how many tasks exist today — the remainder
+  // collapses into a "+N more" row that expands the same card in place
+  // (there's no separate full task-list page yet, so this is the real,
+  // functional destination rather than a placeholder link).
+  const expanded = !!window._gwMyDayTasksExpanded;
+  const useCap = Number.isFinite(cap) && cap > 0 && !expanded;
+  let overdueV = overdue, dueTodayV = dueToday, upcomingV = upcoming, noDueV = noDue, hiddenCount = 0;
+  if (useCap) {
+    let remaining = cap;
+    const take = (arr) => { const t = arr.slice(0, remaining); remaining -= t.length; return t; };
+    overdueV  = take(overdue);
+    dueTodayV = take(dueToday);
+    upcomingV = take(upcoming);
+    noDueV    = take(noDue);
+    hiddenCount = allOpen.length - (overdueV.length + dueTodayV.length + upcomingV.length + noDueV.length);
+  }
+
+  function mkSection(tasks) {
+    if (!tasks.length) return '';
     return tasks.map(t => window.gwTask.renderRow(t, { showRecord: true, showCompleteBtn: true, showEditBtn: true, showArchiveBtn: false })).join('');
   }
 
-  const overdueHtml   = overdue.length   ? `<div class="gw-today-group-label gw-today-group-label--overdue">Overdue (${overdue.length})</div>${mkSection('Overdue',overdue)}` : '';
-  const todayHtml     = dueToday.length  ? `<div class="gw-today-group-label gw-today-group-label--today">Due Today (${dueToday.length})</div>${mkSection('Due Today',dueToday)}` : '';
-  const upcomingHtml  = upcoming.length  ? `<div class="gw-today-group-label">Upcoming</div>${mkSection('Upcoming',upcoming)}` : '';
-  const noDueHtml     = noDue.length     ? `<div class="gw-today-group-label">No Date</div>${mkSection('No Date',noDue)}` : '';
+  const overdueHtml   = overdueV.length   ? `<div class="gw-today-group-label gw-today-group-label--overdue">Overdue (${overdue.length})</div>${mkSection(overdueV)}` : '';
+  const todayHtml     = dueTodayV.length  ? `<div class="gw-today-group-label gw-today-group-label--today">Due Today (${dueToday.length})</div>${mkSection(dueTodayV)}` : '';
+  const upcomingHtml  = upcomingV.length  ? `<div class="gw-today-group-label">Upcoming</div>${mkSection(upcomingV)}` : '';
+  const noDueHtml     = noDueV.length     ? `<div class="gw-today-group-label">No Date</div>${mkSection(noDueV)}` : '';
 
   const emptyAll = !allOpen.length
     ? `<div class="gw-task-empty" style="padding:24px 0">No tasks scheduled — add one to get started.</div>` : '';
 
-  return `<section class="card app-card" style="grid-column:1/-1">
+  const moreLink = hiddenCount > 0
+    ? `<div class="more-link" onclick="window._gwMyDayTasksExpanded=true;_gwTodayRender()">${(typeof gwIcon==='function')?gwIcon('chevronDown',12):'▾'} ${hiddenCount} more task${hiddenCount===1?'':'s'} — view all</div>`
+    : (expanded && cap ? `<div class="more-link" onclick="window._gwMyDayTasksExpanded=false;_gwTodayRender()">Show less</div>` : '');
+
+  const bodyClass = useCap ? 'gw-task-workspace list-cap' : 'gw-task-workspace';
+
+  return `<section class="card app-card${cap ? ' w-fixed-h' : ''}" style="${cap ? '' : 'grid-column:1/-1'}">
     <div class="section-head">
       <h2>My Tasks</h2>
       <div style="display:flex;align-items:center;gap:8px">
@@ -1832,9 +2024,10 @@ function _gwTodayRenderTaskWorkspace(rep) {
         <button class="secondary-btn small" onclick="window._gwTodayNewTask()">+ Add Task</button>
       </div>
     </div>
-    <div class="gw-task-workspace">
+    <div class="${bodyClass}">
       ${overdueHtml}${todayHtml}${upcomingHtml}${noDueHtml}${emptyAll}
     </div>
+    ${moreLink}
   </section>`;
 }
 
@@ -1864,7 +2057,7 @@ function _gwTodayFinanceSnap() {
     return `<div class="gw-today-fin-card">
       <div class="gw-today-fin-head">
         <span class="gw-today-fin-title">Financial Pulse</span>
-        <button class="gw-today-fin-link" onclick="show('financialReports')">Full View</button>
+        <button class="gw-today-fin-link" onclick="show('financialHub')">Full View</button>
       </div>
       <div class="gw-today-fin-kpis">
         <div class="gw-today-fin-kpi">
@@ -1899,10 +2092,10 @@ function _gwTodayRenderMobile(opts) {
   // opts: { rep, isAdmin, isOM, isField, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent }
   const { rep, isAdmin, isOM, isField, showFin, opps, unsyncedBanner, finSnap, taskWorkspace, checklist, recent } = opts;
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
-  const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-  const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
+  const _open    = opps.filter(o=>gwSalesIsOpen(o));
+  const _propo   = opps.filter(o=>gwSalesIs(o,'proposal_presentation'));
   const _pipeVal = _open.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const _won     = opps.filter(o=>o.status==='Sold / Activation');
+  const _won     = opps.filter(o=>gwSalesIs(o,'won'));
   const _wonMTD  = _won.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7) === todayISO().slice(0,7));
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
 
@@ -1913,7 +2106,7 @@ function _gwTodayRenderMobile(opts) {
     <div class="gwtd-header">
       <div class="gwtd-header-top">
         <div class="gwtd-title-group">
-          <h1 class="gwtd-title">My Day</h1>
+          <h1 class="gwtd-title">Command Center</h1>
           <span class="gwtd-date">${dateStr}</span>
         </div>
       </div>
@@ -1967,7 +2160,7 @@ function _gwTodayRenderMobile(opts) {
         <div class="gw-today-fin-card" style="opacity:.6">
           <div class="gw-today-fin-head">
             <span class="gw-today-fin-title">Financial Pulse</span>
-            <button class="gw-today-fin-link" onclick="show('financialReports')">Full View</button>
+            <button class="gw-today-fin-link" onclick="show('financialHub')">Full View</button>
           </div>
           <div style="padding:12px 0;color:#9CA3AF;font-size:13px">Loading financial data…</div>
         </div>
@@ -2029,7 +2222,7 @@ function _gwTodayRenderMobile(opts) {
     window.gwTask.loadToday().then(function() {
       const ws = document.querySelector('.gw-task-workspace');
       if (!ws) return;
-      const newSection = _gwTodayRenderTaskWorkspace(rep);
+      const newSection = _gwTodayRenderTaskWorkspace(rep, window._gwMyDayCaps && window._gwMyDayCaps.tasks);
       const sectionEl = ws.closest('section.app-card');
       if (sectionEl) {
         const tmp = document.createElement('div');
@@ -2040,114 +2233,134 @@ function _gwTodayRenderMobile(opts) {
   }
 }
 
-/* ── My Day customizable widgets (Apple-widget style) ────────────────────────
-   Each dashboard section is a "widget": add/remove from a widget library,
-   reorder (drag or arrows), resize width (drag right edge, snaps to grid
-   columns) and height (drag bottom edge, free). Layout persists per-user. */
-const _GW_MYDAY_SPANS = [1, 2, 3, 4, 5, 6];
-const _GW_MYDAY_SPAN_LABEL = { 1:'\u2159', 2:'\u2153', 3:'\u00BD', 4:'\u2154', 5:'\u215A', 6:'Full' };
+/* ── Command Center widgets ───────────────────────────────────────────────
+   Single canonical layout for everyone — no presets, no custom "modes", no
+   edit-mode/drag/resize. Every widget has a fixed span (design decision,
+   not user-resizable) and a fixed zone. Users can only reorder-free / add /
+   remove via "+ Add Widget" (order + hidden persisted per-user). Deep report
+   content that used to live on separate pages (Business Pulse / Financial
+   Snapshot / Operations Snapshot) is migrated in as accordion-expand-in-place
+   sections inside the relevant widget, or as its own Add-Widget-only item. */
 const _GW_MYDAY_WIDGETS = [
-  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD', span:6, allowed:c=>!c.isField,        render:c=>c.pipeStrip },
-  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace },
-  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>` },
-  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:2, allowed:c=>c.showFin,         render:c=>c.finSnap },
-  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>` },
-  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>` },
-  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml },
-  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>' },
-  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml },
-  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml },
-  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads with no activity in 7+ days',             span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.staleLeadsHtml },
-  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml },
-  // ── Owner-operator widgets (async — loaded after render) ──────────────────
-  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from My Day', span:2, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
-  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true,             defaultOff:true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>` },
-  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:2, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
-  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue and paid-this-month invoice totals', span:2, allowed:c=>c.showFin,     defaultOff:true, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>` },
+  { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD, close likelihood', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip, zone:'hero' },
+  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value trend, stage breakdown, funnel and lead-source detail', span:3, allowed:c=>!c.isField, render:c=>c.pipeChartHtml, zone:'sales' },
+  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
+  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>`, zone:'sales' },
+  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml, zone:'sales' },
+  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>', zone:'sales' },
+  { id:'repLeaderboard', label:'Rep Leaderboard',       desc:'Compact rep performance ranking — open, won, pipeline $, close %', span:3, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:c=>c.repLeaderboardHtml, zone:'sales' },
+  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads sitting late in their stage (needs attention)',        span:3, allowed:c=>!c.isField, render:c=>c.staleLeadsHtml, zone:'sales' },
+  { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml, zone:'sales' },
+  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:3, allowed:c=>c.showFin,         render:c=>c.finSnap, zone:'financial' },
+  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue, paid-this-month, and an aging breakdown', span:3, allowed:c=>c.showFin, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'financial' },
+  { id:'budgetVsActual', label:'Budget vs Actual',      desc:'Annual budget vs actual with per-division progress and margin', span:6, allowed:c=>c.showFin, defaultOff:true, render:c=>c.budgetVsActualHtml, zone:'financial' },
+  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from Command Center', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
+  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'opsDeeper',    label:'Upcoming Schedule (7 Days)', desc:'Jobs scheduled in the next 7 days, plus capacity outlook', span:6, allowed:c=>!c.isField, defaultOff:true, render:c=>c.opsDeeperHtml, zone:'operations' },
+  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
+  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
+  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml, zone:'personal' },
+  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
 ];
 
-/* ── My Day "Day Modes" — preset widget templates ────────────────────────────
-   An owner-operator's day isn't always the same day: some days they're on the
-   tools (need time clock + job lineup), some days they're running the office
-   (need financials + receivables). Modes are one-click preset layouts; the
-   user's own custom layout ("My Layout") is stored separately and never
-   touched by switching modes. */
-const _GW_MYDAY_MODES = [
-  { id:'custom', label:'My Layout', icon:'\u2B50',
-    desc:'Your own saved widget layout' },
-  { id:'field',  label:'Field Day', icon:'\uD83D\uDEE0\uFE0F',
-    desc:'On the tools today — time clock, job lineup, tasks and crew hours',
-    order:['clock','jobsToday','tasks','crewHours'],
-    spans:{ clock:2, jobsToday:4, tasks:4, crewHours:2 } },
-  { id:'office', label:'Office Day', icon:'\uD83D\uDCCA',
-    desc:'Running the business — financial pulse, money owed, follow-ups and wins',
-    order:['pipeStrip','finance','arSnapshot','tasks','staleLeads','recentWins'],
-    spans:{ pipeStrip:6, finance:3, arSnapshot:3, tasks:4, staleLeads:2, recentWins:6 } },
-  { id:'sales',  label:'Sales Day', icon:'\uD83D\uDCDE',
-    desc:'Filling the pipeline — leads, proposals, daily start-up and activity targets',
-    order:['pipeStrip','tasks','checklist','recent','staleLeads','activity'],
-    spans:{ pipeStrip:6, tasks:4, checklist:2, recent:3, staleLeads:3, activity:6 } },
-];
-function _gwMyDayModeKey(){
-  let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
-  return 'gw-myday-mode-' + ((r && r.id) || 'anon');
-}
-function _gwMyDayGetMode(){
-  try {
-    const m = localStorage.getItem(_gwMyDayModeKey());
-    return _GW_MYDAY_MODES.some(x => x.id === m) ? m : 'custom';
-  } catch(e) { return 'custom'; }
-}
-window.gwMyDaySetMode = function(id){
-  if (!_GW_MYDAY_MODES.some(x => x.id === id)) return;
-  try { localStorage.setItem(_gwMyDayModeKey(), id); } catch(e) {}
-  window._gwMyDayEditing = false; window._gwMyDayLibOpen = false;
-  _gwTodayRender();
-  const m = _GW_MYDAY_MODES.find(x => x.id === id);
-  if (typeof showToast === 'function' && m) showToast(id === 'custom' ? 'Back to your layout' : m.label + ' mode');
+/* ── Zone grouping metadata — groups the flat widget list into visually
+   distinct sections (Sales & Pipeline / Financial / Operations / My Work).
+   'hero' (pipeStrip) is rendered standalone above all zones, full width,
+   outside the masonry grid entirely (it already sizes itself naturally).
+   No "Full report" drill-down links — those pages no longer exist; deep
+   content lives inline in the relevant widget via accordion-expand. */
+const _GW_MYDAY_ZONES = {
+  sales:      { label:'Sales & Pipeline', icon:'pipeline', accent:'var(--gw-sky, #4D8A86)' },
+  financial:  { label:'Financial',        icon:'dollar',   accent:'var(--gw-pine, #113931)' },
+  operations: { label:'Operations',       icon:'wrench',   accent:'var(--gw-emerald, #2D7A55)' },
+  personal:   { label:'My Work',          icon:'user',     accent:'var(--gw-amber, #8B6914)' },
 };
+/* Group an ordered list of widget ids into {zoneKey, ids:[...]} buckets,
+   preserving first-seen zone order (so the mode's own widget ordering
+   drives which zone appears first — no hardcoded zone sequence). Widgets
+   tagged zone:'hero' are excluded (rendered standalone, see above). */
+function _gwMyDayGroupByZone(ids){
+  const buckets = []; const seen = {};
+  ids.forEach(id => {
+    const w = _GW_MYDAY_WIDGETS.find(x => x.id === id);
+    if (!w || w.zone === 'hero') return; // hero widgets rendered standalone, not in a zone
+    const zone = w.zone || 'personal';
+    if (!seen[zone]) { seen[zone] = { zoneKey: zone, ids: [] }; buckets.push(seen[zone]); }
+    seen[zone].ids.push(id);
+  });
+  return buckets;
+}
+
+/* ── Command Center layout model — order + hidden only ───────────────────
+   No presets/modes, no custom-vs-preset branching, no spans/heights/
+   densities, no drag-and-drop. Every widget renders at its fixed `span`
+   (from _GW_MYDAY_WIDGETS) always inside its zone. Users can reorder
+   widgets is NOT supported (DnD was cut) — order comes from the widget
+   registry's own definition order, with `hidden` (via Add/Remove Widget)
+   as the only per-user customization axis, persisted to localStorage +
+   D1 (debounced) exactly as before. */
 function _gwMyDayLayoutKey(){
   let r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
   return 'gw-myday-layout-' + ((r && r.id) || 'anon');
 }
 function _gwMyDayResolveLayout(ctx){
   const avail = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => w.id);
-  // ── Day mode templates: preset order/spans, everything else hidden ────────
-  const modeId = _gwMyDayGetMode();
-  if (modeId !== 'custom' && !window._gwMyDayEditing) {
-    const mode = _GW_MYDAY_MODES.find(m => m.id === modeId);
-    if (mode) {
-      const order  = mode.order.filter(id => avail.includes(id));
-      avail.forEach(id => { if (!order.includes(id)) order.push(id); });
-      const hidden = avail.filter(id => !mode.order.includes(id));
-      return { order, hidden, spans: Object.assign({}, mode.spans), heights: {}, mode: modeId };
-    }
-  }
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || 'null'); } catch(e) {}
-  const order = [];
-  if (saved && Array.isArray(saved.order)) saved.order.forEach(id => { if (avail.includes(id)) order.push(id); });
-  avail.forEach(id => { if (!order.includes(id)) order.push(id); });
-  // hidden: default = library widgets marked defaultOff (until the user makes a choice)
+  // Order always follows the registry's own definition order (no reordering
+  // UI) — this keeps zone grouping predictable and avoids stale saved orders
+  // drifting out of sync with newly added widgets.
+  const order = avail.slice();
+  // hidden: default = widgets marked defaultOff, until the user makes a choice
   let hidden;
   if (saved && Array.isArray(saved.hidden)) {
     hidden = saved.hidden.filter(id => avail.includes(id));
-    // widgets added to the library after the user saved: respect their defaultOff
+    // widgets added to the registry after the user saved: respect their defaultOff
     _GW_MYDAY_WIDGETS.forEach(w => {
-      if (w.defaultOff && avail.includes(w.id) && !(saved.seen||[]).includes(w.id) && !hidden.includes(w.id) && !(saved.order||[]).includes(w.id)) hidden.push(w.id);
+      if (w.defaultOff && avail.includes(w.id) && !(saved.seen||[]).includes(w.id) && !hidden.includes(w.id)) hidden.push(w.id);
     });
   } else {
     hidden = _GW_MYDAY_WIDGETS.filter(w => w.defaultOff && avail.includes(w.id)).map(w => w.id);
   }
-  const spans   = (saved && saved.spans   && typeof saved.spans   === 'object') ? saved.spans   : {};
-  const heights = (saved && saved.heights && typeof saved.heights === 'object') ? saved.heights : {};
-  return { order, hidden, spans, heights };
+  return { order, hidden };
 }
 function _gwMyDaySaveLayout(l){
   try {
     const seen = _GW_MYDAY_WIDGETS.map(w => w.id); // mark all current widgets as seen
-    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ order: l.order, hidden: l.hidden, spans: l.spans, heights: l.heights || {}, seen }));
+    localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify({ hidden: l.hidden, seen }));
   } catch(e) {}
+  _gwMyDayPersistLayout();
+}
+function _gwMyDayRemoteKey(){
+  const r = (window.getCurrentRep && window.getCurrentRep()) || window._d1SessionRep;
+  return 'myday_layout_' + ((r && r.id) || 'anon');
+}
+function _gwMyDayPersistLayout(){
+  let layout = {};
+  try { layout = JSON.parse(localStorage.getItem(_gwMyDayLayoutKey()) || '{}'); } catch(e) {}
+  clearTimeout(window._gwMyDayPersistTimer);
+  window._gwMyDayPersistTimer = setTimeout(() => fetch('/api/settings', {
+    method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ key:_gwMyDayRemoteKey(), value:JSON.stringify(layout) })
+  }).catch(()=>{}), 250);
+}
+function _gwMyDayHydrateLayout(){
+  const key = _gwMyDayRemoteKey();
+  if (window._gwMyDayHydrated === key || window._gwMyDayHydrating === key) return;
+  window._gwMyDayHydrating = key;
+  fetch('/api/settings', { credentials:'include' }).then(r=>r.json()).then(j=>{
+    const settings = (j && (j.data ?? j)) || {};
+    if (settings[key]) {
+      const remote = JSON.parse(settings[key]);
+      delete remote.mode; // legacy field from the old modes system — ignore if present
+      delete remote.order; delete remote.spans; delete remote.heights; delete remote.densities;
+      localStorage.setItem(_gwMyDayLayoutKey(), JSON.stringify(remote));
+    }
+    window._gwMyDayHydrated = key;
+    window._gwMyDayHydrating = '';
+    if (window._currentView === 'today') _gwTodayRender();
+  }).catch(()=>{ window._gwMyDayHydrated = key; window._gwMyDayHydrating = ''; });
 }
 function _gwMyDayCurLayout(){
   // Lightweight role ctx just for layout mutations (allowed() predicates)
@@ -2159,97 +2372,44 @@ function _gwMyDayCurLayout(){
   const activityHtml = (typeof renderTodayActivityWidget === 'function') ? renderTodayActivityWidget() : '';
   return _gwMyDayResolveLayout({ rep, isAdmin, isOM, isField, showFin: isAdmin || isOM, activityHtml });
 }
-function _gwMyDaySpanOf(id, layout){
-  const w = _GW_MYDAY_WIDGETS.find(x => x.id === id);
-  const s = Number(layout.spans[id]);
-  return (_GW_MYDAY_SPANS.includes(s)) ? s : (w ? w.span : 6);
-}
-function _gwMyDayRenderWidget(id, ctx, layout, editing){
+function _gwMyDayRenderWidget(id, ctx, layout){
   const w = _GW_MYDAY_WIDGETS.find(x => x.id === id); if (!w) return '';
-  if (layout.hidden.includes(id)) return ''; // removed widgets live in the library panel
+  if (layout.hidden.includes(id)) return ''; // removed widgets live in the Add Widget popover
   const html = w.render(ctx) || '';
-  if (!html && !editing) return '';
-  const span = _gwMyDaySpanOf(id, layout);
-  const h = Number(layout.heights && layout.heights[id]);
-  const hStyle = (h && h >= 120) ? `height:${h}px;overflow-y:auto;` : '';
-  const bar = editing ? `
-    <div class="gw-myday-widget-bar">
-      <span class="gw-myday-widget-name"><span class="gw-myday-drag-dots">\u28FF</span>${w.label}</span>
-      <span class="gw-myday-widget-btns">
-        <button onclick="gwMyDayMove('${id}',-1)" title="Move earlier">\u2190</button>
-        <button onclick="gwMyDayMove('${id}',1)" title="Move later">\u2192</button>
-        <button onclick="gwMyDaySpanCycle('${id}')" title="Cycle width (or drag the right edge)">${_GW_MYDAY_SPAN_LABEL[span] || ''} width</button>
-        ${h ? `<button onclick="gwMyDayResetHeight('${id}')" title="Reset to automatic height">Auto height</button>` : ''}
-        <button class="gw-myday-remove-btn" onclick="gwMyDayToggleHide('${id}')" title="Remove from My Day (find it again in the widget library)">\u00D7 Remove</button>
-      </span>
-    </div>` : '';
-  const grips = editing ? `
-    <div class="gw-myday-grip gw-myday-grip--e"  data-grip="e"  data-widget-id="${id}" title="Drag to resize width"></div>
-    <div class="gw-myday-grip gw-myday-grip--s"  data-grip="s"  data-widget-id="${id}" title="Drag to resize height"></div>
-    <div class="gw-myday-grip gw-myday-grip--se" data-grip="se" data-widget-id="${id}" title="Drag to resize"></div>` : '';
-  return `<div class="gw-myday-widget${editing ? ' gw-myday-widget--edit' : ''}" data-widget-id="${id}" style="grid-column:span ${span}"${editing ? ' draggable="true"' : ''}>
-    ${bar}
-    <div class="gw-myday-widget-body" style="${hStyle}">${html || `<div class="gw-myday-placeholder">${w.label} \u2014 nothing to show right now</div>`}</div>
-    ${grips}
+  if (!html) return '';
+  return `<div class="gw-myday-widget" data-widget-id="${id}" style="grid-column:span ${w.span}">
+    <div class="gw-myday-widget-body">${html}</div>
+    <button class="gw-myday-widget-remove" onclick="gwMyDayToggleHide('${id}')" title="Remove ${escapeHtml(w.label)} from Command Center">${(typeof gwIcon==='function') ? gwIcon('close', 12, 'currentColor') : '\u00D7'}</button>
   </div>`;
 }
-function _gwMyDayLibraryPanel(ctx, layout){
+/* "+ Add Widget" popover — replaces edit-mode/customize/library-panel. Lists
+   every allowed widget with an Add/Remove toggle. No drag, no resize, no
+   separate editing state — this is just a togglable overlay. */
+function _gwMyDayAddWidgetPopover(ctx, layout){
   const items = _GW_MYDAY_WIDGETS.filter(w => w.allowed(ctx)).map(w => {
     const onScreen = !layout.hidden.includes(w.id);
     return `<div class="gw-myday-lib-item${onScreen ? ' gw-myday-lib-item--on' : ''}">
       <div class="gw-myday-lib-info">
-        <strong>${w.label}</strong>
-        <span>${w.desc || ''}</span>
+        <strong>${escapeHtml(w.label)}</strong>
+        <span>${escapeHtml(w.desc || '')}</span>
       </div>
       <button class="${onScreen ? 'gw-myday-lib-remove' : 'gw-myday-lib-add'}" onclick="gwMyDayToggleHide('${w.id}')">${onScreen ? 'Remove' : '+ Add'}</button>
     </div>`;
   }).join('');
-  return `<div class="gw-myday-library" id="gw-myday-library">
+  return `<div class="gw-myday-library" id="gw-myday-add-widget-popover">
     <div class="gw-myday-lib-head">
-      <strong>Widget Library</strong>
-      <span class="muted" style="font-size:12px">Add or remove widgets from your My Day screen</span>
+      <strong>Add Widget</strong>
+      <span class="muted" style="font-size:12px">Add or remove widgets from your Command Center</span>
+      <button class="secondary-btn small" style="margin-left:auto" onclick="gwMyDayAddWidgetClose()">Done</button>
     </div>
     <div class="gw-myday-lib-grid">${items}</div>
   </div>`;
 }
-window.gwMyDayCustomize = function(){
-  // Customizing always edits YOUR layout — presets are fixed templates.
-  if (_gwMyDayGetMode() !== 'custom') {
-    try { localStorage.setItem(_gwMyDayModeKey(), 'custom'); } catch(e) {}
-    if (typeof showToast === 'function') showToast('Editing your own layout (presets are fixed)');
-  }
-  window._gwMyDayEditing = true; _gwTodayRender();
+window.gwMyDayAddWidgetToggle = function(){
+  window._gwMyDayAddWidgetOpen = !window._gwMyDayAddWidgetOpen; _gwTodayRender();
 };
-window.gwMyDayDone = function(){
-  window._gwMyDayEditing = false; window._gwMyDayLibOpen = false; _gwTodayRender();
-  if (typeof showToast === 'function') showToast('My Day layout saved');
-};
-window.gwMyDayReset = function(){
-  try { localStorage.removeItem(_gwMyDayLayoutKey()); } catch(e) {}
-  _gwTodayRender();
-  if (typeof showToast === 'function') showToast('My Day layout reset to default');
-};
-window.gwMyDayToggleLib = function(){
-  window._gwMyDayLibOpen = !window._gwMyDayLibOpen; _gwTodayRender();
-};
-window.gwMyDayMove = function(id, dir){
-  const l = _gwMyDayCurLayout();
-  const i = l.order.indexOf(id); if (i < 0) return;
-  const j = i + (dir < 0 ? -1 : 1);
-  if (j < 0 || j >= l.order.length) return;
-  l.order.splice(j, 0, l.order.splice(i, 1)[0]);
-  _gwMyDaySaveLayout(l); _gwTodayRender();
-};
-window.gwMyDaySpanCycle = function(id){
-  const l = _gwMyDayCurLayout();
-  const cur = _gwMyDaySpanOf(id, l);
-  l.spans[id] = _GW_MYDAY_SPANS[(_GW_MYDAY_SPANS.indexOf(cur) + 1) % _GW_MYDAY_SPANS.length];
-  _gwMyDaySaveLayout(l); _gwTodayRender();
-};
-window.gwMyDayResetHeight = function(id){
-  const l = _gwMyDayCurLayout();
-  if (l.heights) delete l.heights[id];
-  _gwMyDaySaveLayout(l); _gwTodayRender();
+window.gwMyDayAddWidgetClose = function(){
+  window._gwMyDayAddWidgetOpen = false; _gwTodayRender();
 };
 window.gwMyDayToggleHide = function(id){
   const l = _gwMyDayCurLayout();
@@ -2267,20 +2427,110 @@ function _gwMyDayScratchLoad(){
   try { return localStorage.getItem('gw-myday-scratch-' + ((r && r.id) || 'anon')) || ''; } catch(e) { return ''; }
 }
 /* ── Masonry packing: measure each widget, set grid-row span so the packed
-   grid (grid-auto-rows:4px + dense flow) fits everything tightly with no
-   dead vertical space. Re-packs automatically when async widgets load. ── */
+   grid (grid-auto-rows:4px) fits everything tightly with no dead vertical
+   space BETWEEN rows, while widgets sharing the same visual row are
+   stretched to match each other's height (the "fit together evenly within
+   groupings" pass). Re-packs automatically when async widgets load.
+   Operates on EVERY `.gw-myday-grid` on the page, not just one by id — the
+   zone-grouped view renders one grid per zone section (id="gw-myday-grid"
+   only on the first, class shared by all) so each zone packs its own
+   widgets independently.
+
+   Row grouping: CSS uses `grid-auto-flow: row` (NOT `dense` — dense would
+   reshuffle widgets into earlier gaps and break this row math, which
+   assumes strict DOM order). With 6 columns, a widget's `grid-column: span
+   N` fills left-to-right and wraps to a new row only when the next widget
+   would overflow the remaining columns — so we can replicate that same
+   left-to-right wrapping in JS purely from each widget's declared span,
+   without needing to read layout back from the DOM. */
 function _gwMyDayMasonry(){
-  const grid = document.getElementById('gw-myday-grid');
-  if (!grid || window.innerWidth <= 768) return;
-  const ROW = 4, GAP = 28; // ROW must match grid-auto-rows; GAP = vertical breathing room
-  grid.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
-    const body = el.querySelector('.gw-myday-widget-body');
-    if (!body) return;
-    // measure natural content height (bar + body + grips)
-    el.style.gridRow = 'auto';
-    const h = el.getBoundingClientRect().height;
-    if (h > 0) el.style.gridRow = 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW));
-  });
+  const grids = document.querySelectorAll('.gw-myday-grid');
+  if (!grids.length || window.innerWidth <= 768) return;
+  const ROW = 4, GAP = 18, COLS = 6; // ROW must match grid-auto-rows; GAP = vertical breathing room (density pass: 28→18)
+  // IMPORTANT — two things must both happen, in this order, for every widget:
+  //   1) Reset el.style.gridRow to 'auto' BEFORE measuring. `.gw-myday-grid`
+  //      uses align-items:stretch, so a widget with an explicit multi-row
+  //      span has its wrapper (`el`) stretched to that span's full height;
+  //      `.gw-myday-widget-body` has `min-height:100%` (of `el`), so if we
+  //      read the body's height WITHOUT resetting el's span first, we read
+  //      back the *previous* pass's stretched height (inflated by its own
+  //      min-height), compute an even larger span from it, which inflates
+  //      min-height further, which the ResizeObserver below detects as a
+  //      "resize" and re-measures again — an infinite growth feedback loop
+  //      (this is what made every widget balloon into a huge empty box).
+  //      Resetting to 'auto' first collapses `el` back to a single 4px
+  //      track, making the body's min-height:100% negligible (~4px) so the
+  //      read that follows reflects the body's true content-driven height.
+  //   2) Measure `.gw-myday-widget-body.scrollHeight`, NOT `el`'s own
+  //      bounding rect. Even reset to 'auto', `el` itself is stretch-sized
+  //      to the fixed 4px track (CSS grid-auto-rows:4px is a hard length,
+  //      not content-sized) — content overflows the 4px box visually but
+  //      el.getBoundingClientRect().height still reports ~4px. The body is
+  //      a normal block child (not itself grid-stretched) so its scrollHeight
+  //      reflects its real natural content height.
+  const _packGrid = (grid) => {
+    const items = Array.from(grid.querySelectorAll(':scope > .gw-myday-widget'));
+    // 1) Reset + measure every widget's own natural content height first.
+    //    Span is read from the widget REGISTRY via data-widget-id, not from
+    //    el.style.gridColumn — step 4 below may widen a lone widget's own
+    //    inline grid-column to fill its row, and if a later re-pack (async
+    //    content, resize, accordion toggle) read span back from that
+    //    already-widened style, the row math would drift on every pass.
+    //    The registry's `span` is the one stable source of truth.
+    const meas = items.map(el => {
+      const body = el.querySelector('.gw-myday-widget-body');
+      if (!body) return null;
+      const wid = el.getAttribute('data-widget-id');
+      const wDef = (typeof _GW_MYDAY_WIDGETS !== 'undefined') && _GW_MYDAY_WIDGETS.find(x => x.id === wid);
+      const span = (wDef && wDef.span) || parseInt(el.style.gridColumn.replace(/[^\d]/g, ''), 10) || 1;
+      // Reset BOTH row and column to the widget's true registry span before
+      // measuring — a prior pass may have widened this widget to fill a
+      // lone row (step 4 below); measuring at that stale, wider width would
+      // read back a reflowed (often shorter) content height and drift the
+      // math on every subsequent pack.
+      el.style.gridRow = 'auto';
+      el.style.gridColumn = 'span ' + span;
+      return { el, body, span, h: body.scrollHeight };
+    });
+    // 2) Walk items in DOM order, replicating the browser's left-to-right
+    //    `grid-auto-flow: row` wrapping using each widget's column span, to
+    //    group widgets into the same "rows" the grid will actually place
+    //    them into.
+    const rows = [];
+    let row = [], used = 0;
+    meas.forEach(m => {
+      if (!m) return;
+      if (used + m.span > COLS) { if (row.length) rows.push(row); row = []; used = 0; }
+      row.push(m); used += m.span;
+    });
+    if (row.length) rows.push(row);
+    // 3) Every widget's OWN height must always be set explicitly, even when
+    //    alone in its row — `grid-row: auto` with a fixed `grid-auto-rows:
+    //    4px` does NOT size the track to content (that's the entire reason
+    //    this pass measures and sets an explicit span in the first place;
+    //    leaving it 'auto' collapses the widget to a single 4px track).
+    //    Widgets sharing a row are additionally raised to match the
+    //    TALLEST sibling in that row, so paired widgets read as one even
+    //    unit — but a widget alone in its row keeps its OWN natural height
+    //    (not stretched to some other row's tallest widget) and its own
+    //    designed (registry) width. It is NOT force-widened to fill the
+    //    row: auto-widening a lone, lightly-populated widget (e.g. "Crew
+    //    Hours Today" showing one name + hours, or "Today's Jobs" showing
+    //    "No jobs scheduled today") to a full 6-column bar just turns a
+    //    compact card into a mostly-empty stretch of whitespace — the
+    //    opposite of "fit together well, not wasteful". Users control
+    //    which widgets are on screen (via Add Widget / hover-remove), so
+    //    whether a widget ends up paired or alone is a direct result of
+    //    their own choices, not something this pass should paper over by
+    //    force-stretching it.
+    rows.forEach(r => {
+      const maxH = Math.max(...r.map(m => m.h));
+      r.forEach(m => {
+        m.el.style.gridRow = maxH > 0 ? 'span ' + Math.max(1, Math.ceil((maxH + GAP) / ROW)) : 'auto';
+      });
+    });
+  };
+  grids.forEach(_packGrid);
   // watch for async content arriving (calendar, reviews, jobs, AR…) → re-pack
   if (window._gwMyDayRO) { try { window._gwMyDayRO.disconnect(); } catch(e) {} }
   if (typeof ResizeObserver !== 'undefined') {
@@ -2289,105 +2539,32 @@ function _gwMyDayMasonry(){
       if (pending) return;
       pending = setTimeout(() => {
         pending = null;
-        const g = document.getElementById('gw-myday-grid');
-        if (!g) { try { window._gwMyDayRO.disconnect(); } catch(e) {} return; }
-        g.querySelectorAll(':scope > .gw-myday-widget').forEach(el => {
-          const cur = el.style.gridRow;
-          el.style.gridRow = 'auto';
-          const h = el.getBoundingClientRect().height;
-          const next = h > 0 ? 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW)) : cur;
-          el.style.gridRow = next;
-        });
+        const gs = document.querySelectorAll('.gw-myday-grid');
+        if (!gs.length) { try { window._gwMyDayRO.disconnect(); } catch(e) {} return; }
+        gs.forEach(_packGrid);
       }, 120);
     });
-    grid.querySelectorAll(':scope > .gw-myday-widget .gw-myday-widget-body').forEach(b => window._gwMyDayRO.observe(b));
+    grids.forEach(grid => {
+      grid.querySelectorAll(':scope > .gw-myday-widget .gw-myday-widget-body').forEach(b => window._gwMyDayRO.observe(b));
+    });
   }
 }
 window.addEventListener('resize', () => {
   clearTimeout(window._gwMyDayResizeT);
   window._gwMyDayResizeT = setTimeout(_gwMyDayMasonry, 180);
 });
-
-function _gwMyDayBindDnD(){
-  const grid = document.getElementById('gw-myday-grid'); if (!grid) return;
-  let dragId = null;
-  grid.querySelectorAll('.gw-myday-widget').forEach(el => {
-    el.addEventListener('dragstart', e => {
-      if (window._gwMyDayResizing) { e.preventDefault(); return; }
-      dragId = el.dataset.widgetId;
-      e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', dragId); } catch(err) {}
-      setTimeout(() => el.classList.add('gw-myday-dragging'), 0);
-    });
-    el.addEventListener('dragend', () => {
-      el.classList.remove('gw-myday-dragging');
-      grid.querySelectorAll('.gw-myday-drop-target').forEach(x => x.classList.remove('gw-myday-drop-target'));
-    });
-    el.addEventListener('dragover', e => {
-      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-      if (el.dataset.widgetId !== dragId) el.classList.add('gw-myday-drop-target');
-    });
-    el.addEventListener('dragleave', () => el.classList.remove('gw-myday-drop-target'));
-    el.addEventListener('drop', e => {
-      e.preventDefault();
-      const targetId = el.dataset.widgetId;
-      if (!dragId || dragId === targetId) return;
-      const l = _gwMyDayCurLayout();
-      const from = l.order.indexOf(dragId), to = l.order.indexOf(targetId);
-      if (from < 0 || to < 0) return;
-      l.order.splice(to, 0, l.order.splice(from, 1)[0]);
-      _gwMyDaySaveLayout(l); _gwTodayRender();
-    });
-  });
-  _gwMyDayBindResize(grid);
-}
-function _gwMyDayBindResize(grid){
-  // Drag grips: east = width (snaps to grid columns), south = height (free px)
-  const GAP = 28; // must match .gw-myday-grid column gap
-  grid.querySelectorAll('.gw-myday-grip').forEach(grip => {
-    grip.addEventListener('mousedown', e => {
-      e.preventDefault(); e.stopPropagation();
-      const mode = grip.dataset.grip;                       // 'e' | 's' | 'se'
-      const id   = grip.dataset.widgetId;
-      const el   = grid.querySelector(`.gw-myday-widget[data-widget-id="${id}"]`);
-      if (!el) return;
-      const body = el.querySelector('.gw-myday-widget-body');
-      window._gwMyDayResizing = true;
-      el.draggable = false;
-      el.classList.add('gw-myday-resizing');
-      const colW    = (grid.clientWidth - GAP * 5) / 6;     // width of one grid column
-      const startX  = e.clientX, startY = e.clientY;
-      const startW  = el.getBoundingClientRect().width;
-      const startH  = body.getBoundingClientRect().height;
-      let   newSpan = null, newH = null;
-      const onMove = ev => {
-        if (mode === 'e' || mode === 'se') {
-          const w = startW + (ev.clientX - startX);
-          newSpan = Math.max(1, Math.min(6, Math.round((w + GAP) / (colW + GAP))));
-          el.style.gridColumn = 'span ' + newSpan;
-        }
-        if (mode === 's' || mode === 'se') {
-          newH = Math.max(120, Math.round(startH + (ev.clientY - startY)));
-          body.style.height = newH + 'px';
-          body.style.overflowY = 'auto';
-        }
-      };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        el.classList.remove('gw-myday-resizing');
-        el.draggable = true;
-        setTimeout(() => { window._gwMyDayResizing = false; }, 50);
-        const l = _gwMyDayCurLayout();
-        if (newSpan) l.spans[id] = newSpan;
-        if (newH)    { l.heights = l.heights || {}; l.heights[id] = newH; }
-        if (newSpan || newH) { _gwMyDaySaveLayout(l); _gwTodayRender(); }
-      };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
-}
+/* ── Accordion-expand-in-place — shared toggle for all migrated deep report
+   content (funnel/trend/sources, rep leaderboard detail, AR aging, budget
+   detail). Keeps everything on the single Command Center view instead of
+   linking out to a separate page or opening a modal. */
+window.gwMyDayAccordionToggle = function(id){
+  const body = document.getElementById(id);
+  const btn = document.querySelector(`[data-accordion-toggle="${id}"]`);
+  if (!body) return;
+  const isOpen = body.classList.toggle('gw-accordion-body--open');
+  if (btn) btn.classList.toggle('gw-accordion-toggle--open', isOpen);
+  requestAnimationFrame(_gwMyDayMasonry);
+};
 
 /* ── Owner-operator My Day widget loaders (async, mount-guarded) ───────────── */
 function _gwMyDayLoadOwnerWidgets(rep){
@@ -2420,7 +2597,7 @@ function _gwMyDayLoadOwnerWidgets(rep){
         ${entry ? `
           <div class="gw-myday-clock gw-myday-clock--in">
             <div class="gw-myday-clock-live"><span class="gw-myday-clock-dot"></span>Clocked in · ${el(entry.job_type || 'General Work')}</div>
-            <div class="gw-myday-clock-timer" id="gw-myday-clock-elapsed">--:--:--</div>
+            <div class="gw-myday-clock-timer" id="gw-myday-clock-elapsed">--:--:-day-clock-elapsed">--:--:--</div>
             <button class="gw-myday-clock-btn gw-myday-clock-btn--out" onclick="_gwMyDayClockOut()">Clock Out</button>
           </div>` : `
           <div class="gw-myday-clock">
@@ -2462,7 +2639,26 @@ function _gwMyDayLoadOwnerWidgets(rep){
         const wos = ((j.ok && j.data) || []).filter(w => !['cancelled','completed'].includes(w.status))
           .sort((a,b) => (a.scheduled_date||'').localeCompare(b.scheduled_date||'') || (a.scheduled_time||'').localeCompare(b.scheduled_time||''));
         const todayJobs = wos.filter(w => w.scheduled_date === today);
-        const upcoming  = wos.filter(w => w.scheduled_date > today).slice(0, 4);
+        const upcomingAll = wos.filter(w => w.scheduled_date > today);
+
+        // Fixed-height cap: like My Tasks, cap total visible rows so this
+        // card's height never depends on how busy the day is — overflow
+        // collapses into a "+N more" row that expands the same card in
+        // place (there is no separate "all jobs" page — Schedule shows the
+        // whole board, not a filtered today/upcoming list).
+        const cap = window._gwMyDayCaps && window._gwMyDayCaps.jobsToday;
+        const expanded = !!window._gwMyDayJobsExpanded;
+        const useCap = Number.isFinite(cap) && cap > 0 && !expanded;
+        let todayJobsV = todayJobs, upcomingV = upcomingAll.slice(0, 4), hiddenCount = 0;
+        if (useCap) {
+          let remaining = cap;
+          todayJobsV = todayJobs.slice(0, remaining);
+          remaining -= todayJobsV.length;
+          upcomingV = upcomingAll.slice(0, Math.max(0, remaining));
+          const totalAll = todayJobs.length + upcomingAll.length;
+          hiddenCount = totalAll - (todayJobsV.length + upcomingV.length);
+        }
+
         const row = w => `
           <div class="gw-myday-job-row" onclick="show('workOrderDetail','${el(w.id)}')">
             <span class="gw-myday-job-dot" style="background:${el(w.crew_color || '#4D8A86')}"></span>
@@ -2472,11 +2668,19 @@ function _gwMyDayLoadOwnerWidgets(rep){
             </div>
             <span class="gw-myday-job-status gw-myday-job-status--${el(w.status)}">${el((w.status||'').replace('-',' '))}</span>
           </div>`;
-        m.innerHTML = `<section class="card"><div class="section-head"><h2>Today's Jobs</h2>
+
+        const moreLink = hiddenCount > 0
+          ? `<div class="more-link" onclick="window._gwMyDayJobsExpanded=true;_gwMyDayLoadOwnerWidgets(window.getCurrentRep?window.getCurrentRep():null)">${(typeof gwIcon==='function')?gwIcon('chevronDown',12):'▾'} ${hiddenCount} more job${hiddenCount===1?'':'s'} — view all</div>`
+          : (expanded && cap ? `<div class="more-link" onclick="window._gwMyDayJobsExpanded=false;_gwMyDayLoadOwnerWidgets(window.getCurrentRep?window.getCurrentRep():null)">Show less</div>` : '');
+
+        m.innerHTML = `<section class="card${cap ? ' w-fixed-h' : ''}"><div class="section-head"><h2>Today's Jobs</h2>
           ${todayJobs.length ? `<span class="badge">${todayJobs.length}</span>` : ''}
-          <button class="secondary-btn small" onclick="show('scheduleBoard')" style="margin-left:auto;font-size:11px">Schedule</button></div>
-          ${todayJobs.length ? todayJobs.map(row).join('') : `<div class="gw-myday-placeholder">No jobs scheduled today.</div>`}
-          ${upcoming.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcoming.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
+          <span style="margin-left:auto;display:flex;gap:6px"><button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule</button></span></div>
+          <div class="${useCap ? 'list-cap' : ''}">
+            ${todayJobsV.length ? todayJobsV.map(row).join('') : (todayJobs.length ? '' : `<div class="gw-myday-placeholder gw-myday-placeholder--empty">${(typeof gwIcon==='function')?gwIcon('calendar',22,'#8FA0A0'):''}<span>No jobs scheduled today.</span></div>`)}
+            ${upcomingV.length ? `<div class="gw-myday-job-sub">Coming up</div>${upcomingV.map(w => row(w).replace('gw-myday-job-row', 'gw-myday-job-row gw-myday-job-row--dim')).join('')}` : ''}
+          </div>
+          ${moreLink}
         </section>`;
       }).catch(()=>{});
   }
@@ -2491,24 +2695,40 @@ function _gwMyDayLoadOwnerWidgets(rep){
         const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
         const reps = (j.ok && j.data) || [];
         const fmtH = min => (min/60).toFixed(1) + 'h';
-        const rows = reps.map(r => {
+        // Full-row-width (span 6) widget — a narrow stacked list here reads
+        // as a mostly-empty bar (this is exactly what the user flagged as
+        // "wasteful"). Instead lay reps out as a wrapping grid of compact
+        // chip-cards (same visual language as the Money Owed cells below,
+        // for zone-wide consistency) so the widget fills its width with
+        // actual content density regardless of crew size.
+        const totalMin = reps.reduce((s,r) => {
+          const liveMin = (r.entries||[]).reduce((s2,e) => s2 + (e.clock_out ? 0 : Math.floor((Date.now()-new Date(e.clock_in).getTime())/60000)), 0);
+          return s + (r.total_min||0) + liveMin;
+        }, 0);
+        const liveCount = reps.filter(r => (r.entries||[]).some(e => !e.clock_out)).length;
+        const chips = reps.map(r => {
           const live = (r.entries||[]).some(e => !e.clock_out);
           const liveMin = (r.entries||[]).reduce((s,e) => s + (e.clock_out ? 0 : Math.floor((Date.now()-new Date(e.clock_in).getTime())/60000)), 0);
-          return `<div class="gw-myday-crew-row">
+          return `<div class="gw-myday-crew-chip${live ? ' gw-myday-crew-chip--live' : ''}">
             <span class="gw-myday-crew-dot" style="background:${el(r.rep_color||'#4D8A86')}"></span>
-            <strong>${el(r.rep_name)}</strong>
+            <span class="gw-myday-crew-chip-name">${el(r.rep_name)}</span>
             ${live ? '<span class="gw-myday-crew-live">● live</span>' : ''}
             <span class="gw-myday-crew-hrs">${fmtH((r.total_min||0) + liveMin)}</span>
           </div>`;
         }).join('');
         m.innerHTML = `<section class="card"><div class="section-head"><h2>Crew Hours Today</h2>
-          <button class="secondary-btn small" onclick="show('gwTimesheetAdmin')" style="font-size:11px">Review</button></div>
-          ${rows || `<div class="gw-myday-placeholder">No hours logged yet today.</div>`}
+          ${reps.length ? `<span class="badge">${fmtH(totalMin)} total${liveCount ? ` · ${liveCount} live` : ''}</span>` : ''}
+          <span style="margin-left:auto"><button class="secondary-btn small" onclick="show('gwTimesheetAdmin')" style="font-size:11px">Review</button></span></div>
+          <div class="gw-myday-crew-grid">
+            ${chips || `<div class="gw-myday-placeholder">No hours logged yet today.</div>`}
+          </div>
         </section>`;
       }).catch(()=>{});
   }
 
-  // 4) Money Owed (A/R) — outstanding / overdue / paid MTD
+  // 4) Money Owed (A/R) — outstanding / overdue / paid MTD, with an aging
+  // breakdown (0-30 / 31-60 / 61-90 / 90+) migrated in as an accordion-
+  // expand-in-place detail section instead of a separate report page.
   const arMount = document.getElementById('gw-myday-ar-mount');
   if (arMount) {
     fetch('/api/invoices?limit=500', { credentials:'include' })
@@ -2523,8 +2743,31 @@ function _gwMyDayLoadOwnerWidgets(rep){
         const odAmt   = overdue.reduce((s,i) => s + Number(i.balance_due != null ? i.balance_due : i.total || 0), 0);
         const paidMTD = invs.filter(i => i.status === 'paid' && (i.paid_at||'').slice(0,7) === mo)
                             .reduce((s,i) => s + Number(i.amount_paid || i.total || 0), 0);
+
+        // Aging buckets (days past due date) across all open invoices
+        const buckets = [{label:'0-30', min:0, max:30, val:0, cnt:0}, {label:'31-60', min:31, max:60, val:0, cnt:0}, {label:'61-90', min:61, max:90, val:0, cnt:0}, {label:'90+', min:91, max:Infinity, val:0, cnt:0}];
+        open.forEach(i => {
+          const due = i.due_date;
+          const bal = Number(i.balance_due != null ? i.balance_due : i.total || 0);
+          const daysPast = due ? Math.floor((new Date(today).getTime() - new Date(due).getTime()) / 86400000) : 0;
+          const b = buckets.find(bk => daysPast >= bk.min && daysPast <= bk.max) || buckets[0];
+          b.val += bal; b.cnt += 1;
+        });
+        const agingMax = Math.max(1, ...buckets.map(b=>b.val));
+        const agingRows = buckets.map(b => `
+          <div style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+              <span style="font-weight:600">${b.label} days</span>
+              <span style="color:var(--gw-muted)">${_fmt$(b.val)} · ${b.cnt} invoice${b.cnt===1?'':'s'}</span>
+            </div>
+            <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${Math.max(2,Math.round(b.val/agingMax*100))}%;background:${b.min>=61?'#C97B6A':b.min>=31?'#8B6914':'var(--gw-pine,#4D8A86)'};border-radius:3px"></div>
+            </div>
+          </div>`).join('');
+
+        const accordionId = 'gw-ar-accordion-detail';
         m.innerHTML = `<section class="card"><div class="section-head"><h2>Money Owed</h2>
-          <button class="secondary-btn small" onclick="show('invoices')" style="font-size:11px">Invoices</button></div>
+          <span style="display:flex;gap:6px"><button class="secondary-btn small gw-accordion-toggle" data-accordion-toggle="${accordionId}" onclick="gwMyDayAccordionToggle('${accordionId}')" style="font-size:11px">Aging</button><button class="secondary-btn small" onclick="show('invoices')" style="font-size:11px">Invoices</button></span></div>
           <div class="gw-myday-ar-grid">
             <div class="gw-myday-ar-cell" onclick="show('invoices')">
               <span class="gw-myday-ar-label">Outstanding</span>
@@ -2540,6 +2783,49 @@ function _gwMyDayLoadOwnerWidgets(rep){
               <span class="gw-myday-ar-label">Paid this month</span>
               <span class="gw-myday-ar-val">${_fmt$(paidMTD)}</span>
             </div>
+          </div>
+          <div id="${accordionId}" class="gw-accordion-body">
+            <h4 style="margin:14px 0 10px;font-size:11px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Aging Breakdown</h4>
+            ${agingRows}
+          </div>
+        </section>`;
+      }).catch(()=>{});
+  }
+
+  // 5) Upcoming Schedule (7 Days) — Add-Widget-only, migrated from opsReports.
+  // Shows work orders scheduled in the next 7 days, plus the weeks-booked-out
+  // capacity placeholder.
+  const opsDeeperMount = document.getElementById('gw-myday-opsdeeper-mount');
+  if (opsDeeperMount) {
+    const today = todayISO();
+    const next7 = new Date(Date.now() + 7*86400000).toISOString().slice(0,10);
+    fetch(`/api/work-orders?date_from=${today}&date_to=${next7}&limit=100`, { credentials:'include' })
+      .then(r=>r.json()).then(j => {
+        const m = document.getElementById('gw-myday-opsdeeper-mount'); if (!m) return;
+        const el = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+        const wos = ((j.ok && j.data) || []).filter(w => w.scheduled_date > today && !['cancelled','completed'].includes(w.status))
+          .sort((a,b) => (a.scheduled_date||'').localeCompare(b.scheduled_date||''));
+        const row = w => `<tr style="border-bottom:1px solid var(--gw-line)">
+          <td style="padding:8px 12px;font-weight:600;font-size:12px">${el(w.client_name || w.title || w.wo_number)}</td>
+          <td style="padding:8px 8px;font-size:11px;color:var(--gw-muted)">${el(w.crew_name||'—')}</td>
+          <td style="padding:8px 8px;font-size:11px;color:var(--gw-muted)">${el(w.scheduled_date)}</td>
+          <td style="padding:8px 8px"><span style="font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86)">${el((w.status||'').replace('-',' '))}</span></td>
+        </tr>`;
+        m.innerHTML = `<section class="card"><div class="section-head"><h2>Upcoming Schedule (7 Days)</h2>
+          <button class="secondary-btn small" onclick="show('scheduleBoard')" style="font-size:11px">Schedule Board</button></div>
+          ${wos.length ? `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+              <th style="text-align:left;padding:7px 12px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
+              <th style="text-align:left;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
+              <th style="text-align:left;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
+              <th style="text-align:left;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
+            </tr></thead>
+            <tbody>${wos.map(row).join('')}</tbody>
+          </table>` : `<div class="gw-myday-placeholder">No jobs scheduled in the next 7 days.</div>`}
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 4px 2px;border-top:1px solid var(--gw-line);margin-top:12px">
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.5"/><path d="M9 5v4l2.5 2.5" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div style="font-size:11px;color:var(--gw-muted)">Weeks Booked Out — coming soon. Once budgeted hours are attached to estimates and work orders, this will show weeks of capacity booked out based on your team's weekly hour budget.</div>
           </div>
         </section>`;
       }).catch(()=>{});
@@ -2583,10 +2869,23 @@ function _gwTodayRender() {
     const d = window._d1SessionRep;
     _todayRep = { id: d.id, name: d.name, role: d.role || 'admin', email: d.email, color: d.color };
   }
+  // ── Command Center visual-pass scope class (Option 1 design refresh) ──────
+  // Warm background / wider gaps / softer borders / restrained accent color
+  // live under `.gw-view--cc` in premium.css only — no shared :root tokens
+  // touched, so every other page keeps today's look until a separately-
+  // approved global rollout.
+  if (view) view.classList.add('gw-view--cc');
+  _gwMyDayHydrateLayout();
   const _isAdmin  = _todayRep && (_todayRep.role === 'admin' || _todayRep.role === 'owner');
   const _isOM     = _todayRep && _todayRep.role === 'office_manager';
   const _isField  = _todayRep && (_GW_FIELD_ROLES || ['foreman','laborer','field_supervisor']).includes(_todayRep.role);
   const _showFin  = _isAdmin || _isOM;
+
+  // Fixed caps for list-style widgets (jobs / tasks) — the old per-mode caps
+  // no longer apply since there's a single canonical layout, but the "+N
+  // more" collapse behavior itself is still worth keeping so widget height
+  // stays predictable regardless of how busy the day is.
+  window._gwMyDayCaps = { jobsToday: 4, tasks: 4, calendar: 4 };
 
   // Unsynced banner
   const _localOnlyOpps = state.opportunities.filter(o => !o._fromD1);
@@ -2599,39 +2898,323 @@ function _gwTodayRender() {
 
   // Pipeline quick-stats strip (compact, owner-relevant)
   const opps = state.opportunities || [];
-  const _open    = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
-  const _propo   = opps.filter(o=>['Proposal / Estimate Sent','Proposal Sent'].includes(o.status));
+  const _open    = opps.filter(o=>gwSalesIsOpen(o));
+  const _propo   = opps.filter(o=>gwSalesIs(o,'proposal_presentation'));
   const _pipeVal = _open.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const _won     = opps.filter(o=>o.status==='Sold / Activation');
+  const _won     = opps.filter(o=>gwSalesIs(o,'won'));
   const _wonMTD  = _won.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7) === todayISO().slice(0,7));
   const _wonMTDVal = _wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
   const _fmt = n => n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
 
+  // Avg Close Likelihood — 5th hero tile. Aggregates gwLeadScore() across
+  // every open lead (skip pinned won/lost, they don't apply to open leads
+  // anyway) and reuses gwScorePill()'s factor-breakdown tooltip pattern for
+  // each lead in the "why" list, summarized into one hero-level tooltip.
+  const _scoreEntries = _open.map(o => ({ o, r: gwLeadScore(o) }));
+  const _avgScore = _scoreEntries.length
+    ? Math.round(_scoreEntries.reduce((s,e)=>s+e.r.score,0) / _scoreEntries.length)
+    : null;
+  const _scoreBand = _avgScore === null ? 'gw-today-pipe-cell--neutral' : _avgScore >= 70 ? 'gw-today-pipe-cell--emerald' : _avgScore >= 40 ? 'gw-today-pipe-cell--amber' : 'gw-today-pipe-cell--rose';
+  // Tooltip: top 3 leads most dragging the average down + top 3 driving it up,
+  // so the hero tile is legible at a glance without opening the pipeline.
+  const _sortedByScore = _scoreEntries.slice().sort((a,b)=>a.r.score-b.r.score);
+  const _lowest = _sortedByScore.slice(0,3);
+  const _highest = _sortedByScore.slice(-3).reverse();
+  const _scoreTooltipLines = [];
+  if (_lowest.length) _scoreTooltipLines.push('Lowest:', ..._lowest.map(e => `  ${e.r.score}% — ${e.o.client||'Unnamed Lead'}`));
+  if (_highest.length) _scoreTooltipLines.push('Highest:', ..._highest.map(e => `  ${e.r.score}% — ${e.o.client||'Unnamed Lead'}`));
+  const _scoreTooltip = 'Groundwork AI avg close likelihood across ' + _open.length + ' open lead' + (_open.length===1?'':'s') + '\n' + _scoreTooltipLines.join('\n');
+
+  // Hero KPI band: 4 real pipeline figures + 1 AI close-likelihood figure.
+  // Restrained accent pass (Command Center visual refresh, Option 1): only
+  // tiles signaling a genuine positive/active or attention-needed STATE keep
+  // a color chip (Won MTD → green; Avg Close Likelihood → green/amber/red by
+  // score). Purely informational counts (Open Leads, Proposals Out, Pipeline
+  // Value) go neutral so color reads as signal, not decoration — matches the
+  // mockups' sparing use of the green accent instead of a different hue per
+  // tile. `--neutral` is styled only under `.gw-view--cc` in premium.css.
+  const _gi2 = (n) => (typeof gwIcon==='function') ? gwIcon(n, 17, 'currentColor') : '';
   const _pipeStrip = _isField ? '' : `
-    <div class="gw-today-pipe-strip">
-      <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Open pipeline">
-        <span class="gw-today-pipe-label">Open Leads</span>
-        <span class="gw-today-pipe-val">${_open.length}</span>
+    <div class="gw-today-pipe-strip gw-today-pipe-strip--five">
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--sky" onclick="show('pipeline')" title="Open pipeline">
+        <span class="gw-today-pipe-ic">${_gi2('leads')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Open Leads</span><span class="gw-today-pipe-val">${_open.length}</span></span>
       </div>
-      <div class="gw-today-pipe-cell" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
-        <span class="gw-today-pipe-label">Proposals Out</span>
-        <span class="gw-today-pipe-val">${_propo.length}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--neutral" onclick="window._pipelineStatusFilter='proposals';show('pipeline')" title="Proposals out">
+        <span class="gw-today-pipe-ic">${_gi2('estimate')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Proposals Out</span><span class="gw-today-pipe-val">${_propo.length}</span></span>
       </div>
-      <div class="gw-today-pipe-cell" onclick="show('pipeline')" title="Pipeline value">
-        <span class="gw-today-pipe-label">Pipeline Value</span>
-        <span class="gw-today-pipe-val gw-today-pipe-val--money">${_fmt(_pipeVal)}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--neutral" onclick="show('pipeline')" title="Pipeline value">
+        <span class="gw-today-pipe-ic">${_gi2('revenue')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Pipeline Value</span><span class="gw-today-pipe-val gw-today-pipe-val--money">${_fmt(_pipeVal)}</span></span>
       </div>
-      <div class="gw-today-pipe-cell" title="Won this month">
-        <span class="gw-today-pipe-label">Won MTD</span>
-        <span class="gw-today-pipe-val gw-today-pipe-val--won">${_wonMTD.length} · ${_fmt(_wonMTDVal)}</span>
+      <div class="gw-today-pipe-cell gw-today-pipe-cell--emerald" title="Won this month">
+        <span class="gw-today-pipe-ic">${_gi2('won')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Won MTD</span><span class="gw-today-pipe-val gw-today-pipe-val--won">${_wonMTD.length} · ${_fmt(_wonMTDVal)}</span></span>
+      </div>
+      <div class="gw-today-pipe-cell ${_scoreBand}" onclick="show('pipeline')" title="${escapeHtml(_scoreTooltip)}">
+        <span class="gw-today-pipe-ic">${_gi2('target')}</span>
+        <span class="gw-today-pipe-text"><span class="gw-today-pipe-label">Avg Close Likelihood</span><span class="gw-today-pipe-val">${_avgScore===null?'—':_avgScore+'%'}</span></span>
       </div>
     </div>`;
+
+  // Pipeline chart widget — real trend + stage breakdown, no fabricated
+  // numbers. Trend: actual won $ per week for the last 4 weeks. Stage bar:
+  // actual $ distribution of today's open pipeline. The funnel/monthly-trend/
+  // lead-source detail that used to live on the separate Sales Performance
+  // report page is migrated in here as an accordion-expand-in-place section
+  // ("View trend & funnel") instead of a "Full report" link to a page that
+  // no longer exists.
+  const _pipeChartHtml = _isField ? '' : (function(){
+    const weeks = [0,0,0,0]; // oldest → newest, each = won $ that week
+    _won.forEach(o => {
+      const raw = o.closedDate || o.updatedAt || o.createdAt;
+      if (!raw) return;
+      const t = new Date(String(raw).includes('T') ? raw : String(raw).replace(' ','T') + 'Z').getTime();
+      if (isNaN(t)) return;
+      const daysAgo = Math.floor((Date.now() - t) / 86400000);
+      if (daysAgo < 0 || daysAgo >= 28) return;
+      const wk = 3 - Math.floor(daysAgo / 7); // 3 = this week, 0 = 3 weeks ago
+      weeks[wk] += Number(o.jobValue || o.soldAmount || 0);
+    });
+    const maxW = Math.max(1, ...weeks);
+    const pts = weeks.map((v,i) => {
+      const x = (i / (weeks.length - 1)) * 220;
+      const y = 34 - (v / maxW) * 28;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+
+    // Stage breakdown of current open pipeline, by raw status label
+    const stageTotals = {};
+    _open.forEach(o => {
+      const key = o.status || 'Unstaged';
+      stageTotals[key] = (stageTotals[key] || 0) + Number(o.jobValue || 0);
+    });
+    const stageColors = ['var(--gw-sky)', '#7FB0AB', 'var(--gw-amber)', 'var(--gw-emerald)'];
+    const stageEntries = Object.entries(stageTotals).sort((a,b) => b[1]-a[1]);
+    const top = stageEntries.slice(0, 3);
+    const otherVal = stageEntries.slice(3).reduce((s,[,v]) => s+v, 0);
+    if (otherVal > 0) top.push(['Other', otherVal]);
+    const stageTotal = Math.max(1, top.reduce((s,[,v]) => s+v, 0));
+    const barSegs = top.map(([,v], i) => `<i style="width:${(v/stageTotal*100).toFixed(1)}%;background:${stageColors[i]||'#C8D8D3'}"></i>`).join('');
+    const legendRows = top.map(([label,v], i) => `
+      <div class="pipe-legend-row"><span class="k"><i style="background:${stageColors[i]||'#C8D8D3'}"></i>${escapeHtml(label)}</span><span class="v">${_fmt(v)}</span></div>`).join('');
+
+    const wonTrendPct = weeks[0] > 0 ? Math.round(((weeks[3]-weeks[0])/weeks[0])*100) : null;
+    const trendBadge = wonTrendPct === null ? '' : `<span style="font-size:13px;font-weight:700;color:${wonTrendPct>=0?'var(--gw-emerald)':'var(--gw-rose)'}">${wonTrendPct>=0?'+':''}${wonTrendPct}%</span>`;
+
+    // Accordion detail: 6-month won trend + full pipeline funnel + lead
+    // sources — migrated from the old separate Sales Performance report page.
+    const monthMap = {};
+    _won.forEach(o=>{const m=(o.closedDate||o.createdAt||'').slice(0,7);if(m)monthMap[m]=(monthMap[m]||0)+Number(o.jobValue||0);});
+    const months6 = [];
+    for(let i=5;i>=0;i--){const d=new Date();d.setMonth(d.getMonth()-i);months6.push(d.toISOString().slice(0,7));}
+    const maxMonthVal = Math.max(1,...months6.map(m=>monthMap[m]||0));
+    const mtd = todayISO().slice(0,7);
+    const FUNNEL = [
+      {label:'Intake',                 semantic:'intake'},
+      {label:'Qualification',          semantic:'active_qualification'},
+      {label:'Consultation',           semantic:'consultation'},
+      {label:'Estimate Development',   semantic:'estimate_development'},
+      {label:'Proposal / Presentation',semantic:'proposal_presentation'},
+      {label:'Decision',               semantic:'decision'},
+      {label:'Won',                    semantic:'won'},
+      {label:'Lost',                   semantic:'lost'},
+    ];
+    const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(o=>GWSalesProcess.is(o,f.semantic)).length));
+    const funnelRows = FUNNEL.map(f=>{
+      const cnt = opps.filter(o=>GWSalesProcess.is(o,f.semantic)).length;
+      if(!cnt) return '';
+      const pct = Math.max(4, Math.round((cnt/funnelMax)*100));
+      const bar = f.semantic==='won' ? 'background:#2D7A55' : f.semantic==='lost' ? 'background:#A05050' : 'background:var(--gw-pine,#4D8A86)';
+      return `<div style="margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600;color:var(--gw-ink)">${escapeHtml(f.label)}</span>
+          <span style="color:var(--gw-muted)">${cnt}</span>
+        </div>
+        <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;${bar};border-radius:3px;transition:width .4s"></div>
+        </div>
+      </div>`;
+    }).join('');
+    const sourceMap = {};
+    opps.forEach(o=>{ const s=o.leadSource||o.source||'Unknown'; sourceMap[s]=(sourceMap[s]||0)+1; });
+    const sources = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const sourceRows = sources.length ? sources.map(([src,cnt])=>{
+      const pct=opps.length?Math.round((cnt/opps.length)*100):0;
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600">${escapeHtml(String(src).slice(0,36))}</span>
+          <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
+        </div>
+        <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
+        </div>
+      </div>`;
+    }).join('') : `<p style="color:var(--gw-muted);font-size:13px">Add lead source data when creating leads to see breakdown here.</p>`;
+
+    const accordionId = 'gw-pipe-accordion-detail';
+    const detailHtml = `
+      <div id="${accordionId}" class="gw-accordion-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+          <div>
+            <h4 style="margin:0 0 10px;font-size:12px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Pipeline Funnel</h4>
+            ${funnelRows}
+          </div>
+          <div>
+            <h4 style="margin:0 0 10px;font-size:12px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Won Revenue — Last 6 Months</h4>
+            <div style="display:flex;align-items:flex-end;gap:8px;height:70px;margin-bottom:16px">
+              ${months6.map(m=>{
+                const v=monthMap[m]||0;
+                const h=Math.max(4,Math.round((v/maxMonthVal)*70));
+                const isNow=m===mtd;
+                return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+                  <div style="font-size:9px;font-weight:700;color:#2D7A55;white-space:nowrap">${v?_fmt(v).replace(/,000$/,'k'):''}</div>
+                  <div style="width:100%;height:${h}px;background:${isNow?'#2D7A55':'#4D8A8680'};border-radius:3px 3px 0 0;min-height:4px"></div>
+                  <div style="font-size:9px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
+                </div>`;
+              }).join('')}
+            </div>
+            <h4 style="margin:0 0 10px;font-size:12px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Lead Sources</h4>
+            ${sourceRows}
+          </div>
+        </div>
+      </div>`;
+
+    return `<section class="card gw-pipe-chart">
+      <div class="section-head"><h2>Pipeline</h2><span style="display:flex;gap:6px"><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">Pipeline board</button><button class="secondary-btn small gw-accordion-toggle" data-accordion-toggle="${accordionId}" onclick="gwMyDayAccordionToggle('${accordionId}')" style="font-size:11px">View trend</button></span></div>
+      <div class="pipe-num">${_fmt(_pipeVal)} ${trendBadge}</div>
+      <div class="pipe-lbl">Open across ${_open.length} lead${_open.length===1?'':'s'}</div>
+      <svg class="pipe-spark" viewBox="0 0 220 40" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#2D7A55" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="pipe-spark-foot"><span>4 wks ago</span><span>This week</span></div>
+      <div class="pipe-stage-bar">${barSegs || '<i style="width:100%;background:var(--gw-line-strong)"></i>'}</div>
+      <div class="pipe-legend">${legendRows || '<div class="gw-myday-placeholder" style="padding:8px 0">No open leads right now.</div>'}</div>
+      <div class="pipe-mini-row"><span>${_wonMTD.length} won MTD</span><span>${_fmt(_wonMTDVal)} won</span></div>
+      ${detailHtml}
+    </section>`;
+  })();
+
+  // Rep Leaderboard — compact rep performance ranking, migrated from the
+  // old Sales Performance report's rep table. Add-Widget-only (admin/OM),
+  // not part of the default layout.
+  const _repLeaderboardHtml = (function(){
+    if (!_showFin) return '';
+    const reps = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
+    const mtd = todayISO().slice(0,7);
+    const rows = reps.map(r=>{
+      const mine    = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
+      const mWon    = mine.filter(o=>GWSalesProcess.isWon(o));
+      const mOpen   = mine.filter(o=>GWSalesProcess.isOpen(o));
+      const mLost   = mine.filter(o=>GWSalesProcess.isLost(o));
+      const mPipe   = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
+      const mWonVal = mWon.reduce((s,o)=>s+Number(o.jobValue||0),0);
+      const mClosed = mWon.length + mLost.length;
+      const mRate   = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
+      const mMTD    = mWon.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd).length;
+      const rateColor = mRate >= 50 ? '#2D7A55' : mRate >= 25 ? '#8B6914' : 'var(--gw-muted)';
+      return { r, mine, mOpen, mWon, mWonVal, mPipe, mRate, mMTD, rateColor };
+    }).sort((a,b)=>b.mWonVal-a.mWonVal);
+    const bodyRows = rows.map(x=>`
+      <tr style="border-bottom:1px solid var(--gw-line)">
+        <td style="padding:8px 12px;font-weight:700;font-size:12px">${escapeHtml(x.r.name)}</td>
+        <td style="padding:8px 8px;text-align:center;font-size:12px">${x.mOpen.length}</td>
+        <td style="padding:8px 8px;text-align:center;color:#2D7A55;font-weight:700;font-size:12px">${x.mWon.length}</td>
+        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--gw-pine-600)">${_fmt(x.mPipe)}</td>
+        <td style="padding:8px 8px;text-align:center;font-size:12px;font-weight:700;color:${x.rateColor}">${x.mRate}%</td>
+      </tr>`).join('');
+    return `<section class="card gw-rep-leaderboard">
+      <div class="section-head"><h2>Rep Leaderboard</h2><span style="font-size:11px;color:var(--gw-muted)">${reps.length} member${reps.length!==1?'s':''}</span></div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:340px">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:7px 12px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Rep</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won</th>
+            <th style="text-align:right;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Close %</th>
+          </tr></thead>
+          <tbody>${bodyRows||`<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gw-muted);font-style:italic;font-size:12px">No team members configured.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>`;
+  })();
+
+  // Budget vs Actual — migrated from financialReports' fyBlock. Add-Widget-
+  // only (admin/OM), not part of the default layout.
+  const _budgetVsActualHtml = (function(){
+    if (!_showFin) return '';
+    try {
+      const fy = (typeof getResolvedFY==='function') ? getResolvedFY() : null;
+      if (!fy || !fy.annual) return '';
+      const a = fy.annual;
+      const varColor = a.ytdVariance>=0?'#2D7A55':'#C97B6A';
+      const varSign  = a.ytdVariance>=0?'+':'';
+      const pct = a.budgetedRevenue>0?Math.min(100,Math.round(a.actualRevenue/a.budgetedRevenue*100)):0;
+      const divs = fy.divisions||{};
+      const divKeys = Object.keys(divs).filter(k=>divs[k]);
+      const divCells = divKeys.map(k=>{
+        const d=divs[k]; const label=k.charAt(0).toUpperCase()+k.slice(1);
+        const dpct=d.target>0?Math.min(100,Math.round((d.actual||0)/d.target*100)):0;
+        const gm = d.grossMarginPct!=null?Math.round(d.grossMarginPct*100):null;
+        return `<tr style="border-bottom:1px solid var(--gw-line)">
+          <td style="padding:8px 12px;font-weight:600;font-size:12px">${escapeHtml(label)}</td>
+          <td style="padding:8px;text-align:right;font-weight:700;color:var(--gw-pine,#4D8A86);font-size:12px">${_fmt(d.actual||0)}</td>
+          <td style="padding:8px;text-align:right;color:var(--gw-muted);font-size:12px">${_fmt(d.target||0)}</td>
+          <td style="padding:8px;text-align:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="flex:1;height:5px;background:var(--gw-line);border-radius:3px;overflow:hidden"><div style="height:100%;width:${dpct}%;background:var(--gw-pine,#4D8A86);border-radius:3px"></div></div>
+              <span style="font-size:10px;font-weight:700;color:var(--gw-muted);white-space:nowrap">${dpct}%</span>
+            </div>
+          </td>
+          <td style="padding:8px;text-align:center;font-size:11px;font-weight:700;color:${gm!=null&&gm<(d.grossMarginFloor||0)*100?'#C97B6A':'#2D7A55'}">${gm!=null?gm+'%':'—'}</td>
+        </tr>`;
+      }).join('');
+      return `<section class="card gw-budget-vs-actual">
+        <div class="section-head">
+          <h2>Budget vs Actual — ${escapeHtml(fy.budgetVersion||'FY')}</h2>
+          <button class="secondary-btn small" onclick="show('revenueAdmin')" style="font-size:11px">Manage Budget</button>
+        </div>
+        <div class="fr-budget-grid fr-budget-inner">
+          ${[
+            {label:'YTD Actual',val:_fmt(a.actualRevenue),color:'var(--gw-pine,#4D8A86)'},
+            {label:'Annual Budget',val:_fmt(a.budgetedRevenue),color:'var(--gw-ink)'},
+            {label:'YTD Variance',val:varSign+_fmt(a.ytdVariance),color:varColor},
+            {label:'Needed / Month',val:_fmt(a.avgNeededPerMonth),color:'#8B6914'}
+          ].map(k=>`
+          <div style="background:var(--gw-surface-2);border-radius:8px;padding:10px">
+            <div style="font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${k.label}</div>
+            <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
+          </div>`).join('')}
+        </div>
+        <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:var(--gw-pine,#4D8A86);border-radius:4px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:var(--gw-muted);margin-bottom:14px">${pct}% of annual target · ${a.monthsLeft||0} months remaining</div>
+        ${divCells ? `
+        <div class="fr-budget-table-wrap"><table class="fr-panel-table" style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
+            <th style="text-align:left;padding:7px 12px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Division</th>
+            <th style="text-align:right;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Actual</th>
+            <th style="text-align:right;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Target</th>
+            <th style="padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Progress</th>
+            <th style="text-align:center;padding:7px 8px;font-size:9px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">GM %</th>
+          </tr></thead>
+          <tbody>${divCells}</tbody>
+        </table></div>` : ''}
+      </section>`;
+    } catch(_) { return ''; }
+  })();
+
+  // Upcoming Schedule (7 Days) — migrated from opsReports. Add-Widget-only,
+  // not part of the default layout. Loaded async since it needs work-order
+  // data from the API (same pattern as Today's Jobs / Crew Hours).
+  const _opsDeeperHtml = _isField ? '' : `<div id="gw-myday-opsdeeper-mount"><section class="card"><div class="section-head"><h2>Upcoming Schedule (7 Days)</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`;
 
   // Finance snap — always compute so mobile path can use it regardless of role
   const _finSnap = _gwTodayFinanceSnap();
 
   // Task workspace (from cache — loaded async below)
-  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep);
+  const _taskWorkspace = _gwTodayRenderTaskWorkspace(_todayRep, window._gwMyDayCaps.tasks);
 
   // Recently Updated leads
   const recent = [...opps].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,5);
@@ -2656,35 +3239,24 @@ function _gwTodayRender() {
     return;
   }
 
-  // Day-mode switcher (owner-operator presets) — field roles keep their own dashboard
-  const _curMode = _gwMyDayGetMode();
-  const _modeBar = _isField ? '' : `
-    <div class="gw-myday-modes" role="tablist" aria-label="My Day layout mode">
-      ${_GW_MYDAY_MODES.map(m => `
-        <button class="gw-myday-mode-pill${_curMode === m.id ? ' gw-myday-mode-pill--on' : ''}"
-          role="tab" aria-selected="${_curMode === m.id}"
-          onclick="gwMyDaySetMode('${m.id}')" title="${escapeHtml(m.desc || '')}">
-          <span class="gw-myday-mode-ic">${m.icon}</span>${m.label}
-        </button>`).join('')}
-    </div>`;
-
-  // Hero header
+  // Hero header — title, date/rep line, single "+ Add Widget" button.
+  // Replaces the old mode-switcher pill bar and Customize/edit-mode button
+  // entirely — there's only one canonical layout now, and customization is
+  // a simple add/remove popover, not a whole editing mode.
+  const _addOpen = !!window._gwMyDayAddWidgetOpen;
   const _heroBlock = `
     <div class="pl-page-header">
       <div class="pl-page-title">
-        <h1 class="pl-title">My Day</h1>
+        <h1 class="pl-title">Command Center</h1>
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
       </div>
       <div class="pl-page-actions">
-        ${_modeBar}
-        ${window._gwMyDayEditing ? '' : `<button class="secondary-btn small gw-myday-customize-btn" onclick="gwMyDayCustomize()" title="Customize My Day widgets">${(typeof gwIcon==='function') ? gwIcon('settings', 13, 'currentColor') : ''} Customize</button>`}
+        <button class="secondary-btn small${_addOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayAddWidgetToggle()" title="Add or remove Command Center widgets">${(typeof gwIcon==='function') ? gwIcon('plus', 13, 'currentColor') : ''} Add Widget</button>
       </div>
     </div>`;
 
-  // ── Widget grid (customizable: order / visibility / size per user) ───────
-  const _editing = !!window._gwMyDayEditing;
-
-  // Extra library widgets content
+  // Extra widget content computed inline (small enough not to need their own
+  // named builder functions)
   const _quickActionsHtml = `<section class="card"><div class="section-head"><h2>Quick Actions</h2></div>
     <div class="gw-myday-qa-grid">
       <button onclick="show('lead')">${(typeof gwIcon==='function')?gwIcon('leads',15):''} New Lead</button>
@@ -2697,11 +3269,20 @@ function _gwTodayRender() {
   const _scratchpadHtml = `<section class="card"><div class="section-head"><h2>Scratchpad</h2></div>
     <textarea class="gw-myday-scratch" placeholder="Jot quick notes here — saved automatically, just for you…"
       oninput="gwMyDayScratchSave(this)">${escapeHtml(_gwMyDayScratchLoad())}</textarea></section>`;
-  const _staleCutoff = new Date(Date.now() - 7*86400000).toISOString();
-  const _staleLeads = _open.filter(o => (o.updatedAt || o.createdAt || '') < _staleCutoff)
-    .sort((a,b) => (a.updatedAt||'').localeCompare(b.updatedAt||'')).slice(0,6);
+
+  // Needs Follow-Up — sorts by gwStageClock()'s "late" urgency band instead
+  // of generic 7-day staleness, so this surfaces leads that are actually
+  // overdue relative to their own stage's expected duration (a lead that's
+  // 10 days old but only 2 days into a 14-day-expected stage is fine; one
+  // that's 10 days into a 3-day-expected stage needs attention).
+  const _staleLeads = _open
+    .map(o => ({ o, clock: gwStageClock(o) }))
+    .filter(x => x.clock.level === 'late')
+    .sort((a,b) => b.clock.ratio - a.clock.ratio)
+    .slice(0,6)
+    .map(x => x.o);
   const _staleLeadsHtml = `<section class="card"><div class="section-head"><h2>Needs Follow-Up</h2>${_staleLeads.length ? `<span class="badge warn-badge">${_staleLeads.length}</span>` : ''}</div>
-    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder">No stale leads — everything has recent activity. 🎉</div>`}</section>`;
+    ${_staleLeads.length ? _staleLeads.map(oppMini).join('') : `<div class="gw-myday-placeholder gw-myday-placeholder--empty">${(typeof gwIcon==='function')?gwIcon('success',22,'#2D9F63'):''}<span>No leads sitting late in their stage — everything's on pace.</span></div>`}</section>`;
   const _recentWins = _won.slice().sort((a,b)=>(b.closedDate||b.updatedAt||'').localeCompare(a.closedDate||a.updatedAt||'')).slice(0,5);
   const _recentWinsHtml = `<section class="card"><div class="section-head"><h2>Recent Wins</h2></div>
     ${_recentWins.length ? _recentWins.map(oppMini).join('') : `<div class="gw-myday-placeholder">No wins yet — go close one!</div>`}</section>`;
@@ -2709,6 +3290,7 @@ function _gwTodayRender() {
   const _wCtx = {
     rep: _todayRep, isAdmin: _isAdmin, isOM: _isOM, isField: _isField, showFin: _showFin,
     pipeStrip: _pipeStrip,
+    pipeChartHtml: _pipeChartHtml,
     taskWorkspace: _taskWorkspace,
     finSnap: _finSnap,
     checklistHtml: renderChecklist(data.checklists.find(c=>c.id==='daily'), true),
@@ -2718,30 +3300,43 @@ function _gwTodayRender() {
     scratchpadHtml: _scratchpadHtml,
     staleLeadsHtml: _staleLeadsHtml,
     recentWinsHtml: _recentWinsHtml,
+    repLeaderboardHtml: _repLeaderboardHtml,
+    budgetVsActualHtml: _budgetVsActualHtml,
+    opsDeeperHtml: _opsDeeperHtml,
   };
   const _layout = _gwMyDayResolveLayout(_wCtx);
-  const _widgetsHtml = _layout.order.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout, _editing)).join('');
-  const _libOpen = _editing && !!window._gwMyDayLibOpen;
-  const _editBar = _editing ? `
-    <div class="gw-myday-edit-banner">
-      <span>${(typeof gwIcon==='function') ? gwIcon('dashboard', 16, '#4D8A86') : ''} <strong>Customize My Day</strong> — drag to reorder, drag the right/bottom edges to resize, remove what you don't need. Saved just for you.</span>
-      <span class="gw-myday-edit-banner-btns">
-        <button class="secondary-btn small${_libOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayToggleLib()">${_libOpen ? 'Close Library' : '+ Widget Library'}</button>
-        <button class="secondary-btn small" onclick="gwMyDayReset()">Reset to Default</button>
-        <button class="primary-btn small" onclick="gwMyDayDone()">Done</button>
-      </span>
-    </div>
-    ${_libOpen ? _gwMyDayLibraryPanel(_wCtx, _layout) : ''}` : '';
+
+  // ── Zone-grouped layout — the single canonical view for everyone. Hero
+  // widgets (pipeStrip) render standalone, full width, above the zone
+  // sections. Every other widget groups into its zone's own titled section.
+  const _visibleIds = _layout.order.filter(id => !_layout.hidden.includes(id));
+  const _heroIds = _visibleIds.filter(id => { const w = _GW_MYDAY_WIDGETS.find(x=>x.id===id); return w && w.zone === 'hero'; });
+  const _heroWidgetsHtml = _heroIds.map(id => (_GW_MYDAY_WIDGETS.find(x=>x.id===id).render(_wCtx) || '')).join('');
+  const _zoneBuckets = _gwMyDayGroupByZone(_visibleIds);
+  let _firstGrid = true;
+  const _zonesHtml = _zoneBuckets.map(bucket => {
+    const z = _GW_MYDAY_ZONES[bucket.zoneKey] || _GW_MYDAY_ZONES.personal;
+    const html = bucket.ids.map(id => _gwMyDayRenderWidget(id, _wCtx, _layout)).join('');
+    if (!html.trim()) return '';
+    const gridId = _firstGrid ? ' id="gw-myday-grid"' : '';
+    _firstGrid = false;
+    return `<section class="gw-myday-zone" style="--gw-zone-accent:${z.accent}">
+      <div class="gw-myday-zone-head">
+        <span class="gw-myday-zone-ic">${(typeof gwIcon==='function') ? gwIcon(z.icon, 15, 'currentColor') : ''}</span>
+        <h3 class="gw-myday-zone-title">${escapeHtml(z.label)}</h3>
+      </div>
+      <div class="gw-myday-grid"${gridId}>${html}</div>
+    </section>`;
+  }).join('');
+  const _gridsHtml = `${_heroWidgetsHtml}${_zonesHtml}`;
+  const _addWidgetPopoverHtml = _addOpen ? _gwMyDayAddWidgetPopover(_wCtx, _layout) : '';
 
   view.innerHTML = `${_heroBlock}
     ${_unsyncedBanner}
-    ${_editBar}
-    <div id="gw-myday-grid" class="gw-myday-grid${_editing ? ' gw-myday-grid--edit' : ''}">
-      ${_widgetsHtml}
-    </div>
+    ${_addWidgetPopoverHtml}
+    ${_gridsHtml}
   `;
   wireChecks();
-  if (_editing) _gwMyDayBindDnD();
   // Masonry pack: measure widgets → tight grid with no dead vertical space
   requestAnimationFrame(_gwMyDayMasonry);
   // Async: load reviews widget for admin/OM
@@ -2753,15 +3348,14 @@ function _gwTodayRender() {
 
   // Load tasks from D1 async, then re-render the task workspace in place.
   // Guard: skip the re-fetch if a task was just completed within the last 3s —
-  // the completion handler already removed the row from the DOM and patched the
-  // cache. Re-fetching immediately can race with the D1 write and bring the
+  // the completion handler already removed the row from the DOM . Re-fetching immediately can race with the D1 write and bring the
   // completed task back as 'open'.
   const _msSinceComplete = window._gwTaskLastCompletedAt ? (Date.now() - window._gwTaskLastCompletedAt) : Infinity;
   if (window.gwTask && _todayRep && _msSinceComplete > 3000) {
     window.gwTask.loadToday().then(function() {
       const ws = document.querySelector('.gw-task-workspace');
       if (!ws) return; // view changed
-      const newSection = _gwTodayRenderTaskWorkspace(_todayRep);
+      const newSection = _gwTodayRenderTaskWorkspace(_todayRep, window._gwMyDayCaps && window._gwMyDayCaps.tasks);
       const sectionEl = ws.closest('section.app-card');
       if (sectionEl) {
         const tmp = document.createElement('div');
@@ -2820,57 +3414,278 @@ function empty(text, icon, ctaHtml){
   }
   return `<div class="empty">${escapeHtml(text)}</div>`;
 }
+// ══════════════════════════════════════════════════════════════════════════
+// GROUNDWORK AI — LEAD CLOSE LIKELIHOOD + TIME-IN-STAGE CLOCK
+// A running 0-100% score recomputed live on every render from internal
+// metrics: time sitting in the current stage vs its expected duration, the
+// lead's velocity through the process, lead source quality, budget vs
+// estimate fit, estimate momentum, and engagement recency.
+// Hard pins: won = 100, lost/disqualified = 0. Open leads live in 3-97.
+// Every factor is surfaced in a transparent breakdown so reps trust it.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Stage clock: how long has this lead been sitting in its current stage,
+// and how does that compare to the stage's expected duration?
+function gwStageClock(o){
+  const sp = window._gwSalesProcess;
+  let stage = null;
+  if (window.GWSalesProcess) {
+    const r = GWSalesProcess.resolve(o);
+    if (r.resolved && r.stage) stage = r.stage;
+  }
+  if (!stage && sp && Array.isArray(sp.stages)) {
+    stage = sp.stages.find(s => s.display_name === o.status) || null;
+  }
+  // Entry timestamp: stage assignment clock, falling back to last update
+  const enteredRaw = o.stageEnteredAt || o.sales_process_assigned_at || o.updatedAt || o.createdAt;
+  let daysIn = null;
+  if (enteredRaw) {
+    const t = new Date(String(enteredRaw).includes('T') ? enteredRaw : String(enteredRaw).replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(t)) daysIn = Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  }
+  const expected = stage && Number(stage.expected_duration_days) > 0 ? Number(stage.expected_duration_days) : 7;
+  const ratio = daysIn === null ? 0 : daysIn / expected;
+  // Urgency bands drive follow-up prioritization on the board
+  const level = daysIn === null ? 'ok' : ratio >= 1.75 ? 'late' : ratio >= 1 ? 'watch' : 'ok';
+  return { daysIn, expected, ratio, level, stage };
+}
+window.gwStageClock = gwStageClock;
+
+// Robust closed-state detector: returns 'won' | 'lost' | '' (open/unknown).
+// Checks the assignment outcome first, then the semantic resolver, then falls
+// back to matching the status label against the published process stages —
+// so terminal leads stay pinned even when browser state predates the
+// sales-process fields (stale localStorage, mid-deploy sessions).
+function gwLeadClosedState(o){
+  const outcome = (o.salesProcessOutcomeType || o.sales_process_outcome_type || '').toLowerCase();
+  if (outcome === 'won') return 'won';
+  if (outcome === 'lost' || outcome === 'disqualified') return 'lost';
+  if (typeof gwSalesIs === 'function') {
+    try {
+      if (gwSalesIs(o, 'won')) return 'won';
+      if (gwSalesIs(o, 'lost') || gwSalesIs(o, 'disqualified')) return 'lost';
+    } catch(e){}
+  }
+  // Stage-label fallback against the published process definition
+  const sp = window._gwSalesProcess;
+  if (sp && Array.isArray(sp.stages) && o.status) {
+    const st = sp.stages.find(s => s.display_name === o.status);
+    if (st) {
+      const sem = String(st.semantic_type || '').toLowerCase();
+      if (sem === 'won') return 'won';
+      if (sem === 'lost' || sem === 'disqualified') return 'lost';
+      if (sem === 'terminal') {
+        if (/lost|disqualif/i.test(o.status)) return 'lost';
+        if (/won|sold/i.test(o.status)) return 'won';
+      }
+    }
+  }
+  // Last resort: unambiguous terminal labels, even before the process
+  // definition is hydrated (first paint, stale sessions)
+  const label = String(o.status || '');
+  if (/^(won|sold)\b|deal closed|closed won|sold \/ activation/i.test(label)) return 'won';
+  if (/^lost\b|closed lost|disqualified/i.test(label)) return 'lost';
+  return '';
+}
+window.gwLeadClosedState = gwLeadClosedState;
+
+// Open check that never mistakes a closed lead for open, even when the
+// semantic resolver cannot resolve yet
+function gwLeadIsOpen(o){
+  if (gwLeadClosedState(o)) return false;
+  return typeof gwSalesIsOpen === 'function' ? gwSalesIsOpen(o) : true;
+}
+window.gwLeadIsOpen = gwLeadIsOpen;
+
+// Parse a free-text budget range like "$10k-$15k" / "10,000 to 15,000"
+function gwParseBudget(text){
+  if (!text) return null;
+  const s = String(text).toLowerCase();
+  const nums = (s.match(/\d[\d,.]*\s*k?/g) || []).map(m => {
+    const k = /k\s*$/.test(m.trim());
+    const n = parseFloat(m.replace(/[,k\s]/g, ''));
+    return isNaN(n) ? null : (k ? n * 1000 : n);
+  }).filter(n => n !== null && n > 0);
+  if (!nums.length) return null;
+  return { min: Math.min(...nums), max: Math.max(...nums) };
+}
+
+// The Groundwork AI close-likelihood engine.
+// Returns { score, pinned, factors:[{label, delta}], clock }
+function gwLeadScore(o){
+  const factors = [];
+  const clock = gwStageClock(o);
+
+  // ── Hard pins on terminal outcomes ──
+  const closed = gwLeadClosedState(o);
+  const outcome = (o.salesProcessOutcomeType || o.sales_process_outcome_type || '').toLowerCase();
+  if (closed === 'won')  return { score: 100, pinned: 'won',  factors: [{ label: 'Deal won', delta: 0 }], clock };
+  if (closed === 'lost') return { score: 0,   pinned: 'lost', factors: [{ label: outcome === 'disqualified' ? 'Disqualified' : 'Deal lost', delta: 0 }], clock };
+
+  // ── Baseline from stage progression (15% intake → 85% closing) ──
+  const sp = window._gwSalesProcess;
+  let base = 30, stageIdx = 0, openStages = [];
+  if (sp && Array.isArray(sp.stages)) {
+    openStages = sp.stages
+      .filter(s => (s.state || 'active') === 'active' && s.semantic_type !== 'terminal' && !['won','lost','disqualified'].includes(String(s.semantic_type||'').toLowerCase()))
+      .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0));
+    const cur = clock.stage ? openStages.findIndex(s => s.id === clock.stage.id) : -1;
+    if (cur >= 0 && openStages.length > 1) {
+      stageIdx = cur;
+      base = Math.round(15 + (cur / (openStages.length - 1)) * 70);
+    }
+  }
+  if (base === 30) {
+    // Fallback: position in the pipeline label list
+    const labels = (typeof getPipelineStages === 'function') ? getPipelineStages() : [];
+    const i = labels.indexOf(o.status);
+    if (i >= 0 && labels.length > 1) { stageIdx = i; base = Math.round(15 + (i / (labels.length - 1)) * 70); }
+  }
+  factors.push({ label: 'Stage progress (' + (o.status || 'early') + ')', delta: base, base: true });
+
+  // ── Factor 1: time sitting in the current stage vs expected duration ──
+  if (clock.daysIn !== null) {
+    let d = 0, lbl;
+    if (clock.ratio <= 0.5)      { d = 6;   lbl = 'Fresh in stage (' + clock.daysIn + 'd of ~' + clock.expected + 'd)'; }
+    else if (clock.ratio <= 1)   { d = 0;   lbl = 'On pace in stage (' + clock.daysIn + 'd of ~' + clock.expected + 'd)'; }
+    else if (clock.ratio <= 2)   { d = -8;  lbl = 'Sitting past expected (' + clock.daysIn + 'd vs ~' + clock.expected + 'd)'; }
+    else if (clock.ratio <= 3)   { d = -14; lbl = 'Stalled in stage (' + clock.daysIn + 'd vs ~' + clock.expected + 'd)'; }
+    else                         { d = -20; lbl = 'Deeply stalled (' + clock.daysIn + 'd vs ~' + clock.expected + 'd)'; }
+    factors.push({ label: lbl, delta: d });
+  }
+
+  // ── Factor 2: velocity through the process so far ──
+  if (o.createdAt && stageIdx > 0 && openStages.length) {
+    const t0 = new Date(String(o.createdAt).includes('T') ? o.createdAt : String(o.createdAt).replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(t0)) {
+      const totalDays = Math.max(0, (Date.now() - t0) / 86400000);
+      const expectedSoFar = openStages.slice(0, stageIdx).reduce((a, s) => a + (Number(s.expected_duration_days) > 0 ? Number(s.expected_duration_days) : 7), 0);
+      if (expectedSoFar > 0) {
+        const v = totalDays / expectedSoFar;
+        if (v <= 0.75)     factors.push({ label: 'Moving faster than typical', delta: 8 });
+        else if (v <= 1.25) factors.push({ label: 'Typical speed through process', delta: 2 });
+        else if (v <= 2)   factors.push({ label: 'Slower than typical pace', delta: -5 });
+        else               factors.push({ label: 'Well behind typical pace', delta: -10 });
+      }
+    }
+  }
+
+  // ── Factor 3: lead source quality ──
+  const src = (o.leadSource || o.source || '').toLowerCase();
+  if (src) {
+    if (src.includes('existing') || src.includes('repeat'))      factors.push({ label: 'Existing client relationship', delta: 12 });
+    else if (src.includes('referral') || src.includes('refer'))  factors.push({ label: 'Referral lead', delta: 10 });
+    else if (src.includes('website') || src.includes('web'))     factors.push({ label: 'Website inquiry', delta: 3 });
+    else if (src.includes('cold'))                               factors.push({ label: 'Cold outreach lead', delta: -6 });
+  }
+
+  // ── Factor 4: budget vs estimate fit ──
+  const budget = gwParseBudget(o.budgetRange);
+  const est = Number(o.estimateAmount || 0) || Number(o.jobValue || 0);
+  if (budget && est > 0) {
+    if (est <= budget.max)                factors.push({ label: 'Estimate within stated budget', delta: 8 });
+    else if (est <= budget.max * 1.25)    factors.push({ label: 'Estimate slightly above budget', delta: -4 });
+    else                                  factors.push({ label: 'Estimate well above budget', delta: -10 });
+  }
+
+  // ── Factor 5: estimate momentum ──
+  const es = (o.estimateStatus || '').toLowerCase();
+  if (es === 'accepted' || es === 'approved' || es === 'paid') factors.push({ label: 'Estimate accepted', delta: 18 });
+  else if (es === 'sent' || es === 'viewed' || es === 'awaiting_response') factors.push({ label: 'Estimate in customer hands', delta: 6 });
+  else if (es === 'revised') factors.push({ label: 'Estimate revised and resent', delta: 2 });
+  else if (es === 'declined' || es === 'rejected' || es === 'expired') factors.push({ label: 'Estimate declined or expired', delta: -18 });
+  else if (!es && o.estimateSentDate) factors.push({ label: 'Estimate sent', delta: 5 });
+
+  // ── Factor 6: engagement recency ──
+  if (o.updatedAt) {
+    const du = Math.floor((Date.now() - new Date(String(o.updatedAt).includes('T') ? o.updatedAt : String(o.updatedAt).replace(' ', 'T') + 'Z').getTime()) / 86400000);
+    if (!isNaN(du)) {
+      if (du <= 2)       factors.push({ label: 'Active in the last 2 days', delta: 4 });
+      else if (du > 14)  factors.push({ label: 'No activity in ' + du + ' days', delta: -10 });
+      else if (du > 7)   factors.push({ label: 'Quiet for ' + du + ' days', delta: -5 });
+    }
+  }
+
+  const raw = factors.reduce((a, f) => a + f.delta, 0);
+  const score = Math.max(3, Math.min(97, Math.round(raw)));
+  return { score, pinned: null, factors, clock };
+}
+window.gwLeadScore = gwLeadScore;
+
+// Compact score pill markup shared by cards
+function gwScorePill(o, size){
+  const r = gwLeadScore(o);
+  const band = r.score >= 70 ? 'high' : r.score >= 40 ? 'mid' : 'low';
+  const cls = 'gw-score-pill gw-score-' + (r.pinned || band) + (size === 'sm' ? ' gw-score-sm' : '');
+  const title = r.factors.map(f => (f.base ? '' : (f.delta > 0 ? '+' + f.delta : f.delta) + ' ') + f.label).join('\n');
+  return `<span class="${cls}" title="Groundwork AI close likelihood\n${escapeHtml(title)}">${r.score}%</span>`;
+}
+window.gwScorePill = gwScorePill;
+
+// Days-in-stage chip with escalating urgency (replaces the old OVERDUE badge)
+function gwStageChip(o){
+  const c = gwStageClock(o);
+  if (c.daysIn === null || !gwLeadIsOpen(o)) return '';
+  const lbl = c.daysIn === 0 ? 'New today' : c.daysIn + 'd in stage';
+  const txt = c.level === 'late' ? lbl + ' — follow up' : lbl;
+  return `<span class="stage-clock-chip stage-clock-${c.level}" title="~${c.expected}d expected in this stage">${txt}</span>`;
+}
+window.gwStageChip = gwStageChip;
+
 function oppMini(o){
-  const _today = todayISO();
-  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
-  const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : null;
-  // Urgency dot inline — small colored dot before client name
-  const urgencyDot = isOverdue
-    ? `<span style="display:inline-block;width:6px;height:6px;background:#C97B6A;border-radius:50%;flex-shrink:0;margin-top:1px"></span>`
+  const clock = gwStageClock(o);
+  const isOpen = gwLeadIsOpen(o);
+  const needsAttention = isOpen && clock.level !== 'ok';
+  // Urgency dot inline — colored by how long the lead has sat in its stage
+  const urgencyDot = needsAttention
+    ? `<span style="display:inline-block;width:6px;height:6px;background:${clock.level==='late'?'#C97B6A':'#B8860B'};border-radius:50%;flex-shrink:0;margin-top:1px"></span>`
     : '';
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
   // Rep pill — color-coded, uses class + minimal inline for the brand color
   const repPill = repObj
     ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40">${escapeHtml(repObj.name)}</span>`
     : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22)">Unassigned</span>`;
-  // Time label
-  const timeLabel = daysSince !== null
-    ? `<span class="mini-row-time">${daysSince===0?'Today':daysSince===1?'Yesterday':daysSince+'d ago'}</span>`
+  // Time-in-stage label (open leads only — closed leads are done moving)
+  const timeLabel = isOpen && clock.daysIn !== null
+    ? `<span class="mini-row-time">${clock.daysIn===0?'New today':clock.daysIn+'d in stage'}</span>`
     : '';
-  return `<button class="mini-row ${isOverdue?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
+  return `<button class="mini-row ${clock.level==='late'&&isOpen?'mini-row-overdue':''}" onclick="show('pipeline','${o.id}')">
     <strong>${urgencyDot}${escapeHtml(o.client||'Unnamed Lead')}</strong>
     <span class="status-chip ${statusCssClass(o.status||'')}">${escapeHtml(o.status||'New Lead')}</span>
     <em>${escapeHtml(o.project||o.serviceLine||'Opportunity')}</em>
-    <span class="mini-row-meta">${repPill}${timeLabel}</span>
+    <span class="mini-row-meta">${isOpen?gwScorePill(o,'sm'):''}${repPill}${timeLabel}</span>
   </button>`;
 }
 function oppCard(o){
-  const _today = todayISO();
-  const isOverdue = o.nextFollowUp && o.nextFollowUp < _today && !['Sold / Activation','Closed Lost'].includes(o.status);
-  const daysSinceUpdate = o.updatedAt ? Math.floor((Date.now() - new Date(o.updatedAt).getTime()) / 86400000) : 999;
-  const isStale = daysSinceUpdate >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const clock = gwStageClock(o);
+  const isOpen = gwLeadIsOpen(o);
   const repObj = (window.REPS||[]).find(r => r.id === o.repId);
-  const urgencyBadge = isOverdue
-    ? `<span class="urgency-badge overdue">OVERDUE</span>`
-    : isStale
-    ? `<span class="urgency-badge stale">STALE ${daysSinceUpdate}d</span>`
-    : '';
-  return `<article class="opp-card ${isOverdue ? 'opp-overdue' : isStale ? 'opp-stale' : ''}" onclick="show('pipeline','${o.id}')" style="cursor:pointer"
+  const cardState = !isOpen ? '' : clock.level === 'late' ? 'opp-overdue' : clock.level === 'watch' ? 'opp-stale' : '';
+  return `<article class="opp-card ${cardState}" onclick="show('pipeline','${o.id}')" style="cursor:pointer"
     draggable="true" data-opp-id="${o.id}"
     ondragstart="gwPipeDragStart(event,'${o.id}')" ondragend="gwPipeDragEnd(event)">
     <div class="opp-card-top">
       <h3>${escapeHtml(o.client||'Unnamed Lead')}</h3>
-      ${urgencyBadge}
+      ${gwScorePill(o)}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:18px">
+      <span>${gwStageChip(o)}</span>
+      ${(function(){
+        const v = gwLeadBaseValue(o);
+        return v > 0
+          ? `<span class="opp-value" style="margin-left:auto;flex-shrink:0;white-space:nowrap">${money(v)}</span>`
+          : `<span class="opp-value" style="margin-left:auto;flex-shrink:0;color:#9AA79A;font-weight:500" title="No estimated value set">—</span>`;
+      })()}
     </div>
     <p class="opp-project">${escapeHtml(o.project||o.serviceLine||'Opportunity')}${o.address ? ` · ${escapeHtml(o.address)}` : ''}</p>
     <div class="opp-meta">
       ${badge(o.status||'New Lead')}
       ${(function(){
+        if (!isOpen) return '';
         const nu = (typeof gwNextUpForOpp === 'function') ? gwNextUpForOpp(o) : null;
         if (nu) return `<span class="opp-next" title="${escapeHtml(nu.title)}">Next Up: ${escapeHtml(nu.label)}${nu.date ? ' · ' + prettyDate(nu.date) : ''}</span>`;
         return o.nextFollowUp ? `<span class="opp-next">Next Up: Follow up · ${prettyDate(o.nextFollowUp)}</span>` : '';
       })()}
-      ${o.jobValue ? `<span class="opp-value">${money(Number(o.jobValue))}</span>` : ''}
       ${repObj
         ? `<span class="opp-rep-pill" style="color:${repObj.color||'#4D8A86'};background:${repObj.color||'#4D8A86'}18;border:1px solid ${repObj.color||'#4D8A86'}40;margin-left:auto">${escapeHtml(repObj.name)}</span>`
         : `<span class="opp-rep-pill" style="color:#8B6914;background:#8B691415;border:1px solid rgba(139,105,20,.22);margin-left:auto">Unassigned</span>`}
@@ -2882,6 +3697,8 @@ function oppCard(o){
 // Priority: 1) earliest open task on the record  2) estimate-status action  3) stage default
 function gwNextUpForOpp(o){
   try {
+    // Closed leads have no next sales action
+    if (typeof gwLeadClosedState === 'function' && gwLeadClosedState(o)) return null;
     // 1. Open tasks linked to this lead
     if (window.gwTask && typeof window.gwTask.forRecord === 'function') {
       const open = (window.gwTask.forRecord('lead', o.id) || [])
@@ -2894,7 +3711,7 @@ function gwNextUpForOpp(o){
     }
     // 2. Estimate status drives the sales motion
     const es = (o.estimateStatus || '').toLowerCase();
-    const won = ['Sold / Activation','Closed Lost'].includes(o.status);
+    const won = !gwSalesIsOpen(o);
     if (!won) {
       if (es === 'sent' || es === 'revised') return { label: 'Follow up on estimate', date: o.nextFollowUp || null, title: 'Estimate sent — awaiting client response' };
       if (es === 'draft') return { label: 'Finish & send estimate', date: o.nextFollowUp || null, title: 'Estimate drafted but not sent' };
@@ -2917,6 +3734,43 @@ function gwNextUpForOpp(o){
 }
 window.gwNextUpForOpp = gwNextUpForOpp;
 
+// ── Pipeline value by division ────────────────────────────────────────────────
+// Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
+// Tiles are clickable — they toggle the existing division filter.
+function _gwDivisionValueStrip(baseOpps, activeCat){
+  const open = baseOpps.filter(o => gwSalesIsOpen(o));
+  const totals = {}, counts = {};
+  gwDivisions().forEach(d => { totals[d.key] = 0; counts[d.key] = 0; });
+  open.forEach(o => {
+    const k = gwClassifyDivision(o);
+    if (!(k in totals)) { totals[k] = 0; counts[k] = 0; }
+    totals[k] += Number(o.jobValue||0);
+    counts[k] += 1;
+  });
+  const grand = open.reduce((a,o) => a + Number(o.jobValue||0), 0);
+  const noValue = open.filter(o => !Number(o.jobValue||0)).length;
+  return `<section class="card app-card" id="gw-division-value-strip" style="margin-top:12px;padding:12px 16px">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
+      <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 16px 6px 4px;border-right:1px solid #E4EAE3;min-width:150px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">Open Pipeline Value</div>
+        <div style="font-size:20px;font-weight:700;color:#1C3A2B">${money(grand)}</div>
+        <div style="font-size:11px;color:#6F7E6A">${open.length} open lead${open.length===1?'':'s'}${noValue ? ` · ${noValue} missing a value` : ''}</div>
+      </div>
+      ${gwDivisions().map(d => {
+        const active = activeCat === d.key;
+        return `<button type="button" onclick="window._pipelineCatFilter='${active ? 'all' : d.key}';show('pipeline')"
+          title="${active ? 'Click to clear the division filter' : 'Click to filter the pipeline to ' + escapeHtml(d.label)}"
+          style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 14px;border-radius:10px;cursor:pointer;text-align:left;min-width:130px;background:${active ? (d.color||'#2D7A55')+'14' : 'transparent'};border:1px solid ${active ? (d.color||'#2D7A55')+'66' : '#E4EAE3'}">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">
+            <span style="width:8px;height:8px;border-radius:50%;background:${d.color||'#2D7A55'};flex-shrink:0"></span>${escapeHtml(d.label)}
+          </div>
+          <div style="font-size:17px;font-weight:700;color:${d.color||'#1C3A2B'}">${money(totals[d.key]||0)}</div>
+          <div style="font-size:11px;color:#6F7E6A">${counts[d.key]||0} lead${(counts[d.key]||0)===1?'':'s'}</div>
+        </button>`;
+      }).join('')}
+    </div>
+  </section>`;
+}
 function pipeline(selectedId){
   if(selectedId){ return opportunityDetail(selectedId); }
 
@@ -2933,39 +3787,35 @@ function pipeline(selectedId){
     (o.assignedToRepId && o.assignedToRepId !== o.repId && o.assignedToRepId === activeRepFilter)
   );
   if (activeTypeFilter !== 'all') opps = opps.filter(o => o.clientType === activeTypeFilter);
-  if (activeCatFilter === 'landscape') opps = opps.filter(o => {
-    const cat = (o.projectCategory||'').toLowerCase();
-    return cat.includes('landscape') || cat.includes('hardscape') || cat.includes('drainage') || cat.includes('design') || cat.includes('irrigation') || cat.includes('lighting') || cat.includes('enhancement');
-  });
-  if (activeCatFilter === 'maintenance') opps = opps.filter(o => {
-    const cat = (o.projectCategory||'').toLowerCase();
-    return cat.includes('maintenance');
-  });
-  if (activeCatFilter === 'snow') opps = opps.filter(o => {
-    const cat = (o.projectCategory||'').toLowerCase();
-    const div = (data.projectCategories||[]).find(pc => pc.name === o.projectCategory);
-    return cat.includes('snow') || (div && div.division === 'snow');
-  });
+  // Snapshot before the division filter so the per-division value strip can
+  // always show every division's total (respecting rep/client filters).
+  const _divBaseOpps = opps;
+  if (activeCatFilter !== 'all') {
+    opps = opps.filter(o => gwClassifyDivision(o) === activeCatFilter);
+  }
 
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
-  const _closedStatuses = ['Sold / Activation','Deal Closed / Won','Closed Lost'];
-  if (activeStatusFilter === 'open') opps = opps.filter(o => !_closedStatuses.includes(o.status));
-  else if (activeStatusFilter === 'proposals') opps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Follow-Up','Presentation & SOW Pitch'].includes(o.status));
-  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => o.nextFollowUp && o.nextFollowUp < todayISO() && !_closedStatuses.includes(o.status));
-  else if (activeStatusFilter === 'sold') opps = opps.filter(o => ['Sold / Activation','Deal Closed / Won'].includes(o.status));
+  const semantic = o => window.GWSalesProcess ? GWSalesProcess.resolve(o) : { resolved:false };
+  if (activeStatusFilter === 'open') opps = opps.filter(o => window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status));
+  else if (activeStatusFilter === 'proposals') opps = opps.filter(o => { const r=semantic(o); return r.resolved && r.semantic==='proposal_presentation'; });
+  else if (activeStatusFilter === 'overdue') opps = opps.filter(o => gwLeadIsOpen(o) && gwStageClock(o).level === 'late');
+  else if (activeStatusFilter === 'sold') opps = opps.filter(o => { const r=semantic(o); return r.resolved && (r.outcome==='won'||r.semantic==='won'); });
 
   // T47: Sort
-  const activeSort = window._pipelineSort || 'urgent';
+  const activeSort = window._pipelineSort || 'priority';
   function sortOpps(items){
     if(activeSort==='recent') return [...items].sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
     if(activeSort==='value') return [...items].sort((a,b)=>Number(b.jobValue||0)-Number(a.jobValue||0));
-    const _t = todayISO();
-    return [...items].sort((a,b)=>{
-      const ao=a.nextFollowUp&&a.nextFollowUp<_t?0:1; const bo=b.nextFollowUp&&b.nextFollowUp<_t?0:1;
-      if(ao!==bo) return ao-bo;
-      return (a.nextFollowUp||'9999').localeCompare(b.nextFollowUp||'9999');
-    });
+    if(activeSort==='urgent'){
+      // Longest sitting past its stage's expected duration first
+      return [...items].sort((a,b)=>{
+        const ca=gwStageClock(a), cb=gwStageClock(b);
+        return (cb.ratio||0)-(ca.ratio||0);
+      });
+    }
+    // Default: Groundwork AI priority — highest close likelihood first
+    return [...items].sort((a,b)=>gwLeadScore(b).score-gwLeadScore(a).score);
   }
 
   const filters = getPipelineStages();
@@ -2975,13 +3825,13 @@ function pipeline(selectedId){
   const _isMobilePipe = window.innerWidth <= 768;
   const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))}))
     .filter(g => !_isMobilePipe || g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
-  // Catch-all: leads with legacy/unknown status get bucketed into the first stage
+  // Catch-all: an unknown legacy label is never equivalent to the first stage.
+  // Keep these records visible, searchable, editable, and assigned while clearly
+  // excluding them from stage-specific interpretation until a reviewer maps them.
   const knownStatuses = new Set(filters);
-  const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)));
+  const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)).map(o => ({...o, _needsRestaging:true})));
   if (orphanOpps.length) {
-    const firstGroup = grouped.find(g => g.status === filters[0]);
-    if (firstGroup) firstGroup.items = sortOpps([...orphanOpps, ...firstGroup.items]);
-    else grouped.unshift({status: filters[0], items: orphanOpps});
+    grouped.push({status:'Needs Restaging', items:orphanOpps, needsRestaging:true});
   }
 
   const _repFilterHtml = (()=>{
@@ -3018,6 +3868,7 @@ function pipeline(selectedId){
       </div>
       <div class="pl-page-actions">
         <button class="primary-btn small" onclick="show('lead')">+ Add Lead</button>
+        ${(function(){ const r = window.getCurrentRep ? window.getCurrentRep() : null; return r && ['admin','office_manager','sales_manager'].includes(r.role) ? '<button class="secondary-btn small" onclick="show(\'process\',\'builder\')">Customize Stages</button>' : ''; })()}
         <button class="secondary-btn small" onclick="exportCsv()">Export CSV</button>
         <button class="secondary-btn small" onclick="show('forms','follow-up')">Follow-Up Cadence</button>
       </div>
@@ -3035,14 +3886,13 @@ function pipeline(selectedId){
       <div class="pl-filter-group">
         <span class="pl-filter-label">Division</span>
         <button class="pl-filter-btn ${activeCatFilter==='all'?'pl-active':''}" onclick="window._pipelineCatFilter='all';show('pipeline')">All</button>
-        <button class="pl-filter-btn ${activeCatFilter==='landscape'?'pl-active':''}" onclick="window._pipelineCatFilter='landscape';show('pipeline')">Landscape</button>
-        <button class="pl-filter-btn ${activeCatFilter==='maintenance'?'pl-active':''}" onclick="window._pipelineCatFilter='maintenance';show('pipeline')">Maintenance</button>
-        <button class="pl-filter-btn ${activeCatFilter==='snow'?'pl-active':''}" onclick="window._pipelineCatFilter='snow';show('pipeline')">Snow & Ice</button>
+        ${gwDivisions().map(d => `<button class="pl-filter-btn ${activeCatFilter===d.key?'pl-active':''}" onclick="window._pipelineCatFilter='${d.key}';show('pipeline')">${escapeHtml(d.label)}</button>`).join('')}
       </div>
       <div class="pl-filter-divider"></div>
       <div class="pl-filter-group">
         <span class="pl-filter-label">Sort</span>
-        <button class="pl-filter-btn ${activeSort==='urgent'?'pl-active':''}" onclick="window._pipelineSort='urgent';show('pipeline')">Urgent</button>
+        <button class="pl-filter-btn ${activeSort==='priority'?'pl-active':''}" onclick="window._pipelineSort='priority';show('pipeline')" title="Groundwork AI close likelihood, highest first">Priority</button>
+        <button class="pl-filter-btn ${activeSort==='urgent'?'pl-active':''}" onclick="window._pipelineSort='urgent';show('pipeline')" title="Longest sitting in stage first">Sitting Longest</button>
         <button class="pl-filter-btn ${activeSort==='recent'?'pl-active':''}" onclick="window._pipelineSort='recent';show('pipeline')">Recent</button>
         <button class="pl-filter-btn ${activeSort==='value'?'pl-active':''}" onclick="window._pipelineSort='value';show('pipeline')">Value</button>
       </div>
@@ -3054,6 +3904,8 @@ function pipeline(selectedId){
     </div>` : ''}
 
     ${statCards()}
+
+    ${_gwDivisionValueStrip(_divBaseOpps, activeCatFilter)}
 
     ${window.innerWidth <= 768
       ? /* ── Mobile: flat sorted list grouped by status ── */ `
@@ -3067,19 +3919,21 @@ function pipeline(selectedId){
                   <span class="gw-pipe-group-count">${g.items.length}</span>
                 </div>
                 ${g.items.map(o => {
-                  const _t = todayISO();
-                  const overdue = o.nextFollowUp && o.nextFollowUp < _t && !['Sold / Activation','Closed Lost'].includes(o.status);
-                  const daysSince = o.updatedAt ? Math.floor((Date.now()-new Date(o.updatedAt).getTime())/86400000) : 999;
-                  const stale = daysSince >= 14 && !['Sold / Activation','Closed Lost'].includes(o.status);
+                  const _mc = gwStageClock(o);
+                  const _mOpen = gwLeadIsOpen(o);
+                  const overdue = _mOpen && _mc.level === 'late';
+                  const stale = _mOpen && _mc.level === 'watch';
                   const repObj = (window.REPS||[]).find(r=>r.id===o.repId);
                   return `<div class="gw-pipe-card ${overdue?'gw-pipe-card--overdue':stale?'gw-pipe-card--stale':''}" onclick="show('pipeline','${o.id}')">
                     <div class="gw-pipe-card-top">
                       <span class="gw-pipe-card-name">${escapeHtml(o.client||'Unnamed Lead')}</span>
-                      ${overdue ? `<span class="gw-pipe-badge gw-pipe-badge--overdue">OVERDUE</span>` : stale ? `<span class="gw-pipe-badge gw-pipe-badge--stale">${daysSince}d</span>` : ''}
+                      ${gwScorePill(o,'sm')}
                     </div>
+                    ${_mOpen && _mc.daysIn !== null ? `<div style="margin:2px 0 4px">${gwStageChip(o)}</div>` : ''}
                     <div class="gw-pipe-card-project">${escapeHtml(o.project||o.serviceLine||'—')}</div>
+                    ${o._needsRestaging ? `<div class="gw-pipe-badge gw-pipe-badge--overdue" style="margin:6px 0">Original stage: ${escapeHtml(o.status||'(blank)')}</div>` : ''}
                     <div class="gw-pipe-card-bottom">
-                      ${o.jobValue ? `<span class="gw-pipe-card-val">${money(Number(o.jobValue))}</span>` : ''}
+                      ${(function(){ const v = gwLeadBaseValue(o); return v > 0 ? `<span class="gw-pipe-card-val">${money(v)}</span>` : `<span class="gw-pipe-card-val" style="color:#9AA79A;font-weight:500">—</span>`; })()}
                       ${o.nextFollowUp ? `<span class="gw-pipe-card-date" style="display:inline-flex;align-items:center;gap:4px">${(typeof gwIcon==='function')?gwIcon('calendar',12):''} ${prettyDate(o.nextFollowUp)}</span>` : ''}
                       ${repObj ? `<span class="gw-pipe-card-rep" style="color:${repObj.color||'#4D8A86'}">${escapeHtml(repObj.name.split(' ')[0])}</span>` : ''}
                     </div>
@@ -3091,8 +3945,8 @@ function pipeline(selectedId){
         <div class="gw-kanban-wrap mt">
           <div class="kanban" id="gw-kanban-board">
             ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
-              ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"
-            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.items.length ? g.items.map(oppCard).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+              ${g.needsRestaging ? '' : 'ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"'}
+            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
           </div>
           <div class="gw-scroll-more gw-scroll-more--hidden" id="gw-scroll-more">
             <button type="button" class="gw-scroll-more-btn" onclick="gwPipeScrollRight()">
@@ -3221,47 +4075,14 @@ function buildDivisionPipeline() {
 
   // Map an opportunity to a division key
   function getDiv(o) {
-    const cat = (o.projectCategory || '').toLowerCase();
-    const wt  = (o.workType || '').toLowerCase();
-    const sl  = (o.serviceLine || '').toLowerCase();
-    if (cat.includes('snow') || wt.includes('snow') || sl.includes('snow')) return 'snow';
-    if (cat.includes('mainten') || wt.includes('mainten') || sl.includes('mainten')) return 'maintenance';
-    if (cat.includes('landscape') || cat.includes('design') || cat.includes('hardscape') ||
-        cat.includes('drainage') || wt.includes('landscape') || wt.includes('hardscape') ||
-        wt.includes('drainage') || wt.includes('design')) return 'landscape';
-    // fallback by service line
-    if (sl.includes('landscape') || sl.includes('hardscape') || sl.includes('drainage')) return 'landscape';
-    return 'landscape'; // default
+    return gwClassifyDivision(o);
   }
 
-  // Win probability by stage (mirrors HubSpot pipeline)
-  const STAGE_WIN_PROB = {
-    'New Lead': 0.10,
-    'Contacted': 0.15,
-    'Site Visit Scheduled': 0.25,
-    'Site Visit Complete': 0.35,
-    'Estimating': 0.45,
-    'Estimate Sent': 0.55,
-    'Proposal Under Review': 0.65,
-    'Negotiating': 0.75,
-    'Follow-Up': 0.50,
-    'Decision Pending': 0.70,
-    'Sold / Activation': 1.0,
-    'Closed Lost': 0.0,
-  };
-  function winProb(o) {
-    return STAGE_WIN_PROB[o.status] || 0.20;
-  }
+  function winProb(o) { return GWSalesProcess.forecastProbability(o); }
 
-  // "Paper on the Street" statuses — formal estimates/proposals in front of customers
-  const POTS_ESTIMATE_STATUSES = ['sent','revised','viewed','awaiting_response','awaiting response'];
-  const POTS_STAGES = ['Estimate Sent','Proposal Under Review','Negotiating','Decision Pending','Follow-Up'];
-
-  const OPEN_STAGES_EXCL = ['Sold / Activation','Closed Lost'];
-
-  const divKeys = ['landscape','maintenance','snow'];
-  const divLabels = { landscape:'Landscape', maintenance:'Maintenance', snow:'Snow & Ice' };
-  const divColors = { landscape:'#4D8A86', maintenance:'#2D7A55', snow:'#4D8A86' };
+  const divKeys = gwDivisionKeys();
+  const divLabels = gwDivisionLabels();
+  const divColors = gwDivisionColors();
 
   const result = {};
   divKeys.forEach(k => {
@@ -3291,9 +4112,9 @@ function buildDivisionPipeline() {
     const val = parseFloat(o.jobValue || 0);
     const estAmt = parseFloat(o.estimateAmount || val); // fall back to jobValue if no estimateAmount
 
-    const isSold = o.status === 'Sold / Activation';
-    const isLost = o.status === 'Closed Lost';
-    const isOpen = !isSold && !isLost;
+    const isSold = gwSalesIs(o,'won');
+    const isLost = gwSalesIs(o,'lost');
+    const isOpen = GWSalesProcess.isOpen(o);
 
     // Close rate denominator
     if (isSold || isLost) d.totalClosed++;
@@ -3314,10 +4135,7 @@ function buildDivisionPipeline() {
     d.weightedPipeline += val * winProb(o);
 
     // Estimate open?
-    const estStatus = (o.estimateStatus || '').toLowerCase().replace(/ /g,'_');
-    const hasOpenEstimate = POTS_ESTIMATE_STATUSES.includes(estStatus) ||
-                             POTS_ESTIMATE_STATUSES.includes((o.estimateStatus||'').toLowerCase()) ||
-                             POTS_STAGES.includes(o.status);
+    const hasOpenEstimate = GWSalesProcess.hasOpenEstimate(o);
     if (hasOpenEstimate && estAmt > 0) {
       d.openEstimateCount++;
       d.openEstimateValue += estAmt;
@@ -3356,8 +4174,8 @@ function buildDivisionPipeline() {
       ? Math.round((d.totalSold > 0 ? (d.soldCountThisMonth > 0 ? 1 : 0) : 0) * 100) / 100
       : null;
     // Better close rate: sold / (sold + lost) by count
-    const soldCount = opps.filter(o => o.status === 'Sold / Activation' && getDiv(o) === k).length;
-    const lostCount = opps.filter(o => o.status === 'Closed Lost'        && getDiv(o) === k).length;
+    const soldCount = opps.filter(o => gwSalesIs(o,'won') && getDiv(o) === k).length;
+    const lostCount = opps.filter(o => gwSalesIs(o,'lost')        && getDiv(o) === k).length;
     d.closeRatePct = (soldCount + lostCount) > 0
       ? Math.round((soldCount / (soldCount + lostCount)) * 100)
       : null;
@@ -3407,11 +4225,47 @@ function saveClients(list) {
 function clientId() { return 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
 function propId()   { return 'pr_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
 
+// ── CSV hardening helpers ────────────────────────────────────────────────────
+// Quote-aware record splitter: a quoted field may contain commas AND newlines
+// (Homeworks exports embed multi-line HTML in Notes). Splitting by newline
+// before parsing quotes shredded those fields into junk "clients".
+function parseCsvRecords(text) {
+  const records = []; let row = []; let field = ''; let inQ = false;
+  const s = String(text || '').replace(/^\uFEFF/, '');
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') { if (s[i+1] === '"') { field += '"'; i++; } else { inQ = false; } }
+      else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i+1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.length > 1 || row[0].trim() !== '') records.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.length > 1 || row[0].trim() !== '') records.push(row);
+  return records;
+}
+window._gwParseCsvRecords = parseCsvRecords;
+// Strip HTML tags/entities from an imported cell value.
+function gwCleanImportText(v) {
+  let s = String(v == null ? '' : v);
+  s = s.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
+       .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/g, "'");
+  s = s.replace(/<[^>]*>/g, ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+window._gwCleanImportText = gwCleanImportText;
+
 // ── Parse a Homeworks-style CSV row into our client schema ──────────────────
 function parseClientCsv(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = parseCsvRow(lines[0]);
+  const records = parseCsvRecords(text);
+  if (records.length < 2) return [];
+  const headers = records[0].map(h => h.trim());
   const idx = h => headers.findIndex(x => x.toLowerCase().trim() === h.toLowerCase().trim());
   const iName=idx('Name'), iFirst=idx('First Name'), iLast=idx('Last Name'),
         iType=idx('Type'), iStatus=idx('Status'), iEmail=idx('Email'),
@@ -3421,11 +4275,13 @@ function parseClientCsv(text) {
         iTags=idx('Tags'), iNotes=idx('Notes'), iHwId=idx('Client ID'),
         iCompany=idx('Customer Company Name');
   const clients = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const r = parseCsvRow(lines[i]);
-    const name = (r[iName]||r[iCompany]||'').trim();
+  for (let i = 1; i < records.length; i++) {
+    const r = records[i];
+    if (!r.join('').trim()) continue;
+    const name = gwCleanImportText(r[iName]||r[iCompany]||'');
     if (!name) continue;
+    // Guard: skip rows that are clearly shredded prose, not client names
+    if (/<[a-z!/]|&[a-z]+;|<\/p>/i.test((r[iName]||'')) && name.split(' ').length > 8) continue;
     // Map Homeworks type → our type
     const rawType = (r[iType]||'').trim();
     let type = 'Residential';
@@ -3439,27 +4295,27 @@ function parseClientCsv(text) {
     // Parse tags — include 'Annual Maintenance Client' etc.
     const rawTags = (r[iTags]||'').trim();
     const tags = rawTags ? rawTags.split(',').map(t=>t.trim()).filter(Boolean) : [];
-    // Strip HTML from notes
-    const rawNotes = (r[iNotes]||'').trim().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    // Strip HTML from notes (keep full text, collapse whitespace)
+    const rawNotes = gwCleanImportText(r[iNotes]||'');
     clients.push({
       id: clientId(),
       name,
-      firstName: (r[iFirst]||'').trim(),
-      lastName:  (r[iLast]||'').trim(),
-      company:   (r[iCompany]||'').trim(),
+      firstName: gwCleanImportText(r[iFirst]||''),
+      lastName:  gwCleanImportText(r[iLast]||''),
+      company:   gwCleanImportText(r[iCompany]||''),
       type, status,
-      email:   (r[iEmail]||'').trim(),
-      phone:   (r[iPhone]||'').trim(),
-      mobile:  (r[iMobile]||'').trim(),
-      street:  (r[iStreet]||'').trim(),
-      street2: (r[iStreet2]||'').trim(),
-      city:    (r[iCity]||'').trim(),
-      state:   (r[iState]||'').trim(),
-      zip:     (r[iZip]||'').trim(),
-      since:   (r[iSince]||'').trim(),
+      email:   gwCleanImportText(r[iEmail]||''),
+      phone:   gwCleanImportText(r[iPhone]||''),
+      mobile:  gwCleanImportText(r[iMobile]||''),
+      street:  gwCleanImportText(r[iStreet]||''),
+      street2: gwCleanImportText(r[iStreet2]||''),
+      city:    gwCleanImportText(r[iCity]||''),
+      state:   gwCleanImportText(r[iState]||''),
+      zip:     gwCleanImportText(r[iZip]||''),
+      since:   gwCleanImportText(r[iSince]||''),
       tags,
       notes:   rawNotes,
-      homeworksId: (r[iHwId]||'').trim(),
+      homeworksId: gwCleanImportText(r[iHwId]||''),
       properties: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -3620,7 +4476,7 @@ function clients(selectedId) {
         </svg>
         <input id="clientSearchInput" class="cl-search-input" type="search" placeholder="Search clients, addresses, emails…"
           value="${escapeHtml(window._clientSearch||'')}"
-          oninput="window._clientSearch=this.value;show('clients')">
+          oninput="window._gwSearchInput('_clientSearch', this, 'clients')">
       </div>
       <div class="pl-filter-divider"></div>
       <div class="pl-filter-group">
@@ -3765,14 +4621,37 @@ window.showClientForm = function(clientIdToEdit) {
               ${['Active','Inactive','Lead'].map(s => `<option ${(c?.status||'Active')===s?'selected':''}>${s}</option>`).join('')}
             </select>
           </label>
+          <label class="cl-form-label full"><span>Company</span>
+            <input id="clf-company" class="cl-input" value="${escapeHtml(c?.company||'')}" placeholder="Company / management firm">
+          </label>
           <label class="cl-form-label"><span>Email</span>
             <input id="clf-email" class="cl-input" type="email" value="${escapeHtml(c?.email||'')}" placeholder="client@email.com">
+          </label>
+          <label class="cl-form-label"><span>CC Emails <span style="color:#6F7E6A;font-weight:400">(comma-separated)</span></span>
+            <input id="clf-ccemails" class="cl-input" value="${escapeHtml(Array.isArray(c?.ccEmails)?c.ccEmails.join(', '):(c?.ccEmails||''))}" placeholder="billing@co.com, pm@co.com">
           </label>
           <label class="cl-form-label"><span>Phone</span>
             <input id="clf-phone" class="cl-input" value="${escapeHtml(c?.phone||'')}" placeholder="703-xxx-xxxx">
           </label>
           <label class="cl-form-label"><span>Mobile</span>
             <input id="clf-mobile" class="cl-input" value="${escapeHtml(c?.mobile||'')}" placeholder="Mobile">
+          </label>
+          <label class="cl-form-label"><span>Office Phone</span>
+            <input id="clf-phone2" class="cl-input" value="${escapeHtml(c?.phone2||'')}" placeholder="Office / alt line">
+          </label>
+          <label class="cl-form-label"><span>Main POC</span>
+            <input id="clf-poc" class="cl-input" value="${escapeHtml(c?.poc||'')}" placeholder="Primary point of contact">
+          </label>
+          <label class="cl-form-label"><span>Billing Contact</span>
+            <input id="clf-billing" class="cl-input" value="${escapeHtml(c?.billingContact||'')}" placeholder="Name / email for invoices">
+          </label>
+          <label class="cl-form-label"><span>Site Contact</span>
+            <input id="clf-sitecontact" class="cl-input" value="${escapeHtml(c?.siteContact||'')}" placeholder="On-site contact">
+          </label>
+          <label class="cl-form-label"><span>Payment Method</span>
+            <select id="clf-paymethod" class="cl-input">
+              ${['','Check','ACH','Credit Card','Cash','Autopay','Net 30','Other'].map(m => `<option value="${m}" ${(c?.paymentMethod||'')===m?'selected':''}>${m||'— Not set —'}</option>`).join('')}
+            </select>
           </label>
           <label class="cl-form-label full"><span>Street Address</span>
             <input id="clf-street" class="cl-input" value="${escapeHtml(c?.street||'')}" placeholder="123 Main St">
@@ -3783,6 +4662,16 @@ window.showClientForm = function(clientIdToEdit) {
           <label class="cl-form-label" style="grid-template-columns:80px 1fr;gap:8px">
             <div><span>State</span><input id="clf-state" class="cl-input" value="${escapeHtml(c?.state||'VA')}" placeholder="VA" maxlength="2"></div>
             <div><span>Zip</span><input id="clf-zip" class="cl-input" value="${escapeHtml(c?.zip||'')}" placeholder="22180"></div>
+          </label>
+          <label class="cl-form-label full"><span>Mailing Address <span style="color:#6F7E6A;font-weight:400">(if different from service address)</span></span>
+            <input id="clf-mailstreet" class="cl-input" value="${escapeHtml(c?.mailingStreet||'')}" placeholder="Mailing street / PO Box" style="margin-bottom:6px">
+          </label>
+          <label class="cl-form-label"><span>Mailing City</span>
+            <input id="clf-mailcity" class="cl-input" value="${escapeHtml(c?.mailingCity||'')}" placeholder="City">
+          </label>
+          <label class="cl-form-label" style="grid-template-columns:80px 1fr;gap:8px">
+            <div><span>Mail State</span><input id="clf-mailstate" class="cl-input" value="${escapeHtml(c?.mailingState||'')}" placeholder="VA" maxlength="2"></div>
+            <div><span>Mail Zip</span><input id="clf-mailzip" class="cl-input" value="${escapeHtml(c?.mailingZip||'')}" placeholder="22180"></div>
           </label>
           <label class="cl-form-label full"><span>Tags <span style="color:#6F7E6A;font-weight:400">(comma-separated)</span></span>
             <input id="clf-tags" class="cl-input" value="${escapeHtml((c?.tags||[]).join(', '))}" placeholder="Annual Maintenance Client, HOA, etc.">
@@ -3820,19 +4709,35 @@ window.saveClientForm = function(existingId) {
   if (existingId) {
     const idx = list.findIndex(x => x.id === existingId);
     if (idx < 0) return;
+    const richFields = {
+      company:val('clf-company'),
+      ccEmails:val('clf-ccemails').split(',').map(s=>s.trim()).filter(Boolean),
+      phone2:val('clf-phone2'), poc:val('clf-poc'),
+      billingContact:val('clf-billing'), siteContact:val('clf-sitecontact'),
+      paymentMethod:val('clf-paymethod'),
+      mailingStreet:val('clf-mailstreet'), mailingCity:val('clf-mailcity'),
+      mailingState:val('clf-mailstate'), mailingZip:val('clf-mailzip')
+    };
     Object.assign(list[idx], {
       name, firstName:val('clf-first'), lastName:val('clf-last'),
       type:val('clf-type'), status:val('clf-status'),
       email:val('clf-email'), phone:val('clf-phone'), mobile:val('clf-mobile'),
       street:val('clf-street'), city:val('clf-city'), state:val('clf-state'), zip:val('clf-zip'),
       tags, notes:val('clf-notes'), homeworksId:val('clf-hwid'), since:val('clf-since'),
+      ...richFields,
       updatedAt:new Date().toISOString()
     });
   } else {
     list.push({
       id:clientId(), name, firstName:val('clf-first'), lastName:val('clf-last'),
-      company:'', type:val('clf-type'), status:val('clf-status'),
+      company:val('clf-company'), type:val('clf-type'), status:val('clf-status'),
       email:val('clf-email'), phone:val('clf-phone'), mobile:val('clf-mobile'),
+      ccEmails:val('clf-ccemails').split(',').map(s=>s.trim()).filter(Boolean),
+      phone2:val('clf-phone2'), poc:val('clf-poc'),
+      billingContact:val('clf-billing'), siteContact:val('clf-sitecontact'),
+      paymentMethod:val('clf-paymethod'),
+      mailingStreet:val('clf-mailstreet'), mailingCity:val('clf-mailcity'),
+      mailingState:val('clf-mailstate'), mailingZip:val('clf-mailzip'),
       street:val('clf-street'), street2:'', city:val('clf-city'), state:val('clf-state'), zip:val('clf-zip'),
       since:val('clf-since'), tags, notes:val('clf-notes'), homeworksId:val('clf-hwid'),
       properties:[], createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
@@ -3971,24 +4876,48 @@ async function customerDetail(clientId) {
 
   // ── Fetch all data in parallel ────────────────────────────────────────────
   let client = null, workOrders = [], customerNotes = [];
+  let cdEstimates = [], cdInvoices = [], cdPayments = [], cdSubs = [], cdMedia = [], cdPortalUsers = [];
+  const _cdJ = (u) => fetch(u, { credentials:'include' }).then(r=>r.json()).catch(()=>null);
   try {
-    const [cr, wr, nr] = await Promise.all([
+    const [cr, wr, nr, er, ir, pr, sr, mr, por] = await Promise.all([
       fetch(`/api/customers/${resolvedId}`, { credentials:'include' }).then(r=>r.json()),
       fetch(`/api/work-orders?client_id=${resolvedId}&limit=200`, { credentials:'include' }).then(r=>r.json()),
       fetch(`/api/customers/${resolvedId}/notes`, { credentials:'include' }).then(r=>r.json()),
+      _cdJ(`/api/estimates?client_id=${resolvedId}&limit=100`),
+      _cdJ(`/api/invoices?client_id=${resolvedId}&limit=100`),
+      _cdJ(`/api/payments?client_id=${resolvedId}&limit=100`),
+      _cdJ(`/api/recurring-subscriptions`),
+      _cdJ(`/api/customers/${resolvedId}/media`),
+      _cdJ(`/api/admin/portal/users?client_id=${resolvedId}`),
     ]);
     client = cr.data || cr;
     workOrders = wr.data || [];
     customerNotes = nr.data || [];
+    cdEstimates = (er && (er.data || er)) || []; if (!Array.isArray(cdEstimates)) cdEstimates = [];
+    cdInvoices  = (ir && (ir.data || ir)) || []; if (!Array.isArray(cdInvoices))  cdInvoices  = [];
+    cdPayments  = (pr && (pr.data || pr)) || []; if (!Array.isArray(cdPayments))  cdPayments  = [];
+    cdSubs      = (Array.isArray(sr) ? sr : (sr && sr.data) || []).filter(s => s.client_id === resolvedId);
+    cdMedia     = (mr && (mr.data || mr)) || []; if (!Array.isArray(cdMedia))     cdMedia     = [];
+    cdPortalUsers = (por && (por.data || por)) || []; if (!Array.isArray(cdPortalUsers)) cdPortalUsers = [];
   } catch(e) {
     // Fallback to localStorage
     client = (loadClients()||[]).find(c => c.id === resolvedId);
   }
 
-  // If D1 returned null/empty, try localStorage as fallback
+  // If D1 returned null/empty, try localStorage as fallback.
+  // Self-heal: some older clients were created client-side and, due to a
+  // now-fixed backend bug, never actually got persisted to D1 (their first
+  // save silently hit a no-op UPDATE instead of an INSERT). Re-push them to
+  // D1 here so every D1-backed feature (Jobs, Preview Portal, etc.) works
+  // going forward without the user having to notice or take any action.
   if (!client || !client.name) {
     const local = (loadClients()||[]).find(c => c.id === resolvedId);
-    if (local) client = { ...local, ...(client||{}) };
+    if (local) {
+      client = { ...local, ...(client||{}) };
+      try {
+        if (typeof _d1SaveClient === 'function') await _d1SaveClient(local);
+      } catch(e) { console.warn('[client sync] repair failed for', resolvedId, e); }
+    }
   }
 
   if (!client) {
@@ -4003,13 +4932,150 @@ async function customerDetail(clientId) {
   const completedJobs = workOrders.filter(w=>w.status==='completed').length;
   const inProgressJobs= workOrders.filter(w=>w.status==='in-progress').length;
   const scheduledJobs = workOrders.filter(w=>w.status==='scheduled').length;
-  const linkedOpps    = (state.opportunities||[]).filter(o =>
-    o.clientId === client.id || (o.client||'').toLowerCase() === (client.name||'').toLowerCase()
-  );
+  // Linked leads: clientId link, exact name match, or multi-property prefix
+  // ("Lyn Lyons — Yorktowne Shopping Center"). Prefix hits missing a clientId
+  // get self-healed with a D1 write-through so the durable link is restored.
+  const _cnLower = (client.name||'').toLowerCase();
+  const linkedOpps = (state.opportunities||[]).filter(o => {
+    if (o.clientId === client.id) return true;
+    const on = (o.client||'').toLowerCase();
+    if (!_cnLower) return false;
+    if (on === _cnLower) return true;
+    return on.startsWith(_cnLower + ' — ') || on.startsWith(_cnLower + ' - ');
+  });
+  linkedOpps.forEach(o => {
+    if (o.clientId !== client.id) { o.clientId = client.id; if (typeof _d1SaveOpp === 'function') _d1SaveOpp(o); }
+  });
+  const _oppOpen = o => (typeof window.gwSalesIsOpen === 'function') ? window.gwSalesIsOpen(o) : true;
+  const _oppWon  = o => /won|sold/i.test(o.status||'') || !!o.soldAmount;
+  const openOpps = linkedOpps.filter(_oppOpen);
+  const closedOpps = linkedOpps.filter(o => !_oppOpen(o));
+  const wonOpps  = closedOpps.filter(_oppWon);
+  const lostOpps = closedOpps.filter(o => !_oppWon(o));
+  const pipelineValue = openOpps.reduce((s,o)=>s+(Number((typeof gwLeadBaseValue==='function'?gwLeadBaseValue(o):o.jobValue))||0),0);
+  // Outstanding balance across unpaid invoices
+  const outstanding = cdInvoices
+    .filter(i => !['paid','void','voided','draft'].includes(String(i.status||'').toLowerCase()))
+    .reduce((s,i)=>s+(Number(i.balance_due)||0),0);
+  // Recurring revenue projection from active subscriptions
+  const _activeSubs = cdSubs.filter(s => String(s.status||'').toLowerCase()==='active');
+  const _subAnnual = _activeSubs.reduce((sum,s)=>{
+    const price = Number(s.custom_price)||Number(s.plan_price)||0;
+    const freq  = Math.max(1, Number(s.frequency)||1);
+    const unit  = String(s.frequency_unit||'month').toLowerCase();
+    const perYear = unit.startsWith('week') ? 52/freq : unit.startsWith('day') ? 365/freq : unit.startsWith('year') ? 1/freq : 12/freq;
+    return sum + price * perYear;
+  },0);
   const tags = (client.tags||[]);
   // Avatar bg — cycle through a few nice colors based on first char
   const avatarColors = ['#2D7A55','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899'];
   const avatarBg = avatarColors[(client.name||'A').charCodeAt(0) % avatarColors.length];
+
+  // ── Section icon badges + compact empty-state builder ───────────────────
+  // Small gradient icon tiles for each card header (cohesive visual language),
+  // and a centered/compact empty-state block so placeholder cards never
+  // stretch to fight taller neighbours for space.
+  const _cdIco = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const CD_ICONS = {
+    contact:    _cdIco('<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/>'),
+    quick:      _cdIco('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),
+    portal:     _cdIco('<path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>'),
+    notes:      _cdIco('<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>'),
+    recurring:  _cdIco('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>'),
+    timeline:   _cdIco('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'),
+    jobs:       _cdIco('<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>'),
+    pipeline:   _cdIco('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+    financials: _cdIco('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>'),
+    properties: _cdIco('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>'),
+    photos:     _cdIco('<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+  };
+  const _cdSecIcon = (key) => `<span class="cd-section-icon">${CD_ICONS[key]||''}</span>`;
+  const _cdEmpty = (iconKey, title, sub, ctaHtml) => `<div class="cd-empty">
+      <div class="cd-empty-icon">${CD_ICONS[iconKey]||''}</div>
+      <p class="cd-empty-title">${title}</p>
+      ${sub ? `<p class="cd-empty-sub">${sub}</p>` : ''}
+      ${ctaHtml ? `<div class="cd-empty-cta">${ctaHtml}</div>` : ''}
+    </div>`;
+
+  // ── Customer Portal card ─────────────────────────────────────────────────
+  // Reflects the REAL, secure, password-protected portal system (portal.tsx /
+  // /portal/login), never the deprecated `/portal?client=` token scaffold.
+  // Staff always get a "Preview Portal" action (works even with no account
+  // yet) via a locked-down, read-only staff session — never the client's own
+  // password-authenticated login.
+  const _cdPortalUser = cdPortalUsers.find(u => (u.memberships||[]).some(m => m.client_id === client.id)) || null;
+  const _cdPortalExtra = cdPortalUsers.length > 1 ? cdPortalUsers.length - 1 : 0;
+  function _cdPortalCard() {
+    const previewBtn = `<button class="rp-btn" style="flex:1" onclick="_cdPreviewClientPortal('${client.id}')" title="Opens a read-only staff preview in a new tab — no password needed, no payment details shown">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      Preview Portal
+    </button>`;
+    if (!_cdPortalUser) {
+      return `
+        <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
+          This client doesn't have portal access yet. Invite them to a secure, password-protected portal where they can view jobs, estimates, invoices, and pay online.
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdInvitePortal('${client.id}','${escapeHtml(client.name||'')}','${escapeHtml(client.email||'')}','${escapeHtml(client.phone||client.mobile||'')}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Invite to Portal
+          </button>
+          ${previewBtn}
+        </div>`;
+    }
+    const u = _cdPortalUser;
+    const roleInfo = (typeof GW_PORTAL_ROLES !== 'undefined' && GW_PORTAL_ROLES[(u.memberships.find(m=>m.client_id===client.id)||{}).role]) || {};
+    if (u.status === 'invited') {
+      const expired = u.invite_expires_at && new Date(u.invite_expires_at.replace(' ','T')+'Z').getTime() < Date.now();
+      return `
+        <div style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+            <span style="font-weight:600">${escapeHtml(u.name)}</span>
+            <span style="font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;background:${expired?'rgba(200,90,80,.15);color:#D07A72':'rgba(77,138,186,.15);color:#5B9BD1'}">${expired?'Invite Expired':'Invite Pending'}</span>
+          </div>
+          <div style="color:var(--gw-text-muted);font-size:12px">${escapeHtml(u.email)}${roleInfo.label ? ' · ' + escapeHtml(roleInfo.label) : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdResendPortalInvite('${u.id}','${client.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m0 0L7 16l-4 4 4-11L19 4z"/></svg>
+            ${expired ? 'Resend Invite' : 'Resend / Copy Link'}
+          </button>
+          ${previewBtn}
+        </div>`;
+    }
+    if (u.status === 'disabled') {
+      return `
+        <div style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-weight:600">${escapeHtml(u.name)}</span>
+            <span style="font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;background:rgba(200,90,80,.15);color:#D07A72">Access Disabled</span>
+          </div>
+          <div style="color:var(--gw-text-muted);font-size:12px">${escapeHtml(u.email)}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdReactivatePortalAccess('${u.id}','${client.id}')">Reactivate Access</button>
+          ${previewBtn}
+        </div>`;
+    }
+    // active
+    const lastLogin = u.last_login_at ? (typeof _relTime==='function' ? _relTime(u.last_login_at.replace(' ','T')+'Z') : u.last_login_at) : 'Never signed in';
+    return `
+      <div style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <span style="font-weight:600">${escapeHtml(u.name)}</span>
+          <span style="font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;background:rgba(61,169,116,.15);color:#3DA974">Active</span>
+        </div>
+        <div style="color:var(--gw-text-muted);font-size:12px">${escapeHtml(u.email)}${roleInfo.label ? ' · ' + escapeHtml(roleInfo.label) : ''} · Last sign-in: ${escapeHtml(lastLogin)}</div>
+        ${_cdPortalExtra ? `<div style="color:var(--gw-text-muted);font-size:11px;margin-top:2px">+${_cdPortalExtra} more portal user${_cdPortalExtra>1?'s':''} on this account</div>` : ''}
+      </div>
+      <p style="font-size:11.5px;color:var(--gw-text-muted);margin:0 0 10px;line-height:1.5">
+        Signs in at <code style="background:var(--gw-bg-app,#f4f6f8);padding:1px 5px;border-radius:4px">${location.origin}/portal/login</code> with their own password — Avalon staff never see or need it.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${previewBtn}
+        <button class="rp-btn" onclick="_cdDisablePortalAccess('${u.id}','${escapeHtml(u.email)}','${client.id}')">Disable Access</button>
+      </div>`;
+  }
 
   // ── Helper: build a job row ───────────────────────────────────────────────
   function _cdWoRow(wo) {
@@ -4026,14 +5092,29 @@ async function customerDetail(clientId) {
   window._cdWoRow = _cdWoRow; // expose for _cdJobTab
 
   const woRows = workOrders.slice(0,20).map(_cdWoRow).join('')
-    || `<p class="sb-empty-note" style="padding:12px 0">No jobs yet. <button class="stmt-link" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">Schedule first job →</button></p>`;
+    || _cdEmpty('jobs', 'No jobs yet', 'Schedule this client\'s first visit to start building their job history.',
+        `<button class="cd-add-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule First Job</button>`);
 
-  const oppRows = linkedOpps.slice(0,6).map(o => `
+  // Full lead portfolio: open first, then won, then lost/archived — every
+  // lead ever attached to this client stays visible on the client page.
+  const _cdOppRow = o => {
+    const val = Number((typeof gwLeadBaseValue==='function'?gwLeadBaseValue(o):o.jobValue))||0;
+    const site = (o.client||'').includes(' — ') ? (o.client||'').split(' — ').slice(1).join(' — ') : '';
+    return `
     <div class="cd-opp-row" onclick="show('pipeline','${o.id}')" style="cursor:pointer">
-      <span class="cd-opp-proj">${escapeHtml(o.project||o.serviceLine||'Opportunity')}</span>
+      <span class="cd-opp-proj">${escapeHtml(site || o.project || o.serviceLine || 'Opportunity')}</span>
       <span class="status-chip ${statusCssClass(o.status||'')}" style="font-size:10px">${escapeHtml(o.status||'New Lead')}</span>
-      <span class="cd-opp-val">${o.budget ? '$'+Number(o.budget).toLocaleString() : '—'}</span>
-    </div>`).join('') || `<p class="sb-empty-note" style="padding:12px 0">No pipeline opportunities yet.</p>`;
+      <span class="cd-opp-val">${val ? '$'+val.toLocaleString() : '—'}</span>
+    </div>`;
+  };
+  const _cdOppGroup = (label, arr) => arr.length ? `
+    <div style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">${label} (${arr.length})</div>
+    ${arr.map(_cdOppRow).join('')}` : '';
+  const oppRows = linkedOpps.length ? (
+    _cdOppGroup('Open', openOpps) +
+    _cdOppGroup('Won', wonOpps) +
+    _cdOppGroup('Lost / Archived', lostOpps)
+  ) : _cdEmpty('pipeline', 'No pipeline opportunities yet', 'New leads and quotes for this client will show up here.');
 
   const notesHtml = customerNotes.map((n,i)=>`
     <div class="cd-note-item" data-note-id="${n.id||i}">
@@ -4041,10 +5122,51 @@ async function customerDetail(clientId) {
       <div class="cd-note-meta">${escapeHtml(n.created_by||'Admin')} · ${n.created_at ? new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
     </div>`).join('') || '';
 
+  // ── Inline-editable contact rows (lead-style: edit in place, autosave) ──
+  const _cid = client.id;
+  const _iv = (v) => escapeHtml(v == null ? '' : String(v));
+  const _irow = (lbl, field, val, ph, type) => `<div class="cd-info-row">
+      <span class="cd-info-lbl">${lbl}</span>
+      <input class="cd-inline-input" type="${type||'text'}" name="${field}" value="${_iv(val)}" placeholder="${ph||'Add '+lbl.toLowerCase()}"
+        oninput="_cdInlineSave('${_cid}','${field}',this.value)" onblur="_cdInlineSave('${_cid}','${field}',this.value,true)">
+    </div>`;
+  const _isel = (lbl, field, val, opts) => `<div class="cd-info-row">
+      <span class="cd-info-lbl">${lbl}</span>
+      <select class="cd-inline-input cd-inline-select" name="${field}" onchange="_cdInlineSave('${_cid}','${field}',this.value,true)">
+        <option value="">—</option>
+        ${opts.map(o=>`<option value="${_iv(o)}" ${String(val||'')===o?'selected':''}>${_iv(o)}</option>`).join('')}
+      </select>
+    </div>`;
+  const _ccEmailsVal = Array.isArray(client.ccEmails) ? client.ccEmails.join(', ') : String(client.ccEmails||'');
+  const contactRowsHtml = [
+    _irow('Name','name',client.name),
+    _isel('Type','type',client.type,['Residential','Commercial','HOA','Vendor']),
+    _irow('Company','company',client.company),
+    _irow('Phone','phone',client.phone,'','tel'),
+    _irow('Mobile','mobile',client.mobile,'','tel'),
+    _irow('Office Phone','phone2',client.phone2,'','tel'),
+    _irow('Email','email',client.email,'','email'),
+    _irow('CC Email','email2',client.email2,'','email'),
+    _irow('CC Emails','ccEmails',_ccEmailsVal,'comma-separated'),
+    _irow('Street','street',client.street || (!client.city && client.address) || ''),
+    _irow('City','city',client.city),
+    _irow('State','state',client.state),
+    _irow('ZIP','zip',client.zip),
+    _irow('Mailing Street','mailingStreet',client.mailingStreet),
+    _irow('Mailing City','mailingCity',client.mailingCity),
+    _irow('Mailing State','mailingState',client.mailingState),
+    _irow('Mailing ZIP','mailingZip',client.mailingZip),
+    _irow('Main POC','poc',client.poc),
+    _irow('Billing Contact','billingContact',client.billingContact),
+    _irow('Site Contact','siteContact',client.siteContact),
+    _isel('Payment Method','paymentMethod',client.paymentMethod,['Check','ACH','Credit Card','Cash','Autopay','Net 30','Other']),
+  ].join('');
+
   // ── Render ────────────────────────────────────────────────────────────────
   view.innerHTML = `
   <div class="cd-shell">
 
+    <div class="cd-hero-card">
     <!-- ══ Page Header ══ -->
     <div class="cd-page-header">
       <div class="cd-page-header-left">
@@ -4083,10 +5205,6 @@ async function customerDetail(clientId) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           Print
         </button>
-        <button class="rp-btn" onclick="_cdEditClient('${client.id}')">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Edit
-        </button>
         <button class="rp-btn" style="color:var(--gw-danger,#dc2626)" onclick="_cdDeleteClient('${client.id}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           Delete
@@ -4120,49 +5238,26 @@ async function customerDetail(clientId) {
         <span class="cd-stat-val">${linkedOpps.length}</span>
         <span class="cd-stat-lbl">Opportunities</span>
       </div>
+      <div class="cd-stat">
+        <span class="cd-stat-val ${outstanding>0?'cd-stat-val--blue':''}" ${outstanding>0?'style="color:#B4552E"':''}>$${outstanding.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <span class="cd-stat-lbl">Outstanding</span>
+      </div>
+    </div>
     </div>
 
-    <!-- ══ Body: Left + Right ══ -->
-    <div class="cd-body">
-
-      <!-- ── LEFT COLUMN ── -->
-      <div class="cd-left">
+    <!-- ══ Client Overview Grid ══ -->
+    <div class="cd-grid">
 
         <!-- Contact Info -->
-        <section class="cd-section">
+        <section class="cd-section cd-span-2">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Contact Info</h2>
-            <button class="rp-btn-sm" onclick="_cdEditClient('${client.id}')">Edit</button>
+            <h2 class="cd-section-title">${_cdSecIcon('contact')}Contact Info
+              <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(click any field to edit — saves automatically)</span>
+            </h2>
+            <span id="cdAutosaveInd" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
           </div>
-          <div class="cd-info-grid">
-            ${client.phone||client.mobile ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Phone</span>
-              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.phone||client.mobile||'')}">${escapeHtml(client.phone||client.mobile||'')}</a>
-            </div>` : ''}
-            ${client.mobile && client.phone && client.mobile!==client.phone ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Mobile</span>
-              <a class="cd-info-val cd-link" href="tel:${escapeHtml(client.mobile)}">${escapeHtml(client.mobile)}</a>
-            </div>` : ''}
-            ${client.email ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Email</span>
-              <button class="cd-info-val cd-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>${escapeHtml(client.email)}</button>
-            </div>` : ''}
-            ${client.email2 ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">CC Email</span>
-              <button class="cd-info-val cd-link" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email2)}',toName:'${escapeHtml(client.name||'')}'})"}>${escapeHtml(client.email2)}</button>
-            </div>` : ''}
-            ${addr ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Address</span>
-              <a class="cd-info-val cd-link" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">${escapeHtml(addr)}</a>
-            </div>` : ''}
-            ${client.type ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Type</span>
-              <span class="cd-info-val">${clientTypeBadge(client.type)}</span>
-            </div>` : ''}
-            ${client.company && client.company!==client.name ? `<div class="cd-info-row">
-              <span class="cd-info-lbl">Company</span>
-              <span class="cd-info-val">${escapeHtml(client.company)}</span>
-            </div>` : ''}
+          <div class="cd-info-grid cd-info-grid--2col" id="cdInlineForm">
+            ${contactRowsHtml}
           </div>
           ${tags.length ? `<div class="cd-tags" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
             ${tags.map(t=>`<span class="cl-tag">${escapeHtml(t)}</span>`).join('')}
@@ -4170,16 +5265,59 @@ async function customerDetail(clientId) {
           </div>` : `<button class="cd-tag-add-btn" style="margin-top:10px" onclick="_cdAddTag('${client.id}')">+ Add Tag</button>`}
         </section>
 
-        <!-- Internal Notes -->
+        <!-- Quick Actions -->
         <section class="cd-section">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">
-              Customer Notes
+            <h2 class="cd-section-title">${_cdSecIcon('quick')}Quick Actions</h2>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="cd-quick-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>Schedule a Job</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            <button class="cd-quick-btn" onclick="_cdNewLeadForClient('${client.id}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <span>New Lead</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+            ${client.phone||client.mobile ? `
+            <button class="cd-quick-btn" onclick="_cdSendSms('${escapeHtml(client.phone||client.mobile||'')}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <span>Send SMS</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>` : ''}
+            ${client.email ? `
+            <button class="cd-quick-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+              <span>Send Email</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>` : ''}
+            <button class="cd-quick-btn" onclick="${_cdPortalUser ? `_cdPreviewClientPortal('${client.id}')` : `_cdInvitePortal('${client.id}','${escapeHtml(client.name||'')}','${escapeHtml(client.email||'')}','${escapeHtml(client.phone||client.mobile||'')}')`}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>${_cdPortalUser ? 'Preview Portal' : 'Invite to Portal'}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <!-- Customer Portal -->
+        <section class="cd-section">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">${_cdSecIcon('portal')}Customer Portal</h2>
+          </div>
+          ${_cdPortalCard()}
+        </section>
+
+        <!-- Internal Notes -->
+        <section class="cd-section${customerNotes.length ? '' : ' cd-section--empty'}">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">${_cdSecIcon('notes')}Customer Notes
               <span style="font-size:10px;font-weight:400;opacity:.6;margin-left:4px">(internal — never shown to client)</span>
             </h2>
           </div>
           <div id="cd-customer-notes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-            ${notesHtml || '<p class="sb-empty-note">No notes yet. Add context about this customer, preferences, gate codes, etc.</p>'}
+            ${notesHtml || _cdEmpty('notes', 'No notes yet', 'Add context about this customer — preferences, gate codes, etc.')}
           </div>
           <textarea id="cd-note-input" class="rp-input" rows="3"
             placeholder="Gate code, dog on property, preferred schedule, special instructions…"
@@ -4187,64 +5325,34 @@ async function customerDetail(clientId) {
           <button class="rp-btn rp-btn--primary" onclick="_cdSaveNote('${client.id}')">+ Save Note</button>
         </section>
 
-        <!-- Jobs -->
-        <section class="cd-section">
+        <!-- Recurring Services & Revenue Projections -->
+        <section class="cd-section${_activeSubs.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Jobs</h2>
-            <button class="rp-btn-sm" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule Job</button>
+            <h2 class="cd-section-title">${_cdSecIcon('recurring')}Recurring &amp; Projections</h2>
           </div>
-          <div class="cd-tab-bar" id="cd-jobs-tabs">
-            <button class="cd-tab active" data-filter="all"    onclick="_cdJobTab(this,'all')">All (${totalJobs})</button>
-            <button class="cd-tab"         data-filter="scheduled"   onclick="_cdJobTab(this,'scheduled')">Scheduled (${scheduledJobs})</button>
-            <button class="cd-tab"         data-filter="in-progress" onclick="_cdJobTab(this,'in-progress')">In Progress (${inProgressJobs})</button>
-            <button class="cd-tab"         data-filter="completed"   onclick="_cdJobTab(this,'completed')">Completed (${completedJobs})</button>
-          </div>
-          <div id="cd-jobs-list">${woRows}</div>
-          ${workOrders.length >= 20 ? `
-          <div style="text-align:center;padding:10px 0">
-            <button class="rp-btn-sm" onclick="_cdLoadMoreJobs('${client.id}')">Load more jobs</button>
-          </div>` : ''}
+          ${_activeSubs.length ? `
+            ${_activeSubs.map(s=>{
+              const price = Number(s.custom_price)||Number(s.plan_price)||0;
+              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--gw-border)">
+                <div>
+                  <div style="font-weight:600;font-size:13px">${escapeHtml(s.plan_name||'Recurring plan')}</div>
+                  <div style="font-size:11px;color:var(--gw-text-muted)">Every ${Number(s.frequency)||1} ${escapeHtml(s.frequency_unit||'month')}${(Number(s.frequency)||1)>1?'s':''}${s.next_visit_date ? ' · Next: '+_p5FmtDate(s.next_visit_date) : ''}</div>
+                </div>
+                <span style="font-weight:700;font-size:13px;color:#2D7A55">$${price.toLocaleString()}</span>
+              </div>`;}).join('')}
+            <div style="background:var(--gw-bg-app,#f4f6f8);border-radius:10px;padding:12px 14px;margin-top:12px">
+              <div style="font-size:10px;font-weight:700;color:var(--gw-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Revenue Projection</div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Monthly run rate</span><strong>$${(_subAnnual/12).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>Next 12 months</span><strong style="color:#2D7A55">$${_subAnnual.toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>3-year value</span><strong>$${(_subAnnual*3).toLocaleString('en-US',{maximumFractionDigits:0})}</strong></div>
+            </div>`
+          : _cdEmpty('recurring', 'No recurring plans', 'Put this client on a service plan to see revenue projections here.')}
         </section>
-
-        <!-- Pipeline Opportunities -->
-        <section class="cd-section">
-          <div class="cd-section-head">
-            <h2 class="cd-section-title">Pipeline</h2>
-            <button class="rp-btn-sm" onclick="show('lead')">+ New Opportunity</button>
-          </div>
-          ${oppRows}
-        </section>
-
-        <!-- Service Properties -->
-        <section class="cd-section">
-          <div class="cd-section-head">
-            <h2 class="cd-section-title">Properties</h2>
-            <button class="rp-btn-sm" onclick="showAddProperty('${client.id}')">+ Add Property</button>
-          </div>
-          ${(client.properties||[]).length ? (client.properties||[]).map(p=>`
-            <div class="cd-property-row">
-              <div>
-                <div style="font-weight:600;font-size:13px">${escapeHtml(p.label||'Property')}</div>
-                <div style="font-size:12px;color:var(--gw-text-muted)">${escapeHtml([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}</div>
-                ${p.notes ? `<div style="font-size:11px;color:var(--gw-text-muted);margin-top:2px">${escapeHtml(p.notes)}</div>` : ''}
-              </div>
-              <a href="https://maps.google.com/?q=${encodeURIComponent([p.street,p.city,p.state,p.zip].filter(Boolean).join(', '))}"
-                 target="_blank" rel="noopener" class="rp-btn-sm" style="font-size:11px">
-                 <svg width="10" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
-                 Map
-              </a>
-            </div>`).join('') : `<p class="sb-empty-note">No additional properties. Primary address is the main service location.</p>`}
-        </section>
-
-      </div>
-
-      <!-- ── RIGHT COLUMN ── -->
-      <div class="cd-right">
 
         <!-- Activity Timeline -->
-        <section class="cd-section">
+        <section class="cd-section${workOrders.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Activity Timeline</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('timeline')}Activity Timeline</h2>
           </div>
           <div id="cd-timeline" class="cd-timeline">
             ${workOrders.length ? workOrders.slice(0,10).map(wo=>`
@@ -4261,76 +5369,129 @@ async function customerDetail(clientId) {
                 </div>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.3;flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
               </div>`).join('')
-            : '<p class="sb-empty-note">No activity yet.</p>'}
+            : _cdEmpty('timeline', 'No activity yet', 'Jobs scheduled for this client will appear here.')}
           </div>
         </section>
 
-        <!-- Quick Actions -->
-        <section class="cd-section">
+        <!-- Jobs -->
+        <section class="cd-section cd-span-2">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Quick Actions</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('jobs')}Jobs</h2>
           </div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="cd-quick-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              <span>Schedule a Job</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
-            <button class="cd-quick-btn" onclick="show('lead')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              <span>New Opportunity</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
-            ${client.phone||client.mobile ? `
-            <button class="cd-quick-btn" onclick="_cdSendSms('${escapeHtml(client.phone||client.mobile||'')}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              <span>Send SMS</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>` : ''}
-            ${client.email ? `
-            <button class="cd-quick-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}'})"}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-              <span>Send Email</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>` : ''}
-            <button class="cd-quick-btn" onclick="_cdSendPortalLink('${client.id}')">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              <span>Send Portal Link</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4;margin-left:auto"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
+          <div class="cd-tab-bar" id="cd-jobs-tabs">
+            <button class="cd-tab active" data-filter="all"    onclick="_cdJobTab(this,'all')">All (${totalJobs})</button>
+            <button class="cd-tab"         data-filter="scheduled"   onclick="_cdJobTab(this,'scheduled')">Scheduled (${scheduledJobs})</button>
+            <button class="cd-tab"         data-filter="in-progress" onclick="_cdJobTab(this,'in-progress')">In Progress (${inProgressJobs})</button>
+            <button class="cd-tab"         data-filter="completed"   onclick="_cdJobTab(this,'completed')">Completed (${completedJobs})</button>
           </div>
+          <div id="cd-jobs-list">${woRows}</div>
+          ${workOrders.length >= 20 ? `
+          <div style="text-align:center;padding:10px 0">
+            <button class="rp-btn-sm" onclick="_cdLoadMoreJobs('${client.id}')">Load more jobs</button>
+            <button class="cd-add-btn" onclick="_cdNewJobForClient('${client.id}','${escapeHtml(client.name||'')}')">+ Schedule Job</button>
+          </div>` : ''}
         </section>
 
-        <!-- Customer Portal -->
-        <section class="cd-section">
+        <!-- Pipeline Opportunities -->
+        <section class="cd-section${linkedOpps.length ? '' : ' cd-section--empty'}">
           <div class="cd-section-head">
-            <h2 class="cd-section-title">Customer Portal</h2>
+            <h2 class="cd-section-title">${_cdSecIcon('pipeline')}Leads &amp; Opportunities
+              ${pipelineValue ? `<span style="font-size:11px;font-weight:600;color:#2D7A55;margin-left:8px">$${pipelineValue.toLocaleString()} open pipeline</span>` : ''}
+            </h2>
           </div>
-          <p style="font-size:13px;color:var(--gw-text-muted);margin:0 0 14px;line-height:1.5">
-            One-click link lets this client view their jobs, photos, invoices, and pay online — all without logging in.
-          </p>
-          <div id="cd-portal-url-block" style="background:var(--gw-bg-app,#f4f6f8);border:1px solid var(--gw-border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--gw-text-muted);word-break:break-all;margin-bottom:12px;font-family:monospace">
-            ${location.origin}/portal?client=${client.id}
+          ${oppRows}
+          <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewLeadForClient('${client.id}')">+ New Lead</button></div>
+        </section>
+
+        <!-- Financials: Estimates / Invoices / Payments -->
+        <section class="cd-section cd-span-2">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">${_cdSecIcon('financials')}Financials
+              ${outstanding>0 ? `<span style="font-size:11px;font-weight:600;color:#B4552E;margin-left:8px">$${outstanding.toLocaleString('en-US',{minimumFractionDigits:2})} outstanding</span>` : ''}
+            </h2>
           </div>
-          <div style="display:flex;gap:8px">
-            <button class="rp-btn rp-btn--primary" style="flex:1" onclick="_cdSendPortalLink('${client.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-              Copy Link
-            </button>
-            ${client.phone||client.mobile ? `
-            <button class="rp-btn" onclick="_cdSharePortalViaSms('${client.id}','${escapeHtml(client.phone||client.mobile||'')}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              SMS
-            </button>` : ''}
-            ${client.email ? `
-            <button class="rp-btn" onclick="_gwOpenMessageModal({type:'email',to:'${escapeHtml(client.email)}',toName:'${escapeHtml(client.name||'')}',subject:'Your Customer Portal',body:'Hi ${escapeHtml(client.name||'')},\\n\\nHere is a link to access your customer portal:\\n'+location.origin+'/portal?client=${client.id}'})">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-              Email
-            </button>` : ''}
+          <div class="cd-tab-bar" id="cd-fin-tabs">
+            <button class="cd-tab active" onclick="_cdFinTab(this,'estimates')">Estimates (${cdEstimates.length})</button>
+            <button class="cd-tab" onclick="_cdFinTab(this,'invoices')">Invoices (${cdInvoices.length})</button>
+            <button class="cd-tab" onclick="_cdFinTab(this,'payments')">Payments (${cdPayments.length})</button>
+          </div>
+          <div id="cd-fin-estimates">
+            ${cdEstimates.length ? cdEstimates.slice(0,15).map(e=>`
+              <div class="cd-wo-row" style="cursor:pointer" onclick="window.estimateDetail?estimateDetail('${e.id}'):show('estimates')">
+                <span class="cd-wo-num">${escapeHtml(e.est_number||'EST')}</span>
+                <span class="cd-wo-title">${escapeHtml(e.title||e.property_addr||'Estimate')}</span>
+                <span class="cd-wo-date">${e.estimate_date||e.created_at ? _p5FmtDate(e.estimate_date||e.created_at) : '—'}</span>
+                <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(e.status||'draft')}</span>
+                <span class="cd-wo-amt">${Number(e.total) ? '$'+Number(e.total).toLocaleString('en-US',{minimumFractionDigits:2}) : '—'}</span>
+              </div>`).join('') : _cdEmpty('financials', 'No estimates yet', 'Quotes you send this client will show up here.')}
+            <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewEstimateForClient('${client.id}')">+ New Estimate</button></div>
+          </div>
+          <div id="cd-fin-invoices" style="display:none">
+            ${cdInvoices.length ? cdInvoices.slice(0,15).map(i=>{
+              const bal = Number(i.balance_due)||0;
+              return `
+              <div class="cd-wo-row" style="cursor:pointer" onclick="window._invOpenDetail?_invOpenDetail('${i.id}'):show('invoices')">
+                <span class="cd-wo-num">${escapeHtml(i.invoice_number||'INV')}</span>
+                <span class="cd-wo-title">${escapeHtml(i.title||'Invoice')}</span>
+                <span class="cd-wo-date">${i.due_date ? 'Due '+_p5FmtDate(i.due_date) : (i.created_at ? _p5FmtDate(i.created_at) : '—')}</span>
+                <span class="ops-ready-badge" style="font-size:10px">${escapeHtml(i.status||'draft')}</span>
+                <span class="cd-wo-amt" ${bal>0?'style="color:#B4552E;font-weight:700"':''}>${bal>0 ? '$'+bal.toLocaleString('en-US',{minimumFractionDigits:2})+' due' : (Number(i.total)?'$'+Number(i.total).toLocaleString('en-US',{minimumFractionDigits:2}):'—')}</span>
+              </div>`;}).join('') : _cdEmpty('financials', 'No invoices yet', 'Invoices billed to this client will show up here.')}
+            <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdNewInvoiceForClient('${client.id}')">+ New Invoice</button></div>
+          </div>
+          <div id="cd-fin-payments" style="display:none">
+            ${cdPayments.length ? cdPayments.slice(0,15).map(p=>`
+              <div class="cd-wo-row">
+                <span class="cd-wo-num">${escapeHtml(p.invoice_number_display||p.invoice_number||'—')}</span>
+                <span class="cd-wo-title">${escapeHtml(p.payment_method||p.description||'Payment')}</span>
+                <span class="cd-wo-date">${p.created_at ? _p5FmtDate(p.created_at) : '—'}</span>
+                <span class="ops-ready-badge ops-ready" style="font-size:10px">${escapeHtml(p.status||'succeeded')}</span>
+                <span class="cd-wo-amt" style="color:#2D7A55;font-weight:700">$${(Number(p.amount)||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+              </div>`).join('') : _cdEmpty('financials', 'No payments recorded yet', 'Payments collected from this client will show up here.')}
+            <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="_cdRecordPaymentForClient('${client.id}')">+ Record Payment</button></div>
           </div>
         </section>
 
-      </div>
+        <!-- Service Properties -->
+        <section class="cd-section${(client.properties||[]).length ? '' : ' cd-section--empty'}">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">${_cdSecIcon('properties')}Properties</h2>
+          </div>
+          ${(client.properties||[]).length ? (client.properties||[]).map(p=>{
+            const pAddr = [p.street,p.city,p.state,p.zip].filter(Boolean).join(', ') || p.address || '';
+            return `
+            <div class="cd-property-row">
+              <div>
+                <div style="font-weight:600;font-size:13px">${escapeHtml(p.label||'Property')}</div>
+                ${pAddr ? `<div style="font-size:12px;color:var(--gw-text-muted)">${escapeHtml(pAddr)}</div>` : ''}
+                ${p.notes ? `<div style="font-size:11px;color:var(--gw-text-muted);margin-top:2px">${escapeHtml(p.notes)}</div>` : ''}
+              </div>
+              <a href="https://maps.google.com/?q=${encodeURIComponent(pAddr)}"
+                 target="_blank" rel="noopener" class="rp-btn-sm" style="font-size:11px">
+                 <svg width="10" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+                 Map
+              </a>
+            </div>`;}).join('') : _cdEmpty('properties', 'No additional properties', 'The primary address above is the main service location.')}
+          <div class="cd-add-btn-row"><button class="cd-add-btn" onclick="showAddProperty('${client.id}')">+ Add Property</button></div>
+        </section>
+
+        <!-- Site Photos -->
+        <section class="cd-section cd-span-2${cdMedia.length ? '' : ' cd-section--empty'}">
+          <div class="cd-section-head">
+            <h2 class="cd-section-title">${_cdSecIcon('photos')}Site Photos ${cdMedia.length ? `<span style="font-size:11px;font-weight:400;color:var(--gw-text-muted)">(${cdMedia.length})</span>` : ''}</h2>
+          </div>
+          ${cdMedia.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px">
+            ${cdMedia.slice(0,24).map(m=>`
+              <a href="/api/admin/portal/media/${m.id}" target="_blank" rel="noopener" title="${escapeHtml([m.caption,m.wo_number||m.wo_title].filter(Boolean).join(' — '))}" style="display:block;border-radius:8px;overflow:hidden;border:1px solid var(--gw-border);aspect-ratio:1;background:#f0f2ef">
+                <img src="/api/admin/portal/media/${m.id}" loading="lazy" alt="${escapeHtml(m.caption||m.file_name||'Site photo')}" style="width:100%;height:100%;object-fit:cover">
+              </a>`).join('')}
+          </div>` : _cdEmpty('photos', 'No site photos yet', 'Photos crews attach to jobs will appear here automatically, or upload directly below.')}
+          <div class="cd-add-btn-row">
+            <button class="cd-add-btn" onclick="_cdUploadPhotos('${client.id}')">+ Upload Photos</button>
+            <input type="file" id="cdPhotoInput" accept="image/*" multiple style="display:none">
+          </div>
+        </section>
+
     </div>
   </div>`;
 
@@ -4339,6 +5500,191 @@ async function customerDetail(clientId) {
   window._cdCurrentClientWOs = workOrders;
 }
 window.customerDetail = customerDetail;
+
+// Financials tab switcher on the customer detail page
+window._cdFinTab = function(btn, which) {
+  document.querySelectorAll('#cd-fin-tabs .cd-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['estimates','invoices','payments'].forEach(k => {
+    const el = document.getElementById('cd-fin-' + k);
+    if (el) el.style.display = (k === which) ? '' : 'none';
+  });
+};
+
+// ── Inline autosave for client contact fields (lead-style editing) ──────────
+const _cdInlineTimers = {};
+window._cdInlineSave = function(clientId, field, value, immediate) {
+  clearTimeout(_cdInlineTimers[field]);
+  const run = async () => {
+    const val = String(value == null ? '' : value).trim();
+    if (field === 'name' && !val) return; // never blank the client name
+    // Update local cache so page nav / sync shows the change instantly
+    try {
+      const list = loadClients();
+      const lc = list.find(c => c.id === clientId);
+      if (lc) {
+        if (String(lc[field] == null ? '' : (field==='ccEmails' && Array.isArray(lc[field]) ? lc[field].join(', ') : lc[field])) === val) return;
+        lc[field] = field === 'ccEmails' ? val.split(',').map(s=>s.trim()).filter(Boolean) : val;
+        lc.updatedAt = new Date().toISOString();
+    Date().toISOString();
+        localStorage.setItem('avalonClientsV1', JSON.stringify(list));
+      }
+    } catch(_) {}
+    // Persist to D1 (partial update; server merges extra JSON)
+    const payload = { [field]: field === 'ccEmails' ? val.split(',').map(s=>s.trim()).filter(Boolean) : val };
+    try {
+      await fetch(`/api/customers/${clientId}`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      // Live-update the hero name if the name field changed
+      if (field === 'name') {
+        const h = document.querySelector('.cd-hero h1, .cd-hero-name, .cd-client-name');
+        if (h) h.textContent = val;
+      }
+      const ind = document.getElementById('cdAutosaveInd');
+      if (ind) {
+        ind.style.opacity = '1';
+        clearTimeout(ind._fadeTimer);
+        ind._fadeTimer = setTimeout(() => { ind.style.opacity = '0'; }, 1800);
+      }
+    } catch(_) {
+      if (typeof showToast === 'function') showToast('Save failed — check connection', 'error');
+    }
+  };
+  if (immediate) run(); else _cdInlineTimers[field] = setTimeout(run, 600);
+};
+
+// ── Create a lead for this client and jump straight to the lead view ────────
+window._cdNewLeadForClient = function(clientId) {
+  const list = loadClients();
+  const client = list.find(c => c.id === clientId);
+  if (!client) { if (typeof showToast === 'function') showToast('Client not found', 'error'); show('lead'); return; }
+  const stages = getPipelineStages();
+  const addr = [client.street, client.city, client.state, client.zip].filter(Boolean).join(', ') || client.address || '';
+  const opp = {
+    id: uid('opp'),
+    client: client.name || '',
+    clientId: client.id,
+    clientType: client.type || 'Residential',
+    email: client.email || '',
+    phone: client.phone || client.mobile || '',
+    address: addr,
+    source: 'Client Page',
+    status: stages[0] || 'Lead Intake / Rapport',
+    repId: (typeof currentRep !== 'undefined' && currentRep) ? currentRep.id : '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  state.opportunities.unshift(opp);
+  saveState();
+  _d1SaveOpp(opp);
+  if (typeof showToast === 'function') showToast(`New lead created for ${client.name}`, 'success');
+  if (typeof opportunityDetail === 'function') opportunityDetail(opp.id);
+  else show('pipeline', opp.id);
+};
+
+// ── New estimate prefilled with this client ─────────────────────────────────
+window._cdNewEstimateForClient = async function(clientId) {
+  if (typeof estimateBuilder !== 'function') { show('estimates'); return; }
+  const list = loadClients();
+  const client = list.find(c => c.id === clientId);
+  await estimateBuilder(); // fresh draft
+  if (client && typeof _estDraft !== 'undefined' && _estDraft) {
+    const addr = [client.street, client.city, client.state, client.zip].filter(Boolean).join(', ') || client.address || '';
+    _estDraft.client_id = client.id;
+    _estDraft.client_name = client.name || '';
+    _estDraft.client_email = client.email || '';
+    _estDraft.client_phone = client.phone || client.mobile || '';
+    _estDraft.client_address = addr;
+    _estDraft.property_addr = addr;
+    if (typeof _estRenderBuilder === 'function') _estRenderBuilder();
+    if (typeof showToast === 'function') showToast(`New estimate started for ${client.name}`, 'success');
+  }
+};
+
+// ── New invoice prefilled with this client ──────────────────────────────────
+window._cdNewInvoiceForClient = function(clientId) {
+  if (typeof _invOpenBuilder !== 'function') { show('invoices'); return; }
+  _invOpenBuilder(null);
+  // Builder loads clients async — poll for the select, then preselect
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    const sel = document.getElementById('invClientId');
+    if (sel) {
+      clearInterval(timer);
+      if ([...sel.options].some(o => o.value === clientId)) {
+        sel.value = clientId;
+        if (typeof _invOnClientChange === 'function') _invOnClientChange();
+      }
+    } else if (tries > 40) clearInterval(timer);
+  }, 250);
+};
+
+// ── Record a payment against one of this client's open invoices ─────────────
+window._cdRecordPaymentForClient = async function(clientId) {
+  let invoices = [];
+  try {
+    const r = await fetch(`/api/invoices?client_id=${clientId}&limit=100`, { credentials: 'include' });
+    const d = await r.json();
+    invoices = (d.data || d) || [];
+    if (!Array.isArray(invoices)) invoices = [];
+  } catch(_) {}
+  const payable = invoices.filter(i => (Number(i.balance_due) || 0) > 0 && !['void','voided','draft'].includes(String(i.status||'').toLowerCase()));
+  if (!payable.length) {
+    if (typeof showToast === 'function') showToast('No open invoices with a balance — create an invoice first', 'info');
+    return;
+  }
+  if (payable.length === 1 && typeof _invRecordPaymentModal === 'function') {
+    _invRecordPaymentModal(payable[0].id);
+    return;
+  }
+  // Multiple open invoices: small picker
+  document.getElementById('cd-pay-picker')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'cd-pay-picker';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,30,25,.45);z-index:9000;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:420px;width:92%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px;color:#233123">Record Payment</div>
+    <div style="font-size:12px;color:#6B7280;margin-bottom:12px">Choose which invoice this payment applies to:</div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto">
+      ${payable.map(i => `
+        <button style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;background:#fff;cursor:pointer;text-align:left;font-size:13px"
+          onclick="document.getElementById('cd-pay-picker').remove(); if (window._invRecordPaymentModal) _invRecordPaymentModal('${i.id}');">
+          <span style="font-weight:600;color:#233123">${escapeHtml(i.invoice_number || 'Invoice')}</span>
+          <span style="color:#B4552E;font-weight:700">$${(Number(i.balance_due)||0).toLocaleString('en-US',{minimumFractionDigits:2})} due</span>
+        </button>`).join('')}
+    </div>
+    <button style="margin-top:12px;background:none;border:none;color:#6B7280;cursor:pointer;font-size:12px" onclick="document.getElementById('cd-pay-picker').remove()">Cancel</button>
+  </div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+};
+
+// ── Upload site photos directly for this client ─────────────────────────────
+window._cdUploadPhotos = function(clientId) {
+  const input = document.getElementById('cdPhotoInput');
+  if (!input) return;
+  input.onchange = async () => {
+    const files = [...(input.files || [])];
+    if (!files.length) return;
+    if (typeof showToast === 'function') showToast(`Uploading ${files.length} photo${files.length>1?'s':''}…`, 'info');
+    let ok = 0, fail = 0;
+    for (const f of files) {
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        const r = await fetch(`/api/customers/${clientId}/photos`, { method: 'POST', credentials: 'include', body: fd });
+        if (r.ok) ok++; else fail++;
+      } catch(_) { fail++; }
+    }
+    if (typeof showToast === 'function') showToast(fail ? `${ok} uploaded, ${fail} failed` : `${ok} photo${ok>1?'s':''} uploaded`, fail ? 'error' : 'success');
+    if (ok) customerDetail(clientId); // refresh to show new photos
+  };
+  input.click();
+};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // UNIVERSAL IN-APP MESSAGE COMPOSE MODAL
@@ -4349,6 +5695,19 @@ window.customerDetail = customerDetail;
 window._gwOpenMessageModal = function(opts = {}) {
   const existing = document.getElementById('gw-message-modal');
   if (existing) existing.remove();
+  window._gwMsgOpts = opts;
+  // Async: check live SMS availability and upgrade the modal chrome when ready
+  if ((opts.type || 'email') === 'sms' && typeof window.gwSmsStatus === 'function') {
+    window.gwSmsStatus().then(st => {
+      window._gwSmsConfigured = !!(st && st.configured);
+      if (window._gwSmsConfigured) {
+        const note = document.getElementById('gwm-sms-note');
+        if (note) note.innerHTML = '<strong>Live texting is on.</strong> This message sends from ' + (st.from_number || 'your company number') + ' and the reply lands in Text Messages.';
+        const btn = document.getElementById('gwm-send-btn');
+        if (btn && btn.innerHTML.includes('Log SMS')) btn.innerHTML = btn.innerHTML.replace('Log SMS', 'Send SMS');
+      }
+    }).catch(() => {});
+  }
 
   const type     = opts.type || 'email';
   const toAddr   = opts.to || '';
@@ -4442,7 +5801,7 @@ window._gwOpenMessageModal = function(opts = {}) {
 
         <!-- SMS note -->
         <div id="gwm-sms-note" style="${isSms ? 'font-size:12px;color:var(--gw-text-muted,#64748b);background:var(--gw-bg-app,#f4f6f8);border-radius:7px;padding:8px 12px' : 'display:none'}">
-          <strong>SMS will be logged</strong> in this customer's Communications tab. Sending via carrier requires a Twilio integration (Admin → Integrations).
+          <strong>SMS will be logged</strong> in this customer's Communications tab. Live carrier sending turns on once Twilio is connected in Sales, Text Messages, Setup.
         </div>
       </div>
 
@@ -4548,10 +5907,16 @@ window._gwMsgSend = async function() {
       state.communications.push({ id: uid('comm'), type:'email', direction:'out', to, subject, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep'), gmailSent: googleConnected });
       saveState();
     } else {
-      // SMS — log it (live send requires Twilio integration)
-      showToast('SMS logged in Communications', 'info');
+      // SMS — live send via Twilio when configured, otherwise log only
+      const mo = window._gwMsgOpts || {};
+      if (window._gwSmsConfigured && typeof window.gwSmsSend === 'function') {
+        await window.gwSmsSend({ to, body, toName: mo.toName || '', clientId: mo.clientId || '', oppId: mo.oppId || '' });
+        showToast('Text message sent', 'success');
+      } else {
+        showToast('SMS logged (connect Twilio in Text Messages, Setup to send live)', 'info');
+      }
       if (!state.communications) state.communications = [];
-      state.communications.push({ id: uid('comm'), type:'sms', direction:'out', to, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep') });
+      state.communications.push({ id: uid('comm'), type:'sms', direction:'out', to, body, ts: new Date().toISOString(), sentBy: (window.getCurrentRep?.()?.name || 'Rep'), smsSent: !!window._gwSmsConfigured });
       saveState();
     }
     document.getElementById('gw-message-modal')?.remove();
@@ -4589,11 +5954,71 @@ window._cdNewJobForClient = function(clientId, clientName) {
   _sbOpenNewVisit(null, null, clientId, clientName);
 };
 
-// Share portal link via SMS
-window._cdSharePortalViaSms = function(clientId, phone) {
-  const link = `${location.origin}/portal?client=${clientId}`;
-  const msg = `Hi! Here's a link to your customer portal where you can view your jobs, photos, and invoices: ${link}`;
-  _gwOpenMessageModal({ type:'sms', to: phone, body: msg });
+// Invite a client to the real, password-protected portal (or edit an
+// existing invite's client/role) from the client detail page. Refreshes the
+// client detail view instead of navigating to the portal admin screen.
+window._cdInvitePortal = function(clientId, name, email, phone) {
+  if (typeof _portalInviteModal !== 'function') { showToast('Portal module failed to load — refresh and try again','error'); return; }
+  _portalInviteModal({ clientId, name, email, phone, onDone: () => customerDetail(clientId) });
+};
+
+// Staff "Preview Portal": opens a locked-down, read-only preview of this
+// client's portal in a new tab. No client password needed; payment/card
+// details are hidden and no actions can be taken from a preview session.
+window._cdPreviewClientPortal = async function(clientId) {
+  try {
+    let r = await fetch(`/api/admin/portal/preview/${clientId}`, { method:'POST', credentials:'include' });
+    let d = await r.json();
+    if (!d.ok && r.status === 404) {
+      // Self-heal: this client may pre-date a now-fixed sync bug where a
+      // client's first save silently never reached D1. If we still have it
+      // locally, push it now (upsert) and retry once before giving up.
+      const local = (loadClients()||[]).find(c => c.id === clientId);
+      if (local && typeof _d1SaveClient === 'function') {
+        try {
+          await _d1SaveClient(local);
+          r = await fetch(`/api/admin/portal/preview/${clientId}`, { method:'POST', credentials:'include' });
+          d = await r.json();
+        } catch(syncErr) { /* fall through to error below */ }
+      }
+    }
+    if (!d.ok) throw new Error(d.error || 'Could not start preview');
+    window.open(d.url, '_blank', 'noopener');
+  } catch(e) {
+    const msg = /not found/i.test(e.message||'')
+      ? 'This client record needs to finish syncing — click any field to save, then try Preview again.'
+      : (e.message || 'Unknown error');
+    showToast('Failed to start preview: ' + msg, 'error');
+  }
+};
+
+window._cdResendPortalInvite = async function(userId, clientId) {
+  try {
+    const d = await _portalApi(`/api/admin/portal/users/${userId}/resend`, { method:'POST' });
+    if (d.email_sent) { showToast('Invitation email re-sent.','success'); }
+    else if (d.invite_link) {
+      try { await navigator.clipboard.writeText(d.invite_link); showToast('New invite link copied to clipboard.','success'); }
+      catch(_) { showToast('New invite link: ' + d.invite_link, 'info'); }
+    }
+    customerDetail(clientId);
+  } catch(e) { showToast('Failed: ' + (e.message||'Unknown error'), 'error'); }
+};
+
+window._cdDisablePortalAccess = async function(userId, email, clientId) {
+  if (!confirm(`Disable portal access for ${email}? They will be signed out immediately.`)) return;
+  try {
+    await _portalApi(`/api/admin/portal/users/${userId}/disable`, { method:'POST' });
+    showToast('Portal access disabled.','success');
+    customerDetail(clientId);
+  } catch(e) { showToast('Failed: ' + (e.message||'Unknown error'), 'error'); }
+};
+
+window._cdReactivatePortalAccess = async function(userId, clientId) {
+  try {
+    const d = await _portalApi(`/api/admin/portal/users/${userId}/reactivate`, { method:'POST' });
+    showToast(d.status === 'active' ? 'User reactivated.' : 'Set back to invited — resend the invite so they can activate.','success');
+    customerDetail(clientId);
+  } catch(e) { showToast('Failed: ' + (e.message||'Unknown error'), 'error'); }
 };
 
 // Load more jobs (fetches from D1 with offset)
@@ -4674,13 +6099,6 @@ window._cdAddTag = function(clientId) {
 window._cdSendSms = function(phone, prefillBody) {
   if (!phone) { showToast('No phone number on file','error'); return; }
   _gwOpenMessageModal({ type:'sms', to: phone, body: prefillBody||'' });
-};
-
-window._cdSendPortalLink = function(clientId) {
-  const link = `${location.origin}/portal?client=${clientId}`;
-  navigator.clipboard?.writeText(link)
-    .then(()=>showToast('Portal link copied to clipboard','success'))
-    .catch(()=>showToast('Portal link: '+link,'info'));
 };
 
 // ── Add property modal ──────────────────────────────────────────────────────
@@ -4772,18 +6190,9 @@ function lead(){
         + '</select></label>'
     : '<input type="hidden" name="repId" value="' + (_cr ? _cr.id : '') + '">';
 
-  // Project category tile data
-  const _cats = [
-    {v:'Landscape / Enhancement', icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 17V10M10 10C10 10 5 10 3 5c3.5 0 7 2 7 5zm0 0c0 0 5 0 7-5-3.5 0-7 2-7 5z" stroke="#2D7A55" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 17c-2 0-3.5-.5-4-1" stroke="#2D7A55" stroke-width="1.4" stroke-linecap="round" opacity=".5"/></svg>', short:'Landscape'},
-    {v:'Maintenance - Recurring',  icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 4a3.5 3.5 0 00-3 5.2L4.6 15.6a1 1 0 001.4 1.4l6.4-6.4A3.5 3.5 0 0016 7.5a3.5 3.5 0 00-.5-1.8l-2 2-1.5-1.5 2-2A3.5 3.5 0 0014 4z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', short:'Recurring Maint.'},
-    {v:'Maintenance - One Time',   icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 4a3.5 3.5 0 00-3 5.2L4.6 15.6a1 1 0 001.4 1.4l6.4-6.4A3.5 3.5 0 0016 7.5a3.5 3.5 0 00-.5-1.8l-2 2-1.5-1.5 2-2A3.5 3.5 0 0014 4z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', short:'One-Time Maint.'},
-    {v:'Hardscape',                icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="6" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4"/><rect x="11" y="4" width="6" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4"/><rect x="6.5" y="9" width="7" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4"/><rect x="3" y="14" width="4" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4" opacity=".7"/><rect x="9" y="14" width="5" height="3" rx=".5" stroke="#8B6914" stroke-width="1.4" opacity=".7"/></svg>', short:'Hardscape'},
-    {v:'Drainage',                 icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3L13 8a3.5 3.5 0 11-6 0L10 3z" stroke="#4D8A86" stroke-width="1.5" stroke-linejoin="round"/><path d="M4 16h12" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round"/><path d="M7 16l1.5-3M13 16l-1.5-3" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".6"/></svg>', short:'Drainage'},
-    {v:'Design / Build',           icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16L15 5" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round"/><path d="M13 3l4 4-2 2-4-4 2-2z" stroke="#4D8A86" stroke-width="1.3" stroke-linejoin="round"/><path d="M4 16l-1 1 1-1zm0 0l2-1-1 1z" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round"/><rect x="3" y="12" width="8" height="2.5" rx=".5" transform="rotate(-45 3 12)" stroke="#4D8A86" stroke-width="1.3" opacity=".5"/></svg>', short:'Design / Build'},
-    {v:'Irrigation',               icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 15 Q8 8 14 6" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="6" r="1.3" fill="#4D8A86"/><path d="M10 4 Q12 3 14 4" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".6"/><path d="M12 7 Q15 5 17 6" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".6"/><path d="M11 10 Q14 9 16 10" stroke="#4D8A86" stroke-width="1.3" stroke-linecap="round" opacity=".4"/><path d="M3 16 Q4 14 5 15" stroke="#4D8A86" stroke-width="1.4" stroke-linecap="round"/></svg>', short:'Irrigation'},
-    {v:'Outdoor Lighting',         icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3a5 5 0 014 8l-1 1v1H7v-1L6 11a5 5 0 014-8z" stroke="#8B6914" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 16h4" stroke="#8B6914" stroke-width="1.4" stroke-linecap="round"/><path d="M8.5 16.5 Q10 18 11.5 16.5" stroke="#8B6914" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5" r="1" fill="#8B6914" opacity=".4"/><circle cx="17" cy="5" r="1" fill="#8B6914" opacity=".4"/><circle cx="10" cy="1.5" r="1" fill="#8B6914" opacity=".4"/></svg>', short:'Lighting'},
-    {v:'Other',                    icon:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="7" stroke="#6F7E6A" stroke-width="1.4"/><circle cx="7" cy="10" r="1.2" fill="#6F7E6A"/><circle cx="10" cy="10" r="1.2" fill="#6F7E6A"/><circle cx="13" cy="10" r="1.2" fill="#6F7E6A"/></svg>', short:'Other'},
-  ];
+  // Project category tiles come from the company's intake form config
+  const _intakeCfg = gwIntakeConfig();
+  const _cats = _intakeCfg.categories;
   const catTilesHtml = _cats.map(c =>
     '<button type="button" class="cat-tile" data-cat="' + c.v + '">'
     + '<span class="cat-tile-label">' + c.short + '</span>'
@@ -4791,19 +6200,25 @@ function lead(){
   ).join('');
 
   // Service line options
-  const slOptions = (data.serviceLines||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
+  const slOptions = (_intakeCfg.serviceLines||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
 
   // Status options
   const _stages = getPipelineStages();
   const stOptions = _stages.map(o => '<option' + (o===(_stages[0]||'')?' selected':'') + '>' + escapeHtml(o) + '</option>').join('');
 
   // Lead source options
-  const lsOptions = (data.leadSources||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
+  const lsOptions = (_intakeCfg.leadSources||[]).map(o => '<option>' + escapeHtml(o) + '</option>').join('');
 
   view.innerHTML =
-    '<div class="lf-hero">'
-      + '<span class="lf-hero-eyebrow">New Opportunity</span>'
-      + '<h1 class="lf-hero-title">Add Lead</h1>'
+    '<div class="lf-hero" style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      + '<div>'
+        + '<span class="lf-hero-eyebrow">New Opportunity</span>'
+        + '<h1 class="lf-hero-title">Add Lead</h1>'
+      + '</div>'
+      + '<button type="button" class="secondary-btn" onclick="window._gwAiLeadImport&&window._gwAiLeadImport()" title="Paste or drop an email — AI extracts the contact and every property address">'
+        + '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 5l6.5 4 6.5-4"/></svg>'
+        + 'Import from Email (AI)'
+      + '</button>'
     + '</div>'
     + '<form id="leadForm">'
 
@@ -4886,13 +6301,7 @@ function lead(){
           + '<label class="lf-field">'
             + '<span class="lf-label">Work Type <span class="lf-hint">(for commission)</span></span>'
             + '<select name="workType" class="lf-select">'
-              + '<option value="landscape" selected>Landscape</option>'
-              + '<option value="maintenance_onetime">Maintenance – One Time</option>'
-              + '<option value="maintenance_recurring">Maintenance – Recurring</option>'
-              + '<option value="maintenance_upsell">Maintenance – Upsell</option>'
-              + '<option value="hardscape">Hardscape</option>'
-              + '<option value="drainage">Drainage</option>'
-              + '<option value="design_build">Design / Build</option>'
+              + _intakeCfg.workTypes.map((w, i) => '<option value="' + escapeHtml(w.v) + '"' + (i === 0 ? ' selected' : '') + '>' + escapeHtml(w.label) + '</option>').join('')
             + '</select>'
           + '</label>'
         + '</div>'
@@ -5327,7 +6736,7 @@ function opportunityDetail(id){
   const _activeTab   = window._leadTab || 'overview';
   const _repObj      = (window.REPS||[]).find(r=>r.id===o.repId);
   const _repName     = _repObj ? _repObj.name : 'Unassigned';
-  const _isOvd       = o.nextFollowUp && o.nextFollowUp < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
+  const _isOvd       = o.nextFollowUp && o.nextFollowUp < todayISO() && gwSalesIsOpen(o);
   const _estComm     = estCommission(o);
   const _cr          = window.getCurrentRep ? window.getCurrentRep() : null;
   const _isAdm       = _cr && _cr.role === 'admin';
@@ -5342,8 +6751,8 @@ function opportunityDetail(id){
   const _filesCnt    = (state.communications||[]).filter(c=>c.oppId===o.id&&c.files&&c.files.length).reduce((a,c)=>a+c.files.length,0);
   const _notesCnt    = (o.notes||[]).length;
   const _lastComm    = (state.communications||[]).filter(c=>c.oppId===o.id).sort((a,b)=>new Date(b.ts)-new Date(a.ts))[0];
-  const _isSold      = o.status === 'Sold / Activation';
-  const _isClosed    = o.status === 'Closed Lost';
+  const _isSold      = gwSalesIs(o,'won');
+  const _isClosed    = gwSalesIs(o,'lost');
 
   // ── Stat chip helper ─────────────────────────────────────────────────────
   const statChip = (icon, label, value, accent='') =>
@@ -5419,9 +6828,18 @@ function opportunityDetail(id){
           <div class="ld-stat-chips">
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 11V5l5-3 5 3v6H9V8H5v3H2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>','Stage',escapeHtml(o.status||'New Lead'))}
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M1 13c0-3 2.7-5 6-5s6 2 6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Rep',escapeHtml(_repName))}
-            ${o.jobValue ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Value',money(Number(o.jobValue)),'green') : ''}
+            ${gwLeadBaseValue(o) ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M4.5 9.5c0 1.1.67 2 2.5 2s2.5-.9 2.5-2-1-1.8-2.5-2-2.5-.9-2.5-2 .67-2 2.5-2 2.5.9 2.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',_isSold ? 'Sold @' : 'Value',money(gwLeadBaseValue(o)),'green') : ''}
             ${_estComm > 0 ? statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12L7 2l5 10M4.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>','Commission',money(_estComm),'blue') : ''}
-            ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'')}
+            ${(function(){
+              const _sc = gwLeadScore(o);
+              const _accent = _sc.pinned==='won'||_sc.score>=70?'green':_sc.pinned==='lost'||_sc.score<40?'red':'amber';
+              return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1.5a5.5 5.5 0 105.5 5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7 4v3l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Close Likelihood',_sc.score+'%',_accent);
+            })()}
+            ${(function(){
+              const _c = gwStageClock(o);
+              if (_c.daysIn === null || !gwLeadIsOpen(o)) return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Follow-Up',prettyDate(o.nextFollowUp),_isOvd?'red':'');
+              return statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','In Stage',_c.daysIn+'d of ~'+_c.expected+'d',_c.level==='late'?'red':_c.level==='watch'?'amber':'');
+            })()}
             ${statChip('<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2l5.5 10H1.5L7 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6v3M7 10.5h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>','Comm.',o.commissionApproved?'Approved':'Pending',o.commissionApproved?'green':'amber')}
           </div>
         </div>
@@ -5456,14 +6874,13 @@ function opportunityDetail(id){
     </div>`;
 
   // ── STAGE TRACKER ──────────────────────────────────────────────────────────
-  const _stageTrackerHtml = R ? R.StageTracker(_stages, o.status) : '';
+  const _stageTrackerHtml = R ? R.StageTracker(_stages, o) : '';
 
   // ── QUICK ACTION BAR ───────────────────────────────────────────────────────
   const _qaBarHtml = R ? R.QuickActionBar([
     { id:`qa_calendar_${o.id}`,  icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Schedule', onclick:`qaAction('calendar','${o.id}',this)` },
     { id:`qa_gmail_${o.id}`,     icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Email', onclick:`qaAction('gmail','${o.id}',this)` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 7h4M5 9h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', label:'New Estimate', onclick:`window.estimateBuilderForLead ? estimateBuilderForLead('${o.id}') : show('estimates')` },
-    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 2v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" opacity=".6"/></svg>', label:'New Proposal', onclick:`window.proposalBuilderForLead ? proposalBuilderForLead('${o.id}') : showToast('Proposals loading…')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', label:'Log Call', onclick:`window._leadTab='comms';show('pipeline','${o.id}')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Add Note', onclick:`window._leadTab='notes';show('pipeline','${o.id}')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="var(--gw-success)" stroke="none"/></svg>', label:'Call Companion', onclick:`openCallCompanion('${o.id}')` }
@@ -5485,12 +6902,13 @@ function opportunityDetail(id){
             ${inputEdit('phone','Phone',o.phone)}
             ${inputEdit('email','Email',o.email,'email')}
             ${inputEdit('address','Property Address',o.address)}
-            ${selectEdit('serviceLine','Service Line',data.serviceLines,o.serviceLine)}
-            ${selectEdit('source','Lead Source',data.leadSources,o.source)}
+            ${selectEdit('serviceLine','Service Line',gwIntakeConfig().serviceLines,o.serviceLine)}
+            ${selectEdit('source','Lead Source',gwIntakeConfig().leadSources,o.source)}
             ${inputEdit('project','Project / Opportunity',o.project)}
             ${inputEdit('urgency','Urgency / Timing',o.urgency)}
             ${inputEdit('decisionMaker','Decision-Maker(s)',o.decisionMaker)}
             ${inputEdit('budget','Budget Range',o.budget)}
+            <label><span>Est. Value ($)</span><input id="gwLeadValueInput_${o.id}" type="text" inputmode="decimal" placeholder="e.g. 7500" value="${o.jobValue ? Number(o.jobValue) : ''}" onchange="window._gwSetLeadValue('${o.id}', this.value)" title="Estimated dollar value of this lead — drives the commission figure"></label>
           </div>
         </form>
       </div>
@@ -5869,12 +7287,12 @@ function opportunityDetail(id){
             Figures
           </div>
           <div class="rp-micro-grid">
-            <div class="rp-micro-stat">
-              <div class="rp-micro-stat-val${o.jobValue?' accent-green':''}">${o.jobValue ? money(Number(o.jobValue)) : '—'}</div>
-              <div class="rp-micro-stat-label">Est. Value</div>
+            <div class="rp-micro-stat" onclick="window._gwFigEditValue('${o.id}')" title="${_isSold ? 'Click to edit the final sold amount' : 'Click to edit the estimated lead value'}" style="cursor:pointer">
+              <div class="rp-micro-stat-val${gwLeadBaseValue(o)?' accent-green':''}" id="gwFigVal_${o.id}">${gwLeadBaseValue(o) ? money(gwLeadBaseValue(o)) : '—'}</div>
+              <div class="rp-micro-stat-label">${_isSold ? 'Sold @' : 'Est. Value'} <svg width="9" height="9" viewBox="0 0 14 14" fill="none" style="vertical-align:baseline;opacity:.55"><path d="M10 2l2 2-7.5 7.5L2 12l.5-2.5L10 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
             </div>
             <div class="rp-micro-stat">
-              <div class="rp-micro-stat-val${_estComm>0?' accent-green':''}">${_estComm > 0 ? money(_estComm) : '—'}</div>
+              <div class="rp-micro-stat-val${_estComm>0?' accent-green':''}" id="gwFigComm_${o.id}">${_estComm > 0 ? money(_estComm) : '—'}</div>
               <div class="rp-micro-stat-label">Commission</div>
             </div>
             <div class="rp-micro-stat">
@@ -6011,6 +7429,34 @@ function opportunityDetail(id){
       <!-- RIGHT RAIL -->
       <aside class="ld-rail rp-rail" aria-label="Lead context">
 
+        <!-- Groundwork AI Close Likelihood -->
+        ${(function(){
+          const sc = gwLeadScore(o);
+          const band = sc.pinned==='won' ? 'won' : sc.pinned==='lost' ? 'lost' : sc.score>=70 ? 'high' : sc.score>=40 ? 'mid' : 'low';
+          const clockLine = sc.clock && sc.clock.daysIn !== null && !sc.pinned
+            ? `<div class="gw-ai-clock">${sc.clock.daysIn}d in <strong>${escapeHtml(o.status||'stage')}</strong> · ~${sc.clock.expected}d expected</div>` : '';
+          const rows = sc.factors.map(f => f.base
+            ? `<div class="gw-ai-factor gw-ai-factor--base"><span>${escapeHtml(f.label)}</span><em>${f.delta}%</em></div>`
+            : `<div class="gw-ai-factor"><span>${escapeHtml(f.label)}</span><em class="${f.delta>0?'pos':f.delta<0?'neg':''}">${f.delta>0?'+':''}${f.delta}%</em></div>`
+          ).join('');
+          return `<div class="ld-rail-card gw-ai-card">
+          <div class="ld-rail-card-head">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.2 3.3L11.5 5 8.2 6.2 7 9.5 5.8 6.2 2.5 5l3.3-.7L7 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M11 9l.6 1.6 1.6.6-1.6.6L11 13.4l-.6-1.6-1.6-.6 1.6-.6L11 9z" fill="currentColor"/></svg>
+            Groundwork AI
+          </div>
+          <div class="gw-ai-body">
+            <div class="gw-ai-score-row">
+              <span class="gw-ai-score gw-ai-score--${band}">${sc.score}%</span>
+              <span class="gw-ai-score-label">Close likelihood${sc.pinned==='won'?' — deal won':sc.pinned==='lost'?' — closed out':''}</span>
+            </div>
+            <div class="gw-ai-meter"><div class="gw-ai-meter-fill gw-ai-meter--${band}" style="width:${sc.score}%"></div></div>
+            ${clockLine}
+            <div class="gw-ai-factors">${rows}</div>
+            <div class="gw-ai-footnote">Recalculates live as this lead moves through your process and new signals come in.</div>
+          </div>
+        </div>`;
+        })()}
+
         <!-- Task Panel (replaces legacy Follow-Up card) -->
         <div class="ld-rail-card" id="gwTaskRailCard_${o.id}">
           <div class="ld-rail-card-head">
@@ -6073,13 +7519,13 @@ function opportunityDetail(id){
           <div style="padding:12px 12px 4px">
             ${R.FinancialSummary({
               contractValue: o.jobValue,
-              estimateStatus: o.status==='Sold / Activation'?'paid':(o.status==='Closed Lost'?'declined':(o.jobValue?'sent':'draft')),
-              depositPaid: o.status==='Sold / Activation' ? Math.round(Number(o.jobValue)*0.30) : 0,
-              totalBilled: o.status==='Sold / Activation' ? o.jobValue : (o.jobValue ? Math.round(Number(o.jobValue)*0.30) : 0),
-              totalPaid:   o.status==='Sold / Activation' ? o.jobValue : 0,
-              balanceDue:  o.status==='Sold / Activation' ? 0 : o.jobValue,
+              estimateStatus: gwSalesIs(o,'won')?'paid':(gwSalesIs(o,'lost')?'declined':(o.jobValue?'sent':'draft')),
+              depositPaid: gwSalesIs(o,'won') ? Math.round(Number(o.jobValue)*0.30) : 0,
+              totalBilled: gwSalesIs(o,'won') ? o.jobValue : (o.jobValue ? Math.round(Number(o.jobValue)*0.30) : 0),
+              totalPaid:   gwSalesIs(o,'won') ? o.jobValue : 0,
+              balanceDue:  gwSalesIs(o,'won') ? 0 : o.jobValue,
               estimateId: o.id,
-              invoiceId:  o.status==='Sold / Activation' ? o.id : null
+              invoiceId:  gwSalesIs(o,'won') ? o.id : null
             })}
           </div>
         </div>` : ''}
@@ -6092,10 +7538,10 @@ function opportunityDetail(id){
           </div>
           <div style="padding:12px 12px 4px">
             ${R.PaymentTimeline([
-              { name:'Deposit (30%)', amount: Math.round(Number(o.jobValue)*0.30), dueDate: o.createdAt, status: o.status==='Sold / Activation'?'paid':'pending', paidDate: o.closedDate||null },
+              { name:'Deposit (30%)', amount: Math.round(Number(o.jobValue)*0.30), dueDate: o.createdAt, status: gwSalesIs(o,'won')?'paid':'pending', paidDate: o.closedDate||null },
               { name:'Progress (50%)', amount: Math.round(Number(o.jobValue)*0.50), dueDate: o.nextFollowUp||null, status: 'pending' },
               { name:'Final (20%)', amount: Math.round(Number(o.jobValue)*0.20), dueDate: null, status: 'pending' }
-            ], { invoiceId: o.status==='Sold / Activation'?o.id:null })}
+            ], { invoiceId: gwSalesIs(o,'won')?o.id:null })}
           </div>
         </div>` : ''}
 
@@ -6831,6 +8277,7 @@ function selectEdit(name,label,options,value=''){ return `<label><span>${label}<
 function saveOpportunity(id){
   const o = state.opportunities.find(x=>x.id===id); if(!o) return;
   const fd = new FormData(document.getElementById('oppForm'));
+  const beforeOpportunity = {...o, salesProcessAssignment:o.salesProcessAssignment ? {...o.salesProcessAssignment} : undefined};
 
   // COMM-14: Track commission-driving fields before save to detect material changes
   const commFields = ['workType','leadSource','jobValue','repId','collected'];
@@ -6843,7 +8290,7 @@ function saveOpportunity(id){
   // flag for reapproval so Tyler must re-review the commission amount.
   // Respects COMM-17 feature flag — autoReapprovalEnabled (default: true).
   const _commFlags = window.getCommissionFlags ? window.getCommissionFlags() : { autoReapprovalEnabled: true };
-  if (o.status === 'Sold / Activation' && _commFlags.autoReapprovalEnabled) {
+  if (gwSalesIs(o,'won') && _commFlags.autoReapprovalEnabled) {
     const changed = commFields.some(f => String(before[f]||'') !== String(o[f]||''));
     if (changed) {
       const lcStatus = window.getCommissionStatus ? window.getCommissionStatus(o) : null;
@@ -6873,7 +8320,7 @@ function saveOpportunity(id){
     if (typeof window.gwAudit === 'function') {
       window.gwAudit({ type:'lead_stage_changed', entityType:'lead', entityId:id, entityLabel:o.client||id, meta:{ from:prevStatus, to:newStatus } });
     }
-    if (newStatus === 'Sold / Activation' && typeof window.gwWorkflow === 'object') {
+    if (GWSalesProcess.didEnterOutcome(beforeOpportunity,o,'won') && typeof window.gwWorkflow === 'object') {
       window.gwWorkflow.estimateApproved({ entityId:id, entityLabel:o.client||id, client:o.client, jobValue:o.jobValue });
       window.gwWorkflow.depositReceived({ entityType:'lead', entityId:id, entityLabel:o.client||id, client:o.client, amount:Math.round(Number(o.jobValue||0)*0.3) });
     }
@@ -6899,7 +8346,7 @@ function setOppField(id,field,value){
   // Instead, update just the visible follow-up display elements.
   if (field === 'nextFollowUp') {
     const dateStr = prettyDate(value);
-    const isOvd   = value && value < todayISO() && !['Sold / Activation','Closed Lost'].includes(o.status);
+    const isOvd   = value && value < todayISO() && gwSalesIsOpen(o);
     // Rail display date
     const railDate = document.querySelector('.ld-rail-follow-date');
     if (railDate) { railDate.textContent = dateStr; railDate.classList.toggle('overdue', isOvd); }
@@ -6922,6 +8369,52 @@ function setOppField(id,field,value){
   const headerFields = ['status','repId','commissionApproved','collected'];
   if (headerFields.includes(field)) { show('pipeline', id); }
 }
+// ── Editable lead value (Est. Value) — drives commission ─────────────────────
+// Persists opp.jobValue as a Number via the same write-through path as
+// setOppField, then refreshes the Figures rail stats in place so the
+// commission recalculation is visible immediately (no full re-render,
+// which would wipe unsaved form fields).
+window._gwSetLeadValue = function(id, raw, field){
+  const o = state.opportunities.find(x=>x.id===id);
+  if(!o) return;
+  // Won leads edit the final Sold @ amount; open leads edit the estimate.
+  const f = field || (((typeof gwSalesIs === 'function') && gwSalesIs(o,'won')) ? 'soldAmount' : 'jobValue');
+  const num = Math.max(0, parseFloat(String(raw==null?'':raw).replace(/[^0-9.]/g,'')) || 0);
+  if (Number(o[f]||0) === num) { _gwRefreshLeadValueUI(o); return; }
+  o[f] = num;
+  o.updatedAt = new Date().toISOString();
+  saveState();
+  _d1SaveOpp(o);
+  _gwRefreshLeadValueUI(o);
+  showToast(num > 0
+    ? (f === 'soldAmount' ? 'Sold amount updated — final commission recalculated' : 'Lead value updated — commission recalculated')
+    : (f === 'soldAmount' ? 'Sold amount cleared' : 'Lead value cleared'));
+};
+function _gwRefreshLeadValueUI(o){
+  let comm = 0;
+  try { comm = (typeof estCommission === 'function') ? estCommission(o) : 0; } catch(e){}
+  const base = (typeof gwLeadBaseValue === 'function') ? gwLeadBaseValue(o) : Number(o.jobValue||0);
+  const valEl = document.getElementById('gwFigVal_'+o.id);
+  if (valEl){ valEl.textContent = base ? money(base) : '—'; valEl.classList.toggle('accent-green', !!base); }
+  const commEl = document.getElementById('gwFigComm_'+o.id);
+  if (commEl){ commEl.textContent = comm > 0 ? money(comm) : '—'; commEl.classList.toggle('accent-green', comm > 0); }
+  const input = document.getElementById('gwLeadValueInput_'+o.id);
+  if (input && document.activeElement !== input) input.value = o.jobValue ? Number(o.jobValue) : '';
+}
+// Click-to-edit for the Figures rail value stat (Est. Value / Sold @)
+window._gwFigEditValue = function(id){
+  const o = state.opportunities.find(x=>x.id===id); if(!o) return;
+  const el = document.getElementById('gwFigVal_'+id); if(!el) return;
+  if (el.querySelector('input')) return;
+  const isWon = (typeof gwSalesIs === 'function') && gwSalesIs(o,'won');
+  const cur = isWon ? (Number(o.soldAmount||0) || Number(o.jobValue||0) || '') : (o.jobValue ? Number(o.jobValue) : '');
+  el.innerHTML = `<input type="text" inputmode="decimal" value="${cur}" aria-label="${isWon ? 'Final sold amount' : 'Estimated lead value'}"
+    style="width:100%;max-width:110px;font:inherit;font-weight:inherit;padding:2px 6px;border:1px solid #C9D6C8;border-radius:6px;text-align:center;background:#fff"
+    onkeydown="if(event.key==='Enter'){this.blur()}"
+    onblur="window._gwSetLeadValue('${id}', this.value)">`;
+  const inp = el.querySelector('input');
+  if (inp) { inp.focus(); inp.select(); }
+};
 function duplicateOpportunity(id){
   const o = state.opportunities.find(x=>x.id===id);
   if(!o) return;
@@ -7175,7 +8668,7 @@ function wireChecks(){
 
 // ── Lead Picker Modal (shared by Scripts, Templates, Objections, Pricing) ──
 function openLeadPicker(onSelect){
-  const open = state.opportunities.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
+  const open = state.opportunities.filter(o => gwSalesIsOpen(o));
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:80px';
@@ -7236,12 +8729,16 @@ window.mergeTemplate = mergeTemplate;
 
 // ─── Sales Process ────────────────────────────────────────────────────────────
 function process(stageId){
+  if (stageId === 'builder') return salesProcessBuilder();
   const sp = data.salesProcess;
   if(stageId){ const s = data.stages.find(x=>x.id===Number(stageId)); if(s) return renderStage(s); }
   const stepColors = ['#1A4740','#2D7A55','#8B6914','#8B3A2A','#B8744F','#B8744F'];
   view.innerHTML = `
 <div class="eyebrow">Operating System</div>
-<h1 style="color:var(--ink)">Avalon Sales Process</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <h1 style="color:var(--ink);margin-bottom:0">Avalon Sales Process</h1>
+  <button class="primary-btn" onclick="show('process','builder')">Sales Process Builder</button>
+</div>
 <p class="lede">${escapeHtml(sp.subtitle)}</p>
 
 <div style="display:flex;align-items:center;gap:10px;margin:24px 0 8px">
@@ -7275,7 +8772,7 @@ function process(stageId){
 
 <div class="grid grid-3" style="gap:12px">
 ${data.stages.map(s=>{
-  const stageOpps = (state.opportunities||[]).filter(o=>o.status===s.title&&!['Sold / Activation','Closed Lost'].includes(o.status));
+  const stageOpps = (state.opportunities||[]).filter(o=>o.status===s.title&&gwSalesIsOpen(o));
   const cnt = stageOpps.length;
   return `<article class="card clickable" onclick="show('process',${s.id})" style="transition:transform .15s,box-shadow .15s"
     onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,.08)'"
@@ -7345,6 +8842,118 @@ ${data.stages.map(s=>{
   };
 }
 
+async function salesProcessBuilder(versionId){
+  view.innerHTML = '<div class="card"><h2>Sales Process</h2><p class="muted">Loading company process...</p></div>';
+  try {
+    const payload = await DB.salesProcess.get(versionId);
+    const currentRep = window.getCurrentRep ? window.getCurrentRep() : null;
+    const canEdit = Boolean(currentRep && ['admin','office_manager','sales_manager'].includes(currentRep.role));
+    window._gwBuilder = { payload, canEdit, revision:Number(payload.process?.content_revision||1) };
+    if (!payload.process) {
+      const templates = await DB.salesProcess.templates();
+      view.innerHTML = `<div class="eyebrow">Sales</div><h1>Sales Process</h1><p class="lede">Design how your pipeline works. Nothing changes on the live board until you review your leads and publish.</p>${canEdit ? `
+        <div class="spb-start-grid">
+          <article class="card spb-start-card">
+            <h2>Use my current pipeline</h2>
+            <p>Import the stage columns already on your Pipeline board and tune them from there. The fastest way to take control of your existing setup.</p>
+            <button class="primary-btn" onclick="gwStartFromCurrentPipeline()">Start with my stages</button>
+          </article>
+          <article class="card spb-start-card">
+            <h2>Start from a Groundwork template</h2>
+            <p>Proven field-service sales processes with stage guidance, checklists, and call guides built in.</p>
+            <label>Template<select id="spb-template">${templates.map(t=>`<option value="${escapeHtml(t.version_id)}">${escapeHtml(t.name)}</option>`).join('')}</select></label>
+            <label>Process name<input id="spb-new-name" value="Company Sales Process"></label>
+            <button class="secondary-btn" onclick="gwAdoptSelectedTemplate()">Create draft from template</button>
+          </article>
+        </div>` : '<div class="card"><p class="muted">Administrators and sales managers can create drafts. Representatives have read-only access to published definitions.</p></div>'}`;
+      return;
+    }
+    const p=payload.process, stages=payload.stages||[];
+    const isDraft = p.lifecycle==='draft';
+    const isPublished = p.lifecycle==='published';
+    const editable = canEdit && (isDraft || isPublished);
+    const mig = payload.latest_migration || null;
+    if (mig && mig.batch_id && isDraft) window._gwRestaging = Object.assign(window._gwRestaging||{}, { batchId: mig.batch_id, versionId: p.id });
+    const panel = (title, body, key='') => `<section class="spb-panel card" data-panel="${escapeHtml(key||title)}" style="display:none"><h2>${escapeHtml(title)}</h2>${body}</section>`;
+    const dis = editable ? '' : 'disabled';
+    const semanticOptions=[['intake','Intake - new leads start here'],['active_qualification','Qualifying - actively working the lead'],['consultation','Consultation - meeting or site visit'],['estimate_development','Estimating - building the quote'],['proposal_presentation','Presenting - proposal in front of the customer'],['decision','Decision - waiting on the customer'],['terminal','Closed - final stage, records won or lost'],['won','Won - closed successfully'],['lost','Lost - closed without the job'],['disqualified','Disqualified - not a fit'],['nurture','Nurture - long-term follow-up']];
+    const stageRows=stages.map((s,i)=>`<div class="spb-stage-row spb-stage-card" data-id="${escapeHtml(s.id)}">
+      <div class="spb-stage-card-head"><span class="spb-stage-num" aria-hidden="true"></span>
+        <div class="spb-field spb-field-grow"><label>Stage name</label><input name="display_name" value="${escapeHtml(s.display_name)}" placeholder="What this step is called on the board" ${dis}></div>
+        <div class="spb-field"><label>Stage type</label><select name="semantic_type" ${dis}>${semanticOptions.map(([x,l])=>`<option value="${x}" ${x===s.semantic_type?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="spb-field spb-field-narrow"><label>Typical days</label><input name="expected_duration_days" type="number" min="0" value="${Number(s.expected_duration_days||0)}" ${dis}></div>
+        <div class="spb-field"><label>Status</label><select name="state" ${dis}><option value="active" ${s.state==='active'?'selected':''}>Active</option><option value="archived" ${s.state==='archived'?'selected':''}>Archived</option></select></div>
+      </div>
+      <div class="spb-field"><label>Customer milestone</label><input name="customer_milestone" value="${escapeHtml(s.customer_milestone||'')}" placeholder="What the customer sees or receives at this step" ${dis}></div>
+      <div class="spb-stage-card-guidance">
+        <div class="spb-field"><label>Entry guidance</label><textarea name="entry_guidance" placeholder="What should be true before a lead lands here" ${dis}>${escapeHtml(s.entry_guidance||'')}</textarea></div>
+        <div class="spb-field"><label>Exit guidance</label><textarea name="exit_guidance" placeholder="What must be done before the lead moves on" ${dis}>${escapeHtml(s.exit_guidance||'')}</textarea></div>
+      </div>
+      ${editable?`<div class="spb-stage-card-actions"><button class="secondary-btn" onclick="gwMoveBuilderStage(this,-1)" aria-label="Move stage up">Move up</button><button class="secondary-btn" onclick="gwMoveBuilderStage(this,1)" aria-label="Move stage down">Move down</button><button class="secondary-btn" onclick="gwDuplicateBuilderStage(this)">Duplicate</button><button class="secondary-btn spb-remove-btn" onclick="gwRemoveBuilderStage(this)" aria-label="Remove stage">Remove</button></div>`:''}
+    </div>`).join('');
+    const componentPanel=(title,key,items,fields,hint)=>panel(title,`${hint?`<p class="spb-step-hint">${hint}</p>`:''}<div class="spb-component" data-component="${key}">${items.map(item=>gwBuilderComponentRow(key,item,fields,stages,payload)).join('')||'<p class="muted spb-empty">Nothing here yet. Use the add button below to create the first one.</p>'}</div>${editable?`<div class="button-row"><button class="secondary-btn" onclick="gwAddBuilderComponent('${key}')">Add ${escapeHtml(title.replace(/s$/,''))}</button><button class="primary-btn" onclick="gwSaveBuilderComponent('${key}')">${isPublished?'Save to live process':'Save '+escapeHtml(title)}</button></div>`:'<p class="muted">Only administrators and sales managers can edit these definitions.</p>'}`,key);
+    const requirementFields=[['stage_id','Stage','stage'],['requirement_type','Type','select:field|checklist|estimate|condition'],['stable_key','Stable key','text'],['label','Label','text'],['description','Guidance','text'],['required_level','Requirement level','select:entry|exit|required|recommended|optional|manager_review']];
+    const steps=isDraft?[
+      {key:'stages',   num:1, label:'Design Stages'},
+      {key:'migrate',  num:2, label:'Move Your Leads'},
+      {key:'publish',  num:3, label:'Go Live'}
+    ]:[
+      {key:'stages',   num:1, label:'Edit Stages'},
+      {key:'publish',  num:2, label:'History & Rollback'}
+    ];
+    const advanced=[
+      ['overview','Process Overview'],['internal_statuses','Internal Statuses'],['requirements','Qualification Fields'],
+      ['guides','Call Guides'],['automations','Automations'],
+      ['resources','Email Templates'],['academy','Academy Training']
+    ];
+    const lifecycleBadge = isDraft ? '<span class="badge">Draft - live board unchanged</span>' : (p.lifecycle==='published' ? '<span class="badge success">Live process</span>' : `<span class="badge">${escapeHtml(p.lifecycle)}</span>`);
+    view.innerHTML=`<div class="eyebrow">Sales</div><div class="spb-heading"><div><h1>Sales Process</h1><p class="lede">${escapeHtml(p.name||'Company Sales Process')} - Version ${Number(p.version_number||1)}</p></div><div class="spb-heading-badges">${lifecycleBadge}</div></div>
+      ${isPublished&&canEdit?`<div class="card spb-live-note"><p><strong>You are editing your live process.</strong> Changes save straight to the Pipeline board - renames carry your leads with them, and new stages appear as new columns. For a bigger restructure (removing stages that hold leads, or moving many leads at once), start a new draft and use the guided lead review.</p><div class="button-row"><button class="secondary-btn" onclick="if(confirm('Create a new draft copied from your live stages? Your live process keeps working until you publish the draft.'))gwStartFromCurrentPipeline()">Start a new draft for a bigger restructure</button></div></div>`:''}
+      <div class="spb-steps" role="tablist">${steps.map((s,i)=>`<button class="spb-step ${i===0?'spb-step--active':''}" data-step="${s.key}" role="tab" onclick="gwBuilderStep('${s.key}',this)"><span class="spb-step-num">${s.num}</span>${s.label}</button>`).join('')}
+        <select class="spb-adv-select" onchange="if(this.value){gwBuilderStep(this.value)}this.selectedIndex=0" aria-label="Advanced tools"><option value="">Advanced tools</option>${advanced.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></div>
+      ${panel(isDraft?'Design Stages':'Edit Stages',`<p class="spb-step-hint">${isDraft?'These become the columns on your Pipeline board when you publish. Rename, reorder, add, or archive stages. Give each stage a type so reporting knows what it means - intake comes first, and at least one closing stage records won or lost.':'These are the live columns on your Pipeline board. Rename a stage and every lead in it follows the new name. Reorder, add, or adjust guidance and it applies the moment you save. Splitting a closing stage works too: archive it and add stages typed Won and Lost - each closed lead moves to the stage matching its recorded outcome. Other stages that hold leads cannot be removed here - move those leads on the board first, or start a new draft.'}</p><div id="spb-stage-list">${stageRows}</div>${editable?`<div class="button-row"><button class="secondary-btn" onclick="gwAddBuilderStage()">Add stage</button><button class="primary-btn" onclick="gwSaveBuilderStages()">${isPublished?'Save changes to live process':'Save stages'}</button></div>`:''}`,'stages')}
+      ${panel('Move Your Leads',`<p class="spb-step-hint">Every current lead needs a home in the new process before you can go live. Most are matched automatically; you confirm the rest. Nothing moves on the live board until you publish in step 3.</p>${canEdit&&isDraft?(mig&&mig.batch_id?`<div class="card" style="margin-bottom:12px"><p><strong>${mig.snapshot_approved?'Your lead review is complete and locked in.':(Number(mig.pending)?`${Number(mig.pending)} of ${Number(mig.total)} leads still need review.`:'All leads are reviewed. Capture and approve the snapshot to lock in the plan.')}</strong></p><div class="button-row"><button class="primary-btn" onclick="gwRenderRestagingWorkspace('${escapeHtml(mig.batch_id)}','${escapeHtml(p.id)}')">${mig.snapshot_approved?'View reviewed leads':'Resume lead review'}</button><button class="secondary-btn" onclick="if(confirm('Start over? This discards the current review progress and re-matches every lead.'))gwCreateMigrationProposal('${escapeHtml(p.id)}')">Start over with a fresh match</button></div>${mig.snapshot_approved?'<p class="muted">Ready for step 3: Go Live. Re-matching would discard this approval.</p>':''}</div>`:`<div class="button-row"><button class="primary-btn" onclick="gwCreateMigrationProposal('${escapeHtml(p.id)}')">Match my current leads</button></div><p class="muted">After reviewing every lead, capture and approve the snapshot at the top of the review list. That locks in the plan for publishing.</p>`):'<p class="muted">Lead mapping is available while a draft is being prepared.</p>'}`,'migrate')}
+      ${panel(isDraft?'Go Live':'History & Rollback',`<p class="spb-step-hint">${isDraft?'Publishing replaces the live pipeline: board columns become your new stages, every reviewed lead moves to its new home, and new leads start in the first stage. You can roll back afterwards if needed.':'Every version and publication is recorded here. Rolling back reactivates the previous version and restores its stage layout - notes, activities, estimates, and communications are always preserved.'}</p><div class="button-row">${canEdit&&isDraft?`<button class="secondary-btn" onclick="gwValidateSalesProcess('${escapeHtml(p.id)}')">Check for problems</button><button class="primary-btn" onclick="gwPreviewSalesProcess()">Preview and publish</button>`:''}</div><h3>Version history</h3>${(payload.versions||[]).map(v=>`<div class="spb-version"><strong>Version ${Number(v.version_number)}</strong><span>${escapeHtml(v.lifecycle)}</span></div>`).join('')}<h3>Publication history</h3>${(payload.publications||[]).map(pub=>`<div class="spb-version"><div><strong>${escapeHtml(pub.action)}</strong><small> ${escapeHtml(pub.created_at||'')} by ${escapeHtml(pub.actor_id||'')}</small></div>${canEdit&&pub.action==='publish'&&pub.previous_version_id?`<button class="secondary-btn" onclick="gwRollbackPublication('${escapeHtml(pub.id)}','${escapeHtml(pub.previous_version_id)}')">Rollback</button>`:''}</div>`).join('')||'<p class="muted">No publication events.</p>'}`,'publish')}
+      ${panel('Process Overview',`<p class="spb-step-hint">A quick summary of this process version. Everything in Groundwork - the Pipeline board, Stage Guide, Call Companion, Academy, and reporting - follows this one definition.</p><div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Active stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Access</strong><p>${editable?(isPublished?'Live editing enabled':'Editable draft'):'Read only'}</p></div></div><p>${escapeHtml(p.description||'Shared process definition for Pipeline, Stage Guide, Call Companion, Academy, reporting, and automation.')}</p>`,'overview')}
+      ${componentPanel('Internal Statuses','internal_statuses',payload.internal_statuses||[],[['stage_id','Stage','stage'],['stable_key','Stable key','text'],['display_name','Status name','text']],'Optional sub-statuses inside a stage, such as "Left voicemail" or "Second attempt". Representatives use them to note where a lead sits without moving it to another column.')}
+      ${componentPanel('Qualification Fields','requirements',(payload.requirements||[]).filter(x=>x.requirement_type==='field'),requirementFields,'The questions your team must answer before a lead can advance. Attach each field to a stage and choose how strictly it is enforced - from a friendly recommendation to a manager review.')}
+      ${componentPanel('Call Guides','guides',payload.guides||[],[['stage_id','Stage','stage'],['interaction_type','Interaction','text'],['title','Title','text'],['purpose','Purpose','text'],['suggested_language','Suggested language','textarea'],['completion_guidance','Completion guidance','textarea']],'Talk tracks for each stage. These appear in the Call Companion so representatives always know the purpose of the conversation and the words that work.')}
+      ${componentPanel('Automations','automations',payload.automations||[],[['stage_id','Stage','stage'],['name','Name','text'],['trigger_type','Trigger','select:stage_entered|stage_aging|outcome_recorded|requirement_completed'],['action_type','Suggested action','select:suggest_task|suggest_manager_review|suggest_email'],['active','Active','checkbox']],'Gentle nudges tied to stage activity - suggest a task, a manager review, or an email when a lead enters a stage, sits too long, or records an outcome.')}
+      ${componentPanel('Email Templates','resources',(payload.resources||[]).filter(x=>x.resource_type==='email_template'),[['stage_id','Stage','stage'],['stable_key','Stable key','text'],['name','Template name','text'],['content_json','Subject and body configuration','textarea']],'Ready-to-send emails linked to a stage. Representatives pick them up from the lead record so follow-ups stay consistent.')}
+      ${componentPanel('Academy Training','academy',payload.academy_associations||[],[['stage_id','Stage','stage'],['skill_id','Academy skill','skill'],['visibility','Visibility','select:representative|manager|administrator']],'Connect Academy skills to stages so training shows up exactly where the work happens.')}
+      <div id="spb-action-result" aria-live="polite" class="muted"></div>`;
+    gwBuilderStep('stages');
+  } catch(e){ view.innerHTML=`<div class="card danger"><h2>Sales Process unavailable</h2><p>${escapeHtml(e.message||String(e))}</p></div>`; }
+}
+function gwBuilderComponentRow(key,item,fields,stages,payload){
+  return `<div class="spb-component-row" data-id="${escapeHtml(item.id||'')}">${fields.map(([name,label,type])=>{const value=item[name]??'';if(type==='stage')return `<label>${label}<select name="${name}">${stages.map(s=>`<option value="${escapeHtml(s.id)}" ${s.id===value?'selected':''}>${escapeHtml(s.display_name)}</option>`).join('')}</select></label>`;if(type==='skill')return `<label>${label}<select name="${name}">${(payload.academy_skills||[]).map(s=>`<option value="${escapeHtml(s.id)}" ${s.id===value?'selected':''}>${escapeHtml(s.title)}</option>`).join('')}</select></label>`;if(type.startsWith('select:'))return `<label>${label}<select name="${name}">${type.slice(7).split('|').map(x=>`<option ${String(value)===x?'selected':''}>${x}</option>`).join('')}</select></label>`;if(type==='textarea')return `<label>${label}<textarea name="${name}">${escapeHtml(String(value))}</textarea></label>`;if(type==='checkbox')return `<label><input type="checkbox" name="${name}" ${Number(value)!==0?'checked':''}> ${label}</label>`;return `<label>${label}<input name="${name}" value="${escapeHtml(String(value))}"></label>`}).join('')}<button class="secondary-btn" onclick="this.closest('.spb-component-row').remove()">Remove</button></div>`;
+}
+window.salesProcessBuilder=salesProcessBuilder;
+window.gwBuilderTab=function(button,index){document.querySelectorAll('.spb-panel').forEach((x,j)=>x.style.display=j===index?'block':'none');document.querySelectorAll('.spb-tabs .tab').forEach(x=>x.classList.remove('active'));button.classList.add('active')};
+window.gwBuilderStep=function(key){document.querySelectorAll('.spb-panel').forEach(x=>{x.style.display=x.dataset.panel===key?'block':'none'});document.querySelectorAll('.spb-step').forEach(x=>x.classList.toggle('spb-step--active',x.dataset.step===key));};
+window.gwStartFromCurrentPipeline=async function(){const rep=window.getCurrentRep?window.getCurrentRep():null;if(!rep||!['admin','office_manager','sales_manager'].includes(rep.role)){alert('Administrator access is required.');return}try{const result=await DB.salesProcess.fromCurrentPipeline('Company Sales Process');await salesProcessBuilder(result.version_id);if(window.showToast)window.showToast('Draft created from your current pipeline stages')}catch(e){alert(`Could not create a draft from the current pipeline. ${e.message||e}`)}};
+window.gwAdoptSelectedTemplate=async function(){const id=document.getElementById('spb-template').value,name=document.getElementById('spb-new-name').value.trim();const result=await DB.salesProcess.adoptTemplate(id,name);await salesProcessBuilder(result.version_id)};
+window.gwMoveBuilderStage=function(button,direction){const row=button.closest('.spb-stage-row'),other=direction<0?row.previousElementSibling:row.nextElementSibling;if(other)row.parentElement.insertBefore(direction<0?row:other,direction<0?other:row)};
+window.gwDuplicateBuilderStage=function(button){const row=button.closest('.spb-stage-row'),copy=row.cloneNode(true);copy.dataset.id='';copy.querySelector('[name=display_name]').value+=' Copy';row.after(copy)};
+window.gwAddBuilderStage=function(){const list=document.getElementById('spb-stage-list'),source=list.lastElementChild,copy=source.cloneNode(true);copy.dataset.id='';copy.querySelector('[name=display_name]').value='New stage';copy.querySelector('[name=semantic_type]').value='active_qualification';copy.querySelectorAll('textarea').forEach(x=>x.value='');list.append(copy)};
+window.gwRemoveBuilderStage=function(button){const row=button.closest('.spb-stage-row'),list=row.parentElement;if(list.querySelectorAll('.spb-stage-row').length<=2){alert('A process needs at least two stages, so this one cannot be removed.');return}if(row.dataset.id&&!confirm('Remove this stage? A stage that still holds leads cannot be removed - move those leads on the Pipeline board first, then save.'))return;row.remove()};
+window.gwSaveBuilderStages=async function(){const b=window._gwBuilder;const isLive=b.payload.process.lifecycle==='published';const stages=[...document.querySelectorAll('.spb-stage-row')].map((row,i)=>{const original=(b.payload.stages||[]).find(x=>x.id===row.dataset.id)||{};const read=n=>row.querySelector(`[name=${n}]`).value;return {...original,id:row.dataset.id,stable_key:original.stable_key||`stage_${Date.now()}_${i}`,display_name:read('display_name').trim(),semantic_type:read('semantic_type'),expected_duration_days:Number(read('expected_duration_days')),customer_milestone:read('customer_milestone'),entry_guidance:read('entry_guidance'),exit_guidance:read('exit_guidance'),state:read('state')}});try{const result=isLive?await DB.salesProcess.saveLiveStages(b.payload.process.id,stages,b.revision):await DB.salesProcess.saveStages(b.payload.process.id,stages,b.revision);b.revision=result.content_revision;if(isLive){window._gwSalesProcess=null;if(Array.isArray(result.pipeline_stages)&&result.pipeline_stages.length)window._gwPipelineStages=result.pipeline_stages;const moved=Number(result.redistributed_leads||0);if(window.showToast)window.showToast(moved?`Live process updated - ${moved} closed lead${moved>1?'s':''} moved to the matching outcome stage`:'Live process updated - the Pipeline board follows your changes')}await salesProcessBuilder(b.payload.process.id)}catch(e){const msg=String(e.message||e);if(msg.includes('409')||msg.includes('changed since'))alert('This process changed in another session. Reload before saving.');else alert(`Could not save stages. ${msg}`)}};
+window.gwAddBuilderComponent=function(key){const b=window._gwBuilder,container=document.querySelector(`.spb-component[data-component="${key}"]`),templates={internal_statuses:[['stage_id','Stage','stage'],['stable_key','Stable key','text'],['display_name','Status name','text']],requirements:[['stage_id','Stage','stage'],['requirement_type','Type','select:field|checklist|estimate|condition'],['stable_key','Stable key','text'],['label','Label','text'],['description','Guidance','text'],['required_level','Requirement level','select:entry|exit|required|recommended|optional|manager_review']],guides:[['stage_id','Stage','stage'],['interaction_type','Interaction','text'],['title','Title','text'],['purpose','Purpose','text'],['suggested_language','Suggested language','textarea'],['completion_guidance','Completion guidance','textarea']],automations:[['stage_id','Stage','stage'],['name','Name','text'],['trigger_type','Trigger','select:stage_entered|stage_aging|outcome_recorded|requirement_completed'],['action_type','Draft-only action','select:suggest_task|suggest_manager_review|suggest_email'],['active','Active','checkbox']],resources:[['stage_id','Stage','stage'],['stable_key','Stable key','text'],['name','Template name','text'],['content_json','Subject and body configuration','textarea']],academy:[['stage_id','Stage','stage'],['skill_id','Academy skill','skill'],['visibility','Visibility','select:representative|manager|administrator']]};container.insertAdjacentHTML('beforeend',gwBuilderComponentRow(key,{active:1,resource_type:key==='resources'?'email_template':'',requirement_type:key==='requirements'?'field':''},templates[key],b.payload.stages,b.payload))};
+window.gwSaveBuilderComponent=async function(key){const b=window._gwBuilder,isLive=b.payload.process.lifecycle==='published',containers=[...document.querySelectorAll(`.spb-component[data-component="${key}"]`)];const items=containers.flatMap(container=>[...container.querySelectorAll('.spb-component-row')]).map((row,index)=>{const original=[...(b.payload[key]||[]),...(key==='academy'?b.payload.academy_associations||[]:[])].find(x=>x.id===row.dataset.id)||{};const item={...original,id:row.dataset.id,display_order:index+1};row.querySelectorAll('input,select,textarea').forEach(el=>item[el.name]=el.type==='checkbox'?(el.checked?1:0):el.value);if(key==='resources')item.resource_type='email_template';return item});if(key==='requirements'){const preserved=(b.payload.requirements||[]).filter(x=>x.requirement_type!=='field');preserved.forEach((x,i)=>items.push({...x,display_order:items.length+1}))}try{const result=isLive?await DB.salesProcess.saveLiveComponents(b.payload.process.id,key,items,b.revision):await DB.salesProcess.saveComponents(b.payload.process.id,key,items,b.revision);b.revision=result.content_revision;if(isLive){window._gwSalesProcess=null;if(window.showToast)window.showToast('Live process updated')}await salesProcessBuilder(b.payload.process.id)}catch(e){const msg=String(e.message||e);if(msg.includes('409')||msg.includes('changed since'))alert('This process changed in another session. Reload before saving.');else alert(`Could not save. ${msg}`)}};
+window.gwRollbackPublication=async function(publicationId,previousVersionId){const rep=window.getCurrentRep?window.getCurrentRep():null;if(!rep||!['admin','office_manager','sales_manager'].includes(rep.role)){alert('Administrator access is required.');return}if(!confirm(`Reactivate the previous process version ${previousVersionId}? Later notes, activities, estimates, appointments, and communications will be preserved.`))return;const result=await DB.salesProcess.rollback(publicationId);window._gwSalesProcess=null;window._gwAcademyPlaybookLoaded=false;try{if(DB.pipelineStages&&DB.pipelineStages.list){const refreshed=await DB.pipelineStages.list();if(Array.isArray(refreshed)&&refreshed.length)window._gwPipelineStages=refreshed}}catch(_){}await salesProcessBuilder(result.rolled_back_to);if(window.showToast)window.showToast(`Rolled back to ${result.rolled_back_to}`)};
+window.gwPreviewSalesProcess=async function(){const b=window._gwBuilder,batchId=window._gwRestaging?.batchId||'';const host=document.getElementById('spb-action-result');host.innerHTML='<p>Loading immutable preview and publication gates...</p>';try{const [preview,readiness]=await Promise.all([DB.salesProcess.preview(b.payload.process.id,batchId),DB.salesProcess.readiness(b.payload.process.id,batchId)]);const impact=preview.impact||{},mappings=impact.mappings||{};host.innerHTML=`<section class="spb-preview"><div class="spb-preview-heading"><div><strong>Immutable draft preview</strong><p>No live opportunity was changed.</p></div><span class="badge ${readiness.ready?'success':'warn'}">${readiness.ready?'Ready to publish':'Gates incomplete'}</span></div><div class="spb-preview-grid"><article><strong>${Number(impact.opportunities_affected||0)}</strong><span>Opportunities affected</span></article><article><strong>${money(Number(impact.value_affected||0))}</strong><span>Value affected</span></article><article><strong>${Number(mappings.automatic||0)}</strong><span>Automatic mappings</span></article><article><strong>${Number(mappings.manual||0)}</strong><span>Manual mappings</span></article><article><strong>${Number(mappings.unknown||0)}</strong><span>Unknown mappings</span></article></div><h4>Pipeline and mobile order</h4><ol class="spb-preview-stages">${(preview.stages||[]).map(stage=>`<li><strong>${escapeHtml(stage.display_name)}</strong><span>${escapeHtml(stage.semantic_type)}</span></li>`).join('')}</ol><h4>Sample transitions</h4><div class="spb-preview-transitions">${(preview.sample_transitions||[]).map(path=>`<p>${escapeHtml(path.from_stage_name)} to ${escapeHtml(path.to_stage_name)}${path.outcome_type?` (${escapeHtml(path.outcome_type)})`:''}${Number(path.requires_override)?' - manager override':''}</p>`).join('')||'<p>No transition samples configured.</p>'}</div><h4>Preview surfaces</h4><p>${(preview.surfaces||[]).map(escapeHtml).join(', ')}</p><h4>Impact changes</h4><p>Reporting stages: ${Number(impact.reporting_changes||0)}; automations: ${(impact.automation_changes||[]).length}; training associations: ${(impact.training_changes||[]).length}.</p>${readiness.ready?`<button class="primary-btn" onclick="gwPublishSalesProcess('${escapeHtml(batchId)}')">Approve and publish</button>`:`<ul class="spb-gate-list">${(readiness.issues||[]).map(issue=>`<li>${escapeHtml(issue.code)}${issue.opportunity_id?`: ${escapeHtml(issue.opportunity_id)}`:''}</li>`).join('')}</ul>`}</section>`}catch(e){host.textContent=e.message||String(e)}};
+window.gwPublishSalesProcess=async function(batchId){const b=window._gwBuilder,rep=window.getCurrentRep?window.getCurrentRep():null;if(!rep||!['admin','office_manager','sales_manager'].includes(rep.role)){alert('Administrator approval is required.');return}const readiness=await DB.salesProcess.readiness(b.payload.process.id,batchId);if(!readiness.ready){alert('Publication gates are incomplete. Preview the issues before publishing.');return}if(!confirm('Publish this approved immutable sales process and apply every reviewed mapping?'))return;try{const result=await DB.salesProcess.publish(b.payload.process.id,batchId);window._gwSalesProcess=null;window._gwAcademyPlaybookLoaded=false;if(Array.isArray(result.pipeline_stages)&&result.pipeline_stages.length)window._gwPipelineStages=result.pipeline_stages;await salesProcessBuilder(result.published);if(window.showToast)window.showToast(`Published ${result.published}`)}catch(e){alert(`Publication failed. The previous active version was preserved. ${e.message||e}`)}};
+window.gwAdoptGroundworkTemplate=async function(){const result=await DB.salesProcess.adoptTemplate('tpl_groundwork_field_service_v2','Groundwork Field-Service Sales');await salesProcessBuilder(result.version_id)};
+window.gwValidateSalesProcess=async function(versionId){const result=await DB.salesProcess.validate(versionId);const el=document.getElementById('spb-action-result');if(el)el.textContent=result.valid?`Validation passed with ${result.warnings.length} warning(s).`:`Validation failed: ${result.errors.join('; ')}`};
+window.gwCreateMigrationProposal=async function(versionId){const result=await DB.salesProcess.propose(versionId);const el=document.getElementById('spb-action-result');if(el)el.textContent=`Mapping batch ${result.migration_batch_id} created. ${result.pending} of ${result.total} records require review. No live records were changed.`;await gwRenderRestagingWorkspace(result.migration_batch_id,versionId)};
+window.gwRenderRestagingWorkspace=async function(batchId,versionId){const [mappings,inventory,process]=await Promise.all([DB.salesProcess.mappings(batchId),DB.salesProcess.inventory(),DB.salesProcess.get(versionId)]);window._gwRestaging={batchId,versionId,mappings,inventory,stages:process.stages||[]};const host=document.getElementById('spb-action-result')||view;const reps=[...new Set(mappings.map(x=>x.assigned_to_rep_id||x.rep_id).filter(Boolean))];host.innerHTML=`<div class="spb-restaging"><h3>Needs Restaging</h3><div class="button-row"><label>Representative<select id="restage-rep" onchange="gwFilterRestaging()"><option value="">All</option>${reps.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select></label><label>Previous stage<select id="restage-previous" onchange="gwFilterRestaging()"><option value="">All</option>${[...new Set(mappings.map(x=>x.previous_label))].map(x=>`<option>${escapeHtml(x||'(blank)')}</option>`).join('')}</select></label><label>Review state<select id="restage-state" onchange="gwFilterRestaging()"><option value="">All</option><option>pending</option><option>approved</option></select></label><button class="secondary-btn" onclick="gwBulkApproveRestaging()">Approve high confidence</button><button class="primary-btn" onclick="gwApproveRestagingSnapshot()">Capture and approve snapshot</button></div><div id="restage-count"></div><div id="restage-rows">${mappings.map((m,i)=>gwRestagingRow(m,i,process.stages||[])).join('')}</div><pre class="muted">${escapeHtml(JSON.stringify(inventory.reconciliation||{},null,2))}</pre></div>`;gwFilterRestaging()};
+function gwRestagingRow(m,index,stages){const selected=m.final_stage_id||m.proposed_stage_id||'';return `<article class="spb-restaging-row" data-index="${index}" data-rep="${escapeHtml(m.assigned_to_rep_id||m.rep_id||'')}" data-previous="${escapeHtml(m.previous_label||'(blank)')}" data-state="${escapeHtml(m.review_state)}"><div><strong>${escapeHtml(m.client||'Unknown customer')}</strong><p>Original stage: ${escapeHtml(m.previous_label||'(blank)')}</p><p>${escapeHtml(m.suggestion_reason||'No suggestion reason')} - Confidence ${Math.round(Number(m.mapping_confidence||0)*100)}%</p></div><div><p>Representative: ${escapeHtml(m.assigned_to_rep_id||m.rep_id||'Unassigned')}</p><p>Last activity: ${escapeHtml(m.last_activity||'Unknown')} - Next follow-up: ${escapeHtml(m.next_follow_up||'None')}</p><p>Estimate: ${escapeHtml(m.estimate_status||'Unknown')} ${escapeHtml(m.estimate_sent_date||'')} - Appointments: ${Number(m.appointment_count||0)} - Value: ${money(Number(m.job_value||0))}</p><p>${escapeHtml(m.notes_preview||'No notes preview')}</p></div><label>Suggested stage<select class="restage-stage"><option value="" ${selected?'':'selected'}>Needs review - select a stage</option>${stages.map(s=>`<option value="${escapeHtml(s.id)}" ${s.id===selected?'selected':''}>${escapeHtml(s.display_name)}</option>`).join('')}</select></label><label>Outcome<select class="restage-outcome"><option value="">Open</option>${['won','lost','disqualified','nurture'].map(x=>`<option ${m.final_outcome_type===x?'selected':''}>${x}</option>`).join('')}</select></label><button class="primary-btn" onclick="gwSaveRestaging(${index})">Save and Next</button></article>`}
+window.gwFilterRestaging=function(){const rep=document.getElementById('restage-rep')?.value||'',previous=document.getElementById('restage-previous')?.value||'',state=document.getElementById('restage-state')?.value||'';let visible=0;document.querySelectorAll('.spb-restaging-row').forEach(row=>{const show=(!rep||row.dataset.rep===rep)&&(!previous||row.dataset.previous===previous)&&(!state||row.dataset.state===state);row.style.display=show?'grid':'none';if(show)visible++});const remaining=(window._gwRestaging?.mappings||[]).filter(x=>x.review_state!=='approved').length;const el=document.getElementById('restage-count');if(el)el.textContent=`${visible} shown - ${remaining} remaining`};
+window.gwSaveRestaging=async function(index){const r=window._gwRestaging,m=r.mappings[index],row=document.querySelector(`.spb-restaging-row[data-index="${index}"]`),stageId=row.querySelector('.restage-stage').value;if(!stageId){alert('Select a reviewed stage before approving this opportunity.');return}await DB.salesProcess.approveMapping(r.batchId,m.opportunity_id,stageId,row.querySelector('.restage-outcome').value);m.review_state='approved';row.dataset.state='approved';const next=[...document.querySelectorAll('.spb-restaging-row')].find(x=>x.dataset.state!=='approved'&&x.style.display!=='none');if(next)next.scrollIntoView({behavior:'smooth',block:'center'});gwFilterRestaging()};
+window.gwBulkApproveRestaging=async function(){const r=window._gwRestaging;for(const m of r.mappings.filter(x=>x.review_state!=='approved'&&Number(x.mapping_confidence)>=.9&&x.proposed_stage_id)){await DB.salesProcess.approveMapping(r.batchId,m.opportunity_id,m.proposed_stage_id,m.proposed_outcome_type||'');m.review_state='approved'}await gwRenderRestagingWorkspace(r.batchId,r.versionId)};
+
+window.gwApproveRestagingSnapshot=async function(){const r=window._gwRestaging;if(r.mappings.some(x=>x.review_state!=='approved')){alert('Every opportunity must be reviewed before snapshot approval.');return}const snapshot=await DB.salesProcess.captureSnapshot(r.versionId,r.batchId);await DB.salesProcess.approveSnapshot(snapshot.snapshot_id);const preview=await DB.salesProcess.preview(r.versionId,r.batchId);const host=document.getElementById('restage-count');if(host)host.innerHTML=`<strong>Approved snapshot ${escapeHtml(snapshot.snapshot_id)}</strong><p>${Number(preview.impact.opportunities_affected)} opportunities and ${money(Number(preview.impact.value_affected||0))} affected. Automatic: ${Number(preview.impact.mappings.automatic)}; manual: ${Number(preview.impact.mappings.manual)}; unknown: ${Number(preview.impact.mappings.unknown)}.</p><p>Preview surfaces: ${preview.surfaces.map(escapeHtml).join(', ')}</p>`};
+
 function renderStage(s){
   const stageChecklist = (window.AVALON_DATA.checklists||[]).find(c=>c.stage===s.id);
   view.innerHTML = `
@@ -7374,7 +8983,7 @@ function renderStage(s){
 <div class="card danger mt"><h3>Red Flags — Do Not Advance Until Resolved</h3>${list(s.redFlags)}</div>
 ${stageChecklist?`<div class="card mt"><h3>${escapeHtml(stageChecklist.title)}</h3><p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">Check off items as you work through this stage. Progress saves automatically.</p>${renderChecklist(stageChecklist, true)}</div>`:''}
 ${(()=>{
-  const atStage=(state.opportunities||[]).filter(o=>o.status===s.title&&!['Sold / Activation','Closed Lost'].includes(o.status));
+  const atStage=(state.opportunities||[]).filter(o=>o.status===s.title&&gwSalesIsOpen(o));
   if(!atStage.length) return '';
   return `<div class="card mt" style="border-left:3px solid var(--blue)"><h3 style="color:var(--blue);margin-bottom:10px">${atStage.length} Lead${atStage.length>1?'s':''} at This Stage</h3>
     <div style="display:flex;flex-direction:column;gap:6px">${atStage.slice(0,5).map(o=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;cursor:pointer;transition:background .15s" onclick="show('pipeline','${o.id}')" onmouseenter="this.style.background='var(--line)'" onmouseleave="this.style.background='var(--surface)'">
@@ -7903,7 +9512,7 @@ function ai(){
     { id:'custom',          label:'Custom Situation',               icon: gwIcon('ai-spark',18,'#fff'), color:'#6F7E6A' },
   ];
 
-  const openLeads = (state.opportunities||[]).filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status));
+  const openLeads = (state.opportunities||[]).filter(o=>gwSalesIsOpen(o));
 
   view.innerHTML = `
 <div class="eyebrow">AI-Powered Sales</div>
@@ -8319,7 +9928,7 @@ const SVG_TEAM = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 const SVG_NOTE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
 const SVG_STAR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
 
-function academy(param) {
+async function academy(param) {
   if (!window.Academy) {
     view.innerHTML = `<div class="card mt"><p style="color:var(--muted)">Academy engine loading…</p></div>`;
     return;
@@ -8335,6 +9944,10 @@ function academy(param) {
       const rep = window.getCurrentRep ? window.getCurrentRep() : null;
       if (!rep || rep.role !== 'admin') { academy(); return; }
       return academyAdminDashboard();
+    }
+    if (window.DB && DB.salesProcess && !window._gwAcademyPlaybookLoaded) {
+      try { window._gwAcademyPlaybook = await DB.salesProcess.playbook(); } catch (_) { window._gwAcademyPlaybook = null; }
+      window._gwAcademyPlaybookLoaded = true;
     }
     return academyHome();
   } catch(e) {
@@ -8729,6 +10342,8 @@ function academyHome() {
     ? Math.min(100, Math.round(((hd.points - level.minPoints) / (nextLevel.minPoints - level.minPoints)) * 100))
     : 100;
   const isAdmin = rep && (rep.role === 'admin' || rep.role === 'office_manager');
+  const companyPlaybook = window._gwAcademyPlaybook && window._gwAcademyPlaybook.normalized ? window._gwAcademyPlaybook : null;
+  const companyPlaybookHtml = companyPlaybook ? `<section class="card" style="margin-bottom:20px"><div class="section-head"><div><div class="eyebrow">Published sales process</div><h2>Company Playbook</h2></div><span class="badge">${companyPlaybook.stages.length} stages</span></div><div class="grid grid-3">${companyPlaybook.stages.map(stage=>`<article><strong>${Number(stage.display_order)}. ${escapeHtml(stage.display_name)}</strong><p class="muted">${escapeHtml(stage.customer_milestone||stage.description||'')}</p>${stage.training.length?`<div>${stage.training.map(skill=>`<span class="badge">${escapeHtml(skill.title)}</span>`).join(' ')}</div>`:'<small class="muted">No associated training</small>'}${stage.guides.length?`<p><small>${stage.guides.map(guide=>escapeHtml(guide.title)).join(', ')}</small></p>`:''}</article>`).join('')}</div></section>` : '';
 
   // ── SA-203 Phase cards ──
   const phaseCards = hd.phaseProgress.map(ph => {
@@ -8825,7 +10440,7 @@ function academyHome() {
       <span>${escapeHtml(s)}</span>
     </div>`).join('');
 
-  view.innerHTML = ACAD_STYLES + `
+  view.innerHTML = ACAD_STYLES + companyPlaybookHtml + `
 
 <!-- ── Dashboard Banner (SA-101) ── -->
 <div class="acad-banner">
@@ -10411,7 +12026,7 @@ function manager(){
     const abovePlan = div.remaining <= 0;
     const gmOk = div.grossMarginPct >= div.grossMarginFloor;
     const divKey = div.name ? div.name.toLowerCase().replace(/[^a-z]/g,'') : '';
-    const divSvg = divKey.includes('landscape') ? DIV_SVG.landscape : divKey.includes('snow') ? DIV_SVG.snow : divKey.includes('maint') ? DIV_SVG.maintenance : '';
+    const divSvg = divKey.includes('landscape') ? DIV_SVG.landscape : divKey.includes('snow') ? DIV_SVG.snow : divKey.includes('maint') ? DIV_SVG.maintenance : gwDivisionIcon('#2D7A55');
     return `<article class="gw-div-tile${abovePlan?' above-plan':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;margin-top:4px">${divSvg} <span style="font-weight:700;font-size:1rem">${div.name}</span>
         ${abovePlan ? '<span style="background:var(--gw-emerald);color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:8px">\u2713 ABOVE PLAN</span>' : ''}
@@ -10495,12 +12110,10 @@ function manager(){
       <button class="primary-btn" onclick="show('revenueAdmin')" style="font-size:12px;padding:6px 14px;background:linear-gradient(135deg,var(--gw-pine),var(--gw-pine-light))">Edit Monthly Revenue</button>
     </div>
     <div class="grid grid-3 mt" style="gap:16px">
-      ${divTile(divs.landscape)}
-      ${divTile(divs.maintenance)}
-      ${divTile(divs.snow)}
+      ${Object.keys(divs).map(dk => divTile(divs[dk])).join('')}
     </div>
 
-    <div class="card mt">
+    ${(divs.maintenance && divs.maintenance.growthTarget) ? `<div class="card mt">
       <h2>\u2702\ufe0f Maintenance Growth Pipeline \u2014 Ryan\u2019s ${fmtM(divs.maintenance.growthTarget)} Target</h2>
       <p class="muted small-text">Contracted base entering 2026: ${fmtM(divs.maintenance.contractedBase)} (${divs.maintenance.contractedCommercialAccounts} comm + ${divs.maintenance.contractedResidentialAccounts} res accounts). Additional ${fmtM(divs.maintenance.growthTarget)} to sell.</p>
       <div style="overflow-x:auto;margin-top:12px">
@@ -10509,7 +12122,7 @@ function manager(){
           <tbody>${(divs.maintenance.growthPipeline||[]).map(b=>`<tr><td style="padding:8px 12px">${escapeHtml(b.bucket)}</td><td style="padding:8px 12px;text-align:center">${escapeHtml(b.segment)}</td><td style="padding:8px 12px;text-align:right;font-weight:700;color:var(--gw-emerald)">${fmtM(b.target)}</td></tr>`).join('')}</tbody>
         </table>
       </div>
-    </div>
+    </div>` : ''}
 
     ${missingPastMonths.length > 0 ? `<div class="missing-data-alert"><strong>${missingPastMonths.length} past month${missingPastMonths.length>1?'s':''} missing actuals:</strong> ${missingPastMonths.map(m=>m.month).join(', ')} — <button onclick="show('revenueAdmin','division')" style="background:none;border:none;color:#4D8A86;cursor:pointer;font-size:inherit;text-decoration:underline;padding:0">Enter data →</button></div>` : ''}
     <div class="card mt">
@@ -10658,27 +12271,17 @@ window._renderDpTable = function() {
     const repFilter = (document.getElementById('dpRepFilter')||{}).value || '';
     const estFilter = (document.getElementById('dpEstFilter')||{}).value || '';
     const opps = (typeof state !== 'undefined' ? state.opportunities : []) || [];
-    const POTS_STATUSES = ['sent','revised','viewed','awaiting_response','awaiting response'];
-    const POTS_STAGES   = ['Estimate Sent','Proposal Under Review','Negotiating','Decision Pending','Follow-Up'];
 
     function getDiv(o) {
-      const cat = (o.projectCategory||'').toLowerCase();
-      const wt  = (o.workType||'').toLowerCase();
-      const sl  = (o.serviceLine||'').toLowerCase();
-      if (cat.includes('snow')||wt.includes('snow')||sl.includes('snow')) return 'snow';
-      if (cat.includes('mainten')||wt.includes('mainten')||sl.includes('mainten')) return 'maintenance';
-      return 'landscape';
+      return gwClassifyDivision(o);
     }
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-    const STAGE_WIN = {'New Lead':.10,'Contacted':.15,'Site Visit Scheduled':.25,'Site Visit Complete':.35,
-      'Estimating':.45,'Estimate Sent':.55,'Proposal Under Review':.65,'Negotiating':.75,
-      'Follow-Up':.50,'Decision Pending':.70,'Sold / Activation':1.0,'Closed Lost':0.0};
 
-    const KEYS = ['landscape','maintenance','snow'];
-    const LABELS = {landscape:'Landscape',maintenance:'Maintenance',snow:'Snow & Ice'};
-    const COLORS = {landscape:'#4D8A86',maintenance:'#2D7A55',snow:'#4D8A86'};
+    const KEYS = gwDivisionKeys();
+    const LABELS = gwDivisionLabels();
+    const COLORS = gwDivisionColors();
 
     const stats = {};
     KEYS.forEach(k => { stats[k] = {openVal:0,estVal:0,pots:0,weighted:0,openCt:0,estCt:0,ageDays:[],risk7:0,soldMo:0,soldMoCt:0,sold:0,soldCt:0,lost:0,lostCt:0}; });
@@ -10692,15 +12295,15 @@ window._renderDpTable = function() {
       if (!d) return;
       const val = parseFloat(o.jobValue||0);
       const estAmt = parseFloat(o.estimateAmount||val);
-      const isSold = o.status==='Sold / Activation';
-      const isLost = o.status==='Closed Lost';
+      const isSold = gwSalesIs(o,'won');
+      const isLost = gwSalesIs(o,'lost');
 
       if (isSold) { d.sold+=val; d.soldCt++; if ((o.updatedAt||'').slice(0,10)>=startOfMonth){d.soldMo+=val;d.soldMoCt++;} }
       if (isLost) { d.lostCt++; }
       if (isSold||isLost) return;
 
-      d.openCt++; d.openVal+=val; d.weighted+=val*(STAGE_WIN[o.status]||0.20);
-      const hasEst = POTS_STATUSES.includes(estSt)||POTS_STATUSES.includes((o.estimateStatus||'').toLowerCase())||POTS_STAGES.includes(o.status);
+      d.openCt++; d.openVal+=val; d.weighted+=val*GWSalesProcess.forecastProbability(o);
+      const hasEst = GWSalesProcess.hasOpenEstimate(o);
       if (hasEst&&estAmt>0) {
         d.estCt++; d.estVal+=estAmt; d.pots+=estAmt;
         const sentDate = o.estimateSentDate||o.updatedAt||o.createdAt;
@@ -10788,15 +12391,11 @@ window._renderDpTable = function() {
     });
     // Re-compute aging by day bucket across all opps
     const buckets = [{label:'0–7 days',max:7,count:0,val:0,color:'#2D7A55'},{label:'8–14 days',min:8,max:14,count:0,val:0,color:'#8B6914'},{label:'15–30 days',min:15,max:30,count:0,val:0,color:'#8B6914'},{label:'30+ days',min:31,count:0,val:0,color:'#C97B6A'}];
-    const POTS_S = ['sent','revised','viewed','awaiting_response','awaiting response'];
-    const POTS_ST = ['Estimate Sent','Proposal Under Review','Negotiating','Decision Pending','Follow-Up'];
     opps.forEach(o => {
       if (repFilter && o.repId !== repFilter) return;
       const estSt2 = (o.estimateStatus||'').toLowerCase().replace(/ /g,'_');
       if (estFilter && estSt2 !== estFilter) return;
-      if (['Sold / Activation','Closed Lost'].includes(o.status)) return;
-      const hasEst2 = POTS_S.includes(estSt2)||POTS_S.includes((o.estimateStatus||'').toLowerCase())||POTS_ST.includes(o.status);
-      if (!hasEst2) return;
+      if (!GWSalesProcess.hasOpenEstimate(o)) return;
       const sentDate2 = o.estimateSentDate||o.updatedAt||o.createdAt;
       if (!sentDate2) return;
       const age2 = Math.floor((now-new Date(sentDate2))/86400000);
@@ -11504,6 +13103,263 @@ window._toggleNavPerm = function(role, viewKey, enabled) {
   saveNavPerms(perms);
   showToast('Permission updated');
 };
+// ── AI LEAD IMPORT — paste or drop an email, AI extracts the lead(s) ──────────
+// Commercial property managers often send ONE email listing SEVERAL properties
+// to bid. The importer creates one client record (the point of contact) plus
+// one linked lead per property, so each site carries its own bid/value while
+// sharing the contact.
+window._gwAiLeadImport = function() {
+  document.getElementById('gwAiLeadModal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gwAiLeadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+<style>
+  /* .um-input is styled for the dark user-management page (light cream text).
+     This modal has a light card, so re-pin readable colors here. */
+  #gwAiLeadModal .um-input{color:#233123 !important;background:#FFFFFF !important;border:1px solid #C9D6C8 !important}
+  #gwAiLeadModal .um-input::placeholder{color:#9AA79A}
+  #gwAiLeadModal .um-input:focus{border-color:#2D7A55 !important}
+  #gwAiLeadModal #gwAiLeadText{color:#233123}
+  #gwAiLeadModal #gwAiLeadText::placeholder{color:#9AA79A}
+</style>
+<div class="gw-modal-card" style="width:min(680px,100%);max-height:92vh;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+    <div>
+      <h2 style="margin:0 0 4px;font-size:18px">AI Lead Import</h2>
+      <p style="margin:0;font-size:13px;color:#6F7E6A">Paste an email below — or drop a downloaded email file. The AI pulls out the contact and every property address, then you confirm before anything is created.</p>
+    </div>
+    <button onclick="document.getElementById('gwAiLeadModal').remove()" style="background:none;border:none;color:#6F7E6A;cursor:pointer;font-size:20px;padding:0 4px">&times;</button>
+  </div>
+  <div id="gwAiLeadStep1">
+    <div id="gwAiLeadDrop" style="border:2px dashed #C9D6C8;border-radius:12px;padding:10px;transition:border-color .15s,background .15s">
+      <textarea id="gwAiLeadText" rows="10" placeholder="Paste the full email here (headers and signatures are fine)…" style="width:100%;border:none;outline:none;resize:vertical;font-size:13px;line-height:1.5;background:transparent"></textarea>
+      <div style="display:flex;align-items:center;gap:10px;border-top:1px solid #E4EAE3;padding-top:10px;margin-top:6px">
+        <button type="button" class="secondary-btn small" onclick="document.getElementById('gwAiLeadFile').click()">Choose email file</button>
+        <input type="file" id="gwAiLeadFile" accept=".eml,.txt,.md,.html,message/rfc822,text/plain" style="display:none">
+        <span style="font-size:12px;color:#6F7E6A">or drag &amp; drop a .eml / .txt file anywhere in this box</span>
+      </div>
+    </div>
+    <div id="gwAiLeadErr" style="display:none;margin-top:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="primary-btn" id="gwAiLeadParseBtn" style="flex:1" onclick="window._gwAiLeadParse()">Extract Lead Details</button>
+      <button class="secondary-btn" onclick="document.getElementById('gwAiLeadModal').remove()">Cancel</button>
+    </div>
+  </div>
+  <div id="gwAiLeadStep2" style="display:none"></div>
+</div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+
+  // File handling — read dropped/selected files as text
+  const readFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ta = document.getElementById('gwAiLeadText');
+      if (ta) ta.value = String(reader.result || '').slice(0, 60000);
+    };
+    reader.readAsText(file);
+  };
+  const drop = document.getElementById('gwAiLeadDrop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#2D7A55'; drop.style.background = '#2D7A5508'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent'; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.style.borderColor = '#C9D6C8'; drop.style.background = 'transparent';
+    readFile(e.dataTransfer?.files?.[0]);
+  });
+  document.getElementById('gwAiLeadFile').addEventListener('change', e => readFile(e.target.files?.[0]));
+  document.getElementById('gwAiLeadText').focus();
+};
+
+window._gwAiLeadParse = async function() {
+  const text = (document.getElementById('gwAiLeadText')?.value || '').trim();
+  const errEl = document.getElementById('gwAiLeadErr');
+  if (text.length < 20) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Paste the email content first (at least a few lines).'; } return; }
+  const btn = document.getElementById('gwAiLeadParseBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reading email…'; }
+  if (errEl) errEl.style.display = 'none';
+  let data = null;
+  try {
+    const r = await fetch('/api/ai/parse-lead', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email_text: text })
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.message || 'AI could not read this email');
+    data = j.data || j;
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Extract Lead Details'; }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message || 'AI parse failed — try again.'; }
+    return;
+  }
+  window._gwAiLeadDraft = data;
+  window._gwAiLeadRawEmail = text;
+  _gwAiLeadRenderPreview(data);
+};
+
+function _gwAiLeadRenderPreview(d) {
+  const s1 = document.getElementById('gwAiLeadStep1');
+  const s2 = document.getElementById('gwAiLeadStep2');
+  if (!s2) return;
+  if (s1) s1.style.display = 'none';
+  const props = (d.properties && d.properties.length) ? d.properties : [{ label: '', address: '', notes: '' }];
+  const multi = props.length > 1;
+  const _cr = window.getCurrentRep ? window.getCurrentRep() : null;
+  const _ia = _cr && (_cr.role === 'admin' || _cr.role === 'office_manager');
+  const repSel = _ia
+    ? `<label style="display:grid;gap:4px"><span class="um-label">Assigned Rep</span><select id="gwAiL_rep" class="um-input">${(window.REPS||[]).filter(r=>!_GW_FIELD_ROLES.includes(r.role)).map(r=>`<option value="${r.id}" ${_cr&&r.id===_cr.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></label>`
+    : `<input type="hidden" id="gwAiL_rep" value="${_cr ? _cr.id : ''}">`;
+  const contractLabel = d.contract_hint === 'annual' ? 'Annual contract' : d.contract_hint === 'multi_year' ? 'Multi-year contract' : d.contract_hint === 'one_time' ? 'One-time project' : '';
+  s2.style.display = 'block';
+  s2.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#2D7A55">Review before creating</span>
+      ${multi ? `<span style="font-size:11px;font-weight:600;background:#4D8A8618;color:#2E5E5A;border:1px solid #4D8A8640;border-radius:20px;padding:2px 10px">Multi-property account — 1 contact, ${props.length} sites</span>` : ''}
+      ${contractLabel ? `<span style="font-size:11px;font-weight:600;background:#8B691414;color:#8B6914;border:1px solid #8B691430;border-radius:20px;padding:2px 10px">${contractLabel}</span>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <label style="display:grid;gap:4px"><span class="um-label">Contact Name</span><input id="gwAiL_name" class="um-input" value="${escapeHtml(d.contact?.name||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Company</span><input id="gwAiL_company" class="um-input" value="${escapeHtml(d.contact?.company||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Phone</span><input id="gwAiL_phone" class="um-input" value="${escapeHtml(d.contact?.phone||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Email</span><input id="gwAiL_email" class="um-input" value="${escapeHtml(d.contact?.email||'')}"></label>
+      <label style="display:grid;gap:4px"><span class="um-label">Client Type</span><select id="gwAiL_type" class="um-input"><option ${d.client_type==='Commercial'?'selected':''}>Commercial</option><option ${d.client_type==='Residential'?'selected':''}>Residential</option></select></label>
+      ${repSel}
+    </div>
+    <label style="display:grid;gap:4px;margin-bottom:12px"><span class="um-label">Project / Scope</span><input id="gwAiL_project" class="um-input" value="${escapeHtml(d.project||'')}"></label>
+    ${d.urgency ? `<div style="font-size:12.5px;color:#8B6914;background:#8B691410;border:1px solid #8B691425;border-radius:8px;padding:8px 12px;margin-bottom:12px"><strong>Timing:</strong> ${escapeHtml(d.urgency)}</div>` : ''}
+    <div class="um-label" style="margin-bottom:6px">Properties — one lead is created per checked site</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">
+      ${props.map((p, i) => `
+        <div style="display:flex;gap:8px;align-items:flex-start;border:1px solid #E4EAE3;border-radius:10px;padding:10px">
+          <input type="checkbox" class="gwAiL_prop_ck" data-i="${i}" checked style="width:16px;height:16px;margin-top:8px;accent-color:#2D7A55;flex-shrink:0">
+          <div style="flex:1;display:grid;gap:6px">
+            <input class="um-input gwAiL_prop_label" data-i="${i}" placeholder="Site name" value="${escapeHtml(p.label||'')}" style="font-weight:600">
+            <input class="um-input gwAiL_prop_addr" data-i="${i}" placeholder="Address" value="${escapeHtml(p.address||'')}">
+            <input class="um-input gwAiL_prop_notes" data-i="${i}" placeholder="Site notes (exclusions, instructions)" value="${escapeHtml(p.notes||'')}">
+          </div>
+        </div>`).join('')}
+    </div>
+    ${d.summary_note ? `<div style="font-size:12px;color:#6F7E6A;background:#F4F7F3;border-radius:8px;padding:10px 12px;margin-bottom:14px"><strong style="color:#3E4A3C">AI summary (saved as a note on each lead):</strong><br>${escapeHtml(d.summary_note)}</div>` : ''}
+    <div id="gwAiLeadErr2" style="display:none;margin-bottom:10px;font-size:13px;color:#B4552E"></div>
+    <div style="display:flex;gap:10px">
+      <button class="primary-btn" id="gwAiLeadCreateBtn" style="flex:1" onclick="window._gwAiLeadCreate()">Create</button>
+      <button class="secondary-btn" onclick="document.getElementById('gwAiLeadStep2').style.display='none';document.getElementById('gwAiLeadStep1').style.display='block';const b=document.getElementById('gwAiLeadParseBtn');if(b){b.disabled=false;b.textContent='Extract Lead Details';}">Back</button>
+    </div>`;
+  _gwAiLeadSyncCreateBtn();
+  s2.querySelectorAll('.gwAiL_prop_ck').forEach(ck => ck.addEventListener('change', _gwAiLeadSyncCreateBtn));
+}
+
+function _gwAiLeadSyncCreateBtn() {
+  const btn = document.getElementById('gwAiLeadCreateBtn');
+  if (!btn) return;
+  const n = document.querySelectorAll('.gwAiL_prop_ck:checked').length;
+  btn.textContent = n > 1 ? `Create Account + ${n} Property Leads` : 'Create Lead';
+  btn.disabled = n === 0;
+}
+
+window._gwAiLeadCreate = function() {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const name = g('gwAiL_name'), company = g('gwAiL_company');
+  const errEl = document.getElementById('gwAiLeadErr2');
+  if (!name && !company) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Enter at least a contact name or company.'; } return; }
+  const contactName = name || company;
+  const phone = g('gwAiL_phone'), email = g('gwAiL_email');
+  const clientType = g('gwAiL_type') || 'Commercial';
+  const repId = document.getElementById('gwAiL_rep')?.value || '';
+  const project = g('gwAiL_project');
+  const d = window._gwAiLeadDraft || {};
+
+  // Collect checked properties
+  const checked = [];
+  document.querySelectorAll('.gwAiL_prop_ck:checked').forEach(ck => {
+    const i = ck.dataset.i;
+    checked.push({
+      label: (document.querySelector(`.gwAiL_prop_label[data-i="${i}"]`)?.value || '').trim(),
+      address: (document.querySelector(`.gwAiL_prop_addr[data-i="${i}"]`)?.value || '').trim(),
+      notes: (document.querySelector(`.gwAiL_prop_notes[data-i="${i}"]`)?.value || '').trim()
+    });
+  });
+  if (!checked.length) return;
+  const multi = checked.length > 1;
+
+  // ── Client record: the point of contact (one record for the whole account) ─
+  const clientList = loadClients();
+  let cl = clientList.find(c => (c.name||'').toLowerCase() === contactName.toLowerCase());
+  if (!cl) {
+    cl = {
+      id: clientId(), name: contactName, firstName: '', lastName: '',
+      company: company || '', type: clientType, status: 'Active',
+      email: email, phone: phone, mobile: '',
+      street: checked[0].address || '', address: checked[0].address || '',
+      street2: '', city: '', state: 'VA', zip: '',
+      since: new Date().toLocaleDateString('en-US',{month:'short',year:'numeric'}),
+      tags: multi ? ['Multi-Property'] : [],
+      notes: d.summary_note || '',
+      homeworksId: '',
+      properties: checked.map(p => ({ label: p.label, address: p.address, notes: p.notes })),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    clientList.push(cl);
+    saveClients(clientList);
+    if (typeof _d1SaveClient === 'function') _d1SaveClient(cl);
+  } else {
+    // Merge any new properties into the existing account
+    cl.properties = cl.properties || [];
+    checked.forEach(p => {
+      if (p.address && !cl.properties.some(x => (x.address||'').toLowerCase() === p.address.toLowerCase())) {
+        cl.properties.push({ label: p.label, address: p.address, notes: p.notes });
+      }
+    });
+    cl.updatedAt = new Date().toISOString();
+    saveClients(clientList);
+    if (typeof _d1SaveClient === 'function') _d1SaveClient(cl);
+  }
+
+  // ── One lead per property, all linked to the contact's client record ──────
+  const stages = getPipelineStages();
+  const now = new Date().toISOString();
+  const createdIds = [];
+  checked.forEach(p => {
+    const opp = {
+      id: uid('opp'),
+      client: multi ? `${contactName} — ${p.label || p.address || 'Site'}` : contactName,
+      phone, email,
+      address: p.address,
+      clientId: cl.id,
+      clientType,
+      serviceLine: '',
+      source: 'Email',
+      leadSource: 'company_lead',
+      project: project || (d.summary_note ? d.summary_note.slice(0, 120) : 'Imported from email'),
+      urgency: d.urgency || '',
+      decisionMaker: contactName,
+      status: stages[0] || 'Lead Intake / Rapport',
+      repId,
+      createdAt: now, updatedAt: now
+    };
+    state.opportunities.unshift(opp);
+    _d1SaveOpp(opp);
+    createdIds.push(opp.id);
+    // Attach the AI summary + site notes as the first note on the lead
+    const noteBody = [d.summary_note || '', p.notes ? `Site notes: ${p.notes}` : ''].filter(Boolean).join('\n');
+    if (noteBody) {
+      const note = { id: uid('note'), oppId: opp.id, body: noteBody, createdAt: now };
+      state.notes.unshift(note);
+      if (typeof _d1SaveNote === 'function') _d1SaveNote(opp.id, noteBody, repId, note.id);
+    }
+  });
+  saveState();
+  document.getElementById('gwAiLeadModal')?.remove();
+  showToast(multi
+    ? `Created ${createdIds.length} property leads under ${contactName}`
+    : `Lead created for ${contactName}`);
+  if (multi) show('pipeline');
+  else show('pipeline', createdIds[0]);
+};
+
 // ── Mark Sold Modal ───────────────────────────────────────────────────────────
 function openMarkSoldModal(oppId) {
   const o = state.opportunities.find(x => x.id === oppId);
@@ -11530,7 +13386,7 @@ function openMarkSoldModal(oppId) {
           <span style="font-size:12px;font-weight:700;color:var(--blue-dark)">Division / Service Line</span>
           <select id="sm_division" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">
             <option value="">— Select —</option>
-            ${(window.AVALON_DATA?.serviceLines || ['Landscape','Maintenance','Snow & Ice']).map(s => `<option value="${escapeHtml(s)}" ${o.serviceLine===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+            ${gwIntakeConfig().serviceLines.map(s => `<option value="${escapeHtml(s)}" ${o.serviceLine===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
           </select>
         </label>
         <label style="display:grid;gap:6px">
@@ -11589,6 +13445,8 @@ function confirmMarkSold(oppId) {
   o.expectedStart   = document.getElementById('sm_startdate')?.value || '';
   o.updatedAt       = new Date().toISOString();
   saveState();
+  // Write-through to D1 so sold amount/date/division persist across devices
+  if (typeof _d1SaveOpp === 'function') _d1SaveOpp(o);
   closeMarkSoldModal();
   showToast(`${o.client} marked as sold — $${amount.toLocaleString()}`);
   show('pipeline', oppId);
@@ -11644,23 +13502,96 @@ function buildSearchIndex(){
   return items;
 }
 const searchIndex = buildSearchIndex();
+
+// Live CRM records (clients, properties, leads, team) are rebuilt on every
+// keystroke so newly created records are searchable immediately. Static
+// content (scripts, forms, templates, training) comes from searchIndex.
+function buildLiveSearchItems(){
+  const items = [];
+  try {
+    (typeof loadClients === 'function' ? loadClients() : []).forEach(c => {
+      items.push({
+        type: 'Client',
+        title: c.name || c.company || 'Client',
+        text: [c.company, c.email, c.phone, c.mobile, c.street, c.city, c.address, (c.tags||[]).join(' ')].filter(Boolean).join(' '),
+        action: () => show('clients', c.id)
+      });
+      (c.properties || []).forEach(p => {
+        if (!p || (!p.address && !p.label)) return;
+        items.push({
+          type: 'Property',
+          title: p.label || p.address,
+          text: [p.address, p.notes, c.name, c.company].filter(Boolean).join(' '),
+          action: () => show('clients', c.id)
+        });
+      });
+    });
+  } catch(e) {}
+  try {
+    (state.opportunities || []).forEach(o => {
+      items.push({
+        type: 'Lead',
+        title: o.client || 'Lead',
+        text: [o.project, o.address, o.email, o.phone, o.status, o.serviceLine, o.source].filter(Boolean).join(' '),
+        action: () => show('pipeline', o.id)
+      });
+    });
+  } catch(e) {}
+  try {
+    (window.REPS || []).forEach(r => {
+      if (!r || !r.name) return;
+      items.push({
+        type: 'Team',
+        title: r.name,
+        text: [r.email, r.phone, r.role].filter(Boolean).join(' '),
+        action: () => show('team')
+      });
+    });
+  } catch(e) {}
+  return items;
+}
+
 searchInput.addEventListener('input',()=>{
   const q=searchInput.value.trim().toLowerCase();
   if(q.length<2){ searchResults.hidden=true; return; }
-  const results=searchIndex.filter(item=>`${item.title} ${item.text} ${item.type}`.toLowerCase().includes(q)).slice(0,10);
-  searchResults.innerHTML = results.length ? results.map((r,i)=>`<button class="result" data-i="${i}"><div class="result-type">${escapeHtml(r.type)}</div><div class="result-title">${escapeHtml(r.title)}</div><div class="result-text">${escapeHtml(r.text.slice(0,160))}...</div></button>`).join('') : '<div class="result-text" style="padding:12px;">No results found.</div>';
+  const pool = buildLiveSearchItems().concat(searchIndex);
+  const results = pool.filter(item=>`${item.title} ${item.text} ${item.type}`.toLowerCase().includes(q)).slice(0,10);
+  searchResults.innerHTML = results.length ? results.map((r,i)=>`<button class="result" data-i="${i}"><div class="result-type">${escapeHtml(r.type)}</div><div class="result-title">${escapeHtml(r.title)}</div><div class="result-text">${escapeHtml((r.text||'').slice(0,160))}${(r.text||'').length>160?'...':''}</div></button>`).join('') : '<div class="result-text" style="padding:12px;">No results found.</div>';
   searchResults.hidden=false;
-  [...searchResults.querySelectorAll('.result')].forEach((btn, i) => {
+  [...searchResults.querySelectorAll('.result')].forEach(btn => {
     btn.addEventListener('click', () => {
       searchResults.hidden = true;
       searchInput.value = '';
-      searchIndex[Number(btn.dataset.i)].action();
+      // Index into the FILTERED results array (indexing searchIndex by the
+      // filtered position was the old wrong-result bug).
+      const hit = results[Number(btn.dataset.i)];
+      if (hit) hit.action();
     });
   });
 });
 document.addEventListener('click', e => {
   if (!e.target.closest('.search-wrap')) searchResults.hidden = true;
 });
+
+// ── Debounced page-search helper ─────────────────────────────────────────────
+// The old pattern oninput="window._x=this.value;show('clients')" re-rendered
+// the whole page on every keystroke, destroying the input and dropping
+// keyboard focus — search bars only accepted one character at a time. This
+// debounces the re-render and restores focus + caret to the rebuilt input.
+window._gwSearchInput = function(stateKey, el, rerender){
+  window[stateKey] = el.value;
+  const id = el.id;
+  clearTimeout(window._gwSearchInputT);
+  window._gwSearchInputT = setTimeout(() => {
+    if (typeof window[rerender] === 'function') window[rerender]();
+    else show(rerender);
+    const fresh = id ? document.getElementById(id) : null;
+    if (fresh && document.activeElement !== fresh) {
+      fresh.focus();
+      try { const n = fresh.value.length; fresh.setSelectionRange(n, n); } catch(e) {}
+    }
+  }, 250);
+};
 
 const sidebarScrim = document.getElementById('sidebarScrim');
 function openSidebar()  { sidebar.classList.add('open');    if (sidebarScrim) sidebarScrim.classList.add('visible'); }
@@ -11766,6 +13697,22 @@ if (_newBtn && _newDrop) {
 // ── Role-aware +New menu builder ─────────────────────────────────────────────
 // Called after login to tailor the +New dropdown to the user's role.
 // Field roles get a focused create set; office/sales roles get the full set.
+// Navigate to a view, then invoke a creation function once its module has
+// registered it on window (modules attach their entry points at load/render
+// time, so poll briefly instead of assuming it exists immediately).
+window._gwNavThen = function(view, fnName, arg) {
+  window._closeNewMenu && window._closeNewMenu();
+  show(view);
+  let tries = 0;
+  const t = setInterval(function() {
+    tries++;
+    if (typeof window[fnName] === 'function') {
+      clearInterval(t);
+      try { arg === undefined ? window[fnName]() : window[fnName](arg); } catch(e) { console.warn('[_gwNavThen]', fnName, e); }
+    } else if (tries > 30) { clearInterval(t); }
+  }, 100);
+};
+
 window._gwBuildNewMenu = function() {
   const drop = document.getElementById('topbarNewDropdown');
   if (!drop) return;
@@ -11787,17 +13734,43 @@ window._gwBuildNewMenu = function() {
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
         Add Lead
       </button>
+      <button class="tnd-item" onclick="window._closeNewMenu();window._gwAiLeadImport&&window._gwAiLeadImport()" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M1.5 5l6.5 4 6.5-4"/></svg>
+        AI Lead Import
+      </button>
       <button class="tnd-item" onclick="window._closeNewMenu();show('clients');setTimeout(()=>window.showClientForm&&window.showClientForm(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5v6M5 8h6"/></svg>
         Add Client
+      </button>
+      <button class="tnd-item" onclick="window._gwNavThen('estimates','_estNewEstimate')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 1.5h7L13 4.5V14.5H3V1.5z"/><path d="M5.5 8h5M5.5 11h3"/></svg>
+        New Estimate
       </button>`;
   }
   if (isAdmin) {
     html += `
+      <div class="tnd-section-label">Financial</div>
+      <button class="tnd-item" onclick="window._gwNavThen('invoices','_invOpenBuilder',null)" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 1.5h10v13l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2v-11.8z"/><path d="M5.5 5.5h5M5.5 8.5h5"/></svg>
+        New Invoice
+      </button>
+      <button class="tnd-item" onclick="window._gwNavThen('invoices','_invPaymentPicker')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 6.5h13"/><path d="M4 10h3"/></svg>
+        Record Payment
+      </button>
       <div class="tnd-section-label">Operations</div>
       <button class="tnd-item" onclick="window._closeNewMenu();show('scheduleBoard');setTimeout(()=>window._sbOpenNewVisit&&window._sbOpenNewVisit(),80)" role="menuitem">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="2" x2="5" y2="5"/><line x1="11" y1="2" x2="11" y2="5"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
         Schedule Visit
+      </button>
+      <button class="tnd-item" onclick="window._gwNavThen('assetsHub','_ahNewAsset')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5l4 4-7 7-4-4 7-7z"/><path d="M2.5 9.5l-1 4.5 4.5-1"/><path d="M11 6l-4.5 4.5"/></svg>
+        New Asset
+      </button>
+      <div class="tnd-section-label">Team</div>
+      <button class="tnd-item" onclick="window._gwNavThen('userManagement','_umOpenInviteForm')" role="menuitem">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5.5" r="2.8"/><path d="M1.5 14c0-2.7 2-4.3 4.5-4.3s4.5 1.6 4.5 4.3"/><path d="M12.5 5v4M10.5 7h4"/></svg>
+        New Employee
       </button>`;
   }
   if (isForeman) {
@@ -11907,7 +13880,7 @@ window.exportAsCSV = function(title, buildDataFn) {
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = title.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.csv';
+  a.download = title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '.csv';
   a.click();
   URL.revokeObjectURL(a.href);
   document.getElementById('exportModalOverlay')?.remove();
@@ -12130,12 +14103,25 @@ const DIV_ACTUALS_KEY      = 'avalonDivisionActuals';     // { landscape:{ Jan:{
 const ANNUAL_OVERRIDES_KEY = 'avalonAnnualOverrides';     // { grossMarginPct, trueNetIncome, loanMonthly, cogs, grossProfit, ... }
 const PNL_FILES_KEY        = 'avalonPnlFiles';            // [{ id, name, date, type, size, data(base64 or csv-text) }]
 
+// Persist a financial localStorage key to D1 settings so edits survive
+// browser/localStorage resets. Fire-and-forget; localStorage stays the
+// synchronous read path and D1 hydrates it at bootstrap.
+function _finSyncToD1(settingKey, value) {
+  try {
+    fetch('/api/settings', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: settingKey, value: JSON.stringify(value) }),
+    }).catch(() => {});
+  } catch (e) {}
+}
 function loadRevenueActuals() {
   try { return JSON.parse(localStorage.getItem(REV_ACTUALS_KEY)) || {}; }
   catch(e) { return {}; }
 }
 function saveRevenueActuals(actuals) {
   localStorage.setItem(REV_ACTUALS_KEY, JSON.stringify(actuals));
+  _finSyncToD1('fin_revenue_actuals', actuals);
 }
 function loadDivisionActuals() {
   try { return JSON.parse(localStorage.getItem(DIV_ACTUALS_KEY)) || {}; }
@@ -12143,6 +14129,7 @@ function loadDivisionActuals() {
 }
 function saveDivisionActuals(d) {
   localStorage.setItem(DIV_ACTUALS_KEY, JSON.stringify(d));
+  _finSyncToD1('fin_division_actuals', d);
 }
 function loadAnnualOverrides() {
   try { return JSON.parse(localStorage.getItem(ANNUAL_OVERRIDES_KEY)) || {}; }
@@ -12150,6 +14137,7 @@ function loadAnnualOverrides() {
 }
 function saveAnnualOverrides(o) {
   localStorage.setItem(ANNUAL_OVERRIDES_KEY, JSON.stringify(o));
+  _finSyncToD1('fin_annual_overrides', o);
 }
 function loadPnlFiles() {
   try { return JSON.parse(localStorage.getItem(PNL_FILES_KEY)) || []; }
@@ -12180,13 +14168,12 @@ function gwIsAvalonCompany() {
 }
 function gwBlankFY() {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const raw = window.AVALON_DATA.fy2026;
+  // Build divisions from the company's own configured divisions
   const divisions = {};
-  Object.keys(raw.divisions || {}).forEach(dk => {
-    const d = raw.divisions[dk];
-    divisions[dk] = { name: d.name, icon: d.icon, target: 0, actual: null, remaining: 0,
+  gwDivisions().forEach(dv => {
+    divisions[dv.key] = { name: dv.label, icon: 'div', target: 0, actual: null, remaining: 0,
       pctOfCompany: 0, operatingIncome: null, cogs: null, grossProfit: null,
-      grossMarginPct: null, grossMarginFloor: d.grossMarginFloor || 0.4 };
+      grossMarginPct: null, grossMarginFloor: 0.4 };
   });
   return {
     asOfDate: new Date().toLocaleDateString('en-US'),
@@ -12214,8 +14201,16 @@ function getResolvedFY() {
   const savedNotes     = loadRevenueActuals();   // ONLY note_* keys are used
   const savedAnnual    = loadAnnualOverrides();
 
-  const DIVKEYS   = ['landscape', 'maintenance', 'snow'];
+  const DIVKEYS   = gwDivisionKeys();
   const MONTH_ORD = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Ensure fy.divisions has an entry for every configured division
+  DIVKEYS.forEach(dk => {
+    if (!fy.divisions[dk]) {
+      fy.divisions[dk] = { name: gwDivisionLabel(dk), icon: 'div', target: 0, actual: null,
+        remaining: 0, pctOfCompany: 0, operatingIncome: null, cogs: null, grossProfit: null,
+        grossMarginPct: null, grossMarginFloor: 0.4 };
+    }
+  });
 
   // STEP 1: Per-division YTD totals — sum all months from avalonDivisionActuals
   DIVKEYS.forEach(dk => {
@@ -12313,11 +14308,7 @@ window.showMonthDrilldown = function(monthKey) {
   const divActuals = loadDivisionActuals();
   const monthBudget = (fy.monthlyBudget || []).find(m => m.month === monthKey) || {};
   const notes = (loadRevenueActuals() || {})['note_' + monthKey] || '';
-  const DIVISIONS = [
-    { key:'landscape',   label:'Landscape',   icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#2D7A55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color:'#2D7A55' },
-    { key:'maintenance', label:'Maintenance',  icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color:'#4D8A86' },
-    { key:'snow',        label:'Snow & Ice',   icon:'<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#B8C8C7" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#B8C8C7"/><circle cx="9" cy="15.5" r="1" fill="#B8C8C7"/><circle cx="2.5" cy="9" r="1" fill="#B8C8C7"/><circle cx="15.5" cy="9" r="1" fill="#B8C8C7"/></svg>', color:'#4D8A86' }
-  ];
+  const DIVISIONS = gwDivisions().map(d => ({ key: d.key, label: d.label, color: d.color, icon: gwDivisionIcon(d.color) }));
   function fmtM(n){ return n!=null ? n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}) : '—'; }
   const rows = DIVISIONS.map(d => {
     const entry = (divActuals[d.key]||{})[monthKey] || {};
@@ -12436,7 +14427,7 @@ function revenueAdmin(tab) {
       const varSign   = m.variance != null && m.variance > 0 ? '+' : '';
       // Determine which divisions contributed data for this month
       const divs = loadDivisionActuals();
-      const divBreakdown = ['landscape','maintenance','snow'].map(dk => {
+      const divBreakdown = gwDivisionKeys().map(dk => {
         const e = (divs[dk]||{})[m.month];
         return (e && e.revenue != null) ? e.revenue : null;
       });
@@ -12503,11 +14494,7 @@ function revenueAdmin(tab) {
 
 
   // ── Tab: Division Entry ──
-  const DIVISIONS_META = [
-    { key: 'landscape',   label: 'Landscape',    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V9.5M9 9.5C9 9.5 5 9.5 3 5c3 0 6 2 6 4.5zm0 0c0 0 4 0 6-4.5-3 0-6 2-6 4.5z" stroke="#2D7A55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color: '#2D7A55' },
-    { key: 'maintenance', label: 'Maintenance',   icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.5 3a3 3 0 00-2.5 4.5L3.8 13.8a.8.8 0 001.2 1.2l6.5-5.7A3 3 0 0014 10a3 3 0 00-.5-1.5l-1.8 1.8-1.2-1.2 1.8-1.8A3 3 0 0012.5 3z" stroke="#4D8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>', color: '#4D8A86' },
-    { key: 'snow',        label: 'Snow & Ice',    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2.5v13M2.5 9h13M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="#B8C8C7" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="2.5" r="1" fill="#B8C8C7"/><circle cx="9" cy="15.5" r="1" fill="#B8C8C7"/><circle cx="2.5" cy="9" r="1" fill="#B8C8C7"/><circle cx="15.5" cy="9" r="1" fill="#B8C8C7"/></svg>', color: '#4D8A86' }
-  ];
+  const DIVISIONS_META = gwDivisions().map(d => ({ key: d.key, label: d.label, color: d.color, icon: gwDivisionIcon(d.color) }));
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   function renderDivisionTab() {
@@ -12716,7 +14703,7 @@ function revenueAdmin(tab) {
           Jan, Maintenance, 40000, 28400<br>
           Jan, Snow, 18000, 7200
         </code>
-        <p style="color:#6F7E6A;font-size:11px;margin-top:8px">Division values: Landscape / Maintenance / Snow (or Snow &amp; Ice)</p>
+        <p style="color:#6F7E6A;font-size:11px;margin-top:8px">Division values: ${gwDivisions().map(d => escapeHtml(d.label)).join(' / ')}</p>
       </div>`;
   }
 
@@ -12728,6 +14715,7 @@ function revenueAdmin(tab) {
   else if (_revTab === 'pnl')      tabContent = renderPnlTab();
 
   view.innerHTML = `
+  <div class="gw-workflow-cleanup gw-revenue-admin-shell">
     <button class="secondary-btn" onclick="show('manager')">← Back to Manager Tools</button>
     <div class="eyebrow" style="margin-top:16px">Admin — FY2026</div>
     <h1>Financial Data Hub</h1>
@@ -12735,7 +14723,7 @@ function revenueAdmin(tab) {
     ${banner}
     ${tabNav}
     ${tabContent}
-  `;
+  </div>`;
 }
 
 // ── Monthly Tab helpers ───────────────────────────────────────────────────────
@@ -12814,7 +14802,7 @@ window.buildMonthlyExportData = function() {
 // Data builder for division export
 window.buildDivisionExportData = function() {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const DIVS   = [{key:'landscape',label:'Landscape'},{key:'maintenance',label:'Maintenance'},{key:'snow',label:'Snow'}];
+  const DIVS   = gwDivisions().map(d => ({ key: d.key, label: d.label }));
   const all    = loadDivisionActuals();
   const headers = ['Month','Division','Revenue','COGS','GM%'];
   const rows = [];
@@ -12958,7 +14946,7 @@ window.gwSaveMonthBudget = function(month, val) {
 };
 
 window.divSaveAllDivisions = function() {
-  ['landscape','maintenance','snow'].forEach(dk => window.divSaveDivision(dk));
+  gwDivisionKeys().forEach(dk => window.divSaveDivision(dk));
   showToast('All division data saved — dashboards updated');
 };
 
@@ -12982,7 +14970,7 @@ window.annSaveAll = function() {
     }
   });
   // Division overrides
-  const DIVKEYS = ['landscape','maintenance','snow'];
+  const DIVKEYS = gwDivisionKeys();
   const divActuals = loadDivisionActuals();
   DIVKEYS.forEach(dk => {
     if (!divActuals[dk]) divActuals[dk] = {};
@@ -13062,7 +15050,13 @@ window.pnlImportCsv = function(fileId) {
   if (colIdx.month === -1 || colIdx.division === -1 || colIdx.revenue === -1) {
     showToast('CSV must have Month, Division, Revenue columns'); return;
   }
-  const DIVMAP = { landscape: 'landscape', maintenance: 'maintenance', 'snow & ice': 'snow', snow: 'snow' };
+  const DIVMAP = {};
+  gwDivisions().forEach(d => {
+    DIVMAP[d.key.toLowerCase()] = d.key;
+    DIVMAP[d.label.toLowerCase()] = d.key;
+  });
+  // legacy aliases so old Avalon CSVs still import
+  if (DIVMAP['snow'] || DIVMAP['snow & ice']) { DIVMAP['snow & ice'] = DIVMAP['snow & ice'] || DIVMAP['snow']; DIVMAP['snow'] = DIVMAP['snow'] || DIVMAP['snow & ice']; }
   const all = loadDivisionActuals();
   let imported = 0;
   lines.slice(1).forEach(line => {
@@ -13437,14 +15431,22 @@ window.superAdmin = superAdmin;
 //    • All 6 process steps quick-reference
 //    • Live transcript recorder with AI-assisted next-steps summary
 // ══════════════════════════════════════════════════════════════════════════════
-window.openCallCompanion = function(oppId) {
+window.openCallCompanion = async function(oppId) {
   const o = (state && state.opportunities || []).find(x => x.id === oppId);
   if (!o) { console.warn('[CallCompanion] Opportunity not found:', oppId); return; }
+
+  // Normalized context is authoritative after publication. A missing assignment
+  // deliberately falls back to the legacy guide without guessing a stable stage.
+  if (o._salesProcessContext === undefined && window.DB && DB.salesProcess) {
+    try { o._salesProcessContext = await DB.salesProcess.context(oppId); }
+    catch (_) { o._salesProcessContext = null; }
+  }
+  const normalizedContext = o._salesProcessContext && o._salesProcessContext.normalized ? o._salesProcessContext : null;
 
   // Remove any existing companion
   document.getElementById('gw-call-companion')?.remove();
 
-  const currentStageNum = Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
+  const currentStageNum = normalizedContext ? Number(normalizedContext.stage.display_order || 1) : Math.max(1, (window.getPipelineStages ? window.getPipelineStages() : []).indexOf(o.status) + 1);
   const stagesData   = (window.AVALON_DATA && window.AVALON_DATA.stages) || [];
   const checklists   = (window.AVALON_DATA && window.AVALON_DATA.checklists) || [];
   const sp           = (window.AVALON_DATA && window.AVALON_DATA.salesProcess) || {};
@@ -13466,9 +15468,17 @@ window.openCallCompanion = function(oppId) {
   function ccStageBody(n) {
     const sd = stagesData.find(s => s.id === n) || {};
     const cl = checklists.find(c => c.stage === n);
+    const normalizedGuide = normalizedContext && n === currentStageNum ? (normalizedContext.guides || [])[0] : null;
+    let normalizedConfig = {};
+    try { normalizedConfig = normalizedGuide ? JSON.parse(normalizedGuide.config_json || '{}') : {}; } catch (_) {}
+    const stageQuestions = normalizedGuide ? (normalizedConfig.questions || []) : (sd.questions || []);
+    const stagePurpose = normalizedGuide ? (normalizedGuide.purpose || normalizedContext.stage.description || '') : (sd.purpose || '');
+    const normalizedChecklist = normalizedContext && n === currentStageNum ? (normalizedContext.requirements || []).filter(item => item.requirement_type === 'checklist') : [];
+    const normalizedSkills = normalizedContext && n === currentStageNum ? (normalizedContext.academy_skills || []) : [];
+    const normalizedTransitions = normalizedContext && n === currentStageNum ? (normalizedContext.transitions || []) : [];
 
-    const qHtml = (sd.questions || []).length
-      ? sd.questions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
+    const qHtml = stageQuestions.length
+      ? stageQuestions.map(q => `<div class="gw-cc-q">${escapeHtml(q)}</div>`).join('')
       : '<div class="gw-cc-empty">No discovery questions for this stage.</div>';
 
     const clPrefix = `cc-cl-${n}-${oppId}`;
@@ -13500,25 +15510,31 @@ window.openCallCompanion = function(oppId) {
           </label>`;
         }).join('')}`;
     }
+    if (normalizedChecklist.length) {
+      clHtml = normalizedChecklist.map(item => `<div class="gw-cc-check-row"><span>${escapeHtml(item.label)}</span></div>`).join('');
+    }
 
     const rfHtml = (sd.redFlags || []).length
       ? `<div style="margin-top:14px"><div class="gw-cc-section-label" style="color:#C97B6A">Red Flags to Watch</div>
           ${sd.redFlags.map(f => `<div class="gw-cc-rf">${escapeHtml(f)}</div>`).join('')}</div>`
       : '';
+    const trainingHtml = normalizedSkills.length ? `<div style="margin-top:14px"><div class="gw-cc-section-label">Academy Training</div>${normalizedSkills.map(skill=>`<div class="gw-cc-q"><strong>${escapeHtml(skill.title)}</strong></div>`).join('')}</div>` : '';
+    const transitionHtml = normalizedTransitions.length ? `<div style="margin-top:14px"><div class="gw-cc-section-label">Configured Next Steps</div>${normalizedTransitions.map(transition=>`<div class="gw-cc-q"><strong>${escapeHtml(transition.display_label||transition.display_name)}</strong>${transition.guidance?`<div>${escapeHtml(transition.guidance)}</div>`:''}</div>`).join('')}</div>` : '';
 
     const isCurrent = n === currentStageNum;
     return `
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-        <span style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Stage ${n}: ${escapeHtml(sd.title || '')}</span>
+        <span style="font-size:11px;font-weight:800;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Stage ${n}: ${escapeHtml(normalizedContext && n === currentStageNum ? normalizedContext.stage.display_name : (sd.title || ''))}</span>
         ${isCurrent
           ? '<span style="font-size:9px;font-weight:800;color:#fff;background:#2D7A55;border-radius:99px;padding:2px 8px;text-transform:uppercase;letter-spacing:.05em">Current</span>'
           : `<button type="button" onclick="gwCCStageGo(${currentStageNum})" style="font-size:9px;font-weight:800;color:#8B6914;background:#8B691415;border:1px solid #8B691430;border-radius:99px;padding:2px 8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em">Viewing other stage — back to current</button>`}
       </div>
-      <div style="font-size:11px;color:#5E6E6F;margin-bottom:12px;line-height:1.55">${escapeHtml(sd.purpose || '')}</div>
+      <div style="font-size:11px;color:#5E6E6F;margin-bottom:12px;line-height:1.55">${escapeHtml(stagePurpose)}</div>
       <div class="gw-cc-section-label">Discovery Questions</div>
       ${qHtml}
       ${rfHtml}
-      <div style="margin-top:14px">${clHtml}</div>`;
+      <div style="margin-top:14px">${clHtml}</div>
+      ${transitionHtml}${trainingHtml}`;
   }
 
   // ── Steps tab ───────────────────────────────────────────────────────────────
@@ -13939,10 +15955,13 @@ function gwCCBudgetRange(opp) {
 }
 
 function gwCCBuildPrompt(kind, transcript, opp) {
+  const processContext = opp && opp._salesProcessContext && opp._salesProcessContext.normalized ? opp._salesProcessContext : null;
   const ctx = [
     'Client: '  + (opp && opp.client  || 'Unknown'),
     'Project: ' + (opp && (opp.project || opp.serviceLine) || 'Landscaping project'),
-    'Stage: '   + (opp && opp.status  || 'Unknown'),
+    'Stage: '   + (processContext ? processContext.stage.display_name : (opp && opp.status || 'Unknown')),
+    'Stage purpose: ' + (processContext ? processContext.stage.description || processContext.stage.customer_milestone || 'Not configured' : 'Legacy process context'),
+    'Stage guidance: ' + (processContext && processContext.guides && processContext.guides[0] ? processContext.guides[0].suggested_language || 'Not configured' : 'Not configured'),
     'Budget: '  + gwCCBudgetRange(opp),
   ].join('\n');
   const base = `You are a sales assistant for a premium landscaping company. Use ONLY details from the transcript — never invent specifics.\n\n${ctx}\n\nTRANSCRIPT:\n${transcript.slice(0, 4000)}\n\n`;
@@ -14018,7 +16037,7 @@ function estimateDetail(id){
   const jobVal     = opp ? Number(opp.jobValue||0) : 5400;
   const deposit    = Math.round(jobVal * 0.30);
   const remaining  = jobVal - deposit;
-  const status     = opp ? (opp.status==='Sold / Activation'?'approved':(opp.estimateStatus||'draft')) : 'draft';
+  const status     = opp ? (gwSalesIs(opp,'won')?'approved':(opp.estimateStatus||'draft')) : 'draft';
   const badgeClass = {draft:'est-badge--draft',sent:'est-badge--sent',approved:'est-badge--approved',declined:'est-badge--declined',expired:'est-badge--expired'}[status]||'est-badge--draft';
   const badgeLabel = status.charAt(0).toUpperCase()+status.slice(1);
   const backTo     = opp ? `show('pipeline','${opp.id}')` : "show('financialHub')";
@@ -14223,7 +16242,7 @@ function invoiceDetail(id){
   const jobVal     = opp ? Number(opp.jobValue||0) : 5400;
   const deposit    = Math.round(jobVal * 0.30);
   const totalDue   = jobVal;
-  const isPaid     = opp ? opp.status==='Sold / Activation' : false;
+  const isPaid     = opp ? gwSalesIs(opp,'won') : false;
   const paidAmt    = isPaid ? totalDue : deposit;
   const balance    = totalDue - paidAmt;
   const status     = isPaid ? 'paid' : (balance > 0 ? 'partial' : 'sent');
@@ -14387,14 +16406,14 @@ function accountStatement(clientId){
   }).slice(0,20);
 
   const totalContract = clientOpps.reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const totalPaid     = clientOpps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalPaid     = clientOpps.filter(o=>gwSalesIs(o,'won')).reduce((a,o)=>a+Number(o.jobValue||0),0);
   const totalDue      = totalContract - totalPaid;
   const clientName    = clientId ? (clientOpps[0]?.client||'Client') : 'All Clients';
 
   // Build table rows from opps
   const rows = clientOpps.length ? clientOpps.map(o=>{
-    const st = o.status==='Sold / Activation' ? 'paid' :
-               (o.status==='Closed Lost' ? 'declined' :
+    const st = gwSalesIs(o,'won') ? 'paid' :
+               (gwSalesIs(o,'lost') ? 'declined' :
                (o.jobValue&&Number(o.jobValue)>0 ? 'invoiced' : 'draft'));
     const bdgClass = {paid:'stmt-badge--paid',draft:'stmt-badge--draft',invoiced:'stmt-badge--sent',declined:'stmt-badge--overdue',approved:'stmt-badge--approved'}[st]||'stmt-badge--draft';
     const bdgLabel = {paid:'Paid',draft:'Draft',invoiced:'Invoiced',declined:'Declined',approved:'Approved'}[st]||'Draft';
@@ -14403,8 +16422,8 @@ function accountStatement(clientId){
       <td>${escapeHtml(o.client||'—')}</td>
       <td>${_p5FmtDate(o.createdAt)}</td>
       <td>${_p5Money(o.jobValue)}</td>
-      <td>${o.status==='Sold / Activation'?_p5Money(o.jobValue):'$0.00'}</td>
-      <td>${o.status!=='Sold / Activation'&&o.jobValue?_p5Money(o.jobValue):'$0.00'}</td>
+      <td>${gwSalesIs(o,'won')?_p5Money(o.jobValue):'$0.00'}</td>
+      <td>${gwSalesIsOpen(o)&&o.jobValue?_p5Money(o.jobValue):'$0.00'}</td>
       <td><span class="stmt-badge ${bdgClass}">${bdgLabel}</span></td>
     </tr>`;
   }).join('') : `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--gw-text-subtle);font-style:italic">No documents found</td></tr>`;
@@ -14710,22 +16729,22 @@ function financialHub(){
 
   // KPIs
   const totalPipeline  = opps.reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const totalSold      = opps.filter(o=>o.status==='Sold / Activation').reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const totalOpen      = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((a,o)=>a+Number(o.jobValue||0),0);
-  const estimatesOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)&&Number(o.jobValue||0)>0).length;
+  const totalSold      = opps.filter(o=>gwSalesIs(o,'won')).reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const totalOpen      = opps.filter(o=>gwSalesIsOpen(o)).reduce((a,o)=>a+Number(o.jobValue||0),0);
+  const estimatesOpen  = opps.filter(o=>gwSalesIsOpen(o)&&Number(o.jobValue||0)>0).length;
 
   // Recent deals (last 5 sold)
-  const recentSold = opps.filter(o=>o.status==='Sold / Activation')
+  const recentSold = opps.filter(o=>gwSalesIs(o,'won'))
     .sort((a,b)=>new Date(b.closedDate||b.createdAt)-new Date(a.closedDate||a.createdAt))
     .slice(0,5);
 
   // Open estimates (top 5 by value)
-  const openEstimates = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)&&Number(o.jobValue||0)>0)
+  const openEstimates = opps.filter(o=>gwSalesIsOpen(o)&&Number(o.jobValue||0)>0)
     .sort((a,b)=>Number(b.jobValue)-Number(a.jobValue))
     .slice(0,5);
 
   // Outstanding (any open opp with a value)
-  const outstanding = opps.filter(o=>o.status!=='Sold / Activation'&&o.status!=='Closed Lost'&&Number(o.jobValue||0)>0)
+  const outstanding = opps.filter(o=>gwSalesIsOpen(o)&&Number(o.jobValue||0)>0)
     .sort((a,b)=>Number(b.jobValue)-Number(a.jobValue)).slice(0,5);
 
   const soldRows = recentSold.length
@@ -14747,11 +16766,14 @@ function financialHub(){
     : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--gw-text-subtle);font-style:italic">No open estimates</td></tr>`;
 
   view.innerHTML = `
-  <div class="fhub-shell">
-    <div class="fhub-header">
-      <div class="fhub-title">Financial Hub</div>
-      <div class="fhub-subtitle">Overview of pipeline value, estimates, invoices, and payments</div>
-    </div>
+  <div class="fhub-shell rp-shell gw-report-shell">
+    <header class="fhub-header rp-header">
+      <div class="rp-header-left">
+        <div class="eyebrow">Executive Dashboard</div>
+        <h1 class="fhub-title rp-title">Financial Hub</h1>
+        <p class="fhub-subtitle rp-subtitle">Overview of pipeline value, estimates, invoices, and payments</p>
+      </div>
+    </header>
 
     <!-- Quick Navigation Cards -->
     <div class="fhub-quick-nav">
@@ -14795,7 +16817,7 @@ function financialHub(){
       <div class="fhub-kpi-card">
         <div class="fhub-kpi-label">Closed / Collected</div>
         <div class="fhub-kpi-val fhub-kpi-val--positive">${_p5Money(totalSold)}</div>
-        <div class="fhub-kpi-delta fhub-kpi-delta--up">${opps.filter(o=>o.status==='Sold / Activation').length} sold</div>
+        <div class="fhub-kpi-delta fhub-kpi-delta--up">${opps.filter(o=>gwSalesIs(o,'won')).length} sold</div>
       </div>
       <div class="fhub-kpi-card">
         <div class="fhub-kpi-label">Open Value</div>
@@ -14804,7 +16826,7 @@ function financialHub(){
       </div>
       <div class="fhub-kpi-card">
         <div class="fhub-kpi-label">Conversion Rate</div>
-        <div class="fhub-kpi-val">${opps.length>0?Math.round((opps.filter(o=>o.status==='Sold / Activation').length/opps.length)*100):0}%</div>
+        <div class="fhub-kpi-val">${opps.length>0?Math.round((opps.filter(o=>gwSalesIs(o,'won')).length/opps.length)*100):0}%</div>
         <div class="fhub-kpi-delta">Close rate</div>
       </div>
     </div>
@@ -14900,11 +16922,17 @@ function _p6WOStatusLabel(s) {
 // Traffic-light dot for schedule cards: yellow = hold (pre-acceptance),
 // green = confirmed/scheduled, red = cancelled/declined.
 function _p6WOTrafficDot(s) {
-  const color = s === 'hold' ? '#EAB308' : (s === 'cancelled' ? '#DC2626' : (s === 'completed' ? '#16A34A' : (s === 'in-progress' ? '#2563EB' : '#22C55E')));
+  const color = _sbStatusColor(s);
   const title = s === 'hold' ? 'HOLD — waiting for the client to accept the estimate' : (s === 'cancelled' ? 'Cancelled / declined' : 'Confirmed');
   return `<span class="sb-traffic-dot" title="${title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${color};flex:0 0 auto;${s==='hold' ? 'box-shadow:0 0 0 3px rgba(234,179,8,.25);animation:sbHoldPulse 1.8s ease-in-out infinite' : ''}"></span>`;
 }
 window._p6WOTrafficDot = _p6WOTrafficDot;
+function _sbStatusColor(s) {
+  return s === 'hold' || s === 'on-hold' ? '#D99A05'
+    : s === 'cancelled' ? '#C94B43'
+    : s === 'in-progress' ? '#3978C5'
+    : '#239A5B';
+}
 function _p6AssetLabel(s) {
   return { active:'Active', idle:'Idle', maintenance:'In Maintenance',
     retired:'Retired', rented:'Rented Out', pending:'Pending',
@@ -14979,8 +17007,8 @@ function opsHub() {
     </div>`).join('') || '<p style="padding:12px 0;color:var(--gw-text-muted);font-style:italic">No active recurring plans.</p>';
 
   view.innerHTML = `
-  <div class="ops-hub-wrap">
-    <header class="rp-header">
+  <div class="ops-hub-wrap gw-ops-shell">
+    <header class="rp-header gw-ops-header">
       <div class="rp-header-left">
         <h1 class="rp-title">Operations Hub</h1>
         <p class="rp-subtitle">Scheduling · Dispatch · Work Orders · Assets · Inventory</p>
@@ -15064,15 +17092,39 @@ window.opsHub = opsHub;
 // ── 2. Schedule Board ─────────────────────────────────────────────────────────
 // ── Schedule Board State ──────────────────────────────────────────────────────
 window._sbState = window._sbState || {
-  viewMode: 'week',        // 'week' | 'month' | 'crew'
+  viewMode: 'week',        // 'week' | 'timeline' | 'month' | 'agenda'
   weekOffset: 0,
   monthOffset: 0,
   hiddenCrews: new Set(),
   crews: [],
   workOrders: [],
+  backlog: [],
   loaded: false,
   crewLanes: true,         // show crew-lane rows in week view
+  density: 'compact',
+  showMetrics: false,
+  timelineDate: new Date().toISOString().slice(0,10),
+  workdayStart: 6,
+  workdayEnd: 20,
+  snapMinutes: 15,
+  undoStack: [],
 };
+
+function _sbCurrentDateRange() {
+  const sb = window._sbState || {};
+  if (sb.viewMode === 'timeline') {
+    const date = sb.timelineDate || new Date().toISOString().slice(0,10);
+    return { from: date, to: date };
+  }
+  if (sb.viewMode === 'month') {
+    const m = _sbGetMonthDays(sb.monthOffset || 0);
+    const start = new Date(m.first); start.setDate(start.getDate() - start.getDay());
+    const end = new Date(m.last); end.setDate(end.getDate() + (6 - end.getDay()));
+    return { from: start.toISOString().slice(0,10), to: end.toISOString().slice(0,10) };
+  }
+  const days = _sbGetWeekDays(sb.weekOffset || 0);
+  return { from: days[0].toISOString().slice(0,10), to: days[6].toISOString().slice(0,10) };
+}
 
 async function _sbLoadData() {
   try {
@@ -15080,13 +17132,17 @@ async function _sbLoadData() {
     const _sbRep = window._d1SessionRep || (window.getCurrentRep ? window.getCurrentRep() : null);
     const _sbFieldRoles = window._GW_FIELD_ROLES || ['foreman','laborer','field_supervisor'];
     const _sbIsField = _sbRep && _sbFieldRoles.includes(_sbRep.role);
-    const _woUrl = _sbIsField
-      ? `/api/work-orders?limit=500&rep_id=${encodeURIComponent(_sbRep.id)}`
-      : '/api/work-orders?limit=500';
-    const [cr, wo] = await Promise.all([
+    const range = _sbCurrentDateRange();
+    const _woParams = new URLSearchParams({ limit: '1000', date_from: range.from, date_to: range.to });
+    if (_sbIsField && _sbRep) _woParams.set('rep_id', _sbRep.id);
+    const _woUrl = '/api/work-orders?' + _woParams.toString();
+    const [cr, wo, rr, backlog] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
+      fetch('/api/reps', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      fetch('/api/work-orders?limit=300', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
     ]);
+    if (rr && rr.ok) window._gwAllReps = rr.data || rr.reps || [];
     if (cr.ok) {
       // Field roles: only show their own crew(s) in the crew filter bar
       if (_sbIsField && _sbRep) {
@@ -15100,6 +17156,7 @@ async function _sbLoadData() {
       }
     }
     if (wo.ok)  window._sbState.workOrders = wo.data  || [];
+    if (backlog && backlog.ok) window._sbState.backlog = (backlog.data || []).filter(w => !w.scheduled_date && !['completed','cancelled'].includes(w.status));
     window._sbState.loaded = true;
   } catch(e) {
     console.warn('[scheduleBoard] API load failed, using localStorage fallback', e);
@@ -15139,16 +17196,140 @@ function _sbCrewPill(crew) {
   return `<span class="sb-crew-pill" style="background:${c}20;color:${c};border-color:${c}40">${escapeHtml(crew.crew_name||crew.name||'')}</span>`;
 }
 
+function _sbMdColor(id) {
+  const palette = ['#2D7A55','#3B82F6','#8B5CF6','#D97706','#0F766E','#BE123C','#4F46E5'];
+  let h = 0; String(id || '').split('').forEach(ch => { h = ((h << 5) - h) + ch.charCodeAt(0); h |= 0; });
+  return palette[Math.abs(h) % palette.length];
+}
+
+function _sbMinutes(value, fallback) {
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
+}
+function _sbClock(minutes) {
+  const m = Math.max(0, Math.min(1439, Math.round(minutes)));
+  return String(Math.floor(m / 60)).padStart(2,'0') + ':' + String(m % 60).padStart(2,'0');
+}
+function _sbDisplayTime(value) {
+  const mins = _sbMinutes(value, null);
+  if (mins == null) return '';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+function _sbEventRange(wo) {
+  const start = _sbMinutes(wo.scheduled_time, 8 * 60);
+  let end = _sbMinutes(wo.scheduled_end_time, null);
+  const duration = Number(wo.scheduled_duration_minutes) || (Number(wo.duration_hours) ? Number(wo.duration_hours) * 60 : 60);
+  if (end == null || end <= start) end = Math.min(24 * 60, start + Math.max(30, duration));
+  return { start, end, duration: end - start };
+}
+function _sbConflictMap(rows) {
+  const out = new Map(), groups = new Map();
+  (rows || []).forEach(w => {
+    const key = `${w.scheduled_date || ''}:${w.md_crew_id || w.crew_id || 'unassigned'}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(w);
+  });
+  groups.forEach(list => {
+    const timed = list.map(w => ({ w, ..._sbEventRange(w) })).sort((a,b)=>a.start-b.start);
+    for (let i=0;i<timed.length;i++) for (let j=i+1;j<timed.length && timed[j].start < timed[i].end;j++) {
+      const a = timed[i].w, b = timed[j].w;
+      out.set(`${a.id}:${a.md_day_number || 0}`, 'Crew time conflict');
+      out.set(`${b.id}:${b.md_day_number || 0}`, 'Crew time conflict');
+    }
+  });
+  return out;
+}
+function _sbPreferencePayload() {
+  const sb = window._sbState;
+  return { density: sb.density, showMetrics: sb.showMetrics, crewLanes: sb.crewLanes, snapMinutes: sb.snapMinutes, workdayStart: sb.workdayStart, workdayEnd: sb.workdayEnd };
+}
+function _sbSavePreferences() {
+  const value = JSON.stringify(_sbPreferencePayload());
+  localStorage.setItem('gw_schedule_preferences', value);
+  fetch('/api/settings', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'schedule_preferences', value}) }).catch(()=>{});
+}
+function _sbLoadPreferences() {
+  try { Object.assign(window._sbState, JSON.parse(localStorage.getItem('gw_schedule_preferences') || '{}')); } catch (_) {}
+}
+_sbLoadPreferences();
+
+function _sbTimelineHtml(sb, visibleWOs, allCrews) {
+  const date = sb.timelineDate || new Date().toISOString().slice(0,10);
+  const crews = [{id:'__unassigned__',name:'Unassigned',color:'#94a3b8'}, ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))];
+  const start = Number(sb.workdayStart || 6) * 60, end = Number(sb.workdayEnd || 20) * 60;
+  const ppm = 1.15, height = (end - start) * ppm;
+  const hours = Array.from({length: Math.max(1, (end-start)/60 + 1)}, (_,i)=>start+i*60).filter(m=>m<=end);
+  const now = new Date(), nowMinutes = now.getHours()*60+now.getMinutes();
+  const today = new Date().toISOString().slice(0,10);
+  const timeRail = `<div class="sb-time-rail" style="height:${height}px">${hours.map(m=>`<span style="top:${(m-start)*ppm}px">${_sbDisplayTime(_sbClock(m))}</span>`).join('')}</div>`;
+  const columns = crews.map(cr => {
+    const jobs = visibleWOs.filter(w => (w.scheduled_date||'').slice(0,10)===date && ((w.md_crew_id||w.crew_id||'__unassigned__')===cr.id));
+    return `<div class="sb-timeline-crew"><div class="sb-timeline-crew-head" style="--crew-color:${cr.color}"><span></span>${escapeHtml(cr.name)}<small>${jobs.length} visits</small></div><div class="sb-timeline-track" style="height:${height}px" data-date="${date}" data-crew="${cr.id}" ondragover="event.preventDefault()" ondrop="_sbDropOnTimeline(event,this)">
+      ${hours.map(m=>`<i style="top:${(m-start)*ppm}px"></i>`).join('')}
+      ${today===date && nowMinutes>=start && nowMinutes<=end ? `<b class="sb-now-line" style="top:${(nowMinutes-start)*ppm}px"></b>` : ''}
+      ${jobs.map(w=>{
+        const r=_sbEventRange(w), top=Math.max(0,(r.start-start)*ppm), h=Math.max(32,Math.min(height-top,r.duration*ppm));
+        const color=w.is_multiday||w.md_day_number?_sbMdColor(w.id):(w.crew_color||cr.color);
+        const statusColor=_sbStatusColor(w.status);
+        const conflict=window._sbConflicts?.get(`${w.id}:${w.md_day_number||0}`);
+        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--status-color:${statusColor}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
+          <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
+        </article>`;
+      }).join('')}
+    </div></div>`;
+  }).join('');
+  const backlog = (sb.backlog || []).slice(0,20);
+  return `<div class="sb-timeline-layout"><aside class="sb-backlog"><header><strong>Unscheduled</strong><span>${sb.backlog.length}</span></header><p>Drag work onto a crew timeline.</p>${backlog.map(w=>`<article draggable="true" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})"><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.type||'Service')}</small></article>`).join('')||'<div class="sb-backlog-empty">All work is scheduled.</div>'}</aside><div class="sb-timeline-shell"><div class="sb-timeline-toolbar"><label>Date <input type="date" value="${date}" onchange="_sbTimelineDate(this.value)"></label><label>Snap <select onchange="_sbSetSnap(this.value)">${[15,30,60].map(n=>`<option value="${n}"${Number(sb.snapMinutes)===n?' selected':''}>${n} min</option>`).join('')}</select></label><span>Drag events to move them. Drag the bottom edge to change the end time.</span><button onclick="_sbUndo()"${sb.undoStack.length?'':' disabled'}>Undo</button></div><div class="sb-timeline-scroll"><div class="sb-timeline-grid" style="--timeline-crews:${crews.length}">${timeRail}${columns}</div></div></div></div>`;
+}
+function _sbAgendaHtml(sb, visibleWOs, allCrews) {
+  const byDate = new Map();
+  visibleWOs.slice().sort((a,b)=>String(a.scheduled_date||'').localeCompare(String(b.scheduled_date||''))||String(a.scheduled_time||'').localeCompare(String(b.scheduled_time||''))).forEach(w=>{const d=(w.scheduled_date||'Unscheduled').slice(0,10);if(!byDate.has(d))byDate.set(d,[]);byDate.get(d).push(w);});
+  return `<div class="sb-agenda">${[...byDate].map(([date,jobs])=>`<section><header><strong>${date==='Unscheduled'?'Unscheduled':new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</strong><span>${jobs.length} visits</span></header>${jobs.map(w=>`<button onclick="_sbOpenVisitModal('${w.id}')"><time>${_sbDisplayTime(w.scheduled_time)||'Flexible'}${w.scheduled_end_time?' - '+_sbDisplayTime(w.scheduled_end_time):''}</time><span><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')} · ${escapeHtml(w.crew_name||'Unassigned')}</small></span><em>${escapeHtml(_p6WOStatusLabel(w.status))}</em></button>`).join('')}</section>`).join('')||'<div class="sb-agenda-empty">No scheduled visits in this range.</div>'}</div>`;
+}
+
+function _sbMdWarningMap(rows) {
+  const out = new Map();
+  const byJob = new Map();
+  (rows || []).filter(w => w.is_multiday || w.md_day_number).forEach(w => {
+    if (!byJob.has(w.id)) byJob.set(w.id, []);
+    byJob.get(w.id).push(w);
+  });
+  const dayVal = v => { const t = Date.parse(String(v || '') + 'T12:00:00Z'); return Number.isFinite(t) ? Math.round(t / 86400000) : null; };
+  byJob.forEach(list => {
+    const sorted = list.slice().sort((a,b)=>(Number(a.md_phase_sequence || a.md_day_number) - Number(b.md_phase_sequence || b.md_day_number)) || String(a.scheduled_date||'').localeCompare(String(b.scheduled_date||'')));
+    for (let i=1;i<sorted.length;i++) {
+      const prev = sorted[i-1], cur = sorted[i];
+      const p = dayVal(prev.scheduled_date), c = dayVal(cur.scheduled_date);
+      if (p == null || c == null) continue;
+      let msg = '';
+      const expected = p + 1 + (Number(cur.md_dependency_lag_days) || 0);
+      if (c < expected) msg = 'Phase overlap';
+      else if (c > expected) msg = 'Phase gap';
+      if (msg) {
+        out.set(cur.id + ':' + cur.md_day_number, msg);
+        if (c <= p) out.set(prev.id + ':' + prev.md_day_number, msg);
+      }
+    }
+  });
+  return out;
+}
+
 function _sbJobCard(wo, crews, draggable) {
-  const crew = crews.find(c=>c.id===wo.crew_id);
+  const mdCrewId = wo.md_crew_id || wo.crew_id;
+  const crew = crews.find(c=>c.id===mdCrewId);
   const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
   const statusCls = _p6WOStatusClass(wo.status);
   const timeStr = wo.scheduled_time ? wo.scheduled_time.slice(0,5) : '';
   const endStr  = wo.scheduled_end_time ? ' – '+wo.scheduled_end_time.slice(0,5) : '';
   const hrs = wo.duration_hours ? `${wo.duration_hours}h` : '';
+  const isMd = !!(wo.is_multiday || wo.md_day_number);
+  const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
+  const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
+  const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
+  const statusColor = _sbStatusColor(wo.status);
   return `
-    <div class="sb-job-card ${statusCls}" style="border-left:3px solid ${crewColor}"
-        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}')" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -15161,12 +17342,16 @@ function _sbJobCard(wo, crews, draggable) {
         ${_p6WOTrafficDot(wo.status)}
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
+        ${isMd ? `<span class="sb-card-md-pill" title="Multi-day plan">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
+        ${mdWarn ? `<span class="sb-card-md-warn" title="${escapeHtml(mdWarn)}">${escapeHtml(mdWarn)}</span>` : ''}
       </div>
+      ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
       ${crew||wo.crew_name ? `<div class="sb-card-crew" style="color:${crewColor}">${escapeHtml(wo.crew_name||crew?.name||'')}</div>` : ''}
       <div class="sb-card-meta">
         <span class="sb-card-type">${escapeHtml(wo.type||'Service')}</span>
         ${hrs ? `<span class="sb-card-hrs">${hrs}</span>` : ''}
+        ${wo.md_dependency_type ? `<span class="sb-card-hrs" title="Dependency">after day ${escapeHtml(wo.md_depends_on_day_number||'')}</span>` : ''}
       </div>
       <span class="sb-card-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
     </div>`;
@@ -15176,7 +17361,7 @@ async function scheduleBoard() {
   const sb = window._sbState;
 
   // Show loading skeleton
-  view.innerHTML = `<div class="sched-shell"><div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
+  view.innerHTML = `<div class="sched-shell gw-workflow-cleanup sb-density-${sb.density}"><div style="padding:40px;text-align:center;color:var(--gw-text-muted)">
     <div class="sb-spinner"></div><p style="margin-top:12px">${(typeof window._t==='function')?window._t('Loading schedule…'):'Loading schedule…'}</p></div></div>`;
 
   if (!sb.loaded) await _sbLoadData();
@@ -15188,6 +17373,8 @@ function _sbRender() {
   const today = new Date().toISOString().slice(0,10);
   const allCrews = sb.crews;
   const allWOs   = sb.workOrders;
+  window._sbMdWarnings = _sbMdWarningMap(allWOs);
+  window._sbConflicts = _sbConflictMap(allWOs);
 
   // Crew filter bar (toggle visibility per crew)
   const crewFilterBar = `
@@ -15217,15 +17404,23 @@ function _sbRender() {
 
   // Filter WOs by visible crews
   const visibleWOs = allWOs.filter(wo => {
-    if (!wo.crew_id) return true;
-    return !sb.hiddenCrews.has(wo.crew_id);
+    const cid = wo.md_crew_id || wo.crew_id;
+    if (!cid) return true;
+    return !sb.hiddenCrews.has(cid);
   });
 
   let gridHtml = '';
   let headerLabel = '';
 
   const _sbT = (typeof window._t === 'function') ? window._t : (x => x);
-  if (sb.viewMode === 'week') {
+  if (sb.viewMode === 'timeline') {
+    headerLabel = new Date((sb.timelineDate || today) + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric'});
+    gridHtml = _sbTimelineHtml(sb, visibleWOs, allCrews);
+  } else if (sb.viewMode === 'agenda') {
+    const days = _sbGetWeekDays(sb.weekOffset);
+    headerLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+    gridHtml = _sbAgendaHtml(sb, visibleWOs, allCrews);
+  } else if (sb.viewMode === 'week') {
     const days = _sbGetWeekDays(sb.weekOffset);
     const wdNames = [_sbT('Sun'),_sbT('Mon'),_sbT('Tue'),_sbT('Wed'),_sbT('Thu'),_sbT('Fri'),_sbT('Sat')];
     headerLabel = `${days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${days[6].toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
@@ -15256,12 +17451,16 @@ function _sbRender() {
       // One label + 7 cells per crew row — all flat inside the single grid
       const crewCells = laneCrews.map(cr=>{
         const isUnassigned = cr.id==='__unassigned__';
+        const crewWeekJobs = visibleWOs.filter(w => (isUnassigned ? !(w.md_crew_id || w.crew_id) : (w.md_crew_id || w.crew_id) === cr.id));
+        const scheduledHours = crewWeekJobs.reduce((sum,w)=>sum+(_sbEventRange(w).duration/60),0);
+        const weeklyCapacity = 40;
+        const utilization = Math.round((scheduledHours/weeklyCapacity)*100);
         const dayCells = days.map(d=>{
           const iso = d.toISOString().slice(0,10);
           const isToday = iso===today;
           const jobs = isUnassigned
-            ? visibleWOs.filter(w => (!w.crew_id) && w.scheduled_date?.slice(0,10)===iso)
-            : visibleWOs.filter(w => w.crew_id===cr.id && w.scheduled_date?.slice(0,10)===iso);
+            ? visibleWOs.filter(w => (!(w.md_crew_id || w.crew_id)) && w.scheduled_date?.slice(0,10)===iso)
+            : visibleWOs.filter(w => (w.md_crew_id || w.crew_id)===cr.id && w.scheduled_date?.slice(0,10)===iso);
           return `<div class="sb-lane-cell${isToday?' today':''}"
               data-date="${iso}" data-crew="${cr.id}"
               ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -15274,7 +17473,7 @@ function _sbRender() {
         return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
             <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
-            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}</span>
+            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small>${scheduledHours.toFixed(1)}h · ${utilization}%</small><i><b style="width:${Math.min(100,utilization)}%;${utilization>100?'background:#d84b42':''}"></b></i></span>
           </div>
           ${dayCells}`;
       }).join('');
@@ -15321,8 +17520,9 @@ function _sbRender() {
       const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
       const dots = jobs.slice(0,5).map(wo => {
         // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
-        const dotColor = wo.status === 'hold' ? '#EAB308' : (wo.status === 'cancelled' ? '#DC2626' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8'));
-        return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${wo.status==='hold' ? ' — HOLD (awaiting acceptance)' : ''}"></span>`;
+        const isMd = !!(wo.is_multiday || wo.md_day_number);
+        const dotColor = _sbStatusColor(wo.status);        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
+        return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}${isMd ? ' sb-month-dot--multiday' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${escapeHtml(mdTitle)}${wo.status==='hold' ? ' - HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
         <div class="sb-month-cell${isToday?' sb-month-cell--today':''}"
@@ -15330,13 +17530,14 @@ function _sbRender() {
             ondragover="event.preventDefault();this.classList.add('drag-over')"
             ondragleave="this.classList.remove('drag-over')"
             ondrop="_sbDropOnCell(event,'${iso}',null)"
-            onclick="_sbOpenNewVisit('${iso}',null)">
+            onclick="_sbOpenDaySummary('${iso}')">
           <div class="sb-month-num">${d}</div>
           ${jobs.length ? `<div class="sb-month-dots">${dots}${jobs.length>5?`<span class="sb-month-more">+${jobs.length-5}</span>`:''}</div>` : ''}
           ${jobs.slice(0,3).map(wo=>{
-            const crewColor = wo.status === 'hold' ? '#EAB308' : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');
-            return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}" style="border-left:2px solid ${crewColor}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
-              ${_p6WOTrafficDot(wo.status)} ${escapeHtml((wo.client_name||wo.title||'Job').slice(0,20))}
+            const isMd = !!(wo.is_multiday || wo.md_day_number);
+            const crewColor = isMd ? _sbMdColor(wo.id) : (wo.crew_color || allCrews.find(c=>c.id===wo.crew_id)?.color || '#94a3b8');            const mdText = isMd ? `D${wo.md_day_number||'?'} ${wo.md_phase_name || ''}`.trim() + ' - ' : '';
+            return `<div class="sb-month-chip${wo.status==='hold' ? ' sb-month-chip--hold' : ''}${isMd ? ' sb-month-chip--multiday' : ''}" style="border-left:2px solid ${crewColor};${isMd ? '--md-color:' + crewColor : ''}" onclick="event.stopPropagation();_sbOpenVisitModal('${wo.id}')">
+              ${_p6WOTrafficDot(wo.status)} ${escapeHtml((mdText + (wo.client_name||wo.title||'Job')).slice(0,26))}
             </div>`;
           }).join('')}
           ${jobs.length>3 ? `<div class="sb-month-more-link">+${jobs.length-3} more</div>` : ''}
@@ -15352,6 +17553,8 @@ function _sbRender() {
   const totalHolds      = visibleWOs.filter(w=>w.status==='hold').length;
   const totalInProgress = visibleWOs.filter(w=>w.status==='in-progress').length;
   const totalCompleted  = visibleWOs.filter(w=>w.status==='completed').length;
+  const totalUniqueJobs = new Set(visibleWOs.map(w=>w.id)).size;
+  const totalMultiDayPlans = new Set(visibleWOs.filter(w=>w.is_multiday || w.md_day_number).map(w=>w.id)).size;
 
   // ── Mobile layout (≤768px): day-list view ────────────────────────────────
   if (window.innerWidth <= 768) {
@@ -15360,7 +17563,7 @@ function _sbRender() {
   }
 
   view.innerHTML = `
-  <div class="sched-shell">
+  <div class="sched-shell gw-workflow-cleanup sb-density-${sb.density}">
     <div class="gwp-shell" style="padding-bottom:0">
       <header class="gwp-header" style="margin-bottom:14px">
         <div class="gwp-header-left">
@@ -15374,18 +17577,21 @@ function _sbRender() {
         </div>
         <div class="gwp-header-actions">
           <div class="sb-view-toggle">
+            <button class="sb-view-btn${sb.viewMode==='timeline'?' active':''}" onclick="_sbSetView('timeline')">Timeline</button>
             <button class="sb-view-btn${sb.viewMode==='week'?' active':''}" onclick="_sbSetView('week')">Week</button>
             <button class="sb-view-btn${sb.viewMode==='month'?' active':''}" onclick="_sbSetView('month')">Month</button>
+            <button class="sb-view-btn${sb.viewMode==='agenda'?' active':''}" onclick="_sbSetView('agenda')">Agenda</button>
           </div>
-          <button class="gwp-btn-ghost" onclick="show('dispatchBoard')">Dispatch</button>
+          <select class="sb-density-select" onchange="_sbSetDensity(this.value)" title="Calendar density"><option value="compact"${sb.density==='compact'?' selected':''}>Compact</option><option value="comfortable"${sb.density==='comfortable'?' selected':''}>Comfortable</option><option value="detailed"${sb.density==='detailed'?' selected':''}>Detailed</option></select>
+          <button class="gwp-btn-ghost" onclick="_sbToggleMetrics()">${sb.showMetrics?'Hide':'Show'} metrics</button>
           <button class="gwp-btn-primary" onclick="_sbOpenNewVisit(null,null)">+ Work Order</button>
         </div>
       </header>
 
-      <div class="gwp-kpi-row${totalHolds ? ' gwp-kpi-row--5' : ''}" style="margin-bottom:14px">
+      ${sb.showMetrics ? `<div class="gwp-kpi-row${totalHolds ? ' gwp-kpi-row--5' : ''}" style="margin-bottom:14px">
         <div class="gwp-kpi-card gwp-kpi-card--blue">
           <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled</div></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled Visits</div><div class="gwp-kpi-sub">${totalUniqueJobs} work orders</div></div>
         </div>
         ${totalHolds ? `<div class="gwp-kpi-card gwp-kpi-card--yellow" title="Jobs held on the calendar — waiting for the client to accept the estimate">
           <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><span style="width:10px;height:10px;border-radius:50%;background:#EAB308;display:inline-block"></span></div>
@@ -15401,9 +17607,9 @@ function _sbRender() {
         </div>
         <div class="gwp-kpi-card gwp-kpi-card--muted">
           <div class="gwp-kpi-icon gwp-kpi-icon--muted"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div></div>
+          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div><div class="gwp-kpi-sub">${totalMultiDayPlans} multi-day plans</div></div>
         </div>
-      </div>
+      </div>` : ''}
     </div>
 
     ${crewFilterBar}
@@ -15417,20 +17623,31 @@ function _sbRender() {
 window.scheduleBoard = scheduleBoard;
 window._sbNav = function(dir) {
   const sb = window._sbState;
-  if (sb.viewMode==='week') sb.weekOffset += dir; else sb.monthOffset += dir;
-  // reset selected day to first day of new week when navigating
-  if (sb.viewMode === 'week') {
+  if (sb.viewMode === 'timeline') {
+    const d = new Date((sb.timelineDate || new Date().toISOString().slice(0,10)) + 'T12:00:00');
+    d.setDate(d.getDate() + dir);
+    sb.timelineDate = d.toISOString().slice(0,10);
+  } else if (sb.viewMode === 'month') sb.monthOffset += dir;
+  else sb.weekOffset += dir;
+  if (sb.viewMode === 'week' || sb.viewMode === 'agenda') {
     const days = _sbGetWeekDays(sb.weekOffset);
     sb.mobileSelectedDay = days[0].toISOString().slice(0,10);
   }
-  _sbRender();
+  _sbRefresh();
 };
 window._sbGoToday = function() {
-  window._sbState.weekOffset = 0; window._sbState.monthOffset = 0;
-  window._sbState.mobileSelectedDay = new Date().toISOString().slice(0,10);
-  _sbRender();
+  const today = new Date().toISOString().slice(0,10);
+  window._sbState.weekOffset = 0;
+  window._sbState.monthOffset = 0;
+  window._sbState.timelineDate = today;
+  window._sbState.mobileSelectedDay = today;
+  _sbRefresh();
 };
-window._sbSetView = function(v) { window._sbState.viewMode = v; _sbRender(); };
+window._sbSetView = function(v) { window._sbState.viewMode = v; _sbSavePreferences(); _sbRefresh(); };
+window._sbSetDensity = function(v) { window._sbState.density = ['compact','comfortable','detailed'].includes(v) ? v : 'compact'; _sbSavePreferences(); _sbRender(); };
+window._sbToggleMetrics = function() { window._sbState.showMetrics = !window._sbState.showMetrics; _sbSavePreferences(); _sbRender(); };
+window._sbSetSnap = function(v) { window._sbState.snapMinutes = Number(v) || 15; _sbSavePreferences(); _sbRender(); };
+window._sbTimelineDate = function(v) { if (v) window._sbState.timelineDate = v; _sbRefresh(); };
 window._sbToggleCrew = function(id) {
   const sb = window._sbState;
   if (sb.hiddenCrews.has(id)) sb.hiddenCrews.delete(id); else sb.hiddenCrews.add(id);
@@ -15482,7 +17699,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
 
     view.innerHTML = `
-    <div class="sched-shell sbm-shell">
+    <div class="sched-shell sbm-shell gw-workflow-cleanup">
       <!-- Compact header -->
       <div class="sbm-header">
         <div class="sbm-header-row1">
@@ -15579,8 +17796,8 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     dayContent = laneCrews.map(cr => {
       const isUnassigned = cr.id==='__unassigned__';
       const crewJobs = isUnassigned
-        ? selJobs.filter(w=>!w.crew_id)
-        : selJobs.filter(w=>w.crew_id===cr.id);
+        ? selJobs.filter(w=>!(w.md_crew_id || w.crew_id))
+        : selJobs.filter(w=>(w.md_crew_id || w.crew_id)===cr.id);
       if (!crewJobs.length && isUnassigned) return ''; // hide empty unassigned lane
       return `<div class="sbm-crew-lane">
         <div class="sbm-crew-lane-head" style="border-left:3px solid ${cr.color}">
@@ -15607,7 +17824,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
   </div>`;
 
   view.innerHTML = `
-  <div class="sched-shell sbm-shell">
+  <div class="sched-shell sbm-shell gw-workflow-cleanup">
     <!-- Compact mobile header -->
     <div class="sbm-header">
       <div class="sbm-header-row1">
@@ -15673,19 +17890,27 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
 
 // Mobile job card — more touch-friendly than the desktop card
 function _sbMobileJobCard(wo, crews) {
-  const crew = crews.find(c=>c.id===wo.crew_id);
+  const mdCrewId = wo.md_crew_id || wo.crew_id;
+  const crew = crews.find(c=>c.id===mdCrewId);
   const crewColor = wo.crew_color || (crew?.color) || '#94a3b8';
   const statusCls = _p6WOStatusClass(wo.status);
   const timeStr = wo.scheduled_time ? wo.scheduled_time.slice(0,5) : '';
-  const endStr  = wo.scheduled_end_time ? ' – '+wo.scheduled_end_time.slice(0,5) : '';
+  const endStr  = wo.scheduled_end_time ? ' - '+wo.scheduled_end_time.slice(0,5) : '';
+  const isMd = !!(wo.is_multiday || wo.md_day_number);
+  const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
+  const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
+  const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   return `
-  <div class="sbm-job-card ${statusCls}" style="border-left:4px solid ${crewColor}" onclick="_sbOpenVisitModal('${wo.id}')">
+  <div class="sbm-job-card ${statusCls}${isMd?' sbm-job-card--multiday':''}" style="border-left:4px solid ${crewColor};${isMd ? '--md-color:' + mdColor : ''}" onclick="_sbOpenVisitModal('${wo.id}')">
     <div class="sbm-job-top">
       ${_p6WOTrafficDot(wo.status)}
       <span class="sbm-job-num">${wo.wo_number||wo.id}</span>
       ${timeStr ? `<span class="sbm-job-time">${timeStr}${endStr}</span>` : ''}
+      ${isMd ? `<span class="sb-card-md-pill">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
+      ${mdWarn ? `<span class="sb-card-md-warn">${escapeHtml(mdWarn)}</span>` : ''}
       <span class="sbm-job-status ops-ready-badge ${statusCls}">${_p6WOStatusLabel(wo.status)}</span>
     </div>
+    ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
     <div class="sbm-job-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
     <div class="sbm-job-meta">
       ${crew||wo.crew_name ? `<span style="color:${crewColor};font-weight:600;font-size:12px">${escapeHtml(wo.crew_name||crew?.name||'')}</span>` : ''}
@@ -15697,15 +17922,50 @@ function _sbMobileJobCard(wo, crews) {
 
 window._sbToggleCrewLanes = function() {
   window._sbState.crewLanes = !window._sbState.crewLanes;
+  _sbSavePreferences();
   _sbRender();
+};
+
+
+window._sbOpenDaySummary = function(iso) {
+  const jobs = (window._sbState.workOrders || []).filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
+  if (!jobs.length) { _sbOpenNewVisit(iso, null); return; }
+  document.getElementById('sb-day-summary-modal')?.remove();
+  const crews = window._sbState.crews || [];
+  const dayLabel = new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  const mdWarnings = window._sbMdWarnings || _sbMdWarningMap(window._sbState.workOrders || []);
+  const warnRows = jobs.filter(j => mdWarnings.get(j.id + ':' + j.md_day_number));
+  const modal = document.createElement('div');
+  modal.id = 'sb-day-summary-modal';
+  modal.className = 'sb-modal-backdrop';
+  modal.innerHTML = `
+    <div class="sb-visit-modal" style="max-width:760px">
+      <div class="sb-modal-header">
+        <div><h2>${escapeHtml(dayLabel)}</h2><p>${jobs.length} scheduled visit${jobs.length === 1 ? '' : 's'}${warnRows.length ? ' - ' + warnRows.length + ' schedule warning' + (warnRows.length === 1 ? '' : 's') : ''}</p></div>
+        <button class="sb-modal-close" onclick="document.getElementById('sb-day-summary-modal')?.remove()">×</button>
+      </div>
+      <div class="sb-modal-body" style="display:block;max-height:70vh;overflow:auto">
+        ${warnRows.length ? `<div class="gw-md-warn"><strong>Warnings in this day</strong><br>${warnRows.map(w => escapeHtml((w.wo_number || w.id) + ': ' + mdWarnings.get(w.id + ':' + w.md_day_number))).join('<br>')}</div>` : ''}
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${jobs.map(wo => _sbJobCard(wo, crews, false)).join('')}
+        </div>
+      </div>
+      <div class="sb-modal-actions">
+        <button class="rp-btn" onclick="_sbOpenNewVisit('${iso}',null);document.getElementById('sb-day-summary-modal')?.remove()">Add Work Order</button>
+        <button class="rp-btn rp-btn--primary" onclick="document.getElementById('sb-day-summary-modal')?.remove()">Close</button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
 };
 
 // ── Drag & Drop ───────────────────────────────────────────────────────────────
 // Handle mousedown on drag handle — only starts a real HTML5 drag if the user
 // actually moves the mouse (>4px), otherwise it's a click and falls through to
 // the card's onclick handler normally.
-window._sbDragStart = function(e, woId) {
+window._sbDragStart = function(e, woId, dayNumber) {
   e.dataTransfer.setData('text/plain', woId);
+  e.dataTransfer.setData('application/gw-day-number', String(dayNumber || 0));
   e.dataTransfer.effectAllowed = 'move';
   e.currentTarget.style.opacity = '0.45';
 };
@@ -15714,39 +17974,100 @@ window._sbDropOnCell = async function(e, iso, crewId) {
   e.preventDefault();
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   const woId = e.dataTransfer.getData('text/plain');
+  const dragDayNumber = parseInt(e.dataTransfer.getData('application/gw-day-number') || '0') || 0;
   if (!woId) return;
-  // Optimistically update local state
-  const wo = window._sbState.workOrders.find(w=>w.id===woId);
+  const wo = window._sbState.workOrders.find(w=>w.id===woId && (!dragDayNumber || Number(w.md_day_number) === dragDayNumber)) || window._sbState.workOrders.find(w=>w.id===woId);
   if (!wo) return;
   const oldDate = wo.scheduled_date;
-  const oldCrew = wo.crew_id;
+  const oldCrew = wo.md_crew_id || wo.crew_id;
+  const isMdDay = !!(wo.md_day_number || dragDayNumber);
+  const dayNumber = Number(wo.md_day_number || dragDayNumber);
+  const nextCrew = crewId && crewId !== '__unassigned__' ? crewId : (crewId === '__unassigned__' ? '' : oldCrew);
+  const shiftMode = isMdDay && e.shiftKey;
   wo.scheduled_date = iso;
-  if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
+  if (isMdDay) wo.md_crew_id = nextCrew || '';
+  else if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
   else if (crewId === '__unassigned__') wo.crew_id = null;
   _sbRender();
-  // Persist
   try {
+    if (isMdDay) {
+      const path = shiftMode
+        ? `/api/work-orders/${woId}/days/${dayNumber}/shift-downstream`
+        : `/api/work-orders/${woId}/days/${dayNumber}`;
+      const body = shiftMode
+        ? { day_date: iso, crew_id: nextCrew || null }
+        : { day_date: iso, crew_id: nextCrew || null };
+      const r = await fetch(path, { method: shiftMode ? 'POST' : 'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const d = await r.json().catch(()=>({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
+      showToast(shiftMode ? 'Phase and downstream days shifted' : 'Phase rescheduled','success');
+      await _sbRefresh();
+      return;
+    }
     const body = { scheduled_date: iso };
     if (crewId !== null) body.crew_id = crewId === '__unassigned__' ? null : crewId;
-    await fetch(`/api/work-orders/${woId}/reschedule`, {
-      method:'PATCH', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
+    const r = await fetch(`/api/work-orders/${woId}/reschedule`, {
+      method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
-    // If crew changed, update via PUT
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
     if (crewId !== null && crewId !== oldCrew) {
       await fetch(`/api/work-orders/${woId}`, {
-        method:'PUT', headers:{'Content-Type':'application/json'},
+        method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ crew_id: crewId === '__unassigned__' ? null : crewId })
       });
     }
     showToast('Job rescheduled','success');
   } catch(err) {
-    // Rollback
     wo.scheduled_date = oldDate;
-    wo.crew_id = oldCrew;
+    if (isMdDay) wo.md_crew_id = oldCrew || '';
+    else wo.crew_id = oldCrew;
     _sbRender();
-    showToast('Reschedule failed','error');
+    showToast((err && err.message) || 'Reschedule failed','error');
   }
+};
+
+window._sbDropOnTimeline = async function(e, track) {
+  e.preventDefault();
+  const woId = e.dataTransfer.getData('text/plain');
+  const dayN = Number(e.dataTransfer.getData('application/gw-day-number') || 0);
+  const wo = [...window._sbState.workOrders, ...(window._sbState.backlog || [])].find(w=>w.id===woId && (!dayN || Number(w.md_day_number)===dayN));
+  if (!wo || wo.schedule_locked) return showToast('Unlock this visit before moving it','error');
+  const sb = window._sbState, rect = track.getBoundingClientRect();
+  const raw = Number(sb.workdayStart||6)*60 + ((e.clientY-rect.top)/1.15);
+  const snap = Number(sb.snapMinutes)||15, start = Math.round(raw/snap)*snap;
+  const range = _sbEventRange(wo), end = Math.min(1439,start+range.duration);
+  const crew = track.dataset.crew === '__unassigned__' ? '' : track.dataset.crew;
+  await _sbApplySchedule(wo, { day_date:track.dataset.date, scheduled_date:track.dataset.date, start_time:_sbClock(start), end_time:_sbClock(end), scheduled_time:_sbClock(start), scheduled_end_time:_sbClock(end), crew_id:crew, scheduled_duration_minutes:end-start }, 'Visit moved');
+};
+window._sbApplySchedule = async function(wo, changes, message) {
+  const dayN = Number(wo.md_day_number||0), before = { scheduled_date:wo.scheduled_date, scheduled_time:wo.scheduled_time, scheduled_end_time:wo.scheduled_end_time, crew_id:wo.md_crew_id||wo.crew_id, scheduled_duration_minutes:wo.scheduled_duration_minutes };
+  window._sbState.undoStack.push({ woId:wo.id, dayN, before });
+  if (window._sbState.undoStack.length>20) window._sbState.undoStack.shift();
+  try {
+    const url = dayN ? `/api/work-orders/${wo.id}/days/${dayN}` : `/api/work-orders/${wo.id}/reschedule`;
+    const body = dayN ? changes : { scheduled_date:changes.scheduled_date, scheduled_time:changes.scheduled_time, scheduled_end_time:changes.scheduled_end_time, scheduled_duration_minutes:changes.scheduled_duration_minutes };
+    const r = await fetch(url,{method:'PATCH',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({})); if(!r.ok||d.ok===false) throw new Error(d.error||'Schedule update failed');
+    if (!dayN && changes.crew_id !== undefined && changes.crew_id !== before.crew_id) await fetch(`/api/work-orders/${wo.id}`,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({crew_id:changes.crew_id||null})});
+    showToast(`${message}. Undo is available in the timeline toolbar.`,'success'); await _sbRefresh();
+  } catch(err) { window._sbState.undoStack.pop(); showToast(err.message||'Schedule update failed','error'); }
+};
+window._sbUndo = async function() {
+  const item=window._sbState.undoStack.pop(); if(!item) return showToast('Nothing to undo','error');
+  const wo=window._sbState.workOrders.find(w=>w.id===item.woId&&(!item.dayN||Number(w.md_day_number)===item.dayN));
+  if(!wo) return;
+  const b=item.before;
+  await _sbApplySchedule(wo,{day_date:b.scheduled_date,scheduled_date:b.scheduled_date,start_time:b.scheduled_time,end_time:b.scheduled_end_time,scheduled_time:b.scheduled_time,scheduled_end_time:b.scheduled_end_time,crew_id:b.crew_id,scheduled_duration_minutes:b.scheduled_duration_minutes},'Schedule restored');
+  window._sbState.undoStack.pop();
+};
+window._sbResizeStart = function(e, woId, dayN) {
+  e.preventDefault();
+  const wo=window._sbState.workOrders.find(w=>w.id===woId&&(!dayN||Number(w.md_day_number)===Number(dayN))); if(!wo)return;
+  const startY=e.clientY, range=_sbEventRange(wo), el=e.currentTarget.closest('.sb-time-event'), startHeight=el.getBoundingClientRect().height;
+  const move=ev=>{const snap=Number(window._sbState.snapMinutes)||15, delta=Math.round(((ev.clientY-startY)/1.15)/snap)*snap, mins=Math.max(snap,range.duration+delta);el.style.height=Math.max(32,mins*1.15)+'px';el.querySelector('.sb-time-event-time').textContent=`${_sbDisplayTime(_sbClock(range.start))} - ${_sbDisplayTime(_sbClock(range.start+mins))}`;};
+  const up=async ev=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);const snap=Number(window._sbState.snapMinutes)||15, delta=Math.round(((ev.clientY-startY)/1.15)/snap)*snap, mins=Math.max(snap,range.duration+delta);if(Math.abs(el.getBoundingClientRect().height-startHeight)<2)return _sbRender();await _sbApplySchedule(wo,{day_date:wo.scheduled_date,scheduled_date:wo.scheduled_date,start_time:_sbClock(range.start),end_time:_sbClock(range.start+mins),scheduled_time:_sbClock(range.start),scheduled_end_time:_sbClock(range.start+mins),crew_id:wo.md_crew_id||wo.crew_id,scheduled_duration_minutes:mins},'End time updated');};
+  window.addEventListener('pointermove',move);window.addEventListener('pointerup',up,{once:true});
 };
 
 // ── Duplicate Job ─────────────────────────────────────────────────────────────
@@ -15779,6 +18100,20 @@ window._sbOpenVisitModal = async function(woId) {
   // Remove any stale modal first
   const _existing = document.getElementById('sb-visit-modal');
   if (_existing) _existing.remove();
+
+  // Ensure crews + employees are loaded — the modal can be opened from views
+  // (client detail, estimates, My Day) before the schedule board has run.
+  if (!(window._gwAllReps||[]).length || !(window._sbState?.crews||[]).length) {
+    try {
+      const [cr, rr] = await Promise.all([
+        fetch('/api/crews', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+        fetch('/api/reps',  {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      ]);
+      window._sbState = window._sbState || {};
+      if (cr && cr.ok && !(window._sbState.crews||[]).length) window._sbState.crews = cr.data || [];
+      if (rr && rr.ok && !(window._gwAllReps||[]).length) window._gwAllReps = rr.data || rr.reps || [];
+    } catch(e) {}
+  }
 
   let wo = null;
   try {
@@ -15891,6 +18226,10 @@ window._sbOpenVisitModal = async function(woId) {
                     `<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
                 </select>
               </label>
+              <label class="sb-modal-field">
+                <span>Schedule Lock</span>
+                <label style="display:flex;align-items:center;gap:7px;height:38px"><input id="sbm-schedule-locked" type="checkbox"${wo.schedule_locked ? ' checked' : ''}> Prevent drag and resize</label>
+              </label>
             </div>
 
             <div class="sb-modal-field" style="margin-top:8px">
@@ -15933,6 +18272,18 @@ window._sbOpenVisitModal = async function(woId) {
               <button class="rp-btn-sm" onclick="_sbAddCheck()">+ Item</button>
             </div>
             <div id="sbm-checklist">${checklistHtml||'<p class="sb-empty-note">No items. Add checklist items above.</p>'}</div>
+          </section>
+
+          <!-- Multi-Day Job -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Multi-Day Job</h3>
+            <div id="gw-wo-multiday-panel"><p class="sb-empty-note">Loading…</p></div>
+          </section>
+
+          <!-- Client Portal Updates -->
+          <section class="sb-modal-section">
+            <h3 class="sb-modal-section-title">Client Portal Updates</h3>
+            <div id="gw-wo-portal-panel"><p class="sb-empty-note">Loading updates…</p></div>
           </section>
         </div>
 
@@ -16105,6 +18456,22 @@ window._sbOpenVisitModal = async function(woId) {
   // Store current WO for handlers
   window._sbCurrentWO = JSON.parse(JSON.stringify(wo));
   window._sbCurrentWOId = wo.id;
+
+  // Mount Client Portal Updates panel (daily updates + photo publish)
+  if (typeof window._gwPortalUpdatesPanel === 'function') {
+    window._gwPortalUpdatesPanel(wo.id, document.getElementById('gw-wo-portal-panel'));
+  } else {
+    const _pp = document.getElementById('gw-wo-portal-panel');
+    if (_pp) _pp.innerHTML = '<p class="sb-empty-note">Portal module not loaded.</p>';
+  }
+
+  // Mount Multi-Day Job panel (daily AI checklist + auto-publish)
+  if (typeof window._gwMultidayPanel === 'function') {
+    window._gwMultidayPanel(wo.id, document.getElementById('gw-wo-multiday-panel'));
+  } else {
+    const _mp = document.getElementById('gw-wo-multiday-panel');
+    if (_mp) _mp.innerHTML = '<p class="sb-empty-note">Multi-day module not loaded.</p>';
+  }
 };
 
 window._sbCloseModal = function() {
@@ -16123,6 +18490,7 @@ window._sbSaveVisit = async function(woId, andComplete) {
     scheduled_date: document.getElementById('sbm-date')?.value || null,
     scheduled_time: document.getElementById('sbm-time')?.value || null,
     scheduled_end_time: document.getElementById('sbm-end-time')?.value || null,
+    schedule_locked: !!document.getElementById('sbm-schedule-locked')?.checked,
     status:         document.getElementById('sbm-status')?.value || 'scheduled',
     notes:          document.getElementById('sbm-notes')?.value  || '',
     completion_notes: document.getElementById('sbm-completion-notes')?.value || '',
@@ -17118,8 +19486,8 @@ async function workOrderList() {
   : `<div class="rp-empty-state" style="padding:48px 24px;text-align:center"><p style="color:var(--gw-text-muted);margin-bottom:16px">${_wlT('No work orders yet.')}</p><button class="rp-btn rp-btn--primary" onclick="_sbOpenNewVisit(null)">${_wlT('+ Create First Work Order')}</button></div>`;
 
   view.innerHTML = `
-  <div class="wo-list-shell">
-    <header class="rp-header">
+  <div class="wo-list-shell gw-list-shell">
+    <header class="rp-header gw-list-header">
       <div class="rp-header-left">
         <h1 class="rp-title">${_wlT('Work Orders')}</h1>
         <p class="rp-subtitle">${wos.length} ${_wlT('total')} · ${counts['in-progress']} ${_wlT('in progress')} · ${counts.scheduled} ${_wlT('scheduled')}</p>
@@ -17167,192 +19535,20 @@ window._p6DeleteWO = function(id) {
 
 // ── 6. Work Order Detail ──────────────────────────────────────────────────────
 function workOrderDetail(id) {
-  const R   = window.GW && window.GW.record;
-  const wos = state.workOrders || [];
-  let wo    = wos.find(w => w.id === id);
-  if (!wo) {
-    // Create stub if not found
-    wo = { id: id||('wo-'+Date.now()), woNumber:'WO-NEW', status:'scheduled', crew:'', date:'', type:'Service',
-      clientName:'', notes:'', checklist:[], materials:[], assets:[], readiness:'ready',
-      createdAt: new Date().toISOString() };
-    state.workOrders = [...(state.workOrders||[]), wo];
-    saveState();
+  // The legacy work-order detail page is retired. Every job click routes to
+  // the schedule board and opens the full visit modal (D1-backed), which is
+  // the single source of truth for job details, crew, checklist, multiday,
+  // portal updates and photos.
+  if (!id) {
+    // "New work order" flow — open the schedule board's new-visit modal
+    show('scheduleBoard');
+    setTimeout(() => { if (typeof window._sbOpenNewVisit === 'function') window._sbOpenNewVisit(); }, 150);
+    return;
   }
-
-  const _woPrevStatus = wo.status;
-  function save() {
-    wo.clientName = document.getElementById('wo-client-name')?.value || wo.clientName;
-    wo.type       = document.getElementById('wo-type')?.value       || wo.type;
-    wo.date       = document.getElementById('wo-date')?.value       || wo.date;
-    wo.time       = document.getElementById('wo-time')?.value       || wo.time;
-    wo.crew       = document.getElementById('wo-crew')?.value       || wo.crew;
-    const newStatus = document.getElementById('wo-status')?.value || wo.status;
-    wo.readiness  = document.getElementById('wo-readiness')?.value  || wo.readiness;
-    wo.notes      = document.getElementById('wo-notes')?.value      || wo.notes;
-    wo.updatedAt  = new Date().toISOString();
-    // Audit status transitions
-    if (newStatus !== wo.status) {
-      wo.timeline = [...(wo.timeline||[]), { action: `Status changed to ${_p6WOStatusLabel(newStatus)}`, note: `from ${_p6WOStatusLabel(wo.status)}`, at: new Date().toISOString() }];
-      if (typeof window.gwAudit === 'function') window.gwAudit({ type:'work_order_status_changed', entityType:'work_order', entityId:id, entityLabel:_p6WONum(wo), meta:{ from:wo.status, to:newStatus } });
-      // Fire workflow hook when WO is completed
-      if (newStatus === 'completed' && typeof window.gwWorkflow === 'object') {
-        window.gwWorkflow.workOrderCompleted({ entityId:id, entityLabel:_p6WONum(wo), clientName:wo.clientName, crew:wo.crew });
-      }
-      // Fire review request auto-trigger when WO completed
-      if (newStatus === 'completed' && typeof window.gwTriggerReviewRequest === 'function') {
-        const _woClient = wo.clientName || wo.client_name || '';
-        const _woEmail  = wo.client_email || wo.clientEmail || '';
-        window.gwTriggerReviewRequest(id, _woClient, _woEmail);
-      }
-    }
-    wo.status = newStatus;
-    state.workOrders = (state.workOrders||[]).map(w => w.id===id ? wo : w);
-    saveState();
-    showToast('Work order saved', 'success');
-    workOrderDetail(id);
-  }
-
-  // Checklist
-  const checklist = wo.checklist||[];
-  const checklistHtml = checklist.map((item,i) => `
-    <div class="wo-checklist-item">
-      <button class="wo-check-box${item.done?' checked':''}" onclick="_p6ToggleCheck('${id}',${i})">
-        ${item.done?'<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6l3 3 5-5"/></svg>':''}
-      </button>
-      <span class="wo-check-label${item.done?' checked':''}">${escapeHtml(item.text||'')}</span>
-      <button class="rp-btn-sm rp-btn-sm--danger" style="margin-left:auto" onclick="_p6RemoveCheck('${id}',${i})">✕</button>
-    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No checklist items.</p>';
-
-  // Materials
-  const mats = wo.materials||[];
-  const matsHtml = mats.map((m,i) => `
-    <div class="wo-material-item">
-      <span class="wo-mat-name">${escapeHtml(m.name||'Item')}</span>
-      <span class="wo-mat-qty">${m.qty||1} ${escapeHtml(m.unit||'ea')}</span>
-      <button class="rp-btn-sm rp-btn-sm--danger" onclick="_p6RemoveMat('${id}',${i})">✕</button>
-    </div>`).join('') || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No materials allocated.</p>';
-
-  // TL events
-  const tlEvents = (wo.timeline||[]).map(e => ({
-    title: e.action, desc: e.note||'', time: e.at ? _p5FmtDate(e.at) : '—', variant: 'neutral'
-  }));
-  if (!tlEvents.length) tlEvents.push({ title: 'Work Order Created', desc: 'Initial creation', time: wo.createdAt ? _p5FmtDate(wo.createdAt) : '—', variant: 'positive' });
-  const tlHtml = R ? R.OpsTL(tlEvents) : '';
-
-  // Left rail
-  const leftRail = `
-    <section class="rp-section">
-      <div class="wo-scope-block">
-        <div class="wo-scope-label">Work Order #</div>
-        <div class="wo-scope-text" style="font-size:18px;font-weight:800;letter-spacing:.02em">${_p6WONum(wo)}</div>
-      </div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Details</span></div>
-      <div class="rp-field-grid">
-        <label class="rp-field">
-          <span class="rp-field-label">Client / Job Name</span>
-          <input class="rp-input" id="wo-client-name" value="${escapeHtml(wo.clientName||'')}" placeholder="Client or job name">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Type</span>
-          <input class="rp-input" id="wo-type" value="${escapeHtml(wo.type||'Service')}" placeholder="e.g. Lawn Care, Install">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Scheduled Date</span>
-          <input class="rp-input" id="wo-date" type="date" value="${wo.date||''}">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Time</span>
-          <input class="rp-input" id="wo-time" type="time" value="${wo.time||''}">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Crew / Assignee</span>
-          <input class="rp-input" id="wo-crew" value="${escapeHtml(wo.crew||'')}" placeholder="Crew name or lead">
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Status</span>
-          <select class="rp-input" id="wo-status">
-            ${['hold','scheduled','in-progress','completed','on-hold','cancelled'].map(s=>`<option value="${s}"${wo.status===s?' selected':''}>${_p6WOStatusLabel(s)}</option>`).join('')}
-          </select>
-        </label>
-        <label class="rp-field">
-          <span class="rp-field-label">Readiness</span>
-          <select class="rp-input" id="wo-readiness">
-            ${['ready','not-ready','partial','loading','en-route','on-site','wrapping-up','completed','cancelled','delayed'].map(s=>`<option value="${s}"${wo.readiness===s?' selected':''}>${_p6ReadinessLabel(s)}</option>`).join('')}
-          </select>
-        </label>
-      </div>
-      <label class="rp-field" style="margin-top:8px">
-        <span class="rp-field-label">Notes / Scope</span>
-        <textarea class="rp-input" id="wo-notes" rows="4" placeholder="Job scope, special instructions…">${escapeHtml(wo.notes||'')}</textarea>
-      </label>
-      <div style="margin-top:12px;display:flex;gap:8px">
-        <button class="rp-btn rp-btn--primary" onclick="_p6WOSave()">Save Changes</button>
-        <button class="rp-btn" onclick="show('workOrderList')">← Back to WOs</button>
-      </div>
-    </section>
-
-    <section class="rp-section">
-      <div class="rp-section-head">
-        <span class="rp-section-title">Checklist</span>
-        <button class="rp-btn-sm" onclick="_p6AddCheck('${id}')">+ Item</button>
-      </div>
-      ${checklistHtml}
-    </section>
-
-    <section class="rp-section">
-      <div class="rp-section-head">
-        <span class="rp-section-title">Materials</span>
-        <button class="rp-btn-sm" onclick="show('materialAllocation','${id}')">Allocate</button>
-      </div>
-      ${matsHtml}
-    </section>`;
-
-  // Right rail
-  const rightRail = `
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Status</span></div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Readiness</span><br>
-          ${R ? R.ReadinessBadge(wo.readiness||'ready') : `<strong>${_p6ReadinessLabel(wo.readiness||'ready')}</strong>`}</div>
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Work Order Status</span><br>
-          <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span></div>
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Crew</span><br>
-          <strong style="font-size:13px">${escapeHtml(wo.crew||'Unassigned')}</strong></div>
-        <div><span style="font-size:11px;color:var(--gw-text-muted)">Scheduled</span><br>
-          <strong style="font-size:13px">${wo.date ? _p5FmtDate(wo.date) : '—'}${wo.time?' at '+wo.time:''}</strong></div>
-      </div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Approvals</span></div>
-      <div id="wo-approval-panel-${id}"></div>
-    </section>
-    <section class="rp-section">
-      <div class="rp-section-head"><span class="rp-section-title">Timeline</span></div>
-      ${tlHtml || '<p style="color:var(--gw-text-muted);font-style:italic;font-size:12px">No activity yet.</p>'}
-    </section>`;
-
-  view.innerHTML = `
-  <div class="rp-shell">
-    <div class="rp-breadcrumb">
-      <button class="rp-crumb" onclick="show('workOrderList')">Work Orders</button>
-      <span class="rp-crumb-sep">›</span>
-      <span class="rp-crumb-current">${_p6WONum(wo)}</span>
-    </div>
-    <div class="rp-columns">
-      <div class="rp-col-main">${leftRail}</div>
-      <div class="rp-col-side">${rightRail}</div>
-    </div>
-  </div>`;
-
-  window._p6WOSave = save;
-
-  // Mount approval panel in right-rail after DOM renders
-  if (typeof window.gwApproval === 'object') {
-    const apEl = document.getElementById(`wo-approval-panel-${id}`);
-    if (apEl) window.gwApproval.renderPanel(apEl, 'work_order', id, _p6WONum(wo) + (wo.clientName ? ` — ${wo.clientName}` : ''));
-  }
+  show('scheduleBoard');
+  setTimeout(() => {
+    if (typeof window._sbOpenVisitModal === 'function') window._sbOpenVisitModal(id);
+  }, 150);
 }
 window.workOrderDetail = workOrderDetail;
 
@@ -18134,7 +20330,7 @@ function _glCrmModules() {
     { id:'crm01', title:'The 5-Workspace Model', type:'Overview', duration:'4 min',
       content:`<p>Groundwork is organized into five workspaces, each with its own job. Understanding the structure helps you navigate faster and use the right tool for the right task.</p>
       <ul>
-        <li><strong>Dashboard</strong> — Your home base. My Day shows your tasks, pipeline stats, and (for admins) a financial pulse. Business Pulse, Financial Snapshot, and Operations Snapshot give you a cross-sectional view of the business.</li>
+        <li><strong>Dashboard</strong> — Your home base. Command Center shows your tasks, pipeline, jobs, calendar and (for admins) a financial pulse in one glanceable view. Each widget links out to a deeper report (Business Pulse, Financial Snapshot, Operations Snapshot) when you need the full detail.</li>
         <li><strong>Sales</strong> — Pipeline, Leads, Clients, Properties, Estimates, and team tools. This is where deals live and move.</li>
         <li><strong>Financial</strong> — Invoices, Payments, Deposits, Statements. The money side of completed and in-progress work.</li>
         <li><strong>Operations</strong> — Schedule, Dispatch, Work Orders, Resources. Field execution from scheduling to completion.</li>
@@ -18147,7 +20343,7 @@ function _glCrmModules() {
       <h3>Moving through stages</h3>
       <p>Drag or update the status as the deal progresses: Initial Inquiry → Discovery → Site Walk → Proposal Sent → Follow-Up → Closed Won/Lost.</p>
       <h3>Proposal workflow</h3>
-      <p>Once you've done the site walk and built the estimate, attach it to the lead and update the status to "Proposal Sent." This triggers the Proposals Out count on the My Day pipeline strip and the Business Pulse report.</p>
+      <p>Once you've done the site walk and built the estimate, attach it to the lead and update the status to "Proposal Sent." This triggers the Proposals Out count on the Command Center pipeline strip and the Business Pulse report.</p>
       <h3>Won vs Lost</h3>
       <p>Always close out leads — don't leave them in limbo. A lost lead with a reason tells you more than a forgotten lead in the pipeline.</p>` },
     { id:'crm03', title:'Clients, Properties & History', type:'Walkthrough', duration:'5 min',
@@ -18176,12 +20372,12 @@ function _glCrmModules() {
       <p>Operations → Schedule shows all work orders in a calendar view. Field supervisors use this daily to see what's happening and where.</p>
       <h3>Completing a Work Order</h3>
       <p>Update the status to Completed when the job is done. This populates the Operations Snapshot with today's completed jobs and feeds the productivity metrics for the field team.</p>` },
-    { id:'crm06', title:'Tasks & My Day', type:'Walkthrough', duration:'5 min',
-      content:`<p>Tasks in Groundwork are follow-up items tied to a rep, a record, or standalone. They show up in My Day so nothing falls through the cracks.</p>
+    { id:'crm06', title:'Tasks & Command Center', type:'Walkthrough', duration:'5 min',
+      content:`<p>Tasks in Groundwork are follow-up items tied to a rep, a record, or standalone. They show up on Command Center so nothing falls through the cracks.</p>
       <h3>Creating a task</h3>
-      <p>From My Day → + New Task, or from inside any lead/client record via the Tasks panel. Set a type (follow up, call, site visit, proposal, etc.), due date, and assignee.</p>
-      <h3>My Day layout</h3>
-      <p>My Day shows: the pipeline strip at the top (open leads, proposals, pipeline value, won MTD), your task workspace in the main column, and a financial pulse on the right side (admin/OM roles only).</p>
+      <p>From Command Center → + New Task, or from inside any lead/client record via the Tasks panel. Set a type (follow up, call, site visit, proposal, etc.), due date, and assignee.</p>
+      <h3>Command Center layout</h3>
+      <p>Command Center shows: the pipeline strip at the top (open leads, proposals, pipeline value, won MTD), today's jobs, your tasks, your calendar, and a pipeline chart — plus a financial pulse for admin/OM roles. Each of those widgets links to its own full report for deeper detail.</p>
       <h3>Overdue tasks</h3>
       <p>Tasks past their due date show in red. The Team View (Sales → Team) lets managers see task overdue counts across the whole team so nothing gets buried.</p>` },
     { id:'crm07', title:'Reports & Data Reads', type:'Walkthrough', duration:'5 min',
@@ -18266,14 +20462,14 @@ function teamView() {
   const today  = todayISO();
 
   // Pipeline-derived stats (immediate, no async)
-  const totalOpen  = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).length;
-  const totalSold  = opps.filter(o=>o.status==='Sold / Activation').length;
-  const totalVal   = opps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+  const totalOpen  = opps.filter(o=>gwSalesIsOpen(o)).length;
+  const totalSold  = opps.filter(o=>gwSalesIs(o,'won')).length;
+  const totalVal   = opps.filter(o=>gwSalesIsOpen(o)).reduce((s,o)=>s+Number(o.jobValue||0),0);
 
   function _tvRepRow(r, taskSummary) {
     const myOpps    = opps.filter(o => o.repId === r.id || o.assignedToRepId === r.id);
-    const openOpps  = myOpps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-    const soldOpps  = myOpps.filter(o => o.status === 'Sold / Activation');
+    const openOpps  = myOpps.filter(o => gwSalesIsOpen(o));
+    const soldOpps  = myOpps.filter(o => gwSalesIs(o,'won'));
     const myComms   = comms.filter(c => c.repId === r.id);
     const lastComm  = myComms.sort((a,b)=>new Date(b.ts)-new Date(a.ts))[0];
     const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
@@ -18319,7 +20515,7 @@ function teamView() {
   const repRowsHtml = reps.map(r => _tvRepRow(r, null)).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales · Team</div>
@@ -18334,11 +20530,11 @@ function teamView() {
 
     <!-- Team KPIs row -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Open Leads</div>
         <div style="font-size:28px;font-weight:800;color:var(--gds-ink)">${totalOpen}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Value</div>
         <div style="font-size:28px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(totalVal)}</div>
       </div>
@@ -18353,7 +20549,7 @@ function teamView() {
     </div>
 
     <!-- Team Table -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
+    <div class="gw-report-card gw-report-panel" style="margin-bottom:20px">
       <table id="tvRepTable" style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -18402,7 +20598,7 @@ function teamView() {
       const sec = document.getElementById('tvInterventionSection');
       if (sec && needsAttention.length) {
         sec.innerHTML = `
-          <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+          <div class="gw-report-card gw-report-panel">
             <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
               <div style="font-size:13px;font-weight:700;color:var(--gds-ink)">Needs Attention</div>
               <span style="font-size:11px;color:var(--gw-muted)">${needsAttention.length} member${needsAttention.length!==1?'s':''} with overdue tasks</span>
@@ -18469,7 +20665,7 @@ function properties() {
   });
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales</div>
@@ -18482,12 +20678,12 @@ function properties() {
     </header>
 
     <div style="margin-bottom:16px">
-      <input type="search" placeholder="Search properties, addresses, clients…" value="${escapeHtml(window._propSearch||'')}"
-        oninput="window._propSearch=this.value;properties()"
+      <input id="propSearchInput" type="search" placeholder="Search properties, addresses, clients…" value="${escapeHtml(window._propSearch||'')}"
+        oninput="window._gwSearchInput('_propSearch', this, 'properties')"
         style="width:100%;max-width:360px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink)">
     </div>
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -18555,7 +20751,7 @@ function campaigns() {
     </div>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales · Engagement</div>
@@ -19059,7 +21255,7 @@ function payments() {
     </tr>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
@@ -19072,25 +21268,25 @@ function payments() {
     </header>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Received</div>
         <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalReceived)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
         <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${_p5Money(payments_data.filter(p=>p.date&&p.date.slice(0,7)===todayISO().slice(0,7)).reduce((s,p)=>s+Number(p.amount||0),0))}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Transactions</div>
         <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${payments_data.length}</div>
       </div>
     </div>
 
-    <input type="search" placeholder="Search payments…" value="${escapeHtml(window._paySearch||'')}"
-      oninput="window._paySearch=this.value;payments()"
+    <input id="paySearchInput" type="search" placeholder="Search payments…" value="${escapeHtml(window._paySearch||'')}"
+      oninput="window._gwSearchInput('_paySearch', this, 'payments')"
       style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -19216,7 +21412,7 @@ function deposits() {
     </tr>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
@@ -19229,21 +21425,21 @@ function deposits() {
     </header>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Collected</div>
         <div style="font-size:26px;font-weight:800;color:#5B7FA6">${_p5Money(totalDeposited)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Applied to Jobs</div>
         <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalApplied)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Currently Held</div>
         <div style="font-size:26px;font-weight:800;color:#8B6914">${_p5Money(totalHeld)}</div>
       </div>
     </div>
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -19622,8 +21818,8 @@ function _stmtRender(report, opts) {
 
   // ── Revenue Forecast ───────────────────────────────────────────────────────
   else if (window._stmtReport === 'forecast') {
-    const openOpps = opps.filter(o => !['Sold / Activation','Closed Lost'].includes(o.status));
-    const soldUnbilled = opps.filter(o => o.status==='Sold / Activation');
+    const openOpps = opps.filter(o => gwSalesIsOpen(o));
+    const soldUnbilled = opps.filter(o => gwSalesIs(o,'won'));
     const forecastByMonth = {};
     openOpps.forEach(o => {
       const month = (o.expectedCloseDate||o.nextFollowUp||TODAY).slice(0,7);
@@ -19801,7 +21997,7 @@ function financialActivity() {
     ...deps.filter(d=>d.applied).map(d=>({ ts:d.date+'T14:00:00', type:'applied',  label:`Deposit Applied — ${d.clientName}`, amount:-d.amount, color:'#8B6914', icon:'check', note:'' })),
     ...invList.map(i=>({ ts:i.date+'T09:00:00', type:'invoice', label:`Invoice ${i.number||''} — ${i.clientName}`, amount:+i.amount, color:'#6B5EA8', icon:'invoice', note:i.status||'' })),
     // Also pull sold opps as "job won" events
-    ...(state.opportunities||[]).filter(o=>o.status==='Sold / Activation'&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'trophy', note:o.project||'' }))
+    ...(state.opportunities||[]).filter(o=>gwSalesIs(o,'won')&&o.closedDate).map(o=>({ ts:o.closedDate, type:'won', label:`Job Won — ${o.client||o.project}`, amount:+Number(o.jobValue||0), color:'#2D7A55', icon:'trophy', note:o.project||'' }))
   ].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
 
   const totalIn  = events.filter(e=>e.amount>0&&['payment','deposit','won'].includes(e.type)).reduce((s,e)=>s+e.amount,0);
@@ -19820,7 +22016,7 @@ function financialActivity() {
     </tr>`).join('');
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Financial</div>
@@ -19834,21 +22030,21 @@ function financialActivity() {
     </header>
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Activity</div>
         <div style="font-size:26px;font-weight:800;color:var(--gds-ink)">${events.length}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total In</div>
         <div style="font-size:26px;font-weight:800;color:#2D7A55">${_p5Money(totalIn)}</div>
       </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
+      <div class="gw-report-card">
         <div style="font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">This Month</div>
         <div style="font-size:26px;font-weight:800;color:var(--gw-pine-600)">${_p5Money(thisMonth)}</div>
       </div>
     </div>
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -19908,7 +22104,7 @@ function crewView() {
   const todayWOs = wos.filter(w=>w.date&&w.date.slice(0,10)===today);
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Operations</div>
@@ -20004,7 +22200,7 @@ function toolsConsumables() {
         }).join('')
         : `<div style="text-align:center;padding:40px 20px;color:#9CA3AF;font-size:14px">${search?'No matching items.':'No tools or consumables tracked yet.'}</div>`}
       </div>`
-    : `<div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    : `<div class="gw-report-card gw-report-panel">
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
@@ -20034,8 +22230,8 @@ function toolsConsumables() {
       </div>
     </header>
 
-    <input type="search" placeholder="Search tools and consumables…" value="${escapeHtml(window._toolSearch||'')}"
-      oninput="window._toolSearch=this.value;toolsConsumables()"
+    <input id="toolSearchInput" type="search" placeholder="Search tools and consumables…" value="${escapeHtml(window._toolSearch||'')}"
+      oninput="window._gwSearchInput('_toolSearch', this, 'toolsConsumables')"
       style="width:100%;max-width:320px;padding:8px 12px;border:1px solid var(--gw-line);border-radius:8px;font-size:13px;background:var(--gw-surface-2);color:var(--gds-ink);margin-bottom:14px;display:block">
 
     ${mobileBody}
@@ -20109,561 +22305,6 @@ function toolsConsumables() {
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────
-function salesReports() {
-  window._currentView = 'salesReports';
-  activateNav('salesReports');
-  const opps   = state.opportunities || [];
-  const reps   = (window.REPS || []).filter(r => !_GW_FIELD_ROLES.includes(r.role));
-  const today  = todayISO();
-  const mtd    = today.slice(0,7); // YYYY-MM
-
-  // Core metrics
-  const WON_STATUSES = ['Sold / Activation','Deal Closed / Won'];
-  const LOST_STATUSES = ['Closed Lost'];
-  const OPEN_STATUSES = s => !WON_STATUSES.includes(s) && !LOST_STATUSES.includes(s);
-
-  const wonOpps   = opps.filter(o => WON_STATUSES.includes(o.status));
-  const openOpps  = opps.filter(o => OPEN_STATUSES(o.status));
-  const proposalOpps = opps.filter(o => ['Proposal / Estimate Sent','Proposal Sent','Presentation & SOW Pitch'].includes(o.status));
-  const closedAll = opps.filter(o => WON_STATUSES.includes(o.status) || LOST_STATUSES.includes(o.status));
-  const closeRate = closedAll.length ? Math.round((wonOpps.length/closedAll.length)*100) : 0;
-  const pipeVal   = openOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const wonTotal  = wonOpps.reduce((s,o)=>s+Number(o.jobValue||0),0);
-  const avgDeal   = wonOpps.length ? wonTotal/wonOpps.length : 0;
-
-  // MTD won
-  const wonMTD    = wonOpps.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd);
-  const wonMTDVal = wonMTD.reduce((s,o)=>s+Number(o.jobValue||0),0);
-
-  // Pipeline funnel stages
-  const FUNNEL = [
-    {label:'Initial Inquiry',        statuses:['Initial Inquiry']},
-    {label:'Discovery / Consult',    statuses:['Discovery / Consultation']},
-    {label:'Site Walk / Assessment', statuses:['Site Walk / Assessment']},
-    {label:'Proposal Sent',          statuses:['Proposal / Estimate Sent','Proposal Sent']},
-    {label:'Follow-Up',              statuses:['Follow-Up']},
-    {label:'SOW Pitch',              statuses:['Presentation & SOW Pitch']},
-    {label:'On Hold',                statuses:['On Hold']},
-    {label:'Won',                    statuses:WON_STATUSES, won:true},
-    {label:'Lost',                   statuses:LOST_STATUSES, lost:true},
-  ];
-  const funnelMax = Math.max(1, ...FUNNEL.map(f=>opps.filter(o=>f.statuses.includes(o.status)).length));
-
-  // Lead source breakdown
-  const sourceMap = {};
-  opps.forEach(o=>{ const s=o.leadSource||o.source||'Unknown'; sourceMap[s]=(sourceMap[s]||0)+1; });
-  const sources = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,6);
-
-  // Monthly closed trend (last 6 months)
-  const monthMap = {};
-  wonOpps.forEach(o=>{const m=(o.closedDate||o.createdAt||'').slice(0,7);if(m)monthMap[m]=(monthMap[m]||0)+Number(o.jobValue||0);});
-  const months6 = [];
-  for(let i=5;i>=0;i--){const d=new Date();d.setMonth(d.getMonth()-i);months6.push(d.toISOString().slice(0,7));}
-  const maxMonthVal = Math.max(1,...months6.map(m=>monthMap[m]||0));
-
-  // Rep performance table
-  const repRows = reps.map(r=>{
-    const mine    = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
-    const mWon    = mine.filter(o=>WON_STATUSES.includes(o.status));
-    const mOpen   = mine.filter(o=>OPEN_STATUSES(o.status));
-    const mLost   = mine.filter(o=>LOST_STATUSES.includes(o.status));
-    const mPipe   = mOpen.reduce((s,o)=>s+Number(o.jobValue||0),0);
-    const mWonVal = mWon.reduce((s,o)=>s+Number(o.jobValue||0),0);
-    const mClosed = mWon.length + mLost.length;
-    const mRate   = mClosed ? Math.round((mWon.length/mClosed)*100) : 0;
-    const mMTD    = mWon.filter(o=>(o.closedDate||o.createdAt||'').slice(0,7)===mtd).length;
-    const rateColor = mRate >= 50 ? '#2D7A55' : mRate >= 25 ? '#8B6914' : 'var(--gw-muted)';
-    return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:11px 14px">
-        <span style="font-weight:700;font-size:13px">${escapeHtml(r.name)}</span>
-        <div style="font-size:10px;color:var(--gw-muted);margin-top:1px">${escapeHtml((window._gwRoles||[]).find(d=>d.id===r.role)?.label||r.role||'Rep')}</div>
-      </td>
-      <td style="padding:11px 10px;text-align:center;font-weight:600">${mine.length}</td>
-      <td style="padding:11px 10px;text-align:center">${mOpen.length}</td>
-      <td style="padding:11px 10px;text-align:center;color:var(--gw-pine-600);font-weight:700">${proposalOpps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id).length}</td>
-      <td style="padding:11px 10px;text-align:center;color:#2D7A55;font-weight:700">${mWon.length}</td>
-      <td style="padding:11px 10px;text-align:right;font-weight:700;color:var(--gw-pine-600)">${_p5Money(mWonVal)}</td>
-      <td style="padding:11px 10px;text-align:right;color:var(--gw-muted)">${_p5Money(mPipe)}</td>
-      <td style="padding:11px 10px;text-align:center;color:${rateColor};font-weight:700">${mRate}%</td>
-      <td style="padding:11px 10px;text-align:center;color:#4D8A86;font-weight:${mMTD?'700':'400'}">${mMTD||'—'}</td>
-    </tr>`;
-  }).join('');
-
-  view.innerHTML = `
-  <div class="rp-shell" style="max-width:1200px;margin:0 auto;padding:20px 24px 40px">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <div class="eyebrow">Dashboard · Business Pulse</div>
-        <h1 class="rp-title">Sales Performance</h1>
-        <p class="rp-subtitle">Pipeline · close rates · rep performance · lead sources</p>
-      </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('pipeline')">Open Pipeline</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('lead')">+ New Lead</button>
-      </div>
-    </header>
-
-    <!-- KPI Row — 5 cards -->
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
-      ${[
-        {label:'Total Leads',    val:opps.length,           color:'var(--gw-ink)'},
-        {label:'Open Leads',     val:openOpps.length,       color:'var(--gw-ink)'},
-        {label:'Proposals Out',  val:proposalOpps.length,   color:'var(--gw-pine,#4D8A86)'},
-        {label:'Close Rate',     val:closeRate+'%',         color:closeRate>=50?'#2D7A55':closeRate>=25?'#8B6914':'#C97B6A'},
-        {label:'Avg Deal Size',  val:_p5Money(avgDeal),     color:'#5B7FA6'}
-      ].map(k=>`
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">${k.label}</div>
-        <div style="font-size:26px;font-weight:800;color:${k.color}">${k.val}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Secondary row: Pipeline $ + Won total + Won MTD -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Pipeline Value (Open)</div>
-        <div style="font-size:24px;font-weight:800;color:var(--gw-pine,#4D8A86)">${_p5Money(pipeVal)}</div>
-      </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Total Won Revenue</div>
-        <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonTotal)}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonOpps.length} deal${wonOpps.length!==1?'s':''} closed</div>
-      </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Won This Month</div>
-        <div style="font-size:24px;font-weight:800;color:#2D7A55">${_p5Money(wonMTDVal)}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${wonMTD.length} deal${wonMTD.length!==1?'s':''}</div>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
-      <!-- Pipeline Funnel -->
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px">
-        <h3 style="margin:0 0 16px;font-size:14px;font-weight:800">Pipeline Funnel</h3>
-        ${FUNNEL.map(f=>{
-          const cnt = opps.filter(o=>f.statuses.includes(o.status)).length;
-          if(!cnt) return '';
-          const pct = Math.max(4, Math.round((cnt/funnelMax)*100));
-          const bar = f.won ? 'background:#2D7A55' : f.lost ? 'background:#A05050' : 'background:var(--gw-pine,#4D8A86)';
-          return `<div style="margin-bottom:9px">
-            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-              <span style="font-weight:600;color:var(--gw-ink)">${escapeHtml(f.label)}</span>
-              <span style="color:var(--gw-muted)">${cnt}</span>
-            </div>
-            <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
-              <div style="height:100%;width:${pct}%;${bar};border-radius:3px;transition:width .4s"></div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-
-      <!-- Monthly Won Trend (6 months) + Lead Sources -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;flex:0 0 auto">
-          <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Won Revenue — Last 6 Months</h3>
-          <div style="display:flex;align-items:flex-end;gap:8px;height:80px">
-            ${months6.map(m=>{
-              const v=monthMap[m]||0;
-              const h=Math.max(4,Math.round((v/maxMonthVal)*80));
-              const isNow=m===mtd;
-              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
-                <div style="font-size:9px;font-weight:700;color:#2D7A55;white-space:nowrap">${v?_p5Money(v).replace('$','$').replace(/,000$/,'k'):''}</div>
-                <div style="width:100%;height:${h}px;background:${isNow?'#2D7A55':'#4D8A8680'};border-radius:3px 3px 0 0;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--gw-muted);white-space:nowrap">${m.slice(5)}</div>
-              </div>`;
-            }).join('')}
-          </div>
-        </div>
-        <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;flex:1">
-          <h3 style="margin:0 0 12px;font-size:14px;font-weight:800">Lead Sources</h3>
-          ${sources.length
-            ? sources.map(([src,cnt])=>{
-                const pct=opps.length?Math.round((cnt/opps.length)*100):0;
-                return `<div style="margin-bottom:8px">
-                  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-                    <span style="font-weight:600">${escapeHtml(src.slice(0,36))}</span>
-                    <span style="color:var(--gw-muted)">${cnt} (${pct}%)</span>
-                </div>
-                <div style="height:6px;background:var(--gw-line);border-radius:3px;overflow:hidden">
-                  <div style="height:100%;width:${pct}%;background:#6B5EA8;border-radius:3px"></div>
-                </div>
-              </div>`;
-            }).join('')
-          : `<p style="color:var(--gw-muted);font-size:13px">Add lead source data when creating leads to see breakdown here.</p>`}
-        </div>
-      </div>
-    </div>
-
-    <!-- Rep Performance Table -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Rep Performance</h3>
-        <span style="font-size:11px;color:var(--gw-muted)">${reps.length} member${reps.length!==1?'s':''}</span>
-      </div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:680px">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:10px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Rep</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Total</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Open</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Proposals</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won</th>
-            <th style="text-align:right;padding:10px 8px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase;letter-spacing:.06em">Won $</th>
-            <th style="text-align:right;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Pipeline $</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Close %</th>
-            <th style="text-align:center;padding:10px 8px;font-size:10px;font-weight:700;color:#4D8A86;text-transform:uppercase;letter-spacing:.06em">Won MTD</th>
-          </tr></thead>
-          <tbody>${repRows||`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--gw-muted);font-style:italic">No team members configured.</td></tr>`}</tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
-}
-
-function financialReports() {
-  // Financial Snapshot — estimates, invoices, payments. No leads, no missions.
-  window._currentView = 'financialReports';
-  activateNav('financialReports');
-  const fmt = n => (n==null?'—':Number(n).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}));
-
-  // Pull from localStorage (same stores as Financial workspace)
-  let payments_data=[], deps=[], ests=[], invs=[];
-  try { payments_data=JSON.parse(localStorage.getItem('avalonPayments')||'[]'); } catch(_){}
-  try { deps=JSON.parse(localStorage.getItem('avalonDeposits')||'[]'); } catch(_){}
-  try { ests=JSON.parse(localStorage.getItem('avalonEstimates')||'[]'); } catch(_){}
-  try { invs=JSON.parse(localStorage.getItem('avalonInvoices')||'[]'); } catch(_){}
-
-  // Also pull from state if available
-  if (!ests.length && state.estimates) ests = state.estimates;
-  if (!invs.length && state.invoices)  invs = state.invoices;
-
-  const today = todayISO();
-  const mtd   = today.slice(0,7);
-
-  // Estimates
-  const estOpen     = ests.filter(e=>!['approved','rejected','invoiced'].includes(e.status));
-  const estApproved = ests.filter(e=>e.status==='approved');
-  const estTotal    = ests.reduce((s,e)=>s+Number(e.total||e.amount||0),0);
-  const estOpenVal  = estOpen.reduce((s,e)=>s+Number(e.total||e.amount||0),0);
-
-  // Invoices
-  const invUnpaid   = invs.filter(i=>!['paid','voided'].includes(i.status));
-  const invOverdue  = invUnpaid.filter(i=>i.dueDate && i.dueDate < today);
-  const invPaidMTD  = invs.filter(i=>i.status==='paid' && (i.paidDate||i.updatedAt||'').slice(0,7)===mtd);
-  const invOutstanding = invUnpaid.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
-  const invOverdueVal  = invOverdue.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
-  const invPaidMTDVal  = invPaidMTD.reduce((s,i)=>s+Number(i.total||i.amount||0),0);
-
-  // Payments
-  const totalPaid     = payments_data.reduce((s,p)=>s+Number(p.amount||0),0);
-  const paidMTD       = payments_data.filter(p=>(p.date||p.createdAt||'').slice(0,7)===mtd);
-  const paidMTDVal    = paidMTD.reduce((s,p)=>s+Number(p.amount||0),0);
-
-  // Deposits
-  const depHeld       = deps.filter(d=>!d.applied);
-  const depHeldVal    = depHeld.reduce((s,d)=>s+Number(d.amount||0),0);
-
-  // Budget metrics (from revenueAdmin)
-  let fyBlock = '';
-  try {
-    const fy = (typeof getResolvedFY==='function') ? getResolvedFY() : null;
-    if (fy && fy.annual) {
-      const a = fy.annual;
-      const varColor = a.ytdVariance>=0?'#2D7A55':'#C97B6A';
-      const varSign  = a.ytdVariance>=0?'+':'';
-      const pct = a.budgetedRevenue>0?Math.min(100,Math.round(a.actualRevenue/a.budgetedRevenue*100)):0;
-      const divs = fy.divisions||{};
-      const divKeys = Object.keys(divs).filter(k=>divs[k]);
-      const divCells = divKeys.map(k=>{
-        const d=divs[k]; const label=k.charAt(0).toUpperCase()+k.slice(1);
-        const dpct=d.target>0?Math.min(100,Math.round((d.actual||0)/d.target*100)):0;
-        const gm = d.grossMarginPct!=null?Math.round(d.grossMarginPct*100):null;
-        return `<tr style="border-bottom:1px solid var(--gw-line)">
-          <td style="padding:10px 14px;font-weight:600">${escapeHtml(label)}</td>
-          <td style="padding:10px;text-align:right;font-weight:700;color:var(--gw-pine,#4D8A86)">${fmt(d.actual||0)}</td>
-          <td style="padding:10px;text-align:right;color:var(--gw-muted)">${fmt(d.target||0)}</td>
-          <td style="padding:10px;text-align:center">
-            <div style="display:flex;align-items:center;gap:6px">
-              <div style="flex:1;height:5px;background:var(--gw-line);border-radius:3px;overflow:hidden"><div style="height:100%;width:${dpct}%;background:var(--gw-pine,#4D8A86);border-radius:3px"></div></div>
-              <span style="font-size:10px;font-weight:700;color:var(--gw-muted);white-space:nowrap">${dpct}%</span>
-            </div>
-          </td>
-          <td style="padding:10px;text-align:center;font-size:11px;font-weight:700;color:${gm!=null&&gm<(d.grossMarginFloor||0)*100?'#C97B6A':'#2D7A55'}">${gm!=null?gm+'%':'—'}</td>
-          <td style="padding:10px;text-align:right;color:${(d.remaining||0)>0?'var(--gw-muted)':'#2D7A55'};font-size:12px">${fmt(Math.max(0,d.remaining||0))}</td>
-        </tr>`;
-      }).join('');
-      fyBlock = `
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:20px;margin-bottom:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <h3 style="margin:0;font-size:14px;font-weight:800">Budget vs Actual — ${fy.budgetVersion||'FY'}</h3>
-          <button class="rp-btn" onclick="show('revenueAdmin')">Manage Budget</button>
-        </div>
-        <div class="fr-budget-grid fr-budget-inner">
-          ${[
-            {label:'YTD Actual',val:fmt(a.actualRevenue),color:'var(--gw-pine,#4D8A86)'},
-            {label:'Annual Budget',val:fmt(a.budgetedRevenue),color:'var(--gw-ink)'},
-            {label:'YTD Variance',val:varSign+fmt(a.ytdVariance),color:varColor},
-            {label:'Needed / Month',val:fmt(a.avgNeededPerMonth),color:'#8B6914'}
-          ].map(k=>`
-          <div style="background:var(--gw-surface-2);border-radius:8px;padding:12px">
-            <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${k.label}</div>
-            <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
-          </div>`).join('')}
-        </div>
-        <div style="height:7px;background:var(--gw-line);border-radius:4px;overflow:hidden;margin-bottom:6px">
-          <div style="height:100%;width:${pct}%;background:var(--gw-pine,#4D8A86);border-radius:4px;transition:width .4s"></div>
-        </div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-bottom:16px">${pct}% of annual target · ${a.monthsLeft||0} months remaining</div>
-        ${divCells ? `
-        <div class="fr-budget-table-wrap"><table class="fr-panel-table" style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Division</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-pine,#4D8A86);text-transform:uppercase;letter-spacing:.06em">Actual</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Target</th>
-            <th style="padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Progress</th>
-            <th style="text-align:center;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">GM %</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Remaining</th>
-          </tr></thead>
-          <tbody>${divCells}</tbody>
-        </table></div>` : ''}
-      </div>`;
-    }
-  } catch(_) {}
-
-  // Recent payment rows
-  const recentPmts = [...payments_data].sort((a,b)=>(b.date||b.createdAt||'').localeCompare(a.date||a.createdAt||'')).slice(0,8);
-  const pmtRows = recentPmts.map(p=>`<tr style="border-bottom:1px solid var(--gw-line)">
-    <td style="padding:9px 14px;font-weight:600">${escapeHtml(p.clientName||p.client||'—')}</td>
-    <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(p.method||p.type||'—')}</td>
-    <td style="padding:9px 10px;text-align:right;font-weight:700;color:#2D7A55">${fmt(p.amount)}</td>
-    <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(p.date||p.createdAt)}</td>
-  </tr>`).join('');
-
-  // Recent invoice rows
-  const recentInvs = [...invs].sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||'')).slice(0,8);
-  const invRows = recentInvs.map(i=>{
-    const isPaid = i.status==='paid';
-    const isOvd  = !isPaid && i.dueDate && i.dueDate < today;
-    const sColor = isPaid?'#2D7A55':isOvd?'#C97B6A':'var(--gw-muted)';
-    return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:9px 14px;font-weight:600">${escapeHtml(i.clientName||i.client||'—')}</td>
-      <td style="padding:9px 10px;text-align:right;font-weight:700">${fmt(i.total||i.amount)}</td>
-      <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${_p5FmtDate(i.dueDate)}</td>
-      <td style="padding:9px 10px"><span style="font-size:11px;font-weight:700;color:${sColor}">${escapeHtml(i.status||'open')}</span></td>
-    </tr>`;
-  }).join('');
-
-  view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <div class="eyebrow">Dashboard · Financial Snapshot</div>
-        <h1 class="rp-title">Financial Snapshot</h1>
-        <p class="rp-subtitle">Estimates · invoices · payments · budget vs actual</p>
-      </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('financialHub')">Financial Hub</button>
-        <button class="rp-btn" onclick="show('revenueAdmin')">Budget Admin</button>
-      </div>
-    </header>
-
-    <!-- Primary KPIs: invoices + payments -->
-    <div class="fr-kpi-grid">
-      ${[
-        {label:'Outstanding Invoices', val:fmt(invOutstanding),   sub:`${invUnpaid.length} unpaid`,       color:'var(--gw-ink)'},
-        {label:'Overdue',              val:fmt(invOverdueVal),    sub:`${invOverdue.length} invoices`,    color:invOverdueVal?'#C97B6A':'var(--gw-muted)'},
-        {label:'Collected MTD',        val:fmt(paidMTDVal),       sub:`${paidMTD.length} payments`,       color:'#2D7A55'},
-        {label:'Total Collected',      val:fmt(totalPaid),        sub:'all time',                          color:'#2D7A55'},
-      ].map(k=>`
-      <div class="fr-kpi-card">
-        <div class="fr-kpi-card-label">${k.label}</div>
-        <div class="fr-kpi-card-val" style="color:${k.color}">${k.val}</div>
-        <div class="fr-kpi-card-sub">${k.sub}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Secondary: estimates + deposits -->
-    <div class="fr-kpi-grid" style="margin-bottom:20px">
-      ${[
-        {label:'Open Estimates',  val:fmt(estOpenVal),  sub:`${estOpen.length} pending`,     color:'var(--gw-pine,#4D8A86)'},
-        {label:'Approved',        val:fmt(estApproved.reduce((s,e)=>s+Number(e.total||e.amount||0),0)),  sub:`${estApproved.length} estimates`, color:'#2D7A55'},
-        {label:'Est. Total Sent', val:fmt(estTotal),    sub:`${ests.length} total`,           color:'var(--gw-ink)'},
-        {label:'Deposits Held',   val:fmt(depHeldVal),  sub:`${depHeld.length} unapplied`,   color:'#8B6914'},
-      ].map(k=>`
-      <div class="fr-kpi-card">
-        <div class="fr-kpi-card-label">${k.label}</div>
-        <div class="fr-kpi-card-val fr-kpi-card-val--sm" style="color:${k.color}">${k.val}</div>
-        <div class="fr-kpi-card-sub">${k.sub}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Budget vs Actual block (from revenueAdmin data) -->
-    ${fyBlock}
-
-    <!-- Invoices + Payments side by side -->
-    <div class="fr-panel-grid">
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-        <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-          <h3 style="margin:0;font-size:14px;font-weight:800">Recent Invoices</h3>
-          <button class="rp-btn" onclick="show('invoices')" style="font-size:11px;padding:4px 10px">All Invoices</button>
-        </div>
-        <table class="fr-panel-table" style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Amount</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Due</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
-          </tr></thead>
-          <tbody>${invRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No invoices yet.</td></tr>`}</tbody>
-        </table>
-      </div>
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
-        <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-          <h3 style="margin:0;font-size:14px;font-weight:800">Recent Payments</h3>
-          <button class="rp-btn" onclick="show('payments')" style="font-size:11px;padding:4px 10px">All Payments</button>
-        </div>
-        <table class="fr-panel-table" style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-            <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Client</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Method</th>
-            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:700;color:#2D7A55;text-transform:uppercase">Amount</th>
-            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
-          </tr></thead>
-          <tbody>${pmtRows||`<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--gw-muted);font-style:italic">No payments recorded.</td></tr>`}</tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
-}
-
-function opsReports() {
-  // Operations Snapshot — today's jobs, upcoming, weeks booked.
-  window._currentView = 'opsReports';
-  activateNav('opsReports');
-  const wos    = state.workOrders || [];
-  const today  = todayISO();
-  const fmt    = n => Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
-
-  // Today's jobs
-  const todayWOs     = wos.filter(w => w.scheduledDate === today || w.date === today);
-  const todayDone    = todayWOs.filter(w => w.status === 'completed');
-  const todayPending = todayWOs.filter(w => w.status !== 'completed');
-
-  // This week
-  const weekStart = (()=>{ const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); })();
-  const weekEnd   = (()=>{ const d=new Date(); d.setDate(d.getDate()+(6-d.getDay())); return d.toISOString().slice(0,10); })();
-  const thisWeekWOs = wos.filter(w=>{ const dt=w.scheduledDate||w.date||''; return dt>=weekStart&&dt<=weekEnd; });
-  const thisWeekDone = thisWeekWOs.filter(w=>w.status==='completed');
-
-  // Upcoming (next 7 days after today)
-  const next7 = (()=>{ const d=new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10); })();
-  const upcomingWOs = wos.filter(w=>{ const dt=w.scheduledDate||w.date||''; return dt>today&&dt<=next7; })
-    .sort((a,b)=>(a.scheduledDate||a.date||'').localeCompare(b.scheduledDate||b.date||''));
-
-  // All open work orders (not completed)
-  const openWOs      = wos.filter(w=>w.status!=='completed'&&w.status!=='cancelled');
-  const completedAll = wos.filter(w=>w.status==='completed');
-  const totalVal     = wos.reduce((s,w)=>s+Number(w.jobValue||w.value||0),0);
-
-  // Status breakdown
-  const statusMap = {};
-  wos.forEach(w=>{ const s=w.status||'unknown'; statusMap[s]=(statusMap[s]||0)+1; });
-
-  // WO row helper
-  function woRow(w, showDate) {
-    const isCompleted = w.status==='completed';
-    const isOverdue   = !isCompleted && (w.scheduledDate||w.date||'') < today;
-    const statColor   = isCompleted ? '#2D7A55' : isOverdue ? '#C97B6A' : 'var(--gw-pine,#4D8A86)';
-    const dateStr     = showDate ? _p5FmtDate(w.scheduledDate||w.date) : '';
-    return `<tr style="border-bottom:1px solid var(--gw-line)">
-      <td style="padding:9px 14px">
-        <div style="font-weight:600;font-size:13px">${escapeHtml(w.title||_p6WONum(w)||'Work Order')}</div>
-        <div style="font-size:11px;color:var(--gw-muted)">${escapeHtml(w.client||w.clientName||'')}</div>
-      </td>
-      <td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${escapeHtml(w.crew||w.foreman||'—')}</td>
-      ${showDate?`<td style="padding:9px 10px;font-size:12px;color:var(--gw-muted)">${dateStr}</td>`:''}
-      <td style="padding:9px 10px"><span style="font-size:11px;font-weight:700;color:${statColor}">${escapeHtml(w.status||'—')}</span></td>
-    </tr>`;
-  }
-
-  view.innerHTML = `
-  <div class="rp-shell" style="max-width:1100px;margin:0 auto;padding:20px 24px 40px">
-    <header class="rp-header">
-      <div class="rp-header-left">
-        <div class="eyebrow">Dashboard · Operations Snapshot</div>
-        <h1 class="rp-title">Operations Snapshot</h1>
-        <p class="rp-subtitle">Today's jobs · upcoming · schedule health</p>
-      </div>
-      <div class="rp-header-actions">
-        <button class="rp-btn" onclick="show('scheduleBoard')">Schedule Board</button>
-        <button class="rp-btn" onclick="show('workOrderList')">All Work Orders</button>
-      </div>
-    </header>
-
-    <!-- KPIs -->
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px">
-      ${[
-        {label:"Today's Jobs",      val:todayWOs.length,      sub:`${todayDone.length} done · ${todayPending.length} pending`,  color:'var(--gw-ink)'},
-        {label:'This Week',         val:thisWeekWOs.length,   sub:`${thisWeekDone.length} completed`,                           color:'var(--gw-pine,#4D8A86)'},
-        {label:'Open WOs',          val:openWOs.length,       sub:'not yet completed',                                           color:'var(--gw-ink)'},
-        {label:'Upcoming (7 days)', val:upcomingWOs.length,   sub:'scheduled ahead',                                            color:'#8B6914'},
-        {label:'Completed Total',   val:completedAll.length,  sub:'all time',                                                    color:'#2D7A55'},
-      ].map(k=>`
-      <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;padding:16px">
-        <div style="font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${k.label}</div>
-        <div style="font-size:24px;font-weight:800;color:${k.color}">${k.val}</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:3px">${k.sub}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Today's Work Orders -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
-      <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line);display:flex;align-items:center;justify-content:space-between">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Today's Jobs</h3>
-        <span style="font-size:11px;color:var(--gw-muted)">${today}</span>
-      </div>
-      ${todayWOs.length ? `
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-          <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew / Lead</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
-        </tr></thead>
-        <tbody>${todayWOs.map(w=>woRow(w,false)).join('')}</tbody>
-      </table>` :
-      `<div style="padding:32px;text-align:center;color:var(--gw-muted);font-size:13px">No work orders scheduled for today. <button class="rp-btn" style="margin-left:12px" onclick="show('scheduleBoard')">View Schedule</button></div>`}
-    </div>
-
-    <!-- Upcoming next 7 days -->
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden;margin-bottom:20px">
-      <div style="padding:13px 18px;border-bottom:1px solid var(--gw-line)">
-        <h3 style="margin:0;font-size:14px;font-weight:800">Upcoming — Next 7 Days</h3>
-      </div>
-      ${upcomingWOs.length ? `
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
-          <th style="text-align:left;padding:8px 14px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Job</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Crew</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Date</th>
-          <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Status</th>
-        </tr></thead>
-        <tbody>${upcomingWOs.map(w=>woRow(w,true)).join('')}</tbody>
-      </table>` :
-      `<div style="padding:28px;text-align:center;color:var(--gw-muted);font-size:13px">No jobs scheduled in the next 7 days.</div>`}
-    </div>
-
-    <!-- Note: Weeks Booked Out calculation -->
-    <div style="background:var(--gw-surface-2,#F8F6F0);border:1px solid var(--gw-line);border-radius:10px;padding:16px 20px;display:flex;align-items:center;gap:14px">
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.5"/><path d="M9 5v4l2.5 2.5" stroke="var(--gw-pine,#4D8A86)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--gw-ink)">Weeks Booked Out — coming soon</div>
-        <div style="font-size:11px;color:var(--gw-muted);margin-top:2px">Once budgeted hours are attached to estimates and work orders, this will show weeks of capacity booked out based on your team's weekly hour budget.</div>
-      </div>
-      <button class="rp-btn" style="margin-left:auto;white-space:nowrap" onclick="show('workOrderList')">View All WOs</button>
-    </div>
-  </div>`;
-}
-
 function teamReports() {
   window._currentView = 'teamReports';
   activateNav('teamReports');
@@ -20680,10 +22321,10 @@ function teamReports() {
     const myOpps  = opps.filter(o=>o.repId===r.id||o.assignedToRepId===r.id);
     const myComms = comms.filter(c=>c.repId===r.id);
     const myWOs   = wos.filter(w=>w.assignedTo===r.id||w.crew===r.name);
-    const won30   = myOpps.filter(o=>o.status==='Sold / Activation'&&(o.closedDate||'')>=day30).length;
+    const won30   = myOpps.filter(o=>gwSalesIs(o,'won')&&(o.closedDate||'')>=day30).length;
     const comms7  = myComms.filter(c=>c.ts>=day7).length;
     const woDone  = myWOs.filter(w=>w.status==='completed').length;
-    const openPipe= myOpps.filter(o=>!['Sold / Activation','Closed Lost'].includes(o.status)).reduce((s,o)=>s+Number(o.jobValue||0),0);
+    const openPipe= myOpps.filter(o=>gwSalesIsOpen(o)).reduce((s,o)=>s+Number(o.jobValue||0),0);
     return { r, myOpps:myOpps.length, won30, comms7, woDone, openPipe };
   });
 
@@ -20704,7 +22345,7 @@ function teamReports() {
   const top = repData.sort((a,b)=>(b.won30+b.comms7*0.1)-(a.won30+a.comms7*0.1))[0];
 
   view.innerHTML = `
-  <div class="rp-shell" style="max-width:1000px;margin:0 auto;padding:20px 24px 40px">
+  <div class="rp-shell gw-report-shell">
     <header class="rp-header">
       <div class="rp-header-left">
         <div class="eyebrow">Sales · Team</div>
@@ -20713,7 +22354,7 @@ function teamReports() {
       </div>
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('teamView')">Team Overview</button>
-        <button class="rp-btn" onclick="show('salesReports')">Business Pulse</button>
+        <button class="rp-btn" onclick="show('today')">Command Center</button>
       </div>
     </header>
 
@@ -20727,7 +22368,7 @@ function teamReports() {
       </div>
     </div>` : ''}
 
-    <div style="background:var(--gw-card);border:1px solid var(--gw-line);border-radius:10px;overflow:hidden">
+    <div class="gw-report-card gw-report-panel">
       <table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:var(--gw-surface);border-bottom:2px solid var(--gw-line)">
           <th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:var(--gw-muted);text-transform:uppercase">Team Member</th>
@@ -21462,6 +23103,65 @@ function systemConfig() {
       </div>
     </div>
 
+    <!-- ══ 5c. Divisions — company-defined business divisions ══════════════════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('building', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Divisions</div>
+          <div class="sc-card-desc">Name and create your own divisions — they drive pipeline filters, financial dashboards, and reporting</div>
+        </div>
+      </div>
+      <div class="sc-card-body">
+        <div id="sc-div-list"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <button class="sc-btn" onclick="_scAddDivisionRow()" style="font-size:12px">+ Add Division</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--gw-line);padding-top:14px;margin-top:14px">
+          <span style="font-size:11px;color:var(--gw-muted);flex:1">Existing data is re-mapped by keyword — renaming a division keeps its historical numbers.</span>
+          <span id="sc-div-status" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
+          <button class="sc-btn sc-btn-primary" onclick="_scSaveDivisions()">${gwIcon('floppy', 13, '#fff')} Save Divisions</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 5d. Lead Intake Form — company-defined categories and options ═══════ -->
+    <div class="sc-card">
+      <div class="sc-card-head">
+        <div class="sc-card-icon">${gwIcon('checklist', 16, '#2D7A55')}</div>
+        <div class="sc-card-head-text">
+          <div class="sc-card-title">Lead Intake Form</div>
+          <div class="sc-card-desc">Customize the Add Lead form to fit your business — project categories, work types, lead sources, and service lines</div>
+        </div>
+      </div>
+      <div class="sc-card-body">
+        <div class="sc-field" style="margin-bottom:14px">
+          <label class="sc-label">Project Categories <span style="text-transform:none;font-weight:400">(one per line — the tiles reps pick from)</span></label>
+          <textarea id="sc-intake-cats" class="sc-input" rows="6" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Landscape / Enhancement&#10;Maintenance - Recurring&#10;Hardscape"></textarea>
+          <span class="sc-hint">Optional short label after a pipe: <code>Landscape / Enhancement | Landscape</code></span>
+        </div>
+        <div class="sc-field" style="margin-bottom:14px">
+          <label class="sc-label">Work Types <span style="text-transform:none;font-weight:400">(one per line — used for commission rates)</span></label>
+          <textarea id="sc-intake-worktypes" class="sc-input" rows="5" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Landscape&#10;Maintenance - Recurring&#10;Design / Build"></textarea>
+        </div>
+        <div class="sc-g2">
+          <div class="sc-field" style="margin-bottom:14px">
+            <label class="sc-label">Lead Sources <span style="text-transform:none;font-weight:400">(one per line)</span></label>
+            <textarea id="sc-intake-sources" class="sc-input" rows="5" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Referral&#10;Google&#10;Door Hanger"></textarea>
+          </div>
+          <div class="sc-field" style="margin-bottom:14px">
+            <label class="sc-label">Service Lines <span style="text-transform:none;font-weight:400">(one per line)</span></label>
+            <textarea id="sc-intake-servicelines" class="sc-input" rows="5" style="resize:vertical;line-height:1.6;font-size:12.5px" placeholder="Landscape&#10;Maintenance&#10;Snow &amp; Ice"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;border-top:1px solid var(--gw-line);padding-top:14px">
+          <span style="font-size:11px;color:var(--gw-muted);flex:1">Changes apply to new leads immediately — existing leads keep their values.</span>
+          <span id="sc-intake-status" style="font-size:11px;color:#2D7A55;font-weight:600;opacity:0;transition:opacity .3s">Saved</span>
+          <button class="sc-btn sc-btn-primary" onclick="_scSaveIntakeForm()">${gwIcon('floppy', 13, '#fff')} Save Intake Form</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ 6. Data Retention ═══════════════════════════════════════════════════ -->
     <div class="sc-card">
       <div class="sc-card-head">
@@ -21529,11 +23229,16 @@ function systemConfig() {
     const t = document.getElementById('sc-est-terms');
     const n = document.getElementById('sc-est-notes');
     if (!t) return;
+    // Rich-text editor: keeps bold / bullets / headings when pasting from Word or Docs
+    if (typeof window._gwRichAttach === 'function') {
+      window._gwRichAttach('sc-est-terms', { minHeight: '150px' });
+    }
     fetch('/api/estimate-defaults', { credentials: 'include' })
       .then(r => r.json())
       .then(j => {
         const d = (j && j.data) || {};
-        t.value = d.terms || '';
+        if (typeof window._gwRichSet === 'function') window._gwRichSet('sc-est-terms', d.terms || '');
+        else t.value = d.terms || '';
         if (n) n.value = d.customer_notes || '';
         window._scEstDefaultsLoaded = true;
       })
@@ -21602,6 +23307,92 @@ function systemConfig() {
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = `${gwIcon('floppy', 13, '#fff')} Save Defaults`; }
     }
+  };
+
+  // ── Divisions editor ────────────────────────────────────────────────────────
+  window._scDivRowHtml = function(d) {
+    const key = d && d.key ? d.key : '';
+    const label = d && d.label ? d.label : '';
+    const color = d && d.color ? d.color : '#2D7A55';
+    return '<div class="sc-div-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px" data-key="' + escapeHtml(key) + '">'
+      + '<input type="color" class="sc-div-color" value="' + escapeHtml(color) + '" style="width:36px;height:32px;border:1px solid var(--gw-line);border-radius:6px;padding:2px;cursor:pointer;background:#fff">'
+      + '<input type="text" class="sc-input sc-div-label" value="' + escapeHtml(label) + '" placeholder="Division name" style="flex:1">'
+      + '<button type="button" class="sc-btn" onclick="this.closest(\'.sc-div-row\').remove()" style="font-size:12px;color:#C97B6A;border-color:#E5C4BC">Remove</button>'
+      + '</div>';
+  };
+  (function _scLoadDivisions() {
+    const wrap = document.getElementById('sc-div-list');
+    if (!wrap) return;
+    wrap.innerHTML = gwDivisions().map(d => window._scDivRowHtml(d)).join('');
+  })();
+  window._scAddDivisionRow = function() {
+    const wrap = document.getElementById('sc-div-list');
+    if (!wrap) return;
+    wrap.insertAdjacentHTML('beforeend', window._scDivRowHtml({ key: '', label: '', color: '#2D7A55' }));
+    const rows = wrap.querySelectorAll('.sc-div-row');
+    const last = rows[rows.length - 1];
+    const inp = last && last.querySelector('.sc-div-label');
+    if (inp) inp.focus();
+  };
+  window._scSaveDivisions = async function() {
+    const wrap = document.getElementById('sc-div-list');
+    if (!wrap) return;
+    const seen = {};
+    const divisions = [];
+    wrap.querySelectorAll('.sc-div-row').forEach(row => {
+      const label = (row.querySelector('.sc-div-label') || {}).value || '';
+      const color = (row.querySelector('.sc-div-color') || {}).value || '#2D7A55';
+      const trimmed = label.trim();
+      if (!trimmed) return;
+      // Keep the original key if the row started with one (preserves historical data),
+      // otherwise derive a key from the name.
+      let key = row.getAttribute('data-key') || '';
+      if (!key) key = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('div_' + (divisions.length + 1));
+      if (seen[key]) { key = key + '_' + (divisions.length + 1); }
+      seen[key] = true;
+      divisions.push({ key, label: trimmed, color });
+    });
+    if (divisions.length === 0) { showToast('Add at least one division', 'error'); return; }
+    try { localStorage.setItem('gwCompanyDivisions', JSON.stringify(divisions)); } catch (e) {}
+    _finSyncToD1('company_divisions', divisions);
+    const st = document.getElementById('sc-div-status');
+    if (st) { st.style.opacity = '1'; setTimeout(() => { st.style.opacity = '0'; }, 2000); }
+    showToast('Divisions saved — dashboards, filters, and financials updated');
+  };
+
+  // ── Lead Intake Form editor ─────────────────────────────────────────────────
+  (function _scLoadIntakeForm() {
+    const catEl = document.getElementById('sc-intake-cats');
+    if (!catEl) return;
+    const cfg = gwIntakeConfig();
+    catEl.value = cfg.categories.map(c => c.short && c.short !== c.v ? (c.v + ' | ' + c.short) : c.v).join('\n');
+    const wtEl = document.getElementById('sc-intake-worktypes');
+    if (wtEl) wtEl.value = cfg.workTypes.map(w => w.label).join('\n');
+    const lsEl = document.getElementById('sc-intake-sources');
+    if (lsEl) lsEl.value = (cfg.leadSources || []).join('\n');
+    const slEl = document.getElementById('sc-intake-servicelines');
+    if (slEl) slEl.value = (cfg.serviceLines || []).join('\n');
+  })();
+  window._scSaveIntakeForm = async function() {
+    const lines = id => ((document.getElementById(id) || {}).value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const categories = lines('sc-intake-cats').map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return { v: parts[0], short: parts[1] || parts[0] };
+    });
+    const workTypes = lines('sc-intake-worktypes').map(l => ({
+      v: l.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+      label: l
+    }));
+    const leadSources = lines('sc-intake-sources');
+    const serviceLines = lines('sc-intake-servicelines');
+    if (categories.length === 0) { showToast('Add at least one project category', 'error'); return; }
+    if (workTypes.length === 0) { showToast('Add at least one work type', 'error'); return; }
+    const cfg = { categories, workTypes, leadSources, serviceLines };
+    try { localStorage.setItem('gwIntakeConfig', JSON.stringify(cfg)); } catch (e) {}
+    _finSyncToD1('company_intake_config', cfg);
+    const st = document.getElementById('sc-intake-status');
+    if (st) { st.style.opacity = '1'; setTimeout(() => { st.style.opacity = '0'; }, 2000); }
+    showToast('Lead intake form saved — the Add Lead form now uses your setup');
   };
 
   window._scSaveAll = async function(silent) {
@@ -22475,6 +24266,20 @@ body.gw-mobile-mode #view > .rp-shell,
 body.gw-mobile-mode .main { padding-bottom:84px!important; }
 /* Topbar Admin button is redundant on mobile — bottom nav has it */
 body.gw-mobile-mode .topbar-settings { display:none!important; }
+/* ── Sidebar drawer vs bottom nav ──
+   The drawer must layer ABOVE the bottom nav (z 8000) so the user profile
+   footer at its bottom is reachable. Use dynamic viewport height (dvh) so
+   iOS Safari's collapsing toolbars don't push the footer off-screen, and
+   reserve safe-area space so the footer clears the home indicator. */
+body.gw-mobile-mode .sidebar {
+  z-index:8500!important;
+  height:100vh!important;
+  height:100dvh!important;
+  padding-bottom:env(safe-area-inset-bottom)!important;
+}
+body.gw-mobile-mode .sidebar .sidebar-footer {
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+}
 /* Notification bell: ensure it's never pushed off-screen on mobile */
 body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
 </style>
