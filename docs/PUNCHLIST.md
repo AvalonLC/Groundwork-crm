@@ -1,18 +1,20 @@
 # Finance OS — Punch List
 
-Written 2026-08-04, updated same day twice more (config-driven classifier/
-ingest, then live mounting + admin config UI + cron scaffolding). Honest
+Written 2026-08-04, updated same day three times more (config-driven
+classifier/ingest; live mounting + admin config UI + cron scaffolding;
+scheduling finalized + verification tooling + guardrails). Honest
 accounting of what's real, what's inferred, what's estimated, and exactly
 what to review before deploying anything. **Nothing here was deployed** —
 `npm run deploy` and `npm run db:migrate:prod` were never run, and no
 `CRON_SECRET` was ever set, so the cron endpoint fails closed by default.
 
 ## What's actually done and gate-verified
-All 23 original tasks (waves 0-5) plus a config layer and live-mounting
-pass beyond the original scope. 165 tests (132 vitest, 33 Playwright e2e
-against a real local D1 + real Chromium), typecheck clean, real `vite build`
-succeeds (101 modules). Every formula in the engines is checked against
-`fixtures/golden.json` to its own stated tolerance.
+All 23 original tasks (waves 0-5) plus a config layer, live-mounting, and
+finalized scheduling beyond the original scope. 171 tests (138 vitest, 33
+Playwright e2e against a real local D1 + real Chromium), typecheck clean,
+real `vite build` succeeds (101 modules), preflight 45/0/0/0. Every formula
+in the engines is checked against `fixtures/golden.json` to its own stated
+tolerance.
 
 **Live in the app now, behind real auth:** `/finance/money-loop`,
 `/recovery`, `/budget`, `/queue`, `/job-costing`, `/config` (admin config
@@ -45,11 +47,13 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    business logic. Now a config edit (via `/finance/config` or the JSON
    files directly), not a code-writing task — see
    `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md`.
-2. **Nightly rollup has no schedule chosen yet.** Both scheduling options
-   are fully built (`workers/finance-cron/` companion Worker, or an
-   external scheduler hitting `/internal/cron/rollup` directly) — see
-   `workers/finance-cron/README.md`. Needs a `CRON_SECRET` set and one
-   option picked.
+2. **`CRON_SECRET` isn't set yet.** Scheduling is decided (GitHub Actions,
+   `.github/workflows/finance-cron.yml`) and everything is built and
+   tested, including a pre-auth status check
+   (`GET /internal/cron/rollup/status`) and a dry-run mode
+   (`?dry_run=true`) for verifying without writing. Full setup steps:
+   `docs/RUNBOOK-finance-cron.md`. The rejected companion-Worker option is
+   kept as a documented, unused alternative in `workers/finance-cron/`.
 3. **Cross-database joins are stubbed at the boundary, not built.**
    `E2-unbilled` and job-costing's "hours vs estimate" both need data that
    lives in the CRM's own `DB` (invoices/receivables, job estimates) —
@@ -106,6 +110,14 @@ section. Highest-risk guesses, ranked:
   racing against parallel Playwright workers seeding different tenants.
   Scoped to `tenant_id`.
 
+## Guardrails added this pass
+- `scripts/validate-finance-config.js` (`npm run validate:finance-config`,
+  also wired into `npm run preflight` and CI) — catches a broken hand-edit
+  to any `config/finance/*.json` file before it ships, using the same
+  structural checks the admin UI already enforces on save.
+- `config/finance/README.md` — what each config file controls and whether
+  it's safe to leave untouched (all but `role-map.json` degrade safely).
+
 ## What Tyler needs to review before trusting any of this live
 1. **`config/finance/role-map.json`** — confirm the CRM-role mapping before
    trusting real users see the right thing. This is the one piece of new
@@ -115,8 +127,10 @@ section. Highest-risk guesses, ranked:
 3. **Edit `classifier.rules.json` / `ingest.sources.json`** (via
    `/finance/config` or the file directly) with real vendor/keyword data
    and a real export's header row.
-4. **Pick a rollup scheduling option and set `CRON_SECRET`** — both paths
-   are built; see `workers/finance-cron/README.md`.
+4. **Set `CRON_SECRET`** in GitHub Actions (repo secret) and Cloudflare
+   Pages (`wrangler pages secret put`) — exact steps in
+   `docs/RUNBOOK-finance-cron.md`. Scheduling itself is already decided
+   and built.
 5. **Never run `npm run deploy` / `npm run db:migrate:prod` from an agent
    session** — human-only, enforced by `.githooks/pre-push`, unchanged.
 6. Local commit identity in this repo is auto-derived
