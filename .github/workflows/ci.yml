@@ -2,9 +2,12 @@ name: ci
 on:
   push: { branches: [main, 'agent/**'] }
   pull_request:
+
 jobs:
   gate:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
