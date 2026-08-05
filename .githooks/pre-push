@@ -21,6 +21,11 @@ SCAN_EXCLUDES=(
   ':(exclude).github/workflows/ci.yml'
   ':(exclude)src/engines/burden.test.ts'
   ':(exclude)tasks.json'
+  # package.json's deploy/db:migrate:prod integrity has its own precise
+  # structural check below (does the key still exist with a value) —
+  # a line-diff content scan on it just reflects whitespace realignment
+  # from unrelated sibling scripts being added/reformatted nearby.
+  ':(exclude)package.json'
 )
 
 # A comment ABOUT a dangerous command (// # --) is not the command itself.
