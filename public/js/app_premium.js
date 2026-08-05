@@ -813,7 +813,7 @@ const _gwWsNameToId = {
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
   Sales:       ['pipeline','lead','clients','estimates','communications'],
-  Financial:   ['financialHub','invoices','gwReviews','gwStripe'],
+  Financial:   ['financialHub','invoices','gwReviews','gwStripe','financeOS'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Learning:    ['academy'],
   Admin:       ['settings','userManagement'],
@@ -833,7 +833,14 @@ function _gwSetHeader(wsName, tabsConfig, activeTabId) {
     if (t.divider) return;
     if (allowed && !allowed.includes(t.id)) return; // hide on mobile
     const activeClass = t.id === activeTabId ? ' nav-subtab--active' : '';
-    html += `<button class="nav-subtab${activeClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+    // t.href items are real page navigations (e.g. the standalone Finance OS
+    // pages mounted at /finance/*), not client-side SPA tabs — render as a
+    // plain link instead of a show()-wired button.
+    if (t.href) {
+      html += `<a class="nav-subtab${activeClass}" href="${t.href}" style="text-decoration:none">${t.label}</a>`;
+    } else {
+      html += `<button class="nav-subtab${activeClass}" data-tab="${t.id}" onclick="show('${t.id}')">${t.label}</button>`;
+    }
   });
   panel.innerHTML = html;
 }
@@ -991,6 +998,8 @@ function gwFinancial(tab) {
     {id:'deposits',           label:'Deposits'},
     {id:'statements',         label:'Statements'},
     {id:'financialActivity',  label:'Activity'},
+    {divider:true},
+    {id:'financeOS',          label:'Finance OS', href:'/finance/money-loop'},
   ], tab);
   if (tab === 'financialHub')          (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
   else if (tab === 'invoices')         (typeof gwInvoices==='function') ? gwInvoices() : _gwTabStub('Invoices');
