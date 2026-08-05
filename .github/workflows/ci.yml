@@ -39,4 +39,6 @@ jobs:
       - run: npm test
       - name: install Playwright chromium
         run: npx playwright install --with-deps chromium
+      - name: apply finance migrations (local D1)
+        run: npm run db:local
       - run: npm run e2e
