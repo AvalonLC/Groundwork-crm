@@ -2243,6 +2243,14 @@ function _gwTodayRenderMobile(opts) {
    sections inside the relevant widget, or as its own Add-Widget-only item. */
 const _GW_MYDAY_WIDGETS = [
   { id:'pipeStrip',    label:'Pipeline Snapshot',       desc:'Open leads, proposals out, pipeline value, won MTD, close likelihood', span:6, allowed:c=>!c.isField, render:c=>c.pipeStrip, zone:'hero' },
+  // ── "My Work" widgets listed first in the registry so the zone renders
+  // first (zone order follows first-seen registry order — see
+  // _gwMyDayGroupByZone below), right under the hero, ahead of Sales/
+  // Financial/Operations.
+  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
+  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
+  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml, zone:'personal' },
+  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
   { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value trend, stage breakdown, funnel and lead-source detail', span:3, allowed:c=>!c.isField, render:c=>c.pipeChartHtml, zone:'sales' },
   { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
   { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>`, zone:'sales' },
@@ -2258,10 +2266,6 @@ const _GW_MYDAY_WIDGETS = [
   { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
   { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
   { id:'opsDeeper',    label:'Upcoming Schedule (7 Days)', desc:'Jobs scheduled in the next 7 days, plus capacity outlook', span:6, allowed:c=>!c.isField, defaultOff:true, render:c=>c.opsDeeperHtml, zone:'operations' },
-  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
-  { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
-  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml, zone:'personal' },
-  { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
 ];
 
 /* ── Zone grouping metadata — groups the flat widget list into visually
@@ -3275,7 +3279,15 @@ function _gwTodayRender() {
   // overdue relative to their own stage's expected duration (a lead that's
   // 10 days old but only 2 days into a 14-day-expected stage is fine; one
   // that's 10 days into a 3-day-expected stage needs attention).
+  // Extra safety net: _open comes from gwSalesIsOpen(), which trusts the
+  // *currently published* process definition — a lead whose stored stage
+  // no longer resolves against that definition (e.g. process republished
+  // after the lead was closed) falls through as "unresolved" and gets
+  // treated as open by default. gwLeadIsOpen() re-checks the raw status
+  // text (won/lost/disqualified) before trusting that, so a lead actually
+  // marked Lost/Won never surfaces here even if its stage lookup breaks.
   const _staleLeads = _open
+    .filter(o => gwLeadIsOpen(o))
     .map(o => ({ o, clock: gwStageClock(o) }))
     .filter(x => x.clock.level === 'late')
     .sort((a,b) => b.clock.ratio - a.clock.ratio)
