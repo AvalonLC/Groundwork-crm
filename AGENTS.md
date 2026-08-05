@@ -80,6 +80,38 @@ If PM2 isn't available (e.g. Codex cloud sandbox), local preview:
   `groundwork-crm` on every push to main, using repo secrets `CF_API_TOKEN`
   and `CF_ACCOUNT_ID`. Do not add other deploy paths.
 
+## Groundwork Finance OS (module)
+
+A separate Finance OS layer lives inside this same repo, additive to
+everything above — see `CLAUDE.md` for its full build contract (money as
+INTEGER cents, immutable effective-dated rate profiles, the four hard
+rules, architecture invariants, workflow). Summary of how it differs from
+the rest of this app:
+
+- **Separate D1 database**: binding `FINANCE_DB` (name `groundwork`, a
+  distinct database from `DB`/`avalon-sales-hub-production`). Its own
+  migration chain lives in `migrations/finance/` (starting at `0001`,
+  never mixed with the root `migrations/` numbering above) and is applied
+  independently — `deploy.yml`'s automatic "Apply D1 migrations" step only
+  targets `avalon-sales-hub-production`, NOT `groundwork`. Production
+  Finance OS migrations are a deliberate, separate, human-run step.
+- **Routes**: `/finance/*` (UI, behind `requireAuth` + a CRM-role ->
+  Finance-role mapping in `config/finance/role-map.json`),
+  `/internal/rates`, `/internal/actions`, `/internal/cron` (its own
+  `X-Cron-Secret` header auth, not session-based).
+- **Config-driven business rules**: `config/finance/*.json` (classifier
+  rules, ingest source detectors, division map, approval thresholds,
+  automation policy, tenant defaults, role map) are Groundwork-wide
+  platform defaults; a `finance_config_override` D1 table layers
+  per-tenant overrides on top, edited live at `/finance/config`. See
+  `config/finance/README.md`.
+- **Scheduling**: `.github/workflows/finance-cron.yml` — a nightly
+  overhead-recovery rollup calling `POST /internal/cron/rollup`, separate
+  from and unrelated to `deploy.yml`. See `docs/RUNBOOK-finance-cron.md`.
+- **Tests**: `npm test` (vitest, real D1 via `@cloudflare/vitest-pool-workers`),
+  `npm run typecheck` (`tsconfig.finance.json`), `npm run e2e` (Playwright).
+  These are additive to the sales-process tests below, not a replacement.
+
 ## Sales process platform (versioned)
 
 - Schema: migrations `0046`–`0052`. Core tables: `sales_processes`,

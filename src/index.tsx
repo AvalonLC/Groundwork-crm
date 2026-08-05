@@ -29,12 +29,28 @@ import mig0046 from '../migrations/0046_multiday_phase_metadata.sql?raw'
 import mig0047 from '../migrations/0047_schedule_timeline.sql?raw'
 import mig0055 from '../migrations/0055_client_portfolio.sql?raw'
 import { registerPortal } from './portal'
+// ── Finance OS sub-routers (see CLAUDE.md, docs/spec/API.md, docs/spec/ACTIONS.md) ──
+import { ratesRouter } from './api/rates'
+import { actionsRouter } from './api/actions'
+import { financeUiRouter } from './ui/mount'
+import { cronTriggerRouter } from './api/cron-trigger'
 
 
-type Bindings = { DB: D1Database; MEDIA: R2Bucket; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
+type Bindings = { DB: D1Database; FINANCE_DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
 type Variables = { repId: string; companyId: string; role: string; isSuperAdmin: boolean }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
+
+// ── Finance OS routes — mounted, not inlined; see src/api/rates.ts, src/api/actions.ts, src/ui/mount.ts ──
+app.route('/internal/rates', ratesRouter)
+app.route('/internal/actions', actionsRouter)
+// No requireAuth — this has its own X-Cron-Secret header auth (see
+// src/api/cron-trigger.ts) since a scheduler can't supply a session cookie.
+app.route('/internal/cron', cronTriggerRouter)
+// requireAuth is a hoisted function declaration (defined further below in
+// this file) — referencing it here, before its textual definition, is safe.
+app.use('/finance/*', requireAuth)
+app.route('/finance', financeUiRouter)
 
 // ── CORS + middleware ─────────────────────────────────────────────────────────
 app.use('/api/*', cors())

@@ -1,0 +1,44 @@
+name: ci
+on:
+  push: { branches: [main, 'agent/**'] }
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: validate task graph
+        run: node scripts/validate-tasks.js
+      - name: validate finance config files
+        run: npm run validate:finance-config
+      - name: guard - no --remote in source
+        run: |
+          ! grep -rn -- '--remote' src/ scripts/ 2>/dev/null || exit 1
+      - name: guard - no DB_PROD in source
+        run: |
+          ! grep -rn 'DB_PROD' src/ scripts/ 2>/dev/null || exit 1
+      - name: guard - no float money in finance migrations
+        run: |
+          ! grep -rniE '(REAL|FLOAT|DOUBLE)' migrations/finance/ 2>/dev/null || exit 1
+      - name: guard - BH-13 intact
+        run: |
+          grep -q 'BH-13' src/engines/burden.test.ts
+          grep -q '40.62' src/engines/burden.test.ts
+          grep -q 'not.toBe(39.49)' src/engines/burden.test.ts
+      - name: guard - node_modules not tracked
+        run: |
+          ! git ls-files | grep -qx 'node_modules' || exit 1
+      - run: npm run typecheck
+      - run: npm test
+      - name: install Playwright chromium
+        run: npx playwright install --with-deps chromium
+      - name: apply finance migrations (local D1)
+        run: npm run db:local
+      - run: npm run e2e

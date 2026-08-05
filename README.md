@@ -1126,3 +1126,61 @@ screenshot if it's still an issue.
 
 **Command Center** — user explicitly asked to defer ("*I'm gonna sleep on
 it and look at it later*"); no changes made this pass.
+## Finance OS (added 2026-08-04)
+A separate cost-accounting layer inside this repo — job costing, overhead
+recovery, and an AI-assisted action queue, built against its own `FINANCE_DB`
+D1 database (`groundwork`), isolated from this CRM's own `DB`. **Live in the
+app now**, mounted at `/finance/*` behind real CRM auth. Full build contract
+in `CLAUDE.md`, task graph in `tasks.json`, specs in `docs/spec/`, honest gap
+accounting in `docs/PUNCHLIST.md`, cron operations in
+`docs/RUNBOOK-finance-cron.md`.
+
+- **Schema** (`migrations/finance/`): 13 tables, money as INTEGER cents, rates
+  as INTEGER ten-thousandths. Labor/equipment rate profiles are immutable +
+  effective-dated — recalibration inserts a new row and closes the prior one,
+  never an UPDATE to a rate value.
+- **Engines** (`src/engines/`): burdened-hour rate (the equipment double-count
+  guard — BH-13 — is the one number this whole layer exists to get right),
+  equipment ownership/operating split, multi-driver overhead allocation,
+  recovery projection, unbilled-work detection. All pure functions, fixture-
+  verified against `fixtures/golden.json`.
+- **API** (`src/api/`, mounted at `/internal/rates`, `/internal/actions`,
+  `/internal/cron`): rate resolution (employee → crew → role → tenant
+  cascade, confidence attached to every response), two-line cost posting
+  (write-once — a second post attempt is a no-op), the five-verb action
+  queue (`collect`/`bill`/`pay`/`fix`/`decide`), and the authenticated
+  nightly-rollup trigger.
+- **Nightly rollup** (`src/cron/rollup.ts` + `src/cron/gather-inputs.ts`):
+  writes `recovery_snapshot`. Scheduling is decided — a GitHub Actions
+  workflow (`.github/workflows/finance-cron.yml`) calls the rollup endpoint
+  daily. Full setup/verification/rotation steps:
+  `docs/RUNBOOK-finance-cron.md`.
+- **UI** (`src/ui/`, mounted at `/finance/*`): Money Loop, Overhead Recovery,
+  Budget & Rates, Work Queue, Job Costing, and an admin Config editor
+  (`/finance/config`) — all behind the CRM's real `requireAuth`, role
+  mapped from the real session via `config/finance/role-map.json`.
+  Role-based visibility (crew never sees margin/wage/rate) and a
+  simple/advanced vocabulary toggle throughout. `docs/dictionary.json`'s
+  wording and 3 of 4 role definitions are first drafts — see
+  `docs/PUNCHLIST.md`.
+- **Config** (`config/finance/*.json`, guide: `config/finance/README.md`):
+  seven files controlling classifier rules, ingest format detection,
+  division naming, thresholds, feature flags, tenant defaults, and the
+  CRM-role → Finance-role mapping. Live-editable at `/finance/config` (owner
+  only) — edits take effect immediately via a DB-backed override, no
+  deploy needed. `npm run validate:finance-config` checks any hand-edit
+  before it ships (also runs in CI and `npm run preflight`).
+- **AI** (`src/ai/`): receipt pipeline (R2 storage, dedupe by content hash,
+  field-level confidence), two-tier equipment capture, a config-driven
+  deterministic-first classifier, and config-driven file ingest (5 formats)
+  are all built. Classifier/ingest ship with safe placeholder rules — see
+  `BLOCKED-W5-classifier.md` / `BLOCKED-W5-ingest.md` for exactly what real
+  business input is still needed.
+- **Testing**: `npm test` (vitest + `@cloudflare/vitest-pool-workers`, real
+  local D1) and `npm run e2e` (Playwright, real Chromium, real local D1).
+  `npm run preflight` / `bash scripts/harness-selftest.sh` verify the build
+  contract itself.
+- **Never run**: `npm run deploy`, `npm run db:migrate:prod`, or any
+  `--remote` wrangler command against this or the CRM's production
+  database — enforced by `.githooks/pre-push`, and nothing in this build
+  ever did.

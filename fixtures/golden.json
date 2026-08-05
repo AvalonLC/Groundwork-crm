@@ -1,0 +1,134 @@
+{
+  "generated": "2026-08-03",
+  "note": "Verified fixtures. burden_labor_with_equipment is used ONLY when equipment_engine_active=false. Wave 2 ships the equipment engine, so the ACTIVE labor fixture is burden_labor_no_equipment.",
+  "burden_labor_with_equipment": {
+    "input": {
+      "wage": 24.0,
+      "paid": 2080,
+      "pto": 96,
+      "shop": 168,
+      "idle": 194,
+      "tax": 0.0865,
+      "comp": 0.07,
+      "ben_mo": 260,
+      "truck": 4200,
+      "tools": 834,
+      "equip": 2400
+    },
+    "expect": {
+      "billable_hours": 1622,
+      "utilization": 0.779808,
+      "wage_cost": 49920.0,
+      "payroll_pool": 60852.48,
+      "support_pool": 7434,
+      "total_annual_cost": 68286.48,
+      "burdened_rate": 42.1002,
+      "burden_multiplier": 1.75417
+    }
+  },
+  "burden_labor_no_equipment": {
+    "input": {
+      "wage": 24.0,
+      "paid": 2080,
+      "pto": 96,
+      "shop": 168,
+      "idle": 194,
+      "tax": 0.0865,
+      "comp": 0.07,
+      "ben_mo": 260,
+      "truck": 4200,
+      "tools": 834,
+      "equip": 0
+    },
+    "expect": {
+      "billable_hours": 1622,
+      "utilization": 0.779808,
+      "wage_cost": 49920.0,
+      "payroll_pool": 60852.48,
+      "support_pool": 5034,
+      "total_annual_cost": 65886.48,
+      "burdened_rate": 40.6205,
+      "burden_multiplier": 1.69252
+    }
+  },
+  "equipment_rate": {
+    "input": {
+      "purchase_price": 62000,
+      "salvage": 14000,
+      "life_years": 7,
+      "annual_machine_hours": 720,
+      "finance_rate": 0.075,
+      "insurance_annual": 1180,
+      "storage_annual": 600,
+      "fuel_gal_per_hr": 2.4,
+      "fuel_price": 4.05,
+      "repairs_annual": 4900,
+      "wear_annual": 3300,
+      "lube_pct_of_fuel": 0.12
+    },
+    "expect": {
+      "ownership_annual": 11487.14,
+      "ownership_rate": 15.9544,
+      "operating_rate": 22.2753,
+      "total_rate": 38.2297
+    }
+  },
+  "overhead_allocation": {
+    "total_overhead": 578400,
+    "total_sellable_hours": 21086,
+    "blended_overhead_rate": 27.4305,
+    "divisions": {
+      "maintenance": {
+        "sellable_hours": 8110,
+        "allocated_overhead": 196400,
+        "weighted_labor_rate": 38.4,
+        "overhead_rate": 24.217,
+        "absorbed_cost": 62.62,
+        "target_margin": 0.4,
+        "required_bill_rate": 104.37
+      },
+      "hardscape": {
+        "sellable_hours": 9732,
+        "allocated_overhead": 268900,
+        "weighted_labor_rate": 45.6,
+        "overhead_rate": 27.6305,
+        "absorbed_cost": 73.23,
+        "target_margin": 0.34,
+        "required_bill_rate": 110.95
+      },
+      "snow": {
+        "sellable_hours": 1622,
+        "allocated_overhead": 71300,
+        "weighted_labor_rate": 47.2,
+        "overhead_rate": 43.9581,
+        "absorbed_cost": 91.16,
+        "target_margin": 0.38,
+        "required_bill_rate": 147.03
+      },
+      "drainage": {
+        "sellable_hours": 1622,
+        "allocated_overhead": 41800,
+        "weighted_labor_rate": 44.1,
+        "overhead_rate": 25.7707,
+        "absorbed_cost": 69.87,
+        "target_margin": 0.33,
+        "required_bill_rate": 104.28
+      }
+    }
+  },
+  "recovery": {
+    "as_of": "2026-08-03",
+    "restated_target": 591000,
+    "recovered_to_date": 381900,
+    "hours_per_week": 380,
+    "blended_overhead_rate": 27.43,
+    "weekly_recovery": 10423.4,
+    "pct_recovered": 0.646193,
+    "projected_black_friday": "2026-12-21",
+    "confidence_days": 13
+  },
+  "tolerance": {
+    "rate": 0.01,
+    "pct": 0.001
+  }
+}

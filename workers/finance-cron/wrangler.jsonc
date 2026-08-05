@@ -1,0 +1,26 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // Option A of two for scheduling the Finance OS nightly rollup (the other
+  // is an external scheduler hitting POST /internal/cron/rollup directly —
+  // see docs/spec/RECOVERY.md and workers/finance-cron/README.md). This is
+  // a genuine Cloudflare Worker (not Pages), because Cron Triggers are a
+  // Workers-only feature that groundwork-crm's Pages project can't have.
+  //
+  // NOT DEPLOYED. Scaffolded only. To actually use this option:
+  //   1. Pick a cron schedule below (currently commented out).
+  //   2. wrangler secret put CRON_SECRET --config workers/finance-cron/wrangler.jsonc
+  //      (must match the same value set on the main groundwork-crm project).
+  //   3. wrangler deploy --config workers/finance-cron/wrangler.jsonc
+  "name": "groundwork-finance-cron",
+  "main": "index.ts",
+  "compatibility_date": "2026-05-03",
+
+  // "triggers": { "crons": ["0 7 * * *"] },  // uncomment + choose a schedule
+
+  "vars": {
+    // The main app's rollup endpoint this Worker calls. Update if the
+    // production URL differs.
+    "ROLLUP_ENDPOINT": "https://groundwork-crm.com/internal/cron/rollup"
+  }
+}

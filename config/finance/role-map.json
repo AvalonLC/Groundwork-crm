@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "note": "GROUNDWORK PLATFORM DEFAULT — applies to every tenant/company on the CRM unless a tenant overrides it via /finance/config. The CRM role strings on the left (admin, office_manager, estimator, etc., found in src/index.tsx's requireAuth-gated routes) are defined by the shared Groundwork CRM application code itself, not per-tenant — every company using this CRM has the same role vocabulary. The Finance-OS-role values on the right (crew | crew_lead | office | owner, docs/spec/ROLES.md) are this build's inferred, conservative default policy for how those roles translate to financial visibility — not confirmed by any real customer, including whichever company happens to be the CRM's first tenant. CLAUDE.md only defines crew's restrictions directly. Ambiguous CRM roles (estimator, rep) default to the MORE restrictive Finance OS role rather than over-exposing financial data. A tenant that wants a different policy sets its own override at /finance/config; editing this file changes the platform-wide starting point for every tenant.",
+
+  "crm_role_to_finance_role": {
+    "admin": "owner",
+    "office_manager": "office",
+    "estimator": "office",
+    "foreman": "crew_lead",
+    "field_supervisor": "crew_lead",
+    "laborer": "crew",
+    "mechanic": "crew",
+    "view_only": "crew",
+    "rep": "crew"
+  },
+
+  "default_finance_role": "crew",
+  "super_admin_finance_role": "owner"
+}

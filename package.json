@@ -9,7 +9,15 @@
     "deploy": "npm run build && wrangler pages deploy dist --project-name groundwork-crm",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply avalon-sales-hub-production --local",
-    "db:migrate:prod": "wrangler d1 migrations apply avalon-sales-hub-production",
+    "db:migrate:prod":  "wrangler d1 migrations apply avalon-sales-hub-production",
+    "test":        "vitest run",
+    "test:watch":  "vitest",
+    "typecheck":   "tsc --noEmit -p tsconfig.finance.json",
+    "e2e":         "playwright test",
+    "preflight":   "bash scripts/preflight.sh",
+    "db:local":    "wrangler d1 migrations apply groundwork --local",
+    "db:reset":    "rm -rf .wrangler/state && npm run db:local",
+    "validate:finance-config": "node scripts/validate-finance-config.js",
     "test:migrations": "node --test tests/clean-migrations.test.mjs",
     "test:migration-review": "vite build && node --test tests/sales-process-migration-review.integration.test.mjs",
     "test:sales-process-transitions": "vite build && node --test tests/sales-process-transitions.integration.test.mjs",
@@ -24,7 +32,12 @@
     "@hono/vite-dev-server": "^0.25.2",
     "linkedom": "^0.18.13",
     "vite": "^6.3.5",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.4.0",
+    "@cloudflare/workers-types": "^5.20260804.1",
+    "@playwright/test": "^1.50.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0",
+    "@cloudflare/vitest-pool-workers": "^0.20.1"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "note": "GROUNDWORK PLATFORM DEFAULT — applies to every tenant unless overridden per-tenant via /finance/config. Canonical division names (matching overhead_pool/overhead_allocation and the ALLOCATION.md fixture data) plus known aliases seen in class/division P&L exports or crew-facing terminology. These four divisions (maintenance, hardscape, snow, drainage) come from the fixture data this build was verified against, not a fixed platform requirement — a tenant with different divisions overrides this file entirely via /finance/config, they don't edit this list. Add an alias here when ingest sees a division name it doesn't recognize, instead of hardcoding a mapping in code. Matching is case-insensitive.",
+
+  "canonical_divisions": ["maintenance", "hardscape", "snow", "drainage"],
+
+  "aliases": {
+    "maintenance": ["maint", "lawn maintenance", "grounds", "grounds maintenance"],
+    "hardscape": ["hard scape", "hardscaping", "patios", "hardscapes"],
+    "snow": ["snow removal", "winter services", "snow & ice"],
+    "drainage": ["drain", "french drain", "water management", "drainage systems"]
+  },
+
+  "unmapped_division_action": "flag_for_review"
+}

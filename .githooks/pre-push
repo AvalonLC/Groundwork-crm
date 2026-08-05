@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Blocks the only irreversible mistake an agent could make.
+set -uo pipefail
+RANGE="origin/main..HEAD"
+git rev-parse --verify origin/main >/dev/null 2>&1 || RANGE="HEAD"
+
+# Docs/prose can't execute anything, and a handful of non-doc files exist
+# specifically to reference or test these same forbidden patterns (this hook
+# quoting its own rule, preflight/harness self-tests, fixture-guard scripts,
+# CI's own "assert this string is absent" step, tasks.json's "forbidden"
+# spec lists, and the pre-written regression test that is SUPPOSED to
+# contain 39.49/2.61 as the values it rejects). Scanning those as if they
+# were the dangerous command itself only produces false positives.
+SCAN_EXCLUDES=(
+  ':(exclude)*.md' ':(exclude)**/*.md'
+  ':(exclude).githooks/pre-push'
+  ':(exclude)scripts/preflight.sh'
+  ':(exclude)scripts/harness-selftest.sh'
+  ':(exclude)scripts/check-fixtures.js'
+  ':(exclude)scripts/verify-fixtures.py'
+  ':(exclude).github/workflows/ci.yml'
+  ':(exclude)src/engines/burden.test.ts'
+  ':(exclude)tasks.json'
+  # package.json's deploy/db:migrate:prod integrity has its own precise
+  # structural check below (does the key still exist with a value) —
+  # a line-diff content scan on it just reflects whitespace realignment
+  # from unrelated sibling scripts being added/reformatted nearby.
+  ':(exclude)package.json'
+)
+
+# A comment ABOUT a dangerous command (// # --) is not the command itself.
+strip_comments() { grep -vE '^\+\s*(//|#|--)'; }
+
+scan_diff() {
+  git diff "$RANGE" -- . "${SCAN_EXCLUDES[@]}" | strip_comments
+}
+
+# --- production deploy guards, matched to THIS repo's package.json ---
+if scan_diff | grep -nE '^\+.*wrangler.*--remote'; then
+  echo "PRE-PUSH BLOCKED: 'wrangler --remote' added. Humans run remote, not agents."; exit 1
+fi
+if scan_diff | grep -nE '^\+.*(npm run deploy|npm run db:migrate:prod)'; then
+  echo "PRE-PUSH BLOCKED: a production deploy/migrate command was added to source."
+  echo "  This repo deploys straight to groundwork-crm.com with no staging step."
+  echo "  Only Tyler runs: npm run deploy | npm run db:migrate:prod"; exit 1
+fi
+if scan_diff | grep -nE '^\+.*wrangler (pages )?deploy'; then
+  echo "PRE-PUSH BLOCKED: 'wrangler deploy' added. Deploys are Tyler-only."; exit 1
+fi
+# Check the actual resulting file, not the line diff — appending a new
+# script after "deploy"/"db:migrate:prod" reformats that line (adds a
+# trailing comma) without removing anything, and a line-diff match can't
+# tell those apart.
+if git diff "$RANGE" --name-only -- package.json | grep -q .; then
+  for key in deploy db:migrate:prod; do
+    if ! grep -qE "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" package.json; then
+      echo "PRE-PUSH BLOCKED: package.json's \"$key\" script is missing."; exit 1
+    fi
+  done
+fi
+if scan_diff | grep -nE '^\+.*DB_PROD'; then
+  echo "PRE-PUSH BLOCKED: DB_PROD referenced in source."; exit 1
+fi
+# Exclude the diff's own "--- a/file" header line — it starts with '-' too,
+# and would otherwise flag a brand-new file (which has no real removed lines)
+# as if content had been deleted from it.
+if git diff "$RANGE" -- src/engines/burden.test.ts | grep -vE '^(---|\+\+\+) ' | grep -qE '^-'; then
+  echo "PRE-PUSH BLOCKED: burden.test.ts is read-only (BH-13 guard)."; exit 1
+fi
+if scan_diff | grep -nE '^\+.*(39\.49|\b2\.61\b)'; then
+  echo "PRE-PUSH BLOCKED: 39.49 / 2.61 are the known-bad equipment figures. Use 40.62 / 1.4797."; exit 1
+fi
+if git diff "$RANGE" -- migrations/ | grep -vE '^\+\s*--' | grep -niE '^\+.*\b(REAL|FLOAT|DOUBLE)\b'; then
+  echo "PRE-PUSH BLOCKED: floating point in a migration. Money is INTEGER cents."; exit 1
+fi
+if scan_diff | grep -nE '^\+.*(it|test)\.(skip|todo)\('; then
+  echo "PRE-PUSH BLOCKED: skipped test added."; exit 1
+fi
+# Protect Tyler's pre-existing in-progress work from being swept into a commit.
+if [ -f .agent-protected ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if git diff "$RANGE" --name-only -- "$f" 2>/dev/null | grep -q .; then
+      echo "PRE-PUSH BLOCKED: '$f' is listed in .agent-protected and was modified."
+      echo "  That file had uncommitted work before the run started."; exit 1
+    fi
+  done < .agent-protected
+fi
+if git ls-files | grep -qx 'node_modules'; then
+  echo "PRE-PUSH BLOCKED: node_modules is tracked. Run: git rm --cached node_modules"; exit 1
+fi
+echo "pre-push checks passed"
