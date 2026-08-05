@@ -4,7 +4,6 @@ export interface BurdenInput {
   truck: number; equip: number; tools: number;
   equipment_engine_active: boolean;
 }
-
 export interface BurdenResult {
   billable_hours: number; utilization: number;
   payroll_pool: number; support_pool: number; total_annual_cost: number;

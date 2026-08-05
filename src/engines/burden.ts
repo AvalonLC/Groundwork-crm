@@ -1,13 +1,9 @@
 import type { BurdenInput, BurdenResult } from "./types";
 
-/**
- * Pure function. No DB, no I/O. See docs/spec/BH-TESTS.md.
- * All cost rates must flow through /internal/rates/resolve — never call this
- * directly from a route; that's what W3-rateapi wraps around it.
- */
+/** Pure function. No DB, no I/O. See docs/spec/BH-TESTS.md. */
 export function computeBurden(i: BurdenInput): BurdenResult {
   // RULE: when the equipment engine owns machine cost, labor sheds it entirely.
-  // Failing to do this double-charges equipment on every crew hour (BH-13).
+  // Failing to do this double-charges equipment on every crew hour.
   const equipUsed = i.equipment_engine_active ? 0 : i.equip;
 
   const rawBillable = i.paid - (i.pto + i.shop + i.idle);
