@@ -29,27 +29,28 @@ pct_recovered 0.646193, projected_black_friday 2026-12-21, confidence_days 13.
 Writes `recovery_snapshot` (SCHEMA.md) from `time_entry` + `job_cost_ledger`, using
 `db.batch()` — forbidden: "row-by-row writes." Depends on E2-recovery and W3-posting.
 
-### Scheduling — scaffolded 2026-08-04, one decision remains
+### Scheduling — decided 2026-08-04: Option B, GitHub Actions
 Pages has no native Cron Trigger (Workers-only feature; `scripts/preflight.sh`'s
-"cron trigger" check is a SKIP for this reason). What's now built, tested, and
-NOT deployed:
+"cron trigger" check is a SKIP for this reason). Tyler chose Option B: an
+external scheduler, specifically a GitHub Actions scheduled workflow
+(`.github/workflows/finance-cron.yml`), reusing this repo's existing CI/CD
+setup rather than deploying a second Cloudflare Worker for a once-daily
+HTTP call. Option A (a companion Worker, `workers/finance-cron/`) was
+scaffolded but not chosen — kept as a documented, unused alternative.
+
+What's built:
 - `POST /internal/cron/rollup` (`src/api/cron-trigger.ts`), mounted at
   `/internal/cron` — secret-header authenticated (`X-Cron-Secret`), fails
   closed (503) if `CRON_SECRET` isn't configured. Gathers real inputs per
   tenant (`src/cron/gather-inputs.ts`) and calls `runNightlyRollup`.
-- `workers/finance-cron/` — a scaffolded (not deployed) companion Worker
-  with a commented-out Cron Trigger, for Option A below.
-- Full instructions for both options: `workers/finance-cron/README.md`.
+- `.github/workflows/finance-cron.yml` — the active scheduler. 7am UTC
+  daily by default (edit the cron expression to change), plus a manual
+  `workflow_dispatch` trigger for testing.
 
-Two options, both fully scaffolded:
-1. **Companion Worker** (`workers/finance-cron/`) — uncomment a cron schedule,
-   set the shared secret on both projects, deploy.
-2. **External scheduler** — point anything (GitHub Actions, cron-job.org, a
-   server you already run) at `POST /internal/cron/rollup` with the secret
-   header. No companion Worker needed.
-
-**The only remaining decision is which option and the actual schedule** —
-not an architecture question anymore, just a choice + a `wrangler secret put`.
+**Only remaining input: set the `CRON_SECRET` value on both GitHub Actions
+(as a repo secret) and Cloudflare Pages (via `wrangler pages secret put`)
+— exact steps are in the workflow file's header comment and
+`workers/finance-cron/README.md`.** Nothing else needs to be built.
 
 ## Derivation confidence
 **Confident:** every fixture figure, the weekly_recovery and pct_recovered formulas
@@ -63,5 +64,5 @@ are reasonable proxies I built, not formulas Tyler confirmed — worth review
 before trusting the numbers for anything customer-facing (see
 docs/PUNCHLIST.md).
 
-**Needs Tyler:** which scheduling option, and the actual cron schedule/secret —
-the only remaining input, now that both paths are fully built.
+**Needs Tyler:** set `CRON_SECRET` on both GitHub Actions and Cloudflare
+Pages (same value, two places) — the only remaining input for scheduling.
