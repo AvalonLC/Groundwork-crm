@@ -16,7 +16,8 @@
     "e2e":         "playwright test",
     "preflight":   "bash scripts/preflight.sh",
     "db:local":    "wrangler d1 migrations apply groundwork --local",
-    "db:reset":    "rm -rf .wrangler/state && npm run db:local"
+    "db:reset":    "rm -rf .wrangler/state && npm run db:local",
+    "validate:finance-config": "node scripts/validate-finance-config.js"
   },
   "dependencies": {
     "hono": "^4.12.23"

@@ -40,6 +40,7 @@ chk "tasks.json parses"           "node -e 'JSON.parse(require(\"fs\").readFileS
 chk "graph valid, no collisions"  "node scripts/validate-tasks.js"
 chk "golden.json parses"          "node scripts/check-fixtures.js"
 chk "every spec_ref file exists"  "node scripts/check-specrefs.js"
+chk "finance config files valid"  "node scripts/validate-finance-config.js"
 
 echo "-- the equipment double-count guard --"
 chk "BH-13 present"               "grep -q 'BH-13' src/engines/burden.test.ts"

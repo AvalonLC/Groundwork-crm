@@ -5,6 +5,9 @@ name: Finance OS Nightly Rollup
 # reuses this repo's existing GitHub Actions setup instead of deploying and
 # maintaining a second Cloudflare Worker for a once-a-day HTTP call.
 #
+# Full operational runbook (setup, verification, secret rotation, failure
+# triage): docs/RUNBOOK-finance-cron.md
+#
 # Setup required before this can succeed (not done by this workflow file):
 #   1. Generate a random secret value yourself, e.g.:
 #        openssl rand -hex 32
@@ -13,9 +16,8 @@ name: Finance OS Nightly Rollup
 #   3. Set the SAME value as the Cloudflare Pages secret:
 #        wrangler pages secret put CRON_SECRET --project-name groundwork-crm
 #   Until both are set to the same value, every run of this workflow will
-#   fail (401 if CRON_SECRET is missing on GitHub's side, since the header
-#   is then empty; 503 from the endpoint itself if Cloudflare's side was
-#   never set at all — see src/api/cron-trigger.ts).
+#   fail (401 if the values don't match; 503 if Cloudflare's side was never
+#   set at all — see src/api/cron-trigger.ts).
 
 on:
   schedule:
@@ -23,8 +25,12 @@ on:
     # few minutes late under load) — fine for a once-daily rollup. Change
     # the cron expression to whatever time you prefer.
     - cron: '0 7 * * *'
-  workflow_dispatch: {} # manual "Run workflow" button — use this to test
-                        # before waiting on the schedule.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Compute and return results without writing recovery_snapshot (safe to run anytime)'
+        type: boolean
+        default: false
 
 jobs:
   trigger-rollup:
@@ -33,13 +39,19 @@ jobs:
     steps:
       - name: Call Finance OS rollup endpoint
         run: |
+          url="https://groundwork-crm.com/internal/cron/rollup"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            url="${url}?dry_run=true"
+            echo "Dry run — no data will be written."
+          fi
           http_status=$(curl -s -o /tmp/rollup_response.json -w "%{http_code}" -X POST \
-            "https://groundwork-crm.com/internal/cron/rollup" \
+            --retry 2 --retry-delay 5 --max-time 60 \
+            "$url" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
           echo "HTTP status: $http_status"
           cat /tmp/rollup_response.json
           echo
           if [ "$http_status" -ne 200 ]; then
-            echo "::error::Rollup endpoint returned $http_status (expected 200) — see response body above."
+            echo "::error::Rollup endpoint returned $http_status (expected 200) — see response body above, and docs/RUNBOOK-finance-cron.md for triage."
             exit 1
           fi
