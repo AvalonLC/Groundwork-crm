@@ -2249,7 +2249,7 @@ const _GW_MYDAY_WIDGETS = [
   // Financial/Operations.
   { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
   { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
-  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, defaultOff:true, render:c=>c.quickActionsHtml, zone:'personal' },
+  { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, render:c=>c.quickActionsHtml, zone:'personal' },
   { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
   { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value trend, stage breakdown, funnel and lead-source detail', span:3, allowed:c=>!c.isField, render:c=>c.pipeChartHtml, zone:'sales' },
   { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
@@ -3243,13 +3243,44 @@ function _gwTodayRender() {
     return;
   }
 
-  // Hero header — title, date/rep line, single "+ Add Widget" button.
+  // Hero header — title, date/rep line, single "+ Add Widget" button, plus
+  // a row of large placeholder metric tiles embedded directly in the hero
+  // panel (visual-refresh pass — see premium.css ".hero-kpis"). These are
+  // NOT wired to real data yet (unrelated to the pipeline snapshot strip
+  // below); they're a "configure later" placeholder row, same idea as an
+  // empty dashboard-widget slot, dashed border + "Placeholder" tag so
+  // nobody mistakes them for live figures. Icons are inline gwIcon() SVGs
+  // — no emoji, matches the rest of the app's icon language.
   // Replaces the old mode-switcher pill bar and Customize/edit-mode button
   // entirely — there's only one canonical layout now, and customization is
   // a simple add/remove popover, not a whole editing mode.
   const _addOpen = !!window._gwMyDayAddWidgetOpen;
+  const _gi3 = (n) => (typeof gwIcon==='function') ? gwIcon(n, 14, 'currentColor') : '';
+  const _heroPlaceholderKpis = `
+    <div class="hero-kpis">
+      <div class="hkpi placeholder">
+        <div class="hkpi-ph-top"><div class="hkpi-ph-icon">${_gi3('dollar')}</div><div class="hkpi-ph-label">Cash Collected</div></div>
+        <div class="hkpi-ph-hint">e.g. this month</div>
+        <div class="hkpi-ph-tag">Placeholder</div>
+      </div>
+      <div class="hkpi placeholder">
+        <div class="hkpi-ph-top"><div class="hkpi-ph-icon">${_gi3('document')}</div><div class="hkpi-ph-label">Outstanding A/R</div></div>
+        <div class="hkpi-ph-hint">e.g. total unpaid</div>
+        <div class="hkpi-ph-tag">Placeholder</div>
+      </div>
+      <div class="hkpi placeholder">
+        <div class="hkpi-ph-top"><div class="hkpi-ph-icon">${_gi3('trending_up')}</div><div class="hkpi-ph-label">Avg Job Margin</div></div>
+        <div class="hkpi-ph-hint">e.g. % profit</div>
+        <div class="hkpi-ph-tag">Placeholder</div>
+      </div>
+      <div class="hkpi placeholder">
+        <div class="hkpi-ph-top"><div class="hkpi-ph-icon">${_gi3('plus')}</div><div class="hkpi-ph-label">Add Metric</div></div>
+        <div class="hkpi-ph-hint">Configure later</div>
+        <div class="hkpi-ph-tag">Placeholder</div>
+      </div>
+    </div>`;
   const _heroBlock = `
-    <div class="pl-page-header">
+    <div class="pl-page-header gw-cc-hero">
       <div class="pl-page-title">
         <h1 class="pl-title">Command Center</h1>
         <span class="pl-subtitle">${_todayRep ? escapeHtml(_todayRep.name) + ' · ' : ''}${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
@@ -3257,6 +3288,7 @@ function _gwTodayRender() {
       <div class="pl-page-actions">
         <button class="secondary-btn small${_addOpen ? ' gw-myday-lib-btn--open' : ''}" onclick="gwMyDayAddWidgetToggle()" title="Add or remove Command Center widgets">${(typeof gwIcon==='function') ? gwIcon('plus', 13, 'currentColor') : ''} Add Widget</button>
       </div>
+      ${_heroPlaceholderKpis}
     </div>`;
 
   // Extra widget content computed inline (small enough not to need their own
