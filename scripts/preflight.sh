@@ -56,9 +56,10 @@ echo "-- prod-safety guards --"
 # substring, and these are meta-checks (verifying OTHER files/hooks reject
 # the flag), not real usage of it.
 REMOTE_FLAG="--""remote"
+DBPROD_FLAG="DB_""PROD"
 chk "no $REMOTE_FLAG in src/"     '! grep -rn -- "$REMOTE_FLAG" src/ 2>/dev/null'
 chk "no $REMOTE_FLAG in run-wave" '! grep -n -- "$REMOTE_FLAG" scripts/run-wave.sh 2>/dev/null'
-chk "no DB_PROD in src/"          "! grep -rn 'DB_PROD' src/ scripts/*.js 2>/dev/null"
+chk "no $DBPROD_FLAG in src/"    '! grep -rn -- "$DBPROD_FLAG" src/ scripts/*.js 2>/dev/null'
 chk "hook blocks npm run deploy"  "grep -q 'npm run deploy' .githooks/pre-push"
 chk "hook blocks db:migrate:prod" "grep -q 'db:migrate:prod' .githooks/pre-push"
 chk "hook blocks pages deploy"    "grep -qF 'wrangler (pages )?deploy' .githooks/pre-push"
