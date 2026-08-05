@@ -90,3 +90,34 @@ test("UC-08 JSON API denies non-owner roles", async ({ request }) => {
   const res = await request.get(`/api/config?tenant_id=${TENANT}&role=crew`);
   expect(res.status()).toBe(403);
 });
+
+test("UC-09 a tenant's saved override never becomes another tenant's default — the platform default stays the platform default", async ({ request }) => {
+  // Direct verification of the product rule: any one tenant (e.g. a future
+  // Avalon tenant) editing its own config must never change what a
+  // different tenant, or the platform as a whole, sees as the default.
+  const tenantA = "t-e2e-isolation-a";
+  const tenantB = "t-e2e-isolation-b";
+  await resetFinanceDb(request, tenantA);
+  await resetFinanceDb(request, tenantB);
+
+  // Tenant A customizes its own classifier rules.
+  await request.put(`/api/config/classifier_rules?tenant_id=${tenantA}&role=owner`, {
+    data: JSON.stringify({
+      version: 1,
+      stage1_vendor_patterns: [], stage2_keyword_rules: [], stage3_amount_review_rules: [],
+      forced_review_categories: ["tenant_a_only_category"],
+      confidence_thresholds: { auto_categorize_min: "high", stage4_fallback_min: "medium" },
+    }),
+    headers: { "content-type": "application/json" },
+  });
+
+  const aView = await (await request.get(`/api/config/classifier_rules?tenant_id=${tenantA}&role=owner`)).json();
+  expect(aView.is_override).toBe(true);
+  expect(aView.value.forced_review_categories).toEqual(["tenant_a_only_category"]);
+
+  // Tenant B — an entirely different company — still sees the untouched
+  // platform default, never tenant A's edit.
+  const bView = await (await request.get(`/api/config/classifier_rules?tenant_id=${tenantB}&role=owner`)).json();
+  expect(bView.is_override).toBe(false);
+  expect(bView.value.forced_review_categories).not.toContain("tenant_a_only_category");
+});

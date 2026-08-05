@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Global feature flags for Finance OS automation. Turning something off here degrades gracefully to a review queue, never to silent skipping — e.g. classifier_enabled: false means every transaction becomes a manual-review action_item, not that transactions go unprocessed.",
+  "note": "GROUNDWORK PLATFORM DEFAULT — applies to every tenant unless overridden per-tenant via /finance/config. Feature flags for Finance OS automation. Turning something off here degrades gracefully to a review queue, never to silent skipping — e.g. classifier_enabled: false means every transaction becomes a manual-review action_item, not that transactions go unprocessed. A tenant that wants different automation behavior sets its own override; this file is the platform-wide starting point for every tenant.",
 
   "classifier_enabled": true,
   "classifier_ai_fallback_enabled": true,

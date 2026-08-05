@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Config-driven format detection for financial file uploads. Add a source definition here to support a new export format without touching code — src/ai/ingest.ts only knows how to read this shape, not any specific vendor's export format. detect.required_headers are matched case-insensitively, order-independent, against the uploaded file's header row. When no source matches, the fallback applies (flag for review, never guess a mapping).",
+  "note": "GROUNDWORK PLATFORM DEFAULT — applies to every tenant unless overridden per-tenant via /finance/config. Config-driven format detection for financial file uploads, based on common QuickBooks/bank export shapes, not any one customer's real export. Add a source definition here to support a new export format without touching code — src/ai/ingest.ts only knows how to read this shape. detect.required_headers are matched case-insensitively, order-independent, against the uploaded file's header row. When no source matches, the fallback applies (flag for review, never guess a mapping).",
 
   "sources": [
     {

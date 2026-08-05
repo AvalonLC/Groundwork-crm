@@ -40,6 +40,12 @@ src/api/cron-trigger.ts
 
 ## Where CRON_SECRET must be set
 
+`CRON_SECRET` is a single **platform-wide** secret — one value, gating one
+endpoint that processes every tenant's rollup in one call. It is not
+per-tenant and never needs to be (the rollup itself already scopes its
+work per tenant internally; the secret only proves the caller is the
+legitimate scheduler, not a specific tenant's identity).
+
 Two places, same value, set independently (never written to any file in
 this repo — not a `wrangler.jsonc` var, not a `.env`):
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Seed values for a new tenant_finance_policy row. materiality_threshold_cents defaults from approval-thresholds.json's default_materiality_threshold_cents at seed time — duplicated here as an explicit override point per tenant type, not a second source of truth (tenant-onboarding code should prefer approval-thresholds.json unless a tenant type below is selected).",
+  "note": "GROUNDWORK PLATFORM DEFAULT — the seed values every brand-new tenant's tenant_finance_policy row starts from, not any one customer's actual policy. materiality_threshold_cents defaults from approval-thresholds.json's default_materiality_threshold_cents at seed time — duplicated here as an explicit override point per tenant type, not a second source of truth (tenant-onboarding code should prefer approval-thresholds.json unless a tenant type below is selected). Once a tenant is onboarded, its real tenant_finance_policy row (in the DB) is what governs it — this file only affects what a new tenant starts with.",
 
   "equipment_engine_active": false,
   "materiality_threshold_cents": 50000,

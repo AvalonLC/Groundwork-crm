@@ -1,18 +1,29 @@
 {
   "version": 1,
-  "note": "Conservative placeholder defaults. Every rule marked \"placeholder\": true is a generic example, not a confirmed Groundwork business rule — see BLOCKED-W5-classifier.md. Edit this file directly to tune matching; no code change needed. Patterns are JS regex source strings (case-insensitive, applied to vendor name for stage 1 and memo/description for stage 2).",
+  "note": "GROUNDWORK PLATFORM DEFAULT — applies to every tenant unless that tenant has its own override (see finance_config_override / /finance/config). Not specific to any one customer. Every rule marked \"placeholder\": true is a generic contractor/landscaping/service-business starter example, not a confirmed business rule for any real company — see BLOCKED-W5-classifier.md. Edit this file to change the platform-wide default; a tenant editing /finance/config changes only that tenant's own override, never this file. Patterns are JS regex source strings (case-insensitive, applied to vendor name for stage 1 and memo/description for stage 2). Deliberately conservative: nothing new here resolves at \"high\" confidence, so new categories still route to review until real data confirms them.",
 
   "stage1_vendor_patterns": [
     { "id": "fuel-generic", "pattern": "\\b(shell|chevron|exxon|bp|speedway|fuel)\\b", "category": "fuel", "confidence": "medium", "placeholder": true },
     { "id": "materials-generic", "pattern": "\\b(home depot|lowes|supply ?co)\\b", "category": "materials", "confidence": "medium", "placeholder": true },
-    { "id": "equipment-rental-generic", "pattern": "\\b(rental|united rentals|sunbelt)\\b", "category": "equipment_rental", "confidence": "medium", "placeholder": true }
+    { "id": "equipment-rental-generic", "pattern": "\\b(rental|united rentals|sunbelt)\\b", "category": "equipment_rental", "confidence": "medium", "placeholder": true },
+    { "id": "vehicle-maintenance-generic", "pattern": "\\b(autozone|napa|jiffy lube|midas|firestone|discount tire|o'?reilly)\\b", "category": "vehicle_maintenance", "confidence": "medium", "placeholder": true },
+    { "id": "office-supplies-generic", "pattern": "\\b(staples|office depot|office ?max)\\b", "category": "office_supplies", "confidence": "medium", "placeholder": true },
+    { "id": "telecom-generic", "pattern": "\\b(verizon|at&t|t-mobile|comcast|spectrum)\\b", "category": "telecom", "confidence": "low", "placeholder": true },
+    { "id": "software-subscription-generic", "pattern": "\\b(quickbooks|microsoft|google workspace|adobe)\\b", "category": "software_subscriptions", "confidence": "low", "placeholder": true }
   ],
 
   "stage2_keyword_rules": [
     { "id": "payroll-keyword", "keywords": ["payroll", "adp", "gusto", "paychex"], "category": "payroll", "confidence": "medium", "placeholder": true },
     { "id": "insurance-keyword", "keywords": ["insurance", "premium"], "category": "insurance", "confidence": "low", "placeholder": true },
     { "id": "bank-fee-keyword", "keywords": ["monthly service fee", "overdraft fee", "wire transfer fee"], "category": "bank_fees", "confidence": "high", "placeholder": true },
-    { "id": "owner-draw-keyword", "keywords": ["owner draw", "distribution to owner", "member draw"], "category": "owner_draw", "confidence": "high", "placeholder": true }
+    { "id": "owner-draw-keyword", "keywords": ["owner draw", "distribution to owner", "member draw"], "category": "owner_draw", "confidence": "high", "placeholder": true },
+    { "id": "subcontractor-keyword", "keywords": ["subcontractor", "sub-contractor", "1099 contract labor"], "category": "subcontractor_labor", "confidence": "medium", "placeholder": true },
+    { "id": "utilities-keyword", "keywords": ["electric bill", "gas bill", "water bill", "utility"], "category": "utilities", "confidence": "medium", "placeholder": true },
+    { "id": "rent-keyword", "keywords": ["rent", "lease payment"], "category": "rent", "confidence": "low", "placeholder": true },
+    { "id": "professional-services-keyword", "keywords": ["legal fees", "accounting fees", "attorney"], "category": "professional_services", "confidence": "medium", "placeholder": true },
+    { "id": "marketing-keyword", "keywords": ["advertising", "marketing", "google ads", "facebook ads"], "category": "marketing", "confidence": "low", "placeholder": true },
+    { "id": "permits-licenses-keyword", "keywords": ["permit fee", "license renewal", "business license"], "category": "permits_and_licenses", "confidence": "medium", "placeholder": true },
+    { "id": "uniforms-safety-keyword", "keywords": ["uniform", "safety equipment", "ppe"], "category": "uniforms_and_safety", "confidence": "low", "placeholder": true }
   ],
 
   "stage3_amount_review_rules": [

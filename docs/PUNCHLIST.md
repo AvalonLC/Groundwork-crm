@@ -1,8 +1,9 @@
 # Finance OS — Punch List
 
-Written 2026-08-04, updated same day three times more (config-driven
+Written 2026-08-04, updated 2026-08-05 four times more (config-driven
 classifier/ingest; live mounting + admin config UI + cron scaffolding;
-scheduling finalized + verification tooling + guardrails). Honest
+scheduling finalized + verification tooling + guardrails; Groundwork-wide
+platform defaults confirmed generic, not Avalon-specific). Honest
 accounting of what's real, what's inferred, what's estimated, and exactly
 what to review before deploying anything. **Nothing here was deployed** —
 `npm run deploy` and `npm run db:migrate:prod` were never run, and no
@@ -10,11 +11,20 @@ what to review before deploying anything. **Nothing here was deployed** —
 
 ## What's actually done and gate-verified
 All 23 original tasks (waves 0-5) plus a config layer, live-mounting, and
-finalized scheduling beyond the original scope. 171 tests (138 vitest, 33
+finalized scheduling beyond the original scope. 173 tests (140 vitest, 33
 Playwright e2e against a real local D1 + real Chromium), typecheck clean,
-real `vite build` succeeds (101 modules), preflight 45/0/0/0. Every formula
+real `vite build` succeeds (101 modules), preflight green. Every formula
 in the engines is checked against `fixtures/golden.json` to its own stated
 tolerance.
+
+**Platform-default vs. tenant-override, confirmed:** a repo-wide audit found
+zero hardcoded references to any specific tenant/company anywhere in the
+Finance OS layer (config, code, or docs). `config/finance/*.json` are the
+Groundwork-wide defaults; `/finance/config` edits only ever write to the
+logged-in tenant's own DB-backed override (`finance_config_override`,
+scoped by `tenant_id`) — there is no UI path for one tenant's edit to
+change the platform default or another tenant's view, verified directly by
+`UC-09` in `src/ui/config-admin.e2e.ts`.
 
 **Live in the app now, behind real auth:** `/finance/money-loop`,
 `/recovery`, `/budget`, `/queue`, `/job-costing`, `/config` (admin config
@@ -27,7 +37,17 @@ Seven config files, each with a live admin editor at `/finance/config`
 (owner-only) backed by `finance_config_override` — edits take effect
 immediately, no deploy, and Reset reverts to the version-controlled default:
 - `classifier.rules.json` — vendor patterns, keyword rules, forced-review
-  categories, confidence thresholds. Shipped rules are placeholders.
+  categories, confidence thresholds. Seeded with 18 generic
+  contractor/landscaping/service-business starter categories (fuel,
+  materials, equipment rental, vehicle maintenance, office supplies,
+  telecom, software subscriptions, payroll, insurance, bank fees, owner
+  draw, subcontractor labor, utilities, rent, professional services,
+  marketing, permits/licenses, uniforms/safety) — every one still marked
+  `"placeholder": true`, and deliberately none resolve at "high"
+  confidence except the two pre-existing examples, so nothing new
+  auto-resolves without real data confirming it (`CL-10` in
+  `src/ai/classify.test.ts` enforces this as a test, not just a
+  convention).
 - `ingest.sources.json` — 5 file-format detectors. Reasonable guesses,
   unconfirmed against a real Groundwork export.
 - `division-map.json` — canonical divisions + aliases.

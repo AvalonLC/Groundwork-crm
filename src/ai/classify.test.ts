@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
 import { classifyDeterministic, classifyTransaction } from "./classify";
 import { upsertTenantFinancePolicy, getOpenActionItems } from "../db/repos";
+import { classifierRules } from "../config/finance-config";
 
 const db = () => env.FINANCE_DB;
 const TENANT = "t-classify";
@@ -25,6 +26,50 @@ describe("classifyDeterministic (pure, config-driven)", () => {
     });
     expect(d.stage_reached).toBe(2);
     expect(d.category).toBe("payroll");
+  });
+
+  it("CL-09 generic contractor-business starter categories match (vehicle maintenance, utilities, subcontractor labor)", () => {
+    const vehicle = classifyDeterministic({
+      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-vehicle",
+      vendor: "AutoZone #204", memo: null, amount_cents: 4500,
+    });
+    expect(vehicle.category).toBe("vehicle_maintenance");
+
+    const utilities = classifyDeterministic({
+      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-utilities",
+      vendor: "City Power Co", memo: "electric bill account #55219", amount_cents: 32000,
+    });
+    expect(utilities.category).toBe("utilities");
+
+    const sub = classifyDeterministic({
+      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-sub",
+      vendor: "J Rodriguez", memo: "subcontractor labor - drainage job", amount_cents: 150000,
+    });
+    expect(sub.category).toBe("subcontractor_labor");
+  });
+
+  it("CL-10 no new seed category resolves at high confidence — all still route to review", () => {
+    // Deliberate design constraint (per the platform-default seeding pass):
+    // none of the newly added generic categories should auto-resolve
+    // without real data confirming them — only the two pre-existing
+    // examples (bank_fees, owner_draw) demonstrate the auto-resolve path.
+    const newCategoryIds = [
+      "vehicle-maintenance-generic", "office-supplies-generic", "telecom-generic",
+      "software-subscription-generic", "subcontractor-keyword", "utilities-keyword",
+      "rent-keyword", "professional-services-keyword", "marketing-keyword",
+      "permits-licenses-keyword", "uniforms-safety-keyword",
+    ];
+    // Re-derives from the same config the engine actually reads, so this
+    // test fails loudly if someone bumps one of these to "high" without
+    // reviewing why, rather than encoding a separate hardcoded expectation.
+    const allRules: { id: string; confidence: string }[] = [
+      ...classifierRules.stage1_vendor_patterns, ...classifierRules.stage2_keyword_rules,
+    ];
+    for (const id of newCategoryIds) {
+      const rule = allRules.find((r) => r.id === id);
+      expect(rule, `rule "${id}" should exist`).toBeDefined();
+      expect(rule?.confidence, `rule "${id}" should not be high confidence yet`).not.toBe("high");
+    }
   });
 
   it("CL-03 no match at all: stage 3, always requires review", () => {
