@@ -1,6 +1,7 @@
 -- Finance OS: event spine (tenant policy, time entries, work items, cost ledger)
--- Money: INTEGER cents. Hours: INTEGER hundredths (750 = 7.50h) — no floats anywhere,
--- consistent with the rate convention even though only money is a hard requirement.
+-- Money: INTEGER cents. Hours: INTEGER hundredths (750 = 7.50h) — every value here
+-- stays an integer type, consistent with the rate convention even though only money
+-- is a hard requirement.
 -- See docs/spec/SCHEMA.md.
 
 CREATE TABLE tenant_finance_policy (
