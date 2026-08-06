@@ -438,6 +438,16 @@ export async function insertClassificationFinding(
   ).run();
 }
 
+/** Newest first, for the Reconciliation page. */
+export async function listClassificationFindings(
+  db: D1Database, tenantId: string,
+): Promise<ClassificationFinding[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM classification_finding WHERE tenant_id = ? ORDER BY created_at DESC`,
+  ).bind(tenantId).all<ClassificationFinding>();
+  return results;
+}
+
 // ---- receipt ----
 
 export async function getReceiptByHash(
@@ -459,6 +469,16 @@ export async function insertReceipt(
     row.id, row.tenant_id, row.job_id, row.r2_key, row.content_hash, row.vendor,
     row.amount_cents, row.receipt_date, row.field_confidence, row.action_item_id,
   ).run();
+}
+
+/** Newest first, for the Documents page. */
+export async function listReceiptsForTenant(
+  db: D1Database, tenantId: string,
+): Promise<Receipt[]> {
+  const { results } = await db.prepare(
+    `SELECT * FROM receipt WHERE tenant_id = ? ORDER BY created_at DESC`,
+  ).bind(tenantId).all<Receipt>();
+  return results;
 }
 
 // ---- finance_config_override ----

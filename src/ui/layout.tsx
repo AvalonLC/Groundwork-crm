@@ -70,20 +70,20 @@ export interface FinanceNavItem {
 export const FINANCE_NAV: FinanceNavItem[] = [
   { key: "control",     label: "Control Center",    href: "/finance/money-loop",  group: "Operate" },
   { key: "queue",       label: "Work Queue",        href: "/finance/queue",       group: "Operate" },
-  { key: "collections", label: "Collections",       href: null,                   group: "Operate" },
-  { key: "obligations", label: "Obligations",       href: null,                   group: "Operate" },
-  { key: "recon",       label: "Reconciliation",    href: null,                   group: "Operate" },
+  { key: "collections", label: "Collections",       href: "/finance/collections",   group: "Operate" },
+  { key: "obligations", label: "Obligations",       href: "/finance/obligations",   group: "Operate" },
+  { key: "recon",       label: "Reconciliation",    href: "/finance/reconciliation", group: "Operate" },
 
   { key: "jobcost",     label: "Job Costing",       href: "/finance/job-costing", group: "Understand" },
   { key: "recovery",    label: "Overhead Recovery", href: "/finance/recovery",    group: "Understand" },
   { key: "budget",      label: "Budget & Rates",    href: "/finance/budget",      group: "Understand" },
-  { key: "forecast",    label: "Forecast",          href: null,                   group: "Understand" },
+  { key: "forecast",    label: "Forecast",          href: "/finance/forecast",    group: "Understand" },
 
   { key: "invoices",    label: "Invoices",   href: "/#invoices",   external: true, group: "Records" },
   { key: "payments",    label: "Payments",   href: "/#gwStripe",   external: true, group: "Records" },
   { key: "ledger",      label: "Ledger",     href: "/#payments",   external: true, group: "Records" },
   { key: "statements",  label: "Statements", href: "/#statements", external: true, group: "Records" },
-  { key: "documents",   label: "Documents",  href: null,                           group: "Records" },
+  { key: "documents",   label: "Documents",  href: "/finance/documents",           group: "Records" },
 
   { key: "config",      label: "Setup & Config", href: "/finance/config", group: "Configure" },
 ];

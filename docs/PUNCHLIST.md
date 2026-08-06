@@ -84,6 +84,16 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
 5. **`gather-inputs.ts`'s rollup-input derivations are inferred proxies**
    (recovered_to_date from posted overhead ledger lines, budgeted/absorbed
    from weekly allocation shares) — reasonable, not confirmed formulas.
+6. **Receipt upload (`/finance/upload`) has no AI/OCR extraction.**
+   `processReceiptUpload` (`src/ai/receipts.ts`) takes an injected `extract`
+   callback by design; the UI built for it (2026-08-06) passes through
+   whatever the uploader types for vendor/amount/date rather than reading
+   them off the image. This is a real gap, not a permanent design choice —
+   deferred because it needs a real model choice + prompt design, would
+   incur actual Workers AI usage cost, and there was no real receipt image
+   to verify accuracy against. The rest of the pipeline (hash dedupe, R2
+   storage, confidence scoring, review routing) is real and works today
+   regardless of what fills in `extract`.
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"

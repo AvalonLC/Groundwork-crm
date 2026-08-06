@@ -7,6 +7,11 @@ import { jobCostingRouter } from "./job-costing";
 import { configAdminRouter, configAdminApiRouter } from "./config-admin";
 import { policySetupRouter } from "./policy-setup";
 import { documentUploadRouter } from "./document-upload";
+import { collectionsRouter } from "./collections";
+import { obligationsRouter } from "./obligations";
+import { reconciliationRouter } from "./reconciliation";
+import { forecastRouter } from "./forecast";
+import { documentsRouter } from "./documents";
 import type { FinanceAuthVars } from "./layout";
 
 /**
@@ -17,8 +22,12 @@ import type { FinanceAuthVars } from "./layout";
  * auth via requireAuth-populated context vars (src/ui/layout.tsx's
  * readPageArgs) when mounted behind requireAuth, which src/index.tsx does
  * for the whole /finance/* prefix.
+ *
+ * `DB` (the CRM's own database) is included here only because
+ * collections.tsx reads it directly — every other page here only touches
+ * FINANCE_DB.
  */
-export type FinanceUiBindings = { FINANCE_DB: D1Database; RECEIPTS: R2Bucket };
+export type FinanceUiBindings = { FINANCE_DB: D1Database; RECEIPTS: R2Bucket; DB: D1Database };
 
 export const financeUiRouter = new Hono<{ Bindings: FinanceUiBindings; Variables: FinanceAuthVars }>();
 
@@ -33,4 +42,9 @@ financeUiRouter.route("/config", configAdminRouter);
 // this router — same-prefix mounts don't fall through in Hono.
 financeUiRouter.route("/policy", policySetupRouter);
 financeUiRouter.route("/upload", documentUploadRouter);
+financeUiRouter.route("/collections", collectionsRouter);
+financeUiRouter.route("/obligations", obligationsRouter);
+financeUiRouter.route("/reconciliation", reconciliationRouter);
+financeUiRouter.route("/forecast", forecastRouter);
+financeUiRouter.route("/documents", documentsRouter);
 financeUiRouter.route("/api/config", configAdminApiRouter);
