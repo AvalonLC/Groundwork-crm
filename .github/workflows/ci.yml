@@ -41,4 +41,9 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: apply finance migrations (local D1)
         run: npm run db:local
+      - name: apply CRM migrations (local D1)
+        # collections.tsx (src/ui/collections.tsx) reads the CRM's own DB
+        # directly (the invoices table) — its e2e suite needs this schema
+        # too, not just FINANCE_DB's.
+        run: npm run db:migrate:local
       - run: npm run e2e
