@@ -47,9 +47,10 @@ app.route('/internal/actions', actionsRouter)
 // No requireAuth — this has its own X-Cron-Secret header auth (see
 // src/api/cron-trigger.ts) since a scheduler can't supply a session cookie.
 app.route('/internal/cron', cronTriggerRouter)
-// requireAuth is a hoisted function declaration (defined further below in
-// this file) — referencing it here, before its textual definition, is safe.
-app.use('/finance/*', requireAuth)
+// requireAuth / requireAuthFinance are hoisted function declarations
+// (defined further below in this file) — referencing them here, before
+// their textual definition, is safe.
+app.use('/finance/*', requireAuthFinance)
 app.route('/finance', financeUiRouter)
 
 // ── CORS + middleware ─────────────────────────────────────────────────────────
@@ -527,6 +528,21 @@ async function requireAuth(c: any, next: any) {
   c.set('role',         row.role)
   c.set('isSuperAdmin', !!row.is_super_admin)
   await next()
+}
+
+// requireAuth's {ok:false} JSON response is correct for the finance JSON
+// API (/finance/api/*) — existing callers expect it. It's wrong for the six
+// finance HTML pages (/finance/money-loop, /recovery, /budget, /queue,
+// /job-costing, /config): a user who clicked an in-app nav link and hit an
+// expired/missing session should land on the same app shell every other
+// page in this CRM sends them to (it has no server-side auth gate of its
+// own — the client handles the logged-out state), not a raw JSON dead end.
+// requireAuth itself is untouched; this only changes what happens with its
+// failure response, and only for the page routes.
+async function requireAuthFinance(c: any, next: any) {
+  if (c.req.path.startsWith('/finance/api/')) return requireAuth(c, next)
+  const authFailure = await requireAuth(c, next)
+  if (authFailure) return c.redirect('/')
 }
 
 async function requireSuperAdmin(c: any, next: any) {
