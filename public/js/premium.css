@@ -8709,6 +8709,55 @@ h1.pl-title,
   text-align: right;
 }
 
+/* ── Financial Pulse — monthly actual-vs-target-pace bar chart (Command
+   Center mockup parity). Sits between the annual progress bar and the
+   per-division bars inside .gw-today-fin-card. ── */
+.gwcc-chart-wrap { margin: 4px 0 16px; }
+.gwcc-chart-label {
+  display: flex; justify-content: space-between;
+  font-size: 10.5px; color: var(--gw-muted, #5E6E6F); font-weight: 650;
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: .03em;
+}
+.gwcc-bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 80px; }
+.gwcc-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100%; justify-content: flex-end; min-width: 0; }
+.gwcc-bar-track {
+  width: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start;
+  height: 72px; background: var(--gw-surface-3, #EAF1EE); border-radius: 4px 4px 0 0; overflow: hidden;
+}
+.gwcc-bar-fill { background: var(--gw-pine, #4D8A86); border-radius: 4px 4px 0 0; width: 100%; transition: height .4s ease; }
+.gwcc-bar-fill.target { background: #C9A24A; }
+.gwcc-bar-month { font-size: 9.5px; color: var(--gw-muted, #5E6E6F); font-weight: 650; }
+.gwcc-chart-legend { display: flex; gap: 14px; font-size: 10.5px; color: var(--gw-muted, #5E6E6F); margin-top: 8px; }
+.gwcc-chart-legend span { display: flex; align-items: center; gap: 5px; }
+.gwcc-dot2 { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+
+/* ── Financial Pulse — per-division progress bars, restyled to the mockup's
+   thin-track + amount-inline treatment (replaces .gw-today-fin-div's boxed
+   layout when the Command Center's finance widget is in play). ── */
+.gwcc-fp-cats { border-top: 1px solid var(--gw-line, #E2EAE9); padding-top: 12px; }
+.gwcc-fp-cat { margin-bottom: 12px; }
+.gwcc-fp-cat:last-child { margin-bottom: 0; }
+.gwcc-fp-cat-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; font-weight: 600; color: var(--gw-ink, #1F2A2B); }
+.gwcc-fp-cat-track { height: 6px; background: var(--gw-line, #E2EAE9); border-radius: 4px; overflow: hidden; }
+.gwcc-fp-cat-fill { height: 100%; border-radius: 4px; background: #6FA383; transition: width .4s ease; }
+.gwcc-fp-cat-fill.over { background: #B0473E; }
+.gwcc-fp-cat-amt { color: var(--gw-muted, #5E6E6F); font-weight: 500; }
+
+/* ── Money Owed — donut/ring chart + legend (Command Center mockup parity).
+   Replaces the old 3-cell .gw-myday-ar-grid layout. ── */
+.gwcc-mo-row-main { display: flex; align-items: center; gap: 18px; margin-bottom: 4px; }
+.gwcc-mo-ring { flex-shrink: 0; }
+.gwcc-mo-ring circle { transition: stroke-dasharray .4s ease; }
+.gwcc-mo-legend { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.gwcc-mo-legend-item { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; gap: 8px; }
+.gwcc-mo-legend-name { display: flex; align-items: center; gap: 7px; color: var(--gw-ink, #1F2A2B); min-width: 0; }
+.gwcc-mo-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.gwcc-mo-legend-amt { font-weight: 700; color: var(--gw-muted, #5E6E6F); flex-shrink: 0; }
+.gwcc-mo-foot {
+  display: flex; justify-content: space-between; font-size: 11.5px; color: var(--gw-muted, #5E6E6F);
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--gw-line, #E2EAE9);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    LEARNING HUB — .gl-* classes
    Track cards, lesson modals, module rows, progress bars

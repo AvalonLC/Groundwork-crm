@@ -2056,13 +2056,42 @@ function _gwTodayFinanceSnap() {
       const d = divs[k];
       const label = k.charAt(0).toUpperCase() + k.slice(1);
       const dpct = d.target > 0 ? Math.min(100, Math.round((d.actual||0)/d.target*100)) : 0;
-      return `<div class="gw-today-fin-div">
-        <div class="gw-today-fin-div-label">${escapeHtml(label)}</div>
-        <div class="gw-today-fin-div-val">${fmt(d.actual||0)}</div>
-        <div class="gw-today-fin-div-bar"><div style="width:${dpct}%;background:var(--gw-pine,#4D8A86)"></div></div>
-        <div class="gw-today-fin-div-target">of ${fmt(d.target||0)}</div>
+      const over = (d.actual||0) > d.target && d.target > 0;
+      return `<div class="gwcc-fp-cat">
+        <div class="gwcc-fp-cat-top"><span>${escapeHtml(label)}</span><span class="gwcc-fp-cat-amt">${fmt(d.actual||0)} of ${fmt(d.target||0)}</span></div>
+        <div class="gwcc-fp-cat-track"><div class="gwcc-fp-cat-fill${over?' over':''}" style="width:${over?100:dpct}%"></div></div>
       </div>`;
     }).join('');
+
+    // Monthly actual-vs-target-pace bar chart — last 6 months of fy.monthlyBudget
+    // (each bar = actual $ for that month; colored gold if that month came in
+    // below its own budgeted pace, green otherwise). Matches the approved
+    // Command Center mockup's "Monthly actual vs. target pace" chart.
+    const monthsAll = Array.isArray(fy.monthlyBudget) ? fy.monthlyBudget : [];
+    // Prefer months that actually have data (actual != null); if the fiscal
+    // year still has future months with no actuals yet, don't let those
+    // blank trailing entries push real data out of the visible 6-month window.
+    const monthsWithData = monthsAll.filter(m => m && m.actual != null);
+    const monthsSrc = monthsWithData.length ? monthsWithData : monthsAll;
+    const months6 = monthsSrc.slice(-6);
+    const maxMonthVal = Math.max(1, ...months6.map(m => Math.max(m.actual||0, m.budgeted||0)));
+    const barChartHtml = months6.length ? `
+      <div class="gwcc-chart-wrap">
+        <div class="gwcc-chart-label"><span>Monthly actual vs. target pace</span><span>${pct}% of annual target${annual.monthsLeft!=null?' · '+annual.monthsLeft+' months left':''}</span></div>
+        <div class="gwcc-bar-chart">
+          ${months6.map(m => {
+            const hasActual = m.actual != null;
+            const h = hasActual ? Math.max(4, Math.round((m.actual/maxMonthVal)*72)) : 4;
+            const below = hasActual && m.budgeted > 0 && m.actual < m.budgeted;
+            return `<div class="gwcc-bar-col">
+              <div class="gwcc-bar-track"><div class="gwcc-bar-fill${below?' target':''}" style="height:${hasActual?h:0}px"></div></div>
+              <div class="gwcc-bar-month">${escapeHtml((m.month||'').slice(0,3))}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="gwcc-chart-legend"><span><span class="gwcc-dot2" style="background:var(--gw-pine,#4D8A86)"></span>Actual revenue</span><span><span class="gwcc-dot2" style="background:#C9A24A"></span>Below target pace</span></div>
+      </div>` : '';
+
     return `<div class="gw-today-fin-card">
       <div class="gw-today-fin-head">
         <span class="gw-today-fin-title">Financial Pulse</span>
@@ -2087,11 +2116,8 @@ function _gwTodayFinanceSnap() {
           <div class="gw-today-fin-kpi-sub">${annual.monthsLeft||0} mo left</div>
         </div>
       </div>
-      <div class="gw-today-fin-progress">
-        <div class="gw-today-fin-prog-bar"><div style="width:${pct}%"></div></div>
-        <div class="gw-today-fin-prog-label">${pct}% of annual target</div>
-      </div>
-      ${divCells ? `<div class="gw-today-fin-divs">${divCells}</div>` : ''}
+      ${barChartHtml}
+      ${divCells ? `<div class="gwcc-fp-cats">${divCells}</div>` : ''}
     </div>`;
   } catch(_) { return ''; }
 }
@@ -2256,24 +2282,24 @@ const _GW_MYDAY_WIDGETS = [
   // first (zone order follows first-seen registry order — see
   // _gwMyDayGroupByZone below), right under the hero, ahead of Sales/
   // Financial/Operations.
-  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:4, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
+  { id:'tasks',        label:'My Tasks',                desc:'Overdue, due today and upcoming tasks',              span:2, allowed:()=>true,             render:c=>c.taskWorkspace, zone:'personal' },
   { id:'calendar',     label:'My Calendar',             desc:'Today\'s Google Calendar agenda — meetings, calls and online bookings, linked to leads', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-cal-mount"><section class="card"><div class="section-head"><h2>My Calendar — Today</h2></div><div class="gw-myday-placeholder">Loading calendar…</div></section></div>`, zone:'personal' },
   { id:'quickActions', label:'Quick Actions',           desc:'One-click shortcuts to your most-used pages',        span:2, allowed:c=>!c.isField, render:c=>c.quickActionsHtml, zone:'personal' },
   { id:'scratchpad',   label:'Scratchpad',              desc:'Personal quick notes — saved automatically',         span:2, allowed:()=>true,      defaultOff:true, render:c=>c.scratchpadHtml, zone:'personal' },
-  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value trend, stage breakdown, funnel and lead-source detail', span:3, allowed:c=>!c.isField, render:c=>c.pipeChartHtml, zone:'sales' },
-  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
-  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>`, zone:'sales' },
-  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  render:c=>c.activityHtml, zone:'sales' },
-  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>'<div id="gw-reviews-widget-mount"></div>', zone:'sales' },
+  { id:'pipeChart',    label:'Pipeline Chart',          desc:'Pipeline value trend, stage breakdown, funnel and lead-source detail', span:4, allowed:c=>!c.isField, render:c=>c.pipeChartHtml, zone:'sales' },
+  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads sitting late in their stage (needs attention)',        span:2, allowed:c=>!c.isField, render:c=>c.staleLeadsHtml, zone:'sales' },
+  { id:'checklist',    label:'Daily Sales Start-Up',    desc:'Your daily sales-readiness checklist',               span:3, allowed:c=>!c.isField,        defaultOff:true, render:c=>`<section class="card app-card"><div class="section-head"><h2>Daily Sales Start-Up</h2></div>${c.checklistHtml}</section>`, zone:'sales' },
+  { id:'recent',       label:'Recently Updated',        desc:'Last 5 leads with recent activity',                  span:3, allowed:c=>!c.isField,        defaultOff:true, render:c=>`<section class="card"><div class="section-head"><h2>Recently Updated</h2></div>${c.recentHtml}</section>`, zone:'sales' },
+  { id:'activity',     label:'Weekly Activity Targets', desc:'Your personal weekly KPI targets',                   span:6, allowed:c=>!!c.activityHtml,  defaultOff:true, render:c=>c.activityHtml, zone:'sales' },
+  { id:'reviews',      label:'Reviews',                 desc:'Latest customer review requests and ratings',        span:6, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:()=>'<div id="gw-reviews-widget-mount"></div>', zone:'sales' },
   { id:'repLeaderboard', label:'Rep Leaderboard',       desc:'Compact rep performance ranking — open, won, pipeline $, close %', span:3, allowed:c=>c.isAdmin||c.isOM, defaultOff:true, render:c=>c.repLeaderboardHtml, zone:'sales' },
-  { id:'staleLeads',   label:'Needs Follow-Up',         desc:'Open leads sitting late in their stage (needs attention)',        span:3, allowed:c=>!c.isField, render:c=>c.staleLeadsHtml, zone:'sales' },
   { id:'recentWins',   label:'Recent Wins',             desc:'Your latest sold / activated jobs',                  span:3, allowed:c=>!c.isField, defaultOff:true, render:c=>c.recentWinsHtml, zone:'sales' },
-  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:3, allowed:c=>c.showFin,         render:c=>c.finSnap, zone:'financial' },
-  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue, paid-this-month, and an aging breakdown', span:3, allowed:c=>c.showFin, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'financial' },
+  { id:'finance',      label:'Financial Pulse',         desc:'YTD actual vs budget with division progress',        span:4, allowed:c=>c.showFin,         render:c=>c.finSnap, zone:'financial' },
+  { id:'arSnapshot',   label:'Money Owed (A/R)',        desc:'Outstanding, overdue, paid-this-month, and an aging breakdown', span:2, allowed:c=>c.showFin, render:()=>`<div id="gw-myday-ar-mount"><section class="card"><div class="section-head"><h2>Money Owed</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'financial' },
   { id:'budgetVsActual', label:'Budget vs Actual',      desc:'Annual budget vs actual with per-division progress and margin', span:6, allowed:c=>c.showFin, defaultOff:true, render:c=>c.budgetVsActualHtml, zone:'financial' },
-  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from Command Center', span:2, allowed:()=>true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
   { id:'jobsToday',    label:"Today's Jobs",            desc:'Scheduled work orders for today and the days ahead',  span:4, allowed:()=>true, render:()=>`<div id="gw-myday-jobs-mount"><section class="card"><div class="section-head"><h2>Today's Jobs</h2></div><div class="gw-myday-placeholder">Loading schedule…</div></section></div>`, zone:'operations' },
-  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:6, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'crewHours',    label:'Crew Hours Today',        desc:'Who is clocked in right now and hours logged today',  span:2, allowed:c=>c.isAdmin||c.isOM, render:()=>`<div id="gw-myday-crew-mount"><section class="card"><div class="section-head"><h2>Crew Hours Today</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
+  { id:'clock',        label:'Time Clock',              desc:'Clock in / out and track your own hours from Command Center', span:2, allowed:()=>true, defaultOff:true, render:()=>`<div id="gw-myday-clock-mount"><section class="card"><div class="section-head"><h2>Time Clock</h2></div><div class="gw-myday-placeholder">Loading…</div></section></div>`, zone:'operations' },
   { id:'opsDeeper',    label:'Upcoming Schedule (7 Days)', desc:'Jobs scheduled in the next 7 days, plus capacity outlook', span:6, allowed:c=>!c.isField, defaultOff:true, render:c=>c.opsDeeperHtml, zone:'operations' },
 ];
 
@@ -2779,24 +2805,29 @@ function _gwMyDayLoadOwnerWidgets(rep){
           </div>`).join('');
 
         const accordionId = 'gw-ar-accordion-detail';
+        // Ring chart: total owed (outstanding) split into on-track vs overdue
+        // slices — matches the approved Command Center mockup's donut treatment.
+        const ringTotal = Math.max(0, owed);
+        const ringOverduePct = ringTotal > 0 ? Math.min(1, odAmt / ringTotal) : 0;
+        const R = 34, CIRC = 2 * Math.PI * R;
+        const ringOverdueLen = CIRC * ringOverduePct;
+        const ringLabel = _fmt$(ringTotal);
         m.innerHTML = `<section class="card"><div class="section-head"><h2>Money Owed</h2>
           <span style="display:flex;gap:6px"><button class="secondary-btn small gw-accordion-toggle" data-accordion-toggle="${accordionId}" onclick="gwMyDayAccordionToggle('${accordionId}')" style="font-size:11px">Aging</button><button class="secondary-btn small" onclick="show('invoices')" style="font-size:11px">Invoices</button></span></div>
-          <div class="gw-myday-ar-grid">
-            <div class="gw-myday-ar-cell" onclick="show('invoices')">
-              <span class="gw-myday-ar-label">Outstanding</span>
-              <span class="gw-myday-ar-val">${_fmt$(owed)}</span>
-              <span class="gw-myday-ar-sub">${open.length} open invoice${open.length===1?'':'s'}</span>
-            </div>
-            <div class="gw-myday-ar-cell${odAmt ? ' gw-myday-ar-cell--bad' : ''}" onclick="show('invoices')">
-              <span class="gw-myday-ar-label">Overdue</span>
-              <span class="gw-myday-ar-val">${_fmt$(odAmt)}</span>
-              <span class="gw-myday-ar-sub">${overdue.length} invoice${overdue.length===1?'':'s'}</span>
-            </div>
-            <div class="gw-myday-ar-cell gw-myday-ar-cell--good">
-              <span class="gw-myday-ar-label">Paid this month</span>
-              <span class="gw-myday-ar-val">${_fmt$(paidMTD)}</span>
+          <div class="gwcc-mo-row-main">
+            <svg width="86" height="86" viewBox="0 0 86 86" style="flex-shrink:0" class="gwcc-mo-ring">
+              <circle cx="43" cy="43" r="${R}" fill="none" stroke="#2E7D6E" stroke-width="11"/>
+              ${ringOverdueLen > 0.5 ? `<circle cx="43" cy="43" r="${R}" fill="none" stroke="#B0473E" stroke-width="11" stroke-dasharray="${ringOverdueLen.toFixed(1)} ${CIRC.toFixed(1)}" transform="rotate(-90 43 43)"/>` : ''}
+              <text x="43" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="var(--gw-ink,#1B2420)">${ringLabel}</text>
+              <text x="43" y="55" text-anchor="middle" font-size="9" fill="var(--gw-muted,#6E7669)">owed</text>
+            </svg>
+            <div class="gwcc-mo-legend">
+              <div class="gwcc-mo-legend-item" onclick="show('invoices')" style="cursor:pointer"><span class="gwcc-mo-legend-name"><span class="gwcc-mo-legend-dot" style="background:#2E7D6E"></span>Outstanding</span><span class="gwcc-mo-legend-amt">${_fmt$(owed)}</span></div>
+              <div class="gwcc-mo-legend-item" onclick="show('invoices')" style="cursor:pointer"><span class="gwcc-mo-legend-name"><span class="gwcc-mo-legend-dot" style="background:#B0473E"></span>Overdue</span><span class="gwcc-mo-legend-amt">${_fmt$(odAmt)}</span></div>
+              <div class="gwcc-mo-legend-item"><span class="gwcc-mo-legend-name"><span class="gwcc-mo-legend-dot" style="background:#7FA36B"></span>Paid this month</span><span class="gwcc-mo-legend-amt" style="color:#2D7A55">${_fmt$(paidMTD)}</span></div>
             </div>
           </div>
+          <div class="gwcc-mo-foot"><span>${open.length} open invoice${open.length===1?'':'s'}</span><span>Avg days to pay: —</span></div>
           <div id="${accordionId}" class="gw-accordion-body">
             <h4 style="margin:14px 0 10px;font-size:11px;font-weight:800;color:var(--gw-muted);text-transform:uppercase;letter-spacing:.06em">Aging Breakdown</h4>
             ${agingRows}
@@ -3096,10 +3127,8 @@ function _gwTodayRender() {
 
     return `<section class="card gw-pipe-chart">
       <div class="section-head"><h2>Pipeline</h2><span style="display:flex;gap:6px"><button class="secondary-btn small" onclick="show('pipeline')" style="font-size:11px">Pipeline board</button><button class="secondary-btn small gw-accordion-toggle" data-accordion-toggle="${accordionId}" onclick="gwMyDayAccordionToggle('${accordionId}')" style="font-size:11px">View trend</button></span></div>
-      <div class="pipe-num">${_fmt(_pipeVal)} ${trendBadge}</div>
+      <div class="pipe-num">${_fmt(_pipeVal)}</div>
       <div class="pipe-lbl">Open across ${_open.length} lead${_open.length===1?'':'s'}</div>
-      <svg class="pipe-spark" viewBox="0 0 220 40" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#2D7A55" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div class="pipe-spark-foot"><span>4 wks ago</span><span>This week</span></div>
       <div class="pipe-stage-bar">${barSegs || '<i style="width:100%;background:var(--gw-line-strong)"></i>'}</div>
       <div class="pipe-legend">${legendRows || '<div class="gw-myday-placeholder" style="padding:8px 0">No open leads right now.</div>'}</div>
       <div class="pipe-mini-row"><span>${_wonMTD.length} won MTD</span><span>${_fmt(_wonMTDVal)} won</span></div>
