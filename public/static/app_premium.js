@@ -7772,6 +7772,9 @@ function opportunityDetail(id){
   // Wire up Communications compose after render
   if(_activeTab==='comms') wireCommsCompose(o.id, o);
 
+  // Wire up the Files tab's drag-and-drop upload zone after render
+  if(_activeTab==='files') wireFilesTabDropzone(o.id, o);
+
   // Lazy-load D1 notes when Notes tab is active or becomes active
   if (_activeTab === 'notes' && window._d1Ready) {
     _d1LoadNotes(o.id);
@@ -8108,7 +8111,22 @@ function filesTabHtml(oppId, opp){
 
   const fmt = dt => { try{ return new Date(dt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} };
 
-  if(!allFiles.length) return `<div class="comms-board"><div class="comm-empty"><div class="comm-empty-icon">${gwIcon('folder',16)}</div><p>No files attached yet.</p><p style="color:#4A5947;font-size:12.5px;max-width:300px;line-height:1.6">Attach photos, PDFs, proposals, and documents from the Communications tab.</p></div></div>`;
+  // Drag-and-drop zone: click to browse, drop anywhere on it to attach — always
+  // visible (not just the empty state) so files can be added even once some
+  // already exist. wireFilesTabDropzone() (below) wires the actual DOM events
+  // after render; this just lays down the markup + ids it looks for.
+  const dropzoneHtml =
+    '<div class="files-dropzone" id="filesDropzone_'+oppId+'">' +
+      '<input type="file" id="filesDropInput_'+oppId+'" multiple style="display:none">' +
+      '<div class="files-dropzone-icon">'+gwIcon('upload',22,'#4D8A86')+'</div>' +
+      '<div class="files-dropzone-text">Drag &amp; drop files here</div>' +
+      '<div class="files-dropzone-sub">or <button type="button" class="files-dropzone-browse">browse your computer</button> &middot; photos, PDFs, docs, spreadsheets</div>' +
+      '<div class="files-dropzone-progress" id="filesDropProgress_'+oppId+'" style="display:none"></div>' +
+    '</div>';
+
+  if(!allFiles.length) return '<div class="comms-board">' + dropzoneHtml +
+    '<div class="comm-empty"><div class="comm-empty-icon">'+gwIcon('folder',16)+'</div><p>No files attached yet.</p>' +
+    '<p style="color:#4A5947;font-size:12.5px;max-width:300px;line-height:1.6">Drop files above, or attach them from the Communications tab.</p></div></div>';
 
   const ext2icon = ext => {
     const e = (ext||'').toLowerCase();
@@ -8121,6 +8139,7 @@ function filesTabHtml(oppId, opp){
 
   const clientInitials = (opp.client||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   return '<div class="comms-board">' +
+    dropzoneHtml +
     '<div class="comms-header">' +
       '<div class="comms-header-top">' +
         '<div class="comms-header-identity">' +
@@ -8137,6 +8156,7 @@ function filesTabHtml(oppId, opp){
       const ext = (f.name||'').split('.').pop();
       const isImg = ['jpg','jpeg','png','gif','webp'].includes(ext.toLowerCase());
       return '<div class="file-card">' +
+        '<button class="file-card-remove" title="Remove file" onclick="removeLeadFile(\''+oppId+'\',\''+f.commId+'\')">×</button>' +
         '<div class="file-card-icon">'+(isImg&&f.dataUrl?'<img src="'+f.dataUrl+'" alt="'+escapeHtml(f.name)+'" style="width:100%;height:80px;object-fit:cover;border-radius:6px;">':ext2icon(ext)+'<span style="font-size:.65rem;color:#6F7E6A;display:block;margin-top:4px">'+ext.toUpperCase()+'</span>')+'</div>' +
         '<div class="file-card-name" title="'+escapeHtml(f.name)+'">'+escapeHtml(f.name)+'</div>' +
         '<div class="file-card-meta">'+fmt(f.ts)+'</div>' +
@@ -8145,6 +8165,91 @@ function filesTabHtml(oppId, opp){
     }).join('') +
     '</div></div>';
 }
+
+// Wires the Files tab's dropzone: dragover/dragleave/drop, click-to-browse via
+// the hidden <input type=file>, and reads each dropped/selected file to a
+// dataURL exactly like the Communications compose attach button does — then
+// saves each as its own file-only communications entry (type:'note', empty
+// body) so it shows up immediately in the Files grid and in the Notes thread's
+// file chips, reusing the existing storage model rather than inventing a new one.
+function wireFilesTabDropzone(oppId, opp){
+  const zone  = document.getElementById('filesDropzone_'+oppId);
+  const input = document.getElementById('filesDropInput_'+oppId);
+  if(!zone || !input) return;
+
+  function handleFiles(fileList){
+    const files = Array.from(fileList||[]);
+    if(!files.length) return;
+    let remaining = files.length;
+    const progress = document.getElementById('filesDropProgress_'+oppId);
+    if(progress){ progress.style.display='block'; progress.textContent = 'Uploading '+files.length+' file'+(files.length!==1?'s':'')+'…'; }
+
+    files.forEach(file=>{
+      const reader = new FileReader();
+      reader.onload = e=>{
+        const msg = {
+          id: uid('comm'),
+          oppId,
+          type: 'note',
+          direction: 'out',
+          body: '',
+          subject: null,
+          callDuration: null,
+          files: [{ name:file.name, size:file.size, dataUrl:e.target.result }],
+          ts: new Date().toISOString(),
+          sentBy: (window.getCurrentRep ? window.getCurrentRep() : null)?.name || 'Rep',
+          gmailSent: false
+        };
+        if(!state.communications) state.communications = [];
+        state.communications.push(msg);
+        saveState();
+
+        if (typeof window.gwAudit === 'function') {
+          window.gwAudit({ type:'file_attached', entityType:'lead', entityId:oppId, entityLabel:opp?opp.client||'Lead':'Lead', meta:{ fileName:file.name } });
+        }
+
+        remaining--;
+        if(remaining === 0){
+          showToast((files.length>1?files.length+' files':'File')+' attached');
+          window._leadTab = 'files';
+          show('pipeline', oppId);
+        }
+      };
+      reader.onerror = ()=>{
+        remaining--;
+        showToast('Could not read '+file.name);
+        if(remaining===0){ window._leadTab='files'; show('pipeline', oppId); }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  input.addEventListener('change', ()=>{ handleFiles(input.files); input.value=''; });
+
+  ['dragenter','dragover'].forEach(evt=>{
+    zone.addEventListener(evt, e=>{ e.preventDefault(); e.stopPropagation(); zone.classList.add('files-dropzone-active'); });
+  });
+  ['dragleave','dragend'].forEach(evt=>{
+    zone.addEventListener(evt, e=>{ e.preventDefault(); e.stopPropagation(); zone.classList.remove('files-dropzone-active'); });
+  });
+  zone.addEventListener('drop', e=>{
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('files-dropzone-active');
+    const dt = e.dataTransfer;
+    if(dt && dt.files && dt.files.length) handleFiles(dt.files);
+  });
+  // Clicking anywhere on the zone opens the file picker; the "browse" link is
+  // just a visual affordance inside the same click target, not a second handler.
+  zone.addEventListener('click', ()=>{ input.click(); });
+}
+
+window.removeLeadFile = function(oppId, commId){
+  if(!confirm('Remove this file?')) return;
+  state.communications = (state.communications||[]).filter(c=>c.id!==commId);
+  saveState();
+  window._leadTab = 'files';
+  show('pipeline', oppId);
+};
 
 function wireCommsCompose(oppId){
   const typeTabs = document.querySelectorAll('.ctype-btn');
