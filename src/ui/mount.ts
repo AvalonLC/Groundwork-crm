@@ -5,6 +5,7 @@ import { budgetRouter } from "./budget";
 import { queueRouter } from "./queue";
 import { jobCostingRouter } from "./job-costing";
 import { configAdminRouter, configAdminApiRouter } from "./config-admin";
+import { policySetupRouter } from "./policy-setup";
 import type { FinanceAuthVars } from "./layout";
 
 /**
@@ -26,4 +27,8 @@ financeUiRouter.route("/budget", budgetRouter);
 financeUiRouter.route("/queue", queueRouter);
 financeUiRouter.route("/job-costing", jobCostingRouter);
 financeUiRouter.route("/config", configAdminRouter);
+// NOT nested under /config: configAdminRouter's POST /:name would otherwise
+// swallow POST /finance/config/policy (name="policy") before ever reaching
+// this router — same-prefix mounts don't fall through in Hono.
+financeUiRouter.route("/policy", policySetupRouter);
 financeUiRouter.route("/api/config", configAdminApiRouter);

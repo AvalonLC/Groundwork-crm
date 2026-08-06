@@ -5,6 +5,7 @@ import { budgetRouter } from "./budget";
 import { queueRouter } from "./queue";
 import { jobCostingRouter } from "./job-costing";
 import { configAdminRouter, configAdminApiRouter } from "./config-admin";
+import { policySetupRouter } from "./policy-setup";
 
 /**
  * Standalone dev/e2e-test entry for Finance OS UI pages — NOT part of the
@@ -29,6 +30,7 @@ app.route("/budget", budgetRouter);
 app.route("/queue", queueRouter);
 app.route("/job-costing", jobCostingRouter);
 app.route("/config", configAdminRouter);
+app.route("/policy", policySetupRouter);
 app.route("/api/config", configAdminApiRouter);
 
 // ── Test-only seeding endpoints. Only reachable on this dev-only server,

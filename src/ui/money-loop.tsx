@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { getLatestRecoverySnapshot, getOpenActionItems } from "../db/repos";
+import { getLatestRecoverySnapshot, getOpenActionItems, getTenantFinancePolicy } from "../db/repos";
 import type { ActionItem, ActionVerb } from "../db/schema";
+import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Confidence, Why, money, type FinanceAuthVars } from "./layout";
 
 export type MoneyLoopBindings = { FINANCE_DB: D1Database };
@@ -35,7 +36,10 @@ moneyLoopRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const db = c.env.FINANCE_DB;
 
-  const snapshot = await getLatestRecoverySnapshot(db, tenant_id);
+  const [snapshot, policy] = await Promise.all([
+    getLatestRecoverySnapshot(db, tenant_id),
+    canSee(role, "can_see_budget_rates") ? getTenantFinancePolicy(db, tenant_id) : Promise.resolve(null),
+  ]);
   const lanes = await Promise.all(VERBS.map(async (verb) => ({
     verb, items: await getOpenActionItems(db, tenant_id, verb),
   })));
@@ -54,6 +58,14 @@ moneyLoopRouter.get("/", async (c) => {
       role={role}
       vocab={vocab}
     >
+      {canSee(role, "can_see_budget_rates") && !policy ? (
+        <div class="fin-note" data-testid="policy-setup-banner" style="border-left-color:var(--gw-amber)">
+          <strong>Company policy isn't set up yet.</strong> Rate resolution and
+          classification are running on platform defaults, silently.{" "}
+          <a href={c.req.path.replace(/\/money-loop\/?$/, "/policy")} style="font-weight:700">Set it up</a>.
+        </div>
+      ) : null}
+
       <section class="fin-hero" data-testid="runway-hero">
         <div class="fin-hero-l"><Term term="recovery snapshot" vocab={vocab} /></div>
         {pct !== null && snapshot ? (
