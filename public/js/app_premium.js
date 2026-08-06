@@ -2522,6 +2522,21 @@ function _gwMyDayMasonry(){
       const wid = el.getAttribute('data-widget-id');
       const wDef = (typeof _GW_MYDAY_WIDGETS !== 'undefined') && _GW_MYDAY_WIDGETS.find(x => x.id === wid);
       const span = (wDef && wDef.span) || parseInt(el.style.gridColumn.replace(/[^\d]/g, ''), 10) || 1;
+      // The visible white "surface" box (the .card / .gw-today-fin-card) is
+      // a normal block child of `body`, NOT itself grid-stretched — CSS
+      // `height:100%` on it can't resolve against `body` because `body`'s
+      // own height is only ever `min-height:100%` (never a definite
+      // `height`), so percentage heights never resolve and the surface
+      // silently falls back to its own auto (content) height. That's why
+      // two widgets sharing a masonry row (e.g. Financial Pulse + Money
+      // Owed) could get equal OUTER wrapper heights but mismatched INNER
+      // card heights. Fixed below by setting the surface's height directly
+      // in px once the row's tallest sibling is known (step 3) — clear any
+      // such override here, before measuring, so this pass reads the
+      // surface's true natural content height rather than a stale
+      // previous pass's forced height.
+      const surface = body.querySelector(':scope > .card, :scope > section.card, :scope > .gw-today-fin-card, :scope > div > .card');
+      if (surface) surface.style.height = '';
       // Reset BOTH row and column to the widget's true registry span before
       // measuring — a prior pass may have widened this widget to fill a
       // lone row (step 4 below); measuring at that stale, wider width would
@@ -2529,7 +2544,7 @@ function _gwMyDayMasonry(){
       // math on every subsequent pack.
       el.style.gridRow = 'auto';
       el.style.gridColumn = 'span ' + span;
-      return { el, body, span, h: body.scrollHeight };
+      return { el, body, surface, span, h: body.scrollHeight };
     });
     // 2) Walk items in DOM order, replicating the browser's left-to-right
     //    `grid-auto-flow: row` wrapping using each widget's column span, to
@@ -2566,6 +2581,14 @@ function _gwMyDayMasonry(){
       const maxH = Math.max(...r.map(m => m.h));
       r.forEach(m => {
         m.el.style.gridRow = maxH > 0 ? 'span ' + Math.max(1, Math.ceil((maxH + GAP) / ROW)) : 'auto';
+        // Force the visible white surface to the row's tallest natural
+        // content height in px — `height:100%` on it can't resolve (see
+        // comment above; `body` never has a definite CSS height for a
+        // percentage to resolve against), so without this every surface
+        // just sizes to its OWN content, leaving shorter cards (e.g. Money
+        // Owed / Crew Hours / Needs Follow-Up) visibly shorter than their
+        // taller row partner even though the outer grid cells match.
+        if (m.surface && maxH > 0) m.surface.style.height = maxH + 'px';
       });
     });
   };
