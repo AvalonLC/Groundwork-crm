@@ -66,6 +66,13 @@ moneyLoopRouter.get("/", async (c) => {
         </div>
       ) : null}
 
+      {canSee(role, "can_manage_receipts") ? (
+        <div class="fin-note" data-testid="upload-documents-link">
+          Have a P&L export, bank statement, or receipt to add?{" "}
+          <a href={c.req.path.replace(/\/money-loop\/?$/, "/upload")} style="font-weight:700">Upload documents</a>.
+        </div>
+      ) : null}
+
       <section class="fin-hero" data-testid="runway-hero">
         <div class="fin-hero-l"><Term term="recovery snapshot" vocab={vocab} /></div>
         {pct !== null && snapshot ? (

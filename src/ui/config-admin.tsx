@@ -82,6 +82,24 @@ configAdminRouter.get("/", async (c) => {
         </a>
       </section>
 
+      <section class="fin-card" data-testid="upload-link-card">
+        <div class="fin-card-h">
+          <h2 class="fin-card-t">Upload Documents</h2>
+        </div>
+        <p class="fin-card-s" style="margin-bottom:12px">
+          Financial exports (P&L, bank/card CSV, payroll) and receipts — checked against
+          known formats and reconciled against your overhead pools, with anything
+          uncertain flagged for review instead of guessed at.
+        </p>
+        <a
+          href={basePath.replace(/\/config$/, "/upload")}
+          data-testid="upload-link"
+          style="display:inline-block;background:var(--gw-pine);color:#fff;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700"
+        >
+          Open Upload Documents
+        </a>
+      </section>
+
       {configs.map((cfg) => (
         <section class="fin-card" data-testid={`config-${cfg.name}`}>
           <div class="fin-card-h">

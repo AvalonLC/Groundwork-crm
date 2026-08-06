@@ -6,6 +6,7 @@ import { queueRouter } from "./queue";
 import { jobCostingRouter } from "./job-costing";
 import { configAdminRouter, configAdminApiRouter } from "./config-admin";
 import { policySetupRouter } from "./policy-setup";
+import { documentUploadRouter } from "./document-upload";
 
 /**
  * Standalone dev/e2e-test entry for Finance OS UI pages — NOT part of the
@@ -19,7 +20,7 @@ import { policySetupRouter } from "./policy-setup";
  *
  * Run: wrangler dev src/ui/dev-server.ts --port 3100 --local
  */
-export type DevBindings = { FINANCE_DB: D1Database };
+export type DevBindings = { FINANCE_DB: D1Database; RECEIPTS: R2Bucket };
 
 const app = new Hono<{ Bindings: DevBindings }>();
 
@@ -31,6 +32,7 @@ app.route("/queue", queueRouter);
 app.route("/job-costing", jobCostingRouter);
 app.route("/config", configAdminRouter);
 app.route("/policy", policySetupRouter);
+app.route("/upload", documentUploadRouter);
 app.route("/api/config", configAdminApiRouter);
 
 // ── Test-only seeding endpoints. Only reachable on this dev-only server,
