@@ -1920,7 +1920,7 @@ window._updateSidebarRep = function updateSidebarRep() {
 };
 
 function statCards(){
-  const openOpps = state.opportunities.filter(o=>gwSalesIsOpen(o));
+  const openOpps = state.opportunities.filter(o=>gwLeadIsOpen(o));
   const proposalOpps = state.opportunities.filter(o=>gwSalesIs(o,'proposal_presentation'));
   const overdueOpps = state.opportunities.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
   const soldOpps = state.opportunities.filter(o=>gwSalesIs(o,'won'));
@@ -3855,7 +3855,11 @@ window.gwNextUpForOpp = gwNextUpForOpp;
 // Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
 // Tiles are clickable — they toggle the existing division filter.
 function _gwDivisionValueStrip(baseOpps, activeCat){
-  const open = baseOpps.filter(o => gwSalesIsOpen(o));
+  // gwLeadIsOpen (not plain gwSalesIsOpen): won/lost/disqualified leads must
+  // never contribute to a division total, including edge cases where the
+  // semantic resolver can't resolve a stale/legacy status string — same
+  // hardened check statCards() already uses for the overdue counter.
+  const open = baseOpps.filter(o => gwLeadIsOpen(o));
   const totals = {}, counts = {};
   gwDivisions().forEach(d => { totals[d.key] = 0; counts[d.key] = 0; });
   open.forEach(o => {
@@ -6998,6 +7002,7 @@ function opportunityDetail(id){
     { id:`qa_calendar_${o.id}`,  icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M5 1.5v2M9 1.5v2M2 6h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Schedule', onclick:`qaAction('calendar','${o.id}',this)` },
     { id:`qa_gmail_${o.id}`,     icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 5l5.5 3.5L12.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Email', onclick:`qaAction('gmail','${o.id}',this)` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 7h4M5 9h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', label:'New Estimate', onclick:`window.estimateBuilderForLead ? estimateBuilderForLead('${o.id}') : show('estimates')` },
+    { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 6.5h4M5 8.5h4M5 10.5h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>', label:'View Estimates', onclick:`document.getElementById('gw-lead-estimates-${o.id}')?.scrollIntoView({behavior:'smooth',block:'center'})` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>', label:'Log Call', onclick:`window._leadTab='comms';show('pipeline','${o.id}')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5h5M4.5 7.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', label:'Add Note', onclick:`window._leadTab='notes';show('pipeline','${o.id}')` },
     { icon:'<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h3l1.5 3.5-1.8 1.1A9 9 0 008.4 9.3l1.1-1.8L13 9v3c0 .6-.5 1-1 1A11 11 0 012 2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="11" cy="3" r="1.5" fill="var(--gw-success)" stroke="none"/></svg>', label:'Call Companion', onclick:`openCallCompanion('${o.id}')` }
@@ -7473,6 +7478,17 @@ function opportunityDetail(id){
             <div id="gw-lead-cal-meetings" data-opp="${o.id}"></div>
           </div>
         </div>
+
+        <!-- Estimates tied to this lead (opp_id) — painted async from D1 after render, see paintLeadEstimates -->
+        <div class="rp-left-section">
+          <div class="rp-left-section-head">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 2h5.5L11 4.5V12H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 6.5h4M5 8.5h4M5 10.5h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Estimates
+          </div>
+          <div id="gw-lead-estimates-${o.id}" data-opp="${o.id}">
+            <div class="rp-left-field-value" style="font-size:12px;color:var(--gw-ink-3,#6F7E6A)">Loading…</div>
+          </div>
+        </div>
       </aside>
 
       <!-- CENTER WORKSPACE -->
@@ -7748,6 +7764,10 @@ function opportunityDetail(id){
       if (body) body.innerHTML = window.gwTask.renderRecordPanel('lead', o.id, o.client || 'Lead');
     }).catch(() => {});
   }
+
+  // Load this lead's real estimates (joined by opp_id) into the left-panel
+  // quick-links section
+  if (window.DB && window._d1Ready) paintLeadEstimates(o.id);
 
   // Wire up Communications compose after render
   if(_activeTab==='comms') wireCommsCompose(o.id, o);
@@ -8639,6 +8659,48 @@ async function _d1LoadNotes(oppId) {
   }
 }
 window._d1LoadNotes = _d1LoadNotes;
+
+// Paints the "Estimates" quick-links section on the lead detail page
+// (opportunityDetail) — real estimates joined by opp_id, not the legacy
+// manually-edited "Estimate Tracking" fields on the opportunity row itself.
+async function paintLeadEstimates(oppId) {
+  if (!window.DB || !window._d1Ready) return;
+  const mount = document.getElementById('gw-lead-estimates-' + oppId);
+  if (!mount) return;
+
+  let rows = [];
+  try {
+    rows = await DB.estimates.list(oppId);
+  } catch(e) {
+    console.warn('[D1] estimates load failed for', oppId, e.message);
+    const el = document.getElementById('gw-lead-estimates-' + oppId);
+    if (el && el.dataset.opp === oppId) el.innerHTML = '<div class="rp-left-field-value" style="font-size:12px;color:var(--gw-ink-3,#6F7E6A)">Couldn\'t load estimates</div>';
+    return;
+  }
+
+  // The user may have navigated to a different lead (or away) while the
+  // fetch was in flight — only paint if this exact mount is still current.
+  const el = document.getElementById('gw-lead-estimates-' + oppId);
+  if (!el || el.dataset.opp !== oppId) return;
+
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div class="rp-left-field-value" style="font-size:12px;color:var(--gw-ink-3,#6F7E6A)">No estimates yet</div>';
+    return;
+  }
+
+  const shown = rows.slice(0, 10);
+  el.innerHTML = shown.map(function(e) {
+    const name = e.title || e.client_name || 'Estimate';
+    const amt = Number(e.total) ? money(Number(e.total)) : '—';
+    return '<div class="cd-wo-row" style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px" onclick="window.estimateDetail?estimateDetail(\'' + e.id + '\'):show(\'estimates\')">'
+      + '<span style="font-weight:700;color:var(--gw-ink)">' + escapeHtml(e.est_number || 'EST') + '</span>'
+      + '<span style="color:var(--gw-ink-3,#6F7E6A);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(name) + '</span>'
+      + '<span class="ops-ready-badge" style="font-size:9px;flex-shrink:0">' + escapeHtml(e.status || 'draft') + '</span>'
+      + '<span style="margin-left:auto;font-weight:700;flex-shrink:0">' + amt + '</span>'
+      + '</div>';
+  }).join('') + (rows.length > shown.length ? '<div style="font-size:11px;color:var(--gw-ink-3,#6F7E6A);padding-top:4px">+' + (rows.length - shown.length) + ' more</div>' : '');
+}
+window.paintLeadEstimates = paintLeadEstimates;
 
 function renderNotes(oppId) {
   const opp   = state.opportunities.find(x => x.id === oppId);

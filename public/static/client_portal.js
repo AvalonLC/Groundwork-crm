@@ -322,7 +322,14 @@ window._portalReactivate = async function(id) {
 };
 
 // ── Invite modal ──────────────────────────────────────────────────────────────
-window._portalInviteModal = async function() {
+// opts (all optional): { clientId, name, email, phone, onDone }
+// clientId/name/email/phone pre-fill the form (e.g. from the client detail
+// page); onDone runs instead of the default portalAdmin() re-render when the
+// caller isn't the portal admin screen (so we can just refresh the caller's
+// own view instead of navigating away).
+window._portalInviteModal = async function(opts) {
+  opts = opts || {};
+  const done = typeof opts.onDone === 'function' ? opts.onDone : portalAdmin;
   let clients = [];
   try {
     const d = await _portalApi('/api/clients');
@@ -330,7 +337,7 @@ window._portalInviteModal = async function() {
   } catch (_) {}
 
   const clientOpts = clients.map(c =>
-    `<option value="${_escH(c.id)}" data-email="${_escH(c.email || '')}">${_escH(c.name)}</option>`
+    `<option value="${_escH(c.id)}" data-email="${_escH(c.email || '')}"${opts.clientId && c.id === opts.clientId ? ' selected' : ''}>${_escH(c.name)}</option>`
   ).join('');
   const roleOpts = Object.entries(GW_PORTAL_ROLES).map(([k, v], i) =>
     `<option value="${k}"${k === 'account_admin' ? ' selected' : ''}>${_escH(v.label)}</option>`
@@ -351,15 +358,15 @@ window._portalInviteModal = async function() {
         </div>
         <div class="auto-modal-field">
           <label>Contact Name</label>
-          <input id="portal-m-name" placeholder="Jane Smith">
+          <input id="portal-m-name" placeholder="Jane Smith" value="${_escH(opts.name || '')}">
         </div>
         <div class="auto-modal-field">
           <label>Email (their portal login)</label>
-          <input id="portal-m-email" type="email" placeholder="client@example.com">
+          <input id="portal-m-email" type="email" placeholder="client@example.com" value="${_escH(opts.email || '')}">
         </div>
         <div class="auto-modal-field">
           <label>Phone (optional)</label>
-          <input id="portal-m-phone" placeholder="(555) 555-5555">
+          <input id="portal-m-phone" placeholder="(555) 555-5555" value="${_escH(opts.phone || '')}">
         </div>
         <div class="auto-modal-field">
           <label>Role</label>
@@ -437,17 +444,17 @@ window._portalInviteModal = async function() {
       if (d.email_sent) {
         showToast && showToast('Invitation sent to ' + body.email + '.', 'success');
         _portalCloseModal();
-        portalAdmin();
+        done();
       } else if (d.invite_link) {
         res.style.display = 'block';
         res.innerHTML = 'Invite created but email delivery is not configured. Share this link directly:<br><strong>' + _escH(d.invite_link) + '</strong>';
         btn.textContent = 'Done';
         btn.disabled = false;
-        btn.onclick = () => { _portalCloseModal(); portalAdmin(); };
+        btn.onclick = () => { _portalCloseModal(); done(); };
       } else {
         showToast && showToast('Access updated for existing user.', 'success');
         _portalCloseModal();
-        portalAdmin();
+        done();
       }
     } catch (e) {
       showToast && showToast(e.message, 'error');

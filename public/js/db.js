@@ -141,6 +141,15 @@ const DB = (() => {
     }
   };
 
+  // ── ESTIMATES ─────────────────────────────────────────────────────────────────
+  const estimates = {
+    /** Get all estimates linked to an opportunity (opp_id). Company scoping
+     *  happens server-side via the session, not a query param, on this endpoint. */
+    list(oppId) {
+      return get(`/estimates?opp_id=${encodeURIComponent(oppId)}`);
+    }
+  };
+
   // ── COMMUNICATIONS ───────────────────────────────────────────────────────────
   const comms = {
     /** Get communications for an opportunity. */
@@ -441,6 +450,7 @@ const DB = (() => {
     reps,
     opportunities,
     notes,
+    estimates,
     comms,
     checklist,
     clients,

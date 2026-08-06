@@ -8485,32 +8485,66 @@ h1.pl-title,
    PHASE B — My Day view: pipeline strip, two-column layout, finance snap card
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Pipeline stat strip ──────────────────────────────────────────────────── */
+/* ── Pipeline stat strip → Command Center hero KPI band ──────────────────────
+   Same 4 real figures as before (Open Leads / Proposals Out / Pipeline Value
+   / Won MTD), restyled as a proper hero band: each tile gets an icon chip in
+   its own accent color plus a soft tinted top edge, so the top of Command
+   Center reads as a hub summary rather than a plain stat row. Pure
+   presentation — no new data, no grid/masonry changes. */
 .gw-today-pipe-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
-  background: var(--gw-surface, #ffffff);
-  border: 1px solid var(--gw-line, #E2EAE9);
-  border-radius: var(--gw-r-lg, 12px);
-  overflow: hidden;
+  gap: 14px;
   margin-bottom: 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.04);
 }
 .gw-today-pipe-cell {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 14px 16px;
-  gap: 4px;
+  gap: 12px;
+  padding: 16px 18px;
   cursor: pointer;
-  transition: background .15s;
-  border-right: 1px solid var(--gw-line, #E2EAE9);
-  text-align: center;
+  text-align: left;
+  background: var(--gw-surface, #ffffff);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: var(--gw-r-lg, 14px);
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  transition: box-shadow .15s, transform .15s, border-color .15s;
+  position: relative;
+  overflow: hidden;
 }
-.gw-today-pipe-cell:last-child { border-right: 0; }
-.gw-today-pipe-cell:hover { background: var(--gw-bg2, #F5F8F7); }
+.gw-today-pipe-cell:before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+}
+.gw-today-pipe-cell:hover { box-shadow: 0 6px 18px rgba(15,28,20,.09); transform: translateY(-1px); }
+.gw-today-pipe-ic {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+}
+.gw-today-pipe-cell--sky:before, .gw-today-pipe-cell--sky .gw-today-pipe-ic     { background: var(--gw-sky, #4D8A86); }
+.gw-today-pipe-cell--amber:before, .gw-today-pipe-cell--amber .gw-today-pipe-ic { background: var(--gw-amber, #8B6914); }
+.gw-today-pipe-cell--pine:before, .gw-today-pipe-cell--pine .gw-today-pipe-ic   { background: var(--gw-pine, #113931); }
+.gw-today-pipe-cell--emerald:before, .gw-today-pipe-cell--emerald .gw-today-pipe-ic { background: var(--gw-emerald, #2D7A55); }
+.gw-today-pipe-cell--rose:before, .gw-today-pipe-cell--rose .gw-today-pipe-ic   { background: var(--gw-rose, #8B3A2A); }
+.gw-today-pipe-ic { color: #fff; opacity: .92; }
+
+/* 5th hero chip (Avg Close Likelihood) — same tile grid, one extra column */
+.gw-today-pipe-strip--five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .gw-today-pipe-strip--five { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .gw-today-pipe-strip--five { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+.gw-today-pipe-cell > div,
+.gw-today-pipe-cell .gw-today-pipe-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gw-today-pipe-label {
   font-size: 11px;
   font-weight: 700;
@@ -8519,21 +8553,16 @@ h1.pl-title,
   color: var(--gw-muted, #5E6E6F);
 }
 .gw-today-pipe-val {
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--gw-ink, #1F2A2B);
   line-height: 1.15;
 }
-.gw-today-pipe-val--money { font-size: 18px; color: var(--gw-pine, #4D8A86); }
-.gw-today-pipe-val--won   { font-size: 16px; color: #2D7A55; }
+.gw-today-pipe-val--money { font-size: 19px; color: var(--gw-pine, #113931); }
+.gw-today-pipe-val--won   { font-size: 16px; color: var(--gw-emerald, #2D7A55); }
 
 @media (max-width: 680px) {
-  .gw-today-pipe-strip { grid-template-columns: repeat(2, 1fr); }
-  .gw-today-pipe-cell:nth-child(2) { border-right: 0; }
-  .gw-today-pipe-cell:nth-child(2n) { border-right: 0; }
-  .gw-today-pipe-cell { border-bottom: 1px solid var(--gw-line, #E2EAE9); }
-  .gw-today-pipe-cell:nth-child(3),
-  .gw-today-pipe-cell:nth-child(4) { border-bottom: 0; }
+  .gw-today-pipe-strip { grid-template-columns: repeat(2, 1fr); gap: 10px; }
 }
 
 /* ── Two-column My Day grid ───────────────────────────────────────────────── */
@@ -8678,6 +8707,55 @@ h1.pl-title,
   font-size: 10px;
   color: var(--gw-muted, #5E6E6F);
   text-align: right;
+}
+
+/* ── Financial Pulse — monthly actual-vs-target-pace bar chart (Command
+   Center mockup parity). Sits between the annual progress bar and the
+   per-division bars inside .gw-today-fin-card. ── */
+.gwcc-chart-wrap { margin: 4px 0 16px; }
+.gwcc-chart-label {
+  display: flex; justify-content: space-between;
+  font-size: 10.5px; color: var(--gw-muted, #5E6E6F); font-weight: 650;
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: .03em;
+}
+.gwcc-bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 80px; }
+.gwcc-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100%; justify-content: flex-end; min-width: 0; }
+.gwcc-bar-track {
+  width: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start;
+  height: 72px; background: var(--gw-surface-3, #EAF1EE); border-radius: 4px 4px 0 0; overflow: hidden;
+}
+.gwcc-bar-fill { background: var(--gw-pine, #4D8A86); border-radius: 4px 4px 0 0; width: 100%; transition: height .4s ease; }
+.gwcc-bar-fill.target { background: #C9A24A; }
+.gwcc-bar-month { font-size: 9.5px; color: var(--gw-muted, #5E6E6F); font-weight: 650; }
+.gwcc-chart-legend { display: flex; gap: 14px; font-size: 10.5px; color: var(--gw-muted, #5E6E6F); margin-top: 8px; }
+.gwcc-chart-legend span { display: flex; align-items: center; gap: 5px; }
+.gwcc-dot2 { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+
+/* ── Financial Pulse — per-division progress bars, restyled to the mockup's
+   thin-track + amount-inline treatment (replaces .gw-today-fin-div's boxed
+   layout when the Command Center's finance widget is in play). ── */
+.gwcc-fp-cats { border-top: 1px solid var(--gw-line, #E2EAE9); padding-top: 12px; }
+.gwcc-fp-cat { margin-bottom: 12px; }
+.gwcc-fp-cat:last-child { margin-bottom: 0; }
+.gwcc-fp-cat-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; font-weight: 600; color: var(--gw-ink, #1F2A2B); }
+.gwcc-fp-cat-track { height: 6px; background: var(--gw-line, #E2EAE9); border-radius: 4px; overflow: hidden; }
+.gwcc-fp-cat-fill { height: 100%; border-radius: 4px; background: #6FA383; transition: width .4s ease; }
+.gwcc-fp-cat-fill.over { background: #B0473E; }
+.gwcc-fp-cat-amt { color: var(--gw-muted, #5E6E6F); font-weight: 500; }
+
+/* ── Money Owed — donut/ring chart + legend (Command Center mockup parity).
+   Replaces the old 3-cell .gw-myday-ar-grid layout. ── */
+.gwcc-mo-row-main { display: flex; align-items: center; gap: 18px; margin-bottom: 4px; }
+.gwcc-mo-ring { flex-shrink: 0; }
+.gwcc-mo-ring circle { transition: stroke-dasharray .4s ease; }
+.gwcc-mo-legend { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.gwcc-mo-legend-item { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; gap: 8px; }
+.gwcc-mo-legend-name { display: flex; align-items: center; gap: 7px; color: var(--gw-ink, #1F2A2B); min-width: 0; }
+.gwcc-mo-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.gwcc-mo-legend-amt { font-weight: 700; color: var(--gw-muted, #5E6E6F); flex-shrink: 0; }
+.gwcc-mo-foot {
+  display: flex; justify-content: space-between; font-size: 11.5px; color: var(--gw-muted, #5E6E6F);
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--gw-line, #E2EAE9);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -10051,15 +10129,31 @@ h1.pl-title,
 /* CUSTOMER DETAIL PAGE                                                       */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 .cd-shell {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 24px 20px;
+  padding: 24px 20px 48px;
+}
+
+/* Hero card — wraps page header + stats bar in one elevated, high-end panel */
+.cd-hero-card {
+  position: relative;
+  background: linear-gradient(135deg, #FFFFFF 0%, var(--gw-bg-surface, #FDFCF9) 55%, var(--gw-pine-50, #F3FAF6) 100%);
+  border: 1px solid var(--gw-border);
+  border-radius: var(--gw-r-2xl, 24px);
+  box-shadow: var(--gw-shadow-card);
+  padding: 22px 26px 0;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.cd-hero-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--gw-pine-800, #1F5C3F), var(--gw-teal-500, #4D8A86), var(--gw-pine-300, #9BD3B4));
 }
 
 /* Page header */
 .cd-page-header {
   display: flex; justify-content: space-between; align-items: flex-start;
-  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 18px; flex-wrap: wrap; gap: 12px;
 }
 .cd-page-header-left { display: flex; align-items: center; gap: 14px; }
 .cd-back-btn {
@@ -10067,57 +10161,135 @@ h1.pl-title,
   font-size: 12px; font-weight: 600; color: var(--gw-text-muted);
 }
 .cd-avatar {
-  width: 48px; height: 48px; border-radius: 50%;
-  background: var(--gw-pine-500, #2D7A55);
-  color: #fff; font-size: 20px; font-weight: 800;
+  width: 52px; height: 52px; border-radius: 16px;
+  background: linear-gradient(135deg, var(--gw-pine-600, #2D7A55), var(--gw-teal-500, #4D8A86));
+  color: #fff; font-size: 21px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 8px 18px rgba(45,122,85,.22);
 }
 .cd-title-block { display: flex; flex-direction: column; gap: 3px; }
-.cd-name { font-size: 22px; font-weight: 800; color: var(--gw-text); margin: 0; }
+.cd-name { font-size: 23px; font-weight: 800; letter-spacing: -.02em; color: var(--gw-text); margin: 0; }
 .cd-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--gw-text-muted); }
 .cd-since { font-size: 11px; }
 .cd-page-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-/* Stats bar */
+/* Stats bar — sits inside the hero card, separated by a hairline */
 .cd-stats-bar {
-  display: flex; gap: 0; background: var(--gw-surface-1, #fff);
-  border: 1px solid var(--gw-border); border-radius: 10px;
-  overflow: hidden; margin-bottom: 20px;
+  display: flex; gap: 0;
+  border-top: 1px solid var(--gw-border);
+  margin: 0 -26px; padding: 14px 26px 4px;
 }
 .cd-stat {
   flex: 1; display: flex; flex-direction: column; align-items: center;
-  padding: 14px 10px;
+  padding: 6px 10px;
   border-right: 1px solid var(--gw-border);
   text-align: center;
 }
 .cd-stat:last-child { border-right: none; }
-.cd-stat-val { font-size: 18px; font-weight: 800; color: var(--gw-text); }
+.cd-stat-val { font-size: 19px; font-weight: 800; color: var(--gw-text); letter-spacing: -.01em; }
 .cd-stat-val--green { color: var(--gw-success, #2D7A55); }
 .cd-stat-val--blue { color: #3b82f6; }
-.cd-stat-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--gw-text-muted); margin-top: 2px; }
+.cd-stat-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--gw-text-muted); margin-top: 3px; }
 
-/* Body layout */
-.cd-body { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
-.cd-left { display: flex; flex-direction: column; gap: 16px; }
-.cd-right { display: flex; flex-direction: column; gap: 16px; }
-
-/* Sections */
-.cd-section {
-  background: var(--gw-surface-1, #fff);
-  border: 1px solid var(--gw-border);
-  border-radius: 10px; padding: 16px 18px;
+/* Body layout — compact bento-style grid so cards sit side-by-side instead
+   of one long stacked column. Cards declare width via cd-span-2 (2 of 3
+   columns) or default to a single column; the grid fills row by row. */
+.cd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: min-content;
+  gap: 16px;
+  align-items: start;
 }
+.cd-span-2 { grid-column: span 2; }
+@media (max-width: 1100px) {
+  .cd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cd-span-2 { grid-column: span 2; }
+}
+@media (max-width: 680px) {
+  .cd-grid { grid-template-columns: 1fr; }
+  .cd-span-2 { grid-column: span 1; }
+}
+
+/* Sections — premium card treatment matching the rest of the app */
+.cd-section {
+  background: var(--gw-bg-surface-2, #fff);
+  border: 1px solid var(--gw-border);
+  border-radius: var(--gw-r-lg, 16px);
+  box-shadow: var(--gw-shadow-card);
+  padding: 16px 18px;
+  container-type: inline-size;
+  transition: box-shadow .15s, border-color .15s;
+  align-self: start;
+  height: fit-content;
+}
+.cd-section:hover { box-shadow: var(--gw-shadow-md); border-color: var(--gw-border-strong); }
+/* Sections with no real data yet get a quieter treatment so they read as
+   compact placeholders, not as blocks straining to fill leftover space. */
+.cd-section--empty { background: var(--gw-bg-app, #FAFAF8); }
+.cd-section--empty:hover { box-shadow: var(--gw-shadow-card); border-color: var(--gw-border); }
 .cd-section-head {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 12px; gap: 8px;
 }
-.cd-section-title { font-size: 14px; font-weight: 700; color: var(--gw-text); margin: 0; }
+.cd-section-title {
+  font-size: 11.5px; font-weight: 800; color: var(--gw-text-muted);
+  text-transform: uppercase; letter-spacing: .07em; margin: 0;
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+}
+/* Per-section icon badge — small gradient tile that replaces the plain dot,
+   echoing the avatar / quick-action icon treatment for a cohesive, high-end
+   visual language across the page. */
+.cd-section-icon {
+  width: 21px; height: 21px; border-radius: 6px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--gw-pine-600, #2D7A55), var(--gw-teal-500, #4D8A86));
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; box-shadow: 0 2px 6px rgba(45,122,85,.22);
+}
+.cd-section-icon svg { width: 12px; height: 12px; }
+/* Inline hint text / dynamic amounts inside titles should stay normal-case */
+.cd-section-title > span { text-transform: none; letter-spacing: normal; }
+#cdAutosaveInd { text-transform: none; letter-spacing: normal; }
 
-/* Info grid */
-.cd-info-grid { display: flex; flex-direction: column; gap: 8px; }
-.cd-info-row { display: flex; gap: 12px; align-items: center; }
+/* Info grid — 2-column layout on wider cards (e.g. Contact Info spans 2) */
+.cd-info-grid { display: flex; flex-direction: column; gap: 7px; }
+.cd-info-row {
+  display: flex; gap: 12px; align-items: center;
+  padding: 5px 0; border-bottom: 1px solid var(--gw-border-subtle, rgba(0,0,0,.045));
+}
+.cd-info-grid--2col .cd-info-row:nth-last-child(-n+2) { border-bottom: none; }
 .cd-info-lbl { font-size: 11px; font-weight: 600; color: var(--gw-text-muted); width: 72px; flex-shrink: 0; text-transform: uppercase; letter-spacing: .04em; }
+.cd-info-grid--2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 32px;
+  align-content: start;
+}
+@container (max-width: 480px) {
+  .cd-info-grid--2col { grid-template-columns: 1fr; }
+  .cd-info-grid--2col .cd-info-row:nth-last-child(-n+2) { border-bottom: 1px solid var(--gw-border-subtle, rgba(0,0,0,.045)); }
+  .cd-info-grid--2col .cd-info-row:last-child { border-bottom: none; }
+}
+
+/* Compact empty state — used inside client-page cards that have no data yet
+   (Recurring & Projections, Notes, Timeline, Jobs, etc). Intentionally short
+   and centered so a placeholder card never fights taller neighbours for
+   visual weight. */
+.cd-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 5px; padding: 16px 10px 6px;
+}
+.cd-empty-icon {
+  width: 32px; height: 32px; border-radius: 9px; margin-bottom: 3px;
+  background: var(--gw-bg-app, #f4f6f8);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--gw-pine-400, #6fae8d);
+}
+.cd-empty-icon svg { width: 15px; height: 15px; }
+.cd-empty-title { font-size: 12.5px; font-weight: 600; color: var(--gw-text-muted); margin: 0; }
+.cd-empty-sub { font-size: 11px; color: var(--gw-text-muted); opacity: .8; max-width: 240px; line-height: 1.45; margin: 0; }
+.cd-empty-cta { margin-top: 2px; }
 
 /* Inline-editable contact fields (lead-style: edit in place, autosave) */
 .cd-inline-input {
@@ -10235,13 +10407,18 @@ h1.pl-title,
 .cd-tl-meta { font-size: 11px; color: var(--gw-text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 .cd-tl-amt { font-size: 12px; font-weight: 700; color: var(--gw-text); margin-top: 3px; }
 
+/* Job/estimate/invoice/payment rows collapse based on their own card width
+   (container query) rather than the viewport — cards are narrower now that
+   they sit side-by-side in the bento grid. */
+@container (max-width: 480px) {
+  .cd-wo-row { grid-template-columns: 60px 1fr 68px; }
+  .cd-wo-date, .cd-wo-amt { display: none; }
+}
+
 /* Responsive */
 @media (max-width: 900px) {
-  .cd-body { grid-template-columns: 1fr; }
   .cd-stats-bar { flex-wrap: wrap; }
-  .cd-stat { min-width: 30%; }
-  .cd-wo-row { grid-template-columns: 70px 1fr 70px; }
-  .cd-wo-date, .cd-wo-amt { display: none; }
+  .cd-stat { min-width: 30%; border-right: none; }
 }
 @media (max-width: 600px) {
   .cd-page-header { flex-direction: column; }
@@ -14544,17 +14721,72 @@ h1.pl-title,
      plain 1fr has an implicit auto minimum that blocks widget shrinking */
   grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-auto-rows: 4px;
-  grid-auto-flow: row dense;
-  gap: 18px;
-  align-items: start;
+  /* `row` (NOT `row dense`) — dense reshuffles later widgets backward into
+     earlier gaps, which breaks the row-grouping math in _gwMyDayMasonry()
+     (it groups widgets into visual rows by summing spans in strict DOM
+     order — must match the CSS placement algorithm exactly, see comment
+     there). Plain `row` keeps placement 100% predictable: widgets fill
+     left-to-right, top-to-bottom, wrapping to a new row only when the next
+     widget's span would overflow the remaining 6 columns. */
+  grid-auto-flow: row;
+  /* column-gap real; row-gap 0 — vertical breathing room is baked into each
+     widget's masonry row-span by JS (content height + GAP, see
+     _gwMyDayMasonry()) rather than via CSS row-gap, so it stays exact at any
+     row-span size. Density pass: 28px → 18px to match JS GAP constant and
+     the tighter Command Center rebuild. */
+  column-gap: 18px;
+  row-gap: 0;
+  align-items: stretch;
 }
-/* edit mode: keep source order (no dense back-fill) so drag-reorder is predictable */
-.gw-myday-grid--edit { grid-auto-flow: row; }
 .gw-myday-widget { min-width: 0; }
 .gw-myday-widget-body { min-width: 0; overflow-x: auto; }
 .gw-myday-widget-body > .card,
 .gw-myday-widget-body > section.card { margin-top: 0 !important; height: 100%; }
 .gw-myday-widget-body > .gw-today-pipe-strip { margin-bottom: 0; }
+
+/* ── Widget hover-remove "×" — Command Center rebuild: no drag/resize, just
+   an Add-Widget popover + a small hover-only remove button per widget. ── */
+.gw-myday-widget { position: relative; }
+.gw-myday-widget-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gw-surface, #fff);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  color: var(--gw-muted, #5E6E6F);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, background .15s, color .15s;
+  z-index: 5;
+}
+.gw-myday-widget:hover .gw-myday-widget-remove { opacity: 1; }
+.gw-myday-widget-remove:hover { background: var(--gw-rose, #8B3A2A); color: #fff; }
+
+/* ── Accordion-expand-in-place — shared pattern for all migrated deep report
+   content (pipeline funnel/trend/sources, A/R aging). Collapsed by default;
+   toggled via gwMyDayAccordionToggle(id), no separate page/modal. ── */
+.gw-accordion-body {
+  display: none;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+}
+.gw-accordion-body--open { display: block; animation: gwAccordionIn .18s ease; }
+@keyframes gwAccordionIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.gw-accordion-toggle:after {
+  content: '▾';
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 9px;
+  transition: transform .15s;
+}
+.gw-accordion-toggle--open:after { transform: rotate(180deg); }
 
 /* NOTE: no desktop breakpoint overrides here — the user controls widget
    sizes; forcing spans with !important at <=1100px silently broke resizing.
@@ -14564,71 +14796,60 @@ h1.pl-title,
   .gw-myday-widget { grid-column: span 1 !important; grid-row: auto !important; }
 }
 
-/* ── Customize (edit) mode ── */
-.gw-myday-edit-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  flex-wrap: wrap;
-  background: #EDF5F4;
-  border: 1.5px dashed var(--gw-pine, #4D8A86);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 18px;
-  font-size: 13.5px;
+/* ── Command Center zone sections ─────────────────────────────────────────
+   Groups the flat widget pile into visually distinct sections (Sales &
+   Pipeline / Financial / Operations / My Work) so preset day-modes read as
+   a hub of the underlying report areas rather than a uniform grid of
+   same-weight cards. Each zone is its own titled strip with a colored icon
+   chip (--gw-zone-accent, set inline per zone) and, where a report page
+   exists, a "Full report" drill-down link. Only used for preset modes in
+   view mode — see _gwTodayRender's zone-grouping branch; "My Layout"
+   (custom) and edit mode always keep the original flat single-grid. */
+.gw-myday-zone { margin-bottom: 30px; }
+.gw-myday-zone:last-child { margin-bottom: 0; }
+.gw-myday-zone-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--gw-zone-accent, var(--gw-line, #E2EAE9));
+}
+.gw-myday-zone-ic {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--gw-zone-accent, var(--gw-sky, #4D8A86));
+  color: #fff;
+}
+.gw-myday-zone-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
   color: var(--gw-ink, #1F2A2B);
+  flex: 1;
+  letter-spacing: -.01em;
 }
-.gw-myday-edit-banner svg { vertical-align: -3px; }
-.gw-myday-edit-banner-btns { display: flex; gap: 8px; }
-
-.gw-myday-widget--edit {
-  border: 1.5px dashed rgba(77,138,134,.55);
-  border-radius: 14px;
-  padding: 6px;
-  background: rgba(77,138,134,.03);
-  cursor: grab;
-  transition: border-color .15s, box-shadow .15s, transform .15s;
-  animation: gw-myday-wiggle 3.2s ease-in-out infinite;
-}
-.gw-myday-widget--edit:nth-child(2n) { animation-delay: -1.1s; }
-.gw-myday-widget--edit:nth-child(3n) { animation-delay: -2.2s; }
-@keyframes gw-myday-wiggle {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(.14deg); }
-  75% { transform: rotate(-.14deg); }
-}
-.gw-myday-widget--edit:active { cursor: grabbing; }
-.gw-myday-widget--edit .gw-myday-widget-body { pointer-events: none; opacity: .82; }
-.gw-myday-widget--hidden { opacity: .45; }
-.gw-myday-widget--hidden .gw-myday-widget-body { filter: grayscale(.6); }
-
-.gw-myday-widget-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 4px 6px 8px;
-}
-.gw-myday-widget-name {
-  font-size: 12.5px; font-weight: 700; color: var(--gw-pine, #4D8A86);
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.gw-myday-drag-dots { font-size: 13px; color: rgba(77,138,134,.7); letter-spacing: 1px; }
-.gw-myday-widget-btns { display: inline-flex; gap: 4px; }
-.gw-myday-widget-btns button {
-  background: #fff;
-  border: 1px solid var(--gw-line, #DCE6E4);
-  border-radius: 7px;
-  padding: 3px 9px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--gw-ink, #1F2A2B);
+.gw-myday-zone-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
   cursor: pointer;
-  transition: background .12s, border-color .12s;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gw-zone-accent, var(--gw-sky, #4D8A86));
+  padding: 4px 2px;
+  white-space: nowrap;
 }
-.gw-myday-widget-btns button:hover { background: #EDF5F4; border-color: var(--gw-pine, #4D8A86); }
-.gw-myday-widget-btns .gw-myday-show-btn { background: var(--gw-pine, #4D8A86); color: #fff; border-color: var(--gw-pine, #4D8A86); }
-
-/* drag states */
-.gw-myday-dragging { opacity: .35; }
-.gw-myday-drop-target {
-  border-color: var(--gw-pine, #4D8A86) !important;
-  box-shadow: 0 0 0 3px rgba(77,138,134,.22);
+.gw-myday-zone-link:hover { text-decoration: underline; }
+.gw-myday-zone-link-ic { display: inline-flex; }
+@media (max-width: 768px) {
+  .gw-myday-zone { margin-bottom: 22px; }
 }
 
 .gw-myday-placeholder {
@@ -14639,22 +14860,44 @@ h1.pl-title,
   background: var(--gw-bg2, #F5F8F7);
   border-radius: 10px;
 }
-.gw-myday-customize-btn svg { vertical-align: -2px; }
+/* Row-height matching can stretch a widget well past its own natural
+   content height when a taller sibling shares its row — an empty-state
+   placeholder just sitting near the top of that extra space looks like
+   dead whitespace. This variant grows to fill the available height and
+   centers an icon + message so the extra room reads as an intentional
+   "all clear" state instead of a layout gap. */
+.gw-myday-placeholder--empty {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; min-height: 90px; padding: 28px 20px;
+}
+.gw-myday-placeholder--empty span { max-width: 240px; line-height: 1.5; }
+/* .card is a normal block by default — flex:1 above only expands the
+   placeholder to fill leftover row-matched height if its card parent is
+   itself a flex column. Not a direct-child :has() since some widgets nest
+   the placeholder inside an extra wrapper div (e.g. Today's Jobs' list
+   container), so match at any depth. */
+.gw-myday-widget-body > .card:has(.gw-myday-placeholder--empty),
+.gw-myday-widget-body > section.card:has(.gw-myday-placeholder--empty) {
+  display: flex; flex-direction: column;
+}
+.gw-myday-widget-body > .card:has(.gw-myday-placeholder--empty) > div:has(.gw-myday-placeholder--empty),
+.gw-myday-widget-body > section.card:has(.gw-myday-placeholder--empty) > div:has(.gw-myday-placeholder--empty) {
+  display: flex; flex-direction: column; flex: 1;
+}
 
 /* Very wide screens: keep content readable but fluid — cards inside stretch */
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SECTION 40 — MY DAY WIDGETS v2
    1) Bigger breathing room between widgets (never touching)
-   2) Drag-resize grips: right edge = width, bottom edge = height, corner = both
-   3) Widget Library panel (add / remove widgets)
-   4) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
+   2) Widget Library panel (add / remove widgets) — drag/resize removed in the
+      Command Center rebuild (single canonical layout, no edit mode)
+   3) New widgets: Quick Actions, Scratchpad, Needs Follow-Up, Recent Wins
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── 1. Spacing: column gap real; row gap 0 — the vertical gap is baked into
-   each widget's masonry row-span by JS (content height + 28px breathing room) ── */
-.gw-myday-grid { gap: 28px !important; row-gap: 0 !important; }
-.gw-myday-widget { position: relative; }
+/* ── 1. Spacing: column-gap/row-gap now set once on the base .gw-myday-grid
+   rule (Section 39) — see comment there. ── */
 /* cards inside widgets: kill stray top margins so gap is the only spacing */
 .gw-myday-widget-body > .card,
 .gw-myday-widget-body > section.card { margin: 0 !important; }
@@ -14662,47 +14905,7 @@ h1.pl-title,
 .gw-myday-widget-body[style*="height"] > .card,
 .gw-myday-widget-body[style*="height"] > section.card { min-height: 100%; }
 
-/* ── 2. Resize grips (visible only in customize mode) ── */
-.gw-myday-grip { position: absolute; z-index: 5; }
-.gw-myday-grip--e {
-  top: 10px; bottom: 22px; right: -4px; width: 10px;
-  cursor: ew-resize;
-}
-.gw-myday-grip--s {
-  left: 10px; right: 22px; bottom: -4px; height: 10px;
-  cursor: ns-resize;
-}
-.gw-myday-grip--se {
-  right: -4px; bottom: -4px; width: 20px; height: 20px;
-  cursor: nwse-resize;
-}
-.gw-myday-grip--e::after {
-  content: ''; position: absolute; top: 50%; right: 3px; transform: translateY(-50%);
-  width: 4px; height: 34px; border-radius: 4px;
-  background: rgba(77,138,134,.45); opacity: 0; transition: opacity .15s;
-}
-.gw-myday-grip--s::after {
-  content: ''; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
-  width: 34px; height: 4px; border-radius: 4px;
-  background: rgba(77,138,134,.45); opacity: 0; transition: opacity .15s;
-}
-.gw-myday-grip--se::after {
-  content: ''; position: absolute; right: 4px; bottom: 4px; width: 10px; height: 10px;
-  border-right: 3px solid rgba(77,138,134,.65); border-bottom: 3px solid rgba(77,138,134,.65);
-  border-radius: 0 0 4px 0; opacity: 0; transition: opacity .15s;
-}
-.gw-myday-widget--edit:hover .gw-myday-grip::after,
-.gw-myday-widget--edit.gw-myday-resizing .gw-myday-grip::after { opacity: 1; }
-.gw-myday-resizing { animation: none !important; }
-.gw-myday-resizing,
-.gw-myday-resizing * { user-select: none !important; }
-.gw-myday-resizing { outline: 2px solid var(--gw-pine, #4D8A86); outline-offset: 2px; border-radius: 14px; }
-
-/* remove button styling */
-.gw-myday-widget-btns .gw-myday-remove-btn { color: #8B3A2A; border-color: #EBD3CC; }
-.gw-myday-widget-btns .gw-myday-remove-btn:hover { background: #FAE8E4; border-color: #C97B6A; }
-
-/* ── 3. Widget Library panel ── */
+/* ── 2. Widget Library panel ── */
 .gw-myday-library {
   background: var(--gw-surface, #fff);
   border: 1.5px dashed rgba(77,138,134,.5);
@@ -14837,20 +15040,33 @@ h1.pl-title,
 }
 
 /* ── Crew Hours widget ──────────────────────────────────────────────────── */
-.gw-myday-crew-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 6px; border-bottom: 1px solid var(--gw-line, #EDF2F1); font-size: 13px;
+/* Full-row-width (span 6) widget — wraps reps as compact chip-cards (same
+   visual language as .gw-myday-ar-cell) instead of a narrow stacked list,
+   so the widget stays content-dense at full width regardless of crew size. */
+.gw-myday-crew-grid {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;
 }
-.gw-myday-crew-row:last-child { border-bottom: none; }
+.gw-myday-crew-chip {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--gw-bg2, #F5F8F7);
+  border: 1px solid var(--gw-line, #E2EAE9);
+  border-radius: 10px; padding: 9px 12px; font-size: 13px;
+  flex: 1 1 160px; min-width: 160px;
+}
+.gw-myday-crew-chip--live { background: #F0F7F3; border-color: #CBE3D6; }
 .gw-myday-crew-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.gw-myday-crew-row strong { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gw-ink, #1F2A2B); }
+.gw-myday-crew-chip-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gw-ink, #1F2A2B); font-weight: 700; }
 .gw-myday-crew-live { font-size: 10px; font-weight: 800; color: #2D9F63; }
 .gw-myday-crew-hrs { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--gw-ink, #1F2A2B); }
 
 /* ── Money Owed (A/R) widget ────────────────────────────────────────────── */
-.gw-myday-ar-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+/* 3-across dense grid (matches Financial Pulse's KPI-grid density) instead
+   of full-width stacked blocks — full-width rows of small left-aligned text
+   left ~85% of each block visually empty next to Financial Pulse's denser
+   layout when the two shared a row. */
+.gw-myday-ar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }
 .gw-myday-ar-cell {
-  display: flex; flex-direction: column; gap: 1px;
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
   background: var(--gw-bg2, #F5F8F7);
   border: 1px solid var(--gw-line, #E2EAE9);
   border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: border-color .12s;
@@ -14874,15 +15090,11 @@ h1.pl-title,
    flex wrapping instead of window media queries.
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* Pipeline Snapshot: cells reflow into as many columns as fit (min 130px each) */
+/* Pipeline Snapshot hero tiles: reflow into as many columns as fit (min
+   150px each) — each tile is now its own bordered/shadowed card (see the
+   hero KPI band rules above), so no divider-border hack is needed here. */
 .gw-myday-widget-body .gw-today-pipe-strip {
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-}
-/* borders that work at any wrap count: each cell draws bottom+right, the
-   strip's overflow:hidden clips the outermost ones via -1px margins */
-.gw-myday-widget-body .gw-today-pipe-cell {
-  border-bottom: 1px solid var(--gw-line, #E2EAE9);
-  margin-bottom: -1px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 /* Generic inner grids (stats, forms, 2/3/4-col cards) reflow inside widgets */
@@ -14939,6 +15151,77 @@ h1.pl-title,
   .gw-myday-widget-body .gw-today-pipe-val { font-size: 17px; }
   .gw-myday-widget-body .gw-today-pipe-val--money { font-size: 14px; }
   .gw-myday-widget-body h2 { font-size: 15px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 42 — MY DAY: "+N MORE" CAPPING + PIPELINE CHART (curated mode)
+   Fixed-height widget cards (My Tasks / Today's Jobs / My Calendar) so a
+   light day and a packed day render the exact same card shape — overflow
+   past the mode's cap collapses into a quiet "+N more" row that expands the
+   same card in place, never a scrollbar or a growing card.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Fixed-height card + capped list body ─────────────────────────────────── */
+.w-fixed-h { display: flex; flex-direction: column; }
+.w-fixed-h .section-head { flex-shrink: 0; }
+.list-cap { flex: 1; min-height: 0; overflow: hidden; }
+
+/* "+N more / Show less" link — sits below the capped list, above the card edge */
+.more-link {
+  flex-shrink: 0;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+  font-size: 12px; font-weight: 700;
+  color: var(--gw-pine-muted, #2D7A55);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 5px;
+  transition: color .12s;
+}
+.more-link:hover { color: var(--gw-pine, #4D8A86); }
+.more-link svg { flex-shrink: 0; }
+
+/* My Tasks / Today's Jobs / My Calendar cards get a calm fixed height when
+   capped, so all three sit level with each other in the curated layout —
+   auto height (uncapped, e.g. Focus/custom modes) is untouched. */
+.gw-myday-widget-body > .w-fixed-h,
+.gw-myday-widget-body > section.w-fixed-h { height: 380px; }
+.gw-myday-widget-body > .w-fixed-h .gw-cal-md-list.list-cap,
+.gw-myday-widget-body > .w-fixed-h .gw-task-workspace.list-cap { padding-bottom: 2px; }
+
+/* ── Pipeline Chart widget: sparkline + stage breakdown, real D1 data ──────── */
+.gw-pipe-chart { display: flex; flex-direction: column; }
+.pipe-num { font-size: 24px; font-weight: 800; color: var(--gw-ink, #1F2A2B); letter-spacing: -.02em; margin-top: 4px; }
+.pipe-lbl { font-size: 11.5px; color: var(--gw-muted, #5E6E6F); font-weight: 600; margin-top: 2px; }
+.pipe-spark { display: block; width: 100%; height: 40px; margin: 12px 0 4px; flex-shrink: 0; }
+.pipe-spark-foot {
+  display: flex; justify-content: space-between;
+  font-size: 10.5px; color: var(--gw-subtle, #6F7E6A); font-weight: 600;
+  margin-top: -2px;
+}
+.pipe-stage-bar {
+  height: 9px; border-radius: 5px; overflow: hidden; display: flex;
+  margin: 16px 0 10px;
+  background: var(--gw-line-strong, #C8D8D3);
+}
+.pipe-stage-bar > i { display: block; height: 100%; }
+.pipe-legend { display: flex; flex-direction: column; gap: 6px; }
+.pipe-legend-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; color: var(--gw-ink-2, #1E3326); font-weight: 600;
+}
+.pipe-legend-row .k { display: flex; align-items: center; gap: 6px; }
+.pipe-legend-row .k i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pipe-legend-row .v { color: var(--gw-muted, #5E6E6F); font-weight: 700; }
+.pipe-mini-row {
+  display: flex; justify-content: space-between;
+  font-size: 11.5px; color: var(--gw-muted, #5E6E6F); font-weight: 600;
+  margin-top: auto; padding-top: 10px;
+  border-top: 1px solid var(--gw-line, #E2EAE9);
+}
+
+@container (max-width: 260px) {
+  .pipe-num { font-size: 19px; }
+  .pipe-legend-row { font-size: 10.5px; }
 }
 
 /* ── General Settings tab: organized layout (all viewports) ──────────────── */
@@ -15453,6 +15736,153 @@ h1.pl-title,
   border-color: #fff;
   color: #113931;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SITE-WIDE "GREEN HERO" HEADER — promoted from .gw-report-shell-only to the
+   default treatment for every .rp-header across the app (My Day, Pipeline,
+   Clients, Estimates, Invoices, Assets, Operations, Financial Reports, etc.)
+   so every page shares the same premium look instead of a plain white/no
+   header on most pages and a green hero on a handful of report pages.
+   Opt a specific header out with class="rp-header rp-header--plain".
+   ══════════════════════════════════════════════════════════════════════════ */
+.rp-header:not(.rp-header--plain) {
+  background: var(--gw-report-hero, linear-gradient(135deg, #103c34 0%, #1a5a4f 54%, #2b7568 100%));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 22px;
+  box-shadow: 0 24px 52px rgba(17, 57, 49, .18);
+  padding: 26px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.rp-header:not(.rp-header--plain)::after {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -120px;
+  width: 280px;
+  height: 280px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,255,255,.16), transparent 68%);
+  pointer-events: none;
+}
+.rp-header:not(.rp-header--plain) .rp-header-left,
+.rp-header:not(.rp-header--plain) .rp-header-actions { position: relative; z-index: 1; }
+.rp-header:not(.rp-header--plain) .eyebrow {
+  color: rgba(160, 211, 203, .95) !important;
+  letter-spacing: .16em;
+}
+.rp-header:not(.rp-header--plain) .rp-title { color: #fff !important; }
+.rp-header:not(.rp-header--plain) .rp-subtitle { color: rgba(255,255,255,.72) !important; }
+.rp-header:not(.rp-header--plain) .cd-back-btn,
+.rp-header:not(.rp-header--plain) .cl-back-btn { color: rgba(255,255,255,.75) !important; }
+.rp-header:not(.rp-header--plain) .rp-header-actions .rp-btn {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.18);
+  color: #fff;
+  box-shadow: none;
+}
+.rp-header:not(.rp-header--plain) .rp-header-actions .rp-btn:hover { background: rgba(255,255,255,.18); }
+.rp-header:not(.rp-header--plain) .rp-header-actions .rp-btn--primary {
+  background: #fff;
+  border-color: #fff;
+  color: #113931;
+}
+/* Generic (non-.rp-btn) buttons dropped straight into a green header —
+   e.g. plain <button class="primary-btn">/<button class="secondary-btn">
+   used on a few older pages — get the same translucent white treatment. */
+.rp-header:not(.rp-header--plain) .rp-header-actions button:not(.rp-btn):not(.rp-btn--primary) {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.18);
+  color: #fff;
+}
+.rp-header:not(.rp-header--plain) .rp-header-actions button:not(.rp-btn):not(.rp-btn--primary):hover {
+  background: rgba(255,255,255,.18);
+}
+
+/* ── Same "green hero" treatment for the other two header component
+   families used on non-report pages: .pl-page-header (My Day, Pipeline,
+   Clients) and .gwp-header (Financial Reports Hub). Kept as separate
+   selectors (not merged into .rp-header) since their internal class names
+   (.pl-title/.gwp-title etc.) differ. ── */
+.pl-page-header,
+.gwp-header {
+  background: var(--gw-report-hero, linear-gradient(135deg, #103c34 0%, #1a5a4f 54%, #2b7568 100%));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 22px;
+  box-shadow: 0 24px 52px rgba(17, 57, 49, .18);
+  padding: 26px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.pl-page-header::after,
+.gwp-header::after {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -110px;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,255,255,.16), transparent 68%);
+  pointer-events: none;
+}
+.pl-page-header > *,
+.gwp-header > * { position: relative; z-index: 1; }
+/* Scoped (not bare .pl-title/.gwp-title) so specificity (3 classes) reliably
+   beats the older "SECTION 36-B" rule (.view .pl-title { color:#0F1C14
+   !important; }, 2 classes) that otherwise forces the title dark/black on
+   green .pl-page-header pages like My Day, Pipeline, and Clients. */
+.pl-page-header .pl-page-title .pl-title,
+.pl-page-header h1.pl-title,
+.gwp-header .gwp-header-left .gwp-title,
+.gwp-header h1.gwp-title {
+  color: #fff !important;
+}
+.pl-page-header .pl-page-title .pl-subtitle,
+.pl-page-header .pl-subtitle,
+.gwp-header .gwp-header-left .gwp-subtitle,
+.gwp-header .gwp-subtitle {
+  color: rgba(255,255,255,.82) !important;
+}
+.pl-page-header .cl-back-btn { color: rgba(255,255,255,.75) !important; }
+
+/* Buttons + pills inside a .pl-page-header (My Day / Pipeline / Clients) */
+.pl-page-header .primary-btn,
+.pl-page-header .secondary-btn {
+  background: rgba(255,255,255,.14) !important;
+  border: 1px solid rgba(255,255,255,.22) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.pl-page-header .primary-btn:hover,
+.pl-page-header .secondary-btn:hover { background: rgba(255,255,255,.22) !important; }
+.pl-page-header .gw-myday-modes {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.2);
+}
+.pl-page-header .gw-myday-mode-pill { color: rgba(255,255,255,.75); }
+.pl-page-header .gw-myday-mode-pill:hover { background: rgba(255,255,255,.14); color: #fff; }
+.pl-page-header .gw-myday-mode-pill--on {
+  background: #fff; color: #113931;
+  border-color: #fff;
+}
+
+/* Buttons inside a .gwp-header (Financial Reports Hub) */
+.gwp-header-actions .gwp-btn-ghost {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.2);
+  color: #fff;
+}
+.gwp-header-actions .gwp-btn-ghost:hover { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.3); }
+.gwp-header-actions .gwp-btn-primary {
+  background: #fff;
+  border-color: #fff;
+  color: #113931;
+}
+.gwp-header-actions .gwp-btn-primary:hover { background: rgba(255,255,255,.88); }
+
 .gw-report-grid {
   display: grid;
   gap: 14px;
@@ -15537,18 +15967,11 @@ h1.pl-title,
 .gw-list-shell > .rp-header,
 .gw-ops-header,
 .gw-list-header {
-  background: #fff !important;
-  border: 1px solid rgba(26, 71, 64, .10) !important;
-  border-radius: 18px !important;
-  box-shadow: 0 14px 34px rgba(17, 57, 49, .07) !important;
+  /* Same green hero as the rest of the site (see the site-wide .rp-header
+     rule above) — just re-centered with the ops/list shell's max-width. */
   margin: 0 auto 18px !important;
   max-width: 1200px;
-  padding: 22px 24px !important;
 }
-.gw-ops-shell .rp-title,
-.gw-list-shell .rp-title { color: var(--gw-ink, #1F2A2B) !important; }
-.gw-ops-shell .rp-subtitle,
-.gw-list-shell .rp-subtitle { color: var(--gw-muted, #6F7E6A) !important; }
 .gw-ops-shell .rp-card,
 .gw-list-shell > div[style*="border:1px solid"],
 .gw-list-shell .rp-empty-state {
@@ -15775,16 +16198,22 @@ h1.pl-title,
 .sb-lane-crew-name i { display:block; width:76px; height:3px; margin-top:3px; overflow:hidden; border-radius:99px; background:var(--gw-border); }
 .sb-lane-crew-name i b { display:block; height:100%; background:var(--gw-pine-500); border-radius:inherit; }
 
-/* My Day professional structured dashboard */
-.gw-myday-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-  grid-auto-rows: auto !important;
-  grid-auto-flow: row !important;
-  gap: 20px !important;
-  align-items: stretch !important;
-}
+/* My Day professional structured dashboard
+   (grid-template-columns/gap/align-items now set once on the base .gw-myday-grid
+   rule above — this block previously redeclared them with !important and, more
+   importantly, forced grid-auto-rows:auto + grid-auto-flow:row, which fought the
+   masonry engine's 4px fine-grained rows + dense packing and caused large dead
+   vertical gaps between widgets. Removed; base rule is now the single source
+   of truth for row sizing.
+   IMPORTANT: grid-row must NOT be forced to auto with !important here — the
+   masonry JS (_gwMyDayMasonry()) sets each widget's grid-row via inline style
+   ("span N") after measuring its real height. An !important CSS rule always
+   beats an inline style regardless of specificity, so the previous
+   `grid-row: auto !important` silently nullified every widget's computed
+   span — with dense packing and no span info, widgets could be placed into
+   overlapping cells (the visible widget-overlap bug). No CSS grid-row rule
+   at all for .gw-myday-widget → the JS inline style is free to apply. */
 .gw-myday-widget {
-  grid-row: auto !important;
   align-self: stretch;
   min-width: 0;
 }
@@ -15819,15 +16248,24 @@ h1.pl-title,
   letter-spacing: -.015em;
   text-transform: none;
 }
-/* Record-list widgets must never collapse into unusable one-character columns. */
+/* Fallback minimum widths (record-list widgets must never collapse into
+   unusable one-character columns). NOT !important: every widget already
+   gets its real column span as an inline style from _gwMyDaySpanOf()
+   (custom layout choice, or the active day-mode's `spans` config — e.g.
+   curated mode's tasks:2/calendar:2/pipeChart:2 side-by-side row). An
+   !important rule here would always beat that inline span regardless of
+   which mode is active, which is exactly what caused My Tasks to render at
+   a fixed span 4 (overlapping Pipeline Chart) instead of curated mode's
+   configured span 2. These rules now only apply on the rare path where no
+   inline grid-column was set. */
 .gw-myday-widget[data-widget-id="recent"],
 .gw-myday-widget[data-widget-id="staleLeads"],
-.gw-myday-widget[data-widget-id="recentWins"] { grid-column: span 3 !important; }
-.gw-myday-widget[data-widget-id="tasks"] { grid-column: span 4 !important; }
-.gw-myday-widget[data-widget-id="calendar"] { grid-column: span 2 !important; }
+.gw-myday-widget[data-widget-id="recentWins"] { grid-column: span 3; }
+.gw-myday-widget[data-widget-id="tasks"] { grid-column: span 4; }
+.gw-myday-widget[data-widget-id="calendar"] { grid-column: span 2; }
 .gw-myday-widget[data-widget-id="pipeStrip"],
 .gw-myday-widget[data-widget-id="activity"],
-.gw-myday-widget[data-widget-id="reviews"] { grid-column: span 6 !important; }
+.gw-myday-widget[data-widget-id="reviews"] { grid-column: span 6; }
 .gw-myday-widget-body h2,
 .gw-myday-widget-body h3,
 .gw-myday-widget-body .mini-row > *,
@@ -16164,3 +16602,148 @@ h1.pl-title,
 .gw-ai-factor em.neg{color:#8B3A2A}
 .gw-ai-factor--base{color:var(--gw-text-muted,#6F7E6A)}
 .gw-ai-footnote{margin-top:10px;font-size:10.5px;color:var(--gw-text-subtle,#8A968A);line-height:1.45}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMMAND CENTER VISUAL REFRESH — Option 1 (scoped preview)
+   2026-08-04 · Premium-aesthetic pass modeled on the "Groundwork" marketing
+   mockups (warm cream bg, wider breathing room, softer/warmer borders,
+   near-flat shadows, restrained green-accent usage).
+
+   SCOPE: every rule below is namespaced under `.view.gw-view--cc` — the
+   Command Center view container only (class added/removed by
+   _gwTodayRender()/show() in app_premium.js). Nothing here touches the
+   shared :root design tokens, so every other page in the app is completely
+   unaffected. If/when this is approved for a global rollout, these values
+   move up into :root and this whole block goes away.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page background: warm cream instead of the app-wide cool mint ── */
+.view.gw-view--cc {
+  background: #F8F6F1;
+}
+
+/* ── Wider breathing room: grid gap + card padding ── */
+.view.gw-view--cc .gw-myday-grid {
+  column-gap: 24px;
+}
+.view.gw-view--cc .gw-myday-widget-body > .card,
+.view.gw-view--cc .gw-myday-widget-body > section.card,
+.view.gw-view--cc .gw-myday-widget-body > .gw-today-fin-card,
+.view.gw-view--cc .gw-myday-widget-body > div > .card {
+  padding: 22px;
+}
+.view.gw-view--cc .gw-today-pipe-cell {
+  padding: 18px 20px;
+}
+.view.gw-view--cc .gw-today-pipe-strip {
+  gap: 18px;
+}
+
+/* ── Softer, warmer card borders + near-flat shadow (mockups use almost no
+   shadow — depth comes from whitespace, not elevation) ── */
+.view.gw-view--cc .gw-myday-widget-body > .card,
+.view.gw-view--cc .gw-myday-widget-body > section.card,
+.view.gw-view--cc .gw-myday-widget-body > .gw-today-fin-card,
+.view.gw-view--cc .gw-myday-widget-body > div > .card {
+  border-color: #E7E3D9;
+  box-shadow: 0 1px 3px rgba(31,28,20,.035);
+}
+.view.gw-view--cc .gw-today-pipe-cell {
+  border-color: #E7E3D9;
+  box-shadow: none;
+}
+.view.gw-view--cc .gw-today-pipe-cell:hover {
+  box-shadow: 0 4px 12px rgba(31,28,20,.06);
+}
+
+/* ── Zone section dividers: warm neutral instead of the cool --gw-line ── */
+.view.gw-view--cc .gw-myday-zone-head {
+  border-bottom-color: #E7E3D9;
+}
+
+/* ── Bolder headline type on the page title, more like the mockups' larger
+   display type (Command Center title only — not a global h1 change) ── */
+.view.gw-view--cc .pl-title {
+  font-size: 30px;
+  letter-spacing: -.035em;
+}
+
+/* ── Restrained accent color on the hero KPI strip ─────────────────────────
+   Neutral tiles (Open Leads / Proposals Out / Pipeline Value): plain ink
+   icon chip on a soft warm-gray tint, no colored top edge — informational
+   counts don't need a hue. Green stays reserved for genuinely positive/
+   active state (Won MTD, and a healthy Avg Close Likelihood via the
+   existing --emerald/--amber/--rose score bands, unchanged). */
+.view.gw-view--cc .gw-today-pipe-cell--neutral:before,
+.view.gw-view--cc .gw-today-pipe-cell--neutral .gw-today-pipe-ic {
+  background: #EDEAE2;
+}
+.view.gw-view--cc .gw-today-pipe-cell--neutral .gw-today-pipe-ic {
+  color: #6B6557;
+  opacity: 1;
+}
+
+/* ── Widget cards: title weight nudged up slightly to match the mockups'
+   bolder section headers, still well within existing sizing so nothing
+   reflows ── */
+.view.gw-view--cc .gw-myday-widget-body .section-head h2,
+.view.gw-view--cc .gw-myday-widget-body .gw-today-fin-title {
+  font-weight: 800;
+}
+
+/* ── Command Center hero — dark frame treatment + embedded placeholder
+   KPI tiles ──────────────────────────────────────────────────────────────
+   The hero (.pl-page-header, shared with Pipeline/Clients pages) already
+   gets the dark green gradient + white text from the generic rule above.
+   .gw-cc-hero adds one thing on top, scoped to Command Center only: a row
+   of large "configure later" placeholder metric tiles embedded directly
+   inside the panel (dashed border, translucent icon chip, "Placeholder"
+   tag) — these are NOT wired to real data, purely a future-metrics slot,
+   unrelated to the real pipeline snapshot strip that renders below the
+   hero. flex-wrap on .pl-page-header already stacks title/actions above
+   this row; margin-top separates the KPI row from that line. */
+.hero-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+  /* Force onto its own row below title/actions (both siblings sit in the
+     same flex-wrap:wrap header) without touching that header's direction. */
+  flex-basis: 100%;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+.hkpi.placeholder {
+  border: 1.5px dashed rgba(255,255,255,.28);
+  background: rgba(255,255,255,.05);
+  border-radius: 14px;
+  padding: 18px 20px;
+  transition: border-color .15s, background .15s;
+}
+.hkpi.placeholder:hover {
+  border-color: rgba(255,255,255,.42);
+  background: rgba(255,255,255,.07);
+}
+.hkpi-ph-top { display: flex; align-items: center; gap: 9px; }
+.hkpi-ph-icon {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: rgba(255,255,255,.11);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; color: #fff;
+}
+.hkpi-ph-label { font-size: 13px; font-weight: 650; color: #fff; }
+.hkpi-ph-hint { font-size: 11.5px; color: rgba(255,255,255,.55); font-style: italic; margin-top: 9px; }
+.hkpi-ph-tag {
+  display: inline-block; font-size: 9.5px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: rgba(255,255,255,.55);
+  background: rgba(255,255,255,.08);
+  border-radius: 4px; padding: 2px 6px; margin-top: 10px;
+}
+@media (max-width: 900px) {
+  .hero-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .hero-kpis { grid-template-columns: 1fr; }
+}
