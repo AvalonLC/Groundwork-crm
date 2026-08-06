@@ -63,6 +63,43 @@ configAdminRouter.get("/", async (c) => {
         writes an override for <strong>this company only</strong> — it never changes
         another tenant's view or the shipped default. Reset puts it back.
       </div>
+
+      <section class="fin-card" data-testid="policy-link-card">
+        <div class="fin-card-h">
+          <h2 class="fin-card-t">Company Policy</h2>
+        </div>
+        <p class="fin-card-s" style="margin-bottom:12px">
+          The one setting that isn't a config file: your company's own materiality
+          threshold, overhead target, and equipment-engine switch. Rate resolution,
+          classification, and the nightly recovery rollup all read this row directly.
+        </p>
+        <a
+          href={basePath.replace(/\/config$/, "/policy")}
+          data-testid="policy-link"
+          style="display:inline-block;background:var(--gw-pine);color:#fff;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700"
+        >
+          Open Company Policy
+        </a>
+      </section>
+
+      <section class="fin-card" data-testid="upload-link-card">
+        <div class="fin-card-h">
+          <h2 class="fin-card-t">Upload Documents</h2>
+        </div>
+        <p class="fin-card-s" style="margin-bottom:12px">
+          Financial exports (P&L, bank/card CSV, payroll) and receipts — checked against
+          known formats and reconciled against your overhead pools, with anything
+          uncertain flagged for review instead of guessed at.
+        </p>
+        <a
+          href={basePath.replace(/\/config$/, "/upload")}
+          data-testid="upload-link"
+          style="display:inline-block;background:var(--gw-pine);color:#fff;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700"
+        >
+          Open Upload Documents
+        </a>
+      </section>
+
       {configs.map((cfg) => (
         <section class="fin-card" data-testid={`config-${cfg.name}`}>
           <div class="fin-card-h">

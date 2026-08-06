@@ -56,11 +56,15 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
   just present in a file nobody read).
 - `automation-policy.json` — every automation's on/off switch.
 - `tenant-defaults.json` — new-tenant policy seed values.
-- `role-map.json` — CRM role string -> Finance OS role. **Inferred**
-  (`admin`->owner, `office_manager`/`estimator`->office,
-  `foreman`/`field_supervisor`->crew_lead, `laborer`/`mechanic`/
-  `view_only`/`rep`->crew) — ambiguous roles default to the MORE
-  restrictive option, not confirmed by Tyler.
+- `role-map.json` — CRM role string -> Finance OS role. `rep`->crew is
+  **confirmed by Tyler** (2026-08-06, reviewed against Avalon's real role
+  distribution — kept restrictive, no margin/wage/rate visibility for the
+  customer-facing sales role). The rest (`admin`->owner,
+  `office_manager`/`estimator`->office, `foreman`/`field_supervisor`
+  ->crew_lead, `laborer`/`mechanic`/`view_only`->crew) is still
+  **inferred**, not individually confirmed — Tyler reviewed the full
+  table and had no changes, but those rows weren't checked against real
+  headcount the way `rep` was.
 
 ## Real gaps — not built, and why
 1. **Classifier/ingest rules are still placeholders**, not confirmed
@@ -84,6 +88,16 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
 5. **`gather-inputs.ts`'s rollup-input derivations are inferred proxies**
    (recovered_to_date from posted overhead ledger lines, budgeted/absorbed
    from weekly allocation shares) — reasonable, not confirmed formulas.
+6. **Receipt upload (`/finance/upload`) has no AI/OCR extraction.**
+   `processReceiptUpload` (`src/ai/receipts.ts`) takes an injected `extract`
+   callback by design; the UI built for it (2026-08-06) passes through
+   whatever the uploader types for vendor/amount/date rather than reading
+   them off the image. This is a real gap, not a permanent design choice —
+   deferred because it needs a real model choice + prompt design, would
+   incur actual Workers AI usage cost, and there was no real receipt image
+   to verify accuracy against. The rest of the pipeline (hash dedupe, R2
+   storage, confidence scoring, review routing) is real and works today
+   regardless of what fills in `extract`.
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"
@@ -139,9 +153,9 @@ section. Highest-risk guesses, ranked:
   it's safe to leave untouched (all but `role-map.json` degrade safely).
 
 ## What Tyler needs to review before trusting any of this live
-1. **`config/finance/role-map.json`** — confirm the CRM-role mapping before
-   trusting real users see the right thing. This is the one piece of new
-   work with real information-exposure risk if wrong.
+1. ~~**`config/finance/role-map.json`**~~ — reviewed and confirmed 2026-08-06.
+   `rep`->crew checked against real headcount and kept; the rest of the
+   table reviewed and approved as-is, no changes.
 2. **`docs/spec/ROLES.md` and `docs/dictionary.json`** — same category,
    pre-existing guesses that now actually matter since pages are live.
 3. **Edit `classifier.rules.json` / `ingest.sources.json`** (via

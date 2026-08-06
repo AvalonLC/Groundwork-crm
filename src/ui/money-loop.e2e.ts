@@ -42,3 +42,23 @@ test("UM-04 simple vocabulary mode shows no raw accounting words for verb labels
   const text = await page.getByTestId("verb-tile-collect").innerText();
   expect(text).toMatch(/money to collect/i);
 });
+
+test("UM-05 owner sees a setup banner when no company policy row exists yet", async ({ page }) => {
+  await page.goto(`/money-loop?tenant_id=${TENANT}&role=owner`);
+  await expect(page.getByTestId("policy-setup-banner")).toBeVisible();
+  await page.getByTestId("policy-setup-banner").getByRole("link").click();
+  await expect(page).toHaveURL(/\/policy$/);
+});
+
+test("UM-06 banner disappears once a company policy row exists", async ({ page, request }) => {
+  await exec(request,
+    `INSERT INTO tenant_finance_policy (tenant_id, equipment_engine_active, materiality_threshold_cents, restated_target_cents, black_friday_date) VALUES (?,?,?,?,?)`,
+    [TENANT, 0, 50000, 0, null]);
+  await page.goto(`/money-loop?tenant_id=${TENANT}&role=owner`);
+  await expect(page.getByTestId("policy-setup-banner")).toHaveCount(0);
+});
+
+test("UM-07 non-owner roles never see the setup banner", async ({ page }) => {
+  await page.goto(`/money-loop?tenant_id=${TENANT}&role=crew`);
+  await expect(page.getByTestId("policy-setup-banner")).toHaveCount(0);
+});
