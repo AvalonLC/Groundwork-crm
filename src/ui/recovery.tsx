@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getLatestRecoverySnapshot, getOverheadAllocationAsOf } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Term, Card, Empty, Why, type FinanceAuthVars } from "./layout";
 
 export type RecoveryBindings = { FINANCE_DB: D1Database };
 
@@ -18,51 +18,110 @@ export const recoveryRouter = new Hono<{ Bindings: RecoveryBindings; Variables: 
 recoveryRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
-    return c.html(<Page title="Overhead Recovery"><p data-testid="denied">not available for this role</p></Page>, 403);
+    return c.html(
+      <Page title="Overhead Recovery" active="recovery" role={role}>
+        <Card>
+          <div class="fin-empty" data-testid="denied">
+            <div class="fin-empty-t">Not available for your role</div>
+            <div class="fin-empty-s">
+              Overhead recovery figures are limited to office and owner roles.
+            </div>
+          </div>
+        </Card>
+      </Page>,
+      403,
+    );
   }
 
   const db = c.env.FINANCE_DB;
   const snapshot = await getLatestRecoverySnapshot(db, tenant_id);
   const allocations = snapshot ? await getOverheadAllocationAsOf(db, tenant_id, snapshot.as_of) : [];
+  const pct = snapshot ? snapshot.pct_recovered_millionths / 10000 : null;
 
   return c.html(
-    <Page title="Overhead Recovery">
-      <section data-testid="thermometer">
-        <h1><Term term="overhead recovery" vocab={vocab} /></h1>
-        {snapshot ? (
+    <Page
+      title="Overhead Recovery"
+      active="recovery"
+      tenant={tenant_id || undefined}
+      role={role}
+      vocab={vocab}
+    >
+      <section class="fin-hero" data-testid="thermometer">
+        <div class="fin-hero-l"><Term term="overhead recovery" vocab={vocab} /></div>
+        {snapshot && pct !== null ? (
           <>
-            <div data-testid="pct-recovered" style={`width:${(snapshot.pct_recovered_millionths / 10000).toFixed(1)}%`}>
-              {(snapshot.pct_recovered_millionths / 10000).toFixed(1)}%
+            <div class="fin-hero-v" data-testid="pct-recovered" style={`width:${pct.toFixed(1)}%`}>
+              {pct.toFixed(1)}%
             </div>
-            <p data-testid="projected-date">
-              <Term term="restated target" vocab={vocab} /> by {snapshot.projected_black_friday}
-              {" "}(+/- {snapshot.confidence_days} days)
+            <p class="fin-hero-s" data-testid="projected-date">
+              <Term term="restated target" vocab={vocab} /> by{" "}
+              <strong>{snapshot.projected_black_friday}</strong> (+/- {snapshot.confidence_days} days)
+              {" "}— the date this year's fixed costs are fully covered.
+            </p>
+            <div class="fin-meter">
+              <div class="fin-meter-f" style={`width:${Math.min(pct, 100).toFixed(1)}%`}></div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div class="fin-hero-v" data-testid="pct-recovered">no snapshot yet</div>
+            <p class="fin-hero-s">
+              The nightly rollup hasn't produced a snapshot yet. Once it runs, this shows
+              how much of the year's overhead is covered and the date you get there.
             </p>
           </>
-        ) : <p data-testid="pct-recovered">no snapshot yet</p>}
+        )}
       </section>
 
-      <section data-testid="division-dates">
-        <p data-testid="division-dates-note">
+      <div class="fin-note" data-testid="division-dates">
+        <span data-testid="division-dates-note">
           Per-division projection dates are not yet computed upstream — only a
           tenant-level date is available. See docs/spec/UI-RECOVERY.md.
-        </p>
-      </section>
+        </span>
+      </div>
 
-      <section data-testid="absorption">
-        <h2><Term term="absorbed cost" vocab={vocab} /></h2>
-        <table>
-          <tbody>
-            {allocations.map((a) => (
-              <tr data-testid={`division-${a.division}`}>
-                <td>{a.division}</td>
-                <td data-testid={`absorbed-${a.division}`}>{(a.absorbed_cost_cents / 100).toFixed(2)}</td>
-                <td data-testid={`required-bill-rate-${a.division}`}>{(a.required_bill_rate_cents / 100).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <Card
+        title="Where the overhead is landing"
+        sub={vocab === "simple" ? "by part of the business" : "absorbed cost by division"}
+      >
+        <div data-testid="absorption">
+          {allocations.length === 0 ? (
+            <Empty
+              title="No division allocations yet"
+              hint="Once overhead pools are allocated and hours are posted, each part of the business shows what it has absorbed and what it must bill per hour to cover it."
+            />
+          ) : (
+            <table class="fin-table">
+              <thead>
+                <tr>
+                  <th>Division</th>
+                  <th>{vocab === "simple" ? "Overhead carried" : "Absorbed cost"}</th>
+                  <th>{vocab === "simple" ? "Must bill per hour" : "Required bill rate"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allocations.map((a) => (
+                  <tr data-testid={`division-${a.division}`}>
+                    <td><strong>{a.division}</strong></td>
+                    <td class="fin-num" data-testid={`absorbed-${a.division}`}>
+                      {(a.absorbed_cost_cents / 100).toFixed(2)}
+                    </td>
+                    <td class="fin-num" data-testid={`required-bill-rate-${a.division}`}>
+                      {(a.required_bill_rate_cents / 100).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <Why
+          what="How much of your fixed yearly cost each part of the business has covered so far."
+          source="Overhead pools allocated by their driver, charged against hours actually worked — never against invoices or payments."
+          matters="A division recovering too slowly drags the whole company's break-even date later, and that's invisible without this split."
+          moves="Selling and performing more hours in that division, or raising what you bill per hour."
+        />
+      </Card>
     </Page>,
   );
 });

@@ -1,22 +1,38 @@
 import { Hono } from "hono";
 import { getLatestRecoverySnapshot, getOpenActionItems } from "../db/repos";
-import type { ActionVerb } from "../db/schema";
-import { readPageArgs, Page, Term, type FinanceAuthVars } from "./layout";
+import type { ActionItem, ActionVerb } from "../db/schema";
+import { readPageArgs, Page, Term, Card, Empty, Confidence, Why, money, type FinanceAuthVars } from "./layout";
 
 export type MoneyLoopBindings = { FINANCE_DB: D1Database };
 
 const VERBS: ActionVerb[] = ["collect", "bill", "pay", "fix", "decide"];
 
+/** Plain-language framing per verb — simple mode must contain zero
+ * accounting words (CLAUDE.md UI invariant). Advanced mode falls through to
+ * the dictionary term, which is already the accounting-native wording. */
+const VERB_COPY: Record<ActionVerb, string> = {
+  collect: "Money to collect",
+  bill:    "Needs an invoice",
+  pay:     "Needs to be paid",
+  fix:     "Something's off",
+  decide:  "Needs your call",
+};
+
+const sum = (items: ActionItem[]) => items.reduce((t, i) => t + (i.amount_cents ?? 0), 0);
+
 /**
- * See docs/spec/UI-MONEYLOOP.md. Depth 1: runway hero (recovery_snapshot)
- * + five verb tiles. Depth 2: verb lanes (the open action_items per verb).
- * "Runway hero" content is a documented guess (UI-MONEYLOOP.md flagged this
- * in wave 0) — rendered here as the recovery snapshot summary.
+ * Control Center — the daily operating cockpit, and the center of gravity of
+ * the Financial section. See docs/spec/UI-MONEYLOOP.md.
+ *
+ * Depth 1 is the whole page for most users: one hero number, one
+ * plain-language sentence, five verb tiles. Depth 2 (the lanes) renders
+ * underneath rather than behind a navigation step, so nothing is more than
+ * a scroll away.
  */
 export const moneyLoopRouter = new Hono<{ Bindings: MoneyLoopBindings; Variables: FinanceAuthVars }>();
 
 moneyLoopRouter.get("/", async (c) => {
-  const { tenant_id, vocab } = readPageArgs(c);
+  const { tenant_id, role, vocab } = readPageArgs(c);
   const db = c.env.FINANCE_DB;
 
   const snapshot = await getLatestRecoverySnapshot(db, tenant_id);
@@ -24,40 +40,111 @@ moneyLoopRouter.get("/", async (c) => {
     verb, items: await getOpenActionItems(db, tenant_id, verb),
   })));
 
+  const pct = snapshot ? snapshot.pct_recovered_millionths / 10000 : null;
+  const openTotal = lanes.reduce((t, l) => t + l.items.length, 0);
+  const cashInPlay = lanes
+    .filter((l) => l.verb === "collect" || l.verb === "bill")
+    .reduce((t, l) => t + sum(l.items), 0);
+
   return c.html(
-    <Page title="Money Loop">
-      <section data-testid="runway-hero">
-        <h1><Term term="recovery snapshot" vocab={vocab} /></h1>
-        {snapshot ? (
-          <p data-testid="pct-recovered">{(snapshot.pct_recovered_millionths / 10000).toFixed(1)}%</p>
+    <Page
+      title="Control Center"
+      active="control"
+      tenant={tenant_id || undefined}
+      role={role}
+      vocab={vocab}
+    >
+      <section class="fin-hero" data-testid="runway-hero">
+        <div class="fin-hero-l"><Term term="recovery snapshot" vocab={vocab} /></div>
+        {pct !== null && snapshot ? (
+          <>
+            <div class="fin-hero-v" data-testid="pct-recovered">{pct.toFixed(1)}%</div>
+            <p class="fin-hero-s">
+              You've covered {pct.toFixed(1)}% of what it costs to keep the doors open this
+              year. At the current pace you get there around{" "}
+              <strong>{snapshot.projected_black_friday}</strong>, give or take{" "}
+              {snapshot.confidence_days} days.
+            </p>
+            <div class="fin-meter">
+              <div class="fin-meter-f" style={`width:${Math.min(pct, 100).toFixed(1)}%`}></div>
+            </div>
+          </>
         ) : (
-          <p data-testid="pct-recovered">no snapshot yet</p>
+          <>
+            <div class="fin-hero-v" data-testid="pct-recovered">no snapshot yet</div>
+            <p class="fin-hero-s">
+              Nothing has been rolled up yet. Once the nightly rollup runs, this becomes
+              the one number to manage the year against.
+            </p>
+          </>
         )}
       </section>
 
-      <section data-testid="verb-tiles">
+      <div class="fin-grid fin-grid-5" data-testid="verb-tiles">
         {lanes.map(({ verb, items }) => (
-          <article data-testid={`verb-tile-${verb}`}>
-            <h2><Term term={`action item: ${verb}`} vocab={vocab} /></h2>
-            <p data-testid={`verb-count-${verb}`}>{items.length}</p>
-          </article>
+          <a class="fin-tile" href={`#lane-${verb}`} data-testid={`verb-tile-${verb}`}>
+            <div class="fin-tile-l">
+              {vocab === "simple" ? VERB_COPY[verb] : <Term term={`action item: ${verb}`} vocab={vocab} />}
+            </div>
+            <div class="fin-tile-v" data-testid={`verb-count-${verb}`}>{items.length}</div>
+            <div class="fin-tile-m">{sum(items) > 0 ? money(sum(items)) : "nothing waiting"}</div>
+          </a>
         ))}
-      </section>
+      </div>
 
-      <section data-testid="verb-lanes">
-        {lanes.map(({ verb, items }) => (
-          <div data-testid={`lane-${verb}`}>
-            <h3>{verb}</h3>
-            <ul>
-              {items.map((item) => (
-                <li data-testid={`action-${item.id}`}>
-                  {item.id} — owner {item.owner_id} — due {item.sla_due} — confidence {item.confidence}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </section>
+      {openTotal > 0 ? (
+        <div class="fin-note">
+          <strong>{openTotal}</strong> open item{openTotal === 1 ? "" : "s"} across the five lanes
+          {cashInPlay > 0 ? <> · <strong>{money(cashInPlay)}</strong> of cash in play</> : null}.
+          Work them soonest-deadline first — the Work Queue sorts them that way.
+        </div>
+      ) : null}
+
+      <Card title="What needs doing" sub="grouped by what you'd actually do about it">
+        <div class="fin-grid fin-grid-3" data-testid="verb-lanes" style="margin-bottom:0">
+          {lanes.map(({ verb, items }) => (
+            <div class="fin-lane" id={`lane-${verb}`} data-testid={`lane-${verb}`}>
+              <div class="fin-lane-h">
+                <span>{vocab === "simple" ? VERB_COPY[verb] : verb}</span>
+                <span>{items.length}</span>
+              </div>
+              {items.length === 0 ? (
+                <div class="fin-lane-empty">nothing here — good</div>
+              ) : (
+                <ul>
+                  {items.map((item) => (
+                    <li data-testid={`action-${item.id}`}>
+                      <div>
+                        <strong>{item.amount_cents !== null ? money(item.amount_cents) : item.id}</strong>
+                        {" "}<Confidence level={item.confidence} />
+                      </div>
+                      <div style="color:var(--gw-muted);font-size:11.5px;margin-top:3px">
+                        owner {item.owner_id} · due {item.sla_due}
+                        {item.stale_components ? ` · stale: ${item.stale_components}` : ""}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+        <Why
+          what="Five lanes covering everything the system found that needs a person: collect, bill, pay, fix, decide."
+          source="Built from your jobs, invoices, time entries and transactions — anything that couldn't be resolved automatically lands here."
+          matters="If a finding doesn't turn into one of these five actions, it's noise. This is the whole list."
+          moves="Working an item closes it. New work, new invoices and nightly classification add to it."
+        />
+      </Card>
+
+      {openTotal === 0 ? (
+        <Card>
+          <Empty
+            title="Nothing needs you right now"
+            hint="No open items in any lane. As work gets done, invoiced and classified, anything needing a person shows up here."
+          />
+        </Card>
+      ) : null}
     </Page>,
   );
 });

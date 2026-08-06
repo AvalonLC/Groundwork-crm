@@ -813,7 +813,7 @@ const _gwWsNameToId = {
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
   Sales:       ['pipeline','lead','clients','estimates','communications'],
-  Financial:   ['financialHub','invoices','gwReviews','gwStripe','financeOS'],
+  Financial:   ['financialHub','finControl','finQueue','invoices','gwStripe'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Learning:    ['academy'],
   Admin:       ['settings','userManagement'],
@@ -989,17 +989,29 @@ window.gwRecords = gwRecords;
 // ── Financial workspace ───────────────────────────────────────────────────────
 function gwFinancial(tab) {
   tab = tab || 'financialHub';
+  // Two halves, in this order on purpose. The control surfaces (what needs
+  // doing, what things cost, whether the year is on track) come first because
+  // that's what an owner opens Financial to find out; the record lists that
+  // used to lead the menu stay exactly where they were, just below. The
+  // control pages are real page navigations (href) into /finance/* rather
+  // than SPA tabs — see _gwSetHeader.
   _gwSetHeader('Financial', [
     {id:'financialHub',       label:'Overview'},
+    {id:'finControl',         label:'Control Center',    href:'/finance/money-loop'},
+    {id:'finQueue',           label:'Work Queue',        href:'/finance/queue'},
+    {id:'finJobCost',         label:'Job Costing',       href:'/finance/job-costing'},
+    {id:'finRecovery',        label:'Overhead Recovery', href:'/finance/recovery'},
+    {id:'finBudget',          label:'Budget & Rates',    href:'/finance/budget'},
+    {divider:true},
     {id:'invoices',           label:'Invoices'},
-    {id:'gwReviews',          label:'Reviews'},
     {id:'gwStripe',           label:'Payments'},
     {id:'payments',           label:'Ledger'},
     {id:'deposits',           label:'Deposits'},
     {id:'statements',         label:'Statements'},
+    {id:'gwReviews',          label:'Reviews'},
     {id:'financialActivity',  label:'Activity'},
     {divider:true},
-    {id:'financeOS',          label:'Finance OS', href:'/finance/money-loop'},
+    {id:'finConfig',          label:'Setup & Config',    href:'/finance/config'},
   ], tab);
   if (tab === 'financialHub')          (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
   else if (tab === 'invoices')         (typeof gwInvoices==='function') ? gwInvoices() : _gwTabStub('Invoices');

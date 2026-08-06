@@ -26,7 +26,17 @@ function escapeHtml(s: string): string {
 configAdminRouter.get("/", async (c) => {
   const { tenant_id, role } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) {
-    return c.html(<Page title="Finance Config"><p data-testid="denied">not available for this role</p></Page>, 403);
+    return c.html(
+      <Page title="Setup & Config" active="config" role={role}>
+        <section class="fin-card">
+          <div class="fin-empty" data-testid="denied">
+            <div class="fin-empty-t">Not available for your role</div>
+            <div class="fin-empty-s">Financial configuration is owner-only.</div>
+          </div>
+        </section>
+      </Page>,
+      403,
+    );
   }
 
   const configs = await listEffectiveConfigs(c.env.FINANCE_DB, tenant_id);
@@ -37,27 +47,62 @@ configAdminRouter.get("/", async (c) => {
   const basePath = c.req.path;
 
   return c.html(
-    <Page title="Finance Config">
-      <h1>Finance Config</h1>
-      {notice && <p data-testid="notice">{notice}</p>}
+    <Page
+      title="Setup & Config"
+      active="config"
+      tenant={tenant_id || undefined}
+      role={role}
+    >
+      {notice && (
+        <div class="fin-note" data-testid="notice" style={notice.startsWith("Error") ? "border-left-color:var(--gw-rose)" : ""}>
+          {notice}
+        </div>
+      )}
+      <div class="fin-note">
+        These files are the platform defaults every company starts from. Saving here
+        writes an override for <strong>this company only</strong> — it never changes
+        another tenant's view or the shipped default. Reset puts it back.
+      </div>
       {configs.map((cfg) => (
-        <section data-testid={`config-${cfg.name}`}>
-          <h2>{cfg.name}</h2>
-          <p data-testid={`status-${cfg.name}`}>
+        <section class="fin-card" data-testid={`config-${cfg.name}`}>
+          <div class="fin-card-h">
+            <h2 class="fin-card-t">{cfg.name}</h2>
+            <span class={`fin-badge ${cfg.is_override ? "b-med" : "b-human"}`}>
+              {cfg.is_override ? "overridden" : "default"}
+            </span>
+          </div>
+          <p class="fin-card-s" data-testid={`status-${cfg.name}`} style="margin-bottom:10px">
             {cfg.is_override
               ? `Overridden (${cfg.override_scope === "__global__" ? "global" : "this tenant"}, by ${cfg.updated_by ?? "unknown"} at ${cfg.updated_at})`
               : "Using static default (not overridden)"}
           </p>
           <form method="post" action={`${basePath}/${cfg.name}?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`}>
-            <textarea name="config_json" rows={12} cols={80} data-testid={`editor-${cfg.name}`}>
+            <textarea
+              name="config_json"
+              rows={12}
+              cols={80}
+              data-testid={`editor-${cfg.name}`}
+              style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;padding:12px;border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);background:var(--gw-surface-2);color:var(--gw-ink)"
+            >
               {escapeHtml(JSON.stringify(cfg.value, null, 2))}
             </textarea>
-            <br />
-            <button type="submit" data-testid={`save-${cfg.name}`}>Save</button>
+            <button
+              type="submit"
+              data-testid={`save-${cfg.name}`}
+              style="margin-top:10px;background:var(--gw-pine);color:#fff;border:0;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer"
+            >
+              Save
+            </button>
           </form>
           {cfg.is_override && (
-            <form method="post" action={`${basePath}/${cfg.name}/reset?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`}>
-              <button type="submit" data-testid={`reset-${cfg.name}`}>Reset to default</button>
+            <form method="post" action={`${basePath}/${cfg.name}/reset?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`} style="margin-top:8px">
+              <button
+                type="submit"
+                data-testid={`reset-${cfg.name}`}
+                style="background:none;color:var(--gw-muted);border:1px solid var(--gw-line-strong);border-radius:var(--gw-r-sm);padding:8px 16px;font-size:12.5px;font-weight:600;cursor:pointer"
+              >
+                Reset to default
+              </button>
             </form>
           )}
         </section>
