@@ -205,6 +205,25 @@ export async function insertWorkItem(
           row.estimate_cents, row.completed_at).run();
 }
 
+/** Same shape as insertWorkItem, but re-syncable — the CRM work order this
+ * mirrors can be created once and updated many times. */
+export async function upsertWorkItem(
+  db: D1Database, row: Omit<WorkItem, "created_at">,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO work_item (id, tenant_id, job_id, description, status, estimate_cents, completed_at)
+    VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET
+      tenant_id = excluded.tenant_id,
+      job_id = excluded.job_id,
+      description = excluded.description,
+      status = excluded.status,
+      estimate_cents = excluded.estimate_cents,
+      completed_at = excluded.completed_at
+  `).bind(row.id, row.tenant_id, row.job_id, row.description, row.status,
+          row.estimate_cents, row.completed_at).run();
+}
+
 export async function getWorkItem(db: D1Database, tenantId: string, id: string): Promise<WorkItem | null> {
   return db.prepare(`SELECT * FROM work_item WHERE tenant_id = ? AND id = ?`)
     .bind(tenantId, id).first<WorkItem>();

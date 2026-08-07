@@ -98,6 +98,18 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    to verify accuracy against. The rest of the pipeline (hash dedupe, R2
    storage, confidence scoring, review routing) is real and works today
    regardless of what fills in `extract`.
+7. **`GET /api/work-orders`'s `?rep_id=` filter references a column that
+   doesn't exist.** `src/index.tsx` (search `assigned_rep_id`) builds
+   `... AND (wo.assigned_rep_id = ? OR ...)` when `rep_id` is passed as a
+   query param, but no migration ever adds `assigned_rep_id` to
+   `work_orders` — only `crew_id` and the `work_order_employees` join table
+   exist. Any caller passing `?rep_id=` will get a SQL error
+   (`no such column: wo.assigned_rep_id`) instead of results. Found while
+   researching the CRM→Finance OS write-through connectors (2026-08-07);
+   marked with a `TODO(bug)` at the call site but not fixed there — needs a
+   real decision (add the column and a writer for it, or drop the OR-branch
+   in favor of the existing `work_order_employees` join) rather than a
+   drive-by patch.
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"

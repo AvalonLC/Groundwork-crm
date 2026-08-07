@@ -34,6 +34,7 @@ import { ratesRouter } from './api/rates'
 import { actionsRouter } from './api/actions'
 import { financeUiRouter } from './ui/mount'
 import { cronTriggerRouter } from './api/cron-trigger'
+import { syncWorkOrderToFinance, syncTimeEntryToFinance, markOpportunityCollectedFromInvoice } from './bridge/finance-sync'
 
 
 type Bindings = { DB: D1Database; FINANCE_DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -3978,6 +3979,7 @@ app.post('/api/time/clock-out', requireAuth, async (c) => {
     `UPDATE time_entries SET clock_out=?, duration_min=?, notes=?, updated_at=datetime('now')
      WHERE id=? AND company_id=?`
   ).bind(now.toISOString(), durMin, b.notes ?? entry.notes, entry.id, companyId).run()
+  await syncTimeEntryToFinance(c.env.DB, c.env.FINANCE_DB, companyId, repId, entry, durMin)
   return json(c, { id: entry.id, duration_min: durMin })
 })
 
@@ -4005,6 +4007,9 @@ app.post('/api/time/clock-out/:entryId', requireAuth, async (c) => {
     `UPDATE time_entries SET clock_out=?, duration_min=?, notes=?, updated_at=datetime('now')
      WHERE id=? AND company_id=?`
   ).bind(now.toISOString(), durMin, b.notes ?? entry.notes, entry.id, companyId).run()
+  // entry.rep_id, not the caller's repId — an admin/office_manager may be
+  // force-closing someone else's entry (see comment above this route).
+  await syncTimeEntryToFinance(c.env.DB, c.env.FINANCE_DB, companyId, entry.rep_id, entry, durMin)
   return json(c, { id: entry.id, duration_min: durMin })
 })
 
@@ -8709,6 +8714,9 @@ app.put('/api/invoices/:id', requireAuth, async (c) => {
   vals.push(id, companyId)
   await db.prepare(`UPDATE invoices SET ${sets.join(', ')} WHERE id = ? AND company_id = ?`)
     .bind(...vals).run()
+  if (b.status === 'paid') {
+    await markOpportunityCollectedFromInvoice(db, companyId, id)
+  }
   return c.json({ ok: true })
 })
 
@@ -8769,6 +8777,9 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
               ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, companyId, invoiceId, inv.client_id, amountDollars, amountDollars,
                 'succeeded', 'card', pi.id, `Autopay — ${ap.pm_label || 'saved method'}`, inv.invoice_number || '').run()
+              if (newBalance <= 0) {
+                await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, inv.estimate_id)
+              }
               autopay = { attempted: true, paid: true, amount: amountDollars, pm_label: ap.pm_label || '' }
             } else {
               autopay = { attempted: true, paid: false, reason: pi?.error?.message || `Payment status: ${pi?.status || 'failed'}` }
@@ -8808,6 +8819,10 @@ app.post('/api/invoices/:id/record-payment', requireAuth, async (c) => {
     VALUES (?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`)
     .bind(payId, companyId, id, inv.client_id||'', b.amount||0, b.amount||0, 'succeeded',
       b.method||'check', b.note||'Manual payment recorded').run()
+
+  if (newStatus === 'paid') {
+    await markOpportunityCollectedFromInvoice(db, companyId, id, inv.estimate_id)
+  }
 
   return c.json({ ok: true, status: newStatus, balance_due: Math.max(0, newBalance) })
 })
@@ -8991,6 +9006,10 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
        VALUES (?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
     ).bind(pymtId, companyId, invoiceId, inv.client_id||'', amountDollars, amountDollars,
       'succeeded', 'card', `Stripe charge — ${pi.id}`).run()
+
+    if (newStatus === 'paid') {
+      await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, inv.estimate_id)
+    }
 
     return c.json({ ok: true, payment_intent_id: pi.id, status: newStatus, balance_due: newBalance, amount_paid: newPaid })
   } catch (e: any) {
@@ -11235,7 +11254,12 @@ app.post('/api/stripe/webhook', async (c) => {
         const inv = await db.prepare(`SELECT * FROM invoices WHERE id=? AND company_id=?`).bind(invoiceId, companyId).first() as any
         if (inv) {
           const newPaid = (inv.amount_paid || 0) + amountPaid / 100
-          const newStatus = newPaid >= (inv.amount_total || inv.amount) ? 'paid' : 'partial'
+          // Was comparing against inv.amount_total/inv.amount, neither of which
+          // exists on the invoices table (the real column is `total`) — that
+          // comparison was always false, so this path never actually reached
+          // 'paid'. Fixed as part of wiring the collected-flag write-through
+          // below, since this is the primary automated payment path.
+          const newStatus = newPaid >= (inv.total || 0) ? 'paid' : 'partial'
           await db.prepare(`UPDATE invoices SET amount_paid=?, status=? WHERE id=? AND company_id=?`)
             .bind(newPaid, newStatus, invoiceId, companyId).run()
           // Log to payments table
@@ -11243,6 +11267,9 @@ app.post('/api/stripe/webhook', async (c) => {
           await db.prepare(`INSERT OR IGNORE INTO payments (id, company_id, invoice_id, amount, method, stripe_payment_intent_id, status, paid_at)
             VALUES (?,?,?,?,?,?,'completed',?)`).bind(pymtId, companyId, invoiceId, amountPaid/100, 'card',
             session.payment_intent || '', new Date().toISOString()).run()
+          if (newStatus === 'paid') {
+            await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, inv.estimate_id)
+          }
         }
       }
     }
@@ -11262,6 +11289,11 @@ app.post('/api/stripe/webhook', async (c) => {
 
 // GET /api/work-orders — list work orders (optional ?status=&crew_id=&rep_id=&date_from=&date_to=)
 // rep_id filter: returns WOs where assigned_rep_id matches OR crew contains the rep (for field-role scoping)
+// TODO(bug): wo.assigned_rep_id does not exist anywhere in the work_orders
+// schema (no migration ever adds it) — the ?rep_id= branch below will throw
+// a SQL error ("no such column: wo.assigned_rep_id") the first time it's
+// actually hit. Found during the write-through connector build; tracked in
+// docs/PUNCHLIST.md, not fixed here (unrelated to that work).
 app.get('/api/work-orders', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
@@ -11356,6 +11388,7 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, id, eId, companyId).run()
   }
+  await syncWorkOrderToFinance(db, c.env.FINANCE_DB, companyId, id)
   return c.json({ ok: true, id, wo_number: woNum })
 })
 
@@ -11464,6 +11497,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
         .bind(eid, woId, eId, companyId).run()
     }
   }
+  await syncWorkOrderToFinance(db, c.env.FINANCE_DB, companyId, woId)
   return c.json({ ok: true })
 })
 
@@ -12118,8 +12152,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260806b011">
-  <link rel="stylesheet" href="/js/premium.css?v=20260806b011">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12142,10 +12176,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260806b011"></script>
-  <script src="/js/client_portal.js?v=20260806b011"></script>
-  <script src="/js/platform_core.js?v=20260806b011"></script>
-  <script src="/js/client_portal.js?v=20260806b011"></script>  <script>
+  <script src="/js/platform_core.js?v=20260807b001"></script>
+  <script src="/js/client_portal.js?v=20260807b001"></script>
+  <script src="/js/platform_core.js?v=20260807b001"></script>
+  <script src="/js/client_portal.js?v=20260807b001"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12779,12 +12813,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260806b011">
-  <link rel="stylesheet" href="/js/styles.css?v=20260806b011">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260806b011">
-  <link rel="stylesheet" href="/js/premium.css?v=20260806b011">
-  <link rel="stylesheet" href="/js/styles.css?v=20260806b011">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260806b011">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260807b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260807b001">
+  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">
+  <link rel="stylesheet" href="/js/styles.css?v=20260807b001">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260807b001">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13343,45 +13377,45 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260806b011"></script>
-<script src="/js/sales-process.js?v=20260806b011"></script>
-<script src="/js/richtext.js?v=20260806b011"></script>
-<script src="/js/db.js?v=20260806b011"></script>
-<script src="/js/data.js?v=20260806b011"></script>
-<script src="/js/reps.js?v=20260806b011"></script>
-<script src="/js/record-page.js?v=20260806b011"></script>
-<script src="/js/academy.js?v=20260806b011"></script>
-<script src="/js/task_engine.js?v=20260806b011"></script>
-<script src="/js/gw_i18n.js?v=20260806b011"></script>
-<script src="/js/app_premium.js?v=20260806b011"></script>
-<script src="/js/estimates.js?v=20260806b011"></script>
-<script src="/js/multiday.js?v=20260806b011"></script>
-<script src="/js/proposals.js?v=20260806b011"></script>
-<script src="/js/pricing.js?v=20260806b011"></script>
-<script src="/js/invoices.js?v=20260806b011"></script>
-<script src="/js/csv_import.js?v=20260806b011"></script>
-<script src="/js/onboarding.js?v=20260806b011"></script>
-<script src="/js/gw_copilot.js?v=20260806b011"></script>
-<script src="/js/groundwork_ai.js?v=20260806b011"></script>
-<script src="/js/recurring_plans.js?v=20260806b011"></script>
-<script src="/js/reviews.js?v=20260806b011"></script>
-<script src="/js/stripe.js?v=20260806b011"></script>
-<script src="/js/email.js?v=20260806b011"></script>
-<script src="/js/notifications.js?v=20260806b011"></script>
-<script src="/js/integrations.js?v=20260806b011"></script>
-<script src="/js/sms.js?v=20260806b011"></script>
-<script src="/js/calendar_sync.js?v=20260806b011"></script>
-<script src="/js/ai_followup.js?v=20260806b011"></script>
-<script src="/js/user_management.js?v=20260806b011"></script>
-<script src="/js/platform_admin.js?v=20260806b011"></script>
-<script src="/js/time_tracker.js?v=20260806b011"></script>
-<script src="/js/field_workday.js?v=20260806b011"></script>
-<script src="/js/platform_core.js?v=20260806b011"></script>
-<script src="/js/approval_engine.js?v=20260806b011"></script>
-<script src="/js/automation_engine.js?v=20260806b011"></script>
-<script src="/js/client_portal.js?v=20260806b011"></script>
-<script src="/js/field_mode.js?v=20260806b011"></script>
-<script src="/js/assets_hub.js?v=20260806b011"></script><script>
+<script src="/js/gw-icons.js?v=20260807b001"></script>
+<script src="/js/sales-process.js?v=20260807b001"></script>
+<script src="/js/richtext.js?v=20260807b001"></script>
+<script src="/js/db.js?v=20260807b001"></script>
+<script src="/js/data.js?v=20260807b001"></script>
+<script src="/js/reps.js?v=20260807b001"></script>
+<script src="/js/record-page.js?v=20260807b001"></script>
+<script src="/js/academy.js?v=20260807b001"></script>
+<script src="/js/task_engine.js?v=20260807b001"></script>
+<script src="/js/gw_i18n.js?v=20260807b001"></script>
+<script src="/js/app_premium.js?v=20260807b001"></script>
+<script src="/js/estimates.js?v=20260807b001"></script>
+<script src="/js/multiday.js?v=20260807b001"></script>
+<script src="/js/proposals.js?v=20260807b001"></script>
+<script src="/js/pricing.js?v=20260807b001"></script>
+<script src="/js/invoices.js?v=20260807b001"></script>
+<script src="/js/csv_import.js?v=20260807b001"></script>
+<script src="/js/onboarding.js?v=20260807b001"></script>
+<script src="/js/gw_copilot.js?v=20260807b001"></script>
+<script src="/js/groundwork_ai.js?v=20260807b001"></script>
+<script src="/js/recurring_plans.js?v=20260807b001"></script>
+<script src="/js/reviews.js?v=20260807b001"></script>
+<script src="/js/stripe.js?v=20260807b001"></script>
+<script src="/js/email.js?v=20260807b001"></script>
+<script src="/js/notifications.js?v=20260807b001"></script>
+<script src="/js/integrations.js?v=20260807b001"></script>
+<script src="/js/sms.js?v=20260807b001"></script>
+<script src="/js/calendar_sync.js?v=20260807b001"></script>
+<script src="/js/ai_followup.js?v=20260807b001"></script>
+<script src="/js/user_management.js?v=20260807b001"></script>
+<script src="/js/platform_admin.js?v=20260807b001"></script>
+<script src="/js/time_tracker.js?v=20260807b001"></script>
+<script src="/js/field_workday.js?v=20260807b001"></script>
+<script src="/js/platform_core.js?v=20260807b001"></script>
+<script src="/js/approval_engine.js?v=20260807b001"></script>
+<script src="/js/automation_engine.js?v=20260807b001"></script>
+<script src="/js/client_portal.js?v=20260807b001"></script>
+<script src="/js/field_mode.js?v=20260807b001"></script>
+<script src="/js/assets_hub.js?v=20260807b001"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

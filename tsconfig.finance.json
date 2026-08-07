@@ -20,6 +20,7 @@
     "src/ai/**/*.ts",
     "src/ui/**/*.tsx",
     "src/ui/**/*.ts",
+    "src/bridge/**/*.ts",
     "scripts/**/*.js"
   ],
   // Test files reference implementation modules from later waves/tasks (e.g.
