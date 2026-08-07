@@ -12,6 +12,9 @@ import { obligationsRouter } from "./obligations";
 import { reconciliationRouter } from "./reconciliation";
 import { forecastRouter } from "./forecast";
 import { documentsRouter } from "./documents";
+import { invoicesPaymentsRouter } from "./invoices-payments";
+import { ledgerRouter } from "./ledger";
+import { onboardingRouter } from "./onboarding";
 
 /**
  * Standalone dev/e2e-test entry for Finance OS UI pages — NOT part of the
@@ -47,6 +50,9 @@ app.route("/obligations", obligationsRouter);
 app.route("/reconciliation", reconciliationRouter);
 app.route("/forecast", forecastRouter);
 app.route("/documents", documentsRouter);
+app.route("/invoices-payments", invoicesPaymentsRouter);
+app.route("/ledger", ledgerRouter);
+app.route("/onboarding", onboardingRouter);
 app.route("/api/config", configAdminApiRouter);
 
 // ── Test-only seeding endpoints. Only reachable on this dev-only server,
@@ -56,6 +62,7 @@ app.route("/api/config", configAdminApiRouter);
 // enforces foreign keys, so deleting a referenced row first fails the batch.
 const FINANCE_TABLES = [
   "classification_finding", "receipt", "job_cost_ledger", "action_item",
+  "upload_batch",
   "time_entry", "recovery_snapshot", "overhead_allocation", "overhead_pool",
   "equipment_rate_profile", "labor_rate_profile", "work_item", "tenant_finance_policy",
   "finance_config_override",
@@ -86,7 +93,13 @@ app.post("/test/exec", async (c) => {
 app.post("/test/reset-crm", async (c) => {
   const { company_id } = await c.req.json<{ company_id: string }>();
   if (!company_id) return c.json({ error: "company_id is required" }, 400);
-  await c.env.DB.prepare(`DELETE FROM invoices WHERE company_id = ?`).bind(company_id).run();
+  // payments before invoices: payments.invoice_id references invoices.id in
+  // spirit (no FK constraint declared, but deleting children first keeps the
+  // same discipline as the FINANCE_TABLES order above).
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM payments WHERE company_id = ?`).bind(company_id),
+    c.env.DB.prepare(`DELETE FROM invoices WHERE company_id = ?`).bind(company_id),
+  ]);
   return c.json({ ok: true });
 });
 

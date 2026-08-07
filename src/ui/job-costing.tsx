@@ -41,7 +41,7 @@ jobCostingRouter.get("/", async (c) => {
   return c.html(
     <Page
       title={jobId ? `Job ${jobId}` : "Job Costing"}
-      active="jobcost"
+      active="finJobCost"
       eyebrow="Financial · Job Costing"
       tenant={tenant_id || undefined}
       role={role}

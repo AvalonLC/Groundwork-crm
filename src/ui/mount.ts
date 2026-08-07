@@ -12,6 +12,9 @@ import { obligationsRouter } from "./obligations";
 import { reconciliationRouter } from "./reconciliation";
 import { forecastRouter } from "./forecast";
 import { documentsRouter } from "./documents";
+import { invoicesPaymentsRouter } from "./invoices-payments";
+import { ledgerRouter } from "./ledger";
+import { onboardingRouter } from "./onboarding";
 import type { FinanceAuthVars } from "./layout";
 
 /**
@@ -47,4 +50,7 @@ financeUiRouter.route("/obligations", obligationsRouter);
 financeUiRouter.route("/reconciliation", reconciliationRouter);
 financeUiRouter.route("/forecast", forecastRouter);
 financeUiRouter.route("/documents", documentsRouter);
+financeUiRouter.route("/invoices-payments", invoicesPaymentsRouter);
+financeUiRouter.route("/ledger", ledgerRouter);
+financeUiRouter.route("/onboarding", onboardingRouter);
 financeUiRouter.route("/api/config", configAdminApiRouter);

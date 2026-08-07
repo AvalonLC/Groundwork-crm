@@ -19,7 +19,7 @@ budgetRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) {
     return c.html(
-      <Page title="Budget & Rates" active="budget" role={role}>
+      <Page title="Budget & Rates" active="finBudget" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -43,7 +43,7 @@ budgetRouter.get("/", async (c) => {
   return c.html(
     <Page
       title="Budget & Rates"
-      active="budget"
+      active="finBudget"
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}

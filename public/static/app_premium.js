@@ -813,7 +813,7 @@ const _gwWsNameToId = {
 const _GW_MOBILE_TABS = {
   Dashboard:   ['today','fieldDashboard'],
   Sales:       ['pipeline','lead','clients','estimates','communications'],
-  Financial:   ['financialHub','finControl','finQueue','invoices','gwStripe'],
+  Financial:   ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
   Learning:    ['academy'],
   Admin:       ['settings','userManagement'],
@@ -989,39 +989,43 @@ window.gwRecords = gwRecords;
 // ── Financial workspace ───────────────────────────────────────────────────────
 function gwFinancial(tab) {
   tab = tab || 'financialHub';
-  // Two halves, in this order on purpose. The control surfaces (what needs
-  // doing, what things cost, whether the year is on track) come first because
-  // that's what an owner opens Financial to find out; the record lists that
-  // used to lead the menu stay exactly where they were, just below. The
-  // control pages are real page navigations (href) into /finance/* rather
-  // than SPA tabs — see _gwSetHeader.
+  // Eight top-level items, in this order, per the confirmed nav-consolidation
+  // plan (2026-08-06) — the SAME 8 destinations src/ui/layout.tsx's Finance OS
+  // top tab-strip shows, so navigating in from either side reads as continuing
+  // the same tab row rather than leaving into a different app. All 8 are real
+  // page navigations (href) into /finance/*, not SPA tabs, so there's nothing
+  // left for the dispatch below to branch on except the Overview fallback.
+  //
+  // Invoices, Payments (gwStripe), Deposits, Statements, Reviews, and Activity
+  // are no longer separate top-level tabs:
+  //   - Invoices & Payments and Ledger absorb the first four — see
+  //     src/ui/invoices-payments.tsx and src/ui/ledger.tsx. Deposits/
+  //     Statements have no D1 table or API route (confirmed: avalonDeposits/
+  //     avalonStatements are localStorage-only) — Ledger says so honestly
+  //     rather than faking server-rendered content for data that isn't
+  //     tracked server-side, and links out to the existing show('deposits')/
+  //     show('statements') screens instead.
+  //   - Activity folds into Ledger (same three data sources, rebuilt against
+  //     real D1 instead of per-browser localStorage).
+  //   - Reviews moves out entirely — it never had a real top-level home
+  //     outside Financial (the Command Center's Reviews widget is the only
+  //     other surface; its dead show('reviews') link is fixed below to
+  //     show('gwReviews')). Its render function and data model (real D1,
+  //     review_requests/review_settings) are untouched, just no longer
+  //     reachable from this tab strip.
   _gwSetHeader('Financial', [
-    {id:'financialHub',       label:'Overview'},
-    {id:'finControl',         label:'Control Center',    href:'/finance/money-loop'},
-    {id:'finQueue',           label:'Work Queue',        href:'/finance/queue'},
-    {id:'finJobCost',         label:'Job Costing',       href:'/finance/job-costing'},
-    {id:'finRecovery',        label:'Overhead Recovery', href:'/finance/recovery'},
-    {id:'finBudget',          label:'Budget & Rates',    href:'/finance/budget'},
+    {id:'finControl',    label:'Money Loop',          href:'/finance/money-loop'},
+    {id:'finQueue',       label:'Work Queue',          href:'/finance/queue'},
+    {id:'finJobCost',     label:'Job Costing',         href:'/finance/job-costing'},
+    {id:'finBudget',      label:'Budget & Rates',      href:'/finance/budget'},
+    {id:'finRecovery',    label:'Overhead Recovery',   href:'/finance/recovery'},
+    {id:'finInvPay',      label:'Invoices & Payments', href:'/finance/invoices-payments'},
+    {id:'finLedger',      label:'Ledger',              href:'/finance/ledger'},
+    {id:'finDocuments',   label:'Documents',           href:'/finance/documents'},
     {divider:true},
-    {id:'invoices',           label:'Invoices'},
-    {id:'gwStripe',           label:'Payments'},
-    {id:'payments',           label:'Ledger'},
-    {id:'deposits',           label:'Deposits'},
-    {id:'statements',         label:'Statements'},
-    {id:'gwReviews',          label:'Reviews'},
-    {id:'financialActivity',  label:'Activity'},
-    {divider:true},
-    {id:'finConfig',          label:'Setup & Config',    href:'/finance/config'},
+    {id:'finConfig',      label:'Setup & Config',      href:'/finance/config'},
   ], tab);
-  if (tab === 'financialHub')          (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
-  else if (tab === 'invoices')         (typeof gwInvoices==='function') ? gwInvoices() : _gwTabStub('Invoices');
-  else if (tab === 'gwReviews')        (typeof window.gwReviews==='function') ? window.gwReviews() : _gwTabStub('Reviews');
-  else if (tab === 'gwStripe')         (typeof window.gwStripe==='function') ? window.gwStripe() : _gwTabStub('Payments');
-  else if (tab === 'payments')         (typeof payments==='function') ? payments() : _gwTabStub('Ledger');
-  else if (tab === 'deposits')         (typeof deposits==='function') ? deposits() : _gwTabStub('Deposits');
-  else if (tab === 'statements')       (typeof statements==='function') ? statements() : _gwTabStub('Statements');
-  else if (tab === 'financialActivity')(typeof financialActivity==='function') ? financialActivity() : _gwTabStub('Activity');
-  else financialHub();
+  (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
 }
 window.gwFinancial = gwFinancial;
 

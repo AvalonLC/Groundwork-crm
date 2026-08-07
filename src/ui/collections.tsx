@@ -42,7 +42,7 @@ collectionsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Collections" active="collections" role={role}>
+      <Page title="Collections" active="finQueue" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -65,7 +65,7 @@ collectionsRouter.get("/", async (c) => {
   const overdueOwed = overdue.reduce((t, i) => t + i.balance_due, 0);
 
   return c.html(
-    <Page title="Collections" active="collections" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Collections" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab}>
       <div class="fin-note">
         Reads the CRM's own invoices directly — this is the one Finance OS page that
         does, since there's no receivables table of its own. Read-only: nothing here

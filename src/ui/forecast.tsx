@@ -23,7 +23,7 @@ forecastRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Forecast" active="forecast" role={role}>
+      <Page title="Forecast" active="finControl" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -39,7 +39,7 @@ forecastRouter.get("/", async (c) => {
   const pct = snapshot ? snapshot.pct_recovered_millionths / 10000 : null;
 
   return c.html(
-    <Page title="Forecast" active="forecast" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Forecast" active="finControl" tenant={tenant_id || undefined} role={role} vocab={vocab}>
       <section class="fin-hero" data-testid="forecast-hero">
         <div class="fin-hero-l">Projected coverage date</div>
         {snapshot && pct !== null ? (

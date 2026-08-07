@@ -31,7 +31,7 @@ export const documentUploadRouter = new Hono<{ Bindings: DocumentUploadBindings;
 
 function deniedPage(role: string) {
   return (
-    <Page title="Upload Documents" active="config" role={role}>
+    <Page title="Upload Documents" active="finConfig" role={role}>
       <Card>
         <div class="fin-empty" data-testid="denied">
           <div class="fin-empty-t">Not available for your role</div>
@@ -158,7 +158,7 @@ function renderPage(
   // outside the live app mount.
   const qs = `?tenant_id=${encodeURIComponent(tenant ?? "")}&role=${role}`;
   return (
-    <Page title="Upload Documents" active="config" tenant={tenant} role={role} vocab={vocab}>
+    <Page title="Upload Documents" active="finConfig" tenant={tenant} role={role} vocab={vocab}>
       <div class="fin-note">
         Financial exports get checked against known formats and reconciled against your
         overhead pools. Receipts get stored and deduped by content, with anything uncertain

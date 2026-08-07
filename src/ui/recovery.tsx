@@ -19,7 +19,7 @@ recoveryRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Overhead Recovery" active="recovery" role={role}>
+      <Page title="Overhead Recovery" active="finRecovery" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -41,7 +41,7 @@ recoveryRouter.get("/", async (c) => {
   return c.html(
     <Page
       title="Overhead Recovery"
-      active="recovery"
+      active="finRecovery"
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}

@@ -31,7 +31,7 @@ policySetupRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) {
     return c.html(
-      <Page title="Company Policy" active="config" role={role}>
+      <Page title="Company Policy" active="finConfig" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -60,7 +60,7 @@ policySetupRouter.get("/", async (c) => {
   const basePath = c.req.path;
 
   return c.html(
-    <Page title="Company Policy" active="config" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Company Policy" active="finConfig" tenant={tenant_id || undefined} role={role} vocab={vocab}>
       {notice && (
         <div class="fin-note" data-testid="notice" style={notice.startsWith("Error") ? "border-left-color:var(--gw-rose)" : ""}>
           {notice}

@@ -21,7 +21,7 @@ reconciliationRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Reconciliation" active="recon" role={role}>
+      <Page title="Reconciliation" active="finControl" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -37,7 +37,7 @@ reconciliationRouter.get("/", async (c) => {
   const unresolved = findings.filter((f) => !f.action_item_id);
 
   return c.html(
-    <Page title="Reconciliation" active="recon" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Reconciliation" active="finControl" tenant={tenant_id || undefined} role={role} vocab={vocab}>
       <div class="fin-grid fin-grid-3">
         <div class="fin-tile">
           <div class="fin-tile-l">Findings</div>

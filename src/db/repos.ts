@@ -2,7 +2,7 @@ import type {
   ActionItem, ActionVerb, ClassificationFinding, EquipmentRateProfile,
   FinanceConfigOverride, JobCostLedger, LaborRateProfile, OverheadAllocation, OverheadPool,
   RateConfidence, Receipt, RecoverySnapshot, TenantFinancePolicy, TimeEntry,
-  WorkItem,
+  UploadBatch, UploadDomain, WorkItem,
 } from "./schema";
 
 export const GLOBAL_CONFIG_SCOPE = "__global__";
@@ -478,6 +478,37 @@ export async function listReceiptsForTenant(
   const { results } = await db.prepare(
     `SELECT * FROM receipt WHERE tenant_id = ? ORDER BY created_at DESC`,
   ).bind(tenantId).all<Receipt>();
+  return results;
+}
+
+// ---- upload_batch ----
+// One row per file processed through /finance/onboarding. Durable record of
+// "was this ever uploaded" for the confidence-gap report — everything else
+// about a financial export (its action_items) is per-line, not per-file.
+
+export async function insertUploadBatch(
+  db: D1Database, row: Omit<UploadBatch, "created_at">,
+): Promise<void> {
+  await db.prepare(`
+    INSERT INTO upload_batch
+      (id, tenant_id, filename, domain, detected_source_id, needs_review, row_count)
+    VALUES (?,?,?,?,?,?,?)
+  `).bind(
+    row.id, row.tenant_id, row.filename, row.domain, row.detected_source_id,
+    row.needs_review, row.row_count,
+  ).run();
+}
+
+/** Newest first, optionally filtered to one domain — the confidence-gap
+ * report queries this per domain to answer "any ever, and clean?". */
+export async function listUploadBatchesForTenant(
+  db: D1Database, tenantId: string, domain?: UploadDomain,
+): Promise<UploadBatch[]> {
+  const sql = domain
+    ? `SELECT * FROM upload_batch WHERE tenant_id = ? AND domain = ? ORDER BY created_at DESC`
+    : `SELECT * FROM upload_batch WHERE tenant_id = ? ORDER BY created_at DESC`;
+  const stmt = domain ? db.prepare(sql).bind(tenantId, domain) : db.prepare(sql).bind(tenantId);
+  const { results } = await stmt.all<UploadBatch>();
   return results;
 }
 

@@ -27,7 +27,7 @@ configAdminRouter.get("/", async (c) => {
   const { tenant_id, role } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) {
     return c.html(
-      <Page title="Setup & Config" active="config" role={role}>
+      <Page title="Setup & Config" active="finConfig" role={role}>
         <section class="fin-card">
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -49,7 +49,7 @@ configAdminRouter.get("/", async (c) => {
   return c.html(
     <Page
       title="Setup & Config"
-      active="config"
+      active="finConfig"
       tenant={tenant_id || undefined}
       role={role}
     >
@@ -97,6 +97,24 @@ configAdminRouter.get("/", async (c) => {
           style="display:inline-block;background:var(--gw-pine);color:#fff;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700"
         >
           Open Upload Documents
+        </a>
+      </section>
+
+      <section class="fin-card" data-testid="onboarding-link-card">
+        <div class="fin-card-h">
+          <h2 class="fin-card-t">Financial Setup</h2>
+        </div>
+        <p class="fin-card-s" style="margin-bottom:12px">
+          Drop in P&L exports, bank/card exports, and receipts all at once — each gets
+          classified, and a single report shows what's good to go, what needs review,
+          and what's still missing across the board.
+        </p>
+        <a
+          href={basePath.replace(/\/config$/, "/onboarding")}
+          data-testid="onboarding-link"
+          style="display:inline-block;background:var(--gw-pine);color:#fff;border-radius:var(--gw-r-sm);padding:9px 18px;font-size:13px;font-weight:700"
+        >
+          Open Financial Setup
         </a>
       </section>
 

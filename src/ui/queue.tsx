@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getOpenActionItems } from "../db/repos";
+import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
 
 export type QueueBindings = { FINANCE_DB: D1Database };
@@ -38,7 +39,7 @@ queueRouter.get("/", async (c) => {
   return c.html(
     <Page
       title="Work Queue"
-      active="queue"
+      active="finQueue"
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
@@ -60,6 +61,15 @@ queueRouter.get("/", async (c) => {
           <div class="fin-tile-m">already has a proposed answer</div>
         </div>
       </div>
+
+      {canSee(role, "can_see_recovery") ? (
+        <div class="fin-note" data-testid="related-pages-link">
+          What needs doing?{" "}
+          <a href={c.req.path.replace(/\/queue\/?$/, "/collections")} style="font-weight:700">Collections</a>
+          {" "}·{" "}
+          <a href={c.req.path.replace(/\/queue\/?$/, "/obligations")} style="font-weight:700">Obligations</a>
+        </div>
+      ) : null}
 
       <Card title="Queue" sub="work top-down — the clock drives the order">
         <ul data-testid="queue-list" style="list-style:none">

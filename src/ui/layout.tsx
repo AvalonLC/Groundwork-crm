@@ -54,41 +54,41 @@ export const Term: FC<{ term: string; vocab: VocabularyMode }> = ({ term, vocab 
 );
 
 // ── Financial section information architecture ───────────────────────────────
-// One list, rendered into the sidebar of every finance page. `href: null`
-// means the page is specced but not built yet — it renders as a dimmed
-// "soon" row rather than a link, so the intended structure is visible
-// without shipping dead links. `external` items live in the main CRM SPA
-// and navigate back out to it.
+// The 8-item top-level shape confirmed 2026-08-06, matching gwFinancial()'s
+// tab strip in public/js/app_premium.js exactly (same labels, same order,
+// same /finance/* hrefs) so navigating in from the CRM's own sidebar reads
+// as continuing the same tab row rather than leaving into a different app.
+// Setup & Config rides along as a 9th, visually separated item — not part
+// of the confirmed 8, but the only path to Company Policy / config editing,
+// so dropping it isn't an option.
+//
+// Collections, Obligations, Reconciliation, and Forecast are deliberately
+// NOT here — no top-level slot exists for them in the confirmed shape.
+// They're reachable as drill-through links FROM Money Loop (Reconciliation,
+// Forecast — "how are we tracking") and Work Queue (Collections,
+// Obligations — "what needs doing"); see the fin-note blocks in
+// money-loop.tsx and queue.tsx. Invoices/Payments/Deposits/Statements'
+// old external SPA links are also gone — Invoices & Payments and Ledger
+// (both real pages now) absorb them, honestly, per those pages' own notes
+// about Deposits/Statements having no D1 table yet.
 export interface FinanceNavItem {
   key: string;
   label: string;
-  href: string | null;
-  external?: boolean;
-  group: string;
+  href: string;
 }
 
 export const FINANCE_NAV: FinanceNavItem[] = [
-  { key: "control",     label: "Control Center",    href: "/finance/money-loop",  group: "Operate" },
-  { key: "queue",       label: "Work Queue",        href: "/finance/queue",       group: "Operate" },
-  { key: "collections", label: "Collections",       href: "/finance/collections",   group: "Operate" },
-  { key: "obligations", label: "Obligations",       href: "/finance/obligations",   group: "Operate" },
-  { key: "recon",       label: "Reconciliation",    href: "/finance/reconciliation", group: "Operate" },
-
-  { key: "jobcost",     label: "Job Costing",       href: "/finance/job-costing", group: "Understand" },
-  { key: "recovery",    label: "Overhead Recovery", href: "/finance/recovery",    group: "Understand" },
-  { key: "budget",      label: "Budget & Rates",    href: "/finance/budget",      group: "Understand" },
-  { key: "forecast",    label: "Forecast",          href: "/finance/forecast",    group: "Understand" },
-
-  { key: "invoices",    label: "Invoices",   href: "/#invoices",   external: true, group: "Records" },
-  { key: "payments",    label: "Payments",   href: "/#gwStripe",   external: true, group: "Records" },
-  { key: "ledger",      label: "Ledger",     href: "/#payments",   external: true, group: "Records" },
-  { key: "statements",  label: "Statements", href: "/#statements", external: true, group: "Records" },
-  { key: "documents",   label: "Documents",  href: "/finance/documents",           group: "Records" },
-
-  { key: "config",      label: "Setup & Config", href: "/finance/config", group: "Configure" },
+  { key: "finControl",  label: "Money Loop",          href: "/finance/money-loop" },
+  { key: "finQueue",    label: "Work Queue",          href: "/finance/queue" },
+  { key: "finJobCost",  label: "Job Costing",         href: "/finance/job-costing" },
+  { key: "finBudget",   label: "Budget & Rates",      href: "/finance/budget" },
+  { key: "finRecovery", label: "Overhead Recovery",   href: "/finance/recovery" },
+  { key: "finInvPay",   label: "Invoices & Payments", href: "/finance/invoices-payments" },
+  { key: "finLedger",   label: "Ledger",              href: "/finance/ledger" },
+  { key: "finDocuments", label: "Documents",          href: "/finance/documents" },
 ];
 
-const NAV_GROUPS = ["Operate", "Understand", "Records", "Configure"];
+const FINANCE_NAV_CONFIG: FinanceNavItem = { key: "finConfig", label: "Setup & Config", href: "/finance/config" };
 
 // Design tokens mirror public/js/premium.css so finance pages read as part of
 // the same product rather than a separate app. Kept self-contained (rather
@@ -109,24 +109,29 @@ const SHELL_CSS = `
 }
 body{background:var(--gw-bg);color:var(--gw-ink);font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
-.fin-shell{display:flex;min-height:100vh}
-.fin-side{width:248px;flex:0 0 248px;background:var(--gw-pine);color:#fff;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
-.fin-brand{padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.09)}
-.fin-brand-name{font-size:15px;font-weight:800;letter-spacing:-.01em}
-.fin-brand-sub{font-size:11px;color:rgba(255,255,255,.55);margin-top:2px}
-.fin-back{display:block;padding:11px 18px;font-size:12.5px;color:rgba(255,255,255,.62);border-bottom:1px solid rgba(255,255,255,.07)}
-.fin-back:hover{color:#fff;background:var(--gw-pine-deep)}
-.fin-nav{padding:10px 10px 24px;flex:1}
-.fin-nav-group{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.38);padding:16px 8px 6px}
-.fin-nav-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:8px;font-size:13px;color:rgba(255,255,255,.72);margin-bottom:1px}
-.fin-nav-item:hover{background:rgba(255,255,255,.07);color:#fff}
-.fin-nav-item.is-active{background:var(--gw-pine-light);color:#fff;font-weight:700;box-shadow:inset 3px 0 0 var(--gw-sky)}
-.fin-nav-item.is-soon{color:rgba(255,255,255,.34);cursor:default}
-.fin-nav-item.is-soon:hover{background:none;color:rgba(255,255,255,.34)}
-.fin-soon-tag{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,.09);color:rgba(255,255,255,.45)}
-.fin-ext{font-size:10px;color:rgba(255,255,255,.3)}
+.fin-shell{display:flex;flex-direction:column;min-height:100vh}
+/* Top tab-strip — replaces the old vertical sidebar. Colors copied verbatim
+   from the CRM SPA's own .nav-subtab / .nav-subtab--active (public/js/
+   premium.css) rather than approximated, so navigating in from the CRM's
+   own Financial tab strip (gwFinancial() in app_premium.js, same 8 items,
+   same order) reads as continuing the same tab row — even though this is
+   still a real page load, not a shared DOM (see layout.tsx's own note on
+   that ceiling). */
+.fin-topbar{background:var(--gw-pine);display:flex;align-items:center;gap:16px;padding:0 20px;position:sticky;top:0;z-index:6;overflow-x:auto}
+.fin-crumb{flex-shrink:0;font-size:12px;font-weight:600;color:rgba(255,255,255,.62);padding:12px 0;white-space:nowrap}
+.fin-crumb:hover{color:#fff}
+.fin-toptabs{display:flex;align-items:center;gap:2px;flex:1;min-width:0}
+.fin-toptab{display:flex;align-items:center;padding:9px 12px;font-size:13px;font-weight:400;color:rgba(255,255,255,.52);border-radius:6px;white-space:nowrap;position:relative;transition:color .11s,background .11s}
+.fin-toptab:hover{color:rgba(255,255,255,.86);background:rgba(255,255,255,.07)}
+.fin-toptab.is-active{color:#fff;font-weight:500;background:rgba(52,211,153,.13);padding-left:17px}
+.fin-toptab.is-active::before{content:'';position:absolute;left:7px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:#34d399}
+.fin-toptab-divider{width:1px;height:16px;background:rgba(255,255,255,.15);margin:0 4px;flex-shrink:0}
 .fin-main{flex:1;min-width:0;display:flex;flex-direction:column}
-.fin-top{background:var(--gw-surface);border-bottom:1px solid var(--gw-line);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:5}
+/* Not sticky (unlike .fin-topbar): stacking two independently-sticky
+   headers needs a manual top offset matched to the first one's height,
+   which is more fragile than it's worth here — only the tab-strip stays
+   pinned, this scrolls with the page. */
+.fin-top{background:var(--gw-surface);border-bottom:1px solid var(--gw-line);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
 .fin-top-l{min-width:0}
 .fin-eyebrow{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--gw-pine-muted)}
 .fin-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:1px}
@@ -182,48 +187,48 @@ a.fin-tile:hover{border-color:var(--gw-sky);box-shadow:var(--gw-shadow-sm)}
 .fin-why-b{margin-top:9px;font-size:12.5px;color:var(--gw-ink-2);line-height:1.62}
 .fin-why-b dt{font-weight:800;color:var(--gw-ink);margin-top:8px;font-size:11.5px}
 @media(max-width:860px){
-.fin-side{display:none}
 .fin-body{padding:16px 14px 40px}
 .fin-top{padding:12px 16px}
 .fin-hero-v{font-size:33px}
 }
 `;
 
-const Sidebar: FC<{ active?: string }> = ({ active }) => (
-  <aside class="fin-side">
-    <div class="fin-brand">
-      <div class="fin-brand-name">Financial</div>
-      <div class="fin-brand-sub">Groundwork Control</div>
-    </div>
-    <a class="fin-back" href="/">&#8592; Back to Groundwork</a>
-    <nav class="fin-nav">
-      {NAV_GROUPS.map((group) => (
-        <>
-          <div class="fin-nav-group">{group}</div>
-          {FINANCE_NAV.filter((i) => i.group === group).map((item) =>
-            item.href ? (
-              <a class={`fin-nav-item${item.key === active ? " is-active" : ""}`} href={item.href}>
-                <span>{item.label}</span>
-                {item.external ? <span class="fin-ext">&#8599;</span> : null}
-              </a>
-            ) : (
-              <div class="fin-nav-item is-soon">
-                <span>{item.label}</span>
-                <span class="fin-soon-tag">soon</span>
-              </div>
-            ),
-          )}
-        </>
+/** The slim top tab-strip — replaces the old vertical Sidebar. Horizontally
+ * scrollable rather than wrapping/collapsing (see .fin-topbar's
+ * overflow-x:auto) so it stays a single row at any width, same as the CRM
+ * SPA's own tab strips never wrap either. */
+const Topbar: FC<{ active?: string }> = ({ active }) => (
+  <header class="fin-topbar">
+    <a class="fin-crumb" href="/">&#8592; Groundwork</a>
+    <nav class="fin-toptabs">
+      {FINANCE_NAV.map((item) => (
+        <a class={`fin-toptab${item.key === active ? " is-active" : ""}`} href={item.href}>
+          {item.label}
+        </a>
       ))}
+      <span class="fin-toptab-divider" />
+      <a
+        class={`fin-toptab${FINANCE_NAV_CONFIG.key === active ? " is-active" : ""}`}
+        href={FINANCE_NAV_CONFIG.href}
+      >
+        {FINANCE_NAV_CONFIG.label}
+      </a>
     </nav>
-  </aside>
+  </header>
 );
 
 /**
  * The finance app shell. Every /finance/* page renders through this, which
  * is what makes them read as part of Groundwork rather than as standalone
- * routes: same tokens, same sidebar language, same header treatment, plus a
- * way back into the CRM.
+ * routes: same tokens, same tab-strip language (copied from the CRM SPA's
+ * own .nav-subtab, see Topbar/SHELL_CSS above), same header treatment,
+ * plus a way back into the CRM.
+ *
+ * NOT a shared, persistent nav with the CRM SPA — that would need either
+ * turning these pages into SPA-fetched partials or duplicating the SPA's
+ * full chrome into every Hono response, both bigger than this build.
+ * What's here instead: matching visual language + tab continuity, so the
+ * transition *feels* continuous even though it's still a real page load.
  *
  * `title` stays the only required prop so every existing page keeps working
  * unchanged; `active`, `eyebrow`, `tenant`, `role` and `vocab` are optional
@@ -247,7 +252,7 @@ export const Page: FC<{
     </head>
     <body>
       <div class="fin-shell">
-        <Sidebar active={active} />
+        <Topbar active={active} />
         <div class="fin-main">
           <header class="fin-top">
             <div class="fin-top-l">

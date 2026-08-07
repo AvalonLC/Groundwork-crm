@@ -520,7 +520,7 @@
   <div class="rv-widget-header">
     ${gwIcon('star','18','#F59E0B')}
     <span class="rv-widget-title">Reviews</span>
-    <button class="rv-widget-link" onclick="show('reviews')">View all</button>
+    <button class="rv-widget-link" onclick="show('gwReviews')">View all</button>
   </div>
   <div class="rv-widget-stats">
     <div class="rv-widget-stat">
@@ -540,7 +540,7 @@
     ? `<a href="${_esc(settings.google_review_url)}" target="_blank" class="rv-widget-google-btn">
         ${gwIcon('external-link','13','#2D7A55')} View Google Reviews
        </a>`
-    : `<button class="rv-widget-setup-btn" onclick="show('reviews')">
+    : `<button class="rv-widget-setup-btn" onclick="show('gwReviews')">
         ${gwIcon('settings','13','#6B7280')} Set up Google link
        </button>`
   }

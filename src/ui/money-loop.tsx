@@ -22,7 +22,9 @@ const VERB_COPY: Record<ActionVerb, string> = {
 const sum = (items: ActionItem[]) => items.reduce((t, i) => t + (i.amount_cents ?? 0), 0);
 
 /**
- * Control Center — the daily operating cockpit, and the center of gravity of
+ * Money Loop (renamed from "Control Center" 2026-08-06 to match the
+ * confirmed 8-item nav shape — gwFinancial() in app_premium.js uses the
+ * same label) — the daily operating cockpit, and the center of gravity of
  * the Financial section. See docs/spec/UI-MONEYLOOP.md.
  *
  * Depth 1 is the whole page for most users: one hero number, one
@@ -52,8 +54,8 @@ moneyLoopRouter.get("/", async (c) => {
 
   return c.html(
     <Page
-      title="Control Center"
-      active="control"
+      title="Money Loop"
+      active="finControl"
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
@@ -70,6 +72,15 @@ moneyLoopRouter.get("/", async (c) => {
         <div class="fin-note" data-testid="upload-documents-link">
           Have a P&L export, bank statement, or receipt to add?{" "}
           <a href={c.req.path.replace(/\/money-loop\/?$/, "/upload")} style="font-weight:700">Upload documents</a>.
+        </div>
+      ) : null}
+
+      {canSee(role, "can_see_recovery") ? (
+        <div class="fin-note" data-testid="related-pages-link">
+          How are we tracking?{" "}
+          <a href={c.req.path.replace(/\/money-loop\/?$/, "/reconciliation")} style="font-weight:700">Reconciliation</a>
+          {" "}·{" "}
+          <a href={c.req.path.replace(/\/money-loop\/?$/, "/forecast")} style="font-weight:700">Forecast</a>
         </div>
       ) : null}
 

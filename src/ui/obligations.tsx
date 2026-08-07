@@ -20,7 +20,7 @@ obligationsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Obligations" active="obligations" role={role}>
+      <Page title="Obligations" active="finQueue" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -33,7 +33,7 @@ obligationsRouter.get("/", async (c) => {
   }
 
   return c.html(
-    <Page title="Obligations" active="obligations" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Obligations" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab}>
       <Card title="Money the company owes">
         <div data-testid="obligations-blocked">
           <Empty

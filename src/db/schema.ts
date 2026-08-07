@@ -206,6 +206,21 @@ export interface Receipt {
   created_at: string;
 }
 
+// ---- 0005_uploads.sql ----
+
+export type UploadDomain = "financial_export" | "receipt" | "unrecognized";
+
+export interface UploadBatch {
+  id: string;
+  tenant_id: string;
+  filename: string;
+  domain: UploadDomain;
+  detected_source_id: string | null;
+  needs_review: Bool01;
+  row_count: number | null;
+  created_at: string;
+}
+
 // ---- 0004_config_overrides.sql ----
 
 export interface FinanceConfigOverride {

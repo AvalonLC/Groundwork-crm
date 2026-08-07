@@ -14,7 +14,9 @@ export type DocumentsBindings = { FINANCE_DB: D1Database };
  */
 export const documentsRouter = new Hono<{ Bindings: DocumentsBindings; Variables: FinanceAuthVars }>();
 
-function needsReviewFromConfidence(fieldConfidence: string | null): boolean {
+/** Exported for reuse by onboarding.tsx's confidence-gap report — same
+ * "low confidence on any field" signal, not recomputed there. */
+export function needsReviewFromConfidence(fieldConfidence: string | null): boolean {
   if (!fieldConfidence) return false;
   try {
     const parsed = JSON.parse(fieldConfidence) as Record<string, RateConfidence>;
@@ -28,7 +30,7 @@ documentsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_manage_receipts")) {
     return c.html(
-      <Page title="Documents" active="documents" role={role}>
+      <Page title="Documents" active="finDocuments" role={role}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -45,7 +47,7 @@ documentsRouter.get("/", async (c) => {
   const basePath = c.req.path;
 
   return c.html(
-    <Page title="Documents" active="documents" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Documents" active="finDocuments" tenant={tenant_id || undefined} role={role} vocab={vocab}>
       <div class="fin-grid fin-grid-3">
         <div class="fin-tile">
           <div class="fin-tile-l">Receipts</div>
