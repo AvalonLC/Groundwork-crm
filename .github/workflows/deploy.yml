@@ -26,7 +26,7 @@ jobs:
 
       - name: Build
         run: npm run build
-        
+
       - name: Apply CRM D1 migrations
         uses: cloudflare/wrangler-action@v3
         env:
@@ -36,16 +36,6 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: d1 migrations apply avalon-sales-hub-production --remote
-
-      - name: Apply Finance OS D1 migrations
-        uses: cloudflare/wrangler-action@v3
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: d1 migrations apply groundwork --remote
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
