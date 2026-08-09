@@ -110,6 +110,18 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    real decision (add the column and a writer for it, or drop the OR-branch
    in favor of the existing `work_order_employees` join) rather than a
    drive-by patch.
+8. **There is no way, anywhere in the product, to create a `labor_rate_profile`
+   row.** `/finance/budget` (`src/ui/budget.tsx`) is read-only — three review
+   tables, no form, no POST route. `insertLaborRateProfile` (`src/db/repos.ts`)
+   is called from exactly two places in the whole repo, both test files
+   (`src/api/rates.test.ts`, `src/api/posting.test.ts`) — never from a real
+   route. This is stronger than "Specs I derived" item 4 below ("built as a
+   plain review page instead of a wizard") lets on: it's not that the entry
+   flow is a simpler shape than planned, it's that no entry flow exists at
+   all. Until one is built (or rows are inserted directly), job costing and
+   overhead recovery cannot produce a real number for any tenant — confirmed
+   while investigating why `postTimeEntryToLedger` was hitting
+   `no_rate_resolves` in production (2026-08-09).
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"
