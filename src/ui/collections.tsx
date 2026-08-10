@@ -9,7 +9,7 @@ interface OpenInvoiceRow {
   invoice_number: string;
   client_name: string;
   status: string;
-  balance_due: number;
+  balance_due_cents: number;
   due_date: string;
 }
 
@@ -55,14 +55,14 @@ collectionsRouter.get("/", async (c) => {
   }
 
   const { results: invoices } = await c.env.DB.prepare(
-    `SELECT id, invoice_number, client_name, status, balance_due, due_date FROM invoices
-     WHERE company_id = ? AND status IN ('sent','viewed','partial','overdue') AND balance_due > 0
+    `SELECT id, invoice_number, client_name, status, balance_due_cents, due_date FROM invoices
+     WHERE company_id = ? AND status IN ('sent','viewed','partial','overdue') AND balance_due_cents > 0
      ORDER BY due_date ASC`,
   ).bind(tenant_id).all<OpenInvoiceRow>();
 
-  const totalOwed = invoices.reduce((t, i) => t + i.balance_due, 0);
+  const totalOwedCents = invoices.reduce((t, i) => t + i.balance_due_cents, 0);
   const overdue = invoices.filter((i) => (daysOut(i.due_date) ?? 0) < 0);
-  const overdueOwed = overdue.reduce((t, i) => t + i.balance_due, 0);
+  const overdueOwedCents = overdue.reduce((t, i) => t + i.balance_due_cents, 0);
 
   return c.html(
     <Page title="Collections" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab}>
@@ -75,13 +75,13 @@ collectionsRouter.get("/", async (c) => {
       <div class="fin-grid fin-grid-3">
         <div class="fin-tile">
           <div class="fin-tile-l">Open balance</div>
-          <div class="fin-tile-v" data-testid="total-owed">${totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div class="fin-tile-v" data-testid="total-owed">${(totalOwedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           <div class="fin-tile-m">{invoices.length} open invoice{invoices.length === 1 ? "" : "s"}</div>
         </div>
         <div class="fin-tile">
           <div class="fin-tile-l">Overdue</div>
           <div class="fin-tile-v" data-testid="overdue-count" style={overdue.length > 0 ? "color:var(--gw-rose)" : ""}>{overdue.length}</div>
-          <div class="fin-tile-m">{overdue.length > 0 ? `$${overdueOwed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} past due` : "nothing overdue"}</div>
+          <div class="fin-tile-m">{overdue.length > 0 ? `$${(overdueOwedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} past due` : "nothing overdue"}</div>
         </div>
       </div>
 
@@ -102,7 +102,7 @@ collectionsRouter.get("/", async (c) => {
                     <tr data-testid={`invoice-${inv.id}`}>
                       <td><strong>{inv.client_name}</strong></td>
                       <td>{inv.invoice_number}</td>
-                      <td class="fin-num">${inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td class="fin-num">${(inv.balance_due_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td style={late ? "color:var(--gw-rose)" : ""}>
                         {inv.due_date || "—"}{late ? ` (${Math.abs(d as number)}d late)` : ""}
                       </td>

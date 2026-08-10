@@ -589,9 +589,13 @@ export function registerPortal(app: Hono<any>, deps: {
     } catch (_) {}
   }
 
-  // Client-safe estimate columns (never internal_notes / cost_data / ai_meta)
-  const EST_LIST_COLS = `id, est_number, title, status, total, subtotal, tax_amt, discount_amt,
-    deposit_amt, deposit_paid, estimate_date, expiry_date, sent_at, viewed_at, accepted_at,
+  // Client-safe estimate columns (never internal_notes / cost_data / ai_meta).
+  // Dollar fields are sourced from the *_cents columns (source of truth as of
+  // Stage 3a) and divided back to dollars here, at the API-response boundary.
+  const EST_LIST_COLS = `id, est_number, title, status,
+    total_cents / 100.0 AS total, subtotal_cents / 100.0 AS subtotal,
+    tax_amt_cents / 100.0 AS tax_amt, discount_amt_cents / 100.0 AS discount_amt,
+    deposit_amt_cents / 100.0 AS deposit_amt, deposit_paid, estimate_date, expiry_date, sent_at, viewed_at, accepted_at,
     declined_at, client_id, property_id, portal_token, created_at`
   const EST_DETAIL_COLS = EST_LIST_COLS + `, line_items, scope_of_work, customer_notes, terms, payment_schedule, doc_type`
 
@@ -679,7 +683,9 @@ export function registerPortal(app: Hono<any>, deps: {
     if (!s.can('view_billing')) return c.json({ error: 'Not permitted' }, 403)
     const cin = s.clientIds.map(() => '?').join(',')
     const rows = ((await db.prepare(
-      `SELECT id, invoice_number, title, status, total, amount_paid, balance_due, due_date,
+      `SELECT id, invoice_number, title, status,
+              total_cents / 100.0 AS total, amount_paid_cents / 100.0 AS amount_paid,
+              balance_due_cents / 100.0 AS balance_due, due_date,
               sent_at, paid_at, client_id, property_id, portal_token, created_at
        FROM invoices WHERE company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted')
        ORDER BY created_at DESC LIMIT 200`
@@ -694,8 +700,11 @@ export function registerPortal(app: Hono<any>, deps: {
     if (!s.can('view_billing')) return c.json({ error: 'Not permitted' }, 403)
     const cin = s.clientIds.map(() => '?').join(',')
     const row: any = await db.prepare(
-      `SELECT id, invoice_number, title, status, subtotal, tax_amount, discount_amount, total,
-              amount_paid, balance_due, due_date, sent_at, viewed_at, paid_at, line_items,
+      `SELECT id, invoice_number, title, status,
+              subtotal_cents / 100.0 AS subtotal, tax_amount_cents / 100.0 AS tax_amount,
+              discount_amount_cents / 100.0 AS discount_amount, total_cents / 100.0 AS total,
+              amount_paid_cents / 100.0 AS amount_paid, balance_due_cents / 100.0 AS balance_due,
+              due_date, sent_at, viewed_at, paid_at, line_items,
               terms, footer_note, notes, client_id, property_id, portal_token, created_at
        FROM invoices WHERE id=? AND company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted') LIMIT 1`
     ).bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
@@ -706,7 +715,7 @@ export function registerPortal(app: Hono<any>, deps: {
     }
     // Payments applied to this invoice
     row.payments = (await db.prepare(
-      `SELECT amount, status, payment_method, created_at FROM payments
+      `SELECT amount_cents / 100.0 AS amount, status, payment_method, created_at FROM payments
        WHERE invoice_id=? AND company_id=? AND status IN ('succeeded','paid','completed') ORDER BY created_at DESC`
     ).bind(row.id, s.companyId).all()).results || []
     return c.json({ ok: true, data: row })
@@ -719,7 +728,7 @@ export function registerPortal(app: Hono<any>, deps: {
     if (!s.can('view_payment_history')) return c.json({ error: 'Not permitted' }, 403)
     const cin = s.clientIds.map(() => '?').join(',')
     const rows = (await db.prepare(
-      `SELECT p.id, p.amount, p.status, p.payment_method, p.created_at, p.invoice_number, p.invoice_id, p.client_id
+      `SELECT p.id, p.amount_cents / 100.0 AS amount, p.status, p.payment_method, p.created_at, p.invoice_number, p.invoice_id, p.client_id
        FROM payments p WHERE p.company_id=? AND p.client_id IN (${cin})
        AND p.status IN ('succeeded','paid','completed')
        ORDER BY p.created_at DESC LIMIT 100`
@@ -734,7 +743,7 @@ export function registerPortal(app: Hono<any>, deps: {
     if (!s.can('view_documents')) return c.json({ error: 'Not permitted' }, 403)
     const cin = s.clientIds.map(() => '?').join(',')
     const proposals = ((await db.prepare(
-      `SELECT id, prop_number, title, status, total, portal_token, sent_at, accepted_at, proposal_date, created_at, client_id, property_id
+      `SELECT id, prop_number, title, status, total_cents / 100.0 AS total, portal_token, sent_at, accepted_at, proposal_date, created_at, client_id, property_id
        FROM proposals WHERE company_id=? AND client_id IN (${cin}) AND status NOT IN ('draft','void','deleted')
        ORDER BY created_at DESC LIMIT 100`
     ).bind(s.companyId, ...s.clientIds).all()).results as any[] || []).filter(r => propOk(s, r))
@@ -904,7 +913,7 @@ export function registerPortal(app: Hono<any>, deps: {
     const s: PortalScope = c.var.portalScope
     const clientId = pickClientId(s, c.req.query('client_id'), 'manage_autopay')
     if (!clientId) return c.json({ error: 'Not permitted' }, 403)
-    const row: any = await db.prepare(`SELECT enabled, stripe_pm_id, pm_label, max_amount, updated_at FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
+    const row: any = await db.prepare(`SELECT enabled, stripe_pm_id, pm_label, max_amount_cents / 100.0 AS max_amount, updated_at FROM client_autopay WHERE client_id=? AND company_id=? LIMIT 1`).bind(clientId, s.companyId).first()
     return c.json({ ok: true, data: row || { enabled: 0, stripe_pm_id: '', pm_label: '', max_amount: 0 }, client_id: clientId })
   })
 
@@ -944,13 +953,18 @@ export function registerPortal(app: Hono<any>, deps: {
 
   // ── Payments: invoice pay + estimate deposit ───────────────────────────────
 
-  async function recordInvoicePayment(db: D1Database, inv: any, amountDollars: number, piId: string, companyId: string) {
-    const newPaid = (inv.amount_paid || 0) + amountDollars
-    const newBalance = Math.max(0, (inv.total || inv.balance_due || 0) - newPaid)
-    const newStatus = newBalance <= 0 ? 'paid' : 'partial'
-    const amountCents = Math.round(amountDollars * 100)
+  // amountCents is the exact cents amount charged via Stripe — callers pass
+  // cents straight through (no float dollars round-trip in the payment path).
+  async function recordInvoicePayment(db: D1Database, inv: any, amountCents: number, piId: string, companyId: string) {
+    const newPaidCents = Number(inv.amount_paid_cents || 0) + amountCents
+    const totalCents = Number(inv.total_cents || inv.balance_due_cents || 0)
+    const newBalanceCents = Math.max(0, totalCents - newPaidCents)
+    const newStatus = newBalanceCents <= 0 ? 'paid' : 'partial'
+    const newPaid = newPaidCents / 100
+    const newBalance = newBalanceCents / 100
+    const amountDollars = amountCents / 100
     await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-      .bind(newPaid, Math.round(newPaid*100), newBalance, Math.round(newBalance*100), newStatus, inv.id, companyId).run()
+      .bind(newPaid, newPaidCents, newBalance, newBalanceCents, newStatus, inv.id, companyId).run()
     await db.prepare(
       `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
@@ -975,7 +989,7 @@ export function registerPortal(app: Hono<any>, deps: {
       .bind(c.req.param('id'), s.companyId, ...s.clientIds).first()
     if (!inv || !propOk(s, inv)) return c.json({ error: 'Not found' }, 404)
     if (!s.can('make_payments', inv.client_id)) return c.json({ error: 'Not permitted' }, 403)
-    const owedCents = Math.round(Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0)) * 100)
+    const owedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
     if (owedCents < 50) return c.json({ error: 'Nothing due on this invoice' }, 400)
     const company = await companyStripe(db, s.companyId)
     if (!company?.stripe_account_id || !company.stripe_onboarded) return c.json({ error: 'Online payment is not available' }, 400)
@@ -984,15 +998,17 @@ export function registerPortal(app: Hono<any>, deps: {
     try {
       const pi = await chargeSavedPM(stripeKey, company, client.stripe_customer_id, pmId, owedCents,
         { invoice_id: inv.id, company_id: s.companyId, source: 'portal' })
-      const out = await recordInvoicePayment(db, inv, owedCents / 100, pi.id, s.companyId)
+      const out = await recordInvoicePayment(db, inv, owedCents, pi.id, s.companyId)
       await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: inv.client_id, eventType: 'portal_invoice_paid', entityType: 'invoice', entityId: inv.id, entityLabel: inv.invoice_number || inv.id, meta: { amount: owedCents / 100 }, ip: clientIp(c) })
       await notifyCompany(db, s.companyId, 'portal_payment', `Invoice ${inv.invoice_number || ''} paid via portal`, `${s.user.name || s.user.email} paid $${(owedCents / 100).toFixed(2)}.`, 'invoice', inv.id, '#invoices')
       return c.json({ ok: true, ...out })
     } catch (e: any) { return c.json({ error: e.message }, 500) }
   })
 
-  async function markDepositPaid(db: D1Database, est: any, amountDollars: number, piId: string, companyId: string) {
-    const amountCents = Math.round(amountDollars * 100)
+  // amountCents is the exact cents amount charged via Stripe (or the Stripe
+  // Checkout session's own amount_total, already cents) — no float round-trip.
+  async function markDepositPaid(db: D1Database, est: any, amountCents: number, piId: string, companyId: string) {
+    const amountDollars = amountCents / 100
     await db.prepare(`UPDATE estimates SET deposit_paid=1, deposit_paid_at=datetime('now'), deposit_paid_amount=?, deposit_paid_amount_cents=?, stripe_payment_status='deposit_paid', payment_intent_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
       .bind(amountDollars, amountCents, piId, est.id, companyId).run()
     await db.prepare(
@@ -1020,7 +1036,7 @@ export function registerPortal(app: Hono<any>, deps: {
     if (!est) return c.json({ error: 'Not found' }, 404)
     if (!s.can('make_payments', est.client_id)) return c.json({ error: 'Not permitted' }, 403)
     if (est.deposit_paid) return c.json({ error: 'The deposit on this estimate is already paid' }, 400)
-    const depCents = Math.round(Number(est.deposit_amt || 0) * 100)
+    const depCents = Number(est.deposit_amt_cents || 0)
     if (depCents < 50) return c.json({ error: 'No deposit is due on this estimate' }, 400)
     const company = await companyStripe(db, s.companyId)
     if (!company?.stripe_account_id || !company.stripe_onboarded) return c.json({ error: 'Online payment is not available' }, 400)
@@ -1033,7 +1049,7 @@ export function registerPortal(app: Hono<any>, deps: {
       try {
         const pi = await chargeSavedPM(stripeKey, company, client.stripe_customer_id, String(b.stripe_pm_id), depCents,
           { estimate_id: est.id, company_id: s.companyId, source: 'portal_deposit' })
-        await markDepositPaid(db, est, depCents / 100, pi.id, s.companyId)
+        await markDepositPaid(db, est, depCents, pi.id, s.companyId)
         await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: est.client_id, eventType: 'portal_deposit_paid', entityType: 'estimate', entityId: est.id, entityLabel: est.est_number || est.id, meta: { amount: depCents / 100 }, ip: clientIp(c) })
         await notifyCompany(db, s.companyId, 'portal_payment', `Deposit paid on estimate ${est.est_number || ''}`, `${s.user.name || s.user.email} paid the $${(depCents / 100).toFixed(2)} deposit via the portal.`, 'estimate', est.id, '#estimates')
         return c.json({ ok: true, paid: true })
@@ -1097,7 +1113,7 @@ export function registerPortal(app: Hono<any>, deps: {
       })
       const pi: any = await piRes.json()
       if (!piRes.ok || pi.metadata?.estimate_id !== est.id) return c.json({ error: 'Payment does not match this estimate' }, 400)
-      await markDepositPaid(db, est, (session.amount_total || 0) / 100, session.payment_intent || '', s.companyId)
+      await markDepositPaid(db, est, session.amount_total || 0, session.payment_intent || '', s.companyId)
       await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId: est.client_id, eventType: 'portal_deposit_paid', entityType: 'estimate', entityId: est.id, entityLabel: est.est_number || est.id, meta: { amount: (session.amount_total || 0) / 100, via: 'checkout' }, ip: clientIp(c) })
       await notifyCompany(db, s.companyId, 'portal_payment', `Deposit paid on estimate ${est.est_number || ''}`, `${s.user.name || s.user.email} paid the $${((session.amount_total || 0) / 100).toFixed(2)} deposit via the portal.`, 'estimate', est.id, '#estimates')
       return c.json({ ok: true, paid: true })

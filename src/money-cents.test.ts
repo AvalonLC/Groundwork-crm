@@ -215,6 +215,100 @@ describe("Stage 2 dual-write: client_autopay", () => {
   });
 });
 
+describe("Stage 3a cutover: readers use *_cents as source of truth (migrations/0058)", () => {
+  // Each test deliberately corrupts the FLOAT column after Stage 2's own
+  // dual-write has already run correctly, leaving the *_cents column as the
+  // only accurate value. If the endpoint under test were still reading the
+  // float column (pre-cutover), the assertions below would fail on the
+  // corrupted (999999-ish) value instead of the real one.
+
+  it("MC3A-01 POST /api/invoices/from-estimate/:id derives total/balance_due from estimates.total_cents and deposit_paid_amount_cents, not the float columns", async () => {
+    const { cookie } = await seedSession("mc3a-co-est2inv", "mc3a-rep-est2inv");
+    const res = await req("/api/estimates", cookie, {
+      method: "POST",
+      body: JSON.stringify({ title: "Cutover Est", line_items: [{ qty: 1, rate: 1000 }] }),
+    });
+    const { data: { id: estId } } = await res.json() as { data: { id: string } };
+    await db().prepare(
+      `UPDATE estimates SET total = 999999, deposit_paid_amount = 999999, deposit_paid_amount_cents = 30000 WHERE id=?`
+    ).bind(estId).run();
+    const invRes = await req(`/api/invoices/from-estimate/${estId}`, cookie, { method: "POST" });
+    const inv: any = await invRes.json();
+    const row: any = await db().prepare(
+      `SELECT total, total_cents, amount_paid, amount_paid_cents, balance_due, balance_due_cents FROM invoices WHERE id=?`
+    ).bind(inv.id).first();
+    expect(row.total_cents).toBe(100000);
+    expect(row.amount_paid_cents).toBe(30000);
+    expect(row.balance_due_cents).toBe(70000);
+    expect(row.total).toBe(1000);
+    expect(row.amount_paid).toBe(300);
+    expect(row.balance_due).toBe(700);
+  });
+
+  it("MC3A-02 POST /api/invoices/:id/record-payment derives balance_due from invoices.total_cents/amount_paid_cents, not the float columns", async () => {
+    const { cookie } = await seedSession("mc3a-co-recpay", "mc3a-rep-recpay");
+    const res = await req("/api/invoices", cookie, {
+      method: "POST", body: JSON.stringify({ total: 500 }),
+    });
+    const { id: invId } = await res.json() as { id: string };
+    await db().prepare(`UPDATE invoices SET total = 999999, amount_paid = 999999 WHERE id=?`).bind(invId).run();
+    const payRes = await req(`/api/invoices/${invId}/record-payment`, cookie, {
+      method: "POST", body: JSON.stringify({ amount: 150 }),
+    });
+    const out: any = await payRes.json();
+    expect(out.balance_due).toBe(350);
+    const row: any = await db().prepare(`SELECT balance_due, balance_due_cents FROM invoices WHERE id=?`).bind(invId).first();
+    expect(row.balance_due_cents).toBe(35000);
+    expect(row.balance_due).toBe(350);
+  });
+
+  it("MC3A-03 POST /api/estimates/:id/convert-to-job sets work_orders.amount_est/_cents from estimates.total_cents, not the float total", async () => {
+    const { cookie } = await seedSession("mc3a-co-wo", "mc3a-rep-wo");
+    const res = await req("/api/estimates", cookie, {
+      method: "POST",
+      body: JSON.stringify({ title: "Cutover Est WO", line_items: [{ qty: 2, rate: 250 }] }),
+    });
+    const { data: { id: estId } } = await res.json() as { data: { id: string } };
+    await db().prepare(`UPDATE estimates SET total = 999999 WHERE id=?`).bind(estId).run();
+    const woRes = await req(`/api/estimates/${estId}/convert-to-job`, cookie, { method: "POST", body: JSON.stringify({}) });
+    expect(woRes.status).toBe(201);
+    const wo: any = await woRes.json();
+    const row: any = await db().prepare(`SELECT amount_est, amount_est_cents FROM work_orders WHERE id=?`).bind(wo.work_order_id).first();
+    expect(row.amount_est_cents).toBe(50000);
+    expect(row.amount_est).toBe(500);
+  });
+
+  it("MC3A-04 POST /api/recurring-subscriptions without price_override derives custom_price from recurring_plans.price_cents, not the float price column", async () => {
+    const { cookie } = await seedSession("mc3a-co-rp", "mc3a-rep-rp");
+    const planRes = await req("/api/recurring-plans", cookie, {
+      method: "POST", body: JSON.stringify({ name: "Cutover Plan", frequency: "weekly", price: 75 }),
+    });
+    const plan: any = await planRes.json();
+    await db().prepare(`UPDATE recurring_plans SET price = 999999 WHERE id=?`).bind(plan.id).run();
+    await db().prepare(`INSERT OR IGNORE INTO clients (id, company_id, name) VALUES (?,?,?)`).bind("mc3a-client-1", "mc3a-co-rp", "Cutover Client").run().catch(() => {});
+    const subRes = await req("/api/recurring-subscriptions", cookie, {
+      method: "POST", body: JSON.stringify({ plan_id: plan.id, client_id: "mc3a-client-1" }),
+    });
+    expect(subRes.status).toBe(201);
+    const sub: any = await subRes.json();
+    const row: any = await db().prepare(`SELECT custom_price, custom_price_cents FROM client_plan_subscriptions WHERE id=?`).bind(sub.id).first();
+    expect(row.custom_price_cents).toBe(7500);
+    expect(row.custom_price).toBe(75);
+  });
+
+  it("MC3A-05 GET /api/ai/assistant/context pipeline.value is derived from opportunities.job_value_cents, not the float job_value column", async () => {
+    const { cookie } = await seedSession("mc3a-co-opp", "mc3a-rep-opp");
+    const res = await req("/api/opportunities", cookie, {
+      method: "POST", body: JSON.stringify({ client: "Cutover Opp", jobValue: 1200 }),
+    });
+    const { data: { id: oppId } } = await res.json() as { data: { id: string } };
+    await db().prepare(`UPDATE opportunities SET job_value = 999999 WHERE id=?`).bind(oppId).run();
+    const ctxRes = await req("/api/ai/assistant/context", cookie);
+    const ctx: any = await ctxRes.json();
+    expect(ctx.data.pipeline.value).toBe(1200);
+  });
+});
+
 describe("Stage 2: rounding correctness (ROUND, not truncation)", () => {
   const cases: [number, number][] = [
     [19.99, 1999], [0.1, 10], [0.2, 20], [4.99, 499], [1234.56, 123456],

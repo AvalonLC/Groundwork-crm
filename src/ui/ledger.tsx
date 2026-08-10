@@ -8,7 +8,7 @@ interface LedgerEvent {
   ts: string;
   type: "invoice" | "payment";
   label: string;
-  amount: number;
+  amount_cents: number;
   status: string;
 }
 
@@ -43,31 +43,31 @@ ledgerRouter.get("/", async (c) => {
 
   const [{ results: invoices }, { results: payments }] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT invoice_number, client_name, total, created_at FROM invoices
+      `SELECT invoice_number, client_name, total_cents, created_at FROM invoices
        WHERE company_id = ? ORDER BY created_at DESC LIMIT 50`,
-    ).bind(tenant_id).all<{ invoice_number: string; client_name: string; total: number; created_at: string }>(),
+    ).bind(tenant_id).all<{ invoice_number: string; client_name: string; total_cents: number; created_at: string }>(),
     c.env.DB.prepare(
       `SELECT COALESCE(NULLIF(p.invoice_number,''), i.invoice_number) AS invoice_number_display,
-              p.client_id, p.amount, p.status, p.created_at
+              p.client_id, p.amount_cents, p.status, p.created_at
        FROM payments p LEFT JOIN invoices i ON i.id = p.invoice_id
        WHERE p.company_id = ? ORDER BY p.created_at DESC LIMIT 50`,
-    ).bind(tenant_id).all<{ invoice_number_display: string | null; client_id: string | null; amount: number; status: string; created_at: string }>(),
+    ).bind(tenant_id).all<{ invoice_number_display: string | null; client_id: string | null; amount_cents: number; status: string; created_at: string }>(),
   ]);
 
   const events: LedgerEvent[] = [
     ...invoices.map((i) => ({
       ts: i.created_at, type: "invoice" as const,
       label: `Invoice ${i.invoice_number || ""} — ${i.client_name || "client"}`,
-      amount: i.total, status: "sent",
+      amount_cents: i.total_cents, status: "sent",
     })),
     ...payments.map((p) => ({
       ts: p.created_at, type: "payment" as const,
       label: `Payment — ${p.invoice_number_display ? `invoice ${p.invoice_number_display}` : "no invoice on file"}`,
-      amount: p.amount, status: p.status,
+      amount_cents: p.amount_cents, status: p.status,
     })),
   ].sort((a, b) => b.ts.localeCompare(a.ts));
 
-  const totalIn = events.filter((e) => e.type === "payment").reduce((t, e) => t + e.amount, 0);
+  const totalInCents = events.filter((e) => e.type === "payment").reduce((t, e) => t + e.amount_cents, 0);
 
   return c.html(
     <Page title="Ledger" active="finLedger" tenant={tenant_id || undefined} role={role} vocab={vocab}>
@@ -89,7 +89,7 @@ ledgerRouter.get("/", async (c) => {
         </div>
         <div class="fin-tile">
           <div class="fin-tile-l">Total received</div>
-          <div class="fin-tile-v" data-testid="total-in">${totalIn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div class="fin-tile-v" data-testid="total-in">${(totalInCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           <div class="fin-tile-m">across shown payments</div>
         </div>
       </div>
@@ -108,7 +108,7 @@ ledgerRouter.get("/", async (c) => {
                   <tr data-testid={`event-${i}`}>
                     <td>{e.ts ? e.ts.slice(0, 10) : "—"}</td>
                     <td>{e.label}</td>
-                    <td class="fin-num">${e.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="fin-num">${(e.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td><span class={`fin-badge ${e.type === "payment" ? "b-high" : "b-human"}`}>{e.type}</span></td>
                   </tr>
                 ))}

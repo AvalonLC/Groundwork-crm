@@ -568,23 +568,23 @@ async function syncWorkOrderFinanceColumns(db: D1Database, companyId: string, wo
     // the create/update handlers) -> the reverse FK estimates.work_order_id
     // (set by the estimate->work-order conversion flow) -> the most recent
     // accepted estimate on the same opportunity -> none.
-    let estimateTotal: number | null = null
+    let estimateTotalCents: number | null = null
     if (wo.estimate_id) {
-      const est = await db.prepare(`SELECT total FROM estimates WHERE id = ? AND company_id = ?`)
-        .bind(wo.estimate_id, companyId).first<{ total: number }>()
-      estimateTotal = est?.total ?? null
+      const est = await db.prepare(`SELECT total_cents FROM estimates WHERE id = ? AND company_id = ?`)
+        .bind(wo.estimate_id, companyId).first<{ total_cents: number }>()
+      estimateTotalCents = est?.total_cents ?? null
     }
-    if (estimateTotal === null) {
+    if (estimateTotalCents === null) {
       const est = await db.prepare(
-        `SELECT total FROM estimates WHERE work_order_id = ? AND company_id = ? ORDER BY created_at DESC LIMIT 1`,
-      ).bind(woId, companyId).first<{ total: number }>()
-      estimateTotal = est?.total ?? null
+        `SELECT total_cents FROM estimates WHERE work_order_id = ? AND company_id = ? ORDER BY created_at DESC LIMIT 1`,
+      ).bind(woId, companyId).first<{ total_cents: number }>()
+      estimateTotalCents = est?.total_cents ?? null
     }
-    if (estimateTotal === null && wo.opp_id) {
+    if (estimateTotalCents === null && wo.opp_id) {
       const est = await db.prepare(
-        `SELECT total FROM estimates WHERE opp_id = ? AND company_id = ? AND status = 'accepted' ORDER BY created_at DESC LIMIT 1`,
-      ).bind(wo.opp_id, companyId).first<{ total: number }>()
-      estimateTotal = est?.total ?? null
+        `SELECT total_cents FROM estimates WHERE opp_id = ? AND company_id = ? AND status = 'accepted' ORDER BY created_at DESC LIMIT 1`,
+      ).bind(wo.opp_id, companyId).first<{ total_cents: number }>()
+      estimateTotalCents = est?.total_cents ?? null
     }
 
     // Preserve the original completion timestamp across re-syncs instead of
@@ -599,7 +599,7 @@ async function syncWorkOrderFinanceColumns(db: D1Database, companyId: string, wo
 
     await updateWorkOrderFinanceColumns(
       db, companyId, woId,
-      estimateTotal !== null ? Math.round(estimateTotal * 100) : null,
+      estimateTotalCents,
       completedAt,
     )
   } catch (e) {
@@ -2149,7 +2149,7 @@ app.get('/api/sales-process/migration/inventory', requireAuth, async (c) => {
       (SELECT COUNT(*) FROM activity_log a WHERE a.company_id=o.company_id AND a.entity_type='opportunity' AND a.entity_id=o.id) AS activity_count,
       (SELECT COUNT(*) FROM calendar_events ce WHERE ce.company_id=o.company_id AND ce.opp_id=o.id) AS appointment_count,
       (SELECT e.status FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_status,
-      (SELECT e.total FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_amount,
+      (SELECT e.total_cents / 100.0 FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_amount,
       (SELECT e.sent_at FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_sent_at
     FROM opportunities o WHERE o.company_id=? ORDER BY o.created_at, o.id
   `).bind(companyId).all<any>()
@@ -2161,8 +2161,8 @@ app.get('/api/sales-process/migration/inventory', requireAuth, async (c) => {
   items.forEach(o => { const key = String(o.status || '(blank)'); countsByStatus[key] = (countsByStatus[key] || 0) + 1 })
   return json(c, { company_id: companyId, captured_at: new Date().toISOString(), opportunities: items, reconciliation: {
     total_opportunity_count: items.length, count_by_current_status: countsByStatus,
-    total_open_pipeline_value: open.reduce((n,o) => n + Number(o.job_value || 0), 0),
-    total_won_value: items.filter(isWon).reduce((n,o) => n + Number(o.sold_amount || o.job_value || 0), 0),
+    total_open_pipeline_value: open.reduce((n,o) => n + Number(o.job_value_cents || 0), 0) / 100,
+    total_won_value: items.filter(isWon).reduce((n,o) => n + Number(o.sold_amount_cents || o.job_value_cents || 0), 0) / 100,
     total_lost_count: items.filter(isLost).length,
     without_assigned_representative: items.filter(o => !o.assigned_to_rep_id && !o.rep_id).length,
     without_next_action: items.filter(o => !o.next_follow_up && Number(o.task_count || 0) === 0).length,
@@ -2220,8 +2220,8 @@ app.post('/api/sales-process/migration/propose', requireAuth, async (c) => {
 app.get('/api/sales-process/migration/:batchId', requireAuth, async (c) => {
   if (!requireSalesProcessAdmin(c)) return err(c, 'Administrator or sales manager access required', 403)
   const companyId = c.var.companyId as string
-  const rows = await c.env.DB.prepare(`SELECT m.*, o.client, o.rep_id, o.assigned_to_rep_id, o.next_follow_up, o.job_value,
-    o.estimate_amount, o.estimate_sent_date, o.updated_at AS last_activity,
+  const rows = await c.env.DB.prepare(`SELECT m.*, o.client, o.rep_id, o.assigned_to_rep_id, o.next_follow_up, o.job_value_cents / 100.0 AS job_value,
+    o.estimate_amount_cents / 100.0 AS estimate_amount, o.estimate_sent_date, o.updated_at AS last_activity,
     (SELECT e.status FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS estimate_status,
     (SELECT e.sent_at FROM estimates e WHERE e.company_id=o.company_id AND e.opp_id=o.id ORDER BY e.updated_at DESC LIMIT 1) AS linked_estimate_sent_date,
     (SELECT COUNT(*) FROM calendar_events ce WHERE ce.company_id=o.company_id AND ce.opp_id=o.id AND ce.status!='cancelled') AS appointment_count,
@@ -2259,7 +2259,7 @@ app.post('/api/sales-process/versions/:versionId/snapshots', requireAuth, async 
   if (!mappings.results.length) return err(c, 'Migration batch not found', 404)
   const opportunities = await c.env.DB.prepare('SELECT * FROM opportunities WHERE company_id=? ORDER BY id').bind(companyId).all<any>()
   const snapshotId = `snapshot_${uid()}`
-  const totalValue = (opportunities.results as any[]).reduce((sum, opportunity) => sum + Number(opportunity.job_value || 0), 0)
+  const totalValue = (opportunities.results as any[]).reduce((sum, opportunity) => sum + Number(opportunity.job_value_cents || 0), 0) / 100
   const sourceRevision = JSON.stringify((opportunities.results as any[]).map(opportunity => [opportunity.id, opportunity.updated_at || '']))
   const reconciliation = { opportunity_count: opportunities.results.length, total_value: totalValue, mapping_count: mappings.results.length }
   const statements: any[] = [c.env.DB.prepare(`INSERT INTO sales_migration_snapshots
@@ -2306,7 +2306,7 @@ app.get('/api/sales-process/versions/:versionId/preview', requireAuth, async (c)
   const [stages, mappings, opportunities, automations, associations, transitions] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM sales_process_stages WHERE company_id=? AND process_version_id=? AND state=\'active\' ORDER BY display_order').bind(companyId, versionId).all<any>(),
     c.env.DB.prepare('SELECT * FROM sales_migration_mappings WHERE company_id=? AND process_version_id=? AND migration_batch_id=?').bind(companyId, versionId, batchId).all<any>(),
-    c.env.DB.prepare('SELECT id,job_value FROM opportunities WHERE company_id=?').bind(companyId).all<any>(),
+    c.env.DB.prepare('SELECT id,job_value_cents FROM opportunities WHERE company_id=?').bind(companyId).all<any>(),
     c.env.DB.prepare('SELECT id,name,trigger_type,action_type FROM sales_process_automations WHERE company_id=? AND process_version_id=? AND active=1').bind(companyId, versionId).all<any>(),
     c.env.DB.prepare('SELECT id,stage_id,skill_id FROM sales_academy_associations WHERE company_id=? AND process_version_id=?').bind(companyId, versionId).all<any>(),
     c.env.DB.prepare(`SELECT t.id,t.from_stage_id,t.to_stage_id,t.outcome_type,t.requires_override,
@@ -2324,7 +2324,7 @@ app.get('/api/sales-process/versions/:versionId/preview', requireAuth, async (c)
   }
   return json(c, { version, stages: stages.results, sample_transitions: transitions.results, impact: {
     opportunities_affected: opportunities.results.length,
-    value_affected: (opportunities.results as any[]).reduce((sum, opportunity) => sum + Number(opportunity.job_value || 0), 0),
+    value_affected: (opportunities.results as any[]).reduce((sum, opportunity) => sum + Number(opportunity.job_value_cents || 0), 0) / 100,
     mappings: methods, reporting_changes: stages.results.length, automation_changes: automations.results, training_changes: associations.results
   }, surfaces: ['pipeline','opportunity_detail','stage_guide','call_companion','representative_view','reporting','mobile'] })
 })
@@ -5644,7 +5644,7 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
 
   // 1. OVERDUE FOLLOW-UPS — next_follow_up date in the past on open leads
   const overdueFu = await q(
-    `SELECT o.id, o.client, o.status, o.job_value, o.next_follow_up FROM opportunities o
+    `SELECT o.id, o.client, o.status, o.job_value_cents, o.next_follow_up FROM opportunities o
      WHERE o.company_id = ?1 AND ${gwAssistOpenPredicate('o')}
        AND o.next_follow_up != '' AND date(o.next_follow_up) < date('now')${oppScope}
      ORDER BY date(o.next_follow_up) ASC LIMIT 5`, companyId, repId)
@@ -5653,7 +5653,7 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
     push({
       id: 'fu_' + o.id, type: 'follow_up_overdue', priority: days > T.fu_high_days ? 'high' : 'medium',
       title: `Follow up with ${o.client}`,
-      summary: `Follow-up was due ${days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' ago'} — lead is in "${o.status}"${o.job_value ? ' worth $' + Number(o.job_value).toLocaleString() : ''}.`,
+      summary: `Follow-up was due ${days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' ago'} — lead is in "${o.status}"${o.job_value_cents ? ' worth $' + (Number(o.job_value_cents) / 100).toLocaleString() : ''}.`,
       why: 'Leads contacted within a day of their follow-up date close at a much higher rate. Every day past due drops your odds.',
       action_kind: 'open_lead', action_payload: { oppId: o.id },
       actions: [
@@ -5665,16 +5665,16 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
 
   // 2. STALE LEADS — open, no activity (updated_at) in 14+ days
   const stale = await q(
-    `SELECT o.id, o.client, o.status, o.job_value, o.updated_at FROM opportunities o
+    `SELECT o.id, o.client, o.status, o.job_value_cents, o.updated_at FROM opportunities o
      WHERE o.company_id = ?1 AND ${gwAssistOpenPredicate('o', true)}
        AND julianday('now') - julianday(o.updated_at) >= ${Number(T.stale_days)}${oppScope}
-     ORDER BY o.job_value DESC LIMIT 5`, companyId, repId)
+     ORDER BY o.job_value_cents DESC LIMIT 5`, companyId, repId)
   for (const o of stale) {
     const days = Math.floor((Date.now() - new Date(String(o.updated_at).replace(' ', 'T') + 'Z').getTime()) / 86400000)
     push({
-      id: 'stale_' + o.id, type: 'stale_lead', priority: Number(o.job_value) > T.stale_high_value ? 'high' : 'medium',
+      id: 'stale_' + o.id, type: 'stale_lead', priority: Number(o.job_value_cents || 0) > Math.round(T.stale_high_value * 100) ? 'high' : 'medium',
       title: `${o.client} has gone quiet`,
-      summary: `No activity in ${days} days. Stuck in "${o.status}"${o.job_value ? ' — $' + Number(o.job_value).toLocaleString() + ' at risk' : ''}.`,
+      summary: `No activity in ${days} days. Stuck in "${o.status}"${o.job_value_cents ? ' — $' + (Number(o.job_value_cents) / 100).toLocaleString() + ' at risk' : ''}.`,
       why: 'Stalled deals rarely revive themselves. A quick check-in call or a fresh angle (new option, small discount, deadline) restarts the conversation.',
       action_kind: 'open_lead', action_payload: { oppId: o.id },
       actions: [
@@ -5686,10 +5686,10 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
 
   // 3. NO NEXT STEP — open leads with no follow-up date scheduled at all
   const noNext = await q(
-    `SELECT o.id, o.client, o.status, o.job_value FROM opportunities o
+    `SELECT o.id, o.client, o.status, o.job_value_cents FROM opportunities o
      WHERE o.company_id = ?1 AND ${gwAssistOpenPredicate('o')}
        AND (o.next_follow_up IS NULL OR o.next_follow_up = '')${oppScope}
-     ORDER BY o.job_value DESC LIMIT 3`, companyId, repId)
+     ORDER BY o.job_value_cents DESC LIMIT 3`, companyId, repId)
   if (noNext.length) {
     const names = noNext.map((o: any) => o.client).join(', ')
     push({
@@ -5704,16 +5704,16 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
 
   // 4. ESTIMATES SENT, NO RESPONSE — sent/viewed 5+ days ago, still not accepted
   const coldEst = await q(
-    `SELECT id, client_name, title, total, status, sent_at, opp_id FROM estimates
+    `SELECT id, client_name, title, total_cents, status, sent_at, opp_id FROM estimates
      WHERE company_id = ?1 AND status IN ('sent','viewed') AND sent_at != ''
        AND julianday('now') - julianday(sent_at) >= ${Number(T.est_days)}
-     ORDER BY total DESC LIMIT 4`, companyId)
+     ORDER BY total_cents DESC LIMIT 4`, companyId)
   for (const e of coldEst) {
     const days = Math.floor((Date.now() - new Date(String(e.sent_at).replace(' ', 'T') + 'Z').getTime()) / 86400000)
     push({
-      id: 'est_' + e.id, type: 'estimate_no_response', priority: Number(e.total) > T.est_high_total ? 'high' : 'medium',
+      id: 'est_' + e.id, type: 'estimate_no_response', priority: Number(e.total_cents || 0) > Math.round(T.est_high_total * 100) ? 'high' : 'medium',
       title: `Estimate for ${e.client_name} is sitting unanswered`,
-      summary: `"${String(e.title || 'Estimate').slice(0, 50)}" ($${Number(e.total).toLocaleString()}) was ${e.status === 'viewed' ? 'VIEWED but not accepted' : 'sent'} ${days} days ago.`,
+      summary: `"${String(e.title || 'Estimate').slice(0, 50)}" ($${(Number(e.total_cents || 0) / 100).toLocaleString()}) was ${e.status === 'viewed' ? 'VIEWED but not accepted' : 'sent'} ${days} days ago.`,
       why: e.status === 'viewed'
         ? 'They opened it — something is holding them back. A quick "any questions?" call catches objections while the job is still top of mind.'
         : 'Estimates go cold fast. Following up within a week can double acceptance rates.',
@@ -5746,16 +5746,16 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
   // 6. OVERDUE INVOICES — money you are owed (managers/admins only)
   if (isMgr) {
     const lateInv = await q(
-      `SELECT id, client_name, invoice_number, balance_due, due_date FROM invoices
+      `SELECT id, client_name, invoice_number, balance_due_cents, due_date FROM invoices
        WHERE company_id = ?1 AND status IN ('sent','viewed','partial','overdue')
-         AND balance_due > 0 AND due_date != '' AND date(due_date) < date('now')
-       ORDER BY balance_due DESC LIMIT 4`, companyId)
-    const owed = lateInv.reduce((s: number, i: any) => s + Number(i.balance_due || 0), 0)
+         AND balance_due_cents > 0 AND due_date != '' AND date(due_date) < date('now')
+       ORDER BY balance_due_cents DESC LIMIT 4`, companyId)
+    const owedCents = lateInv.reduce((s: number, i: any) => s + Number(i.balance_due_cents || 0), 0)
     if (lateInv.length) {
       push({
-        id: 'inv_overdue', type: 'overdue_invoices', priority: owed > T.inv_high_owed ? 'high' : 'medium',
-        title: `$${owed.toLocaleString()} in overdue invoices`,
-        summary: lateInv.slice(0, 3).map((i: any) => `${i.client_name} ($${Number(i.balance_due).toLocaleString()})`).join(' · '),
+        id: 'inv_overdue', type: 'overdue_invoices', priority: owedCents > Math.round(T.inv_high_owed * 100) ? 'high' : 'medium',
+        title: `$${(owedCents / 100).toLocaleString()} in overdue invoices`,
+        summary: lateInv.slice(0, 3).map((i: any) => `${i.client_name} ($${(Number(i.balance_due_cents || 0) / 100).toLocaleString()})`).join(' · '),
         why: 'Cash flow is oxygen. The older an invoice gets, the harder it is to collect — a friendly reminder now beats an awkward call later.',
         action_kind: 'open_view', action_payload: { view: 'invoices' },
         actions: [{ kind: 'open_view', label: 'Open invoices', payload: { view: 'invoices' } }],
@@ -5766,7 +5766,7 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
   // 7. STAGE STAGNATION — pipeline concentration warning (managers only)
   if (isMgr) {
     const stuck = await q(
-      `SELECT COALESCE(s.display_name,o.status) status, COUNT(*) n, SUM(o.job_value) v FROM opportunities o
+      `SELECT COALESCE(s.display_name,o.status) status, COUNT(*) n, SUM(o.job_value_cents) v FROM opportunities o
        LEFT JOIN sales_stage_assignments a ON a.company_id=o.company_id AND a.opportunity_id=o.id
          AND a.process_version_id=(SELECT id FROM sales_process_versions WHERE company_id=o.company_id AND lifecycle='published' ORDER BY published_at DESC LIMIT 1)
        LEFT JOIN sales_process_stages s ON s.company_id=a.company_id AND s.process_version_id=a.process_version_id AND s.id=a.stage_id
@@ -5778,7 +5778,7 @@ async function gwAssistSignals(db: D1Database, companyId: string, repId: string,
       push({
         id: 'stage_stuck', type: 'stage_stagnation', priority: 'medium',
         title: `${st.n} deals stuck in "${st.status}" for ${Math.round(Number(T.stag_days) / 7)}+ weeks`,
-        summary: `$${Number(st.v || 0).toLocaleString()} in combined value hasn't moved. This stage may be a process bottleneck.`,
+        summary: `$${(Number(st.v || 0) / 100).toLocaleString()} in combined value hasn't moved. This stage may be a process bottleneck.`,
         why: 'When deals cluster in one stage, the issue is usually process (slow estimates, unclear next steps), not the customers. Fix the stage, not just the deals.',
         action_kind: 'open_view', action_payload: { view: 'pipeline' },
         actions: [{ kind: 'open_view', label: 'Open pipeline', payload: { view: 'pipeline' } }],
@@ -5809,7 +5809,7 @@ app.get('/api/ai/assistant/context', requireAuth, async (c) => {
 
   // Pipeline pulse (tenant-scoped headline numbers)
   const pulse: any = await db.prepare(
-    `SELECT COUNT(*) n, COALESCE(SUM(o.job_value),0) v FROM opportunities o
+    `SELECT COUNT(*) n, COALESCE(SUM(o.job_value_cents),0) v FROM opportunities o
      WHERE o.company_id = ? AND ${gwAssistOpenPredicate('o')}`
   ).bind(companyId).first().catch(() => ({ n: 0, v: 0 }))
 
@@ -5828,7 +5828,7 @@ app.get('/api/ai/assistant/context', requireAuth, async (c) => {
     business_type: co?.business_type || '',
     role,
     ai_enabled: !!apiKey,
-    pipeline: { open: Number(pulse?.n) || 0, value: Number(pulse?.v) || 0 },
+    pipeline: { open: Number(pulse?.n) || 0, value: (Number(pulse?.v) || 0) / 100 },
     setup_total: setup.total,
     recommendations: recs,
     snoozed: Object.keys(snoozes).length,
@@ -5881,7 +5881,7 @@ app.post('/api/ai/assistant', requireAuth, async (c) => {
   let recordCtx = ''
   if (b.oppId) {
     const opp: any = await db.prepare(
-      `SELECT id, client, status, job_value, next_follow_up, updated_at, service_line, project FROM opportunities
+      `SELECT id, client, status, job_value_cents, next_follow_up, updated_at, service_line, project FROM opportunities
        WHERE id = ? AND company_id = ? LIMIT 1`
     ).bind(String(b.oppId), companyId).first().catch(() => null)
     if (opp) {
@@ -5889,7 +5889,7 @@ app.post('/api/ai/assistant', requireAuth, async (c) => {
         `SELECT type, direction, subject, substr(body, 1, 200) body, ts FROM communications
          WHERE opp_id = ? AND company_id = ? ORDER BY ts DESC LIMIT 6`
       ).bind(opp.id, companyId).all().catch(() => ({ results: [] }))
-      recordCtx = `CURRENTLY VIEWING LEAD: ${opp.client} — status "${opp.status}", value $${Number(opp.job_value || 0).toLocaleString()}, next follow-up: ${opp.next_follow_up || 'none scheduled'}, service: ${opp.service_line || 'n/a'}${opp.project ? ', project: ' + String(opp.project).slice(0, 100) : ''}\nRecent activity:\n` +
+      recordCtx = `CURRENTLY VIEWING LEAD: ${opp.client} — status "${opp.status}", value $${(Number(opp.job_value_cents || 0) / 100).toLocaleString()}, next follow-up: ${opp.next_follow_up || 'none scheduled'}, service: ${opp.service_line || 'n/a'}${opp.project ? ', project: ' + String(opp.project).slice(0, 100) : ''}\nRecent activity:\n` +
         ((comms.results || []) as any[]).map((m: any) => `- [${String(m.ts).slice(0, 10)}] ${m.type}/${m.direction}${m.subject ? ' "' + m.subject + '"' : ''}: ${String(m.body || '').replace(/\s+/g, ' ').slice(0, 120)}`).join('\n')
     }
   }
@@ -6578,13 +6578,13 @@ app.get('/api/estimates/kpis', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const rows = await db.prepare(`
-    SELECT status, COUNT(*) as cnt, COALESCE(SUM(total),0) as total_val
+    SELECT status, COUNT(*) as cnt, COALESCE(SUM(total_cents),0) as total_val_cents
     FROM estimates WHERE company_id = ?
     GROUP BY status
   `).bind(companyId).all()
   const kpis: Record<string,{cnt:number;val:number}> = {}
   for (const r of (rows.results||[]) as any[]) {
-    kpis[r.status] = { cnt: r.cnt, val: r.total_val }
+    kpis[r.status] = { cnt: r.cnt, val: Number(r.total_val_cents || 0) / 100 }
   }
   return c.json({ ok: true, data: kpis })
 })
@@ -6804,7 +6804,7 @@ app.post('/api/estimates/:id/send', requireAuth, async (c) => {
   const co: any = await db.prepare(`SELECT name FROM companies WHERE id=? LIMIT 1`).bind(companyId).first().catch(() => null)
   const coName = (co && co.name) || 'Groundwork CRM'
   const estNum = est.est_number || est.id
-  const total = Number(est.total || 0)
+  const total = Number(est.total_cents || 0) / 100
   const totalFmt = total ? '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
 
   let emailed = false, fallback = false
@@ -7168,7 +7168,8 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
   const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM work_orders WHERE company_id=?`).bind(companyId).first()
   const woNumber = `WO-${((countRow?.n || 0) + 1).toString().padStart(5, '0')}`
   const woId = 'wo_' + uid()
-  const woAmountEst = Number(est.total || 0)
+  const woAmountEstCents = Number(est.total_cents || 0)
+  const woAmountEst = woAmountEstCents / 100
   await db.prepare(`
     INSERT INTO work_orders (id,company_id,wo_number,opp_id,estimate_id,client_name,client_id,property_addr,
       title,type,status,scheduled_date,scheduled_time,duration_hours,notes,amount_est,amount_est_cents,materials,checklist,timeline,created_by)
@@ -7184,7 +7185,7 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
     b.scheduled_date || null, b.scheduled_time || null,
     budgetHours || Number(b.duration_hours || 0) || null,
     (est.scope_of_work || '') + (est.internal_notes ? `\n\n[Internal] ${est.internal_notes}` : ''),
-    woAmountEst, Math.round(woAmountEst * 100), JSON.stringify(materials),
+    woAmountEst, woAmountEstCents, JSON.stringify(materials),
     JSON.stringify([]), JSON.stringify([{ at: new Date().toISOString(), event: `Created from estimate ${est.est_number}`, by: repId }]),
     repId
   ).run()
@@ -8181,9 +8182,9 @@ app.post('/api/ai/generate-quote', requireAuth, async (c) => {
   if (b.notes) comms = (comms ? comms + '\n' : '') + String(b.notes).slice(0, 6000)
 
   // 2. The company's price book (compact catalog for the model)
-  const pbRows = await db.prepare(`SELECT id, category, name, unit, unit_cost, unit_time FROM price_items WHERE company_id=? AND active=1 ORDER BY category, name LIMIT 1200`).bind(companyId).all()
+  const pbRows = await db.prepare(`SELECT id, category, name, unit, unit_cost_cents, unit_time FROM price_items WHERE company_id=? AND active=1 ORDER BY category, name LIMIT 1200`).bind(companyId).all()
   const priceBook = (pbRows.results || []) as any[]
-  const pbCompact = priceBook.map((p: any) => `${p.id}|${p.category}|${p.name}|${p.unit || ''}|$${p.unit_cost}|${p.unit_time}h`).join('\n')
+  const pbCompact = priceBook.map((p: any) => `${p.id}|${p.category}|${p.name}|${p.unit || ''}|$${(Number(p.unit_cost_cents || 0) / 100)}|${p.unit_time}h`).join('\n')
 
   // 3. Pricing settings (job cost engine parameters)
   const psRow: any = await db.prepare(`SELECT value FROM settings WHERE key=? LIMIT 1`).bind(`${companyId}:pricing_settings`).first().catch(() => null)
@@ -8196,7 +8197,7 @@ app.post('/api/ai/generate-quote', requireAuth, async (c) => {
 
   const context = [
     `Company: ${brand?.name || 'the company'}${brand?.tagline ? ' — ' + brand.tagline : ''}`,
-    lead ? `Client: ${lead.client || ''} | Address: ${lead.address || ''} | Project: ${lead.project || lead.service_line || ''} | Stage: ${lead.pipeline_stage || lead.status || ''}${lead.job_value ? ' | Est. value: $' + lead.job_value : ''}` : '',
+    lead ? `Client: ${lead.client || ''} | Address: ${lead.address || ''} | Project: ${lead.project || lead.service_line || ''} | Stage: ${lead.pipeline_stage || lead.status || ''}${lead.job_value_cents ? ' | Est. value: $' + (Number(lead.job_value_cents) / 100) : ''}` : '',
     comms ? `CONVERSATION HISTORY (what the client asked for — extract scope and quantities from this):\n${comms}` : '',
     b.instructions ? `Rep's instructions: ${String(b.instructions).slice(0, 2000)}` : '',
     `\nJOB COST PARAMETERS (for pricing sanity — sell price must recover these):`,
@@ -8270,7 +8271,7 @@ Rules:
           name: S(li.name || (pb && pb.name)).slice(0, 200),
           qty: N(li.qty) || 1,
           unit: S(li.unit || (pb && pb.unit)).slice(0, 60),
-          unit_cost: pb ? N(pb.unit_cost) : N(li.unit_cost),
+          unit_cost: pb ? (Number(pb.unit_cost_cents || 0) / 100) : N(li.unit_cost),
           unit_time: pb ? N(pb.unit_time) : N(li.unit_time),
           rate: N(li.rate),
           note: S(li.note).slice(0, 300),
@@ -8909,10 +8910,11 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
     const inv: any = await db.prepare(`SELECT * FROM invoices WHERE id=? AND company_id=? LIMIT 1`).bind(invoiceId, companyId).first()
     if (stripeKey && inv?.client_id) {
       const ap: any = await db.prepare(`SELECT * FROM client_autopay WHERE client_id=? AND company_id=? AND enabled=1 LIMIT 1`).bind(inv.client_id, companyId).first()
-      const owedCents = Math.round(Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0)) * 100)
+      const owedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
+      const apMaxAmountCents = Number(ap?.max_amount_cents || 0)
       if (ap?.stripe_pm_id && owedCents >= 50) {
-        if (ap.max_amount > 0 && owedCents / 100 > ap.max_amount) {
-          autopay = { attempted: false, reason: `Balance exceeds the client's autopay cap of $${ap.max_amount}` }
+        if (apMaxAmountCents > 0 && owedCents > apMaxAmountCents) {
+          autopay = { attempted: false, reason: `Balance exceeds the client's autopay cap of $${(apMaxAmountCents / 100)}` }
         } else {
           const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(companyId).first()
           const client: any = await db.prepare(`SELECT stripe_customer_id FROM clients WHERE id=? AND company_id=? LIMIT 1`).bind(inv.client_id, companyId).first()
@@ -8930,12 +8932,14 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
             })
             const pi: any = await piRes.json()
             if (piRes.ok && pi.status === 'succeeded') {
-              const amountDollars = owedCents / 100
-              const amountCents = Math.round(amountDollars * 100)
-              const newPaid = (inv.amount_paid || 0) + amountDollars
-              const newBalance = Math.max(0, (inv.total || 0) - newPaid)
+              const amountCents = owedCents
+              const amountDollars = amountCents / 100
+              const newPaidCents = Number(inv.amount_paid_cents || 0) + amountCents
+              const newBalanceCents = Math.max(0, Number(inv.total_cents || 0) - newPaidCents)
+              const newPaid = newPaidCents / 100
+              const newBalance = newBalanceCents / 100
               await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-                .bind(newPaid, Math.round(newPaid*100), newBalance, Math.round(newBalance*100), newBalance <= 0 ? 'paid' : 'partial', invoiceId, companyId).run()
+                .bind(newPaid, newPaidCents, newBalance, newBalanceCents, newBalanceCents <= 0 ? 'paid' : 'partial', invoiceId, companyId).run()
               await db.prepare(
                 `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
@@ -8969,28 +8973,30 @@ app.post('/api/invoices/:id/record-payment', requireAuth, async (c) => {
     .bind(id, companyId).first()
   if (!inv) return c.json({ error: 'Not found' }, 404)
 
-  const newPaid = (inv.amount_paid || 0) + (b.amount || 0)
-  const newBalance = (inv.total || 0) - newPaid
-  const newStatus = newBalance <= 0 ? 'paid' : 'partial'
-  const paidAt = newBalance <= 0 ? `datetime('now')` : inv.paid_at || ''
-  const clampedBalance = Math.max(0, newBalance)
+  const paymentAmountCents = Math.round((b.amount || 0) * 100)
+  const newPaidCents = Number(inv.amount_paid_cents || 0) + paymentAmountCents
+  const newBalanceCents = Number(inv.total_cents || 0) - newPaidCents
+  const newStatus = newBalanceCents <= 0 ? 'paid' : 'partial'
+  const clampedBalanceCents = Math.max(0, newBalanceCents)
+  const newPaid = newPaidCents / 100
+  const clampedBalance = clampedBalanceCents / 100
 
   await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-    .bind(newPaid, Math.round(newPaid*100), clampedBalance, Math.round(clampedBalance*100), newStatus, id, companyId).run()
+    .bind(newPaid, newPaidCents, clampedBalance, clampedBalanceCents, newStatus, id, companyId).run()
 
   // Log to payments table
   const payId = `pay_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
-  const paymentAmount = b.amount||0
+  const paymentAmount = paymentAmountCents / 100
   await db.prepare(`INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, description, created_at, updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`)
-    .bind(payId, companyId, id, inv.client_id||'', paymentAmount, Math.round(paymentAmount*100), paymentAmount, Math.round(paymentAmount*100), 'succeeded',
+    .bind(payId, companyId, id, inv.client_id||'', paymentAmount, paymentAmountCents, paymentAmount, paymentAmountCents, 'succeeded',
       b.method||'check', b.note||'Manual payment recorded').run()
 
   if (newStatus === 'paid') {
     await markOpportunityCollectedFromInvoice(db, companyId, id, inv.estimate_id)
   }
 
-  return c.json({ ok: true, status: newStatus, balance_due: Math.max(0, newBalance) })
+  return c.json({ ok: true, status: newStatus, balance_due: clampedBalance })
 })
 
 // POST /api/invoices/from-estimate/:estimateId — convert estimate to invoice
@@ -9016,15 +9022,22 @@ app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
 
   const id = `inv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
   const portalToken = crypto.randomUUID()
-  const total = est.total || 0
-  const depositPaid = est.deposit_paid_amount || 0
-  const balanceDue = total - depositPaid
+  // Balance-due derivation done in integer cents (not float dollars) —
+  // subtracting est.total - est.deposit_paid_amount in float would carry
+  // fractional-cent drift into the new invoice's balance_due.
+  const subtotalCents = Number(est.subtotal_cents || 0)
+  const taxAmountCents = Number(est.tax_amount_cents || 0)
+  const totalCents = Number(est.total_cents || 0)
+  const depositPaidCents = Number(est.deposit_paid_amount_cents || 0)
+  const balanceDueCentsClamped = Math.max(0, totalCents - depositPaidCents)
+  const total = totalCents / 100
+  const depositPaid = depositPaidCents / 100
+  const balanceDueClamped = balanceDueCentsClamped / 100
 
   // Get due date = today + 30 days
   const due = new Date(); due.setDate(due.getDate() + 30)
   const dueDate = due.toISOString().split('T')[0]
 
-  const balanceDueClamped = Math.max(0, balanceDue)
   await db.prepare(`
     INSERT INTO invoices (id, company_id, invoice_number, estimate_id, client_id, client_name,
       client_email, client_phone, title, status, subtotal, subtotal_cents, tax_rate, tax_amount, tax_amount_cents,
@@ -9034,8 +9047,8 @@ app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
   `).bind(id, companyId, invoiceNumber, est.id, est.client_id||'', est.client_name||'',
     est.client_email||'', est.client_phone||'',
     `Invoice for ${est.title || est.estimate_number}`, 'draft',
-    est.subtotal||0, Math.round((est.subtotal||0)*100), est.tax_rate||0, est.tax_amount||0, Math.round((est.tax_amount||0)*100),
-    total, Math.round(total*100), depositPaid, Math.round(depositPaid*100), balanceDueClamped, Math.round(balanceDueClamped*100), dueDate,
+    subtotalCents / 100, subtotalCents, est.tax_rate||0, taxAmountCents / 100, taxAmountCents,
+    total, totalCents, depositPaid, depositPaidCents, balanceDueClamped, balanceDueCentsClamped, dueDate,
     JSON.stringify(lineItems), est.notes||'', portalToken
   ).run()
 
@@ -9157,18 +9170,21 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
     if (!piRes.ok) throw new Error(pi.error?.message || 'Charge failed')
     if (pi.status !== 'succeeded') throw new Error(`Payment status: ${pi.status} — may require additional authentication`)
 
-    // Record payment and update invoice
-    const amountDollars = amount / 100
-    const newPaid = (inv.amount_paid || 0) + amountDollars
-    const newBalance = Math.max(0, (inv.total || inv.balance_due || 0) - newPaid)
-    const newStatus = newBalance <= 0 ? 'paid' : 'partial'
+    // Record payment and update invoice — amount is already cents (client-
+    // supplied charge amount), so the running balance stays in cents too.
+    const chargeAmountCents = Math.round(amount)
+    const newPaidCents = Number(inv.amount_paid_cents || 0) + chargeAmountCents
+    const newBalanceCents = Math.max(0, Number(inv.total_cents || inv.balance_due_cents || 0) - newPaidCents)
+    const newStatus = newBalanceCents <= 0 ? 'paid' : 'partial'
+    const newPaid = newPaidCents / 100
+    const newBalance = newBalanceCents / 100
+    const amountDollars = chargeAmountCents / 100
 
     await db.prepare(
       `UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
-    ).bind(newPaid, Math.round(newPaid*100), newBalance, Math.round(newBalance*100), newStatus, invoiceId, companyId).run()
+    ).bind(newPaid, newPaidCents, newBalance, newBalanceCents, newStatus, invoiceId, companyId).run()
 
     const pymtId = `py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`
-    const chargeAmountCents = Math.round(amountDollars * 100)
     await db.prepare(
       `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, description, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
@@ -9535,7 +9551,7 @@ app.get('/api/recurring-subscriptions', requireAuth, async (c) => {
   const status   = c.req.query('status')
   const upcoming = c.req.query('upcoming') // '1' = only next 30 days
   let sql = `
-    SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price as plan_price,
+    SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price_cents / 100.0 as plan_price,
            cl.name as client_display_name, cl.phone as client_phone, cl.address as client_address
     FROM client_plan_subscriptions cs
     LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
@@ -9556,7 +9572,7 @@ app.get('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
   await ensurePortfolioSchema(db)
   const subId = parseInt(c.req.param('id'))
   const sub = await db.prepare(`
-    SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price as plan_price,
+    SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price_cents / 100.0 as plan_price,
            cl.name as client_display_name, cl.phone as client_phone
     FROM client_plan_subscriptions cs
     LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
@@ -9581,7 +9597,11 @@ app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
   const id = Date.now()
   const startDate = start_date || new Date().toISOString().split('T')[0]
   const nextVisit = next_visit_date || startDate
-  const finalPrice = price_override ?? plan.price
+  // price_override (if given) is fresh request input, converted once; falling
+  // back to the plan's own price reads plan.price_cents directly rather than
+  // round-tripping through the float plan.price column.
+  const finalPriceCents = price_override != null ? Math.round(Number(price_override) * 100) : Number(plan.price_cents || 0)
+  const finalPrice = finalPriceCents / 100
   // Was writing to price_override, which isn't a real column on
   // client_plan_subscriptions (the real one is custom_price) -- this INSERT
   // always failed. Fixed as part of adding custom_price_cents (Stage 2 of
@@ -9590,7 +9610,7 @@ app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
   await db.prepare(`
     INSERT INTO client_plan_subscriptions (id, company_id, plan_id, client_id, client_name, start_date, next_visit_date, custom_price, custom_price_cents, notes, status)
     VALUES (?,?,?,?,?,?,?,?,?,?,'active')
-  `).bind(id, companyId, plan_id, client_id, client_name||'', startDate, nextVisit, finalPrice, Math.round(Number(finalPrice) * 100), notes||'').run()
+  `).bind(id, companyId, plan_id, client_id, client_name||'', startDate, nextVisit, finalPrice, finalPriceCents, notes||'').run()
   const created = await db.prepare(`SELECT * FROM client_plan_subscriptions WHERE id=?`).bind(id).first()
   return c.json(created, 201)
 })
@@ -10832,7 +10852,7 @@ app.get('/estimates/portal/:token', async (c) => {
   const statusLabel = { draft:'Draft', sent:'Sent', approved:'Approved ✓', declined:'Declined', expired:'Expired' }[est.status] || est.status
   const canAct = ['sent','draft'].includes(est.status)
   const lineItems = (() => { try { return JSON.parse(est.line_items||'[]') } catch { return [] } })()
-  const total = Number(est.total || 0) || lineItems.reduce((s: number, i: any) => s + (Number(i.qty||1) * Number(i.rate ?? i.unit_price ?? i.unit ?? 0)), 0)
+  const total = (Number(est.total_cents || 0) / 100) || lineItems.reduce((s: number, i: any) => s + (Number(i.qty||1) * Number(i.rate ?? i.unit_price ?? i.unit ?? 0)), 0)
 
   return c.html(`<!DOCTYPE html>
 <html lang="en"><head>
@@ -11021,9 +11041,9 @@ app.get('/invoices/portal/:token', async (c) => {
   const canPayOnline = !!(stripeReady?.stripe_account_id && stripeReady?.stripe_onboarded && (c.env as any).STRIPE_SECRET_KEY)
   const esc2 = (v: any) => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   const bc = (company && /^#[0-9a-fA-F]{3,8}$/.test(company.brand_color || '') ? company.brand_color : '#2D7A55')
-  const total = Number(inv.total || 0)
-  const paid = Number(inv.amount_paid || 0)
-  const owed = Math.max(0, total - paid)
+  const total = Number(inv.total_cents || 0) / 100
+  const paid = Number(inv.amount_paid_cents || 0) / 100
+  const owed = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0)) / 100
   const isPaid = inv.status === 'paid' || (total > 0 && owed <= 0)
   const statusLabel = isPaid ? 'Paid' : inv.status === 'partial' ? 'Partially Paid' : inv.status === 'overdue' ? 'Overdue' : 'Due'
   const fmt = (n: number) => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -11099,9 +11119,9 @@ app.get('/invoices/portal/:token', async (c) => {
     </div>` : ''}
     <div class="portal-section">
       <div class="amount-summary">
-        <div class="amount-row"><span>Subtotal</span><span>${fmt(Number(inv.subtotal || total))}</span></div>
-        ${Number(inv.tax_amount||0) ? `<div class="amount-row"><span>Tax</span><span>${fmt(Number(inv.tax_amount))}</span></div>` : ''}
-        ${Number(inv.discount_amount||0) ? `<div class="amount-row"><span>Discount</span><span>-${fmt(Number(inv.discount_amount))}</span></div>` : ''}
+        <div class="amount-row"><span>Subtotal</span><span>${fmt(Number(inv.subtotal_cents || 0) / 100 || total)}</span></div>
+        ${Number(inv.tax_amount_cents||0) ? `<div class="amount-row"><span>Tax</span><span>${fmt(Number(inv.tax_amount_cents) / 100)}</span></div>` : ''}
+        ${Number(inv.discount_amount_cents||0) ? `<div class="amount-row"><span>Discount</span><span>-${fmt(Number(inv.discount_amount_cents) / 100)}</span></div>` : ''}
         <div class="amount-row"><span>Total</span><span>${fmt(total)}</span></div>
         ${paid > 0 ? `<div class="amount-row"><span>Paid</span><span>-${fmt(paid)}</span></div>` : ''}
         <div class="amount-row owed"><span>${isPaid ? 'Balance' : 'Amount Due'}</span><span>${fmt(owed)}</span></div>
@@ -11153,7 +11173,7 @@ app.post('/api/invoices/portal/:token/pay', async (c) => {
   if (!inv) return c.json({ error: 'Invalid link' }, 404)
   const company: any = await db.prepare(`SELECT stripe_account_id, stripe_onboarded, stripe_platform_fee_pct FROM companies WHERE id=? LIMIT 1`).bind(inv.company_id).first()
   if (!company?.stripe_account_id || !company.stripe_onboarded) return c.json({ error: 'Online payment is not available' }, 400)
-  const owedCents = Math.round(Math.max(0, Number(inv.total || 0) - Number(inv.amount_paid || 0)) * 100)
+  const owedCents = Math.max(0, Number(inv.total_cents || 0) - Number(inv.amount_paid_cents || 0))
   if (owedCents < 50) return c.json({ error: 'Nothing due on this invoice' }, 400)
   try {
     const origin = new URL(c.req.url).origin
@@ -11437,15 +11457,18 @@ app.post('/api/stripe/webhook', async (c) => {
         // Record payment against invoice
         const inv = await db.prepare(`SELECT * FROM invoices WHERE id=? AND company_id=?`).bind(invoiceId, companyId).first() as any
         if (inv) {
-          const newPaid = (inv.amount_paid || 0) + amountPaid / 100
+          // amountPaid (session.amount_total) is already Stripe cents — kept
+          // in cents throughout instead of round-tripping through dollars.
+          const newPaidCents = Number(inv.amount_paid_cents || 0) + amountPaid
           // Was comparing against inv.amount_total/inv.amount, neither of which
           // exists on the invoices table (the real column is `total`) — that
           // comparison was always false, so this path never actually reached
           // 'paid'. Fixed as part of wiring the collected-flag write-through
           // below, since this is the primary automated payment path.
-          const newStatus = newPaid >= (inv.total || 0) ? 'paid' : 'partial'
+          const newStatus = newPaidCents >= Number(inv.total_cents || 0) ? 'paid' : 'partial'
+          const newPaid = newPaidCents / 100
           await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, status=? WHERE id=? AND company_id=?`)
-            .bind(newPaid, Math.round(newPaid*100), newStatus, invoiceId, companyId).run()
+            .bind(newPaid, newPaidCents, newStatus, invoiceId, companyId).run()
           // Log to payments table
           // TODO(bug, found 2026-08-10 during Stage 2 money-cents work, not
           // fixed here -- out of scope): 'method' and 'paid_at' are not real
