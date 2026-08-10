@@ -930,12 +930,13 @@ export function registerPortal(app: Hono<any>, deps: {
       if (!pm) return c.json({ error: 'That payment method is not on file' }, 400)
       pmLabel = pm.label
     } else { pmId = '' }
+    const maxAmountCents = Math.round(maxAmount * 100)
     await db.prepare(
-      `INSERT INTO client_autopay (id, company_id, client_id, enabled, stripe_pm_id, pm_label, max_amount, updated_by)
-       VALUES (?,?,?,?,?,?,?,?)
+      `INSERT INTO client_autopay (id, company_id, client_id, enabled, stripe_pm_id, pm_label, max_amount, max_amount_cents, updated_by)
+       VALUES (?,?,?,?,?,?,?,?,?)
        ON CONFLICT(client_id) DO UPDATE SET enabled=excluded.enabled, stripe_pm_id=excluded.stripe_pm_id,
-         pm_label=excluded.pm_label, max_amount=excluded.max_amount, updated_by=excluded.updated_by, updated_at=datetime('now')`
-    ).bind(`ap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, s.companyId, clientId, enabled, pmId, pmLabel, maxAmount, s.user.id).run()
+         pm_label=excluded.pm_label, max_amount=excluded.max_amount, max_amount_cents=excluded.max_amount_cents, updated_by=excluded.updated_by, updated_at=datetime('now')`
+    ).bind(`ap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, s.companyId, clientId, enabled, pmId, pmLabel, maxAmount, maxAmountCents, s.user.id).run()
     await portalAudit(db, { companyId: s.companyId, actorType: 'portal', portalUserId: s.user.id, clientId, eventType: 'portal_autopay_updated', meta: { enabled: !!enabled, max_amount: maxAmount }, ip: clientIp(c) })
     await notifyCompany(db, s.companyId, 'portal_autopay', `Autopay ${enabled ? 'enabled' : 'disabled'} by client`, `${s.user.name || s.user.email} ${enabled ? 'enabled' : 'disabled'} autopay${enabled && maxAmount ? ` (cap $${maxAmount})` : ''}.`, 'client', clientId, '#clients')
     return c.json({ ok: true })
@@ -947,12 +948,13 @@ export function registerPortal(app: Hono<any>, deps: {
     const newPaid = (inv.amount_paid || 0) + amountDollars
     const newBalance = Math.max(0, (inv.total || inv.balance_due || 0) - newPaid)
     const newStatus = newBalance <= 0 ? 'paid' : 'partial'
-    await db.prepare(`UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-      .bind(newPaid, newBalance, newStatus, inv.id, companyId).run()
+    const amountCents = Math.round(amountDollars * 100)
+    await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+      .bind(newPaid, Math.round(newPaid*100), newBalance, Math.round(newBalance*100), newStatus, inv.id, companyId).run()
     await db.prepare(
-      `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
-    ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, companyId, inv.id, inv.client_id || '', amountDollars, amountDollars,
+      `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+    ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, companyId, inv.id, inv.client_id || '', amountDollars, amountCents, amountDollars, amountCents,
       'succeeded', 'card', piId, `Portal payment — ${piId}`, inv.invoice_number || '').run()
     return { status: newStatus, balance_due: newBalance, amount_paid: newPaid }
   }
@@ -990,12 +992,13 @@ export function registerPortal(app: Hono<any>, deps: {
   })
 
   async function markDepositPaid(db: D1Database, est: any, amountDollars: number, piId: string, companyId: string) {
-    await db.prepare(`UPDATE estimates SET deposit_paid=1, deposit_paid_at=datetime('now'), deposit_paid_amount=?, stripe_payment_status='deposit_paid', payment_intent_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-      .bind(amountDollars, piId, est.id, companyId).run()
+    const amountCents = Math.round(amountDollars * 100)
+    await db.prepare(`UPDATE estimates SET deposit_paid=1, deposit_paid_at=datetime('now'), deposit_paid_amount=?, deposit_paid_amount_cents=?, stripe_payment_status='deposit_paid', payment_intent_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+      .bind(amountDollars, amountCents, piId, est.id, companyId).run()
     await db.prepare(
-      `INSERT INTO payments (id, company_id, estimate_id, client_id, amount, net_amount, status, payment_method, stripe_payment_intent_id, description, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
-    ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, companyId, est.id, est.client_id || '', amountDollars, amountDollars,
+      `INSERT INTO payments (id, company_id, estimate_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, stripe_payment_intent_id, description, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+    ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, companyId, est.id, est.client_id || '', amountDollars, amountCents, amountDollars, amountCents,
       'succeeded', 'card', piId, `Deposit — estimate ${est.est_number || est.id}`).run()
   }
 

@@ -3102,25 +3102,28 @@ app.post('/api/opportunities', requireAuth, async (c) => {
     if (stagesRow?.value) { const parsed = JSON.parse(stagesRow.value); if (Array.isArray(parsed) && parsed.length && String(parsed[0]).trim()) defaultStatus = String(parsed[0]).trim() }
   } catch (_) {}
   const effStatus = b.status || defaultStatus
+  const jobValueNum = Number(b.jobValue||b.job_value||0)
+  const estimateAmountNum = Number(b.estimateAmount||b.estimate_amount||0)
+  const soldAmountNum = Number(b.soldAmount||b.sold_amount||0)
   await c.env.DB.prepare(`
     INSERT INTO opportunities (
       id, company_id, rep_id, assigned_to_rep_id,
       client, phone, email, address, service_line, source, status,
-      job_value, project, urgency, decision_maker, budget_range, next_follow_up,
-      pipeline_stage, estimate_amount, estimate_sent_date, estimate_count,
+      job_value, job_value_cents, project, urgency, decision_maker, budget_range, next_follow_up,
+      pipeline_stage, estimate_amount, estimate_amount_cents, estimate_sent_date, estimate_count,
       work_type, client_type, prompt, desired_outcome, fit_concerns,
-      commission_approved, collected, sold_date, sold_amount, client_id,
+      commission_approved, collected, sold_date, sold_amount, sold_amount_cents, client_id,
       created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(
     id, companyId, effRepId, assignedTo,
     b.client||'', b.phone||'', b.email||'',
     b.address||'', b.serviceLine||b.service_line||'', b.source||'',
-    effStatus, Number(b.jobValue||b.job_value||0),
+    effStatus, jobValueNum, Math.round(jobValueNum * 100),
     b.project||'', b.urgency||'', b.decisionMaker||b.decision_maker||'',
     b.budgetRange||b.budget_range||'', b.nextFollowUp||b.next_follow_up||'',
     b.pipelineStage||b.pipeline_stage||'',
-    Number(b.estimateAmount||b.estimate_amount||0),
+    estimateAmountNum, Math.round(estimateAmountNum * 100),
     b.estimateSentDate||b.estimate_sent_date||'',
     Number(b.estimateCount||b.estimate_count||0),
     b.workType||b.work_type||'', b.clientType||b.client_type||'',
@@ -3128,7 +3131,7 @@ app.post('/api/opportunities', requireAuth, async (c) => {
     b.fitConcerns||b.fit_concerns||'',
     b.commissionApproved||b.commission_approved?1:0,
     b.collected?1:0, b.soldDate||b.sold_date||'',
-    Number(b.soldAmount||b.sold_amount||0),
+    soldAmountNum, Math.round(soldAmountNum * 100),
     b.clientId||b.client_id||''
   ).run()
   // Published-process lead flow: a brand new lead is immediately assigned to the
@@ -3178,12 +3181,23 @@ app.put('/api/opportunities/:id', requireAuth, async (c) => {
     commission_approved:'commission_approved', sold_date:'sold_date', sold_amount:'sold_amount',
     clientId:'client_id', client_id:'client_id'
   }
+  // Dual-write: every money column below also gets its *_cents twin set in
+  // the same statement (migrations/0058_money_cents.sql, Stage 2 of the
+  // money-representation migration — additive only, readers still use the
+  // float column this stage).
+  const MONEY_CENTS_COLS: Record<string,string> = {
+    job_value: 'job_value_cents', estimate_amount: 'estimate_amount_cents', sold_amount: 'sold_amount_cents',
+  }
   const updates: string[] = []
   const vals: any[] = []
   for (const [key, col] of Object.entries(fieldMap)) {
     if (b[key] !== undefined && !updates.includes(`${col} = ?`)) {
       updates.push(`${col} = ?`)
       vals.push(b[key])
+      if (MONEY_CENTS_COLS[col]) {
+        updates.push(`${MONEY_CENTS_COLS[col]} = ?`)
+        vals.push(Math.round(Number(b[key]) * 100))
+      }
     }
   }
   if (!updates.length) return err(c, 'Nothing to update')
@@ -3263,24 +3277,27 @@ app.post('/api/opportunities/bulk-upsert', requireAuth, async (c) => {
     if (!opp.id) { skipped++; continue }
     if (existingIds.has(opp.id)) { skipped++; continue }
     const effRepId = opp.repId || opp.rep_id || repId || null
+    const bulkJobValueNum = Number(opp.jobValue||opp.job_value||0)
+    const bulkEstimateAmountNum = Number(opp.estimateAmount||opp.estimate_amount||0)
+    const bulkSoldAmountNum = Number(opp.soldAmount||opp.sold_amount||0)
     await c.env.DB.prepare(`
       INSERT INTO opportunities (
         id, company_id, rep_id, client, phone, email, address, service_line, source, status,
-        job_value, project, urgency, decision_maker, budget_range, next_follow_up,
-        pipeline_stage, estimate_amount, estimate_sent_date, estimate_count,
+        job_value, job_value_cents, project, urgency, decision_maker, budget_range, next_follow_up,
+        pipeline_stage, estimate_amount, estimate_amount_cents, estimate_sent_date, estimate_count,
         work_type, client_type, prompt, desired_outcome, fit_concerns,
-        commission_approved, collected, sold_date, sold_amount,
+        commission_approved, collected, sold_date, sold_amount, sold_amount_cents,
         created_at, updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
         COALESCE(?,datetime('now')), COALESCE(?,datetime('now')))
     `).bind(
       opp.id, companyId, effRepId, opp.client||'', opp.phone||'', opp.email||'',
       opp.address||'', opp.serviceLine||opp.service_line||'', opp.source||'',
-      opp.status||'New Lead', Number(opp.jobValue||opp.job_value||0),
+      opp.status||'New Lead', bulkJobValueNum, Math.round(bulkJobValueNum * 100),
       opp.project||'', opp.urgency||'', opp.decisionMaker||opp.decision_maker||'',
       opp.budgetRange||opp.budget_range||'', opp.nextFollowUp||opp.next_follow_up||'',
       opp.pipelineStage||opp.pipeline_stage||'',
-      Number(opp.estimateAmount||opp.estimate_amount||0),
+      bulkEstimateAmountNum, Math.round(bulkEstimateAmountNum * 100),
       opp.estimateSentDate||opp.estimate_sent_date||'',
       Number(opp.estimateCount||opp.estimate_count||0),
       opp.workType||opp.work_type||'', opp.clientType||opp.client_type||'',
@@ -3288,7 +3305,7 @@ app.post('/api/opportunities/bulk-upsert', requireAuth, async (c) => {
       opp.fitConcerns||opp.fit_concerns||'',
       opp.commissionApproved||opp.commission_approved?1:0,
       opp.collected?1:0, opp.soldDate||opp.sold_date||'',
-      Number(opp.soldAmount||opp.sold_amount||0),
+      bulkSoldAmountNum, Math.round(bulkSoldAmountNum * 100),
       opp.createdAt||opp.created_at||null,
       opp.updatedAt||opp.updated_at||null
     ).run()
@@ -6656,11 +6673,12 @@ app.post('/api/estimates', requireAuth, async (c) => {
     INSERT INTO estimates (id,company_id,est_number,title,scope_of_work,
       client_id,client_name,client_email,client_phone,client_address,
       property_id,property_addr,opp_id,rep_id,assigned_to,
-      status,subtotal,discount_pct,discount_amt,tax_pct,tax_amt,total,
-      deposit_pct,deposit_amt,line_items,attachments,
+      status,subtotal,subtotal_cents,discount_pct,discount_amt,discount_amt_cents,
+      tax_pct,tax_amt,tax_amt_cents,total,total_cents,
+      deposit_pct,deposit_amt,deposit_amt_cents,line_items,attachments,
       internal_notes,customer_notes,terms,portal_token,
       estimate_date,expiry_date,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(
     id,companyId,estNumber,
     b.title||'',b.scope_of_work||'',
@@ -6668,9 +6686,9 @@ app.post('/api/estimates', requireAuth, async (c) => {
     b.property_id||'',b.property_addr||'',b.opp_id||'',
     repId,b.assigned_to||repId,
     b.status||'draft',
-    subtotal,Number(b.discount_pct||0),discAmt,
-    Number(b.tax_pct||0),taxAmt,total,
-    Number(b.deposit_pct||30),depAmt,
+    subtotal,Math.round(subtotal*100),Number(b.discount_pct||0),discAmt,Math.round(discAmt*100),
+    Number(b.tax_pct||0),taxAmt,Math.round(taxAmt*100),total,Math.round(total*100),
+    Number(b.deposit_pct||30),depAmt,Math.round(depAmt*100),
     JSON.stringify(items),JSON.stringify(b.attachments||[]),
     b.internal_notes||'',b.customer_notes||'',b.terms||'',
     portalToken,
@@ -6723,8 +6741,9 @@ app.put('/api/estimates/:id', requireAuth, async (c) => {
       title=?,scope_of_work=?,
       client_id=?,client_name=?,client_email=?,client_phone=?,client_address=?,
       property_id=?,property_addr=?,assigned_to=?,
-      status=?,subtotal=?,discount_pct=?,discount_amt=?,tax_pct=?,tax_amt=?,total=?,
-      deposit_pct=?,deposit_amt=?,line_items=?,attachments=?,
+      status=?,subtotal=?,subtotal_cents=?,discount_pct=?,discount_amt=?,discount_amt_cents=?,
+      tax_pct=?,tax_amt=?,tax_amt_cents=?,total=?,total_cents=?,
+      deposit_pct=?,deposit_amt=?,deposit_amt_cents=?,line_items=?,attachments=?,
       internal_notes=?,customer_notes=?,terms=?,
       estimate_date=?,expiry_date=?,updated_at=datetime('now')
     WHERE id=? AND company_id=?
@@ -6733,9 +6752,9 @@ app.put('/api/estimates/:id', requireAuth, async (c) => {
     b.client_id||'',b.client_name||'',b.client_email||'',b.client_phone||'',b.client_address||'',
     b.property_id||'',b.property_addr||'',b.assigned_to||'',
     b.status||'draft',
-    subtotal,Number(b.discount_pct||0),discAmt,
-    Number(b.tax_pct||0),taxAmt,total,
-    Number(b.deposit_pct||30),depAmt,
+    subtotal,Math.round(subtotal*100),Number(b.discount_pct||0),discAmt,Math.round(discAmt*100),
+    Number(b.tax_pct||0),taxAmt,Math.round(taxAmt*100),total,Math.round(total*100),
+    Number(b.deposit_pct||30),depAmt,Math.round(depAmt*100),
     JSON.stringify(items),JSON.stringify(b.attachments||[]),
     b.internal_notes||'',b.customer_notes||'',b.terms||'',
     b.estimate_date||'',b.expiry_date||'',
@@ -6878,11 +6897,12 @@ app.post('/api/estimates/:id/duplicate', requireAuth, async (c) => {
     INSERT INTO estimates (id,company_id,est_number,title,scope_of_work,
       client_id,client_name,client_email,client_phone,client_address,
       property_id,property_addr,opp_id,rep_id,assigned_to,
-      status,subtotal,discount_pct,discount_amt,tax_pct,tax_amt,total,
-      deposit_pct,deposit_amt,line_items,attachments,
+      status,subtotal,subtotal_cents,discount_pct,discount_amt,discount_amt_cents,
+      tax_pct,tax_amt,tax_amt_cents,total,total_cents,
+      deposit_pct,deposit_amt,deposit_amt_cents,line_items,attachments,
       internal_notes,customer_notes,terms,portal_token,
       estimate_date,expiry_date,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(
     newId,companyId,`EST-${num}`,
     `Copy of ${row.title||''}`,row.scope_of_work||'',
@@ -6890,9 +6910,9 @@ app.post('/api/estimates/:id/duplicate', requireAuth, async (c) => {
     row.property_id||'',row.property_addr||'',row.opp_id||'',
     row.rep_id||'',row.assigned_to||'',
     'draft',
-    row.subtotal||0,row.discount_pct||0,row.discount_amt||0,
-    row.tax_pct||0,row.tax_amt||0,row.total||0,
-    row.deposit_pct||30,row.deposit_amt||0,
+    row.subtotal||0,Math.round((row.subtotal||0)*100),row.discount_pct||0,row.discount_amt||0,Math.round((row.discount_amt||0)*100),
+    row.tax_pct||0,row.tax_amt||0,Math.round((row.tax_amt||0)*100),row.total||0,Math.round((row.total||0)*100),
+    row.deposit_pct||30,row.deposit_amt||0,Math.round((row.deposit_amt||0)*100),
     row.line_items||'[]',row.attachments||'[]',
     row.internal_notes||'',row.customer_notes||'',row.terms||'',
     newToken,
@@ -6943,11 +6963,12 @@ app.post('/api/price-items', requireAuth, async (c) => {
   const name = (b.name || '').trim()
   if (!name) return c.json({ ok: false, error: 'Name required' }, 400)
   const id = 'pi_' + uid()
+  const itemUnitCost = Number(b.unit_cost || 0)
   await db.prepare(`
-    INSERT INTO price_items (id,company_id,category,name,unit,unit_cost,unit_time,item_type,sku,vendor,notes,active,sort_order)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO price_items (id,company_id,category,name,unit,unit_cost,unit_cost_cents,unit_time,item_type,sku,vendor,notes,active,sort_order)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(id, companyId, (b.category || 'General').trim(), name, b.unit || '',
-    Number(b.unit_cost || 0), Number(b.unit_time || 0), b.item_type || 'material',
+    itemUnitCost, Math.round(itemUnitCost * 100), Number(b.unit_time || 0), b.item_type || 'material',
     b.sku || '', b.vendor || '', b.notes || '', b.active === 0 ? 0 : 1, Number(b.sort_order || 0)).run()
   return c.json({ ok: true, id }, 201)
 })
@@ -6961,7 +6982,10 @@ app.put('/api/price-items/:id', requireAuth, async (c) => {
   const fields = ['category','name','unit','unit_cost','unit_time','item_type','sku','vendor','notes','active','sort_order']
   const sets: string[] = []; const binds: any[] = []
   for (const f of fields) {
-    if (b[f] !== undefined) { sets.push(`${f}=?`); binds.push(['unit_cost','unit_time','active','sort_order'].includes(f) ? Number(b[f]) : b[f]) }
+    if (b[f] !== undefined) {
+      sets.push(`${f}=?`); binds.push(['unit_cost','unit_time','active','sort_order'].includes(f) ? Number(b[f]) : b[f])
+      if (f === 'unit_cost') { sets.push('unit_cost_cents=?'); binds.push(Math.round(Number(b[f]) * 100)) }
+    }
   }
   if (!sets.length) return c.json({ ok: false, error: 'No fields' }, 400)
   sets.push(`updated_at=datetime('now')`)
@@ -7023,15 +7047,16 @@ app.post('/api/price-items/import', requireAuth, async (c) => {
     const r = clean[i]
     const key = `${r.category}|${r.name.toLowerCase()}`
     const exId = mode === 'merge' ? byKey.get(key) : undefined
+    const rUnitCostCents = Math.round(Number(r.unit_cost) * 100)
     if (exId) {
-      batch.push(db.prepare(`UPDATE price_items SET unit=?, unit_cost=?, unit_time=?, item_type=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-        .bind(r.unit, r.unit_cost, r.unit_time, r.item_type, exId, companyId))
+      batch.push(db.prepare(`UPDATE price_items SET unit=?, unit_cost=?, unit_cost_cents=?, unit_time=?, item_type=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+        .bind(r.unit, r.unit_cost, rUnitCostCents, r.unit_time, r.item_type, exId, companyId))
       updated++
     } else {
       const id = 'pi_' + uid() + i.toString(36)
       byKey.set(key, id)
-      batch.push(db.prepare(`INSERT INTO price_items (id,company_id,category,name,unit,unit_cost,unit_time,item_type,sort_order) VALUES (?,?,?,?,?,?,?,?,?)`)
-        .bind(id, companyId, r.category, r.name, r.unit, r.unit_cost, r.unit_time, r.item_type, i))
+      batch.push(db.prepare(`INSERT INTO price_items (id,company_id,category,name,unit,unit_cost,unit_cost_cents,unit_time,item_type,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .bind(id, companyId, r.category, r.name, r.unit, r.unit_cost, rUnitCostCents, r.unit_time, r.item_type, i))
       inserted++
     }
     if (batch.length >= 40) await flush()
@@ -7143,10 +7168,11 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
   const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM work_orders WHERE company_id=?`).bind(companyId).first()
   const woNumber = `WO-${((countRow?.n || 0) + 1).toString().padStart(5, '0')}`
   const woId = 'wo_' + uid()
+  const woAmountEst = Number(est.total || 0)
   await db.prepare(`
     INSERT INTO work_orders (id,company_id,wo_number,opp_id,estimate_id,client_name,client_id,property_addr,
-      title,type,status,scheduled_date,scheduled_time,duration_hours,notes,amount_est,materials,checklist,timeline,created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      title,type,status,scheduled_date,scheduled_time,duration_hours,notes,amount_est,amount_est_cents,materials,checklist,timeline,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     woId, companyId, woNumber, est.opp_id || null, est.id,
     est.client_name || '', est.client_id || null, est.property_addr || est.client_address || '',
@@ -7158,7 +7184,7 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
     b.scheduled_date || null, b.scheduled_time || null,
     budgetHours || Number(b.duration_hours || 0) || null,
     (est.scope_of_work || '') + (est.internal_notes ? `\n\n[Internal] ${est.internal_notes}` : ''),
-    Number(est.total || 0), JSON.stringify(materials),
+    woAmountEst, Math.round(woAmountEst * 100), JSON.stringify(materials),
     JSON.stringify([]), JSON.stringify([{ at: new Date().toISOString(), event: `Created from estimate ${est.est_number}`, by: repId }]),
     repId
   ).run()
@@ -7230,12 +7256,13 @@ app.post('/api/proposals', requireAuth, async (c) => {
   if (sched.length && Math.abs(totalPct - 100) > 0.01) {
     return c.json({ ok: false, error: `Payment schedule must total 100% (currently ${totalPct.toFixed(1)}%)` }, 400)
   }
+  const propTotal = Number(b.total||0)
   await db.prepare(`
     INSERT INTO proposals (id,company_id,prop_number,title,subtitle,overview,
       client_id,client_name,client_email,client_phone,property_addr,
-      opp_id,estimate_id,rep_id,status,sections,payment_schedule,total,
+      opp_id,estimate_id,rep_id,status,sections,payment_schedule,total,total_cents,
       terms,internal_notes,portal_token,proposal_date,valid_through,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(
     id, companyId, propNumber,
     b.title||'', b.subtitle||'', b.overview||'',
@@ -7243,7 +7270,7 @@ app.post('/api/proposals', requireAuth, async (c) => {
     b.opp_id||'', b.estimate_id||'', repId,
     b.status||'draft',
     JSON.stringify(b.sections||[]), JSON.stringify(sched),
-    Number(b.total||0),
+    propTotal, Math.round(propTotal * 100),
     b.terms||'', b.internal_notes||'', portalToken,
     b.proposal_date || new Date().toISOString().slice(0,10),
     b.valid_through || ''
@@ -7262,11 +7289,12 @@ app.put('/api/proposals/:id', requireAuth, async (c) => {
   if (sched.length && Math.abs(totalPct - 100) > 0.01) {
     return c.json({ ok: false, error: `Payment schedule must total 100% (currently ${totalPct.toFixed(1)}%)` }, 400)
   }
+  const updProposalTotal = Number(b.total||0)
   const r = await db.prepare(`
     UPDATE proposals SET
       title=?, subtitle=?, overview=?,
       client_id=?, client_name=?, client_email=?, client_phone=?, property_addr=?,
-      opp_id=?, estimate_id=?, status=?, sections=?, payment_schedule=?, total=?,
+      opp_id=?, estimate_id=?, status=?, sections=?, payment_schedule=?, total=?, total_cents=?,
       terms=?, internal_notes=?, proposal_date=?, valid_through=?,
       sent_at=CASE WHEN ?='sent' AND (sent_at IS NULL OR sent_at='') THEN datetime('now') ELSE sent_at END,
       updated_at=datetime('now')
@@ -7275,7 +7303,7 @@ app.put('/api/proposals/:id', requireAuth, async (c) => {
     b.title||'', b.subtitle||'', b.overview||'',
     b.client_id||'', b.client_name||'', b.client_email||'', b.client_phone||'', b.property_addr||'',
     b.opp_id||'', b.estimate_id||'', b.status||'draft',
-    JSON.stringify(b.sections||[]), JSON.stringify(sched), Number(b.total||0),
+    JSON.stringify(b.sections||[]), JSON.stringify(sched), updProposalTotal, Math.round(updProposalTotal * 100),
     b.terms||'', b.internal_notes||'',
     b.proposal_date||'', b.valid_through||'',
     b.status||'draft',
@@ -8791,17 +8819,23 @@ app.post('/api/invoices', requireAuth, async (c) => {
   const discountAmount = b.discount_amount || 0
   const balanceDue = total - (b.amount_paid || 0)
 
+  const amountPaid = b.amount_paid || 0
   await db.prepare(`
     INSERT INTO invoices (id, company_id, invoice_number, estimate_id, client_id, client_name,
-      client_email, client_phone, client_address, title, status, subtotal, tax_rate, tax_amount,
-      discount_amount, total, amount_paid, balance_due, due_date, line_items, notes, internal_notes,
+      client_email, client_phone, client_address, title, status, subtotal, subtotal_cents,
+      tax_rate, tax_amount, tax_amount_cents, discount_amount, discount_amount_cents,
+      total, total_cents, amount_paid, amount_paid_cents, balance_due, balance_due_cents,
+      due_date, line_items, notes, internal_notes,
       terms, footer_note, portal_token, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(id, companyId, invoiceNumber,
     b.estimate_id||'', b.client_id||'', b.client_name||'', b.client_email||'',
     b.client_phone||'', b.client_address||'', b.title||`Invoice ${invoiceNumber}`,
-    b.status||'draft', subtotal, b.tax_rate||0, taxAmount, discountAmount,
-    total, b.amount_paid||0, balanceDue, b.due_date||'',
+    b.status||'draft', subtotal, Math.round(subtotal*100),
+    b.tax_rate||0, taxAmount, Math.round(taxAmount*100),
+    discountAmount, Math.round(discountAmount*100),
+    total, Math.round(total*100), amountPaid, Math.round(amountPaid*100),
+    balanceDue, Math.round(balanceDue*100), b.due_date||'',
     lineItems, b.notes||'', b.internal_notes||'',
     b.terms||'Net 30', b.footer_note||'', portalToken
   ).run()
@@ -8820,12 +8854,22 @@ app.put('/api/invoices/:id', requireAuth, async (c) => {
     'amount_paid','balance_due','due_date','sent_at','viewed_at','paid_at','voided_at',
     'line_items','notes','internal_notes','terms','footer_note','payment_intent_id',
     'stripe_payment_status']
+  // Dual-write: every money column also gets its *_cents twin set in the
+  // same statement (migrations/0058_money_cents.sql, Stage 2).
+  const MONEY_CENTS_COLS: Record<string,string> = {
+    subtotal:'subtotal_cents', tax_amount:'tax_amount_cents', discount_amount:'discount_amount_cents',
+    total:'total_cents', amount_paid:'amount_paid_cents', balance_due:'balance_due_cents',
+  }
   const sets: string[] = []
   const vals: any[] = []
   for (const key of allowed) {
     if (key in b) {
       sets.push(`${key} = ?`)
       vals.push(key === 'line_items' && Array.isArray(b[key]) ? JSON.stringify(b[key]) : b[key])
+      if (MONEY_CENTS_COLS[key]) {
+        sets.push(`${MONEY_CENTS_COLS[key]} = ?`)
+        vals.push(Math.round(Number(b[key]) * 100))
+      }
     }
   }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400)
@@ -8887,14 +8931,15 @@ app.post('/api/invoices/:id/send', requireAuth, async (c) => {
             const pi: any = await piRes.json()
             if (piRes.ok && pi.status === 'succeeded') {
               const amountDollars = owedCents / 100
+              const amountCents = Math.round(amountDollars * 100)
               const newPaid = (inv.amount_paid || 0) + amountDollars
               const newBalance = Math.max(0, (inv.total || 0) - newPaid)
-              await db.prepare(`UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-                .bind(newPaid, newBalance, newBalance <= 0 ? 'paid' : 'partial', invoiceId, companyId).run()
+              await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+                .bind(newPaid, Math.round(newPaid*100), newBalance, Math.round(newBalance*100), newBalance <= 0 ? 'paid' : 'partial', invoiceId, companyId).run()
               await db.prepare(
-                `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
-              ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, companyId, invoiceId, inv.client_id, amountDollars, amountDollars,
+                `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, stripe_payment_intent_id, description, invoice_number, created_at, updated_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+              ).bind(`py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, companyId, invoiceId, inv.client_id, amountDollars, amountCents, amountDollars, amountCents,
                 'succeeded', 'card', pi.id, `Autopay — ${ap.pm_label || 'saved method'}`, inv.invoice_number || '').run()
               if (newBalance <= 0) {
                 await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, inv.estimate_id)
@@ -8928,15 +8973,17 @@ app.post('/api/invoices/:id/record-payment', requireAuth, async (c) => {
   const newBalance = (inv.total || 0) - newPaid
   const newStatus = newBalance <= 0 ? 'paid' : 'partial'
   const paidAt = newBalance <= 0 ? `datetime('now')` : inv.paid_at || ''
+  const clampedBalance = Math.max(0, newBalance)
 
-  await db.prepare(`UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
-    .bind(newPaid, Math.max(0, newBalance), newStatus, id, companyId).run()
+  await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+    .bind(newPaid, Math.round(newPaid*100), clampedBalance, Math.round(clampedBalance*100), newStatus, id, companyId).run()
 
   // Log to payments table
   const payId = `pay_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
-  await db.prepare(`INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, description, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`)
-    .bind(payId, companyId, id, inv.client_id||'', b.amount||0, b.amount||0, 'succeeded',
+  const paymentAmount = b.amount||0
+  await db.prepare(`INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, description, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`)
+    .bind(payId, companyId, id, inv.client_id||'', paymentAmount, Math.round(paymentAmount*100), paymentAmount, Math.round(paymentAmount*100), 'succeeded',
       b.method||'check', b.note||'Manual payment recorded').run()
 
   if (newStatus === 'paid') {
@@ -8977,17 +9024,18 @@ app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
   const due = new Date(); due.setDate(due.getDate() + 30)
   const dueDate = due.toISOString().split('T')[0]
 
+  const balanceDueClamped = Math.max(0, balanceDue)
   await db.prepare(`
     INSERT INTO invoices (id, company_id, invoice_number, estimate_id, client_id, client_name,
-      client_email, client_phone, title, status, subtotal, tax_rate, tax_amount,
-      total, amount_paid, balance_due, due_date, line_items, notes, portal_token,
+      client_email, client_phone, title, status, subtotal, subtotal_cents, tax_rate, tax_amount, tax_amount_cents,
+      total, total_cents, amount_paid, amount_paid_cents, balance_due, balance_due_cents, due_date, line_items, notes, portal_token,
       created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
   `).bind(id, companyId, invoiceNumber, est.id, est.client_id||'', est.client_name||'',
     est.client_email||'', est.client_phone||'',
     `Invoice for ${est.title || est.estimate_number}`, 'draft',
-    est.subtotal||0, est.tax_rate||0, est.tax_amount||0,
-    total, depositPaid, Math.max(0, balanceDue), dueDate,
+    est.subtotal||0, Math.round((est.subtotal||0)*100), est.tax_rate||0, est.tax_amount||0, Math.round((est.tax_amount||0)*100),
+    total, Math.round(total*100), depositPaid, Math.round(depositPaid*100), balanceDueClamped, Math.round(balanceDueClamped*100), dueDate,
     JSON.stringify(lineItems), est.notes||'', portalToken
   ).run()
 
@@ -9116,14 +9164,15 @@ app.post('/api/invoices/:id/charge', requireAuth, async (c) => {
     const newStatus = newBalance <= 0 ? 'paid' : 'partial'
 
     await db.prepare(
-      `UPDATE invoices SET amount_paid=?, balance_due=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
-    ).bind(newPaid, newBalance, newStatus, invoiceId, companyId).run()
+      `UPDATE invoices SET amount_paid=?, amount_paid_cents=?, balance_due=?, balance_due_cents=?, status=?, updated_at=datetime('now') WHERE id=? AND company_id=?`
+    ).bind(newPaid, Math.round(newPaid*100), newBalance, Math.round(newBalance*100), newStatus, invoiceId, companyId).run()
 
     const pymtId = `py_${Date.now()}_${Math.random().toString(36).slice(2,7)}`
+    const chargeAmountCents = Math.round(amountDollars * 100)
     await db.prepare(
-      `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, net_amount, status, payment_method, description, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
-    ).bind(pymtId, companyId, invoiceId, inv.client_id||'', amountDollars, amountDollars,
+      `INSERT INTO payments (id, company_id, invoice_id, client_id, amount, amount_cents, net_amount, net_amount_cents, status, payment_method, description, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`
+    ).bind(pymtId, companyId, invoiceId, inv.client_id||'', amountDollars, chargeAmountCents, amountDollars, chargeAmountCents,
       'succeeded', 'card', `Stripe charge — ${pi.id}`).run()
 
     if (newStatus === 'paid') {
@@ -9447,9 +9496,9 @@ app.post('/api/recurring-plans', requireAuth, async (c) => {
   if (!name || !frequency || !price) return c.json({ error: 'name, frequency, price required' }, 400)
   const id = Date.now()
   await db.prepare(`
-    INSERT INTO recurring_plans (id, company_id, name, description, frequency, frequency_unit, price, visit_duration_minutes, services_included, is_active)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
-  `).bind(id, companyId, name, description||'', frequency, frequency_unit||'weeks', price, visit_duration_minutes||60, services_included||'', is_active??1).run()
+    INSERT INTO recurring_plans (id, company_id, name, description, frequency, frequency_unit, price, price_cents, visit_duration_minutes, services_included, is_active)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, companyId, name, description||'', frequency, frequency_unit||'weeks', price, Math.round(Number(price) * 100), visit_duration_minutes||60, services_included||'', is_active??1).run()
   const created = await db.prepare(`SELECT * FROM recurring_plans WHERE id=?`).bind(id).first()
   return c.json(created, 201)
 })
@@ -9465,7 +9514,12 @@ app.put('/api/recurring-plans/:id', requireAuth, async (c) => {
   const fields = ['name','description','frequency','frequency_unit','price','visit_duration_minutes','services_included','is_active']
   const setClauses: string[] = []
   const vals: any[] = []
-  fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  fields.forEach(f => {
+    if (body[f] !== undefined) {
+      setClauses.push(`${f}=?`); vals.push(body[f])
+      if (f === 'price') { setClauses.push('price_cents=?'); vals.push(Math.round(Number(body[f]) * 100)) }
+    }
+  })
   if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
   vals.push(planId, companyId)
   await db.prepare(`UPDATE recurring_plans SET ${setClauses.join(',')} WHERE id=? AND company_id=?`).bind(...vals).run()
@@ -9528,10 +9582,15 @@ app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
   const startDate = start_date || new Date().toISOString().split('T')[0]
   const nextVisit = next_visit_date || startDate
   const finalPrice = price_override ?? plan.price
+  // Was writing to price_override, which isn't a real column on
+  // client_plan_subscriptions (the real one is custom_price) -- this INSERT
+  // always failed. Fixed as part of adding custom_price_cents (Stage 2 of
+  // the money-representation migration, 2026-08-10): there was no working
+  // custom_price write to dual-write alongside otherwise.
   await db.prepare(`
-    INSERT INTO client_plan_subscriptions (id, company_id, plan_id, client_id, client_name, start_date, next_visit_date, price_override, notes, status)
-    VALUES (?,?,?,?,?,?,?,?,?,'active')
-  `).bind(id, companyId, plan_id, client_id, client_name||'', startDate, nextVisit, finalPrice, notes||'').run()
+    INSERT INTO client_plan_subscriptions (id, company_id, plan_id, client_id, client_name, start_date, next_visit_date, custom_price, custom_price_cents, notes, status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,'active')
+  `).bind(id, companyId, plan_id, client_id, client_name||'', startDate, nextVisit, finalPrice, Math.round(Number(finalPrice) * 100), notes||'').run()
   const created = await db.prepare(`SELECT * FROM client_plan_subscriptions WHERE id=?`).bind(id).first()
   return c.json(created, 201)
 })
@@ -9544,10 +9603,16 @@ app.put('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
   const sub = await db.prepare(`SELECT id FROM client_plan_subscriptions WHERE id=? AND company_id=?`).bind(subId, companyId).first()
   if (!sub) return c.json({ error: 'Not found' }, 404)
   const body = await c.req.json() as any
-  const fields = ['status','next_visit_date','price_override','notes']
+  // price_override -> custom_price: see the matching note on the POST
+  // handler above (create).
+  const fields = ['status','next_visit_date','notes']
   const setClauses: string[] = []
   const vals: any[] = []
   fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
+  if (body.price_override !== undefined) {
+    setClauses.push('custom_price=?'); vals.push(body.price_override)
+    setClauses.push('custom_price_cents=?'); vals.push(Math.round(Number(body.price_override) * 100))
+  }
   if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
   if (body.status === 'cancelled') { setClauses.push('cancelled_at=?'); vals.push(new Date().toISOString()) }
   vals.push(subId, companyId)
@@ -11379,12 +11444,18 @@ app.post('/api/stripe/webhook', async (c) => {
           // 'paid'. Fixed as part of wiring the collected-flag write-through
           // below, since this is the primary automated payment path.
           const newStatus = newPaid >= (inv.total || 0) ? 'paid' : 'partial'
-          await db.prepare(`UPDATE invoices SET amount_paid=?, status=? WHERE id=? AND company_id=?`)
-            .bind(newPaid, newStatus, invoiceId, companyId).run()
+          await db.prepare(`UPDATE invoices SET amount_paid=?, amount_paid_cents=?, status=? WHERE id=? AND company_id=?`)
+            .bind(newPaid, Math.round(newPaid*100), newStatus, invoiceId, companyId).run()
           // Log to payments table
+          // TODO(bug, found 2026-08-10 during Stage 2 money-cents work, not
+          // fixed here -- out of scope): 'method' and 'paid_at' are not real
+          // columns on payments (the real ones are payment_method, no
+          // paid_at at all) -- this INSERT throws "no such column" every
+          // time this webhook fires with a valid invoice, which propagates
+          // out of the try/catch below as a 400. Tracked in docs/PUNCHLIST.md.
           const pymtId = `py_${Date.now()}`
-          await db.prepare(`INSERT OR IGNORE INTO payments (id, company_id, invoice_id, amount, method, stripe_payment_intent_id, status, paid_at)
-            VALUES (?,?,?,?,?,?,'completed',?)`).bind(pymtId, companyId, invoiceId, amountPaid/100, 'card',
+          await db.prepare(`INSERT OR IGNORE INTO payments (id, company_id, invoice_id, amount, amount_cents, method, stripe_payment_intent_id, status, paid_at)
+            VALUES (?,?,?,?,?,?,?,'completed',?)`).bind(pymtId, companyId, invoiceId, amountPaid/100, Math.round(amountPaid/100*100), 'card',
             session.payment_intent || '', new Date().toISOString()).run()
           if (newStatus === 'paid') {
             await markOpportunityCollectedFromInvoice(db, companyId, invoiceId, inv.estimate_id)
@@ -11476,12 +11547,13 @@ app.post('/api/work-orders', requireAuth, async (c) => {
   // Auto-number
   const countRow = await db.prepare(`SELECT COUNT(*) as cnt FROM work_orders WHERE company_id=?`).bind(companyId).first() as any
   const woNum = 'WO-' + String((countRow?.cnt || 0) + 1).padStart(5, '0')
+  const createAmountEst = body.amount_est || 0
   await db.prepare(`
     INSERT INTO work_orders
       (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
        type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours, notes,
-       amount_est, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       amount_est, amount_est_cents, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     id, companyId, woNum,
     body.opp_id || null, body.crew_id || null,
@@ -11491,7 +11563,7 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     body.scheduled_date || null, body.scheduled_time || null,
     body.scheduled_end_time || null,
     body.duration_hours || null, body.notes || '',
-    body.amount_est || 0,
+    createAmountEst, Math.round(createAmountEst * 100),
     JSON.stringify(body.checklist || []),
     JSON.stringify(body.materials || []),
     JSON.stringify(body.equipment || []),
@@ -11573,7 +11645,8 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       schedule_locked=COALESCE(?,schedule_locked),
       duration_hours=COALESCE(?,duration_hours), notes=COALESCE(?,notes),
       completion_notes=COALESCE(?,completion_notes),
-      amount_est=COALESCE(?,amount_est), amount_actual=COALESCE(?,amount_actual),
+      amount_est=COALESCE(?,amount_est), amount_est_cents=COALESCE(?,amount_est_cents),
+      amount_actual=COALESCE(?,amount_actual), amount_actual_cents=COALESCE(?,amount_actual_cents),
       checklist=COALESCE(?,checklist), materials=COALESCE(?,materials),
       equipment=COALESCE(?,equipment),
       before_photos=COALESCE(?,before_photos), after_photos=COALESCE(?,after_photos),
@@ -11597,7 +11670,9 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     body.notes !== undefined ? body.notes : null,
     body.completion_notes !== undefined ? body.completion_notes : null,
     body.amount_est !== undefined ? body.amount_est : null,
+    body.amount_est !== undefined ? Math.round(Number(body.amount_est) * 100) : null,
     body.amount_actual !== undefined ? body.amount_actual : null,
+    body.amount_actual !== undefined ? Math.round(Number(body.amount_actual) * 100) : null,
     body.checklist !== undefined ? JSON.stringify(body.checklist) : null,
     body.materials !== undefined ? JSON.stringify(body.materials) : null,
     body.equipment !== undefined ? JSON.stringify(body.equipment) : null,
@@ -11648,14 +11723,14 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
     INSERT INTO work_orders
       (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
        type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours, notes,
-       amount_est, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       amount_est, amount_est_cents, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     newId, companyId, woNum,
     src.opp_id, src.crew_id, src.client_name, src.client_id, src.property_addr,
     src.title, src.type, 'scheduled', 'ready',
     newDate, src.scheduled_time, src.scheduled_end_time, src.duration_hours, src.notes,
-    src.amount_est,
+    src.amount_est, src.amount_est_cents,
     src.checklist, src.materials, src.equipment || '[]',
     JSON.stringify([{ action: 'Duplicated from ' + src.wo_number, note: `by ${repId}`, at: new Date().toISOString() }]),
     '[]', '[]', repId

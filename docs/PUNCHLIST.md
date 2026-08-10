@@ -122,6 +122,26 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    overhead recovery cannot produce a real number for any tenant — confirmed
    while investigating why `postTimeEntryToLedger` was hitting
    `no_rate_resolves` in production (2026-08-09).
+9. **The Stripe webhook's payments-table insert references two columns
+   that don't exist.** `src/index.tsx`, `checkout.session.completed`
+   handler (search `INSERT OR IGNORE INTO payments`) writes `method` and
+   `paid_at` — the real columns are `payment_method` (no `paid_at` at all).
+   `INSERT OR IGNORE` only suppresses constraint violations, not "no such
+   column" errors, so this throws every time the webhook fires with a
+   valid invoice, propagating out as a 400 from the handler's own
+   try/catch. Found while dual-writing `*_cents` columns onto this same
+   statement for Stage 2 of the money-representation migration
+   (2026-08-10); not fixed here — unrelated to that task, and the
+   `amount_cents` column was still added alongside the existing `amount`
+   so the statement is at least no more broken than it already was.
+10. **`POST/PUT /api/recurring-subscriptions` wrote to `price_override`,
+    which isn't a real column** on `client_plan_subscriptions` (the real
+    one is `custom_price`) — every create/update of a subscription's
+    price override has always failed with a SQL error. Unlike item 9,
+    this one WAS fixed (both call sites now write `custom_price`), because
+    Stage 2 of the money-representation migration (2026-08-10) needed a
+    real `custom_price` write to dual-write `custom_price_cents`
+    alongside — there was no working write to leave alone.
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"
