@@ -5,8 +5,8 @@ import {
   getTenantFinancePolicy, upsertTenantFinancePolicy,
   insertLaborRateProfile, getLaborRateAsOf, recalibrateLaborRate,
   insertEquipmentRateProfile, getEquipmentRateAsOf, recalibrateEquipmentRate,
-  insertWorkItem, getWorkItem, listCompletedUnbilledWorkItems,
-  insertTimeEntry, postTimeEntry, getTimeEntry,
+  getWorkItem, listCompletedUnbilledWorkItems, updateWorkOrderFinanceColumns,
+  postTimeEntry, getTimeEntry,
   postJobCostLedgerLines, getJobCostLedgerForJob,
   insertOverheadPool, insertOverheadAllocation, getOverheadAllocationAsOf,
   upsertRecoverySnapshot, getLatestRecoverySnapshot,
@@ -16,13 +16,31 @@ import {
   getConfigOverride, upsertConfigOverride, deleteConfigOverride, listConfigOverrides, GLOBAL_CONFIG_SCOPE,
 } from "./repos";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-round-trip";
+
+/** work_orders/time_entries live in this same DB now (migrations/0057_finance_merge.sql)
+ * — repos.ts's Finance-side functions read/write a slim view over them, so
+ * tests seed the real CRM tables directly rather than a separate Finance table. */
+async function seedWorkOrder(id: string, opts: { status?: string } = {}) {
+  await db().prepare(
+    `INSERT INTO work_orders (id, company_id, wo_number, status) VALUES (?,?,?,?)`,
+  ).bind(id, TENANT, `WO-${id}`, opts.status ?? "scheduled").run();
+}
+
+async function seedTimeEntry(id: string, workOrderId: string, hoursHundredths: number) {
+  // duration_min chosen so hours_hundredths (computed as ROUND(duration_min*100/60))
+  // comes out to the requested value: duration_min = hoursHundredths * 60/100.
+  const durationMin = Math.round((hoursHundredths * 60) / 100);
+  await db().prepare(
+    `INSERT INTO time_entries (id, rep_id, company_id, clock_in, clock_out, duration_min, work_order_id) VALUES (?,?,?,?,?,?,?)`,
+  ).bind(id, "emp-1", TENANT, "2026-07-01T08:00:00Z", "2026-07-01T16:00:00Z", durationMin, workOrderId).run();
+}
 
 describe("tenant_finance_policy", () => {
   it("round-trips and upserts", async () => {
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: TENANT, equipment_engine_active: 0,
+      company_id: TENANT, equipment_engine_active: 0,
       materiality_threshold_cents: 50000, restated_target_cents: 59100000,
       black_friday_date: "2026-12-21", created_at: "", updated_at: "",
     } as never);
@@ -30,7 +48,7 @@ describe("tenant_finance_policy", () => {
     expect(p?.equipment_engine_active).toBe(0);
 
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: TENANT, equipment_engine_active: 1,
+      company_id: TENANT, equipment_engine_active: 1,
       materiality_threshold_cents: 50000, restated_target_cents: 59100000,
       black_friday_date: "2026-12-21", created_at: "", updated_at: "",
     } as never);
@@ -41,7 +59,7 @@ describe("tenant_finance_policy", () => {
 
 describe("labor_rate_profile — immutability (BH-06/BH-07/BH-11)", () => {
   const base = {
-    tenant_id: TENANT, scope: "employee" as const, scope_id: "emp-1",
+    company_id: TENANT, scope: "employee" as const, scope_id: "emp-1",
     wage_cents: 2400, paid_hours: 2080, pto_hours: 96, shop_hours: 168,
     idle_hours: 194, tax_rate: 865, comp_rate: 700, benefits_monthly_cents: 26000,
     support_truck_annual_cents: 420000, support_tools_annual_cents: 83400,
@@ -75,7 +93,7 @@ describe("labor_rate_profile — immutability (BH-06/BH-07/BH-11)", () => {
 
     // Prior row's rate/cost fields are untouched — only effective_to changed.
     const { results } = await db().prepare(
-      `SELECT * FROM labor_rate_profile WHERE tenant_id = ? AND scope_id = ? ORDER BY effective_from ASC`,
+      `SELECT * FROM labor_rate_profile WHERE company_id = ? AND scope_id = ? ORDER BY effective_from ASC`,
     ).bind(TENANT, scopeId).all();
     expect(results.length).toBe(2);
     const [prior, next] = results as any[];
@@ -88,7 +106,7 @@ describe("labor_rate_profile — immutability (BH-06/BH-07/BH-11)", () => {
 
 describe("equipment_rate_profile — immutability", () => {
   const base = {
-    tenant_id: TENANT, equipment_id: "eq-1", purchase_price_cents: 6200000,
+    company_id: TENANT, equipment_id: "eq-1", purchase_price_cents: 6200000,
     salvage_cents: 1400000, life_years: 7, annual_machine_hours: 720,
     finance_rate: 750, insurance_annual_cents: 118000, storage_annual_cents: 60000,
     fuel_gal_per_hr: 24000, fuel_price_cents: 405, repairs_annual_cents: 490000,
@@ -109,12 +127,11 @@ describe("equipment_rate_profile — immutability", () => {
   });
 });
 
-describe("work_item", () => {
+describe("work_item (folded onto work_orders)", () => {
   it("round-trips and lists completed-unbilled", async () => {
-    await insertWorkItem(db(), {
-      id: "wi-1", tenant_id: TENANT, job_id: "job-1", description: "mow + edge",
-      status: "complete", estimate_cents: 12000, completed_at: "2026-07-01",
-    });
+    await seedWorkOrder("wi-1", { status: "completed" });
+    await updateWorkOrderFinanceColumns(db(), TENANT, "wi-1", 12000, "2026-07-01");
+
     const wi = await getWorkItem(db(), TENANT, "wi-1");
     expect(wi?.status).toBe("complete");
 
@@ -123,37 +140,34 @@ describe("work_item", () => {
   });
 });
 
-describe("time_entry — posting is write-once", () => {
+describe("time_entry — posting is write-once (folded onto time_entries)", () => {
   it("posts resolved_rate/applied_overhead once; a second post is a no-op", async () => {
-    const id = await insertTimeEntry(db(), {
-      tenant_id: TENANT, employee_id: "emp-1", crew_id: null, job_id: "job-1",
-      work_date: "2026-07-01", hours_hundredths: 800, ot_hours_hundredths: 0,
-    });
+    await seedWorkOrder("wo-post-1");
+    await seedTimeEntry("te-post-1", "wo-post-1", 800);
 
-    const firstPost = await postTimeEntry(db(), TENANT, id, 421002, "high", 27430);
+    const firstPost = await postTimeEntry(db(), TENANT, "te-post-1", 421002, "high", 27430);
     expect(firstPost).toBe(true);
 
-    const entry = await getTimeEntry(db(), TENANT, id);
+    const entry = await getTimeEntry(db(), TENANT, "te-post-1");
     expect(entry?.resolved_rate).toBe(421002);
+    expect(entry?.hours_hundredths).toBe(800);
 
     // Attempting to post again with a different rate must not overwrite it.
-    const secondPost = await postTimeEntry(db(), TENANT, id, 999999, "high", 1);
+    const secondPost = await postTimeEntry(db(), TENANT, "te-post-1", 999999, "high", 1);
     expect(secondPost).toBe(false);
-    const unchanged = await getTimeEntry(db(), TENANT, id);
+    const unchanged = await getTimeEntry(db(), TENANT, "te-post-1");
     expect(unchanged?.resolved_rate).toBe(421002);
   });
 });
 
 describe("job_cost_ledger — two-line post", () => {
   it("writes exactly one labor line and one overhead line, atomically", async () => {
-    const teId = await insertTimeEntry(db(), {
-      tenant_id: TENANT, employee_id: "emp-1", crew_id: null, job_id: "job-2",
-      work_date: "2026-07-02", hours_hundredths: 800, ot_hours_hundredths: 0,
-    });
+    await seedWorkOrder("job-2");
+    await seedTimeEntry("te-job-2", "job-2", 800);
     await postJobCostLedgerLines(
       db(),
-      { tenant_id: TENANT, time_entry_id: teId, job_id: "job-2", amount_cents: 33680, division: "maintenance" },
-      { tenant_id: TENANT, time_entry_id: teId, job_id: "job-2", amount_cents: 19374, division: "maintenance" },
+      { company_id: TENANT, time_entry_id: "te-job-2", job_id: "job-2", amount_cents: 33680, division: "maintenance" },
+      { company_id: TENANT, time_entry_id: "te-job-2", job_id: "job-2", amount_cents: 19374, division: "maintenance" },
     );
     const lines = await getJobCostLedgerForJob(db(), TENANT, "job-2");
     expect(lines.length).toBe(2);
@@ -164,11 +178,11 @@ describe("job_cost_ledger — two-line post", () => {
 describe("overhead_pool / overhead_allocation", () => {
   it("round-trips a division allocation row", async () => {
     await insertOverheadPool(db(), {
-      tenant_id: TENANT, division: "maintenance", pool_type: "shop",
+      company_id: TENANT, division: "maintenance", pool_type: "shop",
       annual_cost_cents: 19640000, driver: "sellable_hours", as_of: "2026-08-01",
     });
     await insertOverheadAllocation(db(), {
-      tenant_id: TENANT, division: "maintenance", as_of: "2026-08-01",
+      company_id: TENANT, division: "maintenance", as_of: "2026-08-01",
       sellable_hours: 8110, allocated_overhead_cents: 19640000,
       weighted_labor_rate_cents: 3840, overhead_rate: 242170,
       absorbed_cost_cents: 6262, target_margin: 4000, required_bill_rate_cents: 10437,
@@ -180,9 +194,9 @@ describe("overhead_pool / overhead_allocation", () => {
 });
 
 describe("recovery_snapshot", () => {
-  it("upserts by (tenant_id, as_of) — a re-run replaces, not duplicates", async () => {
+  it("upserts by (company_id, as_of) — a re-run replaces, not duplicates", async () => {
     const row = {
-      tenant_id: TENANT, as_of: "2026-08-03", restated_target_cents: 59100000,
+      company_id: TENANT, as_of: "2026-08-03", restated_target_cents: 59100000,
       recovered_to_date_cents: 38190000, hours_per_week_hundredths: 38000,
       blended_overhead_rate: 274300, weekly_recovery_cents: 1042340,
       pct_recovered_millionths: 646193, projected_black_friday: "2026-12-21",
@@ -195,7 +209,7 @@ describe("recovery_snapshot", () => {
     expect(latest?.recovered_to_date_cents).toBe(39000000);
 
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE tenant_id = ? AND as_of = ?`,
+      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE company_id = ? AND as_of = ?`,
     ).bind(TENANT, "2026-08-03").all();
     expect((results[0] as any).n).toBe(1);
   });
@@ -204,9 +218,9 @@ describe("recovery_snapshot", () => {
 describe("action_item — five-verb constraint", () => {
   it("round-trips, lists open by verb, and resolves", async () => {
     await insertActionItem(db(), {
-      id: "ai-1", tenant_id: TENANT, verb: "collect", owner_id: "user-1",
+      id: "ai-1", company_id: TENANT, verb: "collect", owner_id: "user-1",
       sla_due: "2026-08-10", amount_cents: 5000, confidence: "high",
-      stale_components: null, source_type: "work_item", source_id: "wi-1",
+      stale_components: null, source_type: "work_order", source_id: "wi-1",
     });
     const open = await getOpenActionItems(db(), TENANT, "collect");
     expect(open.some((a) => a.id === "ai-1")).toBe(true);
@@ -219,7 +233,7 @@ describe("action_item — five-verb constraint", () => {
   it("rejects a verb outside {collect,bill,pay,fix,decide} at the DB level", async () => {
     await expect(
       db().prepare(
-        `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, confidence, status)
+        `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, confidence, status)
          VALUES (?, ?, 'approve', ?, ?, 'high', 'open')`,
       ).bind("ai-bad", TENANT, "user-1", "2026-08-10").run(),
     ).rejects.toThrow();
@@ -229,7 +243,7 @@ describe("action_item — five-verb constraint", () => {
 describe("classification_finding", () => {
   it("round-trips", async () => {
     await insertClassificationFinding(db(), {
-      id: "cf-1", tenant_id: TENANT, subject_type: "pnl_line", subject_id: "line-1",
+      id: "cf-1", company_id: TENANT, subject_type: "pnl_line", subject_id: "line-1",
       stage_reached: 4, confidence: "medium", materiality_cents: 2500,
       proposed_change: null, action_item_id: null,
     });
@@ -242,8 +256,9 @@ describe("classification_finding", () => {
 
 describe("receipt — dedupe by hash", () => {
   it("round-trips and finds by content hash", async () => {
+    await seedWorkOrder("job-1");
     await insertReceipt(db(), {
-      id: "r-1", tenant_id: TENANT, job_id: "job-1", r2_key: "receipts/r-1.jpg",
+      id: "r-1", company_id: TENANT, job_id: "job-1", r2_key: "receipts/r-1.jpg",
       content_hash: "hash-abc", vendor: "Acme Supply", amount_cents: 4599,
       receipt_date: "2026-07-01", field_confidence: null, action_item_id: null,
     });
@@ -263,7 +278,7 @@ describe("finance_config_override — tenant beats global beats nothing", () => 
   it("a global override applies when no tenant-specific override exists", async () => {
     await upsertConfigOverride(db(), GLOBAL_CONFIG_SCOPE, "automation_policy", '{"classifier_enabled":false}', "admin-1");
     const result = await getConfigOverride(db(), "t-cfg-global", "automation_policy");
-    expect(result?.tenant_id).toBe(GLOBAL_CONFIG_SCOPE);
+    expect(result?.company_id).toBe(GLOBAL_CONFIG_SCOPE);
     expect(result?.config_json).toContain("classifier_enabled");
   });
 
@@ -271,7 +286,7 @@ describe("finance_config_override — tenant beats global beats nothing", () => 
     await upsertConfigOverride(db(), GLOBAL_CONFIG_SCOPE, "approval_thresholds", '{"default_materiality_threshold_cents":50000}', "admin-1");
     await upsertConfigOverride(db(), "t-cfg-specific", "approval_thresholds", '{"default_materiality_threshold_cents":99999}', "admin-2");
     const result = await getConfigOverride(db(), "t-cfg-specific", "approval_thresholds");
-    expect(result?.tenant_id).toBe("t-cfg-specific");
+    expect(result?.company_id).toBe("t-cfg-specific");
     expect(result?.config_json).toContain("99999");
   });
 
@@ -282,7 +297,7 @@ describe("finance_config_override — tenant beats global beats nothing", () => 
     expect(result?.config_json).toBe('{"v":2}');
     expect(result?.updated_by).toBe("admin-2");
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM finance_config_override WHERE tenant_id = ? AND config_name = ?`,
+      `SELECT COUNT(*) as n FROM finance_config_override WHERE company_id = ? AND config_name = ?`,
     ).bind("t-cfg-upsert", "division_map").all();
     expect((results[0] as any).n).toBe(1);
   });

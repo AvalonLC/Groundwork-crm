@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { runNightlyRollup, buildTenantRollup } from "../cron/rollup";
 import { gatherTenantRollupInputs, listTenantIdsWithPolicy } from "../cron/gather-inputs";
 
-export type CronTriggerBindings = { FINANCE_DB: D1Database; CRON_SECRET?: string };
+export type CronTriggerBindings = { DB: D1Database; CRON_SECRET?: string };
 
 /**
  * See docs/spec/RECOVERY.md, docs/RUNBOOK-finance-cron.md, and
@@ -45,7 +45,7 @@ cronTriggerRouter.post("/rollup", async (c) => {
   // financial data (job_cost_ledger sums, overhead allocations), so it's
   // not something to expose without auth just because it doesn't write.
   const dryRun = c.req.query("dry_run") === "true";
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
 
   const tenantIds = await listTenantIdsWithPolicy(db);
   const inputs = [];

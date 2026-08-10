@@ -19,7 +19,7 @@ test("UOB2-01 with nothing uploaded and no policy, all three domains show missin
 
 test("UOB2-02 tenant policy present shows good to go", async ({ page, request }) => {
   await exec(request,
-    `INSERT INTO tenant_finance_policy (tenant_id, equipment_engine_active, materiality_threshold_cents, restated_target_cents, black_friday_date) VALUES (?,?,?,?,?)`,
+    `INSERT INTO tenant_finance_policy (company_id, equipment_engine_active, materiality_threshold_cents, restated_target_cents, black_friday_date) VALUES (?,?,?,?,?)`,
     [TENANT, 0, 50000, 0, null]);
   await page.goto(`/onboarding?tenant_id=${TENANT}&role=owner`);
   await expect(page.getByTestId("gap-state-0")).toContainText("good");

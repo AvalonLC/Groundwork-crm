@@ -8,7 +8,7 @@ import { canSee } from "./roles";
 import type { VocabularyMode } from "./vocabulary";
 import { readPageArgs, Page, Card, Why, Confidence, money, type FinanceAuthVars } from "./layout";
 
-export type DocumentUploadBindings = { FINANCE_DB: D1Database; RECEIPTS: R2Bucket };
+export type DocumentUploadBindings = { DB: D1Database; RECEIPTS: R2Bucket };
 
 /**
  * Item 2: src/ai/ingest.ts (ingestFile) and src/ai/receipts.ts
@@ -249,7 +249,7 @@ documentUploadRouter.post("/ingest", async (c) => {
 
   const ownerId = c.var.repId ?? "office-upload";
   const text = await file.text();
-  const result = await ingestFile(c.env.FINANCE_DB, tenant_id, text, ownerId);
+  const result = await ingestFile(c.env.DB, tenant_id, text, ownerId);
   return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, result, null, null, null, null));
 });
 
@@ -281,8 +281,8 @@ documentUploadRouter.post("/receipt", async (c) => {
   const ownerId = c.var.repId ?? "office-upload";
   const bytes = await file.arrayBuffer();
 
-  const result = await processReceiptUpload(c.env.FINANCE_DB, c.env.RECEIPTS, {
-    tenant_id, job_id: null, bytes, filename: file.name,
+  const result = await processReceiptUpload(c.env.DB, c.env.RECEIPTS, {
+    company_id: tenant_id, job_id: null, bytes, filename: file.name,
     extract: async () => fields,
     reviewOwnerId: ownerId, reviewOwnerRole: role,
   });

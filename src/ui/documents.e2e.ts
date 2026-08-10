@@ -14,13 +14,13 @@ test("UDO-01 with nothing uploaded yet, points at Upload Documents", async ({ pa
 
 test("UDO-02 seeded receipts render with vendor/amount/date and correct review status", async ({ page, request }) => {
   await exec(request,
-    `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, confidence, status) VALUES (?,?,?,?,?,?, 'open')`,
+    `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, confidence, status) VALUES (?,?,?,?,?,?, 'open')`,
     ["ai-fix-1", TENANT, "fix", "office-user-1", "2026-08-10", "low"]);
   await exec(request,
-    `INSERT INTO receipt (id, tenant_id, job_id, r2_key, content_hash, vendor, amount_cents, receipt_date, field_confidence, action_item_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO receipt (id, company_id, job_id, r2_key, content_hash, vendor, amount_cents, receipt_date, field_confidence, action_item_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     ["receipt-complete", TENANT, null, "receipts/x/1", "hash1", "Acme Supply", 4599, "2026-07-01", JSON.stringify({ vendor: "high", amount_cents: "high", receipt_date: "high" }), null]);
   await exec(request,
-    `INSERT INTO receipt (id, tenant_id, job_id, r2_key, content_hash, vendor, amount_cents, receipt_date, field_confidence, action_item_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO receipt (id, company_id, job_id, r2_key, content_hash, vendor, amount_cents, receipt_date, field_confidence, action_item_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     ["receipt-flagged", TENANT, null, "receipts/x/2", "hash2", null, 2000, "2026-07-03", JSON.stringify({ vendor: "low", amount_cents: "high", receipt_date: "high" }), "ai-fix-1"]);
 
   await page.goto(`/documents?tenant_id=${TENANT}&role=owner`);

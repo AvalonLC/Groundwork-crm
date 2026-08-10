@@ -4,7 +4,7 @@ import type { RateConfidence } from "../db/schema";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
 
-export type DocumentsBindings = { FINANCE_DB: D1Database };
+export type DocumentsBindings = { DB: D1Database };
 
 /**
  * Documents — real backing (receipt), and genuinely populated now:
@@ -42,7 +42,7 @@ documentsRouter.get("/", async (c) => {
     );
   }
 
-  const receipts = await listReceiptsForTenant(c.env.FINANCE_DB, tenant_id);
+  const receipts = await listReceiptsForTenant(c.env.DB, tenant_id);
   const needingReview = receipts.filter((r) => needsReviewFromConfidence(r.field_confidence));
   const basePath = c.req.path;
 

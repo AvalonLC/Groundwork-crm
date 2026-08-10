@@ -14,7 +14,7 @@ const ZERO_CENTS = 0 as Cents;
 // ---- Tier 1: crew-attached machine capture (job/crew association only) ----
 
 export interface Tier1Attachment {
-  time_entry_id: number;
+  time_entry_id: string; // time_entries.id — TEXT since the 2026-08-09 merge
   equipment_id: string;
 }
 
@@ -26,7 +26,7 @@ export interface Tier1Result {
 /** Cheap, deterministic, no meter reading — just "which machine was on
  * which job." */
 export function validateTier1Attachment(a: Tier1Attachment): Tier1Result {
-  const valid = a.time_entry_id > 0 && a.equipment_id.trim().length > 0;
+  const valid = a.time_entry_id.trim().length > 0 && a.equipment_id.trim().length > 0;
   return { valid, confidence: valid ? "high" : "low" };
 }
 
@@ -75,7 +75,7 @@ export interface Tier2Result {
  * meter reading that roughly matches the rate profile's assumption produces
  * no finding at all, not a low-materiality noise row. */
 export async function processTier2MeterReading(
-  db: D1Database, tenantId: string, reading: Tier2MeterReading,
+  db: D1Database, companyId: string, reading: Tier2MeterReading,
   materialityThreshold: number = approvalThresholds.equipment_meter_variance_pct,
 ): Promise<Tier2Result> {
   const reconciliation = reconcileMeterReading(reading, materialityThreshold);
@@ -84,7 +84,7 @@ export async function processTier2MeterReading(
   const findingId = `cf-equip-${reading.equipment_id}-${crypto.randomUUID().slice(0, 8)}`;
   await insertClassificationFinding(db, {
     id: findingId,
-    tenant_id: tenantId,
+    company_id: companyId,
     subject_type: "equipment_meter",
     subject_id: reading.equipment_id,
     stage_reached: 1,

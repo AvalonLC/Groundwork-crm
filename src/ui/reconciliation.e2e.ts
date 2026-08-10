@@ -15,13 +15,13 @@ test("UR2-01 with nothing classified yet, the page is honest about why, not empt
 
 test("UR2-02 findings render with stage, confidence, materiality, and resolution status", async ({ page, request }) => {
   await exec(request,
-    `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, confidence, status) VALUES (?,?,?,?,?,?, 'open')`,
+    `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, confidence, status) VALUES (?,?,?,?,?,?, 'open')`,
     ["ai-decide-1", TENANT, "decide", "office-user-1", "2026-08-10", "low"]);
   await exec(request,
-    `INSERT INTO classification_finding (id, tenant_id, subject_type, subject_id, stage_reached, confidence, materiality_cents, proposed_change, action_item_id) VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO classification_finding (id, company_id, subject_type, subject_id, stage_reached, confidence, materiality_cents, proposed_change, action_item_id) VALUES (?,?,?,?,?,?,?,?,?)`,
     ["cf-1", TENANT, "bank_transaction", "txn-1", 1, "high", 5000, null, null]);
   await exec(request,
-    `INSERT INTO classification_finding (id, tenant_id, subject_type, subject_id, stage_reached, confidence, materiality_cents, proposed_change, action_item_id) VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO classification_finding (id, company_id, subject_type, subject_id, stage_reached, confidence, materiality_cents, proposed_change, action_item_id) VALUES (?,?,?,?,?,?,?,?,?)`,
     ["cf-2", TENANT, "bank_transaction", "txn-2", 4, "low", 12000, '{"category":"fuel"}', "ai-decide-1"]);
 
   await page.goto(`/reconciliation?tenant_id=${TENANT}&role=owner`);

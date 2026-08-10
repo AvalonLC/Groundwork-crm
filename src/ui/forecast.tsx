@@ -3,7 +3,7 @@ import { getLatestRecoverySnapshot } from "../db/repos";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Card, Why, type FinanceAuthVars } from "./layout";
 
-export type ForecastBindings = { FINANCE_DB: D1Database };
+export type ForecastBindings = { DB: D1Database };
 
 /**
  * Forecast — real backing (recovery_snapshot), same tenant-level
@@ -35,7 +35,7 @@ forecastRouter.get("/", async (c) => {
     );
   }
 
-  const snapshot = await getLatestRecoverySnapshot(c.env.FINANCE_DB, tenant_id);
+  const snapshot = await getLatestRecoverySnapshot(c.env.DB, tenant_id);
   const pct = snapshot ? snapshot.pct_recovered_millionths / 10000 : null;
 
   return c.html(

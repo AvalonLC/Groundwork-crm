@@ -7,7 +7,7 @@ import {
 } from "../db/repos";
 import golden from "../../fixtures/golden.json";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-rates-api";
 
 const post = (path: string, body: unknown) =>
@@ -19,12 +19,12 @@ const post = (path: string, body: unknown) =>
 describe("POST /internal/rates/resolve", () => {
   it("RA-01 resolves employee-scope profile with high confidence and matches BH-01", async () => {
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: TENANT, equipment_engine_active: 0, materiality_threshold_cents: 0,
+      company_id: TENANT, equipment_engine_active: 0, materiality_threshold_cents: 0,
       restated_target_cents: 0, black_friday_date: null,
     } as never);
     const A = golden.burden_labor_with_equipment.input;
     await insertLaborRateProfile(db(), {
-      tenant_id: TENANT, scope: "employee", scope_id: "emp-1",
+      company_id: TENANT, scope: "employee", scope_id: "emp-1",
       wage_cents: Math.round(A.wage * 100), paid_hours: A.paid, pto_hours: A.pto,
       shop_hours: A.shop, idle_hours: A.idle, tax_rate: Math.round(A.tax * 10000),
       comp_rate: Math.round(A.comp * 10000), benefits_monthly_cents: Math.round(A.ben_mo * 100),
@@ -34,7 +34,7 @@ describe("POST /internal/rates/resolve", () => {
       require_rate_approval: 0, effective_from: "2026-01-01", effective_to: null,
     });
 
-    const res = await post("/resolve", { tenant_id: TENANT, employee_id: "emp-1", work_date: "2026-06-01" });
+    const res = await post("/resolve", { company_id: TENANT, employee_id: "emp-1", work_date: "2026-06-01" });
     expect(res.status).toBe(200);
     const json = await res.json() as any;
     expect(json.confidence).toBe("high");
@@ -44,14 +44,14 @@ describe("POST /internal/rates/resolve", () => {
 
   it("RA-02 cascades to tenant scope when no employee/crew/role profile exists", async () => {
     await insertLaborRateProfile(db(), {
-      tenant_id: TENANT, scope: "tenant", scope_id: TENANT,
+      company_id: TENANT, scope: "tenant", scope_id: TENANT,
       wage_cents: 2200, paid_hours: 2080, pto_hours: 80, shop_hours: 100, idle_hours: 100,
       tax_rate: 800, comp_rate: 600, benefits_monthly_cents: 20000,
       support_truck_annual_cents: 300000, support_tools_annual_cents: 50000,
       support_equipment_annual_cents: 100000, require_rate_approval: 0,
       effective_from: "2026-01-01", effective_to: null,
     });
-    const res = await post("/resolve", { tenant_id: TENANT, employee_id: "emp-no-profile", work_date: "2026-06-01" });
+    const res = await post("/resolve", { company_id: TENANT, employee_id: "emp-no-profile", work_date: "2026-06-01" });
     expect(res.status).toBe(200);
     const json = await res.json() as any;
     expect(json.confidence).toBe("low");
@@ -61,7 +61,7 @@ describe("POST /internal/rates/resolve", () => {
   it("RA-03 forbidden: never caches across work_date — a recalibration mid-range is visible on the next call", async () => {
     const scopeId = "emp-recal";
     await insertLaborRateProfile(db(), {
-      tenant_id: TENANT, scope: "employee", scope_id: scopeId,
+      company_id: TENANT, scope: "employee", scope_id: scopeId,
       wage_cents: 2000, paid_hours: 2080, pto_hours: 80, shop_hours: 100, idle_hours: 100,
       tax_rate: 800, comp_rate: 600, benefits_monthly_cents: 20000,
       support_truck_annual_cents: 300000, support_tools_annual_cents: 50000,
@@ -69,7 +69,7 @@ describe("POST /internal/rates/resolve", () => {
       effective_from: "2026-01-01", effective_to: "2026-06-01",
     });
     await insertLaborRateProfile(db(), {
-      tenant_id: TENANT, scope: "employee", scope_id: scopeId,
+      company_id: TENANT, scope: "employee", scope_id: scopeId,
       wage_cents: 3000, paid_hours: 2080, pto_hours: 80, shop_hours: 100, idle_hours: 100,
       tax_rate: 800, comp_rate: 600, benefits_monthly_cents: 20000,
       support_truck_annual_cents: 300000, support_tools_annual_cents: 50000,
@@ -77,14 +77,14 @@ describe("POST /internal/rates/resolve", () => {
       effective_from: "2026-06-01", effective_to: null,
     });
 
-    const before = await (await post("/resolve", { tenant_id: TENANT, employee_id: scopeId, work_date: "2026-03-01" })).json() as any;
-    const after = await (await post("/resolve", { tenant_id: TENANT, employee_id: scopeId, work_date: "2026-07-01" })).json() as any;
+    const before = await (await post("/resolve", { company_id: TENANT, employee_id: scopeId, work_date: "2026-03-01" })).json() as any;
+    const after = await (await post("/resolve", { company_id: TENANT, employee_id: scopeId, work_date: "2026-07-01" })).json() as any;
     expect(before.resolved_rate).not.toBe(after.resolved_rate);
     expect(after.resolved_rate).toBeGreaterThan(before.resolved_rate);
   });
 
   it("RA-04 returns 404, not a cached/guessed value, when nothing resolves", async () => {
-    const res = await post("/resolve", { tenant_id: "t-empty", employee_id: "nobody", work_date: "2026-01-01" });
+    const res = await post("/resolve", { company_id: "t-empty", employee_id: "nobody", work_date: "2026-01-01" });
     expect(res.status).toBe(404);
   });
 });
@@ -93,7 +93,7 @@ describe("POST /internal/rates/equipment", () => {
   it("RA-05 resolves ownership_rate and operating_rate separately, matching the fixture", async () => {
     const F = golden.equipment_rate;
     await insertEquipmentRateProfile(db(), {
-      tenant_id: TENANT, equipment_id: "eq-1",
+      company_id: TENANT, equipment_id: "eq-1",
       purchase_price_cents: Math.round(F.input.purchase_price * 100),
       salvage_cents: Math.round(F.input.salvage * 100), life_years: F.input.life_years,
       annual_machine_hours: F.input.annual_machine_hours,
@@ -108,7 +108,7 @@ describe("POST /internal/rates/equipment", () => {
       effective_from: "2026-01-01", effective_to: null,
     });
 
-    const res = await post("/equipment", { tenant_id: TENANT, equipment_id: "eq-1", work_date: "2026-06-01" });
+    const res = await post("/equipment", { company_id: TENANT, equipment_id: "eq-1", work_date: "2026-06-01" });
     const json = await res.json() as any;
     expect(json.ownership_rate).not.toBe(json.operating_rate);
     expect(Number((json.total_rate / 10000).toFixed(2))).toBe(38.23);

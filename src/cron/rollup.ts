@@ -1,7 +1,7 @@
 import { computeRecoveryProjection } from "../engines/recovery";
 
 export interface TenantRollupInput {
-  tenant_id: string;
+  company_id: string;
   as_of: string; // YYYY-MM-DD
   restated_target_cents: number;
   recovered_to_date_cents: number;
@@ -17,7 +17,7 @@ export interface TenantRollupInput {
 }
 
 export interface TenantRollupResult {
-  tenant_id: string;
+  company_id: string;
   as_of: string;
   restated_target_cents: number;
   recovered_to_date_cents: number;
@@ -44,7 +44,7 @@ export function buildTenantRollup(input: TenantRollupInput): TenantRollupResult 
   });
 
   return {
-    tenant_id: input.tenant_id,
+    company_id: input.company_id,
     as_of: input.as_of,
     restated_target_cents: input.restated_target_cents,
     recovered_to_date_cents: input.recovered_to_date_cents,
@@ -66,10 +66,10 @@ export function buildTenantRollup(input: TenantRollupInput): TenantRollupResult 
  * endpoint) is still an open infrastructure decision, not resolved here.
  * This function is the invocable unit either path would call.
  *
- * Writes every tenant's recovery_snapshot row in ONE db.batch() call —
+ * Writes every company's recovery_snapshot row in ONE db.batch() call —
  * forbidden: "row-by-row writes". Recovery recognition source is entirely
  * upstream (the caller supplies recovered_to_date_cents, already derived
- * from time_entry hours per CLAUDE.md hard rule 3); this function never
+ * from time_entries hours per CLAUDE.md hard rule 3); this function never
  * touches invoice/deposit/payment data itself.
  */
 export async function runNightlyRollup(
@@ -79,11 +79,11 @@ export async function runNightlyRollup(
 
   const statements = results.map((r) => db.prepare(`
     INSERT INTO recovery_snapshot
-      (tenant_id, as_of, restated_target_cents, recovered_to_date_cents,
+      (company_id, as_of, restated_target_cents, recovered_to_date_cents,
        hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents,
        pct_recovered_millionths, projected_black_friday, confidence_days)
     VALUES (?,?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(tenant_id, as_of) DO UPDATE SET
+    ON CONFLICT(company_id, as_of) DO UPDATE SET
       restated_target_cents = excluded.restated_target_cents,
       recovered_to_date_cents = excluded.recovered_to_date_cents,
       hours_per_week_hundredths = excluded.hours_per_week_hundredths,
@@ -93,7 +93,7 @@ export async function runNightlyRollup(
       projected_black_friday = excluded.projected_black_friday,
       confidence_days = excluded.confidence_days
   `).bind(
-    r.tenant_id, r.as_of, r.restated_target_cents, r.recovered_to_date_cents,
+    r.company_id, r.as_of, r.restated_target_cents, r.recovered_to_date_cents,
     r.hours_per_week_hundredths, r.blended_overhead_rate, r.weekly_recovery_cents,
     r.pct_recovered_millionths, r.projected_black_friday, r.confidence_days,
   ));

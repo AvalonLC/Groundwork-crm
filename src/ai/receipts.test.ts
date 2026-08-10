@@ -6,11 +6,17 @@ import {
 } from "./receipts";
 import { getOpenActionItems, getReceiptByHash } from "../db/repos";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const r2 = () => env.RECEIPTS;
 const TENANT = "t-receipts";
 
 const bytes = (s: string) => new TextEncoder().encode(s).buffer;
+
+// receipt.job_id is a real FK to work_orders(id) since migrations/0057_finance_merge.sql.
+async function seedWorkOrder(id: string) {
+  await db().prepare(`INSERT INTO work_orders (id, company_id, wo_number) VALUES (?,?,?)`)
+    .bind(id, TENANT, `WO-${id}`).run();
+}
 
 describe("scoreFieldConfidence / needsReview", () => {
   it("RC-01 high confidence when every field extracted, low when any is missing", () => {
@@ -26,8 +32,9 @@ describe("scoreFieldConfidence / needsReview", () => {
 
 describe("processReceiptUpload", () => {
   it("RC-02 stores a new receipt in R2 and the DB with field-level confidence", async () => {
+    await seedWorkOrder("job-1");
     const result = await processReceiptUpload(db(), r2(), {
-      tenant_id: TENANT, job_id: "job-1", bytes: bytes("receipt-image-1"), filename: "r1.jpg",
+      company_id: TENANT, job_id: "job-1", bytes: bytes("receipt-image-1"), filename: "r1.jpg",
       extract: async () => ({ vendor: "Acme Supply", amount_cents: 4599, receipt_date: "2026-07-01" }),
       reviewOwnerId: "office-user-1", reviewOwnerRole: "office",
     });
@@ -43,8 +50,9 @@ describe("processReceiptUpload", () => {
   });
 
   it("RC-03 dedupe by hash: uploading the same bytes twice is detected, not double-stored", async () => {
+    await seedWorkOrder("job-2");
     const args = {
-      tenant_id: TENANT, job_id: "job-2", bytes: bytes("dupe-bytes"), filename: "r2.jpg",
+      company_id: TENANT, job_id: "job-2", bytes: bytes("dupe-bytes"), filename: "r2.jpg",
       extract: async () => ({ vendor: "Vendor B", amount_cents: 1000, receipt_date: "2026-07-02" }),
       reviewOwnerId: "office-user-1", reviewOwnerRole: "office" as const,
     };
@@ -55,8 +63,9 @@ describe("processReceiptUpload", () => {
   });
 
   it("RC-04 a low-confidence field creates a review action_item", async () => {
+    await seedWorkOrder("job-3");
     const result = await processReceiptUpload(db(), r2(), {
-      tenant_id: TENANT, job_id: "job-3", bytes: bytes("blurry-receipt"), filename: "r3.jpg",
+      company_id: TENANT, job_id: "job-3", bytes: bytes("blurry-receipt"), filename: "r3.jpg",
       extract: async () => ({ vendor: null, amount_cents: 2000, receipt_date: "2026-07-03" }),
       reviewOwnerId: "office-user-1", reviewOwnerRole: "office",
     });
@@ -71,7 +80,7 @@ describe("processReceiptUpload", () => {
   it("forbidden: routing a bookkeeping review to the crew role throws", async () => {
     await expect(
       processReceiptUpload(db(), r2(), {
-        tenant_id: TENANT, job_id: "job-4", bytes: bytes("crew-blocked"), filename: "r4.jpg",
+        company_id: TENANT, job_id: "job-4", bytes: bytes("crew-blocked"), filename: "r4.jpg",
         extract: async () => ({ vendor: null, amount_cents: null, receipt_date: null }),
         reviewOwnerId: "crew-user-1", reviewOwnerRole: "crew",
       }),

@@ -5,13 +5,13 @@ import { classifyDeterministic, classifyTransaction } from "./classify";
 import { upsertTenantFinancePolicy, getOpenActionItems } from "../db/repos";
 import { classifierRules } from "../config/finance-config";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-classify";
 
 describe("classifyDeterministic (pure, config-driven)", () => {
   it("CL-01 a medium-confidence vendor match still requires review (below auto_categorize_min)", () => {
     const d = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-1",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-1",
       vendor: "Shell Gas Station #4021", memo: null, amount_cents: 5000,
     });
     expect(d.stage_reached).toBe(1);
@@ -21,7 +21,7 @@ describe("classifyDeterministic (pure, config-driven)", () => {
 
   it("CL-02 stage 2: a memo keyword match is found when vendor doesn't match", () => {
     const d = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-2",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-2",
       vendor: "Unknown Vendor LLC", memo: "ADP Payroll run 7/15", amount_cents: 200000,
     });
     expect(d.stage_reached).toBe(2);
@@ -30,19 +30,19 @@ describe("classifyDeterministic (pure, config-driven)", () => {
 
   it("CL-09 generic contractor-business starter categories match (vehicle maintenance, utilities, subcontractor labor)", () => {
     const vehicle = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-vehicle",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-vehicle",
       vendor: "AutoZone #204", memo: null, amount_cents: 4500,
     });
     expect(vehicle.category).toBe("vehicle_maintenance");
 
     const utilities = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-utilities",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-utilities",
       vendor: "City Power Co", memo: "electric bill account #55219", amount_cents: 32000,
     });
     expect(utilities.category).toBe("utilities");
 
     const sub = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-sub",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-sub",
       vendor: "J Rodriguez", memo: "subcontractor labor - drainage job", amount_cents: 150000,
     });
     expect(sub.category).toBe("subcontractor_labor");
@@ -74,7 +74,7 @@ describe("classifyDeterministic (pure, config-driven)", () => {
 
   it("CL-03 no match at all: stage 3, always requires review", () => {
     const d = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-3",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-3",
       vendor: "Totally Unrecognized Co", memo: "misc", amount_cents: 1000,
     });
     expect(d.stage_reached).toBe(3);
@@ -84,7 +84,7 @@ describe("classifyDeterministic (pure, config-driven)", () => {
 
   it("CL-04 a high-confidence match at/above auto_categorize_min resolves without review", () => {
     const d = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-fee",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-fee",
       vendor: "Bank of Somewhere", memo: "Monthly service fee", amount_cents: 1500,
     });
     expect(d.category).toBe("bank_fees");
@@ -94,7 +94,7 @@ describe("classifyDeterministic (pure, config-driven)", () => {
 
   it("forbidden guard: forced_review_categories overrides even a high-confidence match", () => {
     const d = classifyDeterministic({
-      tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-draw",
+      company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-draw",
       vendor: null, memo: "Owner draw for personal use", amount_cents: 100000,
     });
     expect(d.category).toBe("owner_draw");
@@ -109,7 +109,7 @@ describe("classifyTransaction (orchestration, DB-backed)", () => {
     const before = (await getOpenActionItems(db(), TENANT, "decide")).length;
     const result = await classifyTransaction(
       db(),
-      { tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-clean-fee", vendor: "Big Bank", memo: "Monthly service fee", amount_cents: 1500 },
+      { company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-clean-fee", vendor: "Big Bank", memo: "Monthly service fee", amount_cents: 1500 },
       "office-user-1",
     );
     expect(result.decision.requires_review).toBe(false);
@@ -122,7 +122,7 @@ describe("classifyTransaction (orchestration, DB-backed)", () => {
     let aiCalled = false;
     await classifyTransaction(
       db(),
-      { tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-ai-clean", vendor: "Big Bank", memo: "Monthly service fee", amount_cents: 1500 },
+      { company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-ai-clean", vendor: "Big Bank", memo: "Monthly service fee", amount_cents: 1500 },
       "office-user-1",
       async () => { aiCalled = true; return { category: "materials", confidence: "high" }; },
     );
@@ -132,7 +132,7 @@ describe("classifyTransaction (orchestration, DB-backed)", () => {
   it("CL-08 AI is consulted once deterministic stages need review, and its suggestion is attached, never auto-applied", async () => {
     const result = await classifyTransaction(
       db(),
-      { tenant_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-ai-2", vendor: "Unmatched Vendor", memo: null, amount_cents: 3000 },
+      { company_id: TENANT, subject_type: "bank_transaction", subject_id: "tx-ai-2", vendor: "Unmatched Vendor", memo: null, amount_cents: 3000 },
       "office-user-1",
       async () => ({ category: "materials", confidence: "high" }),
     );
@@ -144,12 +144,12 @@ describe("classifyTransaction (orchestration, DB-backed)", () => {
 
   it("forbidden: amount over tenant materiality forces review even on an otherwise-clean high-confidence match", async () => {
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: "t-classify-materiality", equipment_engine_active: 0,
+      company_id: "t-classify-materiality", equipment_engine_active: 0,
       materiality_threshold_cents: 1000, restated_target_cents: 0, black_friday_date: null,
     } as never);
     const result = await classifyTransaction(
       db(),
-      { tenant_id: "t-classify-materiality", subject_type: "bank_transaction", subject_id: "tx-big-fee", vendor: "Big Bank", memo: "Monthly service fee", amount_cents: 999999 },
+      { company_id: "t-classify-materiality", subject_type: "bank_transaction", subject_id: "tx-big-fee", vendor: "Big Bank", memo: "Monthly service fee", amount_cents: 999999 },
       "office-user-1",
     );
     expect(result.decision.requires_review).toBe(false); // deterministically clean...

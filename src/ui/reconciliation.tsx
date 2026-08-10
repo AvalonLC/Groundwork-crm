@@ -3,7 +3,7 @@ import { listClassificationFindings } from "../db/repos";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Card, Empty, Confidence, Why, money, type FinanceAuthVars } from "./layout";
 
-export type ReconciliationBindings = { FINANCE_DB: D1Database };
+export type ReconciliationBindings = { DB: D1Database };
 
 /**
  * Reconciliation — real backing (classification_finding), same status as
@@ -33,7 +33,7 @@ reconciliationRouter.get("/", async (c) => {
     );
   }
 
-  const findings = await listClassificationFindings(c.env.FINANCE_DB, tenant_id);
+  const findings = await listClassificationFindings(c.env.DB, tenant_id);
   const unresolved = findings.filter((f) => !f.action_item_id);
 
   return c.html(

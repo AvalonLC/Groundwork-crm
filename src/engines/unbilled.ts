@@ -15,14 +15,14 @@ export interface UnbilledFinding {
 /**
  * Pure function. No DB, no I/O. See docs/spec/UNBILLED.md.
  *
- * The actual join (completed work_item with no receivable) crosses two
- * databases — FINANCE_DB's work_item and the CRM's own DB for
- * invoices/receivables, whose exact schema wasn't available as evidence
- * (flagged in docs/spec/UNBILLED.md as a real gap, not guessed at). This
- * engine takes the join's result as plain inputs instead: a list of
- * already-completed work items, and the set of work_item ids already known
- * to be billed. The caller (a later wave, once the CRM-side query is
- * written) is responsible for producing `billedWorkItemIds`.
+ * The actual join (completed work order with no receivable) no longer
+ * crosses two databases (migrations/0057_finance_merge.sql, 2026-08-09) —
+ * work_orders and invoices live in the same DB now — but the invoices-side
+ * half of this join was never written (flagged in docs/spec/UNBILLED.md as
+ * a real gap, not guessed at), so this engine still takes the join's result
+ * as plain inputs: a list of already-completed work items, and the set of
+ * ids already known to be billed. The caller is responsible for producing
+ * `billedWorkItemIds`.
  *
  * Findings become action_item(verb='collect') rows — this function never
  * invoices anything itself (CLAUDE.md hard rule 1: propose, don't post).

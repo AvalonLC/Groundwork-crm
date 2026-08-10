@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Card, Empty, type FinanceAuthVars } from "./layout";
 
-export type ObligationsBindings = { FINANCE_DB: D1Database };
+export type ObligationsBindings = { DB: D1Database };
 
 /**
  * Obligations — accounts payable (money the company owes). Genuinely

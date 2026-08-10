@@ -6,7 +6,7 @@ import { tenantDefaults } from "../config/finance-config";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Card, Why, money, type FinanceAuthVars } from "./layout";
 
-export type PolicySetupBindings = { FINANCE_DB: D1Database };
+export type PolicySetupBindings = { DB: D1Database };
 
 /**
  * The keystone gap found by direct production inspection (2026-08-06):
@@ -43,7 +43,7 @@ policySetupRouter.get("/", async (c) => {
     );
   }
 
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
   const existing = await getTenantFinancePolicy(db, tenant_id);
   const isFirstRun = !existing;
   // First-run pre-fill uses the platform default seed (config/finance/tenant-defaults.json)
@@ -200,7 +200,7 @@ policySetupRouter.post("/", async (c) => {
   }
 
   const policy: TenantFinancePolicy = {
-    tenant_id,
+    company_id: tenant_id,
     equipment_engine_active: form.equipment_engine_active ? 1 : 0,
     materiality_threshold_cents: materialityCents as never,
     restated_target_cents: restatedCents as never,
@@ -209,6 +209,6 @@ policySetupRouter.post("/", async (c) => {
     updated_at: "",
   };
 
-  await upsertTenantFinancePolicy(c.env.FINANCE_DB, policy);
+  await upsertTenantFinancePolicy(c.env.DB, policy);
   return c.redirect(`${basePath}?${qs}&saved=1`);
 });

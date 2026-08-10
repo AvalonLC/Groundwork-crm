@@ -23,17 +23,17 @@ function daysOut(dueDate: string): number | null {
 }
 
 /**
- * Collections — accounts receivable. Unlike every other Finance OS page,
- * this reads the CRM's own `DB` (invoices table) directly rather than
- * FINANCE_DB: Finance OS has no receivables table of its own, and
- * `migrations/0023_invoices.sql` already has exactly what's needed
- * (status, balance_due, due_date, scoped by company_id — the same
- * identifier as tenant_id here, confirmed via requireAuth in
- * src/index.tsx). Same query shape as the existing "overdue invoices"
- * AI-suggestion in src/index.tsx (~line 5608), widened from
- * overdue-only to every open balance so a not-yet-due invoice is visible
- * before it becomes a problem. Strictly read-only — no write path into
- * the CRM's own invoices table from here, matching CLAUDE.md's
+ * Collections — accounts receivable. Reads the CRM's own `invoices` table
+ * directly (`migrations/0023_invoices.sql` already has exactly what's
+ * needed: status, balance_due, due_date, scoped by company_id). Since the
+ * 2026-08-09 merge (migrations/0057_finance_merge.sql) this is no longer a
+ * cross-database read — Finance OS's own tables live in the same `DB` now
+ * — but Collections still has no receivables table of its own; it reads
+ * `invoices` directly rather than duplicating it. Same query shape as the
+ * existing "overdue invoices" AI-suggestion in src/index.tsx (~line 5608),
+ * widened from overdue-only to every open balance so a not-yet-due invoice
+ * is visible before it becomes a problem. Strictly read-only — no write
+ * path into the CRM's own invoices table from here, matching CLAUDE.md's
  * propose-don't-post rule by extension.
  */
 export const collectionsRouter = new Hono<{ Bindings: CollectionsBindings; Variables: FinanceAuthVars }>();

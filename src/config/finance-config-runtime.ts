@@ -42,19 +42,19 @@ export interface EffectiveConfig<T = unknown> {
   name: ConfigName;
   value: T;
   is_override: boolean;
-  override_scope: string | null; // '__global__', a tenant_id, or null (using static default)
+  override_scope: string | null; // '__global__', a company_id, or null (using static default)
   updated_by: string | null;
   updated_at: string | null;
 }
 
 export async function getEffectiveConfig<T = unknown>(
-  db: D1Database, tenantId: string, name: ConfigName,
+  db: D1Database, companyId: string, name: ConfigName,
 ): Promise<EffectiveConfig<T>> {
-  const override = await getConfigOverride(db, tenantId, name);
+  const override = await getConfigOverride(db, companyId, name);
   if (override) {
     return {
       name, value: JSON.parse(override.config_json) as T, is_override: true,
-      override_scope: override.tenant_id, updated_by: override.updated_by, updated_at: override.updated_at,
+      override_scope: override.company_id, updated_by: override.updated_by, updated_at: override.updated_at,
     };
   }
   return {
@@ -63,8 +63,8 @@ export async function getEffectiveConfig<T = unknown>(
   };
 }
 
-export async function listEffectiveConfigs(db: D1Database, tenantId: string): Promise<EffectiveConfig[]> {
-  return Promise.all(CONFIG_NAMES.map((name) => getEffectiveConfig(db, tenantId, name)));
+export async function listEffectiveConfigs(db: D1Database, companyId: string): Promise<EffectiveConfig[]> {
+  return Promise.all(CONFIG_NAMES.map((name) => getEffectiveConfig(db, companyId, name)));
 }
 
 /** Minimal structural validation — not a full schema check, but enough to
@@ -100,7 +100,7 @@ export function validateConfigShape(name: ConfigName, parsed: unknown): string |
 }
 
 export async function saveConfigOverride(
-  db: D1Database, tenantId: string, name: ConfigName, rawJson: string, updatedBy: string,
+  db: D1Database, companyId: string, name: ConfigName, rawJson: string, updatedBy: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   let parsed: unknown;
   try {
@@ -111,12 +111,12 @@ export async function saveConfigOverride(
   const shapeError = validateConfigShape(name, parsed);
   if (shapeError) return { ok: false, error: shapeError };
 
-  await upsertConfigOverride(db, tenantId, name, JSON.stringify(parsed), updatedBy);
+  await upsertConfigOverride(db, companyId, name, JSON.stringify(parsed), updatedBy);
   return { ok: true };
 }
 
-export async function resetConfigOverride(db: D1Database, tenantId: string, name: ConfigName): Promise<void> {
-  await deleteConfigOverride(db, tenantId, name);
+export async function resetConfigOverride(db: D1Database, companyId: string, name: ConfigName): Promise<void> {
+  await deleteConfigOverride(db, companyId, name);
 }
 
 export { listConfigOverrides, GLOBAL_CONFIG_SCOPE };

@@ -4,7 +4,7 @@ import { env } from "cloudflare:test";
 import { cronTriggerRouter } from "./cron-trigger";
 import { upsertTenantFinancePolicy } from "../db/repos";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-cron-trigger";
 
 // TEST_CRON_SECRET is a fixed vitest-only value (vitest.config.ts) — never
@@ -35,7 +35,7 @@ describe("POST /internal/cron/rollup — auth", () => {
 describe("POST /internal/cron/rollup — processes tenants", () => {
   it("CT-04 a tenant with a policy row gets processed; one without is skipped, not errored", async () => {
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: TENANT, equipment_engine_active: 0, materiality_threshold_cents: 0,
+      company_id: TENANT, equipment_engine_active: 0, materiality_threshold_cents: 0,
       restated_target_cents: 59100000, black_friday_date: null,
     } as never);
 
@@ -45,7 +45,7 @@ describe("POST /internal/cron/rollup — processes tenants", () => {
     expect(res.status).toBe(200);
     const json = await res.json() as any;
     expect(json.tenants_processed).toBeGreaterThanOrEqual(1);
-    expect(json.results.some((r: any) => r.tenant_id === TENANT)).toBe(true);
+    expect(json.results.some((r: any) => r.company_id === TENANT)).toBe(true);
     expect(Array.isArray(json.tenants_skipped)).toBe(true);
   });
 });
@@ -83,7 +83,7 @@ describe("POST /internal/cron/rollup?dry_run=true — verification without writi
   it("CT-09 dry run computes results but writes nothing to recovery_snapshot", async () => {
     const tenantId = "t-cron-dryrun";
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: tenantId, equipment_engine_active: 0, materiality_threshold_cents: 0,
+      company_id: tenantId, equipment_engine_active: 0, materiality_threshold_cents: 0,
       restated_target_cents: 59100000, black_friday_date: null,
     } as never);
 
@@ -93,10 +93,10 @@ describe("POST /internal/cron/rollup?dry_run=true — verification without writi
     expect(res.status).toBe(200);
     const json = await res.json() as any;
     expect(json.dry_run).toBe(true);
-    expect(json.results.some((r: any) => r.tenant_id === tenantId)).toBe(true);
+    expect(json.results.some((r: any) => r.company_id === tenantId)).toBe(true);
 
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE tenant_id = ?`,
+      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE company_id = ?`,
     ).bind(tenantId).all();
     expect((results[0] as any).n).toBe(0); // nothing written
   });
@@ -104,7 +104,7 @@ describe("POST /internal/cron/rollup?dry_run=true — verification without writi
   it("CT-10 a real (non-dry) run for the same tenant DOES write, confirming dry_run is the only thing that skipped it", async () => {
     const tenantId = "t-cron-realrun";
     await upsertTenantFinancePolicy(db(), {
-      tenant_id: tenantId, equipment_engine_active: 0, materiality_threshold_cents: 0,
+      company_id: tenantId, equipment_engine_active: 0, materiality_threshold_cents: 0,
       restated_target_cents: 59100000, black_friday_date: null,
     } as never);
 
@@ -113,7 +113,7 @@ describe("POST /internal/cron/rollup?dry_run=true — verification without writi
     }, authedEnv());
 
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE tenant_id = ?`,
+      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE company_id = ?`,
     ).bind(tenantId).all();
     expect((results[0] as any).n).toBe(1);
   });

@@ -18,15 +18,21 @@ jobs:
         run: node scripts/validate-tasks.js
       - name: validate finance config files
         run: npm run validate:finance-config
-      - name: guard - no --remote in source
+      - name: guard - no wrangler --remote in source
+        # Matched to .githooks/pre-push's actual pattern (wrangler + --remote
+        # on the same line) rather than a bare '--remote' substring search --
+        # the broader check would also flag legitimate mentions, e.g.
+        # scripts/migrate-finance-data.mjs, which takes --remote as a CLI
+        # flag Tyler passes himself and never runs a bare wrangler --remote
+        # command from within source.
         run: |
-          ! grep -rn -- '--remote' src/ scripts/ 2>/dev/null || exit 1
+          ! grep -rnE 'wrangler.*--remote' src/ scripts/ 2>/dev/null || exit 1
       - name: guard - no DB_PROD in source
         run: |
           ! grep -rn 'DB_PROD' src/ scripts/ 2>/dev/null || exit 1
       - name: guard - no float money in finance migrations
         run: |
-          ! grep -rniE '(REAL|FLOAT|DOUBLE)' migrations/finance/ 2>/dev/null || exit 1
+          ! grep -rniE '(REAL|FLOAT|DOUBLE)' migrations/finance/ migrations/0057_finance_merge.sql 2>/dev/null || exit 1
       - name: guard - BH-13 intact
         run: |
           grep -q 'BH-13' src/engines/burden.test.ts
@@ -39,11 +45,8 @@ jobs:
       - run: npm test
       - name: install Playwright chromium
         run: npx playwright install --with-deps chromium
-      - name: apply finance migrations (local D1)
-        run: npm run db:local
-      - name: apply CRM migrations (local D1)
-        # collections.tsx (src/ui/collections.tsx) reads the CRM's own DB
-        # directly (the invoices table) — its e2e suite needs this schema
-        # too, not just FINANCE_DB's.
+      - name: apply migrations (local D1)
+        # Single database since migrations/0057_finance_merge.sql (2026-08-09)
+        # — one migrations_dir, one apply step.
         run: npm run db:migrate:local
       - run: npm run e2e

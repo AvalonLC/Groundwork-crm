@@ -6,10 +6,10 @@ const TENANT = "t-e2e-recovery";
 test.beforeEach(async ({ request }) => {
   await resetFinanceDb(request, TENANT);
   await exec(request,
-    `INSERT INTO recovery_snapshot (tenant_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO recovery_snapshot (company_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [TENANT, "2026-08-03", 59100000, 38190000, 38000, 274300, 1042340, 646193, "2026-12-21", 13]);
   await exec(request,
-    `INSERT INTO overhead_allocation (tenant_id, division, as_of, sellable_hours, allocated_overhead_cents, weighted_labor_rate_cents, overhead_rate, absorbed_cost_cents, target_margin, required_bill_rate_cents) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO overhead_allocation (company_id, division, as_of, sellable_hours, allocated_overhead_cents, weighted_labor_rate_cents, overhead_rate, absorbed_cost_cents, target_margin, required_bill_rate_cents) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [TENANT, "maintenance", "2026-08-03", 8110, 19640000, 3840, 242170, 6262, 4000, 10437]);
 });
 

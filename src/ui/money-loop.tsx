@@ -4,7 +4,7 @@ import type { ActionItem, ActionVerb } from "../db/schema";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Confidence, Why, money, type FinanceAuthVars } from "./layout";
 
-export type MoneyLoopBindings = { FINANCE_DB: D1Database };
+export type MoneyLoopBindings = { DB: D1Database };
 
 const VERBS: ActionVerb[] = ["collect", "bill", "pay", "fix", "decide"];
 
@@ -36,7 +36,7 @@ export const moneyLoopRouter = new Hono<{ Bindings: MoneyLoopBindings; Variables
 
 moneyLoopRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
 
   const [snapshot, policy] = await Promise.all([
     getLatestRecoverySnapshot(db, tenant_id),

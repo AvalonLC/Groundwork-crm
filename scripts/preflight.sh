@@ -84,7 +84,7 @@ chk "Workers AI binding"          "grep -qiE '\"ai\"|\\[ai\\]' \"$WR\""
 # docs/spec/RECOVERY.md instead, resolved before W3-rollup starts.
 echo "  SKIP   cron trigger  (Pages has no native cron — see docs/spec/RECOVERY.md)"
 soft "wrangler authenticated"     "./node_modules/.bin/wrangler whoami"
-soft "local D1 migrates"          "npm run db:local"
+soft "local D1 migrates"          "npm run db:migrate:local"
 
 echo "-- agent CLI --"
 chk "claude or codex on PATH"     "command -v claude || command -v codex"
@@ -105,7 +105,6 @@ if [ "$todo" -gt 0 ]; then
   echo "  Harness is sound. Complete the TODO items above:"
   echo "    git remote add origin git@github.com:<you>/groundwork-finance-os.git"
   echo "    git push -u origin main"
-  echo "    ./node_modules/.bin/wrangler d1 create groundwork   # paste id into wrangler.jsonc"
   exit 2
 fi
 echo "  ==> All green. Next: bash scripts/harness-selftest.sh"

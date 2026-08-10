@@ -5,7 +5,7 @@ import { computeCalibrationSnapshot } from "./calibration";
 import { insertClassificationFinding } from "../db/repos";
 import type { Cents } from "../db/schema";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-calibration";
 
 describe("computeCalibrationSnapshot", () => {
@@ -23,7 +23,7 @@ describe("computeCalibrationSnapshot", () => {
     ];
     for (const r of rows) {
       await insertClassificationFinding(db(), {
-        id: r.id, tenant_id: TENANT, subject_type: "bank_transaction", subject_id: r.id,
+        id: r.id, company_id: TENANT, subject_type: "bank_transaction", subject_id: r.id,
         stage_reached: r.stage, confidence: "medium", materiality_cents: 0 as Cents,
         proposed_change: null, action_item_id: null,
       });

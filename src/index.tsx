@@ -34,10 +34,11 @@ import { ratesRouter } from './api/rates'
 import { actionsRouter } from './api/actions'
 import { financeUiRouter } from './ui/mount'
 import { cronTriggerRouter } from './api/cron-trigger'
-import { syncWorkOrderToFinance, syncTimeEntryToFinance, markOpportunityCollectedFromInvoice } from './bridge/finance-sync'
+import { updateWorkOrderFinanceColumns } from './db/repos'
+import { postTimeEntryToLedger } from './api/posting'
 
 
-type Bindings = { DB: D1Database; FINANCE_DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
+type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
 type Variables = { repId: string; companyId: string; role: string; isSuperAdmin: boolean }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
@@ -544,6 +545,126 @@ async function requireAuthFinance(c: any, next: any) {
   if (c.req.path.startsWith('/finance/api/')) return requireAuth(c, next)
   const authFailure = await requireAuth(c, next)
   if (authFailure) return c.redirect('/')
+}
+
+// ── Finance OS write-through helpers ─────────────────────────────────────────
+// Since migrations/0057_finance_merge.sql (2026-08-09), Finance OS's tables
+// live in this same DB — these replace the old cross-database
+// src/bridge/finance-sync.ts (deleted). All three are best-effort: a Finance
+// OS write failure must never break the CRM request that triggered it.
+
+/** Mirrors a work order's estimate/completion state onto its own
+ * estimate_cents/finance_completed_at columns (work_item's old columns,
+ * folded onto work_orders — id/job_id were always the same value). Called
+ * from both work-order create and update. */
+async function syncWorkOrderFinanceColumns(db: D1Database, companyId: string, woId: string): Promise<void> {
+  try {
+    const wo = await db.prepare(
+      `SELECT id, crew_id, opp_id, estimate_id, status FROM work_orders WHERE id = ? AND company_id = ?`,
+    ).bind(woId, companyId).first<{ id: string; crew_id: string | null; opp_id: string | null; estimate_id: string | null; status: string }>()
+    if (!wo) return
+
+    // Resolve the linked estimate: work_orders.estimate_id (rarely set by
+    // the create/update handlers) -> the reverse FK estimates.work_order_id
+    // (set by the estimate->work-order conversion flow) -> the most recent
+    // accepted estimate on the same opportunity -> none.
+    let estimateTotal: number | null = null
+    if (wo.estimate_id) {
+      const est = await db.prepare(`SELECT total FROM estimates WHERE id = ? AND company_id = ?`)
+        .bind(wo.estimate_id, companyId).first<{ total: number }>()
+      estimateTotal = est?.total ?? null
+    }
+    if (estimateTotal === null) {
+      const est = await db.prepare(
+        `SELECT total FROM estimates WHERE work_order_id = ? AND company_id = ? ORDER BY created_at DESC LIMIT 1`,
+      ).bind(woId, companyId).first<{ total: number }>()
+      estimateTotal = est?.total ?? null
+    }
+    if (estimateTotal === null && wo.opp_id) {
+      const est = await db.prepare(
+        `SELECT total FROM estimates WHERE opp_id = ? AND company_id = ? AND status = 'accepted' ORDER BY created_at DESC LIMIT 1`,
+      ).bind(wo.opp_id, companyId).first<{ total: number }>()
+      estimateTotal = est?.total ?? null
+    }
+
+    // Preserve the original completion timestamp across re-syncs instead of
+    // resetting it to "now" every time an already-complete work order is
+    // touched again (e.g. a note edit after completion).
+    let completedAt: string | null = null
+    if (wo.status === 'completed') {
+      const existing = await db.prepare(`SELECT finance_completed_at FROM work_orders WHERE id = ? AND company_id = ?`)
+        .bind(woId, companyId).first<{ finance_completed_at: string | null }>()
+      completedAt = existing?.finance_completed_at ?? new Date().toISOString()
+    }
+
+    await updateWorkOrderFinanceColumns(
+      db, companyId, woId,
+      estimateTotal !== null ? Math.round(estimateTotal * 100) : null,
+      completedAt,
+    )
+  } catch (e) {
+    console.error('syncWorkOrderFinanceColumns failed (non-blocking)', woId, e)
+  }
+}
+
+/** Posts a just-closed time_entries row onto job_cost_ledger, in place — no
+ * separate insert step needed (the row already exists from clock-in). Only
+ * called at clock-out, never clock-in: duration/hours aren't known until
+ * then. Skipped entirely for general/non-job time (no work_order_id) or
+ * when the linked work order's crew has no division set (division is
+ * required to post; see src/api/posting.ts). */
+async function postWorkOrderTimeEntry(
+  db: D1Database, companyId: string, entry: { id: string; work_order_id: string | null },
+): Promise<void> {
+  try {
+    if (!entry.work_order_id) return
+
+    const wo = await db.prepare(`SELECT crew_id FROM work_orders WHERE id = ? AND company_id = ?`)
+      .bind(entry.work_order_id, companyId).first<{ crew_id: string | null }>()
+    if (!wo?.crew_id) return
+
+    const crew = await db.prepare(`SELECT division FROM crews WHERE id = ? AND company_id = ?`)
+      .bind(wo.crew_id, companyId).first<{ division: string | null }>()
+    if (!crew?.division) return
+
+    const result = await postTimeEntryToLedger(db, companyId, entry.id, crew.division)
+    if (!result.success) {
+      // Expected when a tenant hasn't finished Finance OS setup (no rate
+      // profile / no overhead allocation for this division yet) — an honest
+      // gap, not a bug.
+      console.warn('postWorkOrderTimeEntry: posting did not complete', entry.id, result.reason)
+    }
+  } catch (e) {
+    console.error('postWorkOrderTimeEntry failed (non-blocking)', entry.id, e)
+  }
+}
+
+/** Server-side counterpart to the manual "Payment Collected" checkbox —
+ * called from every code path that transitions an invoice to status='paid',
+ * so `collected` reflects a real payment event even if nobody ever checks
+ * the box by hand. Does not touch commission_approved or any commission
+ * math (out of scope, see the finance-merge project notes). */
+async function markOpportunityCollectedFromInvoice(
+  db: D1Database, companyId: string, invoiceId: string, estimateIdHint?: string | null,
+): Promise<void> {
+  try {
+    let estimateId = estimateIdHint ?? null
+    if (!estimateId) {
+      const inv = await db.prepare(`SELECT estimate_id FROM invoices WHERE id = ? AND company_id = ?`)
+        .bind(invoiceId, companyId).first<{ estimate_id: string | null }>()
+      estimateId = inv?.estimate_id ?? null
+    }
+    if (!estimateId) return // not every invoice traces back to an estimate/opportunity
+
+    const est = await db.prepare(`SELECT opp_id FROM estimates WHERE id = ? AND company_id = ?`)
+      .bind(estimateId, companyId).first<{ opp_id: string | null }>()
+    if (!est?.opp_id) return
+
+    await db.prepare(`UPDATE opportunities SET collected = 1 WHERE id = ? AND company_id = ?`)
+      .bind(est.opp_id, companyId).run()
+  } catch (e) {
+    console.error('markOpportunityCollectedFromInvoice failed (non-blocking)', invoiceId, e)
+  }
 }
 
 async function requireSuperAdmin(c: any, next: any) {
@@ -3979,7 +4100,7 @@ app.post('/api/time/clock-out', requireAuth, async (c) => {
     `UPDATE time_entries SET clock_out=?, duration_min=?, notes=?, updated_at=datetime('now')
      WHERE id=? AND company_id=?`
   ).bind(now.toISOString(), durMin, b.notes ?? entry.notes, entry.id, companyId).run()
-  await syncTimeEntryToFinance(c.env.DB, c.env.FINANCE_DB, companyId, repId, entry, durMin)
+  await postWorkOrderTimeEntry(c.env.DB, companyId, entry)
   return json(c, { id: entry.id, duration_min: durMin })
 })
 
@@ -4007,9 +4128,7 @@ app.post('/api/time/clock-out/:entryId', requireAuth, async (c) => {
     `UPDATE time_entries SET clock_out=?, duration_min=?, notes=?, updated_at=datetime('now')
      WHERE id=? AND company_id=?`
   ).bind(now.toISOString(), durMin, b.notes ?? entry.notes, entry.id, companyId).run()
-  // entry.rep_id, not the caller's repId — an admin/office_manager may be
-  // force-closing someone else's entry (see comment above this route).
-  await syncTimeEntryToFinance(c.env.DB, c.env.FINANCE_DB, companyId, entry.rep_id, entry, durMin)
+  await postWorkOrderTimeEntry(c.env.DB, companyId, entry)
   return json(c, { id: entry.id, duration_min: durMin })
 })
 
@@ -11388,7 +11507,7 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, id, eId, companyId).run()
   }
-  await syncWorkOrderToFinance(db, c.env.FINANCE_DB, companyId, id)
+  await syncWorkOrderFinanceColumns(db, companyId, id)
   return c.json({ ok: true, id, wo_number: woNum })
 })
 
@@ -11497,7 +11616,7 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
         .bind(eid, woId, eId, companyId).run()
     }
   }
-  await syncWorkOrderToFinance(db, c.env.FINANCE_DB, companyId, woId)
+  await syncWorkOrderFinanceColumns(db, companyId, woId)
   return c.json({ ok: true })
 })
 
@@ -12152,8 +12271,8 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">
-  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12176,10 +12295,10 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260807b001"></script>
-  <script src="/js/client_portal.js?v=20260807b001"></script>
-  <script src="/js/platform_core.js?v=20260807b001"></script>
-  <script src="/js/client_portal.js?v=20260807b001"></script>  <script>
+  <script src="/js/platform_core.js?v=20260810b002"></script>
+  <script src="/js/client_portal.js?v=20260810b002"></script>
+  <script src="/js/platform_core.js?v=20260810b002"></script>
+  <script src="/js/client_portal.js?v=20260810b002"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -12813,12 +12932,12 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260807b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260807b001">
-  <link rel="stylesheet" href="/js/premium.css?v=20260807b001">
-  <link rel="stylesheet" href="/js/styles.css?v=20260807b001">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260807b001">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13377,45 +13496,45 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260807b001"></script>
-<script src="/js/sales-process.js?v=20260807b001"></script>
-<script src="/js/richtext.js?v=20260807b001"></script>
-<script src="/js/db.js?v=20260807b001"></script>
-<script src="/js/data.js?v=20260807b001"></script>
-<script src="/js/reps.js?v=20260807b001"></script>
-<script src="/js/record-page.js?v=20260807b001"></script>
-<script src="/js/academy.js?v=20260807b001"></script>
-<script src="/js/task_engine.js?v=20260807b001"></script>
-<script src="/js/gw_i18n.js?v=20260807b001"></script>
-<script src="/js/app_premium.js?v=20260807b001"></script>
-<script src="/js/estimates.js?v=20260807b001"></script>
-<script src="/js/multiday.js?v=20260807b001"></script>
-<script src="/js/proposals.js?v=20260807b001"></script>
-<script src="/js/pricing.js?v=20260807b001"></script>
-<script src="/js/invoices.js?v=20260807b001"></script>
-<script src="/js/csv_import.js?v=20260807b001"></script>
-<script src="/js/onboarding.js?v=20260807b001"></script>
-<script src="/js/gw_copilot.js?v=20260807b001"></script>
-<script src="/js/groundwork_ai.js?v=20260807b001"></script>
-<script src="/js/recurring_plans.js?v=20260807b001"></script>
-<script src="/js/reviews.js?v=20260807b001"></script>
-<script src="/js/stripe.js?v=20260807b001"></script>
-<script src="/js/email.js?v=20260807b001"></script>
-<script src="/js/notifications.js?v=20260807b001"></script>
-<script src="/js/integrations.js?v=20260807b001"></script>
-<script src="/js/sms.js?v=20260807b001"></script>
-<script src="/js/calendar_sync.js?v=20260807b001"></script>
-<script src="/js/ai_followup.js?v=20260807b001"></script>
-<script src="/js/user_management.js?v=20260807b001"></script>
-<script src="/js/platform_admin.js?v=20260807b001"></script>
-<script src="/js/time_tracker.js?v=20260807b001"></script>
-<script src="/js/field_workday.js?v=20260807b001"></script>
-<script src="/js/platform_core.js?v=20260807b001"></script>
-<script src="/js/approval_engine.js?v=20260807b001"></script>
-<script src="/js/automation_engine.js?v=20260807b001"></script>
-<script src="/js/client_portal.js?v=20260807b001"></script>
-<script src="/js/field_mode.js?v=20260807b001"></script>
-<script src="/js/assets_hub.js?v=20260807b001"></script><script>
+<script src="/js/gw-icons.js?v=20260810b002"></script>
+<script src="/js/sales-process.js?v=20260810b002"></script>
+<script src="/js/richtext.js?v=20260810b002"></script>
+<script src="/js/db.js?v=20260810b002"></script>
+<script src="/js/data.js?v=20260810b002"></script>
+<script src="/js/reps.js?v=20260810b002"></script>
+<script src="/js/record-page.js?v=20260810b002"></script>
+<script src="/js/academy.js?v=20260810b002"></script>
+<script src="/js/task_engine.js?v=20260810b002"></script>
+<script src="/js/gw_i18n.js?v=20260810b002"></script>
+<script src="/js/app_premium.js?v=20260810b002"></script>
+<script src="/js/estimates.js?v=20260810b002"></script>
+<script src="/js/multiday.js?v=20260810b002"></script>
+<script src="/js/proposals.js?v=20260810b002"></script>
+<script src="/js/pricing.js?v=20260810b002"></script>
+<script src="/js/invoices.js?v=20260810b002"></script>
+<script src="/js/csv_import.js?v=20260810b002"></script>
+<script src="/js/onboarding.js?v=20260810b002"></script>
+<script src="/js/gw_copilot.js?v=20260810b002"></script>
+<script src="/js/groundwork_ai.js?v=20260810b002"></script>
+<script src="/js/recurring_plans.js?v=20260810b002"></script>
+<script src="/js/reviews.js?v=20260810b002"></script>
+<script src="/js/stripe.js?v=20260810b002"></script>
+<script src="/js/email.js?v=20260810b002"></script>
+<script src="/js/notifications.js?v=20260810b002"></script>
+<script src="/js/integrations.js?v=20260810b002"></script>
+<script src="/js/sms.js?v=20260810b002"></script>
+<script src="/js/calendar_sync.js?v=20260810b002"></script>
+<script src="/js/ai_followup.js?v=20260810b002"></script>
+<script src="/js/user_management.js?v=20260810b002"></script>
+<script src="/js/platform_admin.js?v=20260810b002"></script>
+<script src="/js/time_tracker.js?v=20260810b002"></script>
+<script src="/js/field_workday.js?v=20260810b002"></script>
+<script src="/js/platform_core.js?v=20260810b002"></script>
+<script src="/js/approval_engine.js?v=20260810b002"></script>
+<script src="/js/automation_engine.js?v=20260810b002"></script>
+<script src="/js/client_portal.js?v=20260810b002"></script>
+<script src="/js/field_mode.js?v=20260810b002"></script>
+<script src="/js/assets_hub.js?v=20260810b002"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

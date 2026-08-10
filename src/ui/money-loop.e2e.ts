@@ -6,13 +6,13 @@ const TENANT = "t-e2e-moneyloop";
 test.beforeEach(async ({ request }) => {
   await resetFinanceDb(request, TENANT);
   await exec(request,
-    `INSERT INTO recovery_snapshot (tenant_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO recovery_snapshot (company_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [TENANT, "2026-08-03", 59100000, 38190000, 38000, 274300, 1042340, 646193, "2026-12-21", 13]);
   await exec(request,
-    `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, amount_cents, confidence, status) VALUES (?,?,?,?,?,?,?, 'open')`,
+    `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, amount_cents, confidence, status) VALUES (?,?,?,?,?,?,?, 'open')`,
     ["ai-e2e-1", TENANT, "collect", "user-1", "2026-08-10", 5000, "high"]);
   await exec(request,
-    `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, amount_cents, confidence, status) VALUES (?,?,?,?,?,?,?, 'open')`,
+    `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, amount_cents, confidence, status) VALUES (?,?,?,?,?,?,?, 'open')`,
     ["ai-e2e-2", TENANT, "bill", "user-2", "2026-08-11", 8000, "medium"]);
 });
 
@@ -52,7 +52,7 @@ test("UM-05 owner sees a setup banner when no company policy row exists yet", as
 
 test("UM-06 banner disappears once a company policy row exists", async ({ page, request }) => {
   await exec(request,
-    `INSERT INTO tenant_finance_policy (tenant_id, equipment_engine_active, materiality_threshold_cents, restated_target_cents, black_friday_date) VALUES (?,?,?,?,?)`,
+    `INSERT INTO tenant_finance_policy (company_id, equipment_engine_active, materiality_threshold_cents, restated_target_cents, black_friday_date) VALUES (?,?,?,?,?)`,
     [TENANT, 0, 50000, 0, null]);
   await page.goto(`/money-loop?tenant_id=${TENANT}&role=owner`);
   await expect(page.getByTestId("policy-setup-banner")).toHaveCount(0);

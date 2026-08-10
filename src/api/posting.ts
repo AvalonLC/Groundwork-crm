@@ -19,24 +19,35 @@ export type PostingResult =
  * ledger lines — retroactive recost has no code path to call (forbidden:
  * "retroactive recost without an explicit job").
  *
- * `division` is supplied by the caller (looked up from the job in the CRM's
- * own database — Finance OS doesn't have a job/division mapping of its own;
- * see docs/spec/UNBILLED.md for the same cross-database pattern).
+ * `division` is supplied by the caller — there's still no division column on
+ * time_entries itself (see migrations/0057_finance_merge.sql), it's derived
+ * from the linked work order's crew (work_orders.crew_id -> crews.division).
+ *
+ * `timeEntryId` is time_entries.id directly — since the 2026-08-09 merge
+ * there's no separate insert step; the row already exists from clock-in
+ * (src/index.tsx), this just posts onto it in place.
  */
 export async function postTimeEntryToLedger(
-  db: D1Database, tenantId: string, timeEntryId: number, division: string,
+  db: D1Database, companyId: string, timeEntryId: string, division: string,
 ): Promise<PostingResult> {
-  const entry = await getTimeEntry(db, tenantId, timeEntryId);
+  const entry = await getTimeEntry(db, companyId, timeEntryId);
   if (!entry) return { success: false, reason: "not_found" };
   if (entry.posted_at) return { success: false, reason: "already_posted" };
 
+  // crew_id isn't stored on time_entries (see migrations/0057_finance_merge.sql)
+  // -- it's derived from the linked work order so resolveLaborRate's
+  // employee -> crew -> role -> tenant cascade still has a real crew tier to
+  // try, not just employee/tenant.
+  const workOrder = await db.prepare(`SELECT crew_id FROM work_orders WHERE id = ? AND company_id = ?`)
+    .bind(entry.work_order_id, companyId).first<{ crew_id: string | null }>();
+
   const resolved = await resolveLaborRate(db, {
-    tenant_id: tenantId, employee_id: entry.employee_id, work_date: entry.work_date,
-    crew_id: entry.crew_id ?? undefined,
+    company_id: companyId, employee_id: entry.employee_id, work_date: entry.work_date,
+    crew_id: workOrder?.crew_id ?? undefined,
   });
   if (!resolved) return { success: false, reason: "no_rate_resolves" };
 
-  const allocation = await getLatestOverheadAllocationForDivision(db, tenantId, division, entry.work_date);
+  const allocation = await getLatestOverheadAllocationForDivision(db, companyId, division, entry.work_date);
   if (!allocation) return { success: false, reason: "no_overhead_allocation" };
 
   const hours = entry.hours_hundredths / 100;
@@ -48,13 +59,13 @@ export async function postTimeEntryToLedger(
   // Write-once guard: if another call already posted this entry between our
   // read and this write, postTimeEntry returns false and we do NOT write
   // ledger lines — never two sets of ledger lines for one time_entry.
-  const wrote = await postTimeEntry(db, tenantId, timeEntryId, resolved.resolved_rate, resolved.confidence, overheadCents);
+  const wrote = await postTimeEntry(db, companyId, timeEntryId, resolved.resolved_rate, resolved.confidence, overheadCents);
   if (!wrote) return { success: false, reason: "already_posted" };
 
   await postJobCostLedgerLines(
     db,
-    { tenant_id: tenantId, time_entry_id: timeEntryId, job_id: entry.job_id, amount_cents: toCents(laborCents), division },
-    { tenant_id: tenantId, time_entry_id: timeEntryId, job_id: entry.job_id, amount_cents: toCents(overheadCents), division },
+    { company_id: companyId, time_entry_id: timeEntryId, job_id: entry.work_order_id, amount_cents: toCents(laborCents), division },
+    { company_id: companyId, time_entry_id: timeEntryId, job_id: entry.work_order_id, amount_cents: toCents(overheadCents), division },
   );
 
   return { success: true, resolved_rate: resolved.resolved_rate, labor_cents: laborCents, overhead_cents: overheadCents };

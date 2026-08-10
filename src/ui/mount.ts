@@ -26,11 +26,11 @@ import type { FinanceAuthVars } from "./layout";
  * readPageArgs) when mounted behind requireAuth, which src/index.tsx does
  * for the whole /finance/* prefix.
  *
- * `DB` (the CRM's own database) is included here only because
- * collections.tsx reads it directly — every other page here only touches
- * FINANCE_DB.
+ * Single `DB` binding since the 2026-08-09 merge
+ * (migrations/0057_finance_merge.sql) — Finance OS tables and the CRM's
+ * own tables live in the same database now, no more separate FINANCE_DB.
  */
-export type FinanceUiBindings = { FINANCE_DB: D1Database; RECEIPTS: R2Bucket; DB: D1Database };
+export type FinanceUiBindings = { DB: D1Database; RECEIPTS: R2Bucket };
 
 export const financeUiRouter = new Hono<{ Bindings: FinanceUiBindings; Variables: FinanceAuthVars }>();
 

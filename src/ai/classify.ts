@@ -23,7 +23,7 @@ import {
  */
 
 export interface TransactionInput {
-  tenant_id: string;
+  company_id: string;
   subject_type: string;
   subject_id: string;
   vendor: string | null;
@@ -125,7 +125,7 @@ export async function classifyTransaction(
 ): Promise<ClassifyResult> {
   const decision = classifyDeterministic(input, rules);
 
-  const policy = await getTenantFinancePolicy(db, input.tenant_id);
+  const policy = await getTenantFinancePolicy(db, input.company_id);
   const materialityThreshold = policy?.materiality_threshold_cents ?? Number.MAX_SAFE_INTEGER;
   const materialityForcedReview = input.amount_cents > materialityThreshold;
   const needsReview = decision.requires_review || materialityForcedReview;
@@ -141,7 +141,7 @@ export async function classifyTransaction(
   const findingId = `cf-classify-${crypto.randomUUID().slice(0, 8)}`;
   await insertClassificationFinding(db, {
     id: findingId,
-    tenant_id: input.tenant_id,
+    company_id: input.company_id,
     subject_type: input.subject_type,
     subject_id: input.subject_id,
     stage_reached: aiSuggestion ? 4 : decision.stage_reached,
@@ -156,7 +156,7 @@ export async function classifyTransaction(
     actionItemId = `ai-classify-${findingId.slice(-12)}`;
     await insertActionItem(db, {
       id: actionItemId,
-      tenant_id: input.tenant_id,
+      company_id: input.company_id,
       verb: "decide",
       owner_id: reviewOwnerId,
       sla_due: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),

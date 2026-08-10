@@ -8,7 +8,7 @@ import {
 import { classifierRules } from "./finance-config";
 import { GLOBAL_CONFIG_SCOPE } from "../db/repos";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 
 describe("getEffectiveConfig — falls back to static default with no override", () => {
   it("RT-01 returns the static JSON default when no override exists", async () => {

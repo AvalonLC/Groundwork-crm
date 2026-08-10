@@ -6,7 +6,7 @@ import {
 import { canSee } from "./roles";
 import { readPageArgs, Page, type FinanceAuthVars } from "./layout";
 
-export type ConfigAdminBindings = { FINANCE_DB: D1Database };
+export type ConfigAdminBindings = { DB: D1Database };
 
 /**
  * Admin-editable surface for config/finance/*.json — plain HTML forms
@@ -39,7 +39,7 @@ configAdminRouter.get("/", async (c) => {
     );
   }
 
-  const configs = await listEffectiveConfigs(c.env.FINANCE_DB, tenant_id);
+  const configs = await listEffectiveConfigs(c.env.DB, tenant_id);
   const notice = c.req.query("saved") === "1" ? "Saved." : c.req.query("error") ? `Error: ${c.req.query("error")}` : null;
   // Absolute base path this router is mounted at, derived from the actual
   // request rather than hardcoded — works whether mounted at /config
@@ -176,7 +176,7 @@ configAdminRouter.post("/:name", async (c) => {
   const form = await c.req.parseBody();
   const rawJson = String(form.config_json ?? "");
   const updatedBy = c.var.repId ?? "unknown";
-  const result = await saveConfigOverride(c.env.FINANCE_DB, tenant_id, name, rawJson, updatedBy);
+  const result = await saveConfigOverride(c.env.DB, tenant_id, name, rawJson, updatedBy);
 
   const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
   if (!result.ok) return c.redirect(`${basePath}?${qs}&error=${encodeURIComponent(result.error)}`);
@@ -190,7 +190,7 @@ configAdminRouter.post("/:name/reset", async (c) => {
   if (!canSee(role, "can_see_budget_rates")) return c.text("owner role required", 403);
   if (!isConfigName(name)) return c.text(`unknown config: ${name}`, 404);
 
-  await resetConfigOverride(c.env.FINANCE_DB, tenant_id, name);
+  await resetConfigOverride(c.env.DB, tenant_id, name);
   const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
   return c.redirect(`${basePath}?${qs}&saved=1`);
 });
@@ -202,7 +202,7 @@ export const configAdminApiRouter = new Hono<{ Bindings: ConfigAdminBindings; Va
 configAdminApiRouter.get("/", async (c) => {
   const { tenant_id, role } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
-  return c.json({ configs: await listEffectiveConfigs(c.env.FINANCE_DB, tenant_id) });
+  return c.json({ configs: await listEffectiveConfigs(c.env.DB, tenant_id) });
 });
 
 configAdminApiRouter.get("/:name", async (c) => {
@@ -210,7 +210,7 @@ configAdminApiRouter.get("/:name", async (c) => {
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
   const name = c.req.param("name");
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}`, valid_names: CONFIG_NAMES }, 404);
-  return c.json(await getEffectiveConfig(c.env.FINANCE_DB, tenant_id, name));
+  return c.json(await getEffectiveConfig(c.env.DB, tenant_id, name));
 });
 
 configAdminApiRouter.put("/:name", async (c) => {
@@ -220,7 +220,7 @@ configAdminApiRouter.put("/:name", async (c) => {
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}` }, 404);
   const rawJson = await c.req.text();
   const updatedBy = c.var.repId ?? "unknown";
-  const result = await saveConfigOverride(c.env.FINANCE_DB, tenant_id, name, rawJson, updatedBy);
+  const result = await saveConfigOverride(c.env.DB, tenant_id, name, rawJson, updatedBy);
   if (!result.ok) return c.json({ error: result.error }, 400);
   return c.json({ ok: true });
 });
@@ -230,7 +230,7 @@ configAdminApiRouter.post("/:name/reset", async (c) => {
   if (!canSee(role, "can_see_budget_rates")) return c.json({ error: "owner role required" }, 403);
   const name = c.req.param("name");
   if (!isConfigName(name)) return c.json({ error: `unknown config: ${name}` }, 404);
-  await resetConfigOverride(c.env.FINANCE_DB, tenant_id, name);
+  await resetConfigOverride(c.env.DB, tenant_id, name);
   return c.json({ ok: true });
 });
 

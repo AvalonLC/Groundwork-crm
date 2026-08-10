@@ -3,7 +3,7 @@ import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools } f
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, type FinanceAuthVars } from "./layout";
 
-export type BudgetBindings = { FINANCE_DB: D1Database };
+export type BudgetBindings = { DB: D1Database };
 
 /**
  * See docs/spec/UI-BUDGET.md. "Both rate types" = labor + equipment,
@@ -33,7 +33,7 @@ budgetRouter.get("/", async (c) => {
     );
   }
 
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
   const [laborRates, equipmentRates, pools] = await Promise.all([
     listCurrentLaborRates(db, tenant_id),
     listCurrentEquipmentRates(db, tenant_id),

@@ -9,7 +9,7 @@ import { canSee } from "./roles";
 import { needsReviewFromConfidence } from "./documents";
 import { readPageArgs, Page, Card, Why, type FinanceAuthVars } from "./layout";
 
-export type OnboardingBindings = { FINANCE_DB: D1Database; RECEIPTS: R2Bucket };
+export type OnboardingBindings = { DB: D1Database; RECEIPTS: R2Bucket };
 
 /**
  * Financial Setup & AI Onboarding — stages 1 (multi-file intake), 2 (AI
@@ -212,7 +212,7 @@ onboardingRouter.get("/", async (c) => {
       403,
     );
   }
-  const gap = await computeConfidenceGap(c.env.FINANCE_DB, tenant_id);
+  const gap = await computeConfidenceGap(c.env.DB, tenant_id);
   return c.html(renderPage(role, tenant_id || undefined, vocab, c.req.path, gap, null, null));
 });
 
@@ -228,7 +228,7 @@ onboardingRouter.post("/upload", async (c) => {
   );
 
   if (files.length === 0) {
-    const gap = await computeConfidenceGap(c.env.FINANCE_DB, tenant_id);
+    const gap = await computeConfidenceGap(c.env.DB, tenant_id);
     return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, gap, null, "no files selected"), 400);
   }
 
@@ -239,11 +239,11 @@ onboardingRouter.post("/upload", async (c) => {
     const id = `ub-${crypto.randomUUID().slice(0, 12)}`;
     if (isCsvLike(file)) {
       const text = await file.text();
-      const result = await ingestFile(c.env.FINANCE_DB, tenant_id, text, ownerId);
+      const result = await ingestFile(c.env.DB, tenant_id, text, ownerId);
       const domain: UploadDomain = result.source_id ? "financial_export" : "unrecognized";
       const anyLineNeedsReview = result.lines.some((l) => l.needs_review);
-      await insertUploadBatch(c.env.FINANCE_DB, {
-        id, tenant_id, filename: file.name, domain,
+      await insertUploadBatch(c.env.DB, {
+        id, company_id: tenant_id, filename: file.name, domain,
         detected_source_id: result.source_id, needs_review: anyLineNeedsReview ? 1 : 0,
         row_count: result.total_rows,
       });
@@ -254,8 +254,8 @@ onboardingRouter.post("/upload", async (c) => {
       });
     } else if (isReceiptLike(file)) {
       const bytes = await file.arrayBuffer();
-      const result = await processReceiptUpload(c.env.FINANCE_DB, c.env.RECEIPTS, {
-        tenant_id, job_id: null, bytes, filename: file.name,
+      const result = await processReceiptUpload(c.env.DB, c.env.RECEIPTS, {
+        company_id: tenant_id, job_id: null, bytes, filename: file.name,
         // No OCR yet (PUNCHLIST.md's documented gap) — blank fields, honestly
         // low-confidence, not guessed.
         extract: async () => ({ vendor: null, amount_cents: null, receipt_date: null }),
@@ -264,8 +264,8 @@ onboardingRouter.post("/upload", async (c) => {
       const isDuplicate = result.status === "duplicate";
       const needsReviewFlag = result.status === "stored" && result.needs_review;
       if (!isDuplicate) {
-        await insertUploadBatch(c.env.FINANCE_DB, {
-          id, tenant_id, filename: file.name, domain: "receipt",
+        await insertUploadBatch(c.env.DB, {
+          id, company_id: tenant_id, filename: file.name, domain: "receipt",
           detected_source_id: null, needs_review: needsReviewFlag ? 1 : 0, row_count: null,
         });
       }
@@ -274,8 +274,8 @@ onboardingRouter.post("/upload", async (c) => {
         needsReview: needsReviewFlag, duplicate: isDuplicate,
       });
     } else {
-      await insertUploadBatch(c.env.FINANCE_DB, {
-        id, tenant_id, filename: file.name, domain: "unrecognized",
+      await insertUploadBatch(c.env.DB, {
+        id, company_id: tenant_id, filename: file.name, domain: "unrecognized",
         detected_source_id: null, needs_review: 0, row_count: null,
       });
       fileResults.push({
@@ -285,6 +285,6 @@ onboardingRouter.post("/upload", async (c) => {
     }
   }
 
-  const gap = await computeConfidenceGap(c.env.FINANCE_DB, tenant_id);
+  const gap = await computeConfidenceGap(c.env.DB, tenant_id);
   return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, gap, fileResults, null));
 });

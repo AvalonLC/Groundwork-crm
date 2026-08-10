@@ -30,7 +30,7 @@ export async function computeContentHash(bytes: ArrayBuffer): Promise<string> {
 }
 
 export interface ProcessReceiptArgs {
-  tenant_id: string;
+  company_id: string;
   job_id: string | null;
   bytes: ArrayBuffer;
   filename: string;
@@ -58,10 +58,10 @@ export async function processReceiptUpload(
   }
 
   const hash = await computeContentHash(args.bytes);
-  const existing = await getReceiptByHash(db, args.tenant_id, hash);
+  const existing = await getReceiptByHash(db, args.company_id, hash);
   if (existing) return { status: "duplicate", existing_receipt_id: existing.id };
 
-  const r2Key = `receipts/${args.tenant_id}/${hash}-${args.filename}`;
+  const r2Key = `receipts/${args.company_id}/${hash}-${args.filename}`;
   await r2.put(r2Key, args.bytes);
 
   const fields = await args.extract(args.bytes);
@@ -71,7 +71,7 @@ export async function processReceiptUpload(
   const receiptId = `receipt-${hash.slice(0, 16)}`;
   await insertReceipt(db, {
     id: receiptId,
-    tenant_id: args.tenant_id,
+    company_id: args.company_id,
     job_id: args.job_id,
     r2_key: r2Key,
     content_hash: hash,
@@ -86,7 +86,7 @@ export async function processReceiptUpload(
     const actionId = `ai-receipt-${hash.slice(0, 16)}`;
     await insertActionItem(db, {
       id: actionId,
-      tenant_id: args.tenant_id,
+      company_id: args.company_id,
       verb: "fix",
       owner_id: args.reviewOwnerId,
       sla_due: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),

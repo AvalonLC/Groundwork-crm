@@ -3,7 +3,7 @@ import { getOpenActionItems } from "../db/repos";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
 
-export type QueueBindings = { FINANCE_DB: D1Database };
+export type QueueBindings = { DB: D1Database };
 
 /** Days between an SLA date and today — negative means already overdue. */
 function daysOut(slaDue: string): number | null {
@@ -29,7 +29,7 @@ export const queueRouter = new Hono<{ Bindings: QueueBindings; Variables: Financ
 
 queueRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
   const items = await getOpenActionItems(db, tenant_id);
   const sorted = [...items].sort((a, b) => a.sla_due.localeCompare(b.sla_due));
 

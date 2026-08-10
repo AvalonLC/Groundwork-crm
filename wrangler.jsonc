@@ -13,21 +13,22 @@
     "nodejs_compat"
   ],
 
-  // ── D1 Databases ────────────────────────────────────────────────────────────
-  // Both databases live in Tyler@avalon-lc.com's Cloudflare account.
-  // Run `wrangler d1 list` to verify UUIDs if you recreate the project.
+  // ── D1 Database ─────────────────────────────────────────────────────────────
+  // Lives in Tyler@avalon-lc.com's Cloudflare account.
+  // Run `wrangler d1 list` to verify the UUID if you recreate the project.
   // Local dev: `npm run dev:local` uses --local flag (SQLite on disk, no UUID needed).
+  //
+  // Finance OS used to live in a separate database (`groundwork`, binding
+  // FINANCE_DB) -- merged into this one by migrations/0057_finance_merge.sql
+  // (2026-08-09, see docs/RUNBOOK-finance-merge.md for the data-copy step,
+  // which a schema migration alone cannot do). migrations/finance/ is kept
+  // for historical record of what was applied to the old database; it is no
+  // longer an active migrations_dir for anything.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "avalon-sales-hub-production",
       "database_id": "a09eba8e-6c21-4ec3-a257-70a94b6e2aeb"
-    },
-    {
-      "binding": "FINANCE_DB",
-      "database_name": "groundwork",
-      "database_id": "3c2f1d32-e9cf-4885-b01b-020129871240",
-      "migrations_dir": "migrations/finance"
     }
   ],
 

@@ -6,10 +6,10 @@ const TENANT = "t-e2e-queue";
 test.beforeEach(async ({ request }) => {
   await resetFinanceDb(request, TENANT);
   await exec(request,
-    `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, amount_cents, confidence, stale_components, source_type, status) VALUES (?,?,?,?,?,?,?,?,?, 'open')`,
+    `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, amount_cents, confidence, stale_components, source_type, status) VALUES (?,?,?,?,?,?,?,?,?, 'open')`,
     ["ai-q-late", TENANT, "fix", "user-1", "2026-08-05", 1000, "low", '["utilization"]', "classification_finding"]);
   await exec(request,
-    `INSERT INTO action_item (id, tenant_id, verb, owner_id, sla_due, amount_cents, confidence, source_type, status) VALUES (?,?,?,?,?,?,?,?, 'open')`,
+    `INSERT INTO action_item (id, company_id, verb, owner_id, sla_due, amount_cents, confidence, source_type, status) VALUES (?,?,?,?,?,?,?,?, 'open')`,
     ["ai-q-soon", TENANT, "collect", "user-2", "2026-08-20", 2000, "high", null]);
 });
 

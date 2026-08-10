@@ -10,7 +10,7 @@
  */
 
 export interface CalibrationSnapshot {
-  tenant_id: string;
+  company_id: string;
   total_findings: number;
   stage_distribution: Record<string, number>; // stage_reached -> count
   ai_assisted_count: number; // stage_reached === 4
@@ -19,11 +19,11 @@ export interface CalibrationSnapshot {
 }
 
 export async function computeCalibrationSnapshot(
-  db: D1Database, tenantId: string,
+  db: D1Database, companyId: string,
 ): Promise<CalibrationSnapshot> {
   const { results } = await db.prepare(
-    `SELECT stage_reached, COUNT(*) as n FROM classification_finding WHERE tenant_id = ? GROUP BY stage_reached`,
-  ).bind(tenantId).all<{ stage_reached: number; n: number }>();
+    `SELECT stage_reached, COUNT(*) as n FROM classification_finding WHERE company_id = ? GROUP BY stage_reached`,
+  ).bind(companyId).all<{ stage_reached: number; n: number }>();
 
   const stageDistribution: Record<string, number> = {};
   let total = 0;
@@ -35,7 +35,7 @@ export async function computeCalibrationSnapshot(
   }
 
   return {
-    tenant_id: tenantId,
+    company_id: companyId,
     total_findings: total,
     stage_distribution: stageDistribution,
     ai_assisted_count: aiAssisted,

@@ -3,7 +3,7 @@ import { getJobCostLedgerForJob, getWorkItem } from "../db/repos";
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
 
-export type JobCostingBindings = { FINANCE_DB: D1Database };
+export type JobCostingBindings = { DB: D1Database };
 
 /**
  * See docs/spec/UI-JOBCOST.md. Reads job_cost_ledger (labor + overhead
@@ -19,7 +19,7 @@ export const jobCostingRouter = new Hono<{ Bindings: JobCostingBindings; Variabl
 jobCostingRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const jobId = c.req.query("job_id") ?? "";
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
 
   const [lines, workItem] = await Promise.all([
     getJobCostLedgerForJob(db, tenant_id, jobId),

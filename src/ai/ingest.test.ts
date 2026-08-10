@@ -5,7 +5,7 @@ import { detectSource, ingestFile } from "./ingest";
 import { parseCsv, parseMoneyToCents } from "./csv";
 import { insertOverheadPool, getOpenActionItems } from "../db/repos";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-ingest";
 
 describe("csv helpers", () => {
@@ -76,7 +76,7 @@ describe("ingestFile — class/division P&L", () => {
 
   it("IG-09 gap report finds divisions with a pool but no P&L coverage, and vice versa", async () => {
     await insertOverheadPool(db(), {
-      tenant_id: "t-ingest-gap", division: "snow", pool_type: "shop", annual_cost_cents: 100000, driver: "sellable_hours", as_of: "2026-08-01",
+      company_id: "t-ingest-gap", division: "snow", pool_type: "shop", annual_cost_cents: 100000, driver: "sellable_hours", as_of: "2026-08-01",
     });
     const csv = "Class,Account,Total\nlawn maintenance,Fuel,500.00";
     const result = await ingestFile(db(), "t-ingest-gap", csv, "office-user-1");

@@ -5,12 +5,12 @@ import { buildTenantRollup, runNightlyRollup, type TenantRollupInput } from "./r
 import { getLatestRecoverySnapshot } from "../db/repos";
 import golden from "../../fixtures/golden.json";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const F = golden.recovery;
 
 function fixtureInput(tenantId: string): TenantRollupInput {
   return {
-    tenant_id: tenantId,
+    company_id: tenantId,
     as_of: F.as_of,
     restated_target_cents: Math.round(F.restated_target * 100),
     recovered_to_date_cents: Math.round(F.recovered_to_date * 100),
@@ -60,7 +60,7 @@ describe("runNightlyRollup", () => {
     await runNightlyRollup(db(), [{ ...fixtureInput(tenantId), recovered_to_date_cents: 40000000 }]);
 
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE tenant_id = ? AND as_of = ?`,
+      `SELECT COUNT(*) as n FROM recovery_snapshot WHERE company_id = ? AND as_of = ?`,
     ).bind(tenantId, F.as_of).all();
     expect((results[0] as any).n).toBe(1);
 

@@ -1,7 +1,10 @@
 /**
- * TypeScript row shapes for migrations/finance/0001_spine.sql, 0002_rates.sql,
- * 0003_action.sql. Field names match SQL column names exactly (D1 returns rows
- * as-is). See docs/spec/SCHEMA.md.
+ * TypeScript row shapes for Finance OS tables, now living in the same
+ * database as the CRM's own tables (migrations/0057_finance_merge.sql
+ * merged the former separate `groundwork` D1 instance in — see that file
+ * and docs/spec/SCHEMA.md). Field names match SQL column names exactly
+ * (D1 returns rows as-is), except FinanceWorkOrder/FinanceTimeEntry, which
+ * are deliberately slim views over work_orders/time_entries (see below).
  *
  * Money is INTEGER cents. Rates are INTEGER ten-thousandths. D1/SQLite has no
  * native decimal type; these branded aliases exist so a `Cents` value can't be
@@ -14,10 +17,10 @@ export type HoursHundredths = number & { readonly __brand: "HoursHundredths" };
 
 export type Bool01 = 0 | 1;
 
-// ---- 0001_spine.sql ----
+// ---- tenant_finance_policy (now company_id-keyed) ----
 
 export interface TenantFinancePolicy {
-  tenant_id: string;
+  company_id: string;
   equipment_engine_active: Bool01;
   materiality_threshold_cents: Cents;
   restated_target_cents: Cents;
@@ -26,54 +29,68 @@ export interface TenantFinancePolicy {
   updated_at: string;
 }
 
-export interface WorkItem {
+/**
+ * The Finance-relevant slice of a CRM work_order, not a separate table.
+ * work_item's old columns folded onto work_orders (estimate_cents,
+ * finance_completed_at added; id/job_id were always the same value as
+ * work_orders.id — never a join; description/status were always redundant
+ * with work_orders.title/status). repos.ts computes `status` here from
+ * work_orders.status ('completed' -> 'complete', anything else -> 'open')
+ * and aliases finance_completed_at AS completed_at, so this type's shape
+ * matches the old WorkItem exactly and existing consumers
+ * (src/engines/unbilled.ts, src/ui/job-costing.tsx) didn't need to change.
+ */
+export interface FinanceWorkOrder {
   id: string;
-  tenant_id: string;
-  job_id: string;
-  description: string;
+  company_id: string;
   status: "open" | "complete";
   estimate_cents: Cents | null;
   completed_at: string | null;
-  created_at: string;
 }
 
 export type RateConfidence = "high" | "medium" | "low";
 
-export interface TimeEntry {
-  id: number;
-  tenant_id: string;
+/**
+ * The Finance-relevant slice of a CRM time_entries row, not a separate
+ * table. time_entry's old columns folded onto time_entries
+ * (resolved_rate/resolved_rate_confidence/applied_overhead_cents/posted_at
+ * added). NOT duplicated: hours_hundredths (computed from duration_min at
+ * posting time — see src/api/posting.ts), work_date (derived from
+ * clock_in), employee_id/work_order_id (already rep_id/work_order_id).
+ * ot_hours_hundredths dropped entirely — it was never read anywhere in the
+ * posting formula, and the CRM has no overtime concept to source it from.
+ */
+export interface FinanceTimeEntry {
+  id: string; // time_entries.id (TEXT) — was INTEGER AUTOINCREMENT on the old, separate time_entry table
+  company_id: string;
   employee_id: string;
-  crew_id: string | null;
-  job_id: string;
+  work_order_id: string;
   work_date: string;
   hours_hundredths: HoursHundredths;
-  ot_hours_hundredths: HoursHundredths;
-  // Written ONCE at posting by /internal/rates/resolve. Never recomputed on read.
   resolved_rate: TenThousandths | null;
   resolved_rate_confidence: RateConfidence | null;
   applied_overhead_cents: Cents | null;
   posted_at: string | null;
-  created_at: string;
 }
 
 export interface JobCostLedger {
   id: number;
-  tenant_id: string;
-  time_entry_id: number;
-  job_id: string;
+  company_id: string;
+  time_entry_id: string; // was `number` referencing the old time_entry(id); now TEXT referencing time_entries(id)
+  job_id: string; // references work_orders(id)
   line_type: "labor" | "overhead";
   amount_cents: Cents;
   division: string | null;
   posted_at: string;
 }
 
-// ---- 0002_rates.sql ----
+// ---- rate profiles, overhead allocation, recovery snapshots ----
 
 export type RateScope = "employee" | "crew" | "role" | "tenant";
 
 export interface LaborRateProfile {
   id: number;
-  tenant_id: string;
+  company_id: string;
   scope: RateScope;
   scope_id: string;
   wage_cents: Cents;
@@ -96,7 +113,7 @@ export interface LaborRateProfile {
 
 export interface EquipmentRateProfile {
   id: number;
-  tenant_id: string;
+  company_id: string;
   equipment_id: string;
   purchase_price_cents: Cents;
   salvage_cents: Cents;
@@ -117,7 +134,7 @@ export interface EquipmentRateProfile {
 
 export interface OverheadPool {
   id: number;
-  tenant_id: string;
+  company_id: string;
   division: string;
   pool_type: string;
   annual_cost_cents: Cents;
@@ -128,7 +145,7 @@ export interface OverheadPool {
 
 export interface OverheadAllocation {
   id: number;
-  tenant_id: string;
+  company_id: string;
   division: string;
   as_of: string;
   sellable_hours: number;
@@ -143,7 +160,7 @@ export interface OverheadAllocation {
 
 export interface RecoverySnapshot {
   id: number;
-  tenant_id: string;
+  company_id: string;
   as_of: string;
   restated_target_cents: Cents;
   recovered_to_date_cents: Cents;
@@ -156,23 +173,26 @@ export interface RecoverySnapshot {
   created_at: string;
 }
 
-// ---- 0003_action.sql ----
+// ---- action queue + AI layer ----
 
 export type ActionVerb = "collect" | "bill" | "pay" | "fix" | "decide";
 export type ActionStatus = "open" | "resolved" | "dismissed";
 
 export interface ActionItem {
   id: string;
-  tenant_id: string;
+  company_id: string;
   verb: ActionVerb;
   owner_id: string;
   sla_due: string;
   amount_cents: Cents | null;
   confidence: RateConfidence;
-  /** JSON-encoded string[] — must render in the UI (CLAUDE.md hard rule 4). */
   stale_components: string | null;
   status: ActionStatus;
-  source_type: "work_item" | "classification_finding" | "receipt" | "ingest" | null;
+  // 'work_order', not 'work_item' — the table this literal named no longer
+  // exists under that name as of the 2026-08-09 merge (action_item was
+  // empty in production at merge time, so this is a rename, not a live
+  // data migration).
+  source_type: "work_order" | "classification_finding" | "receipt" | "ingest" | null;
   source_id: string | null;
   created_at: string;
   resolved_at: string | null;
@@ -180,7 +200,7 @@ export interface ActionItem {
 
 export interface ClassificationFinding {
   id: string;
-  tenant_id: string;
+  company_id: string;
   subject_type: string;
   subject_id: string;
   stage_reached: 1 | 2 | 3 | 4;
@@ -193,8 +213,8 @@ export interface ClassificationFinding {
 
 export interface Receipt {
   id: string;
-  tenant_id: string;
-  job_id: string | null;
+  company_id: string;
+  job_id: string | null; // references work_orders(id)
   r2_key: string;
   content_hash: string;
   vendor: string | null;
@@ -206,13 +226,13 @@ export interface Receipt {
   created_at: string;
 }
 
-// ---- 0005_uploads.sql ----
+// ---- upload_batch ----
 
 export type UploadDomain = "financial_export" | "receipt" | "unrecognized";
 
 export interface UploadBatch {
   id: string;
-  tenant_id: string;
+  company_id: string;
   filename: string;
   domain: UploadDomain;
   detected_source_id: string | null;
@@ -221,11 +241,11 @@ export interface UploadBatch {
   created_at: string;
 }
 
-// ---- 0004_config_overrides.sql ----
+// ---- finance_config_override ----
 
 export interface FinanceConfigOverride {
   id: number;
-  tenant_id: string; // '__global__' or a real tenant_id
+  company_id: string; // '__global__' or a real company id
   config_name: string;
   config_json: string;
   updated_by: string | null;

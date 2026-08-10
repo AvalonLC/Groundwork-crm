@@ -74,8 +74,8 @@ export interface GapReport {
   pnl_divisions_with_no_matching_pool: string[];
 }
 
-async function computeGapReport(db: D1Database, tenantId: string, lines: IngestLine[]): Promise<GapReport> {
-  const pools = await listOverheadPools(db, tenantId);
+async function computeGapReport(db: D1Database, companyId: string, lines: IngestLine[]): Promise<GapReport> {
+  const pools = await listOverheadPools(db, companyId);
   const poolDivisions = new Set(pools.map((p) => p.division));
   const pnlDivisions = new Set(lines.map((l) => l.division).filter((d): d is string => d !== null));
 
@@ -100,7 +100,7 @@ export interface IngestFileOptions {
 }
 
 export async function ingestFile(
-  db: D1Database, tenantId: string, csvText: string, reviewOwnerId: string,
+  db: D1Database, companyId: string, csvText: string, reviewOwnerId: string,
   options: IngestFileOptions = {},
 ): Promise<IngestResult> {
   const sources = options.sources ?? ingestSources;
@@ -109,13 +109,13 @@ export async function ingestFile(
   const reviewActionIds: string[] = [];
 
   if (!automationPolicy.ingest_auto_detect_enabled) {
-    const actionId = await createIngestReviewItem(db, tenantId, reviewOwnerId, null, "ingest auto-detect disabled by automation-policy.json");
+    const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, "ingest auto-detect disabled by automation-policy.json");
     return { source_id: null, source_label: null, total_rows: rows.length, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
   }
 
   const source = detectSource(headers, sources);
   if (!source) {
-    const actionId = await createIngestReviewItem(db, tenantId, reviewOwnerId, null, sources.fallback.reason);
+    const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, null, sources.fallback.reason);
     return { source_id: null, source_label: null, total_rows: rows.length, lines: [], gap_report: emptyGapReport(), review_action_item_ids: [actionId] };
   }
 
@@ -124,14 +124,14 @@ export async function ingestFile(
   if (automationPolicy.auto_create_action_items) {
     for (const line of lines) {
       if (line.needs_review) {
-        const actionId = await createIngestReviewItem(db, tenantId, reviewOwnerId, line.amount_cents, line.review_reason!);
+        const actionId = await createIngestReviewItem(db, companyId, reviewOwnerId, line.amount_cents, line.review_reason!);
         reviewActionIds.push(actionId);
       }
     }
   }
 
   const gapReport = source.target === "pnl_line_by_division"
-    ? await computeGapReport(db, tenantId, lines)
+    ? await computeGapReport(db, companyId, lines)
     : emptyGapReport();
 
   return { source_id: source.id, source_label: source.label, total_rows: rows.length, lines, gap_report: gapReport, review_action_item_ids: reviewActionIds };
@@ -142,11 +142,11 @@ function emptyGapReport(): GapReport {
 }
 
 async function createIngestReviewItem(
-  db: D1Database, tenantId: string, ownerId: string, amountCents: number | null, reason: string,
+  db: D1Database, companyId: string, ownerId: string, amountCents: number | null, reason: string,
 ): Promise<string> {
   const id = `ai-ingest-${crypto.randomUUID().slice(0, 12)}`;
   await insertActionItem(db, {
-    id, tenant_id: tenantId, verb: "decide", owner_id: ownerId,
+    id, company_id: companyId, verb: "decide", owner_id: ownerId,
     sla_due: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
     amount_cents: amountCents !== null ? (amountCents as Cents) : null,
     confidence: "low", stale_components: JSON.stringify([reason]),

@@ -14,7 +14,7 @@ test("UF-01 with no rollup yet, says so plainly instead of showing a fabricated 
 
 test("UF-02 with a snapshot, shows the real projected date and confidence window", async ({ page, request }) => {
   await exec(request,
-    `INSERT INTO recovery_snapshot (tenant_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO recovery_snapshot (company_id, as_of, restated_target_cents, recovered_to_date_cents, hours_per_week_hundredths, blended_overhead_rate, weekly_recovery_cents, pct_recovered_millionths, projected_black_friday, confidence_days) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [TENANT, "2026-08-03", 59100000, 38190000, 38000, 274300, 1042340, 646193, "2026-12-21", 13]);
 
   await page.goto(`/forecast?tenant_id=${TENANT}&role=owner`);

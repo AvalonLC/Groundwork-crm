@@ -3,7 +3,7 @@ import { getLatestRecoverySnapshot, getOverheadAllocationAsOf } from "../db/repo
 import { canSee } from "./roles";
 import { readPageArgs, Page, Term, Card, Empty, Why, type FinanceAuthVars } from "./layout";
 
-export type RecoveryBindings = { FINANCE_DB: D1Database };
+export type RecoveryBindings = { DB: D1Database };
 
 /**
  * See docs/spec/UI-RECOVERY.md. Thermometer + absorption are grounded in
@@ -33,7 +33,7 @@ recoveryRouter.get("/", async (c) => {
     );
   }
 
-  const db = c.env.FINANCE_DB;
+  const db = c.env.DB;
   const snapshot = await getLatestRecoverySnapshot(db, tenant_id);
   const allocations = snapshot ? await getOverheadAllocationAsOf(db, tenant_id, snapshot.as_of) : [];
   const pct = snapshot ? snapshot.pct_recovered_millionths / 10000 : null;

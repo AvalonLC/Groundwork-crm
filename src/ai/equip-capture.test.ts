@@ -5,18 +5,18 @@ import {
   validateTier1Attachment, reconcileMeterReading, processTier2MeterReading,
 } from "./equip-capture";
 
-const db = () => env.FINANCE_DB;
+const db = () => env.DB;
 const TENANT = "t-equipcapture";
 
 describe("tier 1: crew-attached machine capture", () => {
   it("EC-01 a well-formed attachment is valid with high confidence", () => {
-    const r = validateTier1Attachment({ time_entry_id: 1, equipment_id: "eq-1" });
+    const r = validateTier1Attachment({ time_entry_id: "te-1", equipment_id: "eq-1" });
     expect(r.valid).toBe(true);
     expect(r.confidence).toBe("high");
   });
 
   it("EC-02 an empty equipment_id is invalid with low confidence", () => {
-    const r = validateTier1Attachment({ time_entry_id: 1, equipment_id: "  " });
+    const r = validateTier1Attachment({ time_entry_id: "te-1", equipment_id: "  " });
     expect(r.valid).toBe(false);
     expect(r.confidence).toBe("low");
   });
@@ -46,7 +46,7 @@ describe("tier 2: meter-photo reconciliation", () => {
     });
     expect(result.finding_id).toBeNull();
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM classification_finding WHERE tenant_id = ? AND subject_id = ?`,
+      `SELECT COUNT(*) as n FROM classification_finding WHERE company_id = ? AND subject_id = ?`,
     ).bind(TENANT, "eq-match").all();
     expect((results[0] as any).n).toBe(0);
   });
@@ -57,7 +57,7 @@ describe("tier 2: meter-photo reconciliation", () => {
     });
     expect(result.finding_id).not.toBeNull();
     const { results } = await db().prepare(
-      `SELECT COUNT(*) as n FROM classification_finding WHERE tenant_id = ? AND subject_id = ?`,
+      `SELECT COUNT(*) as n FROM classification_finding WHERE company_id = ? AND subject_id = ?`,
     ).bind(TENANT, "eq-divergent").all();
     expect((results[0] as any).n).toBe(1);
   });

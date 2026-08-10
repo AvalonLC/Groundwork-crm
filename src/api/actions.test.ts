@@ -14,7 +14,7 @@ const post = (path: string, body: unknown) =>
 describe("POST /internal/actions", () => {
   it("AC-01 creates an action item with a valid verb", async () => {
     const res = await post("/", {
-      id: "ai-api-1", tenant_id: TENANT, verb: "collect",
+      id: "ai-api-1", company_id: TENANT, verb: "collect",
       owner_id: "user-1", sla_due: "2026-08-10",
     });
     expect(res.status).toBe(201);
@@ -22,7 +22,7 @@ describe("POST /internal/actions", () => {
 
   it("forbidden: rejects any verb outside the five-item set", async () => {
     const res = await post("/", {
-      id: "ai-api-bad", tenant_id: TENANT, verb: "approve",
+      id: "ai-api-bad", company_id: TENANT, verb: "approve",
       owner_id: "user-1", sla_due: "2026-08-10",
     });
     expect(res.status).toBe(400);
@@ -32,7 +32,7 @@ describe("POST /internal/actions", () => {
 
   it("forbidden: rejects an action with no owner_id", async () => {
     const res = await post("/", {
-      id: "ai-api-no-owner", tenant_id: TENANT, verb: "fix", sla_due: "2026-08-10",
+      id: "ai-api-no-owner", company_id: TENANT, verb: "fix", sla_due: "2026-08-10",
     });
     expect(res.status).toBe(400);
     const json = await res.json() as any;
@@ -41,7 +41,7 @@ describe("POST /internal/actions", () => {
 
   it("forbidden: rejects an action with no sla_due", async () => {
     const res = await post("/", {
-      id: "ai-api-no-sla", tenant_id: TENANT, verb: "fix", owner_id: "user-1",
+      id: "ai-api-no-sla", company_id: TENANT, verb: "fix", owner_id: "user-1",
     });
     expect(res.status).toBe(400);
     const json = await res.json() as any;
@@ -51,16 +51,16 @@ describe("POST /internal/actions", () => {
 
 describe("GET /internal/actions", () => {
   it("AC-05 lists open actions, filterable by verb, resolving removes it", async () => {
-    await post("/", { id: "ai-api-2", tenant_id: TENANT, verb: "bill", owner_id: "user-2", sla_due: "2026-08-11" });
+    await post("/", { id: "ai-api-2", company_id: TENANT, verb: "bill", owner_id: "user-2", sla_due: "2026-08-11" });
 
-    const listRes = await actionsRouter.request(`/?tenant_id=${TENANT}&verb=bill`, {}, env);
+    const listRes = await actionsRouter.request(`/?company_id=${TENANT}&verb=bill`, {}, env);
     const list = await listRes.json() as any;
     expect(list.items.some((i: any) => i.id === "ai-api-2")).toBe(true);
 
-    const resolveRes = await actionsRouter.request(`/ai-api-2/resolve?tenant_id=${TENANT}`, { method: "POST" }, env);
+    const resolveRes = await actionsRouter.request(`/ai-api-2/resolve?company_id=${TENANT}`, { method: "POST" }, env);
     expect(resolveRes.status).toBe(200);
 
-    const listAfter = await actionsRouter.request(`/?tenant_id=${TENANT}&verb=bill`, {}, env);
+    const listAfter = await actionsRouter.request(`/?company_id=${TENANT}&verb=bill`, {}, env);
     const after = await listAfter.json() as any;
     expect(after.items.some((i: any) => i.id === "ai-api-2")).toBe(false);
   });

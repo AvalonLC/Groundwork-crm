@@ -4,7 +4,7 @@ import { computeBurden } from "../engines/burden";
 import { computeEquipmentRate } from "../engines/equipment";
 import type { RateConfidence } from "../db/schema";
 
-export type RatesBindings = { FINANCE_DB: D1Database };
+export type RatesBindings = { DB: D1Database };
 
 export interface ResolvedLaborRate {
   resolved_rate: number; // ten-thousandths
@@ -35,29 +35,32 @@ export interface ResolvedEquipmentRate {
  */
 export async function resolveLaborRate(
   db: D1Database,
-  args: { tenant_id: string; employee_id: string; work_date: string; crew_id?: string; role?: string },
+  args: { company_id: string; employee_id: string; work_date: string; crew_id?: string; role?: string },
 ): Promise<ResolvedLaborRate | null> {
-  const { tenant_id, employee_id, work_date, crew_id, role } = args;
+  const { company_id, employee_id, work_date, crew_id, role } = args;
 
   // BH-06 cascade: employee -> crew -> role -> tenant, each hop downgrading
-  // confidence. First match wins.
+  // confidence. First match wins. ("tenant" here is the rate-resolution
+  // scope name (labor_rate_profile.scope, unchanged by the 2026-08-09
+  // merge) — a fallback tier meaning "whole company," not the old tenant_id
+  // column, which is gone.)
   const attempts: Array<{ scope: string; scopeId: string | undefined; confidence: RateConfidence }> = [
     { scope: "employee", scopeId: employee_id, confidence: "high" },
     { scope: "crew", scopeId: crew_id, confidence: "medium" },
     { scope: "role", scopeId: role, confidence: "medium" },
-    { scope: "tenant", scopeId: tenant_id, confidence: "low" },
+    { scope: "tenant", scopeId: company_id, confidence: "low" },
   ];
 
   let profile = null;
   let confidence: RateConfidence = "low";
   for (const a of attempts) {
     if (!a.scopeId) continue;
-    profile = await getLaborRateAsOf(db, tenant_id, a.scope, a.scopeId, work_date);
+    profile = await getLaborRateAsOf(db, company_id, a.scope, a.scopeId, work_date);
     if (profile) { confidence = a.confidence; break; }
   }
   if (!profile) return null;
 
-  const policy = await getTenantFinancePolicy(db, tenant_id);
+  const policy = await getTenantFinancePolicy(db, company_id);
   const equipmentEngineActive = policy?.equipment_engine_active === 1;
 
   const burden = computeBurden({
@@ -93,9 +96,9 @@ export async function resolveLaborRate(
 
 export async function resolveEquipmentRate(
   db: D1Database,
-  args: { tenant_id: string; equipment_id: string; work_date: string },
+  args: { company_id: string; equipment_id: string; work_date: string },
 ): Promise<ResolvedEquipmentRate | null> {
-  const profile = await getEquipmentRateAsOf(db, args.tenant_id, args.equipment_id, args.work_date);
+  const profile = await getEquipmentRateAsOf(db, args.company_id, args.equipment_id, args.work_date);
   if (!profile) return null;
 
   const rate = computeEquipmentRate({
@@ -126,14 +129,14 @@ export const ratesRouter = new Hono<{ Bindings: RatesBindings }>();
 
 ratesRouter.post("/resolve", async (c) => {
   const body = await c.req.json<{
-    tenant_id: string; employee_id: string; work_date: string;
+    company_id: string; employee_id: string; work_date: string;
     crew_id?: string; role?: string;
   }>();
-  if (!body.tenant_id || !body.employee_id || !body.work_date) {
-    return c.json({ error: "tenant_id, employee_id, work_date are required" }, 400);
+  if (!body.company_id || !body.employee_id || !body.work_date) {
+    return c.json({ error: "company_id, employee_id, work_date are required" }, 400);
   }
 
-  const result = await resolveLaborRate(c.env.FINANCE_DB, body);
+  const result = await resolveLaborRate(c.env.DB, body);
   if (!result) {
     // Never falls back to a guessed rate (forbidden: "returning a number
     // without confidence").
@@ -143,12 +146,12 @@ ratesRouter.post("/resolve", async (c) => {
 });
 
 ratesRouter.post("/equipment", async (c) => {
-  const body = await c.req.json<{ tenant_id: string; equipment_id: string; work_date: string }>();
-  if (!body.tenant_id || !body.equipment_id || !body.work_date) {
-    return c.json({ error: "tenant_id, equipment_id, work_date are required" }, 400);
+  const body = await c.req.json<{ company_id: string; equipment_id: string; work_date: string }>();
+  if (!body.company_id || !body.equipment_id || !body.work_date) {
+    return c.json({ error: "company_id, equipment_id, work_date are required" }, 400);
   }
 
-  const result = await resolveEquipmentRate(c.env.FINANCE_DB, body);
+  const result = await resolveEquipmentRate(c.env.DB, body);
   if (!result) {
     return c.json({ error: "no equipment rate profile resolves for this equipment/date", confidence: "none" }, 404);
   }
