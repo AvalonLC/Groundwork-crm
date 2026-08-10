@@ -222,27 +222,35 @@ describe("Stage 3a cutover: readers use *_cents as source of truth (migrations/0
   // float column (pre-cutover), the assertions below would fail on the
   // corrupted (999999-ish) value instead of the real one.
 
-  it("MC3A-01 POST /api/invoices/from-estimate/:id derives total/balance_due from estimates.total_cents and deposit_paid_amount_cents, not the float columns", async () => {
+  it("MC3A-01 POST /api/invoices/from-estimate/:id derives total/balance_due/tax from estimates.total_cents, deposit_paid_amount_cents, tax_amt_cents and tax_pct, not the float columns (or the wrong column names)", async () => {
     const { cookie } = await seedSession("mc3a-co-est2inv", "mc3a-rep-est2inv");
     const res = await req("/api/estimates", cookie, {
       method: "POST",
-      body: JSON.stringify({ title: "Cutover Est", line_items: [{ qty: 1, rate: 1000 }] }),
+      body: JSON.stringify({ title: "Cutover Est", line_items: [{ qty: 1, rate: 1000 }], tax_pct: 8.25 }),
     });
     const { data: { id: estId } } = await res.json() as { data: { id: string } };
+    // total/deposit_paid_amount/tax_amt (float) are deliberately wrong here;
+    // estimates has no tax_amount/tax_rate columns at all (the real ones are
+    // tax_amt/tax_amt_cents/tax_pct) -- this is the exact bug the fix closes:
+    // reading a nonexistent est.tax_amount_cents/est.tax_rate always silently
+    // produced 0 regardless of the estimate's real tax.
     await db().prepare(
-      `UPDATE estimates SET total = 999999, deposit_paid_amount = 999999, deposit_paid_amount_cents = 30000 WHERE id=?`
+      `UPDATE estimates SET total = 999999, deposit_paid_amount = 999999, deposit_paid_amount_cents = 30000, tax_amt = 999999 WHERE id=?`
     ).bind(estId).run();
     const invRes = await req(`/api/invoices/from-estimate/${estId}`, cookie, { method: "POST" });
     const inv: any = await invRes.json();
     const row: any = await db().prepare(
-      `SELECT total, total_cents, amount_paid, amount_paid_cents, balance_due, balance_due_cents FROM invoices WHERE id=?`
+      `SELECT total, total_cents, amount_paid, amount_paid_cents, balance_due, balance_due_cents, tax_rate, tax_amount, tax_amount_cents FROM invoices WHERE id=?`
     ).bind(inv.id).first();
-    expect(row.total_cents).toBe(100000);
+    expect(row.total_cents).toBe(108250);
     expect(row.amount_paid_cents).toBe(30000);
-    expect(row.balance_due_cents).toBe(70000);
-    expect(row.total).toBe(1000);
+    expect(row.balance_due_cents).toBe(78250);
+    expect(row.total).toBe(1082.5);
     expect(row.amount_paid).toBe(300);
-    expect(row.balance_due).toBe(700);
+    expect(row.balance_due).toBe(782.5);
+    expect(row.tax_rate).toBe(8.25);
+    expect(row.tax_amount).toBe(82.5);
+    expect(row.tax_amount_cents).toBe(8250);
   });
 
   it("MC3A-02 POST /api/invoices/:id/record-payment derives balance_due from invoices.total_cents/amount_paid_cents, not the float columns", async () => {

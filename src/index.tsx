@@ -9026,7 +9026,7 @@ app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
   // subtracting est.total - est.deposit_paid_amount in float would carry
   // fractional-cent drift into the new invoice's balance_due.
   const subtotalCents = Number(est.subtotal_cents || 0)
-  const taxAmountCents = Number(est.tax_amount_cents || 0)
+  const taxAmountCents = Number(est.tax_amt_cents || 0)
   const totalCents = Number(est.total_cents || 0)
   const depositPaidCents = Number(est.deposit_paid_amount_cents || 0)
   const balanceDueCentsClamped = Math.max(0, totalCents - depositPaidCents)
@@ -9047,7 +9047,7 @@ app.post('/api/invoices/from-estimate/:estimateId', requireAuth, async (c) => {
   `).bind(id, companyId, invoiceNumber, est.id, est.client_id||'', est.client_name||'',
     est.client_email||'', est.client_phone||'',
     `Invoice for ${est.title || est.estimate_number}`, 'draft',
-    subtotalCents / 100, subtotalCents, est.tax_rate||0, taxAmountCents / 100, taxAmountCents,
+    subtotalCents / 100, subtotalCents, est.tax_pct||0, taxAmountCents / 100, taxAmountCents,
     total, totalCents, depositPaid, depositPaidCents, balanceDueClamped, balanceDueCentsClamped, dueDate,
     JSON.stringify(lineItems), est.notes||'', portalToken
   ).run()
