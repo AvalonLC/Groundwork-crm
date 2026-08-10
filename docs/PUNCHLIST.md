@@ -142,6 +142,33 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
     Stage 2 of the money-representation migration (2026-08-10) needed a
     real `custom_price` write to dual-write `custom_price_cents`
     alongside — there was no working write to leave alone.
+11. **`POST /api/invoices/from-estimate/:estimateId` builds its invoice
+    title from two `estimates` columns that don't exist.** `src/index.tsx`
+    (search `Invoice for ${est.title`) reads `est.notes` (real columns are
+    `internal_notes`/`customer_notes`) and `est.estimate_number` (real
+    column is `est_number`) — both always silently resolve to `undefined`/
+    `''`, so the fallback title text and the notes field on the resulting
+    invoice are quietly blank instead of carrying the estimate's real
+    number/notes. Non-crashing, not money-affecting (unlike the sibling
+    bug below, which was in the same function and got fixed), just a
+    cosmetic data-loss gap. Found while independently re-verifying the
+    rest of this function during the Stage 3a review that fixed item
+    below (2026-08-10); flagged as out of scope for that fix and logged
+    here instead, same treatment as item 9.
+    - **Sibling bug in the same function, already fixed on
+      `stage-3a-cents-cutover` (commit `4ba147d`) before merge to `main`:**
+      the same handler read `est.tax_amount`/`est.tax_amount_cents`/
+      `est.tax_rate`, none of which exist on `estimates` (real columns:
+      `tax_amt`/`tax_amt_cents`/`tax_pct`) — every estimate-to-invoice
+      conversion had always silently written `tax_amount = 0` and
+      `tax_rate = 0` regardless of the estimate's real tax, a genuine
+      revenue-affecting bug, pre-dating Stage 2/3a and merely carried
+      forward uncaught by Stage 3a's cents-cutover rewrite of this exact
+      function. Caught during independent review of that branch, fixed
+      on the branch itself (field names corrected, `MC3A-01` extended
+      with a real-tax scenario + float-corruption + tax-field
+      assertions) before merge — this half was NOT deferred, unlike the
+      title/notes issue above.
 
 ## Specs I derived rather than were given (confidence noted)
 Every file in `docs/spec/` ends with its own "Derivation confidence"
