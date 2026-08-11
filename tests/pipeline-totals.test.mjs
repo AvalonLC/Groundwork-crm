@@ -158,6 +158,18 @@ test('column totals sum to the board open value', () => {
   assert.equal(summed, c.gwPipelineTotals(opps, 'all').openValue);
 });
 
+test('gwPipelineTotals counts open leads missing a value', () => {
+  const c = harness();
+  const t = c.gwPipelineTotals([
+    lead({ status: 'Decision Pending', jobValue: 15000 }),
+    lead({ status: 'Decision Pending', jobValue: 0 }),
+    lead({ status: 'New Lead', jobValue: 0 }),
+    lead({ status: 'Won', jobValue: 0, soldAmount: 0 }) // closed — must not count toward open
+  ], 'all');
+  assert.equal(t.openCount, 3);
+  assert.equal(t.openNoValue, 2);
+});
+
 // ── 4. Totals describe the filtered board ───────────────────────────────────
 
 test('totals reflect whatever filtered set they are handed', () => {
@@ -345,4 +357,28 @@ test('client-supplied text cannot break out of the band markup', () => {
   const c = harness();
   const html = c.gwPipelineKpiBand([lead({ status: '<img src=x onerror=alert(1)>', jobValue: 100 })], 'all', null);
   assert.ok(!html.includes('<img src=x'), 'lead status must not render as markup');
+});
+
+test('the Open Pipeline tile surfaces leads missing a value only when there are some', () => {
+  const c = harness();
+  const withMissing = c.gwPipelineKpiBand([
+    lead({ status: 'Decision Pending', jobValue: 5000 }),
+    lead({ status: 'Decision Pending', jobValue: 0 })
+  ], 'all', null);
+  assert.ok(withMissing.includes('1 missing a value'));
+
+  const clean = c.gwPipelineKpiBand([lead({ status: 'Decision Pending', jobValue: 5000 })], 'all', null);
+  assert.ok(!clean.includes('missing a value'));
+});
+
+test('a passed division row is nested inside the band behind a divider, and both are omitted otherwise', () => {
+  const c = harness();
+  const divisionStub = '<div class="gw-kpi-head-label">By Division</div><div class="gw-kpi-grid gw-kpi-grid--divisions">STUB_DIVISION_ROW</div>';
+  const withDivision = c.gwPipelineKpiBand([lead({ status: 'Decision Pending' })], 'all', null, divisionStub);
+  assert.ok(withDivision.includes('gw-kpi-divider'));
+  assert.ok(withDivision.includes('STUB_DIVISION_ROW'));
+
+  const without = c.gwPipelineKpiBand([lead({ status: 'Decision Pending' })], 'all', null);
+  assert.ok(!without.includes('gw-kpi-divider'));
+  assert.ok(!without.includes('STUB_DIVISION_ROW'));
 });

@@ -4039,6 +4039,7 @@ function gwPipelineTotals(opps, period, now){
   const sum  = list => list.reduce((a, o) => a + gwLeadBaseValue(o), 0);
 
   const open = rows.filter(o => gwLeadIsOpen(o));
+  const openNoValue = open.filter(o => !gwLeadBaseValue(o)).length;
   // soldDate is written by confirmMarkSold(); leads closed before that flow
   // existed fall back to updatedAt, which is the only date they carry.
   const won  = rows.filter(o => gwLeadClosedState(o) === 'won'  && gwInPeriod(o.soldDate || o.updatedAt, period, now));
@@ -4066,7 +4067,7 @@ function gwPipelineTotals(opps, period, now){
   }).filter(n => n !== null);
 
   return {
-    openCount: open.length, openValue,
+    openCount: open.length, openValue, openNoValue,
     forecast,
     wonCount: won.length, wonValue,
     lostCount: lost.length, lostValue,
@@ -4103,7 +4104,7 @@ const GW_PIPELINE_PERIODS = [
   { key:'ytd',     label:'YTD' }
 ];
 
-function gwPipelineKpiBand(opps, period, activeStatusFilter){
+function gwPipelineKpiBand(opps, period, activeStatusFilter, divisionRowHtml){
   const t = gwPipelineTotals(opps, period);
   const pct  = v => v === null ? '—' : Math.round(v * 100) + '%';
   const periodLabel = (GW_PIPELINE_PERIODS.find(p => p.key === period) || GW_PIPELINE_PERIODS[0]).label;
@@ -4137,7 +4138,7 @@ function gwPipelineKpiBand(opps, period, activeStatusFilter){
     </div>
     <div class="gw-kpi-grid">
       ${tile({ label:'Open Pipeline', value: money(t.openValue), filter:'open',
-        sub:`${t.openCount} open lead${t.openCount === 1 ? '' : 's'}`,
+        sub:`${t.openCount} open lead${t.openCount === 1 ? '' : 's'}${t.openNoValue ? ` · ${t.openNoValue} missing a value` : ''}`,
         hint:'Estimated value of every lead still in play. Click to show only open leads.' })}
       ${tile({ label:'Weighted Forecast', value: money(t.forecast),
         sub:'open leads × close likelihood',
@@ -4156,12 +4157,16 @@ function gwPipelineKpiBand(opps, period, activeStatusFilter){
         sub:`${money(t.lateValue)} sitting late`,
         hint:'Open leads past their stage\'s expected duration. Click to show only these.' })}
     </div>
+    ${divisionRowHtml ? `<div class="gw-kpi-divider"></div>${divisionRowHtml}` : ''}
   </section>`;
 }
 
 // ── Pipeline value by division ────────────────────────────────────────────────
 // Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
-// Tiles are clickable — they toggle the existing division filter.
+// Tiles are clickable — they toggle the existing division filter. Returns an
+// inner fragment (no wrapping <section>) meant to be nested inside
+// gwPipelineKpiBand's card as its second row — the grand total this used to
+// show on its own is redundant with that band's Open Pipeline tile.
 function _gwDivisionValueStrip(baseOpps, activeCat){
   // gwLeadIsOpen (not plain gwSalesIsOpen): won/lost/disqualified leads must
   // never contribute to a division total, including edge cases where the
@@ -4176,29 +4181,18 @@ function _gwDivisionValueStrip(baseOpps, activeCat){
     totals[k] += Number(o.jobValue||0);
     counts[k] += 1;
   });
-  const grand = open.reduce((a,o) => a + Number(o.jobValue||0), 0);
-  const noValue = open.filter(o => !Number(o.jobValue||0)).length;
-  return `<section class="card app-card" id="gw-division-value-strip" style="margin-top:12px;padding:12px 16px">
-    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
-      <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 16px 6px 4px;border-right:1px solid #E4EAE3;min-width:150px">
-        <div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">Open Pipeline Value</div>
-        <div style="font-size:20px;font-weight:700;color:#1C3A2B">${money(grand)}</div>
-        <div style="font-size:11px;color:#6F7E6A">${open.length} open lead${open.length===1?'':'s'}${noValue ? ` · ${noValue} missing a value` : ''}</div>
-      </div>
+  return `<div class="gw-kpi-head-label" style="display:block;margin-bottom:8px">By Division</div>
+    <div class="gw-kpi-grid gw-kpi-grid--divisions">
       ${gwDivisions().map(d => {
         const active = activeCat === d.key;
-        return `<button type="button" onclick="window._pipelineCatFilter='${active ? 'all' : d.key}';show('pipeline')"
-          title="${active ? 'Click to clear the division filter' : 'Click to filter the pipeline to ' + escapeHtml(d.label)}"
-          style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 14px;border-radius:10px;cursor:pointer;text-align:left;min-width:130px;background:${active ? (d.color||'#2D7A55')+'14' : 'transparent'};border:1px solid ${active ? (d.color||'#2D7A55')+'66' : '#E4EAE3'}">
-          <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">
-            <span style="width:8px;height:8px;border-radius:50%;background:${d.color||'#2D7A55'};flex-shrink:0"></span>${escapeHtml(d.label)}
-          </div>
-          <div style="font-size:17px;font-weight:700;color:${d.color||'#1C3A2B'}">${money(totals[d.key]||0)}</div>
-          <div style="font-size:11px;color:#6F7E6A">${counts[d.key]||0} lead${(counts[d.key]||0)===1?'':'s'}</div>
+        return `<button type="button" class="gw-kpi-tile${active ? ' gw-kpi-tile--on' : ''}" onclick="window._pipelineCatFilter='${active ? 'all' : d.key}';show('pipeline')"
+          title="${active ? 'Click to clear the division filter' : 'Click to filter the pipeline to ' + escapeHtml(d.label)}">
+          <span class="gw-kpi-label"><span style="width:8px;height:8px;border-radius:50%;background:${d.color||'#2D7A55'};flex-shrink:0;display:inline-block;margin-right:6px;vertical-align:middle"></span>${escapeHtml(d.label)}</span>
+          <span class="gw-kpi-value" style="color:${d.color||'#1C3A2B'}">${money(totals[d.key]||0)}</span>
+          <span class="gw-kpi-sub">${counts[d.key]||0} lead${(counts[d.key]||0)===1?'':'s'}</span>
         </button>`;
       }).join('')}
-    </div>
-  </section>`;
+    </div>`;
 }
 function pipeline(selectedId){
   if(selectedId){ return opportunityDetail(selectedId); }
@@ -4342,9 +4336,7 @@ function pipeline(selectedId){
       <button class="pl-clear-filter" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear</button>
     </div>` : ''}
 
-    ${gwPipelineKpiBand(_kpiBaseOpps, activePeriod, activeStatusFilter)}
-
-    ${_gwDivisionValueStrip(_divBaseOpps, activeCatFilter)}
+    ${gwPipelineKpiBand(_kpiBaseOpps, activePeriod, activeStatusFilter, _gwDivisionValueStrip(_divBaseOpps, activeCatFilter))}
 
     ${window.innerWidth <= 768
       ? /* ── Mobile: flat sorted list grouped by status ── */ `
