@@ -31,8 +31,22 @@ jobs:
         run: |
           ! grep -rn 'DB_PROD' src/ scripts/ 2>/dev/null || exit 1
       - name: guard - no float money in finance migrations
+        # Strips SQL '--' comments before matching so English prose that
+        # happens to contain the word "real" (e.g. "a real foreign key",
+        # "job_id now a real FK" in migrations/0057_finance_merge.sql's own
+        # comments) doesn't false-positive as a REAL-typed column. \b word
+        # boundaries added for the same reason (avoid matching inside longer
+        # identifiers). This guard was silently red on every push since
+        # Stage 1 (commit 4beee83, which first added
+        # migrations/0057_finance_merge.sql to its scope) purely on this
+        # false positive — found and fixed 2026-08-11; there was never an
+        # actual float column, confirmed by re-running the corrected check
+        # against every migration file with a real REAL/FLOAT/DOUBLE column
+        # injected as a negative test.
         run: |
-          ! grep -rniE '(REAL|FLOAT|DOUBLE)' migrations/finance/ migrations/0057_finance_merge.sql 2>/dev/null || exit 1
+          ! find migrations/finance/ migrations/0057_finance_merge.sql -type f -name '*.sql' \
+            -exec sh -c "sed 's/--.*\$//' \"\$1\" | grep -niE '\\b(REAL|FLOAT|DOUBLE)\\b'" _ {} \; \
+            2>/dev/null | grep -q . || exit 1
       - name: guard - BH-13 intact
         run: |
           grep -q 'BH-13' src/engines/burden.test.ts
