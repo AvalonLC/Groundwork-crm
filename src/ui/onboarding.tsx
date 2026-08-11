@@ -7,7 +7,7 @@ import {
 import type { UploadDomain } from "../db/schema";
 import { canSee } from "./roles";
 import { needsReviewFromConfidence } from "./documents";
-import { readPageArgs, Page, Card, Why, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type OnboardingBindings = { DB: D1Database; RECEIPTS: R2Bucket };
 
@@ -94,9 +94,10 @@ function gapLabel(state: GapState): string {
 function renderPage(
   role: string, tenant: string | undefined, vocab: string | undefined,
   basePath: string, gap: GapRow[], fileResults: FileResult[] | null, error: string | null,
+  partial: boolean,
 ) {
   return (
-    <Page title="Financial Setup" active="finConfig" tenant={tenant} role={role} vocab={vocab as never}>
+    <Page title="Financial Setup" active="finConfig" tenant={tenant} role={role} vocab={vocab as never} partial={partial}>
       <div class="fin-note">
         Drop everything you have — P&L exports, bank/card exports, receipts — and
         each file gets checked and classified. Nothing here maps divisions, proposes
@@ -199,9 +200,10 @@ function renderPage(
 
 onboardingRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
+  const partial = isPartialRequest(c);
   if (!canSee(role, "can_manage_receipts")) {
     return c.html(
-      <Page title="Financial Setup" active="finConfig" role={role}>
+      <Page title="Financial Setup" active="finConfig" role={role} partial={partial}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -213,13 +215,14 @@ onboardingRouter.get("/", async (c) => {
     );
   }
   const gap = await computeConfidenceGap(c.env.DB, tenant_id);
-  return c.html(renderPage(role, tenant_id || undefined, vocab, c.req.path, gap, null, null));
+  return c.html(renderPage(role, tenant_id || undefined, vocab, c.req.path, gap, null, null, partial));
 });
 
 onboardingRouter.post("/upload", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const basePath = c.req.path.replace(/\/upload$/, "");
-  if (!canSee(role, "can_manage_receipts")) return c.html(<Page title="Financial Setup" active="finConfig" role={role}><Card><div class="fin-empty" data-testid="denied"><div class="fin-empty-t">Not available for your role</div></div></Card></Page>, 403);
+  const partial = isPartialRequest(c);
+  if (!canSee(role, "can_manage_receipts")) return c.html(<Page title="Financial Setup" active="finConfig" role={role} partial={partial}><Card><div class="fin-empty" data-testid="denied"><div class="fin-empty-t">Not available for your role</div></div></Card></Page>, 403);
 
   const form = await c.req.parseBody({ all: true });
   const rawFiles = form.files;
@@ -229,7 +232,7 @@ onboardingRouter.post("/upload", async (c) => {
 
   if (files.length === 0) {
     const gap = await computeConfidenceGap(c.env.DB, tenant_id);
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, gap, null, "no files selected"), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, gap, null, "no files selected", partial), 400);
   }
 
   const ownerId = c.var.repId ?? "office-upload";
@@ -286,5 +289,5 @@ onboardingRouter.post("/upload", async (c) => {
   }
 
   const gap = await computeConfidenceGap(c.env.DB, tenant_id);
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, gap, fileResults, null));
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, gap, fileResults, null, partial));
 });

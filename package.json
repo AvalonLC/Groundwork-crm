@@ -14,6 +14,7 @@
     "test:watch":  "vitest",
     "typecheck":   "tsc --noEmit -p tsconfig.finance.json",
     "e2e":         "playwright test",
+    "e2e:spa":     "playwright test --config=playwright.spa.config.ts",
     "preflight":   "bash scripts/preflight.sh",
     "db:reset":    "rm -rf .wrangler/state && npm run db:migrate:local",
     "validate:finance-config": "node scripts/validate-finance-config.js",

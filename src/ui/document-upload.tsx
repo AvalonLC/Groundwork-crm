@@ -6,7 +6,7 @@ import type { ProcessReceiptResult } from "../ai/receipts";
 import { parseMoneyToCents } from "../ai/csv";
 import { canSee } from "./roles";
 import type { VocabularyMode } from "./vocabulary";
-import { readPageArgs, Page, Card, Why, Confidence, money, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Why, Confidence, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type DocumentUploadBindings = { DB: D1Database; RECEIPTS: R2Bucket };
 
@@ -29,9 +29,9 @@ export type DocumentUploadBindings = { DB: D1Database; RECEIPTS: R2Bucket };
  */
 export const documentUploadRouter = new Hono<{ Bindings: DocumentUploadBindings; Variables: FinanceAuthVars }>();
 
-function deniedPage(role: string) {
+function deniedPage(role: string, partial: boolean) {
   return (
-    <Page title="Upload Documents" active="finConfig" role={role}>
+    <Page title="Upload Documents" active="finConfig" role={role} partial={partial}>
       <Card>
         <div class="fin-empty" data-testid="denied">
           <div class="fin-empty-t">Not available for your role</div>
@@ -151,6 +151,7 @@ function renderPage(
   role: string, tenant: string | undefined, vocab: VocabularyMode, basePath: string,
   ingestResult: IngestResult | null, ingestError: string | null,
   receiptResult: ProcessReceiptResult | null, receiptConfidence: ReturnType<typeof scoreFieldConfidence> | null, receiptError: string | null,
+  partial: boolean,
 ) {
   // Carries tenant_id/role forward explicitly, same as config-admin.tsx and
   // policy-setup.tsx's own forms — c.req.path alone (used for basePath)
@@ -158,7 +159,7 @@ function renderPage(
   // outside the live app mount.
   const qs = `?tenant_id=${encodeURIComponent(tenant ?? "")}&role=${role}`;
   return (
-    <Page title="Upload Documents" active="finConfig" tenant={tenant} role={role} vocab={vocab}>
+    <Page title="Upload Documents" active="finConfig" tenant={tenant} role={role} vocab={vocab} partial={partial}>
       <div class="fin-note">
         Financial exports get checked against known formats and reconciled against your
         overhead pools. Receipts get stored and deduped by content, with anything uncertain
@@ -232,36 +233,39 @@ function basePathFor(c: { req: { path: string } }): string {
 
 documentUploadRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
-  if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role), 403);
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePathFor(c), null, null, null, null, null));
+  const partial = isPartialRequest(c);
+  if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePathFor(c), null, null, null, null, null, partial));
 });
 
 documentUploadRouter.post("/ingest", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const basePath = basePathFor(c);
-  if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role), 403);
+  const partial = isPartialRequest(c);
+  if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
 
   const form = await c.req.parseBody();
   const file = form.file;
   if (!(file instanceof File) || file.size === 0) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, "no file selected", null, null, null), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, "no file selected", null, null, null, partial), 400);
   }
 
   const ownerId = c.var.repId ?? "office-upload";
   const text = await file.text();
   const result = await ingestFile(c.env.DB, tenant_id, text, ownerId);
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, result, null, null, null, null));
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, result, null, null, null, null, partial));
 });
 
 documentUploadRouter.post("/receipt", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   const basePath = basePathFor(c);
-  if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role), 403);
+  const partial = isPartialRequest(c);
+  if (!canSee(role, "can_manage_receipts")) return c.html(deniedPage(role, partial), 403);
 
   const form = await c.req.parseBody();
   const file = form.file;
   if (!(file instanceof File) || file.size === 0) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "no file selected"), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "no file selected", partial), 400);
   }
 
   const vendorRaw = String(form.vendor ?? "").trim();
@@ -269,7 +273,7 @@ documentUploadRouter.post("/receipt", async (c) => {
   const dateRaw = String(form.receipt_date ?? "").trim();
   const amountCents = amountRaw ? parseMoneyToCents(amountRaw) : null;
   if (amountCents !== null && (!Number.isFinite(amountCents) || amountCents < 0)) {
-    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "amount must be a non-negative number"), 400);
+    return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, null, null, "amount must be a non-negative number", partial), 400);
   }
 
   const fields: ExtractedReceiptFields = {
@@ -288,5 +292,5 @@ documentUploadRouter.post("/receipt", async (c) => {
   });
 
   const shownConfidence = result.status === "stored" ? confidence : null;
-  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, result, shownConfidence, null));
+  return c.html(renderPage(role, tenant_id || undefined, vocab, basePath, null, null, result, shownConfidence, null, partial));
 });

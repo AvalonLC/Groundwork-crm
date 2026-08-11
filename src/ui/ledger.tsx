@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Empty, Why, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type LedgerBindings = { DB: D1Database };
 
@@ -29,7 +29,7 @@ ledgerRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Ledger" active="finLedger" role={role}>
+      <Page title="Ledger" active="finLedger" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -70,7 +70,7 @@ ledgerRouter.get("/", async (c) => {
   const totalInCents = events.filter((e) => e.type === "payment").reduce((t, e) => t + e.amount_cents, 0);
 
   return c.html(
-    <Page title="Ledger" active="finLedger" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Ledger" active="finLedger" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <div class="fin-note" data-testid="deposits-statements-gap">
         This is invoices and payments only — the two record types that are
         actually tracked in the CRM's database. Deposits and Statements

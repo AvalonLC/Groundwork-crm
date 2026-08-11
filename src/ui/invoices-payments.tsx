@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Empty, Why, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type InvoicesPaymentsBindings = { DB: D1Database };
 
@@ -44,7 +44,7 @@ invoicesPaymentsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Invoices & Payments" active="finInvPay" role={role}>
+      <Page title="Invoices & Payments" active="finInvPay" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -70,7 +70,7 @@ invoicesPaymentsRouter.get("/", async (c) => {
   ]);
 
   return c.html(
-    <Page title="Invoices & Payments" active="finInvPay" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Invoices & Payments" active="finInvPay" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <div class="fin-note">
         Reads the CRM's own invoices and payments directly — the full record,
         every status. For just what's still owed, see Collections instead.

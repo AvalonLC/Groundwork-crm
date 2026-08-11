@@ -178,6 +178,11 @@ const _VIEW_WORKSPACE_MAP = {
   financialHub:'gwFinancial', invoices:'gwFinancial', payments:'gwFinancial',
   deposits:'gwFinancial', statements:'gwFinancial', financialActivity:'gwFinancial',
   statement:'gwFinancial', gwReviews:'gwFinancial', gwStripe:'gwFinancial',
+  // Finance OS pages (SPA-integrated /finance/* nav — see gwFinancial() and
+  // financeFetch() below)
+  finControl:'gwFinancial', finQueue:'gwFinancial', finJobCost:'gwFinancial',
+  finBudget:'gwFinancial', finRecovery:'gwFinancial', finInvPay:'gwFinancial',
+  finLedger:'gwFinancial', finDocuments:'gwFinancial', finConfig:'gwFinancial',
   // Operations workspace
   scheduleBoard:'gwOperations', dispatchBoard:'gwOperations',
   recurringServices:'gwOperations', crewView:'gwOperations',
@@ -404,6 +409,7 @@ const DEFAULT_NAV_PERMS = {
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
+    'finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','teamReports',
@@ -418,6 +424,7 @@ const DEFAULT_NAV_PERMS = {
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
+    'finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','teamReports',
@@ -986,15 +993,115 @@ function gwRecords(sub) {
 }
 window.gwRecords = gwRecords;
 
+// ── Finance OS SPA integration ────────────────────────────────────────────────
+// Finance OS (/finance/*, src/ui/*.tsx) used to be 16 standalone full-page
+// server-rendered documents — real browser navigation, own <html>/<head>/
+// <body>, a separate green top tab-strip instead of this sidebar. financeFetch()
+// makes it behave exactly like every other in-SPA nav click instead: fetch the
+// same route with X-GW-Partial:1 (src/ui/layout.tsx's isPartialRequest/Page
+// partial mode strips the standalone-page wrapper and returns just the inner
+// content), inject it into #view in place, no reload.
+//
+// The 9 Finance OS nav ids (finControl…finConfig) match FINANCE_NAV /
+// FINANCE_NAV_CONFIG in src/ui/layout.tsx exactly — same keys _gwSetHeader
+// already used when these were {href} links (see gwFinancial() below).
+const _GW_FIN_NAV_TABS = [
+  {id:'finControl',    label:'Money Loop'},
+  {id:'finQueue',      label:'Work Queue'},
+  {id:'finJobCost',    label:'Job Costing'},
+  {id:'finBudget',     label:'Budget & Rates'},
+  {id:'finRecovery',   label:'Overhead Recovery'},
+  {id:'finInvPay',     label:'Invoices & Payments'},
+  {id:'finLedger',     label:'Ledger'},
+  {id:'finDocuments',  label:'Documents'},
+  {divider:true},
+  {id:'finConfig',     label:'Setup & Config'},
+];
+const _GW_FIN_OS_IDS = ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig'];
+
+// Finds every <form> inside a just-injected Finance OS fragment and intercepts
+// its submit so it POSTs via fetch (same X-GW-Partial header) instead of doing
+// a real navigation. Covers all 4 form-bearing Finance OS pages: the two that
+// already responded to POST with rendered HTML (document-upload.tsx,
+// onboarding.tsx) and the two that used to redirect-after-POST
+// (config-admin.tsx, policy-setup.tsx — now render the same target content
+// directly in partial mode instead of redirecting, since a fetch() can't
+// follow a redirect the way a real navigation does; see isPartialRequest in
+// src/ui/layout.tsx). new FormData(form) carries file inputs (multipart)
+// natively — no special-casing needed for the two upload forms.
+function _gwFinanceBindForms(container, viewId) {
+  if (!container) return;
+  container.querySelectorAll('form').forEach((form) => {
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const action = form.getAttribute('action') || location.pathname;
+      const method = (form.getAttribute('method') || 'POST').toUpperCase();
+      const submitBtn = form.querySelector('[type=submit]');
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const res = await fetch(action, {
+          method,
+          body: new FormData(form),
+          headers: { 'X-GW-Partial': '1' },
+          credentials: 'same-origin',
+        });
+        if (res.status === 401 || res.redirected) {
+          if (typeof logoutRep === 'function') logoutRep();
+          if (typeof renderLoginScreen === 'function') renderLoginScreen();
+          return;
+        }
+        const html = await res.text();
+        const view = document.getElementById('view');
+        if (view) view.innerHTML = html;
+        _gwFinanceBindForms(view, viewId);
+        try { history.replaceState(null, '', '#' + viewId); } catch (e) {}
+      } catch (e) {
+        if (submitBtn) submitBtn.disabled = false;
+        if (window.showToast) window.showToast('Save failed: ' + e.message);
+      }
+    });
+  });
+}
+
+// The in-SPA replacement for a real navigation to a /finance/* page. Mirrors
+// this file's existing session-expired handling (logoutRep();
+// renderLoginScreen() — see e.g. the sidebar-footer sign-out action) rather
+// than inventing a new pattern: requireAuthFinance (src/index.tsx) turns an
+// auth failure into a redirect to '/' for HTML page routes, which fetch()
+// follows transparently (res.redirected===true) rather than surfacing as a
+// 401 — checked for explicitly since a followed redirect's body is the SPA
+// shell itself, not Finance OS content, and injecting that into #view would
+// corrupt the page.
+async function financeFetch(path, viewId) {
+  const view = document.getElementById('view');
+  if (!view) return;
+  try {
+    const res = await fetch(path, { headers: { 'X-GW-Partial': '1' }, credentials: 'same-origin' });
+    if (res.status === 401 || res.redirected) {
+      if (typeof logoutRep === 'function') logoutRep();
+      if (typeof renderLoginScreen === 'function') renderLoginScreen();
+      return;
+    }
+    view.innerHTML = await res.text();
+    _gwFinanceBindForms(view, viewId);
+    try { history.replaceState(null, '', '#' + viewId); } catch (e) {}
+  } catch (e) {
+    view.innerHTML = `<div style="padding:48px 24px;text-align:center;color:var(--gw-text-muted)">Couldn't load this page.<br><button class="secondary-btn" style="margin-top:12px" onclick="financeFetch('${path}','${viewId}')">Retry</button></div>`;
+  }
+}
+window.financeFetch = financeFetch;
+
 // ── Financial workspace ───────────────────────────────────────────────────────
 function gwFinancial(tab) {
   tab = tab || 'financialHub';
   // Eight top-level items, in this order, per the confirmed nav-consolidation
   // plan (2026-08-06) — the SAME 8 destinations src/ui/layout.tsx's Finance OS
   // top tab-strip shows, so navigating in from either side reads as continuing
-  // the same tab row rather than leaving into a different app. All 8 are real
-  // page navigations (href) into /finance/*, not SPA tabs, so there's nothing
-  // left for the dispatch below to branch on except the Overview fallback.
+  // the same tab row rather than leaving into a different app. Since the
+  // finance-spa-integration change these are in-SPA nav clicks (financeFetch),
+  // not real page navigations — see finRoute in show()'s routes table, which
+  // is what actually handles show('finControl') etc. Nothing for the dispatch
+  // below to branch on either way — it only ever runs for the Overview fallback.
   //
   // Invoices, Payments (gwStripe), Deposits, Statements, Reviews, and Activity
   // are no longer separate top-level tabs:
@@ -1013,18 +1120,15 @@ function gwFinancial(tab) {
   //     show('gwReviews')). Its render function and data model (real D1,
   //     review_requests/review_settings) are untouched, just no longer
   //     reachable from this tab strip.
-  _gwSetHeader('Financial', [
-    {id:'finControl',    label:'Money Loop',          href:'/finance/money-loop'},
-    {id:'finQueue',       label:'Work Queue',          href:'/finance/queue'},
-    {id:'finJobCost',     label:'Job Costing',         href:'/finance/job-costing'},
-    {id:'finBudget',      label:'Budget & Rates',      href:'/finance/budget'},
-    {id:'finRecovery',    label:'Overhead Recovery',   href:'/finance/recovery'},
-    {id:'finInvPay',      label:'Invoices & Payments', href:'/finance/invoices-payments'},
-    {id:'finLedger',      label:'Ledger',              href:'/finance/ledger'},
-    {id:'finDocuments',   label:'Documents',           href:'/finance/documents'},
-    {divider:true},
-    {id:'finConfig',      label:'Setup & Config',      href:'/finance/config'},
-  ], tab);
+  // {id,label} items now (no href) — see financeFetch()/_gwFinanceBindForms()
+  // above: clicking these fetches the Finance OS page as a partial and swaps
+  // it into #view in place, exactly like every other in-SPA nav click,
+  // instead of a real page navigation. finRoute (in show()'s routes table)
+  // is what actually dispatches show('finControl') etc. to financeFetch —
+  // this workspace function itself is only ever reached for the plain
+  // Financial workspace landing (tab defaults to 'financialHub' below), same
+  // as before this change.
+  _gwSetHeader('Financial', _GW_FIN_NAV_TABS, tab);
   (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
 }
 window.gwFinancial = gwFinancial;
@@ -1304,15 +1408,11 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
     {id:'communications', label:'Communications'},
   ], null);
 
-  // Financial
-  _gwSetHeader('Financial', [
-    {id:'financialHub',      label:'Overview'},
-    {id:'invoices',          label:'Invoices'},
-    {id:'payments',          label:'Payments'},
-    {id:'deposits',          label:'Deposits'},
-    {id:'statements',        label:'Statements'},
-    {id:'financialActivity', label:'Activity'},
-  ], null);
+  // Financial — the real Finance OS nav (Money Loop…Setup & Config), same set
+  // gwFinancial() renders at runtime, so the panel doesn't flash the old
+  // Overview/Invoices/Payments/Deposits/Statements/Activity list before the
+  // first real navigation into Financial repaints it.
+  _gwSetHeader('Financial', _GW_FIN_NAV_TABS, null);
 
   // Operations — full list; field roles will have non-permitted tabs hidden by _gwApplyFieldNavFilters()
   _gwSetHeader('Operations', [
@@ -1582,8 +1682,23 @@ function show(viewName='today', param){
   const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].includes(viewName);
   const _isDirectWsCall = _isTopWsCall;
   if (!_isDirectWsCall) {
-    const _wsName = _wsHeaderMap[viewName];
-    if (_wsName && _wsTabDefs[_wsName]) {
+    // Finance OS ids (finControl…finConfig, dispatched to financeFetch by
+    // finRoute below) get their own tab set (_GW_FIN_NAV_TABS, same one
+    // gwFinancial() itself renders) rather than falling through to the
+    // generic _wsTabDefs.Financial lookup below — that list is still the
+    // OLD legacy Overview/Invoices/Payments/Deposits/Statements/Activity
+    // set, kept as-is for those still-live legacy views (financialHub,
+    // invoices, etc.), so it can't also serve the new 9-item Finance OS set.
+    // This is what makes navigating directly to e.g. #finControl on page
+    // load (hash restore) — not just clicking it from within gwFinancial() —
+    // correctly highlight the right tab and keep the Financial sidebar
+    // section expanded, same as every other workspace's leaf ids.
+    if (_GW_FIN_OS_IDS.includes(viewName)) {
+      _gwSetHeader('Financial', _GW_FIN_NAV_TABS, viewName);
+      window._gwPendingSubHeader = null;
+      window._gwActiveSubTabs = null;
+    } else if (_wsHeaderMap[viewName] && _wsTabDefs[_wsHeaderMap[viewName]]) {
+      const _wsName = _wsHeaderMap[viewName];
       // Highlight aliases for views that don't have their own nav entry
       let _tabHighlight = viewName;
       if (viewName === 'auditLog')        _tabHighlight = 'settings';
@@ -1774,7 +1889,21 @@ function show(viewName='today', param){
   const customerRoute = {
     customerDetail: (id) => customerDetail(id),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ai, ...commsHubRoute};
+  // Finance OS pages — in-SPA nav via financeFetch (see that function above),
+  // not real page navigations. Path/id pairs match FINANCE_NAV/
+  // FINANCE_NAV_CONFIG in src/ui/layout.tsx exactly.
+  const finRoute = {
+    finControl:   () => financeFetch('/finance/money-loop', 'finControl'),
+    finQueue:     () => financeFetch('/finance/queue', 'finQueue'),
+    finJobCost:   () => financeFetch('/finance/job-costing', 'finJobCost'),
+    finBudget:    () => financeFetch('/finance/budget', 'finBudget'),
+    finRecovery:  () => financeFetch('/finance/recovery', 'finRecovery'),
+    finInvPay:    () => financeFetch('/finance/invoices-payments', 'finInvPay'),
+    finLedger:    () => financeFetch('/finance/ledger', 'finLedger'),
+    finDocuments: () => financeFetch('/finance/documents', 'finDocuments'),
+    finConfig:    () => financeFetch('/finance/config', 'finConfig'),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ...finRoute, ai, ...commsHubRoute};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -24611,6 +24740,9 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
       gwSales:'gwSales', pipeline:'gwSales', clients:'gwSales', lead:'gwSales', estimates:'gwSales',
       gwOperations:'gwOperations', scheduleBoard:'gwOperations', workOrderList:'gwOperations',
       gwFinancial:'gwFinancial', invoices:'gwFinancial', gwReviews:'gwFinancial',
+      finControl:'gwFinancial', finQueue:'gwFinancial', finJobCost:'gwFinancial',
+      finBudget:'gwFinancial', finRecovery:'gwFinancial', finInvPay:'gwFinancial',
+      finLedger:'gwFinancial', finDocuments:'gwFinancial', finConfig:'gwFinancial',
       gwAdmin:'gwAdmin' };
     const active = wsMap[viewName] || '';
     document.querySelectorAll('.gw-mnav-btn').forEach(btn => {

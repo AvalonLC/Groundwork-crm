@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { listCurrentLaborRates, listCurrentEquipmentRates, listOverheadPools } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term, Card, Empty, Why, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Term, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type BudgetBindings = { DB: D1Database };
 
@@ -19,7 +19,7 @@ budgetRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_budget_rates")) {
     return c.html(
-      <Page title="Budget & Rates" active="finBudget" role={role}>
+      <Page title="Budget & Rates" active="finBudget" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -47,6 +47,7 @@ budgetRouter.get("/", async (c) => {
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
+      partial={isPartialRequest(c)}
     >
       <div class="fin-note">
         These are the numbers every other page inherits. Cost rates resolve through

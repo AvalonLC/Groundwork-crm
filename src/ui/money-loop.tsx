@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getLatestRecoverySnapshot, getOpenActionItems, getTenantFinancePolicy } from "../db/repos";
 import type { ActionItem, ActionVerb } from "../db/schema";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term, Card, Empty, Confidence, Why, money, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Term, Card, Empty, Confidence, Why, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type MoneyLoopBindings = { DB: D1Database };
 
@@ -59,6 +59,7 @@ moneyLoopRouter.get("/", async (c) => {
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
+      partial={isPartialRequest(c)}
     >
       {canSee(role, "can_see_budget_rates") && !policy ? (
         <div class="fin-note" data-testid="policy-setup-banner" style="border-left-color:var(--gw-amber)">

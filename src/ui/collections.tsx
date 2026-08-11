@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Empty, Why, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type CollectionsBindings = { DB: D1Database };
 
@@ -42,7 +42,7 @@ collectionsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Collections" active="finQueue" role={role}>
+      <Page title="Collections" active="finQueue" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -65,7 +65,7 @@ collectionsRouter.get("/", async (c) => {
   const overdueOwedCents = overdue.reduce((t, i) => t + i.balance_due_cents, 0);
 
   return c.html(
-    <Page title="Collections" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Collections" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <div class="fin-note">
         Reads the CRM's own invoices directly — this is the one Finance OS page that
         does, since there's no receivables table of its own. Read-only: nothing here

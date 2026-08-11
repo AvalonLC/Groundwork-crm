@@ -241,3 +241,18 @@ section. Highest-risk guesses, ranked:
 6. Local commit identity in this repo is auto-derived
    (`tylerjohnson@mac.mynetworksettings.com`) — worth setting explicitly
    before pushing anywhere shared.
+7. **`package.json`'s `dev:local`/`preview` scripts pass a `--d1=DB` flag
+   to `wrangler pages dev` that silently binds to an empty, disconnected
+   local D1 instead of the configured `avalon-sales-hub-production`
+   database** — found while building the finance-spa-integration branch's
+   real-browser test (`docs/STAGE-FINANCE-SPA-INTEGRATION-STATUS.md` has
+   the full repro). Local dev via these scripts currently can't log in
+   against a migrated local D1 at all. Not fixed here (out of scope for
+   that branch) — dropping the `--d1=DB` override fixes it.
+8. **`config-admin.tsx`'s config-JSON textarea is double HTML-escaped**
+   (its own `escapeHtml()` plus Hono JSX's default escaping of the
+   `{expression}` child) — reading the textarea's live value back in a
+   real browser and resubmitting it verbatim fails `JSON.parse`. Found by
+   the same branch's new test; not fixed there (out of scope). See that
+   status doc for the repro and why the existing `config-admin.e2e.ts`
+   suite never trips it.

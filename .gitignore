@@ -36,6 +36,7 @@ Thumbs.db
 status.log
 test-results.json
 test-results-finance/
+test-results-spa/
 BLOCKED-*.md
 *.tsbuildinfo
 

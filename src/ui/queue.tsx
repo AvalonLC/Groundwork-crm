@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getOpenActionItems } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Term, Card, Empty, Why, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type QueueBindings = { DB: D1Database };
 
@@ -43,6 +43,7 @@ queueRouter.get("/", async (c) => {
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
+      partial={isPartialRequest(c)}
     >
       <div class="fin-grid fin-grid-3">
         <div class="fin-tile">

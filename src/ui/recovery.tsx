@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getLatestRecoverySnapshot, getOverheadAllocationAsOf } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term, Card, Empty, Why, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Term, Card, Empty, Why, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type RecoveryBindings = { DB: D1Database };
 
@@ -19,7 +19,7 @@ recoveryRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Overhead Recovery" active="finRecovery" role={role}>
+      <Page title="Overhead Recovery" active="finRecovery" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -45,6 +45,7 @@ recoveryRouter.get("/", async (c) => {
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
+      partial={isPartialRequest(c)}
     >
       <section class="fin-hero" data-testid="thermometer">
         <div class="fin-hero-l"><Term term="overhead recovery" vocab={vocab} /></div>

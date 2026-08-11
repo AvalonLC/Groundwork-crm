@@ -13035,7 +13035,8 @@ function getHtml(): string {
   <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">
   <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
   <link rel="stylesheet" href="/js/styles.css?v=20260810b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">  <style>
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260810b002">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 

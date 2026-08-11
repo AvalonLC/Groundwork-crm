@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { listReceiptsForTenant } from "../db/repos";
 import type { RateConfidence } from "../db/schema";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Empty, Why, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type DocumentsBindings = { DB: D1Database };
 
@@ -30,7 +30,7 @@ documentsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_manage_receipts")) {
     return c.html(
-      <Page title="Documents" active="finDocuments" role={role}>
+      <Page title="Documents" active="finDocuments" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -47,7 +47,7 @@ documentsRouter.get("/", async (c) => {
   const basePath = c.req.path;
 
   return c.html(
-    <Page title="Documents" active="finDocuments" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Documents" active="finDocuments" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <div class="fin-grid fin-grid-3">
         <div class="fin-tile">
           <div class="fin-tile-l">Receipts</div>

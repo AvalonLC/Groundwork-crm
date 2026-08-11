@@ -4,7 +4,7 @@ import {
   isConfigName, getStaticDefault, CONFIG_NAMES, type ConfigName,
 } from "../config/finance-config-runtime";
 import { canSee } from "./roles";
-import { readPageArgs, Page, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type ConfigAdminBindings = { DB: D1Database };
 
@@ -23,35 +23,28 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-configAdminRouter.get("/", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
-  if (!canSee(role, "can_see_budget_rates")) {
-    return c.html(
-      <Page title="Setup & Config" active="finConfig" role={role}>
-        <section class="fin-card">
-          <div class="fin-empty" data-testid="denied">
-            <div class="fin-empty-t">Not available for your role</div>
-            <div class="fin-empty-s">Financial configuration is owner-only.</div>
-          </div>
-        </section>
-      </Page>,
-      403,
-    );
-  }
-
+/**
+ * Shared by the GET handler (notice derived from ?saved=/?error= query
+ * params) and the two POST handlers' partial-mode branch (notice derived
+ * directly from the just-computed save/reset result — see isPartialRequest
+ * in layout.tsx: a fetch()-based form submit can't follow a redirect the
+ * way a real navigation does, so instead of c.redirect() this renders the
+ * same target content the redirect would have landed on, directly).
+ * Full-page (non-partial) POST behavior is untouched — still a real
+ * redirect, exactly as before this function existed.
+ */
+async function renderConfigAdminPage(
+  c: { env: { DB: D1Database } },
+  tenant_id: string, role: string, basePath: string, notice: string | null, partial: boolean,
+) {
   const configs = await listEffectiveConfigs(c.env.DB, tenant_id);
-  const notice = c.req.query("saved") === "1" ? "Saved." : c.req.query("error") ? `Error: ${c.req.query("error")}` : null;
-  // Absolute base path this router is mounted at, derived from the actual
-  // request rather than hardcoded — works whether mounted at /config
-  // (dev-server.ts) or /finance/config (the live app), no path assumptions.
-  const basePath = c.req.path;
-
-  return c.html(
+  return (
     <Page
       title="Setup & Config"
       active="finConfig"
       tenant={tenant_id || undefined}
       role={role}
+      partial={partial}
     >
       {notice && (
         <div class="fin-note" data-testid="notice" style={notice.startsWith("Error") ? "border-left-color:var(--gw-rose)" : ""}>
@@ -162,8 +155,34 @@ configAdminRouter.get("/", async (c) => {
           )}
         </section>
       ))}
-    </Page>,
+    </Page>
   );
+}
+
+configAdminRouter.get("/", async (c) => {
+  const { tenant_id, role } = readPageArgs(c);
+  const partial = isPartialRequest(c);
+  if (!canSee(role, "can_see_budget_rates")) {
+    return c.html(
+      <Page title="Setup & Config" active="finConfig" role={role} partial={partial}>
+        <section class="fin-card">
+          <div class="fin-empty" data-testid="denied">
+            <div class="fin-empty-t">Not available for your role</div>
+            <div class="fin-empty-s">Financial configuration is owner-only.</div>
+          </div>
+        </section>
+      </Page>,
+      403,
+    );
+  }
+
+  const notice = c.req.query("saved") === "1" ? "Saved." : c.req.query("error") ? `Error: ${c.req.query("error")}` : null;
+  // Absolute base path this router is mounted at, derived from the actual
+  // request rather than hardcoded — works whether mounted at /config
+  // (dev-server.ts) or /finance/config (the live app), no path assumptions.
+  const basePath = c.req.path;
+
+  return c.html(await renderConfigAdminPage(c, tenant_id, role, basePath, notice, partial));
 });
 
 configAdminRouter.post("/:name", async (c) => {
@@ -178,6 +197,14 @@ configAdminRouter.post("/:name", async (c) => {
   const updatedBy = c.var.repId ?? "unknown";
   const result = await saveConfigOverride(c.env.DB, tenant_id, name, rawJson, updatedBy);
 
+  // Partial (SPA in-app-nav) requests can't follow a redirect the way a
+  // real navigation does (see layout.tsx's isPartialRequest) — render the
+  // same content the redirect below would have landed on, directly.
+  // Full-page requests keep the exact pre-existing redirect behavior.
+  if (isPartialRequest(c)) {
+    const notice = result.ok ? "Saved." : `Error: ${result.error}`;
+    return c.html(await renderConfigAdminPage(c, tenant_id, role, basePath, notice, true));
+  }
   const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
   if (!result.ok) return c.redirect(`${basePath}?${qs}&error=${encodeURIComponent(result.error)}`);
   return c.redirect(`${basePath}?${qs}&saved=1`);
@@ -191,6 +218,10 @@ configAdminRouter.post("/:name/reset", async (c) => {
   if (!isConfigName(name)) return c.text(`unknown config: ${name}`, 404);
 
   await resetConfigOverride(c.env.DB, tenant_id, name);
+
+  if (isPartialRequest(c)) {
+    return c.html(await renderConfigAdminPage(c, tenant_id, role, basePath, "Saved.", true));
+  }
   const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
   return c.redirect(`${basePath}?${qs}&saved=1`);
 });

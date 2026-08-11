@@ -4,7 +4,8 @@ import type { TenantFinancePolicy } from "../db/schema";
 import { parseMoneyToCents } from "../ai/csv";
 import { tenantDefaults } from "../config/finance-config";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Why, money, type FinanceAuthVars } from "./layout";
+import type { VocabularyMode } from "./vocabulary";
+import { readPageArgs, Page, Card, Why, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type PolicySetupBindings = { DB: D1Database };
 
@@ -27,22 +28,20 @@ function centsToDollarInput(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 
-policySetupRouter.get("/", async (c) => {
-  const { tenant_id, role, vocab } = readPageArgs(c);
-  if (!canSee(role, "can_see_budget_rates")) {
-    return c.html(
-      <Page title="Company Policy" active="finConfig" role={role}>
-        <Card>
-          <div class="fin-empty" data-testid="denied">
-            <div class="fin-empty-t">Not available for your role</div>
-            <div class="fin-empty-s">Company financial policy is owner-only.</div>
-          </div>
-        </Card>
-      </Page>,
-      403,
-    );
-  }
-
+/**
+ * Shared by the GET handler (notice derived from ?saved=/?error= query
+ * params) and the POST handler's partial-mode branch (notice derived
+ * directly from the just-computed save/validation result — see
+ * isPartialRequest in layout.tsx: a fetch()-based form submit can't follow
+ * a redirect the way a real navigation does, so instead of c.redirect()
+ * this renders the same target content the redirect would have landed on,
+ * directly). Full-page (non-partial) POST behavior is untouched — still a
+ * real redirect, exactly as before this function existed.
+ */
+async function renderPolicyPage(
+  c: { env: { DB: D1Database } },
+  tenant_id: string, role: string, vocab: VocabularyMode, basePath: string, notice: string | null, partial: boolean,
+) {
   const db = c.env.DB;
   const existing = await getTenantFinancePolicy(db, tenant_id);
   const isFirstRun = !existing;
@@ -56,11 +55,8 @@ policySetupRouter.get("/", async (c) => {
     black_friday_date: tenantDefaults.black_friday_date,
   };
 
-  const notice = c.req.query("saved") === "1" ? "Saved." : c.req.query("error") ? `Error: ${c.req.query("error")}` : null;
-  const basePath = c.req.path;
-
-  return c.html(
-    <Page title="Company Policy" active="finConfig" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+  return (
+    <Page title="Company Policy" active="finConfig" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={partial}>
       {notice && (
         <div class="fin-note" data-testid="notice" style={notice.startsWith("Error") ? "border-left-color:var(--gw-rose)" : ""}>
           {notice}
@@ -165,8 +161,31 @@ policySetupRouter.get("/", async (c) => {
           moves="Editing and saving here. Nothing else in Finance OS writes to this row."
         />
       </Card>
-    </Page>,
+    </Page>
   );
+}
+
+policySetupRouter.get("/", async (c) => {
+  const { tenant_id, role, vocab } = readPageArgs(c);
+  const partial = isPartialRequest(c);
+  if (!canSee(role, "can_see_budget_rates")) {
+    return c.html(
+      <Page title="Company Policy" active="finConfig" role={role} partial={partial}>
+        <Card>
+          <div class="fin-empty" data-testid="denied">
+            <div class="fin-empty-t">Not available for your role</div>
+            <div class="fin-empty-s">Company financial policy is owner-only.</div>
+          </div>
+        </Card>
+      </Page>,
+      403,
+    );
+  }
+
+  const notice = c.req.query("saved") === "1" ? "Saved." : c.req.query("error") ? `Error: ${c.req.query("error")}` : null;
+  const basePath = c.req.path;
+
+  return c.html(await renderPolicyPage(c, tenant_id, role, vocab, basePath, notice, partial));
 });
 
 function parseDollarField(raw: FormDataEntryValue | undefined): number | null {
@@ -177,9 +196,15 @@ function parseDollarField(raw: FormDataEntryValue | undefined): number | null {
 }
 
 policySetupRouter.post("/", async (c) => {
-  const { tenant_id, role } = readPageArgs(c);
+  const { tenant_id, role, vocab } = readPageArgs(c);
   const basePath = c.req.path;
   if (!canSee(role, "can_see_budget_rates")) return c.text("owner role required", 403);
+
+  const partial = isPartialRequest(c);
+  const respond = async (error: string) =>
+    partial
+      ? c.html(await renderPolicyPage(c, tenant_id, role, vocab, basePath, `Error: ${error}`, true))
+      : c.redirect(`${basePath}?tenant_id=${encodeURIComponent(tenant_id)}&role=${role}&error=${encodeURIComponent(error)}`);
 
   const form = await c.req.parseBody();
   const qs = `tenant_id=${encodeURIComponent(tenant_id)}&role=${role}`;
@@ -190,13 +215,13 @@ policySetupRouter.post("/", async (c) => {
   const blackFridayDate = blackFridayRaw || null;
 
   if (materialityCents === null || materialityCents < 0) {
-    return c.redirect(`${basePath}?${qs}&error=${encodeURIComponent("materiality threshold must be a non-negative amount")}`);
+    return respond("materiality threshold must be a non-negative amount");
   }
   if (restatedCents === null || restatedCents < 0) {
-    return c.redirect(`${basePath}?${qs}&error=${encodeURIComponent("restated target must be a non-negative amount")}`);
+    return respond("restated target must be a non-negative amount");
   }
   if (blackFridayDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(blackFridayDate)) {
-    return c.redirect(`${basePath}?${qs}&error=${encodeURIComponent("target recovery date must be YYYY-MM-DD")}`);
+    return respond("target recovery date must be YYYY-MM-DD");
   }
 
   const policy: TenantFinancePolicy = {
@@ -210,5 +235,6 @@ policySetupRouter.post("/", async (c) => {
   };
 
   await upsertTenantFinancePolicy(c.env.DB, policy);
+  if (partial) return c.html(await renderPolicyPage(c, tenant_id, role, vocab, basePath, "Saved.", true));
   return c.redirect(`${basePath}?${qs}&saved=1`);
 });

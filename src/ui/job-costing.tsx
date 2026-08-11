@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getJobCostLedgerForJob, getWorkItem } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Term, Card, Empty, Why, money, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Term, Card, Empty, Why, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type JobCostingBindings = { DB: D1Database };
 
@@ -46,6 +46,7 @@ jobCostingRouter.get("/", async (c) => {
       tenant={tenant_id || undefined}
       role={role}
       vocab={vocab}
+      partial={isPartialRequest(c)}
     >
       {!jobId ? (
         <Card>

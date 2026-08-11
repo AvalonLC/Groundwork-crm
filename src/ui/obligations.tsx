@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Empty, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Empty, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type ObligationsBindings = { DB: D1Database };
 
@@ -20,7 +20,7 @@ obligationsRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Obligations" active="finQueue" role={role}>
+      <Page title="Obligations" active="finQueue" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -33,7 +33,7 @@ obligationsRouter.get("/", async (c) => {
   }
 
   return c.html(
-    <Page title="Obligations" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Obligations" active="finQueue" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <Card title="Money the company owes">
         <div data-testid="obligations-blocked">
           <Empty

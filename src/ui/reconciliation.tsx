@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { listClassificationFindings } from "../db/repos";
 import { canSee } from "./roles";
-import { readPageArgs, Page, Card, Empty, Confidence, Why, money, type FinanceAuthVars } from "./layout";
+import { readPageArgs, Page, Card, Empty, Confidence, Why, money, isPartialRequest, type FinanceAuthVars } from "./layout";
 
 export type ReconciliationBindings = { DB: D1Database };
 
@@ -21,7 +21,7 @@ reconciliationRouter.get("/", async (c) => {
   const { tenant_id, role, vocab } = readPageArgs(c);
   if (!canSee(role, "can_see_recovery")) {
     return c.html(
-      <Page title="Reconciliation" active="finControl" role={role}>
+      <Page title="Reconciliation" active="finControl" role={role} partial={isPartialRequest(c)}>
         <Card>
           <div class="fin-empty" data-testid="denied">
             <div class="fin-empty-t">Not available for your role</div>
@@ -37,7 +37,7 @@ reconciliationRouter.get("/", async (c) => {
   const unresolved = findings.filter((f) => !f.action_item_id);
 
   return c.html(
-    <Page title="Reconciliation" active="finControl" tenant={tenant_id || undefined} role={role} vocab={vocab}>
+    <Page title="Reconciliation" active="finControl" tenant={tenant_id || undefined} role={role} vocab={vocab} partial={isPartialRequest(c)}>
       <div class="fin-grid fin-grid-3">
         <div class="fin-tile">
           <div class="fin-tile-l">Findings</div>
