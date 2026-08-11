@@ -565,8 +565,13 @@ function statusCssClass(status){
 // Which dollar figure drives a lead's money displays and commission:
 // won leads use the final Sold @ amount (falling back to the estimate),
 // everything else uses the Est. Value (jobValue).
+// gwLeadClosedState (not gwSalesIs): the semantic resolver only answers for a
+// published sales process or the legacy label map, so on custom stage names it
+// reported every won lead as unresolved and the sold amount never applied.
 function gwLeadBaseValue(opp){
-  const isWon = (typeof gwSalesIs === 'function') && gwSalesIs(opp,'won');
+  const isWon = (typeof gwLeadClosedState === 'function')
+    ? gwLeadClosedState(opp) === 'won'
+    : ((typeof gwSalesIs === 'function') && gwSalesIs(opp,'won'));
   if (isWon && Number(opp?.soldAmount || 0) > 0) return Number(opp.soldAmount);
   return Number(opp?.jobValue || 0);
 }
@@ -2052,11 +2057,17 @@ window._updateSidebarRep = function updateSidebarRep() {
   } catch(e) {}
 };
 
-function statCards(){
-  const openOpps = state.opportunities.filter(o=>gwLeadIsOpen(o));
-  const proposalOpps = state.opportunities.filter(o=>gwSalesIs(o,'proposal_presentation'));
-  const overdueOpps = state.opportunities.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
-  const soldOpps = state.opportunities.filter(o=>gwSalesIs(o,'won'));
+// `opps` lets a caller pass the set it is actually showing (the pipeline board
+// passes its filtered leads); callers that omit it keep the whole-book view.
+// Won/lost come from gwLeadClosedState, which resolves custom tenant stage
+// names — gwSalesIs alone reported 0 sold for any tenant not on the legacy
+// labels, no matter how many deals were in the Won column.
+function statCards(opps){
+  const rows = Array.isArray(opps) ? opps : state.opportunities;
+  const openOpps = rows.filter(o=>gwLeadIsOpen(o));
+  const proposalOpps = rows.filter(o=>gwSalesIs(o,'proposal_presentation'));
+  const overdueOpps = rows.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
+  const soldOpps = rows.filter(o=>gwLeadClosedState(o)==='won');
   return `<div class="grid grid-4 stat-grid">
     <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
       <span>Open</span><strong>${openOpps.length}</strong>
@@ -3984,6 +3995,170 @@ function gwNextUpForOpp(o){
 }
 window.gwNextUpForOpp = gwNextUpForOpp;
 
+// ── Pipeline totals ──────────────────────────────────────────────────────────
+// Pure aggregation behind the board's column headers and the KPI band. No DOM
+// work here so the numbers can be asserted directly (tests/pipeline-totals.test.mjs).
+
+// Inclusive start of a reporting window; null means "all time".
+function gwPeriodStart(period, now){
+  const d = now ? new Date(now) : new Date();
+  if (period === 'month')   return new Date(d.getFullYear(), d.getMonth(), 1);
+  if (period === 'quarter') return new Date(d.getFullYear(), Math.floor(d.getMonth()/3)*3, 1);
+  if (period === 'ytd')     return new Date(d.getFullYear(), 0, 1);
+  return null;
+}
+
+// Undated leads count only when no window is set — a missing close date must
+// never be read as "closed this month".
+function gwInPeriod(dateStr, period, now){
+  const start = gwPeriodStart(period, now);
+  if (!start) return true;
+  if (!dateStr) return false;
+  const s = String(dateStr);
+  const t = new Date(s.includes('T') ? s : s.replace(' ', 'T') + (s.length <= 10 ? 'T00:00:00Z' : 'Z')).getTime();
+  return !isNaN(t) && t >= start.getTime();
+}
+
+// Rollup for one stage column.
+function gwStageTotals(items){
+  const rows = Array.isArray(items) ? items : [];
+  let value = 0, late = 0, noValue = 0;
+  rows.forEach(o => {
+    const v = gwLeadBaseValue(o);
+    value += v;
+    if (!v) noValue += 1;
+    if (gwLeadIsOpen(o) && gwStageClock(o).level === 'late') late += 1;
+  });
+  return { count: rows.length, value, late, noValue };
+}
+
+// Board-level rollup. `opps` is the already-filtered set the board is showing,
+// so every figure describes exactly what the user can see.
+function gwPipelineTotals(opps, period, now){
+  const rows = Array.isArray(opps) ? opps : [];
+  const sum  = list => list.reduce((a, o) => a + gwLeadBaseValue(o), 0);
+
+  const open = rows.filter(o => gwLeadIsOpen(o));
+  // soldDate is written by confirmMarkSold(); leads closed before that flow
+  // existed fall back to updatedAt, which is the only date they carry.
+  const won  = rows.filter(o => gwLeadClosedState(o) === 'won'  && gwInPeriod(o.soldDate || o.updatedAt, period, now));
+  const lost = rows.filter(o => gwLeadClosedState(o) === 'lost' && gwInPeriod(o.updatedAt, period, now));
+  const late = open.filter(o => gwStageClock(o).level === 'late');
+
+  const openValue = sum(open), wonValue = sum(won), lostValue = sum(lost);
+  const decided = won.length + lost.length;
+  const decidedValue = wonValue + lostValue;
+
+  // Weighted on the same close-likelihood % printed on every card, so the band
+  // and the board always agree. Open leads only: gwLeadScore pins won to 100
+  // and lost to 0, so closed deals would double-count as forecast.
+  const forecast = open.reduce((a, o) => a + gwLeadBaseValue(o) * (gwLeadScore(o).score / 100), 0);
+
+  // Deals missing either end of the span are dropped rather than dragging the
+  // average toward zero.
+  const spans = won.map(o => {
+    if (!o.soldDate || !o.createdAt) return null;
+    const sd = String(o.soldDate), cd = String(o.createdAt);
+    const t1 = Date.parse(sd.includes('T') ? sd : sd + 'T00:00:00Z');
+    const t0 = Date.parse(cd.includes('T') ? cd : cd.replace(' ', 'T') + 'Z');
+    if (isNaN(t0) || isNaN(t1) || t1 < t0) return null;
+    return (t1 - t0) / 86400000;
+  }).filter(n => n !== null);
+
+  return {
+    openCount: open.length, openValue,
+    forecast,
+    wonCount: won.length, wonValue,
+    lostCount: lost.length, lostValue,
+    lateCount: late.length, lateValue: sum(late),
+    winRate:      decided ? won.length / decided : null,
+    winRateValue: decidedValue ? wonValue / decidedValue : null,
+    avgDeal:      won.length ? wonValue / won.length : null,
+    avgDaysToClose: spans.length ? spans.reduce((a, n) => a + n, 0) / spans.length : null
+  };
+}
+
+// Column subhead. Sits below the <h3> rather than inside it: the header is
+// pinned to one line by white-space:nowrap + ellipsis, so money crammed in
+// there is the first thing to get clipped on a narrow column.
+function gwStageTotalHtml(totals){
+  const t = totals || { count:0, value:0, late:0, noValue:0 };
+  const flags = [
+    t.late    ? `${t.late} late` : null,
+    t.noValue ? `${t.noValue} no value` : null
+  ].filter(Boolean).join(' · ');
+  return `<div class="kanban-col-total">
+    <span class="kanban-col-money">${t.value ? money(t.value) : '—'}</span>
+    ${flags ? `<span class="kanban-col-flags">${escapeHtml(flags)}</span>` : ''}
+  </div>`;
+}
+
+// ── Pipeline KPI band ─────────────────────────────────────────────────────────
+// Replaces the generic statCards() row on the board. Tiles double as the
+// existing status quick-filters, so the headline numbers are also navigation.
+const GW_PIPELINE_PERIODS = [
+  { key:'all',     label:'All Time' },
+  { key:'month',   label:'This Month' },
+  { key:'quarter', label:'This Quarter' },
+  { key:'ytd',     label:'YTD' }
+];
+
+function gwPipelineKpiBand(opps, period, activeStatusFilter){
+  const t = gwPipelineTotals(opps, period);
+  const pct  = v => v === null ? '—' : Math.round(v * 100) + '%';
+  const periodLabel = (GW_PIPELINE_PERIODS.find(p => p.key === period) || GW_PIPELINE_PERIODS[0]).label;
+
+  // Clicking the active tile clears the filter, matching the division strip.
+  const tile = (o) => {
+    const on = o.filter && activeStatusFilter === o.filter;
+    const attrs = o.filter
+      ? `type="button" class="gw-kpi-tile${on ? ' gw-kpi-tile--on' : ''}" onclick="window._pipelineStatusFilter=${on ? 'null' : `'${o.filter}'`};show('pipeline')"`
+      : `type="button" class="gw-kpi-tile gw-kpi-tile--static"`; // not disabled — a disabled button suppresses its tooltip
+    return `<button ${attrs} title="${escapeHtml(o.hint || '')}">
+      <span class="gw-kpi-label">${escapeHtml(o.label)}</span>
+      <span class="gw-kpi-value"${o.tone ? ` style="color:${o.tone}"` : ''}>${o.value}</span>
+      <span class="gw-kpi-sub">${o.sub}</span>
+    </button>`;
+  };
+
+  const wonSub = [
+    `${t.wonCount} deal${t.wonCount === 1 ? '' : 's'}`,
+    t.avgDeal !== null ? `avg ${money(t.avgDeal)}` : null,
+    t.avgDaysToClose !== null ? `${Math.round(t.avgDaysToClose)}d to close` : null
+  ].filter(Boolean).join(' · ');
+
+  return `<section class="card app-card gw-kpi-band" id="gw-pipeline-kpis">
+    <div class="gw-kpi-head">
+      <span class="gw-kpi-head-label">Closed results</span>
+      <div class="gw-kpi-periods">
+        ${GW_PIPELINE_PERIODS.map(p => `<button type="button" class="pl-filter-btn ${period === p.key ? 'pl-active' : ''}"
+          onclick="window._pipelinePeriod='${p.key}';show('pipeline')">${escapeHtml(p.label)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="gw-kpi-grid">
+      ${tile({ label:'Open Pipeline', value: money(t.openValue), filter:'open',
+        sub:`${t.openCount} open lead${t.openCount === 1 ? '' : 's'}`,
+        hint:'Estimated value of every lead still in play. Click to show only open leads.' })}
+      ${tile({ label:'Weighted Forecast', value: money(t.forecast),
+        sub:'open leads × close likelihood',
+        hint:'Each open lead\'s value multiplied by the Groundwork AI close likelihood shown on its card.' })}
+      ${tile({ label:`Won · ${periodLabel}`, value: money(t.wonValue), filter:'sold', tone:'#2D7A55',
+        sub: wonSub,
+        hint:'Sold amount for deals won in this period. Deals closed before a sold date was recorded fall back to their last-updated date.' })}
+      ${tile({ label:`Lost · ${periodLabel}`, value: money(t.lostValue), filter:'lost', tone:'#B4553F',
+        sub:`${t.lostCount} deal${t.lostCount === 1 ? '' : 's'}`,
+        hint:'Lost deals have no dedicated close date, so this period is based on when the lead was last updated.' })}
+      ${tile({ label:'Win Rate', value: pct(t.winRate),
+        sub: t.winRate === null ? 'no decisions yet' : `${t.wonCount} of ${t.wonCount + t.lostCount} decided · ${pct(t.winRateValue)} by value`,
+        hint:'Won ÷ decided (won + lost). Leads still open are not counted either way.' })}
+      ${tile({ label:'Needs Follow-Up', value: String(t.lateCount), filter:'overdue',
+        tone: t.lateCount ? '#8B6914' : undefined,
+        sub:`${money(t.lateValue)} sitting late`,
+        hint:'Open leads past their stage\'s expected duration. Click to show only these.' })}
+    </div>
+  </section>`;
+}
+
 // ── Pipeline value by division ────────────────────────────────────────────────
 // Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
 // Tiles are clickable — they toggle the existing division filter.
@@ -4048,13 +4223,20 @@ function pipeline(selectedId){
     opps = opps.filter(o => gwClassifyDivision(o) === activeCatFilter);
   }
 
+  // The KPI band reads the rep/client/division set but NOT the status
+  // quick-filter — otherwise clicking "Won" would zero out every other tile,
+  // including the one you need to click to get back.
+  const _kpiBaseOpps = opps;
+  const activePeriod = window._pipelinePeriod || 'all';
+
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
   const semantic = o => window.GWSalesProcess ? GWSalesProcess.resolve(o) : { resolved:false };
   if (activeStatusFilter === 'open') opps = opps.filter(o => window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status));
   else if (activeStatusFilter === 'proposals') opps = opps.filter(o => { const r=semantic(o); return r.resolved && r.semantic==='proposal_presentation'; });
   else if (activeStatusFilter === 'overdue') opps = opps.filter(o => gwLeadIsOpen(o) && gwStageClock(o).level === 'late');
-  else if (activeStatusFilter === 'sold') opps = opps.filter(o => { const r=semantic(o); return r.resolved && (r.outcome==='won'||r.semantic==='won'); });
+  else if (activeStatusFilter === 'sold') opps = opps.filter(o => gwLeadClosedState(o) === 'won');
+  else if (activeStatusFilter === 'lost') opps = opps.filter(o => gwLeadClosedState(o) === 'lost');
 
   // T47: Sort
   const activeSort = window._pipelineSort || 'priority';
@@ -4077,7 +4259,10 @@ function pipeline(selectedId){
   // Desktop: keep ALL stage columns visible (drop targets for drag & drop, and
   // they fill wide monitors). Mobile: only columns with items (list view).
   const _isMobilePipe = window.innerWidth <= 768;
-  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))}))
+  const grouped = filters.map(status => {
+    const items = sortOpps(opps.filter(o=>o.status===status));
+    return {status, items, totals: gwStageTotals(items)};
+  })
     .filter(g => !_isMobilePipe || g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
   // Catch-all: an unknown legacy label is never equivalent to the first stage.
   // Keep these records visible, searchable, editable, and assigned while clearly
@@ -4085,7 +4270,7 @@ function pipeline(selectedId){
   const knownStatuses = new Set(filters);
   const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)).map(o => ({...o, _needsRestaging:true})));
   if (orphanOpps.length) {
-    grouped.push({status:'Needs Restaging', items:orphanOpps, needsRestaging:true});
+    grouped.push({status:'Needs Restaging', items:orphanOpps, totals:gwStageTotals(orphanOpps), needsRestaging:true});
   }
 
   const _repFilterHtml = (()=>{
@@ -4157,7 +4342,7 @@ function pipeline(selectedId){
       <button class="pl-clear-filter" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear</button>
     </div>` : ''}
 
-    ${statCards()}
+    ${gwPipelineKpiBand(_kpiBaseOpps, activePeriod, activeStatusFilter)}
 
     ${_gwDivisionValueStrip(_divBaseOpps, activeCatFilter)}
 
@@ -4170,6 +4355,7 @@ function pipeline(selectedId){
               <div class="gw-pipe-group">
                 <div class="gw-pipe-group-head">
                   <span class="gw-pipe-group-label">${escapeHtml(g.status)}</span>
+                  <span class="gw-pipe-group-total">${money(g.totals.value)}</span>
                   <span class="gw-pipe-group-count">${g.items.length}</span>
                 </div>
                 ${g.items.map(o => {
@@ -4200,7 +4386,7 @@ function pipeline(selectedId){
           <div class="kanban" id="gw-kanban-board">
             ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
               ${g.needsRestaging ? '' : 'ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"'}
-            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${gwStageTotalHtml(g.totals)}${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
           </div>
           <div class="gw-scroll-more gw-scroll-more--hidden" id="gw-scroll-more">
             <button type="button" class="gw-scroll-more-btn" onclick="gwPipeScrollRight()">
@@ -4280,8 +4466,9 @@ window.gwPipeDragEnter = function(ev) {
     const hint = document.createElement('div');
     hint.className = 'gw-drop-hint';
     hint.textContent = 'Move here';
-    const h3 = col.querySelector('h3');
-    if (h3 && h3.nextSibling) col.insertBefore(hint, h3.nextSibling);
+    // Below the whole header (title + column total), not between them.
+    const head = col.querySelector('.kanban-col-total') || col.querySelector('h3');
+    if (head && head.nextSibling) col.insertBefore(hint, head.nextSibling);
     else col.appendChild(hint);
   }
 };
