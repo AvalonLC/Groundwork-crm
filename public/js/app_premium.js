@@ -25078,13 +25078,19 @@ function systemTemplates() {
 
 // ── Mobile bottom nav ─────────────────────────────────────────────────────────
 (function _gwMobileNav() {
-  // Only inject on narrow screens
-  if (window.innerWidth > 768) return;
+  // Built unconditionally, shown by media query. It used to bail out here when
+  // innerWidth > 768, which read the width once at load — so rotating a phone to
+  // landscape (or resizing a window down) left the user with no bottom nav until
+  // a full reload. The `gw-mobile-mode` body class that drives content clearance
+  // is now kept in sync with the same breakpoint via matchMedia below.
+  const _mq = window.matchMedia('(max-width: 768px)');
 
   const nav = document.createElement('nav');
   nav.id = 'gw-mobile-nav';
   nav.innerHTML = `
 <style>
+#gw-mobile-nav { display:none; }
+@media (max-width: 768px) {
 #gw-mobile-nav {
   position:fixed;bottom:0;left:0;right:0;z-index:8000;
   background:#111827;border-top:1px solid rgba(255,255,255,.1);
@@ -25093,6 +25099,7 @@ function systemTemplates() {
   height:calc(68px + env(safe-area-inset-bottom));
   padding-bottom:env(safe-area-inset-bottom);
   box-shadow:0 -4px 20px rgba(0,0,0,.3);
+}
 }
 .gw-mnav-btn {
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -25152,7 +25159,16 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
 </button>`;
 
   document.body.appendChild(nav);
-  document.body.classList.add('gw-mobile-mode');
+
+  // Keep the body class in sync with the same breakpoint the CSS uses. The class
+  // drives bottom-bar content clearance and the drawer's dvh sizing, so it has to
+  // follow rotation/resize rather than being set once at load.
+  const _syncMobileMode = () => {
+    document.body.classList.toggle('gw-mobile-mode', _mq.matches);
+  };
+  _syncMobileMode();
+  if (_mq.addEventListener) _mq.addEventListener('change', _syncMobileMode);
+  else _mq.addListener(_syncMobileMode); // Safari < 14
 
   // ── Deferred nav: if bootstrap hasn't completed when a nav button is tapped,
   // queue the destination and flush it once _initialRoute() finishes.
@@ -25163,8 +25179,11 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
   // Highlight active tab whenever show() fires, and guard against pre-bootstrap taps
   const _origShow = window.show;
   window.show = function(viewName, param) {
-    // If bootstrap not yet done and this is a protected workspace view, queue it
-    if (!window._d1Ready && !window._d1SessionRep &&
+    // If bootstrap not yet done and this is a protected workspace view, queue it.
+    // Kept gated on the mobile breakpoint: this wrapper is now installed at every
+    // width (it used to only exist when the page loaded narrow), and the queueing
+    // behaviour is specific to taps on the bottom nav.
+    if (_mq.matches && !window._d1Ready && !window._d1SessionRep &&
         ['gwAdmin','gwSales','gwFinancial','gwOperations','gwLearning'].includes(viewName)) {
       window._gwPendingMobileNav = { viewName, param };
       return; // will be flushed by _initialRoute() after bootstrap
