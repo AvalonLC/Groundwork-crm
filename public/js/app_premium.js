@@ -17754,6 +17754,25 @@ window._sbState = window._sbState || {
   undoStack: [],
 };
 
+// Saved service packages for the visit modal's "Add Package" picker — a
+// simple module-level cache refetched on first open, not part of _sbState
+// (mirrors _pbItems in pricing.js / _prCustomTpls in proposals.js, the two
+// closest "load once, fetch() directly, no DB.js client" precedents in this
+// codebase — see /api/service-packages).
+let _sbPackages = null;
+async function _sbLoadPackages() {
+  try {
+    const r = await fetch('/api/service-packages', { credentials: 'include' });
+    const j = await r.json();
+    _sbPackages = Array.isArray(j.packages) ? j.packages : [];
+  } catch (e) { _sbPackages = []; }
+  return _sbPackages;
+}
+function _sbParseJsonField(v) {
+  if (Array.isArray(v)) return v;
+  try { return JSON.parse(v || '[]'); } catch (e) { return []; }
+}
+
 function _sbCurrentDateRange() {
   const sb = window._sbState || {};
   if (sb.viewMode === 'timeline') {
@@ -19129,6 +19148,18 @@ window._sbSaveVisit = async function(woId, andComplete) {
   const equipItems = [...document.querySelectorAll('#sbm-equip-list .sb-equip-row')].map(row => {
     return row.querySelector('span')?.textContent?.trim() || '';
   }).filter(Boolean);
+  // Collect materials line items — the DOM is the source of truth (see
+  // _sbAddLine/_sbAddPackage, which don't keep wo.materials perfectly in
+  // sync after removals), same pattern as equipment above.
+  const materialItems = [...document.querySelectorAll('#sbm-line-items .sb-line-row')].map(row => {
+    const inputs = row.querySelectorAll('input');
+    return {
+      name: inputs[0]?.value.trim() || '',
+      qty:  parseFloat(inputs[1]?.value) || 0,
+      unit: inputs[2]?.value.trim() || '',
+      cost: parseFloat(inputs[3]?.value) || 0,
+    };
+  }).filter(m => m.name);
   const wo = window._sbCurrentWO || {};
   const body = {
     scheduled_date: document.getElementById('sbm-date')?.value || null,
@@ -19141,6 +19172,8 @@ window._sbSaveVisit = async function(woId, andComplete) {
     crew_id:        document.getElementById('sbm-crew')?.value   || null,
     duration_hours: parseFloat(document.getElementById('sbm-duration')?.value||'0') || null,
     equipment:      equipItems,
+    materials:      materialItems,
+    checklist:      wo.checklist || [],
     employee_ids:   [...document.querySelectorAll('#sbm-emp-chips .sb-emp-chip')].map(el=>el.dataset.repId).filter(Boolean),
     before_photos:  wo.before_photos || [],
     after_photos:   wo.after_photos  || [],
@@ -19356,7 +19389,157 @@ window._sbAddLine = function() {
     <button class="rp-btn-sm rp-btn-sm--danger" onclick="_sbRemoveLine(${idx})">×</button>`;
   container.appendChild(div);
 };
-window._sbAddPackage = function() { showToast('Package library coming soon','info'); };
+// Package picker: a small panel toggled open under the "+ Add Line / Add
+// Package" button row (not a second stacked modal — the visit modal is
+// already a fixed two-column overlay). Mirrors proposals.js's "My Templates"
+// dropdown-with-optgroups + save/apply/delete trio (_prSendTemplates /
+// _prSaveCurrentAsTpl / _prSendApplyTemplate), the closest existing
+// "saved bundle, applied with one click" pattern in this codebase.
+window._sbAddPackage = async function() {
+  const existing = document.getElementById('sbm-package-panel');
+  if (existing) { existing.remove(); return; }
+  if (_sbPackages === null) await _sbLoadPackages();
+  const btnRow = document.getElementById('sbm-line-items')?.nextElementSibling;
+  if (!btnRow) return;
+  const panel = document.createElement('div');
+  panel.id = 'sbm-package-panel';
+  panel.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--gw-border,#e2e8f0);border-radius:8px;background:var(--gw-surface-2,#f8fafc)';
+  panel.innerHTML = _sbPackagePanelHtml();
+  btnRow.after(panel);
+};
+
+function _sbPackagePanelHtml() {
+  const byCategory = {};
+  (_sbPackages || []).forEach(p => {
+    const cat = p.category || 'My Packages';
+    (byCategory[cat] = byCategory[cat] || []).push(p);
+  });
+  const options = Object.keys(byCategory).length
+    ? Object.entries(byCategory).map(([cat, pkgs]) => `<optgroup label="${escapeHtml(cat)}">${
+        pkgs.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
+      }</optgroup>`).join('')
+    : '<option value="">No saved packages yet</option>';
+  return `
+    <div style="display:flex;gap:8px;align-items:center">
+      <select class="rp-input" id="sbm-package-select" style="flex:1">${options}</select>
+      <button class="rp-btn-sm" onclick="_sbApplyPackage()">Apply</button>
+      <button class="rp-btn-sm rp-btn-sm--danger" onclick="_sbDeleteSelectedPackage()">Delete</button>
+    </div>
+    <div style="margin-top:8px">
+      <button class="rp-btn-sm" onclick="_sbSaveCurrentAsPackage()">Save current items as package…</button>
+    </div>`;
+}
+
+// Appends (never replaces) the chosen package's materials/equipment/checklist
+// onto the visit's existing ones, reusing each field's own established
+// insertion shape (_sbAddLine's row markup, _sbAddCrewItem's chip markup,
+// _sbAddCheck's live wo.checklist sync) so a package-inserted row behaves
+// identically to one added by hand.
+window._sbApplyPackage = function() {
+  const sel = document.getElementById('sbm-package-select');
+  const pkg = (_sbPackages || []).find(p => p.id === sel?.value);
+  if (!pkg) return;
+  const wo = window._sbCurrentWO || {};
+
+  const materials = _sbParseJsonField(pkg.materials);
+  const lineContainer = document.getElementById('sbm-line-items');
+  materials.forEach(m => {
+    if (!wo.materials) wo.materials = [];
+    const idx = wo.materials.length;
+    wo.materials.push({ name: m.name || '', qty: m.qty || 1, unit: m.unit || 'ea', cost: m.cost || 0 });
+    const div = document.createElement('div'); div.className = 'sb-line-row';
+    div.innerHTML = `<input class="rp-input" value="${escapeHtml(m.name || '')}" placeholder="Item / Service" style="flex:2">
+      <input class="rp-input" value="${m.qty || 1}" type="number" min="0" style="width:60px" placeholder="Qty">
+      <input class="rp-input" value="${escapeHtml(m.unit || '')}" placeholder="Unit" style="width:70px">
+      <input class="rp-input" value="${m.cost || 0}" type="number" min="0" placeholder="Rate" style="width:80px">
+      <button class="rp-btn-sm rp-btn-sm--danger" onclick="_sbRemoveLine(${idx})">×</button>`;
+    lineContainer?.appendChild(div);
+  });
+
+  const equipment = _sbParseJsonField(pkg.equipment);
+  const equipList = document.getElementById('sbm-equip-list');
+  equipList?.querySelector('.sb-empty-note')?.remove();
+  equipment.forEach(val => {
+    if (!val) return;
+    const idx = equipList?.querySelectorAll('.sb-equip-row').length || 0;
+    const row = document.createElement('div');
+    row.className = 'sb-equip-row'; row.dataset.idx = idx;
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--gw-surface-3);border-radius:6px';
+    row.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+      <span style="flex:1;font-size:13px">${escapeHtml(val)}</span>
+      <button class="sb-check-del" onclick="this.closest('.sb-equip-row').remove()">×</button>`;
+    equipList?.appendChild(row);
+  });
+
+  const checklist = _sbParseJsonField(pkg.checklist);
+  const checklistContainer = document.getElementById('sbm-checklist');
+  checklistContainer?.querySelector('.sb-empty-note')?.remove();
+  checklist.forEach(item => {
+    if (!wo.checklist) wo.checklist = [];
+    wo.checklist.push({ text: item.text || '', done: false });
+    const idx = wo.checklist.length - 1;
+    const div = document.createElement('div'); div.className = 'sb-check-item';
+    div.innerHTML = `<button class="sb-check-box" onclick="_sbToggleCheck(${idx})"></button>
+      <span class="sb-check-label">${escapeHtml(item.text || '')}</span>
+      <button class="sb-check-del" onclick="_sbRemoveCheck(${idx})">×</button>`;
+    checklistContainer?.appendChild(div);
+  });
+
+  showToast(`Applied "${pkg.name}"`, 'success');
+  document.getElementById('sbm-package-panel')?.remove();
+};
+
+// Collects the visit's *current* materials/equipment/checklist the same way
+// _sbSaveVisit does (DOM is the source of truth for materials/equipment;
+// wo.checklist is already kept live-synced) and saves them as a new package.
+window._sbSaveCurrentAsPackage = async function() {
+  const name = prompt('Package name:');
+  if (!name || !name.trim()) return;
+  const materials = [...document.querySelectorAll('#sbm-line-items .sb-line-row')].map(row => {
+    const inputs = row.querySelectorAll('input');
+    return {
+      name: inputs[0]?.value.trim() || '',
+      qty:  parseFloat(inputs[1]?.value) || 0,
+      unit: inputs[2]?.value.trim() || '',
+      cost: parseFloat(inputs[3]?.value) || 0,
+    };
+  }).filter(m => m.name);
+  const equipment = [...document.querySelectorAll('#sbm-equip-list .sb-equip-row')]
+    .map(row => row.querySelector('span')?.textContent?.trim() || '').filter(Boolean);
+  const checklist = (window._sbCurrentWO?.checklist || []).map(item => ({ text: item.text || '', done: false }));
+  if (!materials.length && !equipment.length && !checklist.length) {
+    showToast('Nothing to save — add some lines, equipment, or checklist items first', 'info');
+    return;
+  }
+  try {
+    const r = await fetch('/api/service-packages', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), materials, equipment, checklist }),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'save failed');
+    showToast(`Saved package "${name.trim()}"`, 'success');
+    await _sbLoadPackages();
+    const panel = document.getElementById('sbm-package-panel');
+    if (panel) panel.innerHTML = _sbPackagePanelHtml();
+  } catch (e) {
+    showToast('Could not save package: ' + e.message, 'error');
+  }
+};
+
+window._sbDeleteSelectedPackage = async function() {
+  const sel = document.getElementById('sbm-package-select');
+  const pkg = (_sbPackages || []).find(p => p.id === sel?.value);
+  if (!pkg) return;
+  if (!confirm(`Delete package "${pkg.name}"?`)) return;
+  try {
+    await fetch(`/api/service-packages/${pkg.id}`, { method: 'DELETE', credentials: 'include' });
+    showToast('Package deleted', 'success');
+    await _sbLoadPackages();
+    const panel = document.getElementById('sbm-package-panel');
+    if (panel) panel.innerHTML = _sbPackagePanelHtml();
+  } catch (e) { showToast('Delete failed', 'error'); }
+};
 window._sbRemoveLine = function(idx) {
   const rows=document.querySelectorAll('#sbm-line-items .sb-line-row');
   if (rows[idx]) rows[idx].remove();

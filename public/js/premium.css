@@ -15999,8 +15999,11 @@ h1.pl-title,
   border-color: rgba(26, 71, 64, .10);
   box-shadow: 0 10px 24px rgba(17, 57, 49, .05);
 }
+/* No background here: this class is only ever paired with .gwp-header on the
+   Schedule board (.sched-shell), whose header should carry the shared
+   dark-hero .gwp-header gradient like the rest of the app, not a plain
+   white card. */
 .gw-workflow-cleanup .gwp-header {
-  background: #fff;
   border: 1px solid rgba(26, 71, 64, .10);
   border-radius: 18px;
   box-shadow: 0 14px 34px rgba(17, 57, 49, .07);
@@ -16114,7 +16117,12 @@ h1.pl-title,
 /* Schedule board density and time-based dispatch timeline */
 .sched-shell { min-height:calc(100vh - 72px); }
 .sched-shell .gwp-shell { max-width:none; padding:14px 16px 0; }
-.sched-shell .gwp-header { position:sticky; top:0; z-index:20; background:var(--gw-bg,#f7f8f6); padding:6px 0; }
+/* Its own sticky positioning is superseded by the later "Schedule board layout
+   system" block below (position:relative;top:auto) — the background here was
+   only ever needed to keep a *sticky* header opaque over scrolling content,
+   so it's dropped rather than carried forward as a stale white/light card
+   fighting the shared dark-hero .gwp-header rule. */
+.sched-shell .gwp-header { position:sticky; top:0; z-index:20; padding:6px 0; }
 .sched-shell .sb-grid-wrap { max-width:none; margin:0; padding:8px 12px 24px; overflow:auto; }
 .sb-density-select { height:34px; border:1px solid var(--gw-border); border-radius:8px; background:var(--gw-bg-surface); color:var(--gw-text); padding:0 9px; font:600 11px inherit; }
 .sb-density-compact .sb-job-card { padding:5px 7px; border-radius:6px; min-height:34px; }
@@ -16330,19 +16338,21 @@ h1.pl-title,
 .gw-myday-widget--expanded .gw-myday-widget-body > .card,
 .gw-myday-widget--expanded .gw-myday-widget-body > section.card { padding:22px; }
 
-/* Schedule board layout system: consistent sizing and restrained status color. */
+/* Schedule board layout system: consistent sizing and restrained status color.
+   No outer width/max-width cap here (unlike an earlier version of this block) —
+   .view (the CRM SPA's own content container) is itself fluid with no cap, and
+   these three sections should fill it the same way every other in-SPA page's
+   content does, rather than sticking to a fixed frame with dead space around
+   it on wide monitors. The grid columns underneath (.sb-week-grid etc.) carry
+   their own upper bound instead, so cells don't stretch unboundedly. */
 .sched-shell {
-  --sb-frame-width: 1440px;
   --sb-card-bg: #fff;
   padding: 18px 0 40px;
 }
 .sched-shell .gwp-shell,
 .sched-shell > .sb-crew-bar,
 .sched-shell > .sb-grid-wrap {
-  width: min(calc(100% - 32px), var(--sb-frame-width));
   box-sizing: border-box;
-  margin-left: auto;
-  margin-right: auto;
 }
 .sched-shell .gwp-shell { padding: 0 !important; }
 .sched-shell .gwp-header {
@@ -16406,21 +16416,29 @@ h1.pl-title,
   box-shadow: 0 12px 28px rgba(17,57,49,.06);
 }
 
-/* Equal calendar columns. Horizontal scrolling is preferable to squeezed days. */
+/* Equal calendar columns. Horizontal scrolling is preferable to squeezed days.
+   Columns cap their upper width instead of stretching to 1fr now that the
+   outer shell has no max-width of its own — otherwise a day column could
+   grow past 300px+ on an ultra-wide monitor with mostly empty padding around
+   a card sized for ~160-170px. justify-content:center (not margin:auto — a
+   grid container doesn't shrink to its tracks' total size on its own) centers
+   the columns within any leftover width once they've hit their cap. */
 .sched-shell .sb-week-grid {
-  grid-template-columns: repeat(7, minmax(160px, 1fr));
+  grid-template-columns: repeat(7, minmax(160px, 240px));
   min-width: 1120px;
   gap: 6px;
+  justify-content: center;
 }
 .sched-shell .sb-lane-wrap { min-width: 1280px; border-radius: 8px; }
-.sched-shell .sb-lane-grid { grid-template-columns: 126px repeat(7, minmax(164px, 1fr)); }
+.sched-shell .sb-lane-grid { grid-template-columns: 126px repeat(7, minmax(164px, 240px)); justify-content: center; }
 .sched-shell .sb-lane-day-head { min-height: 58px; box-sizing: border-box; }
 .sched-shell .sb-lane-label { padding: 10px 9px; align-items: flex-start; }
 .sched-shell .sb-lane-cell { min-height: 112px; padding: 7px; gap: 6px; background: #fff; }
 .sched-shell .sb-month-grid {
-  grid-template-columns: repeat(7, minmax(132px, 1fr));
+  grid-template-columns: repeat(7, minmax(132px, 200px));
   min-width: 924px;
   gap: 4px;
+  justify-content: center;
 }
 .sched-shell .sb-month-cell { min-height: 112px; padding: 7px; box-sizing: border-box; }
 .sched-shell .sb-month-chip {
