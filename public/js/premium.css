@@ -16124,6 +16124,11 @@ h1.pl-title,
    fighting the shared dark-hero .gwp-header rule. */
 .sched-shell .gwp-header { position:sticky; top:0; z-index:20; padding:6px 0; }
 .sched-shell .sb-grid-wrap { max-width:none; margin:0; padding:8px 12px 24px; overflow:auto; }
+/* .sb-crew-bar has its own long-standing max-width:1400px;margin:0 auto base
+   rule (line ~9494), separate from anything above — missed the first time
+   around since .gwp-shell/.sb-grid-wrap happened to already be covered here
+   and this block never included the crew bar too. */
+.sched-shell .sb-crew-bar { max-width:none; margin:0; }
 .sb-density-select { height:34px; border:1px solid var(--gw-border); border-radius:8px; background:var(--gw-bg-surface); color:var(--gw-text); padding:0 9px; font:600 11px inherit; }
 .sb-density-compact .sb-job-card { padding:5px 7px; border-radius:6px; min-height:34px; }
 .sb-density-compact .sb-card-top { margin:0; }
