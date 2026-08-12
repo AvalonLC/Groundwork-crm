@@ -43,15 +43,37 @@ a{color:inherit;text-decoration:none}
    headers needs a manual top offset matched to the first one's height,
    which is more fragile than it's worth here — only the tab-strip stays
    pinned, this scrolls with the page. */
-.fin-top{background:var(--gw-surface);border-bottom:1px solid var(--gw-line);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+/* Dark hero card, matching .pl-page-header in premium.css (same gradient
+   stops used across Pipeline/My Day/Clients/Sales Process) so this reads as
+   the same header treatment as the rest of the CRM rather than a plain bar.
+   Uses this file's own token scale (--gw-r-lg/--gw-shadow-md) rather than
+   premium.css's exact radius/shadow values, consistent with this file's
+   token-mirroring (not byte-for-byte copying) approach. */
+.fin-top{
+  background: linear-gradient(135deg, #103c34 0%, #1a5a4f 54%, #2b7568 100%);
+  color:#fff;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--gw-r-lg);
+  box-shadow: var(--gw-shadow-md);
+  padding: 22px 26px;
+  margin: 22px 28px 0;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  position:relative;overflow:hidden;
+}
+.fin-top::after{
+  content:'';position:absolute;right:-60px;top:-90px;width:220px;height:220px;
+  border-radius:999px;background:radial-gradient(circle, rgba(255,255,255,.16), transparent 68%);
+  pointer-events:none;
+}
+.fin-top>*{position:relative;z-index:1}
 .fin-top-l{min-width:0}
-.fin-eyebrow{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--gw-pine-muted)}
-.fin-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:1px}
+.fin-eyebrow{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.7)}
+.fin-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:1px;color:#fff}
 .fin-top-r{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.fin-chip{font-size:11.5px;padding:5px 10px;border-radius:999px;background:var(--gw-surface-3);color:var(--gw-ink-2);font-weight:600;white-space:nowrap}
-.fin-toggle{display:inline-flex;background:var(--gw-surface-3);border-radius:999px;padding:2px}
-.fin-toggle a{font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;color:var(--gw-muted)}
-.fin-toggle a.on{background:var(--gw-surface);color:var(--gw-ink);box-shadow:var(--gw-shadow-xs)}
+.fin-chip{font-size:11.5px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;font-weight:600;white-space:nowrap}
+.fin-toggle{display:inline-flex;background:rgba(255,255,255,.14);border-radius:999px;padding:2px}
+.fin-toggle a{font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;color:rgba(255,255,255,.75)}
+.fin-toggle a.on{background:#fff;color:var(--gw-pine);box-shadow:none}
 .fin-body{padding:24px 28px 56px;max-width:1280px;width:100%}
 .fin-card{background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:var(--gw-r-md);box-shadow:var(--gw-shadow-xs);padding:18px 20px;margin-bottom:18px}
 .fin-card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
@@ -65,12 +87,16 @@ a.fin-tile:hover{border-color:var(--gw-sky);box-shadow:var(--gw-shadow-sm)}
 .fin-tile-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-muted)}
 .fin-tile-v{font-size:28px;font-weight:800;letter-spacing:-.03em;margin-top:7px;line-height:1.1}
 .fin-tile-m{font-size:11.5px;color:var(--gw-subtle);margin-top:5px}
-.fin-hero{background:linear-gradient(135deg,var(--gw-pine) 0%,#17493F 100%);color:#fff;border-radius:var(--gw-r-lg);padding:26px 28px;margin-bottom:20px;box-shadow:var(--gw-shadow-md)}
-.fin-hero-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.62)}
-.fin-hero-v{font-size:42px;font-weight:800;letter-spacing:-.035em;margin-top:6px;line-height:1.05}
-.fin-hero-s{font-size:13.5px;color:rgba(255,255,255,.8);margin-top:9px;max-width:62ch}
-.fin-meter{height:9px;background:rgba(255,255,255,.16);border-radius:999px;margin-top:18px;overflow:hidden}
-.fin-meter-f{height:100%;background:linear-gradient(90deg,#5FBF8F,#8FD9AE);border-radius:999px}
+/* Light card, not dark: .fin-top (above) is now the page's one dark hero, so
+   this content card (Money Loop's "How we're tracking", Overhead Recovery's
+   thermometer) no longer doubles it up. Class names kept as .fin-hero* to
+   avoid touching money-loop.tsx/recovery.tsx for a pure restyle. */
+.fin-hero{background:var(--gw-surface);color:var(--gw-ink);border:1px solid var(--gw-line);border-radius:var(--gw-r-lg);padding:26px 28px;margin-bottom:20px;box-shadow:var(--gw-shadow-sm)}
+.fin-hero-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--gw-muted)}
+.fin-hero-v{font-size:42px;font-weight:800;letter-spacing:-.035em;margin-top:6px;line-height:1.05;color:var(--gw-pine)}
+.fin-hero-s{font-size:13.5px;color:var(--gw-subtle);margin-top:9px;max-width:62ch}
+.fin-meter{height:9px;background:var(--gw-surface-3);border-radius:999px;margin-top:18px;overflow:hidden}
+.fin-meter-f{height:100%;background:linear-gradient(90deg,var(--gw-emerald),#5FBF8F);border-radius:999px}
 .fin-table{width:100%;border-collapse:collapse;font-size:13px}
 .fin-table th{text-align:left;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-muted);padding:0 12px 9px;border-bottom:1px solid var(--gw-line)}
 .fin-table td{padding:11px 12px;border-bottom:1px solid var(--gw-line)}
@@ -100,6 +126,6 @@ a.fin-tile:hover{border-color:var(--gw-sky);box-shadow:var(--gw-shadow-sm)}
 .fin-why-b dt{font-weight:800;color:var(--gw-ink);margin-top:8px;font-size:11.5px}
 @media(max-width:860px){
 .fin-body{padding:16px 14px 40px}
-.fin-top{padding:12px 16px}
+.fin-top{margin:16px 16px 0;padding:16px 18px}
 .fin-hero-v{font-size:33px}
 }
