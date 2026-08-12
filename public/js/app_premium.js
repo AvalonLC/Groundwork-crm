@@ -1024,7 +1024,6 @@ const _GW_FIN_NAV_TABS = [
   {id:'finInvPay',     label:'Invoices & Payments'},
   {id:'finLedger',     label:'Ledger'},
   {id:'finDocuments',  label:'Documents'},
-  {divider:true},
   {id:'finConfig',     label:'Setup & Config'},
 ];
 const _GW_FIN_OS_IDS = ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig'];
@@ -1073,6 +1072,23 @@ function _gwFinanceBindForms(container, viewId) {
   });
 }
 
+// Same problem as _gwFinanceBindForms above, but for <a href="/finance/..."> links —
+// every drill-through (Money Loop's Reconciliation/Forecast, Work Queue's
+// Collections/Obligations, Setup & Config's Company Policy/Upload Documents/
+// Financial Setup, Documents' "Upload another document") is a plain link in the
+// underlying .tsx, which without this would do a real navigation and drop the SPA
+// shell/sidebar entirely instead of staying in-app like the 9 top-level nav clicks do.
+function _gwFinanceBindLinks(container, viewId) {
+  if (!container) return;
+  container.querySelectorAll('a[href^="/finance/"]').forEach((a) => {
+    a.addEventListener('click', (ev) => {
+      if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
+      ev.preventDefault();
+      financeFetch(a.getAttribute('href'), viewId);
+    });
+  });
+}
+
 // The in-SPA replacement for a real navigation to a /finance/* page. Mirrors
 // this file's existing session-expired handling (logoutRep();
 // renderLoginScreen() — see e.g. the sidebar-footer sign-out action) rather
@@ -1094,6 +1110,7 @@ async function financeFetch(path, viewId) {
     }
     view.innerHTML = await res.text();
     _gwFinanceBindForms(view, viewId);
+    _gwFinanceBindLinks(view, viewId);
     try { history.replaceState(null, '', '#' + viewId); } catch (e) {}
   } catch (e) {
     view.innerHTML = `<div style="padding:48px 24px;text-align:center;color:var(--gw-text-muted)">Couldn't load this page.<br><button class="secondary-btn" style="margin-top:12px" onclick="financeFetch('${path}','${viewId}')">Retry</button></div>`;
