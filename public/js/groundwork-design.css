@@ -1915,6 +1915,24 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
 }
 
 @media (max-width: 920px) {
+  .view { padding: 16px !important; }
+  .grid-2, .grid-3, .grid-4, .form-grid { grid-template-columns: 1fr !important; }
+  .primary-btn, .secondary-btn, .danger-btn { min-height: 44px !important; }
+  select, input[type=text], input[type=number], input[type=date], input[type=email], textarea {
+    font-size: 16px !important; /* prevent iOS zoom */
+  }
+  .search-wrap { flex: 1 !important; max-width: none !important; }
+}
+
+/* Off-canvas drawer — phone only (<=768px).
+   This MUST stay at 768px to match the JS in app_premium.js (_gwMobileNav and the
+   #menuBtn handler both branch on innerWidth <= 768). When this lived at 920px the
+   sidebar was translated off-canvas and the hamburger was shown between 769-920px,
+   but the click handler took the desktop branch (_toggleSidebarCollapse) — so the
+   drawer could not be opened at all in that range. Above 768px the sidebar is docked
+   and the brand-row chevron (#sidebarCloseBtn, shown at min-width:769px) toggles the
+   collapsed icon rail instead. */
+@media (max-width: 768px) {
   :root { --gw-sidebar-w: 264px; }
   .app-shell { grid-template-columns: 1fr !important; }
   .sidebar {
@@ -1926,13 +1944,6 @@ a:hover { color: var(--gw-pine-800); text-decoration: underline; }
   }
   .sidebar.open { transform: translateX(0) !important; }
   .menu-btn { display: inline-flex !important; align-items: center !important; justify-content: center !important; }
-  .view { padding: 16px !important; }
-  .grid-2, .grid-3, .grid-4, .form-grid { grid-template-columns: 1fr !important; }
-  .primary-btn, .secondary-btn, .danger-btn { min-height: 44px !important; }
-  select, input[type=text], input[type=number], input[type=date], input[type=email], textarea {
-    font-size: 16px !important; /* prevent iOS zoom */
-  }
-  .search-wrap { flex: 1 !important; max-width: none !important; }
 }
 
 @media print {

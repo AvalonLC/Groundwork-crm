@@ -12539,7 +12539,6 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
   <link rel="stylesheet" href="/js/premium.css?v=20260810b002">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
@@ -12563,8 +12562,6 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260810b002"></script>
-  <script src="/js/client_portal.js?v=20260810b002"></script>
   <script src="/js/platform_core.js?v=20260810b002"></script>
   <script src="/js/client_portal.js?v=20260810b002"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
@@ -13200,9 +13197,6 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260810b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">
   <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
   <link rel="stylesheet" href="/js/styles.css?v=20260810b002">
   <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">
