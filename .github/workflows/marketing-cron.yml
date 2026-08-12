@@ -1,0 +1,78 @@
+name: Marketing OS Drain and Attribution
+
+# Cloudflare Pages has no native cron triggers and this project has no Queues
+# binding, so campaign sends are drained by an external scheduler — the same
+# Option B decision, and the same CRON_SECRET, as finance-cron.yml.
+#
+# The drain is a SAFETY NET, not the primary path. Approving a campaign kicks
+# off the first batches immediately via waitUntil (see the approve handler in
+# src/marketing/api.ts); this workflow finishes long sends and picks up
+# anything a worker that died mid-batch left behind.
+#
+# GitHub's schedule trigger is best-effort and frequently runs several minutes
+# late under load. That is tolerable here precisely because it is the safety
+# net: a large send drains progressively rather than waiting on any one tick.
+# It does mean a send can take longer than the wall-clock arithmetic suggests,
+# which the campaign list surfaces as pending recipients.
+#
+# Setup required before this can succeed (shared with finance-cron.yml — if
+# that workflow already runs, CRON_SECRET is set and nothing more is needed):
+#   1. Generate a secret:  openssl rand -hex 32
+#   2. GitHub:     Settings -> Secrets and variables -> Actions -> CRON_SECRET
+#   3. Cloudflare: wrangler pages secret put CRON_SECRET --project-name groundwork-crm
+#   Until both hold the same value every run fails — 401 on a mismatch, 503 if
+#   Cloudflare's side was never set (see src/marketing/cron.ts).
+#
+# Verify the Cloudflare side without the secret:
+#   curl https://groundwork-crm.com/internal/cron/marketing-drain/status
+
+on:
+  schedule:
+    # Every 5 minutes. The endpoint is bounded work — a few campaigns, a few
+    # batches each — and returns immediately when there is nothing queued, so
+    # an idle tick costs one cheap request.
+    - cron: '*/5 * * * *'
+    # Attribution walks the inquiry-to-sold-job chain once a night. Kept apart
+    # from the drain so it never competes with a live send for CPU.
+    - cron: '20 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  drain:
+    # Skip the drain on the nightly attribution tick.
+    if: github.event.schedule != '20 7 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Drain queued campaign batches
+        run: |
+          http_status=$(curl -s -o /tmp/drain.json -w "%{http_code}" -X POST \
+            --retry 2 --retry-delay 5 --max-time 120 \
+            "https://groundwork-crm.com/internal/cron/marketing-drain" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $http_status"
+          cat /tmp/drain.json
+          echo
+          if [ "$http_status" -ne 200 ]; then
+            echo "::error::Drain endpoint returned $http_status (expected 200). 401 means the GitHub and Cloudflare CRON_SECRET values differ; 503 means Cloudflare's secret or SENDGRID_API_KEY is unset."
+            exit 1
+          fi
+
+  attribution:
+    if: github.event.schedule == '20 7 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Roll up campaign attribution
+        run: |
+          http_status=$(curl -s -o /tmp/attr.json -w "%{http_code}" -X POST \
+            --retry 2 --retry-delay 5 --max-time 120 \
+            "https://groundwork-crm.com/internal/cron/marketing-attribution" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $http_status"
+          cat /tmp/attr.json
+          echo
+          if [ "$http_status" -ne 200 ]; then
+            echo "::error::Attribution endpoint returned $http_status (expected 200)."
+            exit 1
+          fi
