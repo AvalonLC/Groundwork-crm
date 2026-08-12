@@ -184,17 +184,23 @@
          <div class="gwcp-pulse" style="position:fixed;left:${rect.left - pad}px;top:${rect.top - pad}px;width:${rect.width + pad * 2}px;height:${rect.height + pad * 2}px;border-radius:12px;border:3px solid #4ADE80;z-index:${Z_TOUR + 1};pointer-events:none"></div>`
       : `<div style="position:fixed;inset:0;background:rgba(13,35,24,.62);z-index:${Z_TOUR};pointer-events:none"></div>`;
 
-    // Card position: below target if room, else above, else centered
+    // Card position: below target if room, else above, else centered.
+    // cardW must match what the card actually renders at (width:360px capped by
+    // max-width:calc(100vw - 24px)). Using a flat 360 here made the upper clamp
+    // bound negative on any viewport under 384px, so the card was positioned off
+    // the left edge on small phones. The extra Math.max keeps the bound sane even
+    // if the viewport is narrower than the card's own minimum.
     let cardPos = `left:50%;top:50%;transform:translate(-50%,-50%)`;
     if (rect) {
-      const below = rect.bottom + 14, cardH = 240, cardW = 360;
-      let left = Math.min(Math.max(rect.left, 12), innerWidth - cardW - 12);
+      const below = rect.bottom + 14, cardH = 240;
+      const cardW = Math.min(360, innerWidth - 24);
+      const left = Math.min(Math.max(rect.left, 12), Math.max(12, innerWidth - cardW - 12));
       if (below + cardH < innerHeight) cardPos = `left:${left}px;top:${below}px`;
       else if (rect.top - cardH - 14 > 0) cardPos = `left:${left}px;top:${rect.top - cardH - 14}px`;
     }
 
     root.innerHTML = hole + `
-    <div id="gwCpCard" style="position:fixed;${cardPos};z-index:${Z_TOUR + 2};width:360px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;font-family:inherit;animation:gwcpIn .25s ease">
+    <div id="gwCpCard" style="position:fixed;${cardPos};z-index:${Z_TOUR + 2};width:360px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:auto;font-family:inherit;animation:gwcpIn .25s ease">
       <div style="background:linear-gradient(135deg,#1C3A2B,#2D7A55);padding:13px 18px;display:flex;align-items:center;gap:10px">
         <span style="display:inline-flex">${ic('sparkle',17,'#fff')}</span>
         <span style="flex:1;color:#fff;font-size:12px;font-weight:800;letter-spacing:.04em">GROUNDWORK GUIDE · ${T.idx + 1} OF ${steps.length}</span>

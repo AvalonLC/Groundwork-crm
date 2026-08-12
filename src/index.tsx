@@ -13556,7 +13556,91 @@ function getHtml(): string {
       .disp-shell,
       .rp-shell,
       .ops-hub-wrap {
-        padding-bottom: 80px !important;
+        padding-bottom: calc(80px + var(--gw-safe-b, 0px)) !important;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         TOUCH SIZING — authoritative, keep last
+         This is the final mobile rule in the last-loaded stylesheet, so it is
+         the one place that reliably wins. Previously only .primary-btn,
+         .secondary-btn and .danger-btn ever reached 44px; .rp-btn, .tab,
+         .est-btn-*, .gw-btn-ghost and .topbar-icon-btn sat between 23px and
+         34px, and several blocks above actively shrank buttons further on
+         mobile. Anything a finger has to hit now clears --gw-tap (44px).
+         ══════════════════════════════════════════════════════════════════════ */
+      /* Broad by design. Enumerating class names was losing a whack-a-mole game
+         (an audit found 66 of 85 on-screen controls still under 44px, including
+         all 35 sidebar sub-nav rows). A button element defaults to inline-block
+         and vertically centres its own label, so min-height alone is enough and
+         we avoid forcing the display property, which would break buttons that
+         legitimately lay their contents out as block or grid. */
+      button, [role="button"], a.btn, .nav-subtab, select,
+      /* The class selectors are repeated here on purpose: a bare element
+         selector is specificity (0,0,1) and loses to any existing class-based
+         !important rule such as .secondary-btn{min-height:34px!important}. */
+      .primary-btn, .secondary-btn, .danger-btn, .install-btn,
+      .rp-btn, .rp-btn--primary, .rp-btn--ghost,
+      .est-btn-primary, .est-btn-secondary, .est-btn-ghost,
+      .gw-btn-ghost, .tab, .int-action-btn, .topbar-new-btn, .topbar-settings,
+      .gw-notif-bell, .gw-task-action-btn, .gw-trail-pill, .gw-trail-back {
+        min-height: var(--gw-tap, 44px) !important;
+      }
+
+      .primary-btn, .secondary-btn, .danger-btn, .install-btn,
+      .rp-btn, .rp-btn--primary, .rp-btn--ghost,
+      .est-btn-primary, .est-btn-secondary, .est-btn-ghost,
+      .gw-btn-ghost, .tab, .int-action-btn,
+      .rp-header-actions button, .gw-toolbar button, .filter-row button {
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        font-size: 14px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+      }
+
+
+      /* The bottom nav sets its own height and must not be stretched by the
+         broad rule above. */
+      #gw-mobile-nav .gw-mnav-btn { min-height: 0 !important; }
+
+      /* Icon-only controls: square, not stretched */
+      .topbar-icon-btn, .menu-btn, .sidebar-close-btn, .rp-icon-btn {
+        min-width: var(--gw-tap, 44px) !important;
+        min-height: var(--gw-tap, 44px) !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+
+      /* Small/dense variants stay usable without dominating the row */
+      .rp-btn-sm, .est-btn-sm, .small.primary-btn, .small.secondary-btn {
+        min-height: var(--gw-tap-sm, 38px) !important;
+        font-size: 13px !important;
+      }
+
+      /* Sidebar nav rows — these are the primary navigation on a phone and were
+         landing near 30px. Overrides the .nav-item rule earlier in this block. */
+      .nav-item {
+        min-height: var(--gw-tap, 44px) !important;
+        padding-top: 11px !important;
+        padding-bottom: 11px !important;
+        font-size: 14px !important;
+        display: flex !important;
+        align-items: center !important;
+      }
+      .nav-item--sub { font-size: 13px !important; }
+
+      /* Native controls: 16px keeps iOS Safari from zooming the page on focus */
+      input, select, textarea,
+      .search-wrap input, #searchInput {
+        font-size: 16px !important;
+        min-height: var(--gw-tap, 44px) !important;
+      }
+      /* Checkboxes and radios must not be stretched by the rule above */
+      input[type=checkbox], input[type=radio] {
+        min-height: 0 !important;
+        width: 22px !important;
+        height: 22px !important;
       }
     }
   </style>

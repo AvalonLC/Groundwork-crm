@@ -46,6 +46,52 @@
   /* ── Typography ── */
   --gw-font: 'Inter', system-ui, -apple-system, sans-serif;
 
+  /* ── Spacing scale ──
+     Use these instead of ad-hoc pixel values in new/edited rules. */
+  --gw-space-1:  4px;
+  --gw-space-2:  8px;
+  --gw-space-3: 12px;
+  --gw-space-4: 16px;
+  --gw-space-5: 20px;
+  --gw-space-6: 24px;
+  --gw-space-7: 32px;
+  --gw-space-8: 40px;
+
+  /* ── Touch targets ──
+     44px is the Apple HIG minimum and the Material 48dp guidance rounds near it.
+     Anything a finger has to hit on a phone should reach --gw-tap. */
+  --gw-tap:     44px;
+  --gw-tap-sm:  38px;  /* dense secondary controls, still thumb-usable */
+
+  /* ── Safe-area insets (notch / home indicator) ──
+     env() resolves to 0px on non-notched devices, so these are always safe to add. */
+  --gw-safe-t: env(safe-area-inset-top,    0px);
+  --gw-safe-r: env(safe-area-inset-right,  0px);
+  --gw-safe-b: env(safe-area-inset-bottom, 0px);
+  --gw-safe-l: env(safe-area-inset-left,   0px);
+
+  /* ── Z-index scale ──
+     Layering was previously ad-hoc across 100/200/300/500/1200/9000/9999/10000.
+     New floating UI should use these so stacking stays predictable. */
+  --gw-z-sticky:  10;
+  --gw-z-scrim:   19;
+  --gw-z-drawer:  20;
+  --gw-z-dropdown: 300;
+  --gw-z-nav:    8000;   /* bottom mobile nav */
+  --gw-z-sheet:  8500;   /* drawer above the bottom nav */
+  --gw-z-modal:  9000;
+  --gw-z-toast:  9999;
+
+  /* ── Breakpoints (documentation anchors) ──
+     CSS cannot use custom properties inside a media query, so these are not
+     consumed directly — they record the canonical set so new rules stop
+     inventing values. The file historically carried 40 distinct breakpoints.
+       phone  : max-width 768px   (matches every JS branch in app_premium.js)
+       tablet : 769px - 1100px
+       desktop: 1101px and up                                                  */
+  --gw-bp-phone:  768px;
+  --gw-bp-tablet: 1100px;
+
   /* ── Legacy aliases (keep existing code working) ── */
   --blue:      var(--gw-sky);
   --blue-2:    var(--gw-sky-2);
@@ -263,7 +309,8 @@ button{cursor:pointer}
   display:flex;
   align-items:center;
   gap:10px;
-  padding:0 24px;
+  /* Respect the notch in landscape, where the inset lands on left/right. */
+  padding:0 calc(24px + var(--gw-safe-r,0px)) 0 calc(24px + var(--gw-safe-l,0px));
   height:58px;
   background:var(--gw-surface);
   border-bottom:1px solid var(--gw-line);
@@ -2433,9 +2480,19 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     transition:transform .22s ease;
     z-index:20; width:280px;
     box-shadow:var(--gw-shadow-lg);
+    /* Clear the notch at the top and the home indicator at the bottom so the
+       brand row and the user footer stay tappable. */
+    padding-top:var(--gw-safe-t,0px);
+    padding-bottom:var(--gw-safe-b,0px);
   }
   .sidebar.open { transform:translateX(0); }
   .topbar .menu-btn { display:flex; }
+
+  /* Modals become bottom-anchored and can never exceed the visible viewport. */
+  .cl-modal, .gw-modal, .gw-modal-card, .sold-modal, .ah-modal {
+    max-height:calc(100dvh - var(--gw-safe-t,0px) - var(--gw-safe-b,0px) - 24px);
+    overflow-y:auto;
+  }
 }
 @media print {
   .sidebar, .topbar, .toast { display:none; }
@@ -12049,15 +12106,17 @@ h1.pl-title,
     width: 100% !important;
   }
 
-  /* Individual action buttons: auto-size, don't overflow */
+  /* Individual action buttons: auto-size, don't overflow.
+     Sizing deliberately left to the global tap-target rule below — this block
+     used to force font-size:12px/padding:7px 10px here, which shrank header
+     buttons to roughly 31px tall on exactly the screens where they most need to
+     be thumb-sized. */
   .rp-header-actions .rp-btn,
   .rp-header-actions .rp-btn--primary,
   .rp-header-actions button {
     flex: 1 1 auto !important;
     min-width: 0 !important;
     white-space: nowrap !important;
-    font-size: 12px !important;
-    padding: 7px 10px !important;
     justify-content: center !important;
   }
 
@@ -16928,4 +16987,333 @@ h1.pl-title,
 /* Division tile count varies by tenant — auto-fit rather than a fixed split. */
 .gw-kpi-grid--divisions {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE COMPONENT PATTERNS  (phone, <=768px)
+   Two reusable patterns so individual screens don't each invent their own
+   mobile treatment. Kept at the end of the file deliberately: these are meant
+   to win over the per-feature rules defined above them.
+
+   1. Tables -> cards. The codebase has ~30 separate table implementations and
+      most had no scroll container, so a wide table simply pushed the page
+      sideways. Where a table was handled at all, the approach was to *hide*
+      columns (.cl-table hid columns 4-5, .wo-row hid 3 of 7) — the data was
+      thrown away rather than reflowed. A card per row shows everything.
+      data-label is stamped automatically from <thead> by _gwEnhanceTables()
+      in app_premium.js, so render functions don't need to change.
+      Opt out with data-no-mcards on the table.
+
+   2. Modals -> bottom sheets. There were ~12 independent overlay/card class
+      pairs and exactly one (.gw-task-modal) became a sheet on mobile.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Safety net: applies at every width. A table may scroll inside its own
+   wrapper, but must never make the document scroll sideways. */
+.gw-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+
+  /* ── 1. Tables as cards ─────────────────────────────────────────────────── */
+  table.gw-mcards {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  /* Header is still read by assistive tech, just not painted. */
+  table.gw-mcards thead {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  table.gw-mcards,
+  table.gw-mcards tbody,
+  table.gw-mcards tr,
+  table.gw-mcards td {
+    display: block;
+    width: 100%;
+  }
+  table.gw-mcards tr {
+    background: var(--gw-surface);
+    border: 1px solid var(--gw-line);
+    border-radius: var(--gw-r-md, 14px);
+    box-shadow: var(--gw-shadow-xs);
+    margin-bottom: var(--gw-space-3, 12px);
+    padding: 4px 14px;
+  }
+  table.gw-mcards td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--gw-space-3, 12px);
+    padding: 9px 0;
+    border: 0;
+    border-bottom: 1px solid var(--gw-line);
+    text-align: right;
+    white-space: normal;
+  }
+  table.gw-mcards tr td:last-child { border-bottom: 0; }
+  table.gw-mcards td::before {
+    content: attr(data-label);
+    flex: 0 0 38%;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gw-muted);
+    letter-spacing: .01em;
+  }
+  /* A cell with no label and no content is just noise on a card. */
+  table.gw-mcards td:empty { display: none; }
+  /* Action cells read better as a full-width row of buttons. */
+  table.gw-mcards td.gw-mcards-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: var(--gw-space-2, 8px);
+  }
+  table.gw-mcards td.gw-mcards-actions::before { flex-basis: 100%; }
+
+  /* Stop hiding data now that rows reflow. These were the two lossy rules. */
+  .cl-cell-addr, .cl-cell-contact,
+  .cl-table th:nth-child(4), .cl-table th:nth-child(5) { display: revert; }
+
+  /* ── Grid-based pseudo-tables ───────────────────────────────────────────── */
+  /* .wo-row and friends are CSS grids pretending to be tables, so they become
+     cards by collapsing to a single column instead of dropping columns. */
+  .wo-row, .cd-wo-row {
+    grid-template-columns: 1fr !important;
+    gap: 4px !important;
+    background: var(--gw-surface);
+    border: 1px solid var(--gw-line);
+    border-radius: var(--gw-r-md, 14px);
+    margin-bottom: var(--gw-space-3, 12px);
+    padding: 12px 14px !important;
+  }
+  .wo-row > span:nth-child(3),
+  .wo-row > span:nth-child(4),
+  .wo-row > span:nth-child(5),
+  .wo-type, .wo-date { display: revert !important; }
+  .wo-actions { justify-content: flex-start; margin-top: 6px; }
+  /* The header row of a grid pseudo-table means nothing once rows are cards. */
+  .wo-row.wo-head, .wo-head.wo-row, .cd-wo-row.wo-head { display: none !important; }
+
+  /* ── 2. Modals as bottom sheets ─────────────────────────────────────────── */
+  .cl-modal-overlay, .gw-modal-overlay, .gw-task-modal-overlay,
+  .sold-modal-backdrop, .ah-modal-bg, .sb-modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    /* These overlays carry z-indexes as low as 100-300, which put them BELOW
+       the bottom nav (8000) and the verify banner — so an open sheet had the
+       nav and the banner painted across its content. Lift them onto the modal
+       layer of the z-index scale. */
+    z-index: var(--gw-z-modal, 9000) !important;
+  }
+  .cl-modal, .gw-modal, .gw-modal-card, .gw-task-modal,
+  .sold-modal, .ah-modal, .sb-modal-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: auto !important;
+    border-radius: var(--gw-r-xl, 24px) var(--gw-r-xl, 24px) 0 0 !important;
+    max-height: 90dvh !important;
+    overflow-y: auto !important;
+    padding-bottom: calc(var(--gw-space-5, 20px) + var(--gw-safe-b, 0px)) !important;
+    animation: gw-sheet-in .22s cubic-bezier(.22,.6,.36,1);
+  }
+  /* Grab affordance so a sheet reads as draggable-looking, like native. */
+  .cl-modal::before, .gw-modal::before, .gw-task-modal::before,
+  .sold-modal::before, .ah-modal::before, .sb-modal-panel::before {
+    content: '';
+    display: block;
+    width: 38px; height: 4px;
+    margin: 8px auto 4px;
+    border-radius: 999px;
+    background: var(--gw-line-strong);
+    flex: none;
+  }
+
+  /* ── 3. Fixed banners ───────────────────────────────────────────────────── */
+  /* #gw-verify-banner is built with inline styles (left:50% + translateX(-50%)
+     + shrink-to-fit), so on a phone it collapsed to a ~220px column of wrapped
+     text sitting underneath the bottom nav. !important is required to beat the
+     inline style attribute. */
+  #gw-verify-banner {
+    left: var(--gw-space-3, 12px) !important;
+    right: var(--gw-space-3, 12px) !important;
+    width: auto !important;
+    transform: none !important;
+    bottom: calc(80px + var(--gw-safe-b, 0px)) !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    /* Above the bottom nav, below an open sheet. */
+    z-index: calc(var(--gw-z-nav, 8000) + 100) !important;
+  }
+}
+
+@keyframes gw-sheet-in {
+  from { transform: translateY(14px); opacity: .6; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE SCREEN PASSES  (phone, <=768px)
+   Per-screen fixes on top of the shared patterns above. Everything here was
+   found by measuring scrollWidth vs clientWidth on a real 374px-wide render,
+   so each rule corresponds to content that was actually being clipped or
+   pushed out of its box rather than a guess about what might be tight.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Pipeline / My Day / Clients hero actions ───────────────────────────── */
+  /* Was `flex:1 1 0; min-width:0; white-space:nowrap` — equal-width buttons
+     crammed onto one row with text that could not wrap, so labels were clipped
+     (a 71px button holding 101px of text). Wrap two-up instead: at 374px that
+     is ~164px per button, comfortably wider than the longest label. */
+  .pl-page-actions {
+    flex-wrap: wrap !important;
+    align-items: stretch !important;
+  }
+  .pl-page-actions .primary-btn,
+  .pl-page-actions .secondary-btn,
+  .pl-page-actions .primary-btn.small,
+  .pl-page-actions .secondary-btn.small {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-width: 0 !important;
+    font-size: 13px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    justify-content: center !important;
+  }
+  /* Let the title and the action row sit on separate lines. Note: overflow
+     stays hidden here on purpose — the hero's decorative ::after glow is a
+     260px circle deliberately parked at right:-70px, so unclipping it makes
+     the element report a 404px scrollWidth against a 334px box and looks like
+     an overflow bug when nothing is actually being cut off. */
+  .pl-page-header {
+    flex-wrap: wrap !important;
+  }
+
+  /* ── Filter / toolbar chip rows ─────────────────────────────────────────── */
+  /* These are chip strips that exceed the viewport by design. Scrolling them
+     sideways is the right mobile pattern; leaving them `overflow:visible` was
+     silently cutting the last filters off. */
+  .pl-toolbar, .gw-toolbar, .filter-row, .cl-filter-row, .tabs {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .pl-toolbar::-webkit-scrollbar,
+  .gw-toolbar::-webkit-scrollbar,
+  .filter-row::-webkit-scrollbar,
+  .tabs::-webkit-scrollbar { display: none; }
+  .pl-toolbar > *, .gw-toolbar > *, .filter-row > *, .tabs > * { flex: 0 0 auto; }
+
+  /* ── KPI tiles ──────────────────────────────────────────────────────────── */
+  /* The band truncates labels with an ellipsis, which is fine in a wide tile
+     but loses the label entirely in a 117px one ("AVG CLOSE LIKELIHOOD" became
+     "AVG CLOSE…"). Let them wrap instead — the tile just gets taller. */
+  .gw-kpi-band .gw-kpi-label,
+  .gw-kpi-band .gw-kpi-sub,
+  .gw-kpi-label, .gw-kpi-sub,
+  .gwp-kpi-label, .gwp-kpi-sub, .gwp-kpi-body {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.3;
+  }
+  .gw-kpi-band .gw-kpi-value, .gw-kpi-value, .gwp-kpi-value {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  /* The card lays its icon and text out side by side, which leaves the label
+     roughly 66px inside a 146px tile — not enough for a single word like
+     "Outstanding" (90px), and a one-word label cannot wrap. Stacking the icon
+     above the text hands the label the full tile width. */
+  .gwp-kpi-card {
+    overflow: visible !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+  .gwp-kpi-body { width: 100% !important; }
+
+  /* Grid and flex children default to min-width:auto, which refuses to shrink
+     below their content and is the usual reason a KPI row is a few pixels wider
+     than its container on a narrow screen. minmax(0,1fr) + min-width:0 lets the
+     tracks actually shrink. */
+  .gwp-kpi-row, .gwp-kpi-row--3, .gwp-kpi-row--5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .gwp-kpi-row > *, .gw-kpi-grid > *, .gw-kpi-band > *,
+  .stat-grid > *, .dashboard-strip > *, .metric-strip > * {
+    min-width: 0 !important;
+  }
+  .gwp-shell { min-width: 0 !important; max-width: 100% !important; }
+
+  /* ── Kanban / board columns ─────────────────────────────────────────────── */
+  /* A 3-column board with minmax(280px,1fr) tracks needs 840px+. One column per
+     row is the only readable option on a phone. */
+  .kanban { grid-template-columns: 1fr !important; }
+  .kanban-col { min-width: 0 !important; }
+
+  /* ── Detail / split layouts ─────────────────────────────────────────────── */
+  .ld-body, .est-detail-shell, .est-builder-shell, .ah-detail-grid,
+  .rp-cols, .rp-columns {
+    grid-template-columns: 1fr !important;
+  }
+  .est-rail-card--sticky, .est-builder-rail, .ld-rail {
+    position: static !important;
+    max-height: none !important;
+  }
+
+  /* ── Filter bars built from <select> ────────────────────────────────────── */
+  /* .est-filter-bar gives each select `flex:1 1 0; min-width:0`, so four of
+     them splitting 310px collapsed to 43px each while needing 105px — the
+     dropdowns were unreadable and effectively unusable. Wrap two-up with a
+     real minimum instead. */
+  .est-filter-bar, .cl-filter-bar, .inv-filter-bar {
+    flex-wrap: wrap !important;
+    gap: var(--gw-space-2, 8px) !important;
+  }
+  .est-filter-select, .est-filter-bar select,
+  .cl-filter-bar select, .inv-filter-bar select {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: 140px !important;
+  }
+
+  /* ── Schedule board mobile header ───────────────────────────────────────── */
+  /* "Schedule" + ‹ + the date range + › were competing for 151px, and the date
+     range lost completely — it computed to 0px wide, so there was no way to
+     tell which week you were looking at. Give the title its own line and let
+     the range take the space between the arrows. */
+  .sbm-header-row1 { flex-wrap: wrap !important; }
+  .sbm-title-nav {
+    flex-wrap: wrap !important;
+    flex: 1 1 100% !important;
+    align-items: center !important;
+  }
+  .sbm-title { flex: 1 1 100% !important; }
+  .sbm-period {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+    text-align: center !important;
+  }
+  .sbm-nav-btn { flex: 0 0 auto !important; }
+
+  /* ── Truncated row titles ───────────────────────────────────────────────── */
+  /* Ellipsised list titles lose the end of the name on a narrow screen; a
+     second line costs nothing here. */
+  .gw-task-row-title, .gw-myday-row-title, .mini-row strong {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.35;
+  }
 }
