@@ -28,6 +28,7 @@ import mig0045 from '../migrations/0045_multiday_jobs.sql?raw'
 import mig0046 from '../migrations/0046_multiday_phase_metadata.sql?raw'
 import mig0047 from '../migrations/0047_schedule_timeline.sql?raw'
 import mig0055 from '../migrations/0055_client_portfolio.sql?raw'
+import mig0059 from '../migrations/0059_service_packages.sql?raw'
 import { registerPortal } from './portal'
 // ── Finance OS sub-routers (see CLAUDE.md, docs/spec/API.md, docs/spec/ACTIONS.md) ──
 import { ratesRouter } from './api/rates'
@@ -446,6 +447,24 @@ async function ensureEmailTplSchema(db: D1Database): Promise<void> {
     await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0033_email_templates.sql', '0033_email_templates.sql').run()
   } catch {}
   _emailTplSchemaOk = true
+}
+
+// ── Service packages schema (migration 0059) ──
+let _servicePackagesSchemaOk = false
+async function ensureServicePackagesSchema(db: D1Database): Promise<void> {
+  if (_servicePackagesSchemaOk) return
+  const stmts = mig0059.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(';').map(x => x.trim()).filter(x => x.length > 0)
+  for (const stmt of stmts) {
+    try { await db.prepare(stmt).run() } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (!/duplicate column|already exists/i.test(msg)) console.log('ensureServicePackagesSchema err', msg.slice(0, 120))
+    }
+  }
+  try {
+    await db.prepare('INSERT INTO d1_migrations (name, applied_at) SELECT ?, CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = ?)').bind('0059_service_packages.sql', '0059_service_packages.sql').run()
+  } catch {}
+  _servicePackagesSchemaOk = true
 }
 
 // ── Price book + estimate merge schema (migration 0034) ──
@@ -10413,6 +10432,61 @@ app.delete('/api/email-templates/:id', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   await ensureEmailTplSchema(db)
   await db.prepare(`DELETE FROM email_templates WHERE id=? AND company_id=?`)
+    .bind(c.req.param('id'), c.var.companyId as string).run()
+  return c.json({ ok: true })
+})
+
+// GET /api/service-packages — list company's saved packages (Schedule board's
+// visit editor "Add Package" picker)
+app.get('/api/service-packages', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureServicePackagesSchema(db)
+  const rows = await db.prepare(
+    `SELECT * FROM service_packages WHERE company_id=? ORDER BY updated_at DESC`
+  ).bind(c.var.companyId as string).all()
+  return c.json({ packages: rows.results || [] })
+})
+
+// POST /api/service-packages — create a package
+app.post('/api/service-packages', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureServicePackagesSchema(db)
+  const b = await c.req.json() as any
+  const name = (b.name || '').trim()
+  if (!name) return c.json({ error: 'name required' }, 400)
+  const id = `pkg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  await db.prepare(
+    `INSERT INTO service_packages (id, company_id, name, category, materials, equipment, checklist, created_by)
+     VALUES (?,?,?,?,?,?,?,?)`
+  ).bind(id, c.var.companyId as string, name, (b.category || 'My Packages').trim() || 'My Packages',
+         JSON.stringify(b.materials || []), JSON.stringify(b.equipment || []), JSON.stringify(b.checklist || []),
+         c.var.repId as string).run()
+  return c.json({ ok: true, id }, 201)
+})
+
+// PUT /api/service-packages/:id — update a package
+app.put('/api/service-packages/:id', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureServicePackagesSchema(db)
+  const id = c.req.param('id')
+  const b = await c.req.json() as any
+  const existing = await db.prepare(`SELECT id FROM service_packages WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(id, c.var.companyId as string).first()
+  if (!existing) return c.json({ error: 'not found' }, 404)
+  await db.prepare(
+    `UPDATE service_packages SET name=?, category=?, materials=?, equipment=?, checklist=?, updated_at=datetime('now')
+     WHERE id=? AND company_id=?`
+  ).bind((b.name || '').trim() || 'Untitled', (b.category || 'My Packages').trim() || 'My Packages',
+         JSON.stringify(b.materials || []), JSON.stringify(b.equipment || []), JSON.stringify(b.checklist || []),
+         id, c.var.companyId as string).run()
+  return c.json({ ok: true })
+})
+
+// DELETE /api/service-packages/:id — delete a package
+app.delete('/api/service-packages/:id', requireAuth, async (c) => {
+  const db = c.env.DB as D1Database
+  await ensureServicePackagesSchema(db)
+  await db.prepare(`DELETE FROM service_packages WHERE id=? AND company_id=?`)
     .bind(c.req.param('id'), c.var.companyId as string).run()
   return c.json({ ok: true })
 })
