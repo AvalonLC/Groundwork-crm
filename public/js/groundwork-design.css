@@ -997,6 +997,20 @@ label {
 /* hidden attribute wins over display:flex */
 .toast[hidden] { display: none !important; }
 
+/* Phone: span the width instead of a fixed 360px box.
+   The base rule is `right:20px; max-width:360px`, which on a 360px-wide handset
+   makes the toast wider than the space left of the offset and pushes it off the
+   left edge. Anchoring both sides and clearing the bottom nav + home indicator
+   keeps it fully on screen. */
+@media (max-width: 768px) {
+  .toast {
+    left: 12px !important;
+    right: 12px !important;
+    max-width: none !important;
+    bottom: calc(80px + var(--gw-safe-b, 0px)) !important;
+  }
+}
+
 /* ─── 14. STAT TILES ─────────────────────────────────────────────────────── */
 .stat, .kpi-card, .gw-kpi-card, .dash-tile {
   background: var(--gw-bg-surface-2) !important;

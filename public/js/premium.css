@@ -46,6 +46,52 @@
   /* ── Typography ── */
   --gw-font: 'Inter', system-ui, -apple-system, sans-serif;
 
+  /* ── Spacing scale ──
+     Use these instead of ad-hoc pixel values in new/edited rules. */
+  --gw-space-1:  4px;
+  --gw-space-2:  8px;
+  --gw-space-3: 12px;
+  --gw-space-4: 16px;
+  --gw-space-5: 20px;
+  --gw-space-6: 24px;
+  --gw-space-7: 32px;
+  --gw-space-8: 40px;
+
+  /* ── Touch targets ──
+     44px is the Apple HIG minimum and the Material 48dp guidance rounds near it.
+     Anything a finger has to hit on a phone should reach --gw-tap. */
+  --gw-tap:     44px;
+  --gw-tap-sm:  38px;  /* dense secondary controls, still thumb-usable */
+
+  /* ── Safe-area insets (notch / home indicator) ──
+     env() resolves to 0px on non-notched devices, so these are always safe to add. */
+  --gw-safe-t: env(safe-area-inset-top,    0px);
+  --gw-safe-r: env(safe-area-inset-right,  0px);
+  --gw-safe-b: env(safe-area-inset-bottom, 0px);
+  --gw-safe-l: env(safe-area-inset-left,   0px);
+
+  /* ── Z-index scale ──
+     Layering was previously ad-hoc across 100/200/300/500/1200/9000/9999/10000.
+     New floating UI should use these so stacking stays predictable. */
+  --gw-z-sticky:  10;
+  --gw-z-scrim:   19;
+  --gw-z-drawer:  20;
+  --gw-z-dropdown: 300;
+  --gw-z-nav:    8000;   /* bottom mobile nav */
+  --gw-z-sheet:  8500;   /* drawer above the bottom nav */
+  --gw-z-modal:  9000;
+  --gw-z-toast:  9999;
+
+  /* ── Breakpoints (documentation anchors) ──
+     CSS cannot use custom properties inside a media query, so these are not
+     consumed directly — they record the canonical set so new rules stop
+     inventing values. The file historically carried 40 distinct breakpoints.
+       phone  : max-width 768px   (matches every JS branch in app_premium.js)
+       tablet : 769px - 1100px
+       desktop: 1101px and up                                                  */
+  --gw-bp-phone:  768px;
+  --gw-bp-tablet: 1100px;
+
   /* ── Legacy aliases (keep existing code working) ── */
   --blue:      var(--gw-sky);
   --blue-2:    var(--gw-sky-2);
@@ -263,7 +309,8 @@ button{cursor:pointer}
   display:flex;
   align-items:center;
   gap:10px;
-  padding:0 24px;
+  /* Respect the notch in landscape, where the inset lands on left/right. */
+  padding:0 calc(24px + var(--gw-safe-r,0px)) 0 calc(24px + var(--gw-safe-l,0px));
   height:58px;
   background:var(--gw-surface);
   border-bottom:1px solid var(--gw-line);
@@ -2433,9 +2480,19 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     transition:transform .22s ease;
     z-index:20; width:280px;
     box-shadow:var(--gw-shadow-lg);
+    /* Clear the notch at the top and the home indicator at the bottom so the
+       brand row and the user footer stay tappable. */
+    padding-top:var(--gw-safe-t,0px);
+    padding-bottom:var(--gw-safe-b,0px);
   }
   .sidebar.open { transform:translateX(0); }
   .topbar .menu-btn { display:flex; }
+
+  /* Modals become bottom-anchored and can never exceed the visible viewport. */
+  .cl-modal, .gw-modal, .gw-modal-card, .sold-modal, .ah-modal {
+    max-height:calc(100dvh - var(--gw-safe-t,0px) - var(--gw-safe-b,0px) - 24px);
+    overflow-y:auto;
+  }
 }
 @media print {
   .sidebar, .topbar, .toast { display:none; }
@@ -12049,15 +12106,17 @@ h1.pl-title,
     width: 100% !important;
   }
 
-  /* Individual action buttons: auto-size, don't overflow */
+  /* Individual action buttons: auto-size, don't overflow.
+     Sizing deliberately left to the global tap-target rule below — this block
+     used to force font-size:12px/padding:7px 10px here, which shrank header
+     buttons to roughly 31px tall on exactly the screens where they most need to
+     be thumb-sized. */
   .rp-header-actions .rp-btn,
   .rp-header-actions .rp-btn--primary,
   .rp-header-actions button {
     flex: 1 1 auto !important;
     min-width: 0 !important;
     white-space: nowrap !important;
-    font-size: 12px !important;
-    padding: 7px 10px !important;
     justify-content: center !important;
   }
 

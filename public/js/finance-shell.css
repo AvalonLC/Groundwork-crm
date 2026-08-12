@@ -18,6 +18,11 @@
 --gw-shadow-xs:0 1px 3px rgba(15,28,20,.06);--gw-shadow-sm:0 4px 12px rgba(15,28,20,.07);
 --gw-shadow-md:0 8px 28px rgba(15,28,20,.09);
 --gw-r-sm:10px;--gw-r-md:14px;--gw-r-lg:18px;
+/* Touch + safe-area tokens, mirrored from premium.css. Standalone /finance/*
+   pages link only this sheet, so they would otherwise fall back to the literals. */
+--gw-tap:44px;--gw-tap-sm:38px;
+--gw-safe-t:env(safe-area-inset-top,0px);--gw-safe-r:env(safe-area-inset-right,0px);
+--gw-safe-b:env(safe-area-inset-bottom,0px);--gw-safe-l:env(safe-area-inset-left,0px);
 }
 body{background:var(--gw-bg);color:var(--gw-ink);font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
@@ -149,4 +154,54 @@ a.fin-tile:hover{border-color:var(--gw-sky);box-shadow:var(--gw-shadow-sm)}
 .fin-body{padding:16px 14px 40px}
 .fin-top{margin:16px 16px 0;padding:16px 18px}
 .fin-hero-v{font-size:33px}
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Finance OS — phone foundation
+   Finance OS is server-rendered (src/ui/*.tsx) and styled entirely by this
+   file, which until now carried exactly one media query. These rules bring it
+   in line with the rest of the CRM on a phone: stacked header, fluid
+   containers, 44px tap targets, notch clearance, and no horizontal overflow.
+   Per-page layout work is deliberately out of scope here.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media(max-width:768px){
+  /* Header stacks instead of squeezing the title against the chips */
+  .fin-top{
+    margin:12px 12px 0;
+    padding:16px 16px calc(16px + var(--gw-safe-b,0px));
+    flex-direction:column;
+    align-items:flex-start;
+    gap:12px;
+  }
+  .fin-title{font-size:26px;line-height:1.15}
+  .fin-eyebrow{font-size:11px}
+  /* Mode chips wrap onto their own row and stay thumb-sized */
+  .fin-toggle{width:100%;flex-wrap:wrap}
+  .fin-chip,.fin-toggle button,.fin-toptab{
+    min-height:var(--gw-tap,44px);
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .fin-body{
+    padding:14px 12px calc(80px + var(--gw-safe-b,0px));
+  }
+
+  /* Hero metric and lane grids go single-column rather than shrinking */
+  .fin-hero,.fin-lanes,.fin-grid{grid-template-columns:1fr !important}
+  .fin-hero-v{font-size:30px}
+
+  /* Nothing in Finance OS may force the page to scroll sideways */
+  .fin-body table{width:100%}
+  .fin-table-wrap,.fin-body .fin-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* Native controls at 16px so iOS Safari does not zoom on focus */
+  .fin-body input,.fin-body select,.fin-body textarea{
+    font-size:16px;
+    min-height:var(--gw-tap,44px);
+  }
+  .fin-body input[type=checkbox],.fin-body input[type=radio]{
+    min-height:0;width:22px;height:22px;
+  }
 }
