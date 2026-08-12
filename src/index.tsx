@@ -36,6 +36,11 @@ import { financeUiRouter } from './ui/mount'
 import { cronTriggerRouter } from './api/cron-trigger'
 import { updateWorkOrderFinanceColumns } from './db/repos'
 import { postTimeEntryToLedger } from './api/posting'
+// ── Marketing OS — mounted sub-routers (see src/marketing/) ──────────────────
+import { marketingRouter } from './marketing/api'
+import { marketingPublicRouter } from './marketing/public'
+import { marketingCronRouter } from './marketing/cron'
+import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/leads'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -54,6 +59,18 @@ app.route('/internal/cron', cronTriggerRouter)
 // their textual definition, is safe.
 app.use('/finance/*', requireAuthFinance)
 app.route('/finance', financeUiRouter)
+
+// ── Marketing OS ─────────────────────────────────────────────────────────────
+// Authenticated API. requireAuth is applied here rather than inside the router
+// so the router stays a plain Hono app that can be tested on its own.
+app.use('/api/marketing/*', requireAuth)
+app.route('/api/marketing', marketingRouter)
+// Scheduled drain — X-Cron-Secret header auth, same as the finance rollup.
+app.route('/internal/cron', marketingCronRouter)
+// Public: campaign images, unsubscribe, click redirects, inquiry forms and the
+// SendGrid event webhook. Each handler resolves an unguessable token or
+// verifies a signature; none of them may assume a session.
+app.route('/', marketingPublicRouter)
 
 // ── CORS + middleware ─────────────────────────────────────────────────────────
 app.use('/api/*', cors())
@@ -3096,44 +3113,28 @@ app.post('/api/opportunities', requireAuth, async (c) => {
   // New-lead default stage: first label of the company's live pipeline setting
   // (kept in sync with the published sales process on publish), falling back to
   // the legacy nine-stage default only when the setting is absent.
-  let defaultStatus = 'Lead Intake / Rapport'
-  try {
-    const stagesRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key=? LIMIT 1').bind(`${companyId}:pipeline_stages`).first<{ value: string }>()
-    if (stagesRow?.value) { const parsed = JSON.parse(stagesRow.value); if (Array.isArray(parsed) && parsed.length && String(parsed[0]).trim()) defaultStatus = String(parsed[0]).trim() }
-  } catch (_) {}
-  const effStatus = b.status || defaultStatus
-  const jobValueNum = Number(b.jobValue||b.job_value||0)
-  const estimateAmountNum = Number(b.estimateAmount||b.estimate_amount||0)
-  const soldAmountNum = Number(b.soldAmount||b.sold_amount||0)
-  await c.env.DB.prepare(`
-    INSERT INTO opportunities (
-      id, company_id, rep_id, assigned_to_rep_id,
-      client, phone, email, address, service_line, source, status,
-      job_value, job_value_cents, project, urgency, decision_maker, budget_range, next_follow_up,
-      pipeline_stage, estimate_amount, estimate_amount_cents, estimate_sent_date, estimate_count,
-      work_type, client_type, prompt, desired_outcome, fit_concerns,
-      commission_approved, collected, sold_date, sold_amount, sold_amount_cents, client_id,
-      created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
-  `).bind(
-    id, companyId, effRepId, assignedTo,
-    b.client||'', b.phone||'', b.email||'',
-    b.address||'', b.serviceLine||b.service_line||'', b.source||'',
-    effStatus, jobValueNum, Math.round(jobValueNum * 100),
-    b.project||'', b.urgency||'', b.decisionMaker||b.decision_maker||'',
-    b.budgetRange||b.budget_range||'', b.nextFollowUp||b.next_follow_up||'',
-    b.pipelineStage||b.pipeline_stage||'',
-    estimateAmountNum, Math.round(estimateAmountNum * 100),
-    b.estimateSentDate||b.estimate_sent_date||'',
-    Number(b.estimateCount||b.estimate_count||0),
-    b.workType||b.work_type||'', b.clientType||b.client_type||'',
-    b.prompt||'', b.desiredOutcome||b.desired_outcome||'',
-    b.fitConcerns||b.fit_concerns||'',
-    b.commissionApproved||b.commission_approved?1:0,
-    b.collected?1:0, b.soldDate||b.sold_date||'',
-    soldAmountNum, Math.round(soldAmountNum * 100),
-    b.clientId||b.client_id||''
-  ).run()
+  // Shared with the public inquiry form via src/marketing/leads.ts so a form
+  // submission lands in the same stage a rep-created lead would.
+  const effStatus = b.status || await resolveDefaultPipelineStage(c.env.DB, companyId)
+  await insertOpportunityRow(c.env.DB, companyId, {
+    id, repId: effRepId, assignedToRepId: assignedTo,
+    client: b.client||'', phone: b.phone||'', email: b.email||'',
+    address: b.address||'', serviceLine: b.serviceLine||b.service_line||'', source: b.source||'',
+    status: effStatus, jobValue: Number(b.jobValue||b.job_value||0),
+    project: b.project||'', urgency: b.urgency||'', decisionMaker: b.decisionMaker||b.decision_maker||'',
+    budgetRange: b.budgetRange||b.budget_range||'', nextFollowUp: b.nextFollowUp||b.next_follow_up||'',
+    pipelineStage: b.pipelineStage||b.pipeline_stage||'',
+    estimateAmount: Number(b.estimateAmount||b.estimate_amount||0),
+    estimateSentDate: b.estimateSentDate||b.estimate_sent_date||'',
+    estimateCount: Number(b.estimateCount||b.estimate_count||0),
+    workType: b.workType||b.work_type||'', clientType: b.clientType||b.client_type||'',
+    prompt: b.prompt||'', desiredOutcome: b.desiredOutcome||b.desired_outcome||'',
+    fitConcerns: b.fitConcerns||b.fit_concerns||'',
+    commissionApproved: !!(b.commissionApproved||b.commission_approved),
+    collected: !!b.collected, soldDate: b.soldDate||b.sold_date||'',
+    soldAmount: Number(b.soldAmount||b.sold_amount||0),
+    clientId: b.clientId||b.client_id||''
+  })
   // Published-process lead flow: a brand new lead is immediately assigned to the
   // published stage whose label matches its status (default: the first stage),
   // so it participates in stage tracking without needing restaging review.
