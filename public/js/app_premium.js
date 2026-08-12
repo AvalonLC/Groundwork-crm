@@ -732,6 +732,11 @@ function fallbackCopy(text){
       financialHub:'Overview', invoices:'Invoices',
       payments:'Payments', deposits:'Deposits', statements:'Statements',
       financialActivity:'Activity', statement:'Statement',
+      // Finance OS tabs (src/ui/layout.tsx's FINANCE_NAV, same labels)
+      finControl:'Money Loop', finQueue:'Work Queue', finJobCost:'Job Costing',
+      finBudget:'Budget & Rates', finRecovery:'Overhead Recovery',
+      finInvPay:'Invoices & Payments', finLedger:'Ledger', finDocuments:'Documents',
+      finConfig:'Setup & Config',
       // Operations workspace tabs
       scheduleBoard:'Schedule', dispatchBoard:'Dispatch',
       recurringServices:'Recurring Services', crewView:'Crew View',
