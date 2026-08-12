@@ -19,6 +19,7 @@
 import { Hono } from 'hono';
 import { SendGridProvider } from './providers/sendgrid';
 import { drainCampaign, listDrainableCampaigns } from './send';
+import { rollupAttribution } from './attribution';
 
 export type MarketingCronBindings = {
   DB: D1Database;
@@ -72,4 +73,21 @@ marketingCronRouter.post('/marketing-drain', async (c) => {
   }
 
   return c.json({ drained: results.length, results });
+});
+
+/**
+ * Nightly attribution walk. Separate from the drain because it is not
+ * time-critical and should not compete with a send for the same CPU budget.
+ * Safe to run repeatedly — the unique index absorbs re-walks.
+ */
+marketingCronRouter.post('/marketing-attribution', async (c) => {
+  const configured = c.env.CRON_SECRET;
+  if (!configured) {
+    return c.json({ error: 'CRON_SECRET is not configured — refusing all requests until it is' }, 503);
+  }
+  if (c.req.header('X-Cron-Secret') !== configured) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  const result = await rollupAttribution(c.env.DB, { limit: Number(c.req.query('limit') ?? 500) });
+  return c.json({ ok: true, ...result });
 });
