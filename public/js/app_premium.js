@@ -25204,6 +25204,91 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
   };
 })();
 
+// ── Mobile table enhancement ──────────────────────────────────────────────────
+// Turns any rendered <table> into the card pattern defined at the end of
+// premium.css (.gw-mcards) without touching the ~30 render functions that build
+// tables. Two jobs:
+//   1. stamp data-label on every <td> from its column's <th>, which is what the
+//      card layout prints as the row label
+//   2. wrap the table in .gw-table-scroll so a wide table scrolls inside itself
+//      instead of pushing the whole document sideways
+// Both are no-ops visually above 768px — the CSS only reacts on phones.
+// Opt a table out with the data-no-mcards attribute.
+(function _gwMobileTables() {
+  const DONE = '_gwMcards';
+
+  function labelFor(table) {
+    // Prefer an explicit thead; fall back to a first row made only of <th>.
+    let head = table.tHead && table.tHead.rows.length
+      ? table.tHead.rows[table.tHead.rows.length - 1]
+      : null;
+    if (!head) {
+      const first = table.rows[0];
+      if (first && first.cells.length && [...first.cells].every(c => c.tagName === 'TH')) head = first;
+    }
+    if (!head) return null;
+    return [...head.cells].map(c => (c.textContent || '').trim());
+  }
+
+  function enhance(table) {
+    if (table.dataset[DONE] || table.hasAttribute('data-no-mcards')) return;
+    table.dataset[DONE] = '1';
+
+    const labels = labelFor(table);
+    if (labels && labels.length) {
+      table.classList.add('gw-mcards');
+      for (const row of table.rows) {
+        if (row.parentElement === table.tHead) continue;
+        let col = 0;
+        for (const cell of row.cells) {
+          if (cell.tagName === 'TH') { col += cell.colSpan || 1; continue; }
+          // Only label when the column actually has a heading; a blank heading
+          // is usually an actions column, which gets its own treatment.
+          const text = labels[col];
+          if (text) cell.setAttribute('data-label', text);
+          else cell.classList.add('gw-mcards-actions');
+          col += cell.colSpan || 1;
+        }
+      }
+    }
+
+    // Wrap for horizontal scroll unless something already wraps it.
+    const parent = table.parentElement;
+    if (parent && !parent.classList.contains('gw-table-scroll')
+        && !/auto|scroll/.test(getComputedStyle(parent).overflowX)) {
+      const wrap = document.createElement('div');
+      wrap.className = 'gw-table-scroll';
+      parent.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    }
+  }
+
+  function scan(root) {
+    if (!root) return;
+    let tables;
+    try { tables = root.querySelectorAll('table'); } catch { return; }
+    tables.forEach(enhance);
+  }
+
+  function start() {
+    const host = document.getElementById('view');
+    if (!host) return;
+    scan(host);
+    // setTimeout rather than requestAnimationFrame: rAF is paused in a
+    // backgrounded tab, so a view rendered while the tab was hidden would stay
+    // unenhanced — and because the in-flight flag would never clear, every
+    // later render would be skipped too.
+    let timer = null;
+    new MutationObserver(() => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; scan(host); }, 60);
+    }).observe(host, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN — FIELD REPORTS INBOX
 // Visible to admin, office_manager, division_manager

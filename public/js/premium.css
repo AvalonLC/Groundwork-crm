@@ -16988,3 +16988,172 @@ h1.pl-title,
 .gw-kpi-grid--divisions {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE COMPONENT PATTERNS  (phone, <=768px)
+   Two reusable patterns so individual screens don't each invent their own
+   mobile treatment. Kept at the end of the file deliberately: these are meant
+   to win over the per-feature rules defined above them.
+
+   1. Tables -> cards. The codebase has ~30 separate table implementations and
+      most had no scroll container, so a wide table simply pushed the page
+      sideways. Where a table was handled at all, the approach was to *hide*
+      columns (.cl-table hid columns 4-5, .wo-row hid 3 of 7) — the data was
+      thrown away rather than reflowed. A card per row shows everything.
+      data-label is stamped automatically from <thead> by _gwEnhanceTables()
+      in app_premium.js, so render functions don't need to change.
+      Opt out with data-no-mcards on the table.
+
+   2. Modals -> bottom sheets. There were ~12 independent overlay/card class
+      pairs and exactly one (.gw-task-modal) became a sheet on mobile.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Safety net: applies at every width. A table may scroll inside its own
+   wrapper, but must never make the document scroll sideways. */
+.gw-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+
+  /* ── 1. Tables as cards ─────────────────────────────────────────────────── */
+  table.gw-mcards {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  /* Header is still read by assistive tech, just not painted. */
+  table.gw-mcards thead {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  table.gw-mcards,
+  table.gw-mcards tbody,
+  table.gw-mcards tr,
+  table.gw-mcards td {
+    display: block;
+    width: 100%;
+  }
+  table.gw-mcards tr {
+    background: var(--gw-surface);
+    border: 1px solid var(--gw-line);
+    border-radius: var(--gw-r-md, 14px);
+    box-shadow: var(--gw-shadow-xs);
+    margin-bottom: var(--gw-space-3, 12px);
+    padding: 4px 14px;
+  }
+  table.gw-mcards td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--gw-space-3, 12px);
+    padding: 9px 0;
+    border: 0;
+    border-bottom: 1px solid var(--gw-line);
+    text-align: right;
+    white-space: normal;
+  }
+  table.gw-mcards tr td:last-child { border-bottom: 0; }
+  table.gw-mcards td::before {
+    content: attr(data-label);
+    flex: 0 0 38%;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gw-muted);
+    letter-spacing: .01em;
+  }
+  /* A cell with no label and no content is just noise on a card. */
+  table.gw-mcards td:empty { display: none; }
+  /* Action cells read better as a full-width row of buttons. */
+  table.gw-mcards td.gw-mcards-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: var(--gw-space-2, 8px);
+  }
+  table.gw-mcards td.gw-mcards-actions::before { flex-basis: 100%; }
+
+  /* Stop hiding data now that rows reflow. These were the two lossy rules. */
+  .cl-cell-addr, .cl-cell-contact,
+  .cl-table th:nth-child(4), .cl-table th:nth-child(5) { display: revert; }
+
+  /* ── Grid-based pseudo-tables ───────────────────────────────────────────── */
+  /* .wo-row and friends are CSS grids pretending to be tables, so they become
+     cards by collapsing to a single column instead of dropping columns. */
+  .wo-row, .cd-wo-row {
+    grid-template-columns: 1fr !important;
+    gap: 4px !important;
+    background: var(--gw-surface);
+    border: 1px solid var(--gw-line);
+    border-radius: var(--gw-r-md, 14px);
+    margin-bottom: var(--gw-space-3, 12px);
+    padding: 12px 14px !important;
+  }
+  .wo-row > span:nth-child(3),
+  .wo-row > span:nth-child(4),
+  .wo-row > span:nth-child(5),
+  .wo-type, .wo-date { display: revert !important; }
+  .wo-actions { justify-content: flex-start; margin-top: 6px; }
+  /* The header row of a grid pseudo-table means nothing once rows are cards. */
+  .wo-row.wo-head, .wo-head.wo-row, .cd-wo-row.wo-head { display: none !important; }
+
+  /* ── 2. Modals as bottom sheets ─────────────────────────────────────────── */
+  .cl-modal-overlay, .gw-modal-overlay, .gw-task-modal-overlay,
+  .sold-modal-backdrop, .ah-modal-bg, .sb-modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    /* These overlays carry z-indexes as low as 100-300, which put them BELOW
+       the bottom nav (8000) and the verify banner — so an open sheet had the
+       nav and the banner painted across its content. Lift them onto the modal
+       layer of the z-index scale. */
+    z-index: var(--gw-z-modal, 9000) !important;
+  }
+  .cl-modal, .gw-modal, .gw-modal-card, .gw-task-modal,
+  .sold-modal, .ah-modal, .sb-modal-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: auto !important;
+    border-radius: var(--gw-r-xl, 24px) var(--gw-r-xl, 24px) 0 0 !important;
+    max-height: 90dvh !important;
+    overflow-y: auto !important;
+    padding-bottom: calc(var(--gw-space-5, 20px) + var(--gw-safe-b, 0px)) !important;
+    animation: gw-sheet-in .22s cubic-bezier(.22,.6,.36,1);
+  }
+  /* Grab affordance so a sheet reads as draggable-looking, like native. */
+  .cl-modal::before, .gw-modal::before, .gw-task-modal::before,
+  .sold-modal::before, .ah-modal::before, .sb-modal-panel::before {
+    content: '';
+    display: block;
+    width: 38px; height: 4px;
+    margin: 8px auto 4px;
+    border-radius: 999px;
+    background: var(--gw-line-strong);
+    flex: none;
+  }
+
+  /* ── 3. Fixed banners ───────────────────────────────────────────────────── */
+  /* #gw-verify-banner is built with inline styles (left:50% + translateX(-50%)
+     + shrink-to-fit), so on a phone it collapsed to a ~220px column of wrapped
+     text sitting underneath the bottom nav. !important is required to beat the
+     inline style attribute. */
+  #gw-verify-banner {
+    left: var(--gw-space-3, 12px) !important;
+    right: var(--gw-space-3, 12px) !important;
+    width: auto !important;
+    transform: none !important;
+    bottom: calc(80px + var(--gw-safe-b, 0px)) !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    /* Above the bottom nav, below an open sheet. */
+    z-index: calc(var(--gw-z-nav, 8000) + 100) !important;
+  }
+}
+
+@keyframes gw-sheet-in {
+  from { transform: translateY(14px); opacity: .6; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
