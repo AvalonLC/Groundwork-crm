@@ -18,6 +18,7 @@
     "src/api/**/*.ts",
     "src/cron/**/*.ts",
     "src/ai/**/*.ts",
+    "src/marketing/**/*.ts",
     "src/ui/**/*.tsx",
     "src/ui/**/*.ts",
     "src/bridge/**/*.ts",
