@@ -17157,3 +17157,163 @@ h1.pl-title,
   from { transform: translateY(14px); opacity: .6; }
   to   { transform: translateY(0);    opacity: 1; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE SCREEN PASSES  (phone, <=768px)
+   Per-screen fixes on top of the shared patterns above. Everything here was
+   found by measuring scrollWidth vs clientWidth on a real 374px-wide render,
+   so each rule corresponds to content that was actually being clipped or
+   pushed out of its box rather than a guess about what might be tight.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Pipeline / My Day / Clients hero actions ───────────────────────────── */
+  /* Was `flex:1 1 0; min-width:0; white-space:nowrap` — equal-width buttons
+     crammed onto one row with text that could not wrap, so labels were clipped
+     (a 71px button holding 101px of text). Wrap two-up instead: at 374px that
+     is ~164px per button, comfortably wider than the longest label. */
+  .pl-page-actions {
+    flex-wrap: wrap !important;
+    align-items: stretch !important;
+  }
+  .pl-page-actions .primary-btn,
+  .pl-page-actions .secondary-btn,
+  .pl-page-actions .primary-btn.small,
+  .pl-page-actions .secondary-btn.small {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-width: 0 !important;
+    font-size: 13px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    justify-content: center !important;
+  }
+  /* Let the title and the action row sit on separate lines. Note: overflow
+     stays hidden here on purpose — the hero's decorative ::after glow is a
+     260px circle deliberately parked at right:-70px, so unclipping it makes
+     the element report a 404px scrollWidth against a 334px box and looks like
+     an overflow bug when nothing is actually being cut off. */
+  .pl-page-header {
+    flex-wrap: wrap !important;
+  }
+
+  /* ── Filter / toolbar chip rows ─────────────────────────────────────────── */
+  /* These are chip strips that exceed the viewport by design. Scrolling them
+     sideways is the right mobile pattern; leaving them `overflow:visible` was
+     silently cutting the last filters off. */
+  .pl-toolbar, .gw-toolbar, .filter-row, .cl-filter-row, .tabs {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .pl-toolbar::-webkit-scrollbar,
+  .gw-toolbar::-webkit-scrollbar,
+  .filter-row::-webkit-scrollbar,
+  .tabs::-webkit-scrollbar { display: none; }
+  .pl-toolbar > *, .gw-toolbar > *, .filter-row > *, .tabs > * { flex: 0 0 auto; }
+
+  /* ── KPI tiles ──────────────────────────────────────────────────────────── */
+  /* The band truncates labels with an ellipsis, which is fine in a wide tile
+     but loses the label entirely in a 117px one ("AVG CLOSE LIKELIHOOD" became
+     "AVG CLOSE…"). Let them wrap instead — the tile just gets taller. */
+  .gw-kpi-band .gw-kpi-label,
+  .gw-kpi-band .gw-kpi-sub,
+  .gw-kpi-label, .gw-kpi-sub,
+  .gwp-kpi-label, .gwp-kpi-sub, .gwp-kpi-body {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.3;
+  }
+  .gw-kpi-band .gw-kpi-value, .gw-kpi-value, .gwp-kpi-value {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  /* The card lays its icon and text out side by side, which leaves the label
+     roughly 66px inside a 146px tile — not enough for a single word like
+     "Outstanding" (90px), and a one-word label cannot wrap. Stacking the icon
+     above the text hands the label the full tile width. */
+  .gwp-kpi-card {
+    overflow: visible !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+  .gwp-kpi-body { width: 100% !important; }
+
+  /* Grid and flex children default to min-width:auto, which refuses to shrink
+     below their content and is the usual reason a KPI row is a few pixels wider
+     than its container on a narrow screen. minmax(0,1fr) + min-width:0 lets the
+     tracks actually shrink. */
+  .gwp-kpi-row, .gwp-kpi-row--3, .gwp-kpi-row--5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .gwp-kpi-row > *, .gw-kpi-grid > *, .gw-kpi-band > *,
+  .stat-grid > *, .dashboard-strip > *, .metric-strip > * {
+    min-width: 0 !important;
+  }
+  .gwp-shell { min-width: 0 !important; max-width: 100% !important; }
+
+  /* ── Kanban / board columns ─────────────────────────────────────────────── */
+  /* A 3-column board with minmax(280px,1fr) tracks needs 840px+. One column per
+     row is the only readable option on a phone. */
+  .kanban { grid-template-columns: 1fr !important; }
+  .kanban-col { min-width: 0 !important; }
+
+  /* ── Detail / split layouts ─────────────────────────────────────────────── */
+  .ld-body, .est-detail-shell, .est-builder-shell, .ah-detail-grid,
+  .rp-cols, .rp-columns {
+    grid-template-columns: 1fr !important;
+  }
+  .est-rail-card--sticky, .est-builder-rail, .ld-rail {
+    position: static !important;
+    max-height: none !important;
+  }
+
+  /* ── Filter bars built from <select> ────────────────────────────────────── */
+  /* .est-filter-bar gives each select `flex:1 1 0; min-width:0`, so four of
+     them splitting 310px collapsed to 43px each while needing 105px — the
+     dropdowns were unreadable and effectively unusable. Wrap two-up with a
+     real minimum instead. */
+  .est-filter-bar, .cl-filter-bar, .inv-filter-bar {
+    flex-wrap: wrap !important;
+    gap: var(--gw-space-2, 8px) !important;
+  }
+  .est-filter-select, .est-filter-bar select,
+  .cl-filter-bar select, .inv-filter-bar select {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: 140px !important;
+  }
+
+  /* ── Schedule board mobile header ───────────────────────────────────────── */
+  /* "Schedule" + ‹ + the date range + › were competing for 151px, and the date
+     range lost completely — it computed to 0px wide, so there was no way to
+     tell which week you were looking at. Give the title its own line and let
+     the range take the space between the arrows. */
+  .sbm-header-row1 { flex-wrap: wrap !important; }
+  .sbm-title-nav {
+    flex-wrap: wrap !important;
+    flex: 1 1 100% !important;
+    align-items: center !important;
+  }
+  .sbm-title { flex: 1 1 100% !important; }
+  .sbm-period {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+    text-align: center !important;
+  }
+  .sbm-nav-btn { flex: 0 0 auto !important; }
+
+  /* ── Truncated row titles ───────────────────────────────────────────────── */
+  /* Ellipsised list titles lose the end of the name on a narrow screen; a
+     second line costs nothing here. */
+  .gw-task-row-title, .gw-myday-row-title, .mini-row strong {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.35;
+  }
+}
