@@ -124,18 +124,11 @@ const Topbar: FC<{ active?: string }> = ({ active }) => (
   <header class="fin-topbar">
     <a class="fin-crumb" href="/">&#8592; Groundwork</a>
     <nav class="fin-toptabs">
-      {FINANCE_NAV.map((item) => (
+      {[...FINANCE_NAV, FINANCE_NAV_CONFIG].map((item) => (
         <a class={`fin-toptab${item.key === active ? " is-active" : ""}`} href={item.href}>
           {item.label}
         </a>
       ))}
-      <span class="fin-toptab-divider" />
-      <a
-        class={`fin-toptab${FINANCE_NAV_CONFIG.key === active ? " is-active" : ""}`}
-        href={FINANCE_NAV_CONFIG.href}
-      >
-        {FINANCE_NAV_CONFIG.label}
-      </a>
     </nav>
   </header>
 );
