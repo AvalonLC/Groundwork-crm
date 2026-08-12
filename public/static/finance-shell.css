@@ -1,0 +1,152 @@
+/* Finance OS shell styles — was inlined per-page as SHELL_CSS in src/ui/layout.tsx
+   until the SPA-integration change (finance-spa-integration branch): a real
+   stylesheet is required so partial (fetch-injected) renders don't duplicate a
+   huge <style> block on every in-app nav click, and so the CRM SPA's own shell
+   can link it once and have injected Finance OS content pre-styled.
+   Design tokens mirror public/js/premium.css so finance pages read as part of
+   the same product rather than a separate app. Kept self-contained (rather
+   than linking premium.css) because that sheet targets the SPA's DOM shape;
+   duplicating only the tokens gives identical color and spacing without
+   inheriting rules that assume the SPA shell exists around them. */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--gw-pine:#113931;--gw-pine-deep:#0E372F;--gw-pine-light:#1A4740;--gw-pine-muted:#4D8A86;
+--gw-emerald:#2D7A55;--gw-sky:#4D8A86;--gw-sky-soft:#E5F0EF;--gw-amber:#8B6914;--gw-rose:#8B3A2A;
+--gw-ink:#0F1C14;--gw-ink-2:#1E3326;--gw-muted:#5A6B79;--gw-subtle:#6F7E6A;
+--gw-line:#E2EBE8;--gw-line-strong:#C8D8D3;
+--gw-bg:#F5F9F7;--gw-surface:#FFFFFF;--gw-surface-2:#FDFCF9;--gw-surface-3:#EAF1EE;
+--gw-shadow-xs:0 1px 3px rgba(15,28,20,.06);--gw-shadow-sm:0 4px 12px rgba(15,28,20,.07);
+--gw-shadow-md:0 8px 28px rgba(15,28,20,.09);
+--gw-r-sm:10px;--gw-r-md:14px;--gw-r-lg:18px;
+}
+body{background:var(--gw-bg);color:var(--gw-ink);font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+/* premium.css's generic `input{width:100%}` (needed for its own text fields)
+   is now live alongside this file whenever Finance OS content renders in-SPA
+   (both stylesheets are loaded in the CRM shell's <head>) — without this, a
+   checkbox/radio here stretches to the full row width instead of staying its
+   natural size. Scoped to type selectors rather than a class so it doesn't
+   depend on every checkbox remembering to opt in. */
+input[type=checkbox],input[type=radio]{width:auto}
+.fin-shell{display:flex;flex-direction:column;min-height:100vh}
+/* Top tab-strip — replaces the old vertical sidebar. Colors copied verbatim
+   from the CRM SPA's own .nav-subtab / .nav-subtab--active (public/js/
+   premium.css) rather than approximated, so navigating in from the CRM's
+   own Financial tab strip (gwFinancial() in app_premium.js, same 8 items,
+   same order) reads as continuing the same tab row — even though this is
+   still a real page load, not a shared DOM (see layout.tsx's own note on
+   that ceiling). */
+.fin-topbar{background:var(--gw-pine);display:flex;align-items:center;gap:16px;padding:0 20px;position:sticky;top:0;z-index:6;overflow-x:auto}
+.fin-crumb{flex-shrink:0;font-size:12px;font-weight:600;color:rgba(255,255,255,.62);padding:12px 0;white-space:nowrap}
+.fin-crumb:hover{color:#fff}
+.fin-toptabs{display:flex;align-items:center;gap:2px;flex:1;min-width:0}
+.fin-toptab{display:flex;align-items:center;padding:9px 12px;font-size:13px;font-weight:400;color:rgba(255,255,255,.52);border-radius:6px;white-space:nowrap;position:relative;transition:color .11s,background .11s}
+.fin-toptab:hover{color:rgba(255,255,255,.86);background:rgba(255,255,255,.07)}
+.fin-toptab.is-active{color:#fff;font-weight:500;background:rgba(52,211,153,.13);padding-left:17px}
+.fin-toptab.is-active::before{content:'';position:absolute;left:7px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:#34d399}
+.fin-main{flex:1;min-width:0;display:flex;flex-direction:column}
+/* Not sticky (unlike .fin-topbar): stacking two independently-sticky
+   headers needs a manual top offset matched to the first one's height,
+   which is more fragile than it's worth here — only the tab-strip stays
+   pinned, this scrolls with the page. */
+/* Dark hero card, matching .pl-page-header in premium.css (same gradient
+   stops used across Pipeline/My Day/Clients/Sales Process) so this reads as
+   the same header treatment as the rest of the CRM rather than a plain bar.
+   Uses this file's own token scale (--gw-r-lg/--gw-shadow-md) rather than
+   premium.css's exact radius/shadow values, consistent with this file's
+   token-mirroring (not byte-for-byte copying) approach. */
+.fin-top{
+  background: linear-gradient(135deg, #103c34 0%, #1a5a4f 54%, #2b7568 100%);
+  color:#fff;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--gw-r-lg);
+  box-shadow: var(--gw-shadow-md);
+  padding: 22px 26px;
+  margin: 22px 28px 0;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  position:relative;overflow:hidden;
+}
+.fin-top::after{
+  content:'';position:absolute;right:-60px;top:-90px;width:220px;height:220px;
+  border-radius:999px;background:radial-gradient(circle, rgba(255,255,255,.16), transparent 68%);
+  pointer-events:none;
+}
+.fin-top>*{position:relative;z-index:1}
+.fin-top-l{min-width:0}
+.fin-eyebrow{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.7)}
+.fin-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:1px;color:#fff}
+.fin-top-r{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.fin-chip{font-size:11.5px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;font-weight:600;white-space:nowrap}
+.fin-toggle{display:inline-flex;background:rgba(255,255,255,.14);border-radius:999px;padding:2px}
+.fin-toggle a{font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;color:rgba(255,255,255,.75)}
+.fin-toggle a.on{background:#fff;color:var(--gw-pine);box-shadow:none}
+.fin-body{padding:24px 28px 56px;width:100%}
+/* premium.css's .view (the CRM SPA's own content container, wrapping every
+   in-SPA page including Pipeline's .pl-page-header) is genuinely fluid — no
+   max-width cap, just padding:28px 32px — confirmed via computed style, not
+   the width-capped version of .view that appears elsewhere in that file but
+   is overridden. Finance OS's own max-width:1280px (now removed above) was
+   the actual bug: it stopped growing on wide monitors and, with no
+   margin:auto, sat flush left with dead space on the right instead of
+   filling the window the way every other page does.
+
+   In-SPA (financeFetch() injects into #view.view): .fin-top/.fin-body's own
+   side padding/margin is then redundant with .view's own 32px side padding —
+   zero it out here so the total inset matches every other in-SPA page
+   instead of stacking two paddings. */
+.view .fin-top{margin:0}
+.view .fin-body{padding-left:0;padding-right:0}
+.fin-card{background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:var(--gw-r-md);box-shadow:var(--gw-shadow-xs);padding:18px 20px;margin-bottom:18px}
+.fin-card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+.fin-card-t{font-size:14px;font-weight:800;letter-spacing:-.01em}
+.fin-card-s{font-size:12px;color:var(--gw-muted)}
+.fin-grid{display:grid;gap:14px;margin-bottom:18px}
+.fin-grid-5{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.fin-grid-3{grid-template-columns:repeat(auto-fit,minmax(232px,1fr))}
+.fin-tile{background:var(--gw-surface);border:1px solid var(--gw-line);border-radius:var(--gw-r-md);padding:16px 18px;box-shadow:var(--gw-shadow-xs);display:block}
+a.fin-tile:hover{border-color:var(--gw-sky);box-shadow:var(--gw-shadow-sm)}
+.fin-tile-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-muted)}
+.fin-tile-v{font-size:28px;font-weight:800;letter-spacing:-.03em;margin-top:7px;line-height:1.1}
+.fin-tile-m{font-size:11.5px;color:var(--gw-subtle);margin-top:5px}
+/* Light card, not dark: .fin-top (above) is now the page's one dark hero, so
+   this content card (Money Loop's "How we're tracking", Overhead Recovery's
+   thermometer) no longer doubles it up. Class names kept as .fin-hero* to
+   avoid touching money-loop.tsx/recovery.tsx for a pure restyle. */
+.fin-hero{background:var(--gw-surface);color:var(--gw-ink);border:1px solid var(--gw-line);border-radius:var(--gw-r-lg);padding:26px 28px;margin-bottom:20px;box-shadow:var(--gw-shadow-sm)}
+.fin-hero-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--gw-muted)}
+.fin-hero-v{font-size:42px;font-weight:800;letter-spacing:-.035em;margin-top:6px;line-height:1.05;color:var(--gw-pine)}
+.fin-hero-s{font-size:13.5px;color:var(--gw-subtle);margin-top:9px;max-width:62ch}
+.fin-meter{height:9px;background:var(--gw-surface-3);border-radius:999px;margin-top:18px;overflow:hidden}
+.fin-meter-f{height:100%;background:linear-gradient(90deg,var(--gw-emerald),#5FBF8F);border-radius:999px}
+.fin-table{width:100%;border-collapse:collapse;font-size:13px}
+.fin-table th{text-align:left;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-muted);padding:0 12px 9px;border-bottom:1px solid var(--gw-line)}
+.fin-table td{padding:11px 12px;border-bottom:1px solid var(--gw-line)}
+.fin-table tr:last-child td{border-bottom:0}
+.fin-table tbody tr:hover{background:var(--gw-surface-2)}
+.fin-num{font-variant-numeric:tabular-nums;font-weight:700}
+.fin-badge{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.05em}
+.b-high{background:#DCF2E6;color:#1B5E3A}
+.b-med{background:#FBF0D9;color:#6E5210}
+.b-low{background:#F7E2DD;color:#7A2E20}
+.b-ai{background:var(--gw-sky-soft);color:#2C5F5C}
+.b-human{background:var(--gw-surface-3);color:var(--gw-ink-2)}
+.fin-empty{text-align:center;padding:34px 20px;color:var(--gw-muted)}
+.fin-empty-t{font-size:14px;font-weight:700;color:var(--gw-ink-2);margin-bottom:5px}
+.fin-empty-s{font-size:12.5px;max-width:46ch;margin:0 auto}
+.fin-note{background:var(--gw-sky-soft);border-left:3px solid var(--gw-sky);border-radius:0 var(--gw-r-sm) var(--gw-r-sm) 0;padding:12px 15px;font-size:12.5px;color:var(--gw-ink-2);margin-bottom:18px}
+.fin-lane{border:1px solid var(--gw-line);border-radius:var(--gw-r-sm);overflow:hidden;background:var(--gw-surface)}
+.fin-lane-h{background:var(--gw-surface-3);padding:9px 14px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--gw-ink-2);display:flex;justify-content:space-between}
+.fin-lane ul{list-style:none}
+.fin-lane li{padding:10px 14px;border-bottom:1px solid var(--gw-line);font-size:12.5px}
+.fin-lane li:last-child{border-bottom:0}
+.fin-lane-empty{padding:16px 14px;font-size:12px;color:var(--gw-subtle);text-align:center}
+.fin-why{margin-top:12px;border-top:1px dashed var(--gw-line-strong);padding-top:12px}
+.fin-why summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--gw-sky);list-style:none}
+.fin-why summary::-webkit-details-marker{display:none}
+.fin-why-b{margin-top:9px;font-size:12.5px;color:var(--gw-ink-2);line-height:1.62}
+.fin-why-b dt{font-weight:800;color:var(--gw-ink);margin-top:8px;font-size:11.5px}
+@media(max-width:860px){
+.fin-body{padding:16px 14px 40px}
+.fin-top{margin:16px 16px 0;padding:16px 18px}
+.fin-hero-v{font-size:33px}
+}

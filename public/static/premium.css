@@ -15858,6 +15858,7 @@ h1.pl-title,
 }
 .pl-page-header .primary-btn:hover,
 .pl-page-header .secondary-btn:hover { background: rgba(255,255,255,.22) !important; }
+.pl-page-header .badge { background: rgba(255,255,255,.16); color:#fff; border-color: rgba(255,255,255,.28); }
 .pl-page-header .gw-myday-modes {
   background: rgba(255,255,255,.12);
   border-color: rgba(255,255,255,.2);
@@ -16521,7 +16522,8 @@ h1.pl-title,
 .spb-step--active{background:var(--brand,#2563eb);border-color:var(--brand,#2563eb);color:#fff}
 .spb-step--active .spb-step-num{background:rgba(255,255,255,.25);color:#fff}
 .spb-step-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--ink);font-size:.75rem;font-weight:800}
-.spb-adv-select{margin-left:auto;max-width:190px;font-size:.82rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:var(--muted);background:transparent}
+.spb-adv-select{margin-left:auto;max-width:200px;font-size:.82rem;padding:9px 14px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--surface);font-weight:700;cursor:pointer}
+.spb-adv-select:hover{border-color:var(--blue)}
 .spb-step-hint{margin:0 0 14px;padding:10px 12px;background:var(--surface);border-radius:8px;color:var(--muted);font-size:.85rem}
 @media(max-width:768px){.spb-start-grid{grid-template-columns:1fr}.spb-steps{flex-direction:column;align-items:stretch}.spb-step{justify-content:flex-start}.spb-adv-select{margin-left:0;max-width:none}}
 .spb-stage-card{display:flex;flex-direction:column;gap:12px;padding:18px;margin-bottom:14px;background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);counter-increment:spbstage;transition:box-shadow .15s,border-color .15s}
@@ -16530,8 +16532,13 @@ h1.pl-title,
 .spb-stage-num::before{content:counter(spbstage)}
 .spb-stage-num{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-size:.82rem;font-weight:800;flex:none;margin-top:18px}
 .spb-stage-card-head{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.spb-stage-toggle{margin-left:auto;margin-top:18px;flex:none;display:inline-flex;align-items:center;gap:2px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font-size:.78rem;font-weight:700;cursor:pointer;transition:background .12s,border-color .12s}
+.spb-stage-toggle:hover{border-color:var(--blue);color:var(--ink)}
+.spb-stage-toggle--open{background:rgba(37,99,235,.08);border-color:var(--blue);color:var(--ink)}
+.spb-stage-card-body.gw-accordion-body{margin-top:0}
+.spb-stage-list-actions{display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px}
 .spb-field{display:flex;flex-direction:column;gap:5px;min-width:0}
-.spb-field>label{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.spb-field>label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--gw-muted,var(--muted))}
 .spb-field input,.spb-field select,.spb-field textarea{font-size:.9rem;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);width:100%}
 .spb-field input:focus,.spb-field select:focus,.spb-field textarea:focus{outline:none;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 .spb-field input:disabled,.spb-field select:disabled,.spb-field textarea:disabled{opacity:.65;background:var(--line);cursor:not-allowed}
@@ -16551,7 +16558,7 @@ h1.pl-title,
 .spb-component-row label input,.spb-component-row label select,.spb-component-row label textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
 .spb-component-row label input:focus,.spb-component-row label select:focus,.spb-component-row label textarea:focus{outline:none;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 .spb-component-row>button{justify-self:start;align-self:end;font-size:.78rem}
-@media(max-width:768px){.spb-stage-card{padding:14px}.spb-stage-card-head{flex-direction:column}.spb-stage-card-head .spb-field,.spb-stage-card-head .spb-field-narrow,.spb-field-grow{flex:1 1 auto;width:100%}.spb-stage-card-guidance{grid-template-columns:1fr}.spb-stage-num{margin-top:0}.spb-stage-card-actions button{flex:1 1 auto}}
+@media(max-width:768px){.spb-stage-card{padding:14px}.spb-stage-card-head{flex-direction:column}.spb-stage-card-head .spb-field,.spb-stage-card-head .spb-field-narrow,.spb-field-grow{flex:1 1 auto;width:100%}.spb-stage-card-guidance{grid-template-columns:1fr}.spb-stage-num{margin-top:0}.spb-stage-card-actions button{flex:1 1 auto}.spb-stage-toggle{align-self:flex-end;margin-top:0;width:fit-content}}
 
 /* ══════════════════════════════════════════════════════════════════════════
    GROUNDWORK AI — CLOSE LIKELIHOOD SCORE + TIME-IN-STAGE CLOCK
@@ -16746,4 +16753,145 @@ h1.pl-title,
 }
 @media (max-width: 560px) {
   .hero-kpis { grid-template-columns: 1fr; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION 43 — PIPELINE TOTALS: column money subheads + top KPI band
+   The board previously showed counts only. Columns now carry their dollar
+   total, and the generic stat row is replaced by a period-scoped KPI band.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Column subhead ── */
+/* Sits under .kanban-col > h3, which is nowrap+ellipsis and must stay that way. */
+.kanban-col-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin: -4px 0 9px;
+  min-width: 0;
+}
+.kanban-col-money {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gw-ink, #1C3A2B);
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+.kanban-col-flags {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gw-muted, #6F7E6A);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* .gw-pipe-group-head is space-between with no gap — auto margin pulls the
+   total over to the count pill, so it needs its own breathing room. */
+.gw-pipe-group-total {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gw-ink, #1C3A2B);
+  white-space: nowrap;
+}
+
+/* ── Top KPI band ── */
+.gw-kpi-band { margin-top: 12px; padding: 12px 16px; }
+
+.gw-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.gw-kpi-head-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #6F7E6A);
+}
+.gw-kpi-periods { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.gw-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gw-kpi-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid var(--gw-line, #E4EAE3);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.gw-kpi-tile:hover:not(:disabled) {
+  background: rgba(77, 138, 134, .06);
+  border-color: rgba(77, 138, 134, .34);
+}
+.gw-kpi-tile--on {
+  background: rgba(77, 138, 134, .12);
+  border-color: rgba(77, 138, 134, .44);
+}
+/* Forecast and win rate aren't board filters — no pointer, no hover lift. */
+.gw-kpi-tile--static { cursor: default; opacity: 1; }
+
+/* Scoped under .gw-kpi-band: these three class names are reused (with
+   different rules) by unrelated older KPI components elsewhere in this file
+   — scoping avoids widening that collision while we're already editing here. */
+.gw-kpi-band .gw-kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--gw-muted, #6F7E6A);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gw-kpi-band .gw-kpi-value {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--gw-ink, #1C3A2B);
+  white-space: nowrap;
+}
+.gw-kpi-band .gw-kpi-sub {
+  font-size: 11px;
+  color: var(--gw-muted, #6F7E6A);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Fixed 3-tile variant (e.g. Sales Process "at a glance" band) — placed before
+   the responsive overrides below so ≤1180px/≤700px still collapse it same as
+   the base 6-tile grid, unlike .gw-kpi-grid--divisions' auto-fit below. */
+.gw-kpi-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+@media (max-width: 1180px) { .gw-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px)  { .gw-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ── Divider between the Closed Results tiles and the By Division row ── */
+.gw-kpi-divider {
+  border-top: 1px solid var(--gw-line, #E4EAE3);
+  margin: 14px 0 10px;
+}
+
+/* Division tile count varies by tenant — auto-fit rather than a fixed split. */
+.gw-kpi-grid--divisions {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }

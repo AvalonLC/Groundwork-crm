@@ -167,17 +167,27 @@ const _VIEW_WORKSPACE_MAP = {
   fieldDashboard:'gwDashboard',
   // Sales workspace
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', customerDetail:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
+  // Marketing workspace — campaigns, audiences, brand kit, media, forms.
+  // `campaigns` is repointed here from the old localStorage-only Sequences mock.
+  gwMarketing:'gwMarketing', marketingCampaigns:'gwMarketing', marketingAudiences:'gwMarketing',
+  marketingBrand:'gwMarketing', marketingMedia:'gwMarketing', marketingForms:'gwMarketing',
+  marketingAnalytics:'gwMarketing',
   // Learning workspace
   gwLearning:'gwLearning', academy:'gwLearning', learnEstimating:'gwLearning', learnFinancial:'gwLearning', learnCrmGuide:'gwLearning',
   estimates:'gwSales', proposals:'gwSales', communications:'gwSales', templates:'gwSales',
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
-  aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
+  aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwMarketing',
   process:'gwSales', forms:'gwSales', scripts:'gwSales', emailTemplates:'gwSales',
   objections:'gwSales', calculator:'gwSales',
   // Financial workspace
   financialHub:'gwFinancial', invoices:'gwFinancial', payments:'gwFinancial',
   deposits:'gwFinancial', statements:'gwFinancial', financialActivity:'gwFinancial',
   statement:'gwFinancial', gwReviews:'gwFinancial', gwStripe:'gwFinancial',
+  // Finance OS pages (SPA-integrated /finance/* nav — see gwFinancial() and
+  // financeFetch() below)
+  finControl:'gwFinancial', finQueue:'gwFinancial', finJobCost:'gwFinancial',
+  finBudget:'gwFinancial', finRecovery:'gwFinancial', finInvPay:'gwFinancial',
+  finLedger:'gwFinancial', finDocuments:'gwFinancial', finConfig:'gwFinancial',
   // Operations workspace
   scheduleBoard:'gwOperations', dispatchBoard:'gwOperations',
   recurringServices:'gwOperations', crewView:'gwOperations',
@@ -404,6 +414,7 @@ const DEFAULT_NAV_PERMS = {
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
+    'finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','teamReports',
@@ -418,6 +429,7 @@ const DEFAULT_NAV_PERMS = {
     'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
     'learnEstimating','learnFinancial','learnCrmGuide',
     'financialHub','invoices','gwReviews','gwStripe','payments','deposits','statements','financialActivity',
+    'finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig',
     'scheduleBoard','dispatchBoard','recurringServices','gwRecurringPlans','crewView','workOrderList','workOrderDetail',
     'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
     'revenueAdmin','teamReports',
@@ -558,8 +570,13 @@ function statusCssClass(status){
 // Which dollar figure drives a lead's money displays and commission:
 // won leads use the final Sold @ amount (falling back to the estimate),
 // everything else uses the Est. Value (jobValue).
+// gwLeadClosedState (not gwSalesIs): the semantic resolver only answers for a
+// published sales process or the legacy label map, so on custom stage names it
+// reported every won lead as unresolved and the sold amount never applied.
 function gwLeadBaseValue(opp){
-  const isWon = (typeof gwSalesIs === 'function') && gwSalesIs(opp,'won');
+  const isWon = (typeof gwLeadClosedState === 'function')
+    ? gwLeadClosedState(opp) === 'won'
+    : ((typeof gwSalesIs === 'function') && gwSalesIs(opp,'won'));
   if (isWon && Number(opp?.soldAmount || 0) > 0) return Number(opp.soldAmount);
   return Number(opp?.jobValue || 0);
 }
@@ -720,6 +737,11 @@ function fallbackCopy(text){
       financialHub:'Overview', invoices:'Invoices',
       payments:'Payments', deposits:'Deposits', statements:'Statements',
       financialActivity:'Activity', statement:'Statement',
+      // Finance OS tabs (src/ui/layout.tsx's FINANCE_NAV, same labels)
+      finControl:'Money Loop', finQueue:'Work Queue', finJobCost:'Job Costing',
+      finBudget:'Budget & Rates', finRecovery:'Overhead Recovery',
+      finInvPay:'Invoices & Payments', finLedger:'Ledger', finDocuments:'Documents',
+      finConfig:'Setup & Config',
       // Operations workspace tabs
       scheduleBoard:'Schedule', dispatchBoard:'Dispatch',
       recurringServices:'Recurring Services', crewView:'Crew View',
@@ -800,6 +822,7 @@ const _gwWsNameToId = {
   Sales: 'gwSales',
   Financial: 'gwFinancial',
   Operations: 'gwOperations',
+  Marketing: 'gwMarketing',
   Learning: 'gwLearning',
   Admin: 'gwAdmin',
 };
@@ -815,6 +838,7 @@ const _GW_MOBILE_TABS = {
   Sales:       ['pipeline','lead','clients','estimates','communications'],
   Financial:   ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
+  Marketing:   ['marketingCampaigns'],
   Learning:    ['academy'],
   Admin:       ['settings','userManagement'],
 };
@@ -986,15 +1010,132 @@ function gwRecords(sub) {
 }
 window.gwRecords = gwRecords;
 
+// ── Finance OS SPA integration ────────────────────────────────────────────────
+// Finance OS (/finance/*, src/ui/*.tsx) used to be 16 standalone full-page
+// server-rendered documents — real browser navigation, own <html>/<head>/
+// <body>, a separate green top tab-strip instead of this sidebar. financeFetch()
+// makes it behave exactly like every other in-SPA nav click instead: fetch the
+// same route with X-GW-Partial:1 (src/ui/layout.tsx's isPartialRequest/Page
+// partial mode strips the standalone-page wrapper and returns just the inner
+// content), inject it into #view in place, no reload.
+//
+// The 9 Finance OS nav ids (finControl…finConfig) match FINANCE_NAV /
+// FINANCE_NAV_CONFIG in src/ui/layout.tsx exactly — same keys _gwSetHeader
+// already used when these were {href} links (see gwFinancial() below).
+const _GW_FIN_NAV_TABS = [
+  {id:'finControl',    label:'Money Loop'},
+  {id:'finQueue',      label:'Work Queue'},
+  {id:'finJobCost',    label:'Job Costing'},
+  {id:'finBudget',     label:'Budget & Rates'},
+  {id:'finRecovery',   label:'Overhead Recovery'},
+  {id:'finInvPay',     label:'Invoices & Payments'},
+  {id:'finLedger',     label:'Ledger'},
+  {id:'finDocuments',  label:'Documents'},
+  {id:'finConfig',     label:'Setup & Config'},
+];
+const _GW_FIN_OS_IDS = ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments','finConfig'];
+
+// Finds every <form> inside a just-injected Finance OS fragment and intercepts
+// its submit so it POSTs via fetch (same X-GW-Partial header) instead of doing
+// a real navigation. Covers all 4 form-bearing Finance OS pages: the two that
+// already responded to POST with rendered HTML (document-upload.tsx,
+// onboarding.tsx) and the two that used to redirect-after-POST
+// (config-admin.tsx, policy-setup.tsx — now render the same target content
+// directly in partial mode instead of redirecting, since a fetch() can't
+// follow a redirect the way a real navigation does; see isPartialRequest in
+// src/ui/layout.tsx). new FormData(form) carries file inputs (multipart)
+// natively — no special-casing needed for the two upload forms.
+function _gwFinanceBindForms(container, viewId) {
+  if (!container) return;
+  container.querySelectorAll('form').forEach((form) => {
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const action = form.getAttribute('action') || location.pathname;
+      const method = (form.getAttribute('method') || 'POST').toUpperCase();
+      const submitBtn = form.querySelector('[type=submit]');
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const res = await fetch(action, {
+          method,
+          body: new FormData(form),
+          headers: { 'X-GW-Partial': '1' },
+          credentials: 'same-origin',
+        });
+        if (res.status === 401 || res.redirected) {
+          if (typeof logoutRep === 'function') logoutRep();
+          if (typeof renderLoginScreen === 'function') renderLoginScreen();
+          return;
+        }
+        const html = await res.text();
+        const view = document.getElementById('view');
+        if (view) view.innerHTML = html;
+        _gwFinanceBindForms(view, viewId);
+        try { history.replaceState(null, '', '#' + viewId); } catch (e) {}
+      } catch (e) {
+        if (submitBtn) submitBtn.disabled = false;
+        if (window.showToast) window.showToast('Save failed: ' + e.message);
+      }
+    });
+  });
+}
+
+// Same problem as _gwFinanceBindForms above, but for <a href="/finance/..."> links —
+// every drill-through (Money Loop's Reconciliation/Forecast, Work Queue's
+// Collections/Obligations, Setup & Config's Company Policy/Upload Documents/
+// Financial Setup, Documents' "Upload another document") is a plain link in the
+// underlying .tsx, which without this would do a real navigation and drop the SPA
+// shell/sidebar entirely instead of staying in-app like the 9 top-level nav clicks do.
+function _gwFinanceBindLinks(container, viewId) {
+  if (!container) return;
+  container.querySelectorAll('a[href^="/finance/"]').forEach((a) => {
+    a.addEventListener('click', (ev) => {
+      if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
+      ev.preventDefault();
+      financeFetch(a.getAttribute('href'), viewId);
+    });
+  });
+}
+
+// The in-SPA replacement for a real navigation to a /finance/* page. Mirrors
+// this file's existing session-expired handling (logoutRep();
+// renderLoginScreen() — see e.g. the sidebar-footer sign-out action) rather
+// than inventing a new pattern: requireAuthFinance (src/index.tsx) turns an
+// auth failure into a redirect to '/' for HTML page routes, which fetch()
+// follows transparently (res.redirected===true) rather than surfacing as a
+// 401 — checked for explicitly since a followed redirect's body is the SPA
+// shell itself, not Finance OS content, and injecting that into #view would
+// corrupt the page.
+async function financeFetch(path, viewId) {
+  const view = document.getElementById('view');
+  if (!view) return;
+  try {
+    const res = await fetch(path, { headers: { 'X-GW-Partial': '1' }, credentials: 'same-origin' });
+    if (res.status === 401 || res.redirected) {
+      if (typeof logoutRep === 'function') logoutRep();
+      if (typeof renderLoginScreen === 'function') renderLoginScreen();
+      return;
+    }
+    view.innerHTML = await res.text();
+    _gwFinanceBindForms(view, viewId);
+    _gwFinanceBindLinks(view, viewId);
+    try { history.replaceState(null, '', '#' + viewId); } catch (e) {}
+  } catch (e) {
+    view.innerHTML = `<div style="padding:48px 24px;text-align:center;color:var(--gw-text-muted)">Couldn't load this page.<br><button class="secondary-btn" style="margin-top:12px" onclick="financeFetch('${path}','${viewId}')">Retry</button></div>`;
+  }
+}
+window.financeFetch = financeFetch;
+
 // ── Financial workspace ───────────────────────────────────────────────────────
 function gwFinancial(tab) {
   tab = tab || 'financialHub';
   // Eight top-level items, in this order, per the confirmed nav-consolidation
   // plan (2026-08-06) — the SAME 8 destinations src/ui/layout.tsx's Finance OS
   // top tab-strip shows, so navigating in from either side reads as continuing
-  // the same tab row rather than leaving into a different app. All 8 are real
-  // page navigations (href) into /finance/*, not SPA tabs, so there's nothing
-  // left for the dispatch below to branch on except the Overview fallback.
+  // the same tab row rather than leaving into a different app. Since the
+  // finance-spa-integration change these are in-SPA nav clicks (financeFetch),
+  // not real page navigations — see finRoute in show()'s routes table, which
+  // is what actually handles show('finControl') etc. Nothing for the dispatch
+  // below to branch on either way — it only ever runs for the Overview fallback.
   //
   // Invoices, Payments (gwStripe), Deposits, Statements, Reviews, and Activity
   // are no longer separate top-level tabs:
@@ -1013,18 +1154,15 @@ function gwFinancial(tab) {
   //     show('gwReviews')). Its render function and data model (real D1,
   //     review_requests/review_settings) are untouched, just no longer
   //     reachable from this tab strip.
-  _gwSetHeader('Financial', [
-    {id:'finControl',    label:'Money Loop',          href:'/finance/money-loop'},
-    {id:'finQueue',       label:'Work Queue',          href:'/finance/queue'},
-    {id:'finJobCost',     label:'Job Costing',         href:'/finance/job-costing'},
-    {id:'finBudget',      label:'Budget & Rates',      href:'/finance/budget'},
-    {id:'finRecovery',    label:'Overhead Recovery',   href:'/finance/recovery'},
-    {id:'finInvPay',      label:'Invoices & Payments', href:'/finance/invoices-payments'},
-    {id:'finLedger',      label:'Ledger',              href:'/finance/ledger'},
-    {id:'finDocuments',   label:'Documents',           href:'/finance/documents'},
-    {divider:true},
-    {id:'finConfig',      label:'Setup & Config',      href:'/finance/config'},
-  ], tab);
+  // {id,label} items now (no href) — see financeFetch()/_gwFinanceBindForms()
+  // above: clicking these fetches the Finance OS page as a partial and swaps
+  // it into #view in place, exactly like every other in-SPA nav click,
+  // instead of a real page navigation. finRoute (in show()'s routes table)
+  // is what actually dispatches show('finControl') etc. to financeFetch —
+  // this workspace function itself is only ever reached for the plain
+  // Financial workspace landing (tab defaults to 'financialHub' below), same
+  // as before this change.
+  _gwSetHeader('Financial', _GW_FIN_NAV_TABS, tab);
   (typeof financialHub==='function') ? financialHub() : _gwTabStub('Overview');
 }
 window.gwFinancial = gwFinancial;
@@ -1304,15 +1442,11 @@ window._gwApplyFieldNavFilters = _gwApplyFieldNavFilters;
     {id:'communications', label:'Communications'},
   ], null);
 
-  // Financial
-  _gwSetHeader('Financial', [
-    {id:'financialHub',      label:'Overview'},
-    {id:'invoices',          label:'Invoices'},
-    {id:'payments',          label:'Payments'},
-    {id:'deposits',          label:'Deposits'},
-    {id:'statements',        label:'Statements'},
-    {id:'financialActivity', label:'Activity'},
-  ], null);
+  // Financial — the real Finance OS nav (Money Loop…Setup & Config), same set
+  // gwFinancial() renders at runtime, so the panel doesn't flash the old
+  // Overview/Invoices/Payments/Deposits/Statements/Activity list before the
+  // first real navigation into Financial repaints it.
+  _gwSetHeader('Financial', _GW_FIN_NAV_TABS, null);
 
   // Operations — full list; field roles will have non-permitted tabs hidden by _gwApplyFieldNavFilters()
   _gwSetHeader('Operations', [
@@ -1485,8 +1619,12 @@ function show(viewName='today', param){
       estimates:'Estimates', proposals:'Proposals', communications:'Communications', textMessages:'Text Messages', automations:'Sequences',
       templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
       playbooks:'Playbooks', aiAssist:'AI Assist',
-      campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
-      emailTemplates:'Templates', objections:'Talk Tracks',
+      process:'Playbooks', scripts:'Talk Tracks',
+      // Marketing
+      campaigns:'Campaigns', marketingCampaigns:'Campaigns', marketingAudiences:'Audiences',
+      marketingBrand:'Brand Kit', marketingMedia:'Media', marketingForms:'Forms',
+      marketingAnalytics:'Analytics',
+      forms:'Playbooks', emailTemplates:'Templates', objections:'Talk Tracks',
       calculator:'Pricing Tools', ai:'AI Assist',
       // Financial
       financialHub:'Overview', invoices:'Invoices', payments:'Payments',
@@ -1539,7 +1677,11 @@ function show(viewName='today', param){
     academy:'Learning', learnEstimating:'Learning', learnFinancial:'Learning', learnCrmGuide:'Learning',
     estimates:'Sales', proposals:'Sales', communications:'Sales', textMessages:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
-    automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
+    automations:'Sales', process:'Sales', forms:'Sales',
+    // Marketing workspace tab aliases
+    campaigns:'Marketing', marketingCampaigns:'Marketing', marketingAudiences:'Marketing',
+    marketingBrand:'Marketing', marketingMedia:'Marketing', marketingForms:'Marketing',
+    marketingAnalytics:'Marketing',
     scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
     calculator:'Sales', ai:'Sales',
     // Financial workspace tab aliases
@@ -1564,6 +1706,7 @@ function show(viewName='today', param){
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'Command Center'}],
     Sales:      [{id:'pipeline',label:'Pipeline'},{id:'process',label:'Sales Process'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
+    Marketing:  [{id:'marketingCampaigns',label:'Campaigns'},{id:'marketingAudiences',label:'Audiences'},{id:'marketingBrand',label:'Brand Kit'},{id:'marketingMedia',label:'Media'},{id:'marketingForms',label:'Forms'},{id:'marketingAnalytics',label:'Analytics'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [
@@ -1582,8 +1725,23 @@ function show(viewName='today', param){
   const _isTopWsCall = ['gwDashboard','gwSales','gwFinancial','gwOperations','gwLearning','gwAdmin'].includes(viewName);
   const _isDirectWsCall = _isTopWsCall;
   if (!_isDirectWsCall) {
-    const _wsName = _wsHeaderMap[viewName];
-    if (_wsName && _wsTabDefs[_wsName]) {
+    // Finance OS ids (finControl…finConfig, dispatched to financeFetch by
+    // finRoute below) get their own tab set (_GW_FIN_NAV_TABS, same one
+    // gwFinancial() itself renders) rather than falling through to the
+    // generic _wsTabDefs.Financial lookup below — that list is still the
+    // OLD legacy Overview/Invoices/Payments/Deposits/Statements/Activity
+    // set, kept as-is for those still-live legacy views (financialHub,
+    // invoices, etc.), so it can't also serve the new 9-item Finance OS set.
+    // This is what makes navigating directly to e.g. #finControl on page
+    // load (hash restore) — not just clicking it from within gwFinancial() —
+    // correctly highlight the right tab and keep the Financial sidebar
+    // section expanded, same as every other workspace's leaf ids.
+    if (_GW_FIN_OS_IDS.includes(viewName)) {
+      _gwSetHeader('Financial', _GW_FIN_NAV_TABS, viewName);
+      window._gwPendingSubHeader = null;
+      window._gwActiveSubTabs = null;
+    } else if (_wsHeaderMap[viewName] && _wsTabDefs[_wsHeaderMap[viewName]]) {
+      const _wsName = _wsHeaderMap[viewName];
       // Highlight aliases for views that don't have their own nav entry
       let _tabHighlight = viewName;
       if (viewName === 'auditLog')        _tabHighlight = 'settings';
@@ -1667,7 +1825,6 @@ function show(viewName='today', param){
     teamView:           ()   => teamView(),
     // Sales
     properties:         ()   => properties(),
-    campaigns:          ()   => campaigns(),
     emailTemplates:     ()   => emailTemplates(),
     // Financial
     payments:           ()   => payments(),
@@ -1725,7 +1882,15 @@ function show(viewName='today', param){
     templates:      ()   => communicationsHub('templates'),
     emailTemplates: ()   => communicationsHub('templates'),
     automations:    ()   => communicationsHub('sequences'),
-    campaigns:      ()   => communicationsHub('sequences'),
+    // `campaigns` used to open the Sequences mock, which persisted to
+    // localStorage only. It now opens the real, D1-backed module.
+    campaigns:          ()   => gwMarketing('marketingCampaigns'),
+    marketingCampaigns: ()   => gwMarketing('marketingCampaigns'),
+    marketingAudiences: ()   => gwMarketing('marketingAudiences'),
+    marketingBrand:     ()   => gwMarketing('marketingBrand'),
+    marketingMedia:     ()   => gwMarketing('marketingMedia'),
+    marketingForms:     ()   => gwMarketing('marketingForms'),
+    marketingAnalytics: ()   => gwMarketing('marketingAnalytics'),
     scripts:        ()   => communicationsHub('talkTracks'),
     objections:     ()   => communicationsHub('talkTracks'),
     ai:             ()   => communicationsHub('aiAssist'),
@@ -1738,6 +1903,7 @@ function show(viewName='today', param){
     gwSales:      (t) => gwSales(t),
     gwFinancial:  (t) => gwFinancial(t),
     gwOperations: (t) => gwOperations(t),
+    gwMarketing:  (t) => gwMarketing(t),
     gwLearning:   (t) => gwLearning(t),
     gwAdmin:      (t) => gwAdmin(t),
     gwRecords:    (s) => gwRecords(s),
@@ -1774,7 +1940,21 @@ function show(viewName='today', param){
   const customerRoute = {
     customerDetail: (id) => customerDetail(id),
   };
-  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ai, ...commsHubRoute};
+  // Finance OS pages — in-SPA nav via financeFetch (see that function above),
+  // not real page navigations. Path/id pairs match FINANCE_NAV/
+  // FINANCE_NAV_CONFIG in src/ui/layout.tsx exactly.
+  const finRoute = {
+    finControl:   () => financeFetch('/finance/money-loop', 'finControl'),
+    finQueue:     () => financeFetch('/finance/queue', 'finQueue'),
+    finJobCost:   () => financeFetch('/finance/job-costing', 'finJobCost'),
+    finBudget:    () => financeFetch('/finance/budget', 'finBudget'),
+    finRecovery:  () => financeFetch('/finance/recovery', 'finRecovery'),
+    finInvPay:    () => financeFetch('/finance/invoices-payments', 'finInvPay'),
+    finLedger:    () => financeFetch('/finance/ledger', 'finLedger'),
+    finDocuments: () => financeFetch('/finance/documents', 'finDocuments'),
+    finConfig:    () => financeFetch('/finance/config', 'finConfig'),
+  };
+  const routes = {today, pipeline, lead, clients, process, forms, scripts, templates, objections, calculator, manager, settings, ...intRoute, ...repRoute, ...revenueRoute, ...umRoute, ...saRoute, ...paRoute, ...ttRoute, ...p5Route, ...p6Route, ...p7Route, ...p8Route, ...engRoute, ...wsRoute, ...customerRoute, ...finRoute, ai, ...commsHubRoute};
   (routes[viewName] || today)(param);
   window.scrollTo({top:0, behavior:'smooth'});
   if (typeof window._avalonState !== 'undefined') window._avalonState = state;
@@ -1923,11 +2103,17 @@ window._updateSidebarRep = function updateSidebarRep() {
   } catch(e) {}
 };
 
-function statCards(){
-  const openOpps = state.opportunities.filter(o=>gwLeadIsOpen(o));
-  const proposalOpps = state.opportunities.filter(o=>gwSalesIs(o,'proposal_presentation'));
-  const overdueOpps = state.opportunities.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
-  const soldOpps = state.opportunities.filter(o=>gwSalesIs(o,'won'));
+// `opps` lets a caller pass the set it is actually showing (the pipeline board
+// passes its filtered leads); callers that omit it keep the whole-book view.
+// Won/lost come from gwLeadClosedState, which resolves custom tenant stage
+// names — gwSalesIs alone reported 0 sold for any tenant not on the legacy
+// labels, no matter how many deals were in the Won column.
+function statCards(opps){
+  const rows = Array.isArray(opps) ? opps : state.opportunities;
+  const openOpps = rows.filter(o=>gwLeadIsOpen(o));
+  const proposalOpps = rows.filter(o=>gwSalesIs(o,'proposal_presentation'));
+  const overdueOpps = rows.filter(o=>(typeof gwLeadIsOpen==='function'?gwLeadIsOpen(o):gwSalesIsOpen(o)) && (typeof gwStageClock==='function' ? gwStageClock(o).level==='late' : (o.nextFollowUp && o.nextFollowUp < todayISO())));
+  const soldOpps = rows.filter(o=>gwLeadClosedState(o)==='won');
   return `<div class="grid grid-4 stat-grid">
     <article class="stat dash-card-clickable" title="Click to filter: Open leads" onclick="window._pipelineStatusFilter='open';show('pipeline')" style="cursor:pointer">
       <span>Open</span><strong>${openOpps.length}</strong>
@@ -3855,9 +4041,178 @@ function gwNextUpForOpp(o){
 }
 window.gwNextUpForOpp = gwNextUpForOpp;
 
+// ── Pipeline totals ──────────────────────────────────────────────────────────
+// Pure aggregation behind the board's column headers and the KPI band. No DOM
+// work here so the numbers can be asserted directly (tests/pipeline-totals.test.mjs).
+
+// Inclusive start of a reporting window; null means "all time".
+function gwPeriodStart(period, now){
+  const d = now ? new Date(now) : new Date();
+  if (period === 'month')   return new Date(d.getFullYear(), d.getMonth(), 1);
+  if (period === 'quarter') return new Date(d.getFullYear(), Math.floor(d.getMonth()/3)*3, 1);
+  if (period === 'ytd')     return new Date(d.getFullYear(), 0, 1);
+  return null;
+}
+
+// Undated leads count only when no window is set — a missing close date must
+// never be read as "closed this month".
+function gwInPeriod(dateStr, period, now){
+  const start = gwPeriodStart(period, now);
+  if (!start) return true;
+  if (!dateStr) return false;
+  const s = String(dateStr);
+  const t = new Date(s.includes('T') ? s : s.replace(' ', 'T') + (s.length <= 10 ? 'T00:00:00Z' : 'Z')).getTime();
+  return !isNaN(t) && t >= start.getTime();
+}
+
+// Rollup for one stage column.
+function gwStageTotals(items){
+  const rows = Array.isArray(items) ? items : [];
+  let value = 0, late = 0, noValue = 0;
+  rows.forEach(o => {
+    const v = gwLeadBaseValue(o);
+    value += v;
+    if (!v) noValue += 1;
+    if (gwLeadIsOpen(o) && gwStageClock(o).level === 'late') late += 1;
+  });
+  return { count: rows.length, value, late, noValue };
+}
+
+// Board-level rollup. `opps` is the already-filtered set the board is showing,
+// so every figure describes exactly what the user can see.
+function gwPipelineTotals(opps, period, now){
+  const rows = Array.isArray(opps) ? opps : [];
+  const sum  = list => list.reduce((a, o) => a + gwLeadBaseValue(o), 0);
+
+  const open = rows.filter(o => gwLeadIsOpen(o));
+  const openNoValue = open.filter(o => !gwLeadBaseValue(o)).length;
+  // soldDate is written by confirmMarkSold(); leads closed before that flow
+  // existed fall back to updatedAt, which is the only date they carry.
+  const won  = rows.filter(o => gwLeadClosedState(o) === 'won'  && gwInPeriod(o.soldDate || o.updatedAt, period, now));
+  const lost = rows.filter(o => gwLeadClosedState(o) === 'lost' && gwInPeriod(o.updatedAt, period, now));
+  const late = open.filter(o => gwStageClock(o).level === 'late');
+
+  const openValue = sum(open), wonValue = sum(won), lostValue = sum(lost);
+  const decided = won.length + lost.length;
+  const decidedValue = wonValue + lostValue;
+
+  // Weighted on the same close-likelihood % printed on every card, so the band
+  // and the board always agree. Open leads only: gwLeadScore pins won to 100
+  // and lost to 0, so closed deals would double-count as forecast.
+  const forecast = open.reduce((a, o) => a + gwLeadBaseValue(o) * (gwLeadScore(o).score / 100), 0);
+
+  // Deals missing either end of the span are dropped rather than dragging the
+  // average toward zero.
+  const spans = won.map(o => {
+    if (!o.soldDate || !o.createdAt) return null;
+    const sd = String(o.soldDate), cd = String(o.createdAt);
+    const t1 = Date.parse(sd.includes('T') ? sd : sd + 'T00:00:00Z');
+    const t0 = Date.parse(cd.includes('T') ? cd : cd.replace(' ', 'T') + 'Z');
+    if (isNaN(t0) || isNaN(t1) || t1 < t0) return null;
+    return (t1 - t0) / 86400000;
+  }).filter(n => n !== null);
+
+  return {
+    openCount: open.length, openValue, openNoValue,
+    forecast,
+    wonCount: won.length, wonValue,
+    lostCount: lost.length, lostValue,
+    lateCount: late.length, lateValue: sum(late),
+    winRate:      decided ? won.length / decided : null,
+    winRateValue: decidedValue ? wonValue / decidedValue : null,
+    avgDeal:      won.length ? wonValue / won.length : null,
+    avgDaysToClose: spans.length ? spans.reduce((a, n) => a + n, 0) / spans.length : null
+  };
+}
+
+// Column subhead. Sits below the <h3> rather than inside it: the header is
+// pinned to one line by white-space:nowrap + ellipsis, so money crammed in
+// there is the first thing to get clipped on a narrow column.
+function gwStageTotalHtml(totals){
+  const t = totals || { count:0, value:0, late:0, noValue:0 };
+  const flags = [
+    t.late    ? `${t.late} late` : null,
+    t.noValue ? `${t.noValue} no value` : null
+  ].filter(Boolean).join(' · ');
+  return `<div class="kanban-col-total">
+    <span class="kanban-col-money">${t.value ? money(t.value) : '—'}</span>
+    ${flags ? `<span class="kanban-col-flags">${escapeHtml(flags)}</span>` : ''}
+  </div>`;
+}
+
+// ── Pipeline KPI band ─────────────────────────────────────────────────────────
+// Replaces the generic statCards() row on the board. Tiles double as the
+// existing status quick-filters, so the headline numbers are also navigation.
+const GW_PIPELINE_PERIODS = [
+  { key:'all',     label:'All Time' },
+  { key:'month',   label:'This Month' },
+  { key:'quarter', label:'This Quarter' },
+  { key:'ytd',     label:'YTD' }
+];
+
+function gwPipelineKpiBand(opps, period, activeStatusFilter, divisionRowHtml){
+  const t = gwPipelineTotals(opps, period);
+  const pct  = v => v === null ? '—' : Math.round(v * 100) + '%';
+  const periodLabel = (GW_PIPELINE_PERIODS.find(p => p.key === period) || GW_PIPELINE_PERIODS[0]).label;
+
+  // Clicking the active tile clears the filter, matching the division strip.
+  const tile = (o) => {
+    const on = o.filter && activeStatusFilter === o.filter;
+    const attrs = o.filter
+      ? `type="button" class="gw-kpi-tile${on ? ' gw-kpi-tile--on' : ''}" onclick="window._pipelineStatusFilter=${on ? 'null' : `'${o.filter}'`};show('pipeline')"`
+      : `type="button" class="gw-kpi-tile gw-kpi-tile--static"`; // not disabled — a disabled button suppresses its tooltip
+    return `<button ${attrs} title="${escapeHtml(o.hint || '')}">
+      <span class="gw-kpi-label">${escapeHtml(o.label)}</span>
+      <span class="gw-kpi-value"${o.tone ? ` style="color:${o.tone}"` : ''}>${o.value}</span>
+      <span class="gw-kpi-sub">${o.sub}</span>
+    </button>`;
+  };
+
+  const wonSub = [
+    `${t.wonCount} deal${t.wonCount === 1 ? '' : 's'}`,
+    t.avgDeal !== null ? `avg ${money(t.avgDeal)}` : null,
+    t.avgDaysToClose !== null ? `${Math.round(t.avgDaysToClose)}d to close` : null
+  ].filter(Boolean).join(' · ');
+
+  return `<section class="card app-card gw-kpi-band" id="gw-pipeline-kpis">
+    <div class="gw-kpi-head">
+      <span class="gw-kpi-head-label">Closed results</span>
+      <div class="gw-kpi-periods">
+        ${GW_PIPELINE_PERIODS.map(p => `<button type="button" class="pl-filter-btn ${period === p.key ? 'pl-active' : ''}"
+          onclick="window._pipelinePeriod='${p.key}';show('pipeline')">${escapeHtml(p.label)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="gw-kpi-grid">
+      ${tile({ label:'Open Pipeline', value: money(t.openValue), filter:'open',
+        sub:`${t.openCount} open lead${t.openCount === 1 ? '' : 's'}${t.openNoValue ? ` · ${t.openNoValue} missing a value` : ''}`,
+        hint:'Estimated value of every lead still in play. Click to show only open leads.' })}
+      ${tile({ label:'Weighted Forecast', value: money(t.forecast),
+        sub:'open leads × close likelihood',
+        hint:'Each open lead\'s value multiplied by the Groundwork AI close likelihood shown on its card.' })}
+      ${tile({ label:`Won · ${periodLabel}`, value: money(t.wonValue), filter:'sold', tone:'#2D7A55',
+        sub: wonSub,
+        hint:'Sold amount for deals won in this period. Deals closed before a sold date was recorded fall back to their last-updated date.' })}
+      ${tile({ label:`Lost · ${periodLabel}`, value: money(t.lostValue), filter:'lost', tone:'#B4553F',
+        sub:`${t.lostCount} deal${t.lostCount === 1 ? '' : 's'}`,
+        hint:'Lost deals have no dedicated close date, so this period is based on when the lead was last updated.' })}
+      ${tile({ label:'Win Rate', value: pct(t.winRate),
+        sub: t.winRate === null ? 'no decisions yet' : `${t.wonCount} of ${t.wonCount + t.lostCount} decided · ${pct(t.winRateValue)} by value`,
+        hint:'Won ÷ decided (won + lost). Leads still open are not counted either way.' })}
+      ${tile({ label:'Needs Follow-Up', value: String(t.lateCount), filter:'overdue',
+        tone: t.lateCount ? '#8B6914' : undefined,
+        sub:`${money(t.lateValue)} sitting late`,
+        hint:'Open leads past their stage\'s expected duration. Click to show only these.' })}
+    </div>
+    ${divisionRowHtml ? `<div class="gw-kpi-divider"></div>${divisionRowHtml}` : ''}
+  </section>`;
+}
+
 // ── Pipeline value by division ────────────────────────────────────────────────
 // Sums Est. Value (jobValue) across OPEN leads grouped by gwClassifyDivision.
-// Tiles are clickable — they toggle the existing division filter.
+// Tiles are clickable — they toggle the existing division filter. Returns an
+// inner fragment (no wrapping <section>) meant to be nested inside
+// gwPipelineKpiBand's card as its second row — the grand total this used to
+// show on its own is redundant with that band's Open Pipeline tile.
 function _gwDivisionValueStrip(baseOpps, activeCat){
   // gwLeadIsOpen (not plain gwSalesIsOpen): won/lost/disqualified leads must
   // never contribute to a division total, including edge cases where the
@@ -3872,29 +4227,18 @@ function _gwDivisionValueStrip(baseOpps, activeCat){
     totals[k] += Number(o.jobValue||0);
     counts[k] += 1;
   });
-  const grand = open.reduce((a,o) => a + Number(o.jobValue||0), 0);
-  const noValue = open.filter(o => !Number(o.jobValue||0)).length;
-  return `<section class="card app-card" id="gw-division-value-strip" style="margin-top:12px;padding:12px 16px">
-    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
-      <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 16px 6px 4px;border-right:1px solid #E4EAE3;min-width:150px">
-        <div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">Open Pipeline Value</div>
-        <div style="font-size:20px;font-weight:700;color:#1C3A2B">${money(grand)}</div>
-        <div style="font-size:11px;color:#6F7E6A">${open.length} open lead${open.length===1?'':'s'}${noValue ? ` · ${noValue} missing a value` : ''}</div>
-      </div>
+  return `<div class="gw-kpi-head-label" style="display:block;margin-bottom:8px">By Division</div>
+    <div class="gw-kpi-grid gw-kpi-grid--divisions">
       ${gwDivisions().map(d => {
         const active = activeCat === d.key;
-        return `<button type="button" onclick="window._pipelineCatFilter='${active ? 'all' : d.key}';show('pipeline')"
-          title="${active ? 'Click to clear the division filter' : 'Click to filter the pipeline to ' + escapeHtml(d.label)}"
-          style="display:flex;flex-direction:column;justify-content:center;gap:2px;padding:6px 14px;border-radius:10px;cursor:pointer;text-align:left;min-width:130px;background:${active ? (d.color||'#2D7A55')+'14' : 'transparent'};border:1px solid ${active ? (d.color||'#2D7A55')+'66' : '#E4EAE3'}">
-          <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6F7E6A">
-            <span style="width:8px;height:8px;border-radius:50%;background:${d.color||'#2D7A55'};flex-shrink:0"></span>${escapeHtml(d.label)}
-          </div>
-          <div style="font-size:17px;font-weight:700;color:${d.color||'#1C3A2B'}">${money(totals[d.key]||0)}</div>
-          <div style="font-size:11px;color:#6F7E6A">${counts[d.key]||0} lead${(counts[d.key]||0)===1?'':'s'}</div>
+        return `<button type="button" class="gw-kpi-tile${active ? ' gw-kpi-tile--on' : ''}" onclick="window._pipelineCatFilter='${active ? 'all' : d.key}';show('pipeline')"
+          title="${active ? 'Click to clear the division filter' : 'Click to filter the pipeline to ' + escapeHtml(d.label)}">
+          <span class="gw-kpi-label"><span style="width:8px;height:8px;border-radius:50%;background:${d.color||'#2D7A55'};flex-shrink:0;display:inline-block;margin-right:6px;vertical-align:middle"></span>${escapeHtml(d.label)}</span>
+          <span class="gw-kpi-value" style="color:${d.color||'#1C3A2B'}">${money(totals[d.key]||0)}</span>
+          <span class="gw-kpi-sub">${counts[d.key]||0} lead${(counts[d.key]||0)===1?'':'s'}</span>
         </button>`;
       }).join('')}
-    </div>
-  </section>`;
+    </div>`;
 }
 function pipeline(selectedId){
   if(selectedId){ return opportunityDetail(selectedId); }
@@ -3919,13 +4263,20 @@ function pipeline(selectedId){
     opps = opps.filter(o => gwClassifyDivision(o) === activeCatFilter);
   }
 
+  // The KPI band reads the rep/client/division set but NOT the status
+  // quick-filter — otherwise clicking "Won" would zero out every other tile,
+  // including the one you need to click to get back.
+  const _kpiBaseOpps = opps;
+  const activePeriod = window._pipelinePeriod || 'all';
+
   // T28: Status quick-filter from stat cards
   const activeStatusFilter = window._pipelineStatusFilter || null;
   const semantic = o => window.GWSalesProcess ? GWSalesProcess.resolve(o) : { resolved:false };
   if (activeStatusFilter === 'open') opps = opps.filter(o => window.GWSalesProcess ? GWSalesProcess.isOpen(o) : !['Sold / Activation','Deal Closed / Won','Closed Lost'].includes(o.status));
   else if (activeStatusFilter === 'proposals') opps = opps.filter(o => { const r=semantic(o); return r.resolved && r.semantic==='proposal_presentation'; });
   else if (activeStatusFilter === 'overdue') opps = opps.filter(o => gwLeadIsOpen(o) && gwStageClock(o).level === 'late');
-  else if (activeStatusFilter === 'sold') opps = opps.filter(o => { const r=semantic(o); return r.resolved && (r.outcome==='won'||r.semantic==='won'); });
+  else if (activeStatusFilter === 'sold') opps = opps.filter(o => gwLeadClosedState(o) === 'won');
+  else if (activeStatusFilter === 'lost') opps = opps.filter(o => gwLeadClosedState(o) === 'lost');
 
   // T47: Sort
   const activeSort = window._pipelineSort || 'priority';
@@ -3948,7 +4299,10 @@ function pipeline(selectedId){
   // Desktop: keep ALL stage columns visible (drop targets for drag & drop, and
   // they fill wide monitors). Mobile: only columns with items (list view).
   const _isMobilePipe = window.innerWidth <= 768;
-  const grouped = filters.map(status => ({status, items: sortOpps(opps.filter(o=>o.status===status))}))
+  const grouped = filters.map(status => {
+    const items = sortOpps(opps.filter(o=>o.status===status));
+    return {status, items, totals: gwStageTotals(items)};
+  })
     .filter(g => !_isMobilePipe || g.items.length || ['Lead Intake / Rapport','Mutual Agreement Set','Discovery / CBR Uncovered'].includes(g.status));
   // Catch-all: an unknown legacy label is never equivalent to the first stage.
   // Keep these records visible, searchable, editable, and assigned while clearly
@@ -3956,7 +4310,7 @@ function pipeline(selectedId){
   const knownStatuses = new Set(filters);
   const orphanOpps = sortOpps(opps.filter(o => !knownStatuses.has(o.status)).map(o => ({...o, _needsRestaging:true})));
   if (orphanOpps.length) {
-    grouped.push({status:'Needs Restaging', items:orphanOpps, needsRestaging:true});
+    grouped.push({status:'Needs Restaging', items:orphanOpps, totals:gwStageTotals(orphanOpps), needsRestaging:true});
   }
 
   const _repFilterHtml = (()=>{
@@ -4028,9 +4382,7 @@ function pipeline(selectedId){
       <button class="pl-clear-filter" onclick="window._pipelineStatusFilter=null;show('pipeline')">× Clear</button>
     </div>` : ''}
 
-    ${statCards()}
-
-    ${_gwDivisionValueStrip(_divBaseOpps, activeCatFilter)}
+    ${gwPipelineKpiBand(_kpiBaseOpps, activePeriod, activeStatusFilter, _gwDivisionValueStrip(_divBaseOpps, activeCatFilter))}
 
     ${window.innerWidth <= 768
       ? /* ── Mobile: flat sorted list grouped by status ── */ `
@@ -4041,6 +4393,7 @@ function pipeline(selectedId){
               <div class="gw-pipe-group">
                 <div class="gw-pipe-group-head">
                   <span class="gw-pipe-group-label">${escapeHtml(g.status)}</span>
+                  <span class="gw-pipe-group-total">${money(g.totals.value)}</span>
                   <span class="gw-pipe-group-count">${g.items.length}</span>
                 </div>
                 ${g.items.map(o => {
@@ -4071,7 +4424,7 @@ function pipeline(selectedId){
           <div class="kanban" id="gw-kanban-board">
             ${grouped.map(g=>`<section class="kanban-col" data-stage="${escapeHtml(g.status)}"
               ${g.needsRestaging ? '' : 'ondragover="gwPipeDragOver(event)" ondragenter="gwPipeDragEnter(event)" ondragleave="gwPipeDragLeave(event)" ondrop="gwPipeDrop(event)"'}
-            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
+            ><h3>${escapeHtml(g.status)} <span class="kanban-count">${g.items.length}</span></h3>${gwStageTotalHtml(g.totals)}${g.needsRestaging ? '<p class="muted small-text">Review required. Original stages are shown on each opportunity.</p>' : ''}${g.items.length ? g.items.map(o => g.needsRestaging ? oppCard({...o, project:(o.project||o.serviceLine||'')+' · Original stage: '+(o.status||'(blank)')}) : oppCard(o)).join('') : '<p class="muted small-text">No items</p>'}</section>`).join('')}
           </div>
           <div class="gw-scroll-more gw-scroll-more--hidden" id="gw-scroll-more">
             <button type="button" class="gw-scroll-more-btn" onclick="gwPipeScrollRight()">
@@ -4151,8 +4504,9 @@ window.gwPipeDragEnter = function(ev) {
     const hint = document.createElement('div');
     hint.className = 'gw-drop-hint';
     hint.textContent = 'Move here';
-    const h3 = col.querySelector('h3');
-    if (h3 && h3.nextSibling) col.insertBefore(hint, h3.nextSibling);
+    // Below the whole header (title + column total), not between them.
+    const head = col.querySelector('.kanban-col-total') || col.querySelector('h3');
+    if (head && head.nextSibling) col.insertBefore(hint, head.nextSibling);
     else col.appendChild(hint);
   }
 };
@@ -9171,13 +9525,16 @@ async function salesProcessBuilder(versionId){
         <div class="spb-field"><label>Stage type</label><select name="semantic_type" ${dis}>${semanticOptions.map(([x,l])=>`<option value="${x}" ${x===s.semantic_type?'selected':''}>${l}</option>`).join('')}</select></div>
         <div class="spb-field spb-field-narrow"><label>Typical days</label><input name="expected_duration_days" type="number" min="0" value="${Number(s.expected_duration_days||0)}" ${dis}></div>
         <div class="spb-field"><label>Status</label><select name="state" ${dis}><option value="active" ${s.state==='active'?'selected':''}>Active</option><option value="archived" ${s.state==='archived'?'selected':''}>Archived</option></select></div>
+        <button type="button" class="spb-stage-toggle gw-accordion-toggle" onclick="gwToggleBuilderStage(this)" aria-expanded="false" aria-label="Show stage details">Details</button>
       </div>
-      <div class="spb-field"><label>Customer milestone</label><input name="customer_milestone" value="${escapeHtml(s.customer_milestone||'')}" placeholder="What the customer sees or receives at this step" ${dis}></div>
-      <div class="spb-stage-card-guidance">
-        <div class="spb-field"><label>Entry guidance</label><textarea name="entry_guidance" placeholder="What should be true before a lead lands here" ${dis}>${escapeHtml(s.entry_guidance||'')}</textarea></div>
-        <div class="spb-field"><label>Exit guidance</label><textarea name="exit_guidance" placeholder="What must be done before the lead moves on" ${dis}>${escapeHtml(s.exit_guidance||'')}</textarea></div>
+      <div class="spb-stage-card-body gw-accordion-body">
+        <div class="spb-field"><label>Customer milestone</label><input name="customer_milestone" value="${escapeHtml(s.customer_milestone||'')}" placeholder="What the customer sees or receives at this step" ${dis}></div>
+        <div class="spb-stage-card-guidance">
+          <div class="spb-field"><label>Entry guidance</label><textarea name="entry_guidance" placeholder="What should be true before a lead lands here" ${dis}>${escapeHtml(s.entry_guidance||'')}</textarea></div>
+          <div class="spb-field"><label>Exit guidance</label><textarea name="exit_guidance" placeholder="What must be done before the lead moves on" ${dis}>${escapeHtml(s.exit_guidance||'')}</textarea></div>
+        </div>
+        ${editable?`<div class="spb-stage-card-actions"><button class="secondary-btn" onclick="gwMoveBuilderStage(this,-1)" aria-label="Move stage up">Move up</button><button class="secondary-btn" onclick="gwMoveBuilderStage(this,1)" aria-label="Move stage down">Move down</button><button class="secondary-btn" onclick="gwDuplicateBuilderStage(this)">Duplicate</button><button class="secondary-btn spb-remove-btn" onclick="gwRemoveBuilderStage(this)" aria-label="Remove stage">Remove</button></div>`:''}
       </div>
-      ${editable?`<div class="spb-stage-card-actions"><button class="secondary-btn" onclick="gwMoveBuilderStage(this,-1)" aria-label="Move stage up">Move up</button><button class="secondary-btn" onclick="gwMoveBuilderStage(this,1)" aria-label="Move stage down">Move down</button><button class="secondary-btn" onclick="gwDuplicateBuilderStage(this)">Duplicate</button><button class="secondary-btn spb-remove-btn" onclick="gwRemoveBuilderStage(this)" aria-label="Remove stage">Remove</button></div>`:''}
     </div>`).join('');
     const componentPanel=(title,key,items,fields,hint)=>panel(title,`${hint?`<p class="spb-step-hint">${hint}</p>`:''}<div class="spb-component" data-component="${key}">${items.map(item=>gwBuilderComponentRow(key,item,fields,stages,payload)).join('')||'<p class="muted spb-empty">Nothing here yet. Use the add button below to create the first one.</p>'}</div>${editable?`<div class="button-row"><button class="secondary-btn" onclick="gwAddBuilderComponent('${key}')">Add ${escapeHtml(title.replace(/s$/,''))}</button><button class="primary-btn" onclick="gwSaveBuilderComponent('${key}')">${isPublished?'Save to live process':'Save '+escapeHtml(title)}</button></div>`:'<p class="muted">Only administrators and sales managers can edit these definitions.</p>'}`,key);
     const requirementFields=[['stage_id','Stage','stage'],['requirement_type','Type','select:field|checklist|estimate|condition'],['stable_key','Stable key','text'],['label','Label','text'],['description','Guidance','text'],['required_level','Requirement level','select:entry|exit|required|recommended|optional|manager_review']];
@@ -9195,11 +9552,31 @@ async function salesProcessBuilder(versionId){
       ['resources','Email Templates'],['academy','Academy Training']
     ];
     const lifecycleBadge = isDraft ? '<span class="badge">Draft - live board unchanged</span>' : (p.lifecycle==='published' ? '<span class="badge success">Live process</span>' : `<span class="badge">${escapeHtml(p.lifecycle)}</span>`);
-    view.innerHTML=`<div class="eyebrow">Sales</div><div class="spb-heading"><div><h1>Sales Process</h1><p class="lede">${escapeHtml(p.name||'Company Sales Process')} - Version ${Number(p.version_number||1)}</p></div><div class="spb-heading-badges">${lifecycleBadge}</div></div>
-      ${isPublished&&canEdit?`<div class="card spb-live-note"><p><strong>You are editing your live process.</strong> Changes save straight to the Pipeline board - renames carry your leads with them, and new stages appear as new columns. For a bigger restructure (removing stages that hold leads, or moving many leads at once), start a new draft and use the guided lead review.</p><div class="button-row"><button class="secondary-btn" onclick="if(confirm('Create a new draft copied from your live stages? Your live process keeps working until you publish the draft.'))gwStartFromCurrentPipeline()">Start a new draft for a bigger restructure</button></div></div>`:''}
+    const activeStages = stages.filter(s=>s.state==='active');
+    const avgStageDays = activeStages.length ? Math.round(activeStages.reduce((a,s)=>a+Number(s.expected_duration_days||0),0)/activeStages.length) : 0;
+    const totalCycleDays = activeStages.reduce((a,s)=>a+Number(s.expected_duration_days||0),0);
+    const statsBand = `<section class="card app-card gw-kpi-band">
+      <div class="gw-kpi-head"><span class="gw-kpi-head-label">This process at a glance</span></div>
+      <div class="gw-kpi-grid gw-kpi-grid--3">
+        <button type="button" class="gw-kpi-tile gw-kpi-tile--static"><span class="gw-kpi-label">Stages</span><span class="gw-kpi-value">${activeStages.length}</span><span class="gw-kpi-sub">${stages.length-activeStages.length} archived</span></button>
+        <button type="button" class="gw-kpi-tile gw-kpi-tile--static"><span class="gw-kpi-label">Avg time per stage</span><span class="gw-kpi-value">${avgStageDays}d</span><span class="gw-kpi-sub">typical duration</span></button>
+        <button type="button" class="gw-kpi-tile gw-kpi-tile--static"><span class="gw-kpi-label">Typical cycle length</span><span class="gw-kpi-value">${totalCycleDays}d</span><span class="gw-kpi-sub">intake to close</span></button>
+      </div>
+    </section>`;
+    view.innerHTML=`<div class="pl-page-header">
+        <div class="pl-page-title">
+          <h1 class="pl-title">Sales Process</h1>
+          <span class="pl-subtitle">${escapeHtml(p.name||'Company Sales Process')} · Version ${Number(p.version_number||1)}</span>
+        </div>
+        <div class="pl-page-actions">
+          ${lifecycleBadge}
+          ${isPublished&&canEdit?`<button class="secondary-btn small" onclick="if(confirm('Create a new draft copied from your live stages? Your live process keeps working until you publish the draft.'))gwStartFromCurrentPipeline()">Start a new draft</button>`:''}
+        </div>
+      </div>
+      ${isPublished&&canEdit?`<div class="card spb-live-note"><p><strong>You are editing your live process.</strong> Changes save straight to the Pipeline board - renames carry your leads with them, and new stages appear as new columns. For a bigger restructure (removing stages that hold leads, or moving many leads at once), start a new draft and use the guided lead review.</p></div>`:''}
       <div class="spb-steps" role="tablist">${steps.map((s,i)=>`<button class="spb-step ${i===0?'spb-step--active':''}" data-step="${s.key}" role="tab" onclick="gwBuilderStep('${s.key}',this)"><span class="spb-step-num">${s.num}</span>${s.label}</button>`).join('')}
         <select class="spb-adv-select" onchange="if(this.value){gwBuilderStep(this.value)}this.selectedIndex=0" aria-label="Advanced tools"><option value="">Advanced tools</option>${advanced.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></div>
-      ${panel(isDraft?'Design Stages':'Edit Stages',`<p class="spb-step-hint">${isDraft?'These become the columns on your Pipeline board when you publish. Rename, reorder, add, or archive stages. Give each stage a type so reporting knows what it means - intake comes first, and at least one closing stage records won or lost.':'These are the live columns on your Pipeline board. Rename a stage and every lead in it follows the new name. Reorder, add, or adjust guidance and it applies the moment you save. Splitting a closing stage works too: archive it and add stages typed Won and Lost - each closed lead moves to the stage matching its recorded outcome. Other stages that hold leads cannot be removed here - move those leads on the board first, or start a new draft.'}</p><div id="spb-stage-list">${stageRows}</div>${editable?`<div class="button-row"><button class="secondary-btn" onclick="gwAddBuilderStage()">Add stage</button><button class="primary-btn" onclick="gwSaveBuilderStages()">${isPublished?'Save changes to live process':'Save stages'}</button></div>`:''}`,'stages')}
+      ${panel(isDraft?'Design Stages':'Edit Stages',`<p class="spb-step-hint">${isDraft?'These become the columns on your Pipeline board when you publish. Rename, reorder, add, or archive stages. Give each stage a type so reporting knows what it means - intake comes first, and at least one closing stage records won or lost.':'These are the live columns on your Pipeline board. Rename a stage and every lead in it follows the new name. Reorder, add, or adjust guidance and it applies the moment you save. Splitting a closing stage works too: archive it and add stages typed Won and Lost - each closed lead moves to the stage matching its recorded outcome. Other stages that hold leads cannot be removed here - move those leads on the board first, or start a new draft.'}</p>${statsBand}<div class="spb-stage-list-actions"><button class="secondary-btn small" onclick="gwToggleAllBuilderStages(true)">Expand all</button><button class="secondary-btn small" onclick="gwToggleAllBuilderStages(false)">Collapse all</button></div><div id="spb-stage-list">${stageRows}</div>${editable?`<div class="button-row"><button class="secondary-btn" onclick="gwAddBuilderStage()">Add stage</button><button class="primary-btn" onclick="gwSaveBuilderStages()">${isPublished?'Save changes to live process':'Save stages'}</button></div>`:''}`,'stages')}
       ${panel('Move Your Leads',`<p class="spb-step-hint">Every current lead needs a home in the new process before you can go live. Most are matched automatically; you confirm the rest. Nothing moves on the live board until you publish in step 3.</p>${canEdit&&isDraft?(mig&&mig.batch_id?`<div class="card" style="margin-bottom:12px"><p><strong>${mig.snapshot_approved?'Your lead review is complete and locked in.':(Number(mig.pending)?`${Number(mig.pending)} of ${Number(mig.total)} leads still need review.`:'All leads are reviewed. Capture and approve the snapshot to lock in the plan.')}</strong></p><div class="button-row"><button class="primary-btn" onclick="gwRenderRestagingWorkspace('${escapeHtml(mig.batch_id)}','${escapeHtml(p.id)}')">${mig.snapshot_approved?'View reviewed leads':'Resume lead review'}</button><button class="secondary-btn" onclick="if(confirm('Start over? This discards the current review progress and re-matches every lead.'))gwCreateMigrationProposal('${escapeHtml(p.id)}')">Start over with a fresh match</button></div>${mig.snapshot_approved?'<p class="muted">Ready for step 3: Go Live. Re-matching would discard this approval.</p>':''}</div>`:`<div class="button-row"><button class="primary-btn" onclick="gwCreateMigrationProposal('${escapeHtml(p.id)}')">Match my current leads</button></div><p class="muted">After reviewing every lead, capture and approve the snapshot at the top of the review list. That locks in the plan for publishing.</p>`):'<p class="muted">Lead mapping is available while a draft is being prepared.</p>'}`,'migrate')}
       ${panel(isDraft?'Go Live':'History & Rollback',`<p class="spb-step-hint">${isDraft?'Publishing replaces the live pipeline: board columns become your new stages, every reviewed lead moves to its new home, and new leads start in the first stage. You can roll back afterwards if needed.':'Every version and publication is recorded here. Rolling back reactivates the previous version and restores its stage layout - notes, activities, estimates, and communications are always preserved.'}</p><div class="button-row">${canEdit&&isDraft?`<button class="secondary-btn" onclick="gwValidateSalesProcess('${escapeHtml(p.id)}')">Check for problems</button><button class="primary-btn" onclick="gwPreviewSalesProcess()">Preview and publish</button>`:''}</div><h3>Version history</h3>${(payload.versions||[]).map(v=>`<div class="spb-version"><strong>Version ${Number(v.version_number)}</strong><span>${escapeHtml(v.lifecycle)}</span></div>`).join('')}<h3>Publication history</h3>${(payload.publications||[]).map(pub=>`<div class="spb-version"><div><strong>${escapeHtml(pub.action)}</strong><small> ${escapeHtml(pub.created_at||'')} by ${escapeHtml(pub.actor_id||'')}</small></div>${canEdit&&pub.action==='publish'&&pub.previous_version_id?`<button class="secondary-btn" onclick="gwRollbackPublication('${escapeHtml(pub.id)}','${escapeHtml(pub.previous_version_id)}')">Rollback</button>`:''}</div>`).join('')||'<p class="muted">No publication events.</p>'}`,'publish')}
       ${panel('Process Overview',`<p class="spb-step-hint">A quick summary of this process version. Everything in Groundwork - the Pipeline board, Stage Guide, Call Companion, Academy, and reporting - follows this one definition.</p><div class="grid grid-3"><div><strong>Lifecycle</strong><p>${escapeHtml(p.lifecycle)}</p></div><div><strong>Active stages</strong><p>${stages.filter(s=>s.state==='active').length}</p></div><div><strong>Access</strong><p>${editable?(isPublished?'Live editing enabled':'Editable draft'):'Read only'}</p></div></div><p>${escapeHtml(p.description||'Shared process definition for Pipeline, Stage Guide, Call Companion, Academy, reporting, and automation.')}</p>`,'overview')}
@@ -9219,11 +9596,14 @@ function gwBuilderComponentRow(key,item,fields,stages,payload){
 window.salesProcessBuilder=salesProcessBuilder;
 window.gwBuilderTab=function(button,index){document.querySelectorAll('.spb-panel').forEach((x,j)=>x.style.display=j===index?'block':'none');document.querySelectorAll('.spb-tabs .tab').forEach(x=>x.classList.remove('active'));button.classList.add('active')};
 window.gwBuilderStep=function(key){document.querySelectorAll('.spb-panel').forEach(x=>{x.style.display=x.dataset.panel===key?'block':'none'});document.querySelectorAll('.spb-step').forEach(x=>x.classList.toggle('spb-step--active',x.dataset.step===key));};
+window.gwToggleBuilderStage=function(button){const card=button.closest('.spb-stage-card'),body=card.querySelector('.spb-stage-card-body');const isOpen=body.classList.toggle('gw-accordion-body--open');button.classList.toggle('gw-accordion-toggle--open',isOpen);button.setAttribute('aria-expanded',String(isOpen));};
+window.gwToggleAllBuilderStages=function(open){document.querySelectorAll('#spb-stage-list .spb-stage-card-body').forEach(b=>b.classList.toggle('gw-accordion-body--open',open));document.querySelectorAll('#spb-stage-list .spb-stage-toggle').forEach(t=>{t.classList.toggle('gw-accordion-toggle--open',open);t.setAttribute('aria-expanded',String(open));});};
 window.gwStartFromCurrentPipeline=async function(){const rep=window.getCurrentRep?window.getCurrentRep():null;if(!rep||!['admin','office_manager','sales_manager'].includes(rep.role)){alert('Administrator access is required.');return}try{const result=await DB.salesProcess.fromCurrentPipeline('Company Sales Process');await salesProcessBuilder(result.version_id);if(window.showToast)window.showToast('Draft created from your current pipeline stages')}catch(e){alert(`Could not create a draft from the current pipeline. ${e.message||e}`)}};
 window.gwAdoptSelectedTemplate=async function(){const id=document.getElementById('spb-template').value,name=document.getElementById('spb-new-name').value.trim();const result=await DB.salesProcess.adoptTemplate(id,name);await salesProcessBuilder(result.version_id)};
 window.gwMoveBuilderStage=function(button,direction){const row=button.closest('.spb-stage-row'),other=direction<0?row.previousElementSibling:row.nextElementSibling;if(other)row.parentElement.insertBefore(direction<0?row:other,direction<0?other:row)};
-window.gwDuplicateBuilderStage=function(button){const row=button.closest('.spb-stage-row'),copy=row.cloneNode(true);copy.dataset.id='';copy.querySelector('[name=display_name]').value+=' Copy';row.after(copy)};
-window.gwAddBuilderStage=function(){const list=document.getElementById('spb-stage-list'),source=list.lastElementChild,copy=source.cloneNode(true);copy.dataset.id='';copy.querySelector('[name=display_name]').value='New stage';copy.querySelector('[name=semantic_type]').value='active_qualification';copy.querySelectorAll('textarea').forEach(x=>x.value='');list.append(copy)};
+window.gwDuplicateBuilderStage=function(button){const row=button.closest('.spb-stage-row'),copy=row.cloneNode(true);copy.dataset.id='';copy.querySelector('[name=display_name]').value+=' Copy';row.after(copy);gwOpenBuilderStageCard(copy)};
+window.gwAddBuilderStage=function(){const list=document.getElementById('spb-stage-list'),source=list.lastElementChild,copy=source.cloneNode(true);copy.dataset.id='';copy.querySelector('[name=display_name]').value='New stage';copy.querySelector('[name=semantic_type]').value='active_qualification';copy.querySelectorAll('textarea').forEach(x=>x.value='');list.append(copy);gwOpenBuilderStageCard(copy)};
+window.gwOpenBuilderStageCard=function(card){const body=card.querySelector('.spb-stage-card-body'),toggle=card.querySelector('.spb-stage-toggle');if(body)body.classList.add('gw-accordion-body--open');if(toggle){toggle.classList.add('gw-accordion-toggle--open');toggle.setAttribute('aria-expanded','true')}card.scrollIntoView({behavior:'smooth',block:'center'})};
 window.gwRemoveBuilderStage=function(button){const row=button.closest('.spb-stage-row'),list=row.parentElement;if(list.querySelectorAll('.spb-stage-row').length<=2){alert('A process needs at least two stages, so this one cannot be removed.');return}if(row.dataset.id&&!confirm('Remove this stage? A stage that still holds leads cannot be removed - move those leads on the Pipeline board first, then save.'))return;row.remove()};
 window.gwSaveBuilderStages=async function(){const b=window._gwBuilder;const isLive=b.payload.process.lifecycle==='published';const stages=[...document.querySelectorAll('.spb-stage-row')].map((row,i)=>{const original=(b.payload.stages||[]).find(x=>x.id===row.dataset.id)||{};const read=n=>row.querySelector(`[name=${n}]`).value;return {...original,id:row.dataset.id,stable_key:original.stable_key||`stage_${Date.now()}_${i}`,display_name:read('display_name').trim(),semantic_type:read('semantic_type'),expected_duration_days:Number(read('expected_duration_days')),customer_milestone:read('customer_milestone'),entry_guidance:read('entry_guidance'),exit_guidance:read('exit_guidance'),state:read('state')}});try{const result=isLive?await DB.salesProcess.saveLiveStages(b.payload.process.id,stages,b.revision):await DB.salesProcess.saveStages(b.payload.process.id,stages,b.revision);b.revision=result.content_revision;if(isLive){window._gwSalesProcess=null;if(Array.isArray(result.pipeline_stages)&&result.pipeline_stages.length)window._gwPipelineStages=result.pipeline_stages;const moved=Number(result.redistributed_leads||0);if(window.showToast)window.showToast(moved?`Live process updated - ${moved} closed lead${moved>1?'s':''} moved to the matching outcome stage`:'Live process updated - the Pipeline board follows your changes')}await salesProcessBuilder(b.payload.process.id)}catch(e){const msg=String(e.message||e);if(msg.includes('409')||msg.includes('changed since'))alert('This process changed in another session. Reload before saving.');else alert(`Could not save stages. ${msg}`)}};
 window.gwAddBuilderComponent=function(key){const b=window._gwBuilder,container=document.querySelector(`.spb-component[data-component="${key}"]`),templates={internal_statuses:[['stage_id','Stage','stage'],['stable_key','Stable key','text'],['display_name','Status name','text']],requirements:[['stage_id','Stage','stage'],['requirement_type','Type','select:field|checklist|estimate|condition'],['stable_key','Stable key','text'],['label','Label','text'],['description','Guidance','text'],['required_level','Requirement level','select:entry|exit|required|recommended|optional|manager_review']],guides:[['stage_id','Stage','stage'],['interaction_type','Interaction','text'],['title','Title','text'],['purpose','Purpose','text'],['suggested_language','Suggested language','textarea'],['completion_guidance','Completion guidance','textarea']],automations:[['stage_id','Stage','stage'],['name','Name','text'],['trigger_type','Trigger','select:stage_entered|stage_aging|outcome_recorded|requirement_completed'],['action_type','Draft-only action','select:suggest_task|suggest_manager_review|suggest_email'],['active','Active','checkbox']],resources:[['stage_id','Stage','stage'],['stable_key','Stable key','text'],['name','Template name','text'],['content_json','Subject and body configuration','textarea']],academy:[['stage_id','Stage','stage'],['skill_id','Academy skill','skill'],['visibility','Visibility','select:representative|manager|administrator']]};container.insertAdjacentHTML('beforeend',gwBuilderComponentRow(key,{active:1,resource_type:key==='resources'?'email_template':'',requirement_type:key==='requirements'?'field':''},templates[key],b.payload.stages,b.payload))};
@@ -24611,6 +24991,9 @@ body.gw-mobile-mode #gw-notif-bell-wrap { flex-shrink:0; }
       gwSales:'gwSales', pipeline:'gwSales', clients:'gwSales', lead:'gwSales', estimates:'gwSales',
       gwOperations:'gwOperations', scheduleBoard:'gwOperations', workOrderList:'gwOperations',
       gwFinancial:'gwFinancial', invoices:'gwFinancial', gwReviews:'gwFinancial',
+      finControl:'gwFinancial', finQueue:'gwFinancial', finJobCost:'gwFinancial',
+      finBudget:'gwFinancial', finRecovery:'gwFinancial', finInvPay:'gwFinancial',
+      finLedger:'gwFinancial', finDocuments:'gwFinancial', finConfig:'gwFinancial',
       gwAdmin:'gwAdmin' };
     const active = wsMap[viewName] || '';
     document.querySelectorAll('.gw-mnav-btn').forEach(btn => {

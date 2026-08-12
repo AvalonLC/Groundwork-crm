@@ -37,6 +37,12 @@ import { financeUiRouter } from './ui/mount'
 import { cronTriggerRouter } from './api/cron-trigger'
 import { updateWorkOrderFinanceColumns } from './db/repos'
 import { postTimeEntryToLedger } from './api/posting'
+// ── Marketing OS — mounted sub-routers (see src/marketing/) ──────────────────
+import { marketingRouter } from './marketing/api'
+import { marketingPublicRouter } from './marketing/public'
+import { marketingCronRouter } from './marketing/cron'
+import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/leads'
+import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, toolSpecs } from './marketing/ai-tools'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -55,6 +61,18 @@ app.route('/internal/cron', cronTriggerRouter)
 // their textual definition, is safe.
 app.use('/finance/*', requireAuthFinance)
 app.route('/finance', financeUiRouter)
+
+// ── Marketing OS ─────────────────────────────────────────────────────────────
+// Authenticated API. requireAuth is applied here rather than inside the router
+// so the router stays a plain Hono app that can be tested on its own.
+app.use('/api/marketing/*', requireAuth)
+app.route('/api/marketing', marketingRouter)
+// Scheduled drain — X-Cron-Secret header auth, same as the finance rollup.
+app.route('/internal/cron', marketingCronRouter)
+// Public: campaign images, unsubscribe, click redirects, inquiry forms and the
+// SendGrid event webhook. Each handler resolves an unguessable token or
+// verifies a signature; none of them may assume a session.
+app.route('/', marketingPublicRouter)
 
 // ── CORS + middleware ─────────────────────────────────────────────────────────
 app.use('/api/*', cors())
@@ -2662,7 +2680,8 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwMarketing','gwAdmin',
+      'gwMarketing','marketingCampaigns','marketingAudiences','marketingBrand','marketingMedia','marketingForms','marketingAnalytics',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
       'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
@@ -2672,7 +2691,8 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'revenueAdmin','teamReports',
       'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing',
       'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
-    office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwMarketing','gwAdmin',
+      'gwMarketing','marketingCampaigns','marketingAudiences','marketingBrand','marketingMedia','marketingForms','marketingAnalytics',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
       'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
@@ -2681,7 +2701,8 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','teamReports',
       'settings','userManagement','integrations','manager','pricing','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
-    rep: ['gwDashboard','gwSales',
+    rep: ['gwDashboard','gwSales','gwMarketing',
+      'marketingCampaigns','marketingAnalytics',
       'today','myDashboard','pipeline','lead','clients','properties','estimates','proposals',
       'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
@@ -3115,44 +3136,28 @@ app.post('/api/opportunities', requireAuth, async (c) => {
   // New-lead default stage: first label of the company's live pipeline setting
   // (kept in sync with the published sales process on publish), falling back to
   // the legacy nine-stage default only when the setting is absent.
-  let defaultStatus = 'Lead Intake / Rapport'
-  try {
-    const stagesRow = await c.env.DB.prepare('SELECT value FROM settings WHERE key=? LIMIT 1').bind(`${companyId}:pipeline_stages`).first<{ value: string }>()
-    if (stagesRow?.value) { const parsed = JSON.parse(stagesRow.value); if (Array.isArray(parsed) && parsed.length && String(parsed[0]).trim()) defaultStatus = String(parsed[0]).trim() }
-  } catch (_) {}
-  const effStatus = b.status || defaultStatus
-  const jobValueNum = Number(b.jobValue||b.job_value||0)
-  const estimateAmountNum = Number(b.estimateAmount||b.estimate_amount||0)
-  const soldAmountNum = Number(b.soldAmount||b.sold_amount||0)
-  await c.env.DB.prepare(`
-    INSERT INTO opportunities (
-      id, company_id, rep_id, assigned_to_rep_id,
-      client, phone, email, address, service_line, source, status,
-      job_value, job_value_cents, project, urgency, decision_maker, budget_range, next_follow_up,
-      pipeline_stage, estimate_amount, estimate_amount_cents, estimate_sent_date, estimate_count,
-      work_type, client_type, prompt, desired_outcome, fit_concerns,
-      commission_approved, collected, sold_date, sold_amount, sold_amount_cents, client_id,
-      created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
-  `).bind(
-    id, companyId, effRepId, assignedTo,
-    b.client||'', b.phone||'', b.email||'',
-    b.address||'', b.serviceLine||b.service_line||'', b.source||'',
-    effStatus, jobValueNum, Math.round(jobValueNum * 100),
-    b.project||'', b.urgency||'', b.decisionMaker||b.decision_maker||'',
-    b.budgetRange||b.budget_range||'', b.nextFollowUp||b.next_follow_up||'',
-    b.pipelineStage||b.pipeline_stage||'',
-    estimateAmountNum, Math.round(estimateAmountNum * 100),
-    b.estimateSentDate||b.estimate_sent_date||'',
-    Number(b.estimateCount||b.estimate_count||0),
-    b.workType||b.work_type||'', b.clientType||b.client_type||'',
-    b.prompt||'', b.desiredOutcome||b.desired_outcome||'',
-    b.fitConcerns||b.fit_concerns||'',
-    b.commissionApproved||b.commission_approved?1:0,
-    b.collected?1:0, b.soldDate||b.sold_date||'',
-    soldAmountNum, Math.round(soldAmountNum * 100),
-    b.clientId||b.client_id||''
-  ).run()
+  // Shared with the public inquiry form via src/marketing/leads.ts so a form
+  // submission lands in the same stage a rep-created lead would.
+  const effStatus = b.status || await resolveDefaultPipelineStage(c.env.DB, companyId)
+  await insertOpportunityRow(c.env.DB, companyId, {
+    id, repId: effRepId, assignedToRepId: assignedTo,
+    client: b.client||'', phone: b.phone||'', email: b.email||'',
+    address: b.address||'', serviceLine: b.serviceLine||b.service_line||'', source: b.source||'',
+    status: effStatus, jobValue: Number(b.jobValue||b.job_value||0),
+    project: b.project||'', urgency: b.urgency||'', decisionMaker: b.decisionMaker||b.decision_maker||'',
+    budgetRange: b.budgetRange||b.budget_range||'', nextFollowUp: b.nextFollowUp||b.next_follow_up||'',
+    pipelineStage: b.pipelineStage||b.pipeline_stage||'',
+    estimateAmount: Number(b.estimateAmount||b.estimate_amount||0),
+    estimateSentDate: b.estimateSentDate||b.estimate_sent_date||'',
+    estimateCount: Number(b.estimateCount||b.estimate_count||0),
+    workType: b.workType||b.work_type||'', clientType: b.clientType||b.client_type||'',
+    prompt: b.prompt||'', desiredOutcome: b.desiredOutcome||b.desired_outcome||'',
+    fitConcerns: b.fitConcerns||b.fit_concerns||'',
+    commissionApproved: !!(b.commissionApproved||b.commission_approved),
+    collected: !!b.collected, soldDate: b.soldDate||b.sold_date||'',
+    soldAmount: Number(b.soldAmount||b.sold_amount||0),
+    clientId: b.clientId||b.client_id||''
+  })
   // Published-process lead flow: a brand new lead is immediately assigned to the
   // published stage whose label matches its status (default: the first stage),
   // so it participates in stage tracking without needing restaging review.
@@ -5506,6 +5511,85 @@ app.post('/api/onboarding/checklist/:stepId', requireAuth, async (c) => {
 // { question, view, checklist:[{id,title,done}] } → { answer, tour? }
 // `tour` is a Getting Started step id (cl_*) when a guided spotlight tour
 // exists for what the user asked about; the frontend renders a "Show me" button.
+// ── Marketing campaign copilot ────────────────────────────────────────────────
+// Drafts a campaign from the tenant's own brand, services, media and past
+// results. Lives here rather than in src/marketing/api.ts only because the AI
+// credential resolution, quota gate and usage metering are all defined in this
+// file; the tool registry, draft schema and prompt are in
+// src/marketing/ai-tools.ts. The registry contains no tool that can send,
+// schedule or approve — see the boundary test in ai-tools.test.ts.
+app.post('/api/marketing/ai/copilot', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const repId = c.var.repId as string
+  const role = c.var.role as string
+  if (!c.var.isSuperAdmin && !['admin', 'office_manager'].includes(role)) return err(c, 'forbidden', 403)
+
+  const db = c.env.DB as D1Database
+  const { apiKey, baseUrl, model, keySource } = await _aiCreds(db, companyId, c.env)
+  if (!apiKey) return c.json({ ok: false, error: 'no_api_key', message: 'AI is not enabled for your company yet.' }, 400)
+  const _qg = await _aiQuotaGate(db, companyId, keySource)
+  if (_qg) return c.json(_qg.body, _qg.status as any)
+
+  const b: any = await c.req.json().catch(() => ({}))
+  const prompt = String(b.prompt || '').slice(0, 2000)
+  if (!prompt) return err(c, 'prompt required')
+  const campaignId = String(b.campaign_id || '').slice(0, 60)
+
+  const messages: any[] = [
+    { role: 'system', content: COPILOT_SYSTEM_PROMPT },
+    { role: 'user', content: prompt },
+  ]
+  const toolsCalled: string[] = []
+  let usage: any = null
+
+  try {
+    // Bounded tool loop. Six rounds is enough to read the brand, a service, the
+    // media library and an audience count; the cap stops a model that keeps
+    // calling tools from burning the request's CPU budget.
+    for (let round = 0; round < 6; round++) {
+      const r = await _aiChatJson(baseUrl, apiKey, model, messages, undefined, toolSpecs())
+      if (!r.ok) return c.json({ ok: false, error: 'ai_error', message: (await r.text()).slice(0, 300) }, 502)
+      const data: any = await r.json()
+      usage = data?.usage || usage
+      const msg = data?.choices?.[0]?.message
+      if (!msg) break
+      const calls = msg.tool_calls
+      if (!Array.isArray(calls) || calls.length === 0) break
+      messages.push(msg)
+      for (const call of calls.slice(0, 6)) {
+        const name = String(call?.function?.name || '')
+        let args: any = {}
+        try { args = JSON.parse(call?.function?.arguments || '{}') } catch {}
+        toolsCalled.push(name)
+        const result = await runTool(db, companyId, name, args)
+        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 6000) })
+      }
+    }
+
+    // Final turn: no tools, schema-constrained, must return the draft.
+    messages.push({ role: 'user', content: 'Now return the finished campaign draft as JSON matching the required schema.' })
+    const fin = await _aiChatJson(baseUrl, apiKey, model, messages, CAMPAIGN_DRAFT_SCHEMA)
+    if (!fin.ok) return c.json({ ok: false, error: 'ai_error', message: (await fin.text()).slice(0, 300) }, 502)
+    const finData: any = await fin.json()
+    usage = finData?.usage || usage
+    const draft = normalizeDraft(_aiParseJson(finData?.choices?.[0]?.message?.content || '{}'))
+
+    await _logAiUsage(db, companyId, repId, 'marketing_campaign', model, usage, keySource)
+    try {
+      await db.prepare(`INSERT INTO marketing_ai_generation
+        (id, company_id, campaign_id, rep_id, kind, prompt, tools_called_json, draft_json, model, tokens)
+        VALUES (?,?,?,?,'campaign_draft',?,?,?,?,?)`)
+        .bind('aig_' + uid(), companyId, campaignId || null, repId, prompt,
+              JSON.stringify(toolsCalled), JSON.stringify(draft), model || '',
+              Number(usage?.total_tokens) || 0).run()
+    } catch (e: any) { console.error('[marketing_ai_generation]', e?.message || e) }
+
+    return json(c, { ok: true, draft, tools_called: toolsCalled })
+  } catch (e: any) {
+    return c.json({ ok: false, error: 'ai_error', message: String(e?.message || e).slice(0, 300) }, 502)
+  }
+})
+
 app.post('/api/ai/copilot', requireAuth, async (c) => {
   const companyId = (c as any).get('companyId') as string
   const repId = (c as any).get('repId') as string
@@ -7781,14 +7865,26 @@ function _aiParseJson(rawIn: string): any {
 // request even though the worker finished). reasoning_effort:'low' +
 // response_format:json_object cuts completion size/time by ~3x. If the
 // configured model rejects those params (custom BYOK models), retry once bare.
-async function _aiChatJson(baseUrl: string, apiKey: string, model: string, messages: any[]): Promise<any> {
+// `schema` (optional) asks for a guaranteed shape via Structured Outputs. The
+// retry ladder becomes json_schema → json_object → bare, so a BYOK model that
+// rejects json_schema still lands on the existing json_object behaviour and
+// only a model rejecting both falls all the way through. Callers that pass no
+// schema get exactly the previous two-step behaviour.
+// `tools` (optional) enables tool calling for the marketing copilot.
+async function _aiChatJson(baseUrl: string, apiKey: string, model: string, messages: any[], schema?: { name: string; schema: any }, tools?: any[]): Promise<any> {
   const call = async (extra: any) => fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages, ...extra }),
+    body: JSON.stringify({ model, messages, ...(tools && tools.length ? { tools } : {}), ...extra }),
   })
   const fast: any = { response_format: { type: 'json_object' } }
   if (/^(gpt-5|o\d)/i.test(model)) fast.reasoning_effort = 'low'
+  if (schema) {
+    const strict: any = { ...fast, response_format: { type: 'json_schema', json_schema: { name: schema.name, schema: schema.schema, strict: true } } }
+    const r0 = await call(strict)
+    if (r0.status !== 400) return r0
+    // Falls through to json_object below.
+  }
   let r = await call(fast)
   if (r.status === 400) {
     // Model may not support response_format / reasoning_effort — plain retry
@@ -13530,6 +13626,16 @@ function getHtml(): string {
         <div class="nav-subtabs" id="gw-subtabs-gwOperations"></div>
       </div>
 
+      <!-- ── Marketing ── -->
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwMarketing" data-label="Marketing" onclick="_gwTogglePanel('gwMarketing')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l5.4-3.1a1.2 1.2 0 011.2 0L14 6.5v6a1 1 0 01-1 1H3a1 1 0 01-1-1z"/><path d="M2 6.5l6 4 6-4"/></svg>
+          <span class="nav-workspace-label">Marketing</span>
+          <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwMarketing"></div>
+      </div>
+
       <!-- ── Learning ── -->
       <div class="nav-ws-group tenant-nav">
         <button class="nav-item nav-workspace" data-view="gwLearning" data-label="Learning" onclick="_gwTogglePanel('gwLearning')">
@@ -13707,7 +13813,7 @@ function getHtml(): string {
 <script src="/js/automation_engine.js?v=20260810b002"></script>
 <script src="/js/client_portal.js?v=20260810b002"></script>
 <script src="/js/field_mode.js?v=20260810b002"></script>
-<script src="/js/assets_hub.js?v=20260810b002"></script><script>
+<script src="/js/assets_hub.js?v=20260810b002"></script><script src="/js/marketing.js?v=20260812a001"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
