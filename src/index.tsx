@@ -2661,7 +2661,8 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
     "SELECT value FROM settings WHERE key = ? LIMIT 1"
   ).bind(`${companyId}:nav_perms`).first<{ value: string }>()
   const defaultPerms = {
-    admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    admin: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwMarketing','gwAdmin',
+      'gwMarketing','marketingCampaigns','marketingAudiences','marketingBrand','marketingMedia','marketingForms','marketingAnalytics',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
       'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
@@ -2671,7 +2672,8 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'revenueAdmin','teamReports',
       'settings','userManagement','integrations','manager','systemConfig','systemTemplates','opsHub','pricing',
       'approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
-    office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwAdmin',
+    office_manager: ['gwDashboard','gwSales','gwFinancial','gwOperations','gwMarketing','gwAdmin',
+      'gwMarketing','marketingCampaigns','marketingAudiences','marketingBrand','marketingMedia','marketingForms','marketingAnalytics',
       'today','myDashboard','teamView','pipeline','lead','clients','properties','estimates','proposals',
       'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy',
@@ -2680,7 +2682,8 @@ app.get('/api/nav-perms', requireAuth, async (c) => {
       'assetsHub','assetList','assetDetail','maintenanceQueue','inventoryList','materialAllocation','toolsConsumables','timeTracker',
       'revenueAdmin','teamReports',
       'settings','userManagement','integrations','manager','pricing','approvalQueue','auditLog','portalAdmin','automationCenter','fieldMode'],
-    rep: ['gwDashboard','gwSales',
+    rep: ['gwDashboard','gwSales','gwMarketing',
+      'marketingCampaigns','marketingAnalytics',
       'today','myDashboard','pipeline','lead','clients','properties','estimates','proposals',
       'communications','textMessages','templates','sequences','talkTracks','playbooks','aiAssist',
       'automations','campaigns','process','forms','scripts','emailTemplates','objections','calculator','ai','academy'],
@@ -13549,6 +13552,16 @@ function getHtml(): string {
         <div class="nav-subtabs" id="gw-subtabs-gwOperations"></div>
       </div>
 
+      <!-- ── Marketing ── -->
+      <div class="nav-ws-group tenant-nav">
+        <button class="nav-item nav-workspace" data-view="gwMarketing" data-label="Marketing" onclick="_gwTogglePanel('gwMarketing')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l5.4-3.1a1.2 1.2 0 011.2 0L14 6.5v6a1 1 0 01-1 1H3a1 1 0 01-1-1z"/><path d="M2 6.5l6 4 6-4"/></svg>
+          <span class="nav-workspace-label">Marketing</span>
+          <svg class="nav-chevron-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto;opacity:.45"><path d="M2 3.5l3 3 3-3"/></svg>
+        </button>
+        <div class="nav-subtabs" id="gw-subtabs-gwMarketing"></div>
+      </div>
+
       <!-- ── Learning ── -->
       <div class="nav-ws-group tenant-nav">
         <button class="nav-item nav-workspace" data-view="gwLearning" data-label="Learning" onclick="_gwTogglePanel('gwLearning')">
@@ -13726,7 +13739,7 @@ function getHtml(): string {
 <script src="/js/automation_engine.js?v=20260810b002"></script>
 <script src="/js/client_portal.js?v=20260810b002"></script>
 <script src="/js/field_mode.js?v=20260810b002"></script>
-<script src="/js/assets_hub.js?v=20260810b002"></script><script>
+<script src="/js/assets_hub.js?v=20260810b002"></script><script src="/js/marketing.js?v=20260812a001"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

@@ -167,11 +167,16 @@ const _VIEW_WORKSPACE_MAP = {
   fieldDashboard:'gwDashboard',
   // Sales workspace
   pipeline:'gwSales', lead:'gwSales', clients:'gwSales', customerDetail:'gwSales', properties:'gwSales', teamView:'gwSales', teamReports:'gwSales',
+  // Marketing workspace — campaigns, audiences, brand kit, media, forms.
+  // `campaigns` is repointed here from the old localStorage-only Sequences mock.
+  gwMarketing:'gwMarketing', marketingCampaigns:'gwMarketing', marketingAudiences:'gwMarketing',
+  marketingBrand:'gwMarketing', marketingMedia:'gwMarketing', marketingForms:'gwMarketing',
+  marketingAnalytics:'gwMarketing',
   // Learning workspace
   gwLearning:'gwLearning', academy:'gwLearning', learnEstimating:'gwLearning', learnFinancial:'gwLearning', learnCrmGuide:'gwLearning',
   estimates:'gwSales', proposals:'gwSales', communications:'gwSales', templates:'gwSales',
   sequences:'gwSales', talkTracks:'gwSales', playbooks:'gwSales',
-  aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwSales',
+  aiAssist:'gwSales', ai:'gwSales', automations:'gwSales', campaigns:'gwMarketing',
   process:'gwSales', forms:'gwSales', scripts:'gwSales', emailTemplates:'gwSales',
   objections:'gwSales', calculator:'gwSales',
   // Financial workspace
@@ -817,6 +822,7 @@ const _gwWsNameToId = {
   Sales: 'gwSales',
   Financial: 'gwFinancial',
   Operations: 'gwOperations',
+  Marketing: 'gwMarketing',
   Learning: 'gwLearning',
   Admin: 'gwAdmin',
 };
@@ -832,6 +838,7 @@ const _GW_MOBILE_TABS = {
   Sales:       ['pipeline','lead','clients','estimates','communications'],
   Financial:   ['finControl','finQueue','finJobCost','finBudget','finRecovery','finInvPay','finLedger','finDocuments'],
   Operations:  ['scheduleBoard','dispatchBoard','workOrderList','timeTracker','assetsHub'],
+  Marketing:   ['marketingCampaigns'],
   Learning:    ['academy'],
   Admin:       ['settings','userManagement'],
 };
@@ -1612,8 +1619,12 @@ function show(viewName='today', param){
       estimates:'Estimates', proposals:'Proposals', communications:'Communications', textMessages:'Text Messages', automations:'Sequences',
       templates:'Templates', sequences:'Sequences', talkTracks:'Talk Tracks',
       playbooks:'Playbooks', aiAssist:'AI Assist',
-      campaigns:'Sequences', process:'Playbooks', forms:'Playbooks', scripts:'Talk Tracks',
-      emailTemplates:'Templates', objections:'Talk Tracks',
+      process:'Playbooks', scripts:'Talk Tracks',
+      // Marketing
+      campaigns:'Campaigns', marketingCampaigns:'Campaigns', marketingAudiences:'Audiences',
+      marketingBrand:'Brand Kit', marketingMedia:'Media', marketingForms:'Forms',
+      marketingAnalytics:'Analytics',
+      forms:'Playbooks', emailTemplates:'Templates', objections:'Talk Tracks',
       calculator:'Pricing Tools', ai:'AI Assist',
       // Financial
       financialHub:'Overview', invoices:'Invoices', payments:'Payments',
@@ -1666,7 +1677,11 @@ function show(viewName='today', param){
     academy:'Learning', learnEstimating:'Learning', learnFinancial:'Learning', learnCrmGuide:'Learning',
     estimates:'Sales', proposals:'Sales', communications:'Sales', textMessages:'Sales', templates:'Sales',
     sequences:'Sales', talkTracks:'Sales', playbooks:'Sales', aiAssist:'Sales',
-    automations:'Sales', campaigns:'Sales', process:'Sales', forms:'Sales',
+    automations:'Sales', process:'Sales', forms:'Sales',
+    // Marketing workspace tab aliases
+    campaigns:'Marketing', marketingCampaigns:'Marketing', marketingAudiences:'Marketing',
+    marketingBrand:'Marketing', marketingMedia:'Marketing', marketingForms:'Marketing',
+    marketingAnalytics:'Marketing',
     scripts:'Sales', emailTemplates:'Sales', objections:'Sales',
     calculator:'Sales', ai:'Sales',
     // Financial workspace tab aliases
@@ -1691,6 +1706,7 @@ function show(viewName='today', param){
   const _wsTabDefs = {
     Dashboard:  [{id:'today',label:'Command Center'}],
     Sales:      [{id:'pipeline',label:'Pipeline'},{id:'process',label:'Sales Process'},{id:'lead',label:'Leads'},{id:'clients',label:'Clients'},{id:'properties',label:'Properties'},{id:'teamView',label:'Team'},{id:'estimates',label:'Estimates'},{id:'communications',label:'Communications'}],
+    Marketing:  [{id:'marketingCampaigns',label:'Campaigns'},{id:'marketingAudiences',label:'Audiences'},{id:'marketingBrand',label:'Brand Kit'},{id:'marketingMedia',label:'Media'},{id:'marketingForms',label:'Forms'},{id:'marketingAnalytics',label:'Analytics'}],
     Learning:   [{id:'academy',label:'Sales Academy'},{id:'learnEstimating',label:'Estimating 101'},{id:'learnFinancial',label:'Financial Literacy'},{id:'learnCrmGuide',label:'CRM Guide'}],
     Financial:  [{id:'financialHub',label:'Overview'},{id:'invoices',label:'Invoices'},{id:'payments',label:'Payments'},{id:'deposits',label:'Deposits'},{id:'statements',label:'Statements'},{id:'financialActivity',label:'Activity'}],
     Operations: [
@@ -1809,7 +1825,6 @@ function show(viewName='today', param){
     teamView:           ()   => teamView(),
     // Sales
     properties:         ()   => properties(),
-    campaigns:          ()   => campaigns(),
     emailTemplates:     ()   => emailTemplates(),
     // Financial
     payments:           ()   => payments(),
@@ -1867,7 +1882,15 @@ function show(viewName='today', param){
     templates:      ()   => communicationsHub('templates'),
     emailTemplates: ()   => communicationsHub('templates'),
     automations:    ()   => communicationsHub('sequences'),
-    campaigns:      ()   => communicationsHub('sequences'),
+    // `campaigns` used to open the Sequences mock, which persisted to
+    // localStorage only. It now opens the real, D1-backed module.
+    campaigns:          ()   => gwMarketing('marketingCampaigns'),
+    marketingCampaigns: ()   => gwMarketing('marketingCampaigns'),
+    marketingAudiences: ()   => gwMarketing('marketingAudiences'),
+    marketingBrand:     ()   => gwMarketing('marketingBrand'),
+    marketingMedia:     ()   => gwMarketing('marketingMedia'),
+    marketingForms:     ()   => gwMarketing('marketingForms'),
+    marketingAnalytics: ()   => gwMarketing('marketingAnalytics'),
     scripts:        ()   => communicationsHub('talkTracks'),
     objections:     ()   => communicationsHub('talkTracks'),
     ai:             ()   => communicationsHub('aiAssist'),
@@ -1880,6 +1903,7 @@ function show(viewName='today', param){
     gwSales:      (t) => gwSales(t),
     gwFinancial:  (t) => gwFinancial(t),
     gwOperations: (t) => gwOperations(t),
+    gwMarketing:  (t) => gwMarketing(t),
     gwLearning:   (t) => gwLearning(t),
     gwAdmin:      (t) => gwAdmin(t),
     gwRecords:    (s) => gwRecords(s),
