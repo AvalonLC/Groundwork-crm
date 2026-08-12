@@ -1,4 +1,4 @@
--- 0061_marketing_forms_attribution.sql — Marketing OS, part 3 of 3.
+-- 0066_marketing_forms_attribution.sql — Marketing OS, part 3 of 3.
 --
 -- Native inquiry forms (replacing the Google Forms CTAs), the SendGrid sender
 -- identity, business-outcome attribution and the AI generation log.

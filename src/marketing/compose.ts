@@ -139,7 +139,7 @@ export async function persistRender(
 
   // l.id is the per-campaign key that appears in the URL and repeats across
   // campaigns by design; the row id has to be campaign-qualified to stay
-  // unique. See migrations/0063_marketing_link_key.sql.
+  // unique. See migrations/0068_marketing_link_key.sql.
   const statements = result.links.map((l) =>
     db
       .prepare(

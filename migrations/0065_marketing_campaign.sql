@@ -1,4 +1,4 @@
--- 0060_marketing_campaign.sql — Marketing OS, part 2 of 3.
+-- 0065_marketing_campaign.sql — Marketing OS, part 2 of 3.
 --
 -- The campaign itself, the frozen recipient snapshot, delivery events and the
 -- click-tracked links. Additive only; safe to replay.

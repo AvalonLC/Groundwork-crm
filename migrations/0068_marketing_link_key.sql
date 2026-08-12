@@ -1,4 +1,4 @@
--- 0063_marketing_link_key.sql — Marketing OS.
+-- 0068_marketing_link_key.sql — Marketing OS.
 --
 -- Separates a tracked link's per-campaign key from its globally unique row id.
 --

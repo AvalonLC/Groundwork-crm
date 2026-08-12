@@ -1,4 +1,4 @@
--- 0059_marketing_core.sql — Marketing OS, part 1 of 3.
+-- 0064_marketing_core.sql — Marketing OS, part 1 of 3.
 --
 -- Brand kit, service marketing knowledge, media library, saved audiences and
 -- the suppression list. Additive only; safe to replay.
