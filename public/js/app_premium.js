@@ -18991,8 +18991,10 @@ window._sbOpenVisitModal = async function(woId) {
     </div>`;
 
   // Work tracking
+  // Calendar duration, not budgeted labor — work_orders.duration_hours drives
+  // how long the job blocks the grid. What was sold lives in budget_minutes and
+  // is surfaced by the Hours card.
   const budgetedHrs = wo.duration_hours || 0;
-  const actualHrs   = wo.actual_hours   || 0;
 
   const modal = document.createElement('div');
   modal.id = 'sb-visit-modal';
@@ -19162,22 +19164,26 @@ window._sbOpenVisitModal = async function(woId) {
             ${photosHtml('After',  afterPhotos,  'after_photos')}
           </section>
 
-          <!-- Work Tracking -->
+          <!-- Time on the calendar.
+               This section used to be "Work Tracking" and showed a Budgeted and
+               an Actual stat. Both were misleading:
+
+                 "Budgeted" read work_orders.duration_hours, which is ALSO what
+                 the grid uses to decide how long a job blocks — so the field
+                 labelled "total man-hrs" silently resized the job on the board.
+                 It is calendar time, and is now labelled as such.
+
+                 "Actual" read work_orders.actual_hours, a denormalised column
+                 nothing keeps current — it showed 0h on jobs with real logged
+                 time. The Hours card above computes actual from time_entries,
+                 net of breaks, so a second contradictory figure is worse than
+                 none. Removed rather than left to disagree. -->
           <section class="sb-modal-section">
-            <h3 class="sb-modal-section-title">Work Tracking</h3>
-            <div class="sb-work-track">
-              <div class="sb-work-stat">
-                <span class="sb-work-num">${budgetedHrs}h</span>
-                <span class="sb-work-lbl">Budgeted</span>
-              </div>
-              <div class="sb-work-stat">
-                <span class="sb-work-num sb-work-num--blue">${actualHrs}h</span>
-                <span class="sb-work-lbl">Actual</span>
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+            <h3 class="sb-modal-section-title">Time on the calendar</h3>
+            <p class="sb-modal-hint">How long this blocks the schedule. Sold, planned and actual hours are in the Hours card above.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
               <label class="sb-modal-field">
-                <span>Budgeted Hours <em style="font-size:10px;font-weight:400;opacity:.6">(total man-hrs)</em></span>
+                <span>Duration <em style="font-size:10px;font-weight:400;opacity:.6">(hours on the grid)</em></span>
                 <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||''}">
               </label>
               <label class="sb-modal-field">
