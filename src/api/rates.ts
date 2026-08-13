@@ -125,7 +125,42 @@ export async function resolveEquipmentRate(
   };
 }
 
-export const ratesRouter = new Hono<{ Bindings: RatesBindings }>();
+export type RatesVariables = {
+  repId: string;
+  companyId: string;
+  role: string;
+  isSuperAdmin: boolean;
+};
+
+export const ratesRouter = new Hono<{ Bindings: RatesBindings; Variables: RatesVariables }>();
+
+/**
+ * Every endpoint here takes its tenant from the request BODY rather than the
+ * session, so authentication alone is not enough: without this, any signed-in
+ * user could pass another company's id and read that company's burdened labor
+ * rates, which are wage-derived.
+ *
+ * requireAuth is applied at the mount point in src/index.tsx; this narrows it to
+ * the caller's own tenant. Super admins are exempt because cross-tenant support
+ * access is their purpose.
+ */
+ratesRouter.use("*", async (c, next) => {
+  const sessionCompany = c.var.companyId;
+  // Fails CLOSED. If this router is ever mounted without requireAuth in front of
+  // it — which is exactly how it shipped originally — there is no session tenant
+  // to compare against, and allowing the request through would reinstate the hole
+  // this guard exists to close.
+  if (!sessionCompany) {
+    return c.json({ error: "unauthenticated" }, 401);
+  }
+  // Hono caches the parsed body, so reading it here does not consume it for the
+  // handler. A malformed body is left for the handler's own 400.
+  const body = await c.req.json<{ company_id?: string }>().catch(() => ({}) as { company_id?: string });
+  if (body.company_id && body.company_id !== sessionCompany && !c.var.isSuperAdmin) {
+    return c.json({ error: "company_id does not match the authenticated session" }, 403);
+  }
+  await next();
+});
 
 ratesRouter.post("/resolve", async (c) => {
   const body = await c.req.json<{
