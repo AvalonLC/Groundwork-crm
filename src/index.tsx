@@ -4506,8 +4506,8 @@ app.put('/api/workday-settings', requireAuth, async (c) => {
     INSERT INTO workday_settings
       (id, company_id, working_days, shift_start, shift_end, lunch_minutes,
        grace_period_minutes, late_threshold_minutes, overtime_threshold_hours,
-       missed_punch_flag, prompt_clock_in, updated_at)
-    VALUES ('default_'||?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       missed_punch_flag, prompt_clock_in, productive_minutes_per_day, updated_at)
+    VALUES ('default_'||?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(company_id) DO UPDATE SET
       working_days=excluded.working_days, shift_start=excluded.shift_start,
       shift_end=excluded.shift_end, lunch_minutes=excluded.lunch_minutes,
@@ -4516,12 +4516,19 @@ app.put('/api/workday-settings', requireAuth, async (c) => {
       overtime_threshold_hours=excluded.overtime_threshold_hours,
       missed_punch_flag=excluded.missed_punch_flag,
       prompt_clock_in=excluded.prompt_clock_in,
+      productive_minutes_per_day=excluded.productive_minutes_per_day,
       updated_at=datetime('now')
   `).bind(
     companyId, companyId,
     b.working_days||'1,2,3,4,5', b.shift_start||'07:00', b.shift_end||'17:00',
     b.lunch_minutes??30, b.grace_period_minutes??10, b.late_threshold_minutes??15,
-    b.overtime_threshold_hours??8.0, b.missed_punch_flag??1, b.prompt_clock_in??1
+    b.overtime_threshold_hours??8.0, b.missed_punch_flag??1, b.prompt_clock_in??1,
+    // Migration 0060 added this column and no endpoint ever wrote it, so every
+    // tenant has been permanently pinned to the 450-minute default — the single
+    // number the entire capacity denominator is built on was not adjustable.
+    // Clamped to a real working day: 0 would make every crew read as infinitely
+    // over capacity, and anything past 24h is a typo.
+    Math.max(30, Math.min(1440, Number(b.productive_minutes_per_day) || 450))
   ).run()
   return json(c, { ok: true })
 })
@@ -7295,14 +7302,32 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
     budgetHours = hoursPerVisitFromRecurringData(est.recurring_data) || 0
   }
 
+  // SOLD labor, in minutes, on its own column.
+  //
+  // budget_minutes had exactly one writer in the entire codebase: migration
+  // 0063's one-time backfill. Nothing has written it since, so every job created
+  // after that migration ran carries NULL and the Hours card reports "vs sold"
+  // as null forever — the card works and the number it exists to show is never
+  // there. This is the missing writer.
+  //
+  // Note what does NOT happen here: budgetHours is no longer pushed into
+  // duration_hours as well. 0063's header says it separated these two meanings;
+  // it separated the column but not this write, so the same figure kept landing
+  // in both. duration_hours is read as CALENDAR duration in five places, so a
+  // 72-hour labor budget was blocking 72 hours on the grid — three people on a
+  // 4-hour job showed as a 12-hour block. Calendar duration now comes only from
+  // what the scheduler is actually told, and is null until someone says.
+  const budgetMinutes = budgetHours > 0 ? Math.round(budgetHours * 60) : null
+  const calendarHours = Number(b.duration_hours || 0) || null
+
   const woNumber = await nextWorkOrderNumber(db, companyId)
   const woId = 'wo_' + uid()
   const woAmountEstCents = Number(est.total_cents || 0)
   const woAmountEst = woAmountEstCents / 100
   await db.prepare(`
     INSERT INTO work_orders (id,company_id,wo_number,opp_id,estimate_id,client_name,client_id,property_addr,
-      title,type,status,scheduled_date,scheduled_time,duration_hours,notes,amount_est,amount_est_cents,materials,checklist,timeline,created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      title,type,status,scheduled_date,scheduled_time,duration_hours,budget_minutes,notes,amount_est,amount_est_cents,materials,checklist,timeline,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     woId, companyId, woNumber, est.opp_id || null, est.id,
     est.client_name || '', est.client_id || null, est.property_addr || est.client_address || '',
@@ -7312,7 +7337,7 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
     // a yellow "hold" — it flips green (scheduled) automatically on acceptance.
     (b.hold === true || (b.hold !== false && est.status !== 'accepted' && est.status !== 'approved' && est.status !== 'invoiced')) ? 'hold' : 'scheduled',
     b.scheduled_date || null, b.scheduled_time || null,
-    budgetHours || Number(b.duration_hours || 0) || null,
+    calendarHours, budgetMinutes,
     (est.scope_of_work || '') + (est.internal_notes ? `\n\n[Internal] ${est.internal_notes}` : ''),
     woAmountEst, woAmountEstCents, JSON.stringify(materials),
     JSON.stringify([]), JSON.stringify([{ at: new Date().toISOString(), event: `Created from estimate ${est.est_number}`, by: repId }]),
@@ -7324,6 +7349,9 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
   // created from then on would be invisible in the Week view. No-ops when the
   // job has no date yet — a backlog job gets its row when it is scheduled.
   await ensurePrimaryDay(db, companyId, woId)
+  // And staff it, so the day carries planned labor rather than being an empty
+  // block on the grid. No-ops until the job has a crew or a named employee list.
+  await syncDayEmployees(db, companyId, woId)
 
   await db.prepare(`UPDATE estimates SET work_order_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(woId, est.id, companyId).run()
@@ -11765,8 +11793,26 @@ app.get('/api/work-orders', requireAuth, async (c) => {
   const clientId  = c.req.query('client_id')
   const dateFrom  = c.req.query('date_from')
   const dateTo    = c.req.query('date_to')
-  const limitParam = c.req.query('limit')
-  const limitVal   = limitParam ? parseInt(limitParam) : 500
+  // limit was interpolated straight into the SQL, so ?limit=abc produced
+  // "LIMIT NaN" and a 500. parseInt kept it from being an injection, not from
+  // being a crash. Bound and clamped now, with offset actually honoured:
+  // public/js/app_premium.js has been sending &offset= from the client detail
+  // "load more" since it was written, and getting page one back every time.
+  const limitVal  = Math.max(1, Math.min(1000, Number(c.req.query('limit')) || 500))
+  const offsetVal = Math.max(0, Number(c.req.query('offset')) || 0)
+
+  // ?expand=days — one row per SCHEDULED DAY instead of one row per work order.
+  //
+  // The wo_days join carried no is_primary predicate, so a five-day job came
+  // back as five rows with identical wo.* and different md_*. The schedule board
+  // depends on that: it renders each phase as its own card with a "Day n/N" pill.
+  // Every other consumer does not, and silently over-counted — client detail, the
+  // Work Orders list, dashboard tallies and the board's own backlog filter all
+  // treated one job as several.
+  //
+  // So the fan-out becomes opt-in rather than the default. "A list of work
+  // orders" now means what it says; the board asks for the expansion explicitly.
+  const expandDays = c.req.query('expand') === 'days'
   let sql = `SELECT wo.*, COALESCE(md.day_date, wo.scheduled_date) as scheduled_date, COALESCE(md.start_time, wo.scheduled_time) as scheduled_time,
              COALESCE(md.end_time, wo.scheduled_end_time) as scheduled_end_time,
              COALESCE(md.scheduled_duration_minutes, wo.scheduled_duration_minutes) as scheduled_duration_minutes,
@@ -11777,7 +11823,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
              md.depends_on_day_number as md_depends_on_day_number, md.dependency_type as md_dependency_type, md.dependency_lag_days as md_dependency_lag_days,
              md.status as md_status
              FROM work_orders wo
-             LEFT JOIN wo_days md ON md.work_order_id = wo.id AND md.company_id = wo.company_id
+             LEFT JOIN wo_days md ON md.work_order_id = wo.id AND md.company_id = wo.company_id${expandDays ? '' : ' AND md.is_primary = 1'}
              LEFT JOIN crews cr ON cr.id = COALESCE(NULLIF(md.crew_id,''), wo.crew_id) AND cr.company_id = wo.company_id
              WHERE wo.company_id = ?`
   const params: any[] = [companyId]
@@ -11798,7 +11844,8 @@ app.get('/api/work-orders', requireAuth, async (c) => {
     )`
     params.push(repId, repId, repId, companyId)
   }
-  sql += ` ORDER BY COALESCE(md.day_date, wo.scheduled_date) DESC, wo.created_at DESC LIMIT ${limitVal}`
+  sql += ` ORDER BY COALESCE(md.day_date, wo.scheduled_date) DESC, wo.created_at DESC LIMIT ? OFFSET ?`
+  params.push(limitVal, offsetVal)
   const rows = await db.prepare(sql).bind(...params).all()
   // Parse JSON fields
   const data = (rows.results || []).map((r: any) => ({
@@ -11852,9 +11899,10 @@ app.post('/api/work-orders', requireAuth, async (c) => {
   await db.prepare(`
     INSERT INTO work_orders
       (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
-       type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours, notes,
+       type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours,
+       scheduled_duration_minutes, budget_minutes, notes,
        amount_est, amount_est_cents, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     id, companyId, woNum,
     body.opp_id || null, body.crew_id || null,
@@ -11863,7 +11911,20 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     body.status || 'scheduled', body.readiness || 'ready',
     body.scheduled_date || null, body.scheduled_time || null,
     body.scheduled_end_time || null,
-    body.duration_hours || null, body.notes || '',
+    body.duration_hours || null,
+    // Calendar span and sold labor, each on its own column and each optional.
+    // Neither existed on this endpoint before, so the only way to say anything
+    // about hours was duration_hours — which the grid reads as the length of the
+    // block. The create modal's "Budgeted Hours" field went straight into it, so
+    // sold labor and calendar time were the same number from the moment a job
+    // was born. See the capacity module header for why they are not the same.
+    body.scheduled_duration_minutes != null ? Math.max(15, Math.min(1440, Number(body.scheduled_duration_minutes) || 0)) : null,
+    body.budget_minutes != null
+      ? Math.max(0, Number(body.budget_minutes) || 0)
+      : body.budget_hours != null
+        ? Math.round(Math.max(0, Number(body.budget_hours) || 0) * 60)
+        : null,
+    body.notes || '',
     createAmountEst, Math.round(createAmountEst * 100),
     JSON.stringify(body.checklist || []),
     JSON.stringify(body.materials || []),
@@ -11882,8 +11943,14 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, id, eId, companyId).run()
   }
-  // Per-day labor for the people just put on this job.
-  if (employees.length) await syncDayEmployees(db, companyId, id)
+  // Per-day labor. Unconditional now: this was gated on `employees.length`, so a
+  // job created with a CREW but no explicit employee list got a day row with
+  // nobody on it. That is the normal case from the board — you pick a crew, not
+  // a list of names — and every such job contributed zero planned minutes, so
+  // the crew read as completely idle on the Week view no matter how much work
+  // was booked into it. syncDayEmployees derives from the day's crew and no-ops
+  // when there is neither a crew nor a job list, so calling it always is safe.
+  await syncDayEmployees(db, companyId, id)
   await syncWorkOrderFinanceColumns(db, companyId, id)
   return c.json({ ok: true, id, wo_number: woNum })
 })
@@ -11933,8 +12000,24 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
   const woId = c.req.param('id')
   const body: any = await c.req.json()
   // Get current WO for timeline diff
-  const cur: any = await db.prepare(`SELECT status, timeline FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
+  const cur: any = await db.prepare(`SELECT status, timeline, schedule_locked FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).first()
   if (!cur) return c.json({ ok: false, error: 'Not found' }, 404)
+
+  // Which of this endpoint's many fields actually move the job on the calendar.
+  const SCHEDULING_FIELDS = ['crew_id', 'scheduled_date', 'scheduled_time', 'scheduled_end_time', 'scheduled_duration_minutes', 'schedule_locked'] as const
+  const touchesSchedule = SCHEDULING_FIELDS.some(f => body[f] !== undefined)
+
+  // Schedule lock, enforced.
+  //
+  // PATCH /reschedule has refused a locked job since it was written, but this
+  // endpoint writes every one of the same columns and never checked — so the
+  // lock could be walked straight past by editing the job instead of dragging
+  // it, and the same statement could even clear the lock on the way through.
+  // A lock that only stops one of two doors is not a lock.
+  if (cur.schedule_locked && !body.force && touchesSchedule) {
+    return c.json({ ok: false, error: 'This visit is locked. Unlock it before rescheduling.' }, 409)
+  }
+
   let tl = JSON.parse(cur.timeline || '[]')
   if (body.status && body.status !== cur.status) {
     tl.push({ action: `Status → ${body.status}`, note: `by ${repId}`, at: new Date().toISOString() })
@@ -11999,6 +12082,22 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     // Keeps hand-tuned planned_minutes; see syncDayEmployees.
     await syncDayEmployees(db, companyId, woId)
   }
+
+  // Push the new date/time/crew down onto the day row.
+  //
+  // This was missing, and it is the mechanism behind "I moved the job to another
+  // crew and the people didn't follow". The board's crew drag is two requests:
+  // PATCH /reschedule (whose UPDATE has no crew_id column, so the crew in that
+  // body is discarded) and then this PUT. Neither one moved wo_days.crew_id, and
+  // capacity is computed from wo_days — so the card sat in the new lane while the
+  // labor, the people and the utilisation stayed with the old crew, and a refresh
+  // could put the card back where it came from.
+  //
+  // Runs after the employee block above so that when both change at once, the
+  // day's own crew roster is the one that wins — the precedence syncDayEmployees
+  // documents.
+  if (touchesSchedule) await syncPrimaryDayFromWorkOrder(db, companyId, woId)
+
   await syncWorkOrderFinanceColumns(db, companyId, woId)
   return c.json({ ok: true })
 })
@@ -12065,8 +12164,10 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, newId, (e as any).rep_id, companyId).run()
   }
-  // Per-day labor for the copied assignments.
-  if ((emps.results || []).length) await syncDayEmployees(db, companyId, newId)
+  // Per-day labor. Unconditional for the same reason as POST /api/work-orders:
+  // a duplicate that inherits a CREW but no named employees was landing on the
+  // grid with nobody on it and zero planned minutes.
+  await syncDayEmployees(db, companyId, newId)
   return c.json({ ok: true, id: newId, wo_number: woNum })
 })
 
@@ -12277,6 +12378,16 @@ Return ONLY valid JSON: { "days": [ { "day": 1, "questions": ["...", "..."] }, .
   await db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=? AND day_number>? AND status='pending'`).bind(woId, companyId, totalDays).run()
   await db.prepare(`UPDATE work_orders SET is_multiday=1, total_days=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(totalDays, woId, companyId).run()
 
+  // Staff the days this just created.
+  //
+  // Without it a freshly split multi-day job has day rows with a crew on them
+  // and nobody in wo_day_employees, so every one of those days contributes zero
+  // planned minutes and the crew reads as idle across the whole job — the exact
+  // "capacity built, never populated" shape the Week view is meant to remove.
+  // Covers every day at once rather than per day, so each takes its own crew's
+  // roster; hand-tuned minutes and manually-added people survive.
+  await syncDayEmployees(db, companyId, woId)
+
   const days = (await db.prepare(`SELECT * FROM wo_days WHERE work_order_id=? AND company_id=? ORDER BY day_number`).bind(woId, companyId).all()).results as any[] || []
   return c.json({ ok: true, ai_used: aiUsed, data: days.map(d => ({ ...d, questions: JSON.parse(d.questions || '[]') })) })
 })
@@ -12388,6 +12499,20 @@ app.post('/api/work-orders/:id/days/:n/shift-downstream', requireAuth, async (c)
     updates.push(db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(newDate, woId, companyId))
   }
   if (updates.length) await db.batch(updates)
+
+  // Re-derive day N's people when this call moved it to a different crew.
+  //
+  // Migration 0069 exists specifically so a crew change can replace a day's
+  // roster without dropping anyone added by hand — but only PATCH /days/:n was
+  // ever taught to use it. This endpoint writes the same crew_id column (above)
+  // and left wo_day_employees on the previous crew, so shifting a phase to
+  // another crew moved the card and not the labor. Same bug, second door.
+  //
+  // Only day N: the downstream days move in time, not between crews.
+  if (crewId !== undefined && selected && String(selected.crew_id || '') !== crewId) {
+    await syncDayEmployees(db, companyId, woId, selected.id)
+  }
+
   return c.json({ ok: true, delta_days: deltaDays, shifted })
 })
 
@@ -12681,7 +12806,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260813b004">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260813b006">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12704,8 +12829,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260813b004"></script>
-  <script src="/js/client_portal.js?v=20260813b004"></script>  <script>
+  <script src="/js/platform_core.js?v=20260813b006"></script>
+  <script src="/js/client_portal.js?v=20260813b006"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13339,10 +13464,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260813b004">
-  <link rel="stylesheet" href="/js/styles.css?v=20260813b004">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260813b004">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260813b004">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260813b006">
+  <link rel="stylesheet" href="/js/styles.css?v=20260813b006">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260813b006">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260813b006">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13997,46 +14122,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260813b004"></script>
-<script src="/js/gw-icons.js?v=20260813b004"></script>
-<script src="/js/sales-process.js?v=20260813b004"></script>
-<script src="/js/richtext.js?v=20260813b004"></script>
-<script src="/js/db.js?v=20260813b004"></script>
-<script src="/js/data.js?v=20260813b004"></script>
-<script src="/js/reps.js?v=20260813b004"></script>
-<script src="/js/record-page.js?v=20260813b004"></script>
-<script src="/js/academy.js?v=20260813b004"></script>
-<script src="/js/task_engine.js?v=20260813b004"></script>
-<script src="/js/gw_i18n.js?v=20260813b004"></script>
-<script src="/js/app_premium.js?v=20260813b004"></script>
-<script src="/js/estimates.js?v=20260813b004"></script>
-<script src="/js/multiday.js?v=20260813b004"></script>
-<script src="/js/proposals.js?v=20260813b004"></script>
-<script src="/js/pricing.js?v=20260813b004"></script>
-<script src="/js/invoices.js?v=20260813b004"></script>
-<script src="/js/csv_import.js?v=20260813b004"></script>
-<script src="/js/onboarding.js?v=20260813b004"></script>
-<script src="/js/gw_copilot.js?v=20260813b004"></script>
-<script src="/js/groundwork_ai.js?v=20260813b004"></script>
-<script src="/js/recurring_plans.js?v=20260813b004"></script>
-<script src="/js/reviews.js?v=20260813b004"></script>
-<script src="/js/stripe.js?v=20260813b004"></script>
-<script src="/js/email.js?v=20260813b004"></script>
-<script src="/js/notifications.js?v=20260813b004"></script>
-<script src="/js/integrations.js?v=20260813b004"></script>
-<script src="/js/sms.js?v=20260813b004"></script>
-<script src="/js/calendar_sync.js?v=20260813b004"></script>
-<script src="/js/ai_followup.js?v=20260813b004"></script>
-<script src="/js/user_management.js?v=20260813b004"></script>
-<script src="/js/platform_admin.js?v=20260813b004"></script>
-<script src="/js/time_tracker.js?v=20260813b004"></script>
-<script src="/js/field_workday.js?v=20260813b004"></script>
-<script src="/js/platform_core.js?v=20260813b004"></script>
-<script src="/js/approval_engine.js?v=20260813b004"></script>
-<script src="/js/automation_engine.js?v=20260813b004"></script>
-<script src="/js/client_portal.js?v=20260813b004"></script>
-<script src="/js/field_mode.js?v=20260813b004"></script>
-<script src="/js/assets_hub.js?v=20260813b004"></script><script src="/js/marketing.js?v=20260813b004"></script><script>
+<script src="/js/gw_date.js?v=20260813b006"></script>
+<script src="/js/gw-icons.js?v=20260813b006"></script>
+<script src="/js/sales-process.js?v=20260813b006"></script>
+<script src="/js/richtext.js?v=20260813b006"></script>
+<script src="/js/db.js?v=20260813b006"></script>
+<script src="/js/data.js?v=20260813b006"></script>
+<script src="/js/reps.js?v=20260813b006"></script>
+<script src="/js/record-page.js?v=20260813b006"></script>
+<script src="/js/academy.js?v=20260813b006"></script>
+<script src="/js/task_engine.js?v=20260813b006"></script>
+<script src="/js/gw_i18n.js?v=20260813b006"></script>
+<script src="/js/app_premium.js?v=20260813b006"></script>
+<script src="/js/estimates.js?v=20260813b006"></script>
+<script src="/js/multiday.js?v=20260813b006"></script>
+<script src="/js/proposals.js?v=20260813b006"></script>
+<script src="/js/pricing.js?v=20260813b006"></script>
+<script src="/js/invoices.js?v=20260813b006"></script>
+<script src="/js/csv_import.js?v=20260813b006"></script>
+<script src="/js/onboarding.js?v=20260813b006"></script>
+<script src="/js/gw_copilot.js?v=20260813b006"></script>
+<script src="/js/groundwork_ai.js?v=20260813b006"></script>
+<script src="/js/recurring_plans.js?v=20260813b006"></script>
+<script src="/js/reviews.js?v=20260813b006"></script>
+<script src="/js/stripe.js?v=20260813b006"></script>
+<script src="/js/email.js?v=20260813b006"></script>
+<script src="/js/notifications.js?v=20260813b006"></script>
+<script src="/js/integrations.js?v=20260813b006"></script>
+<script src="/js/sms.js?v=20260813b006"></script>
+<script src="/js/calendar_sync.js?v=20260813b006"></script>
+<script src="/js/ai_followup.js?v=20260813b006"></script>
+<script src="/js/user_management.js?v=20260813b006"></script>
+<script src="/js/platform_admin.js?v=20260813b006"></script>
+<script src="/js/time_tracker.js?v=20260813b006"></script>
+<script src="/js/field_workday.js?v=20260813b006"></script>
+<script src="/js/platform_core.js?v=20260813b006"></script>
+<script src="/js/approval_engine.js?v=20260813b006"></script>
+<script src="/js/automation_engine.js?v=20260813b006"></script>
+<script src="/js/client_portal.js?v=20260813b006"></script>
+<script src="/js/field_mode.js?v=20260813b006"></script>
+<script src="/js/assets_hub.js?v=20260813b006"></script><script src="/js/marketing.js?v=20260813b006"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
