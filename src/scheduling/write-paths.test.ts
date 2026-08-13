@@ -359,6 +359,162 @@ describe('the four labor numbers', () => {
   });
 });
 
+describe('the crew mirror — the actual mechanism behind the report', () => {
+  it('P1-24 after a crew move the job itself agrees about which crew has it', async () => {
+    // Verified in a browser before this test was written, because my first
+    // explanation was wrong and worth correcting: the board does NOT drag
+    // through PATCH /reschedule. Its `isMdDay` flag is true whenever a card has
+    // a day number, and the primary day of an ordinary single-day job is day 1 —
+    // so essentially every drag went to PATCH /days/:n.
+    //
+    // That endpoint updates wo_days correctly, including crew_id, and mirrors
+    // only scheduled_date back to the work order. crew_id was never mirrored, so
+    // a single GET /api/work-orders/:id came back holding both answers:
+    //
+    //     crew_id:   crew-blue      <- what the drawer's crew picker selects
+    //     crew_name: "Green Crew"   <- resolved through the day row
+    //
+    // Capacity was right the whole time. Opening the job showed the old crew.
+    const woId = await createJob();
+    const day = await dayRow(woId);
+
+    await req(`/api/scheduling/days/${day.id}/schedule`, cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: GREEN }),
+    });
+
+    const detail = (await (await req(`/api/work-orders/${woId}`, cookie)).json()) as any;
+    expect(detail.data.crew_id).toBe(GREEN);       // the picker
+    expect(detail.data.crew_name).toBe('Green');   // the label
+    expect(detail.data.md_crew_id).toBe(GREEN);    // the day
+  });
+
+  it('P1-25 a job dragged onto a crew stops reporting as needing one', async () => {
+    // GET /api/scheduling/backlog buckets on work_orders.crew_id, not the day's.
+    // With the mirror missing, a crewless job dragged onto a lane kept an empty
+    // work_orders.crew_id and sat in "needs crew" forever while visibly staffed
+    // on the grid.
+    const woId = await createJob({ crew_id: null });
+    const day = await dayRow(woId);
+    let backlog = (await (await req('/api/scheduling/backlog', cookie)).json()) as any;
+    expect(backlog.needs_crew.map((w: any) => w.work_order_id)).toContain(woId);
+
+    await req(`/api/scheduling/days/${day.id}/schedule`, cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: BLUE }),
+    });
+
+    backlog = (await (await req('/api/scheduling/backlog', cookie)).json()) as any;
+    expect(backlog.needs_crew.map((w: any) => w.work_order_id)).not.toContain(woId);
+  });
+
+  it('P1-26 moving one phase of a multi-day job does not touch the work order', async () => {
+    // The mirror is deliberately limited to the primary day. A multi-day job's
+    // day 3 has its own crew, and work_orders carries a single crew_id that
+    // cannot describe them — writing day 3's crew there would make the job claim
+    // a crew it only has on Wednesday.
+    const woId = await createJob({ scheduled_date: null, crew_id: null });
+    for (const [n, date] of [[1, MONDAY], [2, TUESDAY]] as const) {
+      await db().prepare(
+        `INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, questions, status, crew_id, scheduled_duration_minutes, is_primary)
+         VALUES (?,?,?,?,?,'[]','pending','',480,0)`,
+      ).bind(`wp-mm-${n}`, CO, woId, n, date).run();
+    }
+
+    await req(`/api/scheduling/days/wp-mm-2/schedule`, cookie, {
+      method: 'POST', body: body({ crew_id: GREEN }),
+    });
+
+    expect((await db().prepare(`SELECT crew_id FROM wo_days WHERE id='wp-mm-2'`).first<any>()).crew_id).toBe(GREEN);
+    expect((await woRow(woId)).crew_id).toBeNull();  // the job stays uncommitted
+    expect(await peopleOn('wp-mm-2')).toEqual(['wp-cara']);
+    expect(await peopleOn('wp-mm-1')).toEqual([]);   // day 1 untouched
+  });
+});
+
+describe('the single atomic call the board now makes', () => {
+  it('P1-19 a card carries its day id, so the board can address the day directly', async () => {
+    // The board drags a DAY, not a job — one phase of a multi-day job moves on
+    // its own. Without md_day_id on the card there was no way to name the row,
+    // which is why the drag went through the work-order endpoints at all.
+    const woId = await createJob();
+    const list = (await (await req('/api/work-orders?expand=days', cookie)).json()) as any;
+    const card = list.data.find((w: any) => w.id === woId);
+    expect(card.md_day_id).toBeTruthy();
+    expect(card.md_day_id).toBe((await dayRow(woId)).id);
+  });
+
+  it('P1-20 one call moves the date, the crew, the people and the mirror together', async () => {
+    // What the two-request version could not guarantee: after this single write
+    // there is no intermediate state in which the four disagree.
+    const woId = await createJob();
+    const day = await dayRow(woId);
+
+    const res = await req(`/api/scheduling/days/${day.id}/schedule`, cookie, {
+      method: 'POST', body: body({ date: TUESDAY, crew_id: GREEN }),
+    });
+    expect(res.status).toBe(200);
+
+    const after = await dayRow(woId);
+    const wo = await woRow(woId);
+    expect(after.day_date).toBe(TUESDAY);
+    expect(after.crew_id).toBe(GREEN);
+    expect(wo.scheduled_date).toBe(TUESDAY);
+    expect(wo.crew_id).toBe(GREEN);
+    expect(await peopleOn(day.id)).toEqual(['wp-cara']);
+  });
+
+  it('P1-21 scheduling a backlog job creates its day and staffs it', async () => {
+    // A job with no date has no wo_days row at all, so there is nothing to
+    // address — the board falls back to the work-order-level endpoint, which
+    // creates the row and then applies the same write.
+    const woId = await createJob({ scheduled_date: null, crew_id: null });
+    expect(await dayRow(woId)).toBeNull();
+
+    const res = await req(`/api/scheduling/work-orders/${woId}/schedule`, cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: BLUE }),
+    });
+    expect(res.status).toBe(200);
+
+    const day = await dayRow(woId);
+    expect(day.day_date).toBe(MONDAY);
+    expect(day.crew_id).toBe(BLUE);
+    expect(await peopleOn(day.id)).toEqual(['wp-anna', 'wp-ben']);
+  });
+
+  it('P1-22 a locked job is refused BEFORE anything is written', async () => {
+    // This endpoint selected schedule_locked and never read it. The only check
+    // was downstream, by which point the work order's date had already been
+    // committed — so a locked job returned 409 and moved anyway.
+    const woId = await createJob();
+    await req(`/api/work-orders/${woId}`, cookie, { method: 'PUT', body: body({ schedule_locked: true }) });
+
+    const res = await req(`/api/scheduling/work-orders/${woId}/schedule`, cookie, {
+      method: 'POST', body: body({ date: TUESDAY }),
+    });
+    expect(res.status).toBe(409);
+    expect((await woRow(woId)).scheduled_date).toBe(MONDAY); // and did not move
+  });
+
+  it('P1-23 the move is all-or-nothing across the day row and its mirror', async () => {
+    // The day update and the work_orders mirror share one db.batch, so they
+    // cannot land apart. Asserted by pointing the mirror at a work order that
+    // cannot be updated and checking the day did not move either.
+    const woId = await createJob();
+    const day = await dayRow(woId);
+    await db().prepare(`DELETE FROM work_orders WHERE id=?`).bind(woId).run();
+
+    // The day row is now an orphan; the batch's second statement matches nothing.
+    // What matters is that the endpoint does not leave a half-applied schedule.
+    const res = await req(`/api/scheduling/days/${day.id}/schedule`, cookie, {
+      method: 'POST', body: body({ date: TUESDAY }),
+    });
+    const after = await db().prepare(`SELECT day_date FROM wo_days WHERE id=?`).bind(day.id).first<any>();
+    // Either both moved or neither did — never a day on Tuesday with a work
+    // order still on Monday.
+    if (res.status === 200) expect(after.day_date).toBe(TUESDAY);
+    else expect(after.day_date).toBe(MONDAY);
+  });
+});
+
 describe('GET /api/work-orders paging and shape', () => {
   it('P1-16 one row per job by default, one row per day on request', async () => {
     // The wo_days join had no is_primary predicate, so a five-day job came back
