@@ -553,7 +553,10 @@ function escapeHtml(str=''){
 }
 function nl2br(str=''){ return escapeHtml(str).replace(/\n/g,'<br>'); }
 function uid(prefix='id'){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2,8)}`; }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+// toISOString() is a UTC serialiser, so this returned tomorrow's date after
+// ~19:00 Eastern — and it is compared against stored calendar dates all over
+// the app to decide what is due today or overdue.
+function todayISO(){ return (typeof gwToday === 'function') ? gwToday() : new Date().toISOString().slice(0,10); }
 function prettyDate(dateStr){ if(!dateStr) return 'Not set'; const d = new Date(`${dateStr}T12:00:00`); return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
 function list(items){ return `<ul class="list">${items.map(i=>`<li>${escapeHtml(i)}</li>`).join('')}</ul>`; }
 function badge(text, cls=''){ return `<span class="badge ${cls}">${escapeHtml(text)}</span>`; }
@@ -15853,7 +15856,10 @@ async function superAdmin() {
   }
 
   const fmt = n => (n ?? 0).toLocaleString();
-  const dateStr = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+  // Same UTC-midnight defect as _p5FmtDate had. This one also drops a hardcoded
+  // 'en-US' and now follows the browser locale, like every other date in the app
+  // — a deliberate change, and the reason it is called out rather than silent.
+  const dateStr = d => d ? gwDateFormat(d, {month:'short',day:'numeric',year:'numeric'}) : '—';
   const planBadge = p => {
     const colors = { trial:'#8B6914', starter:'#1A4740', pro:'#4D8A86', enterprise:'#2D7A55' };
     const c = colors[p] || '#6F7E6A';
@@ -16701,10 +16707,15 @@ function _p5Money(v){
   const n=Number(v||0);
   return isNaN(n)?'—':'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Was `new Date(d).toLocaleDateString(...)`. For a bare 'YYYY-MM-DD' that parses
+// as UTC midnight and renders in local time, so west of Greenwich it showed the
+// PREVIOUS day — which is why the work-order drawer header disagreed with the
+// date field sitting right beside it. Eight scheduling screens render dates
+// through this one function, so they are all fixed by delegating to gwDateFormat.
 function _p5FmtDate(d){
-  if(!d) return '—';
-  try{ return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
-  catch(e){ return d; }
+  return (typeof gwDateFormat === 'function')
+    ? gwDateFormat(d)
+    : (d ? String(d) : '—'); // gw_date.js not loaded yet — show the raw value, never a wrong day
 }
 function _p5Initials(name){
   return (name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -17789,7 +17800,7 @@ window._sbState = window._sbState || {
   crewLanes: true,         // show crew-lane rows in week view
   density: 'compact',
   showMetrics: false,
-  timelineDate: new Date().toISOString().slice(0,10),
+  timelineDate: gwToday(),
   workdayStart: 6,
   workdayEnd: 20,
   snapMinutes: 15,
@@ -17818,17 +17829,17 @@ function _sbParseJsonField(v) {
 function _sbCurrentDateRange() {
   const sb = window._sbState || {};
   if (sb.viewMode === 'timeline') {
-    const date = sb.timelineDate || new Date().toISOString().slice(0,10);
+    const date = sb.timelineDate || gwToday();
     return { from: date, to: date };
   }
   if (sb.viewMode === 'month') {
     const m = _sbGetMonthDays(sb.monthOffset || 0);
     const start = new Date(m.first); start.setDate(start.getDate() - start.getDay());
     const end = new Date(m.last); end.setDate(end.getDate() + (6 - end.getDay()));
-    return { from: start.toISOString().slice(0,10), to: end.toISOString().slice(0,10) };
+    return { from: gwDateISO(start), to: gwDateISO(end) };
   }
   const days = _sbGetWeekDays(sb.weekOffset || 0);
-  return { from: days[0].toISOString().slice(0,10), to: days[6].toISOString().slice(0,10) };
+  return { from: gwDateISO(days[0]), to: gwDateISO(days[6]) };
 }
 
 async function _sbLoadData() {
@@ -17967,13 +17978,13 @@ function _sbLoadPreferences() {
 _sbLoadPreferences();
 
 function _sbTimelineHtml(sb, visibleWOs, allCrews) {
-  const date = sb.timelineDate || new Date().toISOString().slice(0,10);
+  const date = sb.timelineDate || gwToday();
   const crews = [{id:'__unassigned__',name:'Unassigned',color:'#94a3b8'}, ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))];
   const start = Number(sb.workdayStart || 6) * 60, end = Number(sb.workdayEnd || 20) * 60;
   const ppm = 1.15, height = (end - start) * ppm;
   const hours = Array.from({length: Math.max(1, (end-start)/60 + 1)}, (_,i)=>start+i*60).filter(m=>m<=end);
   const now = new Date(), nowMinutes = now.getHours()*60+now.getMinutes();
-  const today = new Date().toISOString().slice(0,10);
+  const today = gwToday();
   const timeRail = `<div class="sb-time-rail" style="height:${height}px">${hours.map(m=>`<span style="top:${(m-start)*ppm}px">${_sbDisplayTime(_sbClock(m))}</span>`).join('')}</div>`;
   const columns = crews.map(cr => {
     const jobs = visibleWOs.filter(w => (w.scheduled_date||'').slice(0,10)===date && ((w.md_crew_id||w.crew_id||'__unassigned__')===cr.id));
@@ -18082,7 +18093,7 @@ async function scheduleBoard() {
 
 function _sbRender() {
   const sb = window._sbState;
-  const today = new Date().toISOString().slice(0,10);
+  const today = gwToday();
   const allCrews = sb.crews;
   const allWOs   = sb.workOrders;
   window._sbMdWarnings = _sbMdWarningMap(allWOs);
@@ -18152,7 +18163,7 @@ function _sbRender() {
       const headerCells = `
         <div class="sb-lane-corner"></div>
         ${days.map(d=>{
-          const iso = d.toISOString().slice(0,10);
+          const iso = gwDateISO(d);
           const isToday = iso===today;
           return `<div class="sb-lane-day-head${isToday?' today':''}">
             <span class="sb-day-name">${wdNames[d.getDay()]}</span>
@@ -18212,7 +18223,7 @@ function _sbRender() {
                   : weeklyCapacityHours.toFixed(0) + 'h open')
               : plannedHours.toFixed(1) + 'h of ' + weeklyCapacityHours.toFixed(0) + 'h · ' + utilization + '%';
         const dayCells = days.map(d=>{
-          const iso = d.toISOString().slice(0,10);
+          const iso = gwDateISO(d);
           const isToday = iso===today;
           const jobs = isUnassigned
             ? visibleWOs.filter(w => (!(w.md_crew_id || w.crew_id)) && w.scheduled_date?.slice(0,10)===iso)
@@ -18239,7 +18250,7 @@ function _sbRender() {
     } else {
       // ── Standard column week view ────────────────────────────────────────────
       const cols = days.map(d => {
-        const iso = d.toISOString().slice(0,10);
+        const iso = gwDateISO(d);
         const isToday = iso === today;
         const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
         return `
@@ -18380,19 +18391,19 @@ window.scheduleBoard = scheduleBoard;
 window._sbNav = function(dir) {
   const sb = window._sbState;
   if (sb.viewMode === 'timeline') {
-    const d = new Date((sb.timelineDate || new Date().toISOString().slice(0,10)) + 'T12:00:00');
+    const d = new Date((sb.timelineDate || gwToday()) + 'T12:00:00');
     d.setDate(d.getDate() + dir);
-    sb.timelineDate = d.toISOString().slice(0,10);
+    sb.timelineDate = gwDateISO(d);
   } else if (sb.viewMode === 'month') sb.monthOffset += dir;
   else sb.weekOffset += dir;
   if (sb.viewMode === 'week' || sb.viewMode === 'agenda') {
     const days = _sbGetWeekDays(sb.weekOffset);
-    sb.mobileSelectedDay = days[0].toISOString().slice(0,10);
+    sb.mobileSelectedDay = gwDateISO(days[0]);
   }
   _sbRefresh();
 };
 window._sbGoToday = function() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = gwToday();
   window._sbState.weekOffset = 0;
   window._sbState.monthOffset = 0;
   window._sbState.timelineDate = today;
@@ -18497,7 +18508,7 @@ window._sbSelectDay = function(iso) {
 
 // ── Mobile schedule render ────────────────────────────────────────────────────
 function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, totalInProgress, totalCompleted, headerLabel, _gridHtml, _crewFilterBar) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = gwToday();
   const _mT = (typeof window._t === 'function') ? window._t : (x => x);
   const wdNames = [_mT('Sun'),_mT('Mon'),_mT('Tue'),_mT('Wed'),_mT('Thu'),_mT('Fri'),_mT('Sat')];
   const wdShort = ['S','M','T','W','T','F','S'];
@@ -18590,18 +18601,18 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
   // Determine selected day
   if (!sb.mobileSelectedDay) {
     // Auto-select today if in current week, else first day
-    const todayInWeek = days.find(d=>d.toISOString().slice(0,10)===today);
-    sb.mobileSelectedDay = todayInWeek ? today : days[0].toISOString().slice(0,10);
+    const todayInWeek = days.find(d=>gwDateISO(d)===today);
+    sb.mobileSelectedDay = todayInWeek ? today : gwDateISO(days[0]);
   }
   // Ensure selected day is in current week
-  const weekIsos = days.map(d=>d.toISOString().slice(0,10));
+  const weekIsos = days.map(d=>gwDateISO(d));
   if (!weekIsos.includes(sb.mobileSelectedDay)) {
     sb.mobileSelectedDay = weekIsos[0];
   }
 
   // Day strip: 7 tappable day chips
   const dayStrip = days.map(d => {
-    const iso = d.toISOString().slice(0,10);
+    const iso = gwDateISO(d);
     const isToday = iso === today;
     const isSelected = iso === sb.mobileSelectedDay;
     const jobCount = visibleWOs.filter(w=>w.scheduled_date?.slice(0,10)===iso).length;
@@ -18915,7 +18926,7 @@ window._sbDuplicateJob = async function(woId) {
   if (wo.scheduled_date) {
     const d = new Date(wo.scheduled_date + 'T12:00:00');
     d.setDate(d.getDate() + 1);
-    nextDate = d.toISOString().slice(0,10);
+    nextDate = gwDateISO(d);
   }
   const userDate = prompt('Duplicate to date (YYYY-MM-DD):', nextDate || '');
   if (!userDate) return;

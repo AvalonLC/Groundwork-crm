@@ -98,8 +98,25 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    to verify accuracy against. The rest of the pipeline (hash dedupe, R2
    storage, confidence scoring, review routing) is real and works today
    regardless of what fills in `extract`.
-7. **`GET /api/work-orders`'s `?rep_id=` filter references a column that
-   doesn't exist.** `src/index.tsx` (search `assigned_rep_id`) builds
+7. ~~**`GET /api/work-orders`'s `?rep_id=` filter references a column that
+   doesn't exist.**~~ **FIXED 2026-08-13** (scheduling Phase 0). The entry
+   below understated it: this was not a latent trap waiting for a first
+   caller, it was firing on every page load. `public/js/app_premium.js` sets
+   `?rep_id=` for foreman, laborer and field_supervisor, so **the schedule
+   board had been returning 500 to the entire field crew** while working
+   normally for anyone in the office — which is why it went unnoticed.
+
+   Resolved by dropping the `assigned_rep_id` branch, per the second of the
+   two options below. A rep is on a job three ways and all three are real:
+   `work_order_employees` (the job list), `wo_day_employees` (a specific day —
+   someone added to Thursday only), or `crew_members` (the crew running it).
+   No single "assigned rep" column could have expressed the middle case.
+   Covered by `src/scheduling/field-scoping.test.ts` (FS-01…FS-07); six of the
+   seven fail against the previous code with the production error.
+
+   <details><summary>original entry</summary>
+
+   `src/index.tsx` (search `assigned_rep_id`) builds
    `... AND (wo.assigned_rep_id = ? OR ...)` when `rep_id` is passed as a
    query param, but no migration ever adds `assigned_rep_id` to
    `work_orders` — only `crew_id` and the `work_order_employees` join table
@@ -110,6 +127,7 @@ immediately, no deploy, and Reset reverts to the version-controlled default:
    real decision (add the column and a writer for it, or drop the OR-branch
    in favor of the existing `work_order_employees` join) rather than a
    drive-by patch.
+   </details>
 8. **There is no way, anywhere in the product, to create a `labor_rate_profile`
    row.** `/finance/budget` (`src/ui/budget.tsx`) is read-only — three review
    tables, no form, no POST route. `insertLaborRateProfile` (`src/db/repos.ts`)
