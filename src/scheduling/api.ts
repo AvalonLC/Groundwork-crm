@@ -425,21 +425,26 @@ schedulingRouter.get('/week', async (c) => {
   });
 
   // One extra read for assignments across every day in range — still not per crew.
-  const dayIds = dayRows.map((d: any) => d.id);
-  let assignmentRows: any[] = [];
-  if (dayIds.length) {
-    const placeholders = dayIds.map(() => '?').join(',');
-    const res = await db
-      .prepare(
-        `SELECT e.wo_day_id, e.rep_id, e.planned_minutes, e.crew_role, r.name AS rep_name
-           FROM wo_day_employees e
-           JOIN reps r ON r.id = e.rep_id
-          WHERE e.company_id=? AND e.wo_day_id IN (${placeholders})`,
-      )
-      .bind(companyId, ...dayIds)
-      .all<any>();
-    assignmentRows = res.results || [];
-  }
+  //
+  // Joins back to wo_days on the date range rather than binding one parameter per
+  // day id. The IN-list version blew D1's bound-parameter cap the moment a week
+  // held more than about a hundred day rows: /week returned 500 and the board
+  // died outright. Verified — 120 day rows in one week reproduced it exactly.
+  // Three bound parameters now, regardless of how busy the week is.
+  const dayIds = new Set(dayRows.map((d: any) => d.id));
+  const assignmentsRes = await db
+    .prepare(
+      `SELECT e.wo_day_id, e.rep_id, e.planned_minutes, e.crew_role, r.name AS rep_name
+         FROM wo_day_employees e
+         JOIN wo_days d ON d.id = e.wo_day_id
+         JOIN reps r ON r.id = e.rep_id
+        WHERE e.company_id=? AND d.day_date >= ? AND d.day_date <= ?`,
+    )
+    .bind(companyId, start, end)
+    .all<any>();
+  // Kept to the days actually being rendered, so a crew_id filter still narrows
+  // the result the same way the old id-list did.
+  const assignmentRows = (assignmentsRes.results || []).filter((a: any) => dayIds.has(a.wo_day_id));
 
   const assignmentsByDay = new Map<string, any[]>();
   for (const a of assignmentRows) {
