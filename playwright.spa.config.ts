@@ -21,7 +21,14 @@ import { defineConfig } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "tests",
-  testMatch: "finance-spa-nav.spa.ts",
+  // Every *.spa.ts here, not just the finance one — schedule-board.spa.ts joined
+  // it. Still deliberately a different suffix from playwright.config.ts's
+  // "**/*.e2e.ts", so the two configs never fight over the port.
+  testMatch: "**/*.spa.ts",
+  // These share one built app and one local D1, and they create and delete work
+  // orders by a tag. Running files in parallel would let one file's cleanup
+  // delete another's fixtures mid-test.
+  workers: 1,
   outputDir: "test-results-spa",
   reporter: [["list"]],
   use: {
