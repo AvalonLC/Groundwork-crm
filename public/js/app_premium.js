@@ -18397,6 +18397,61 @@ window._sbRefresh = async function() {
  * Silent on failure: a stale percentage is a much smaller problem than an error
  * toast on top of a drag that actually succeeded.
  */
+/**
+ * Fill the Hours card in the visit modal: sold vs planned vs actual.
+ *
+ * Three numbers the CRM used to collapse into one. From
+ * GET /api/scheduling/work-orders/:id/hours:
+ *
+ *   budget   what the estimate sold (null when the job came from no estimate)
+ *   planned  what we intend to spend, summed from wo_day_employees
+ *   actual   what it took, NET of breaks
+ *
+ * "No budget" is rendered as such rather than as zero or as on-target — a job
+ * with nothing to compare against is a different statement from a job that
+ * landed exactly on its number.
+ */
+window._sbLoadHours = async function(woId) {
+  const host = document.getElementById('sbm-hours');
+  if (!host) return;
+  const h = m => (Number(m || 0) / 60).toFixed(1) + 'h';
+  try {
+    const r = await fetch(`/api/scheduling/work-orders/${encodeURIComponent(woId)}/hours`, { credentials: 'include' });
+    const d = await r.json();
+    if (!d || !d.ok) throw new Error(d && d.error);
+
+    const cell = (label, value, hint, tone) =>
+      `<div class="sb-hours-cell${tone ? ' sb-hours-cell--' + tone : ''}">
+         <span class="sb-hours-label">${escapeHtml(label)}</span>
+         <strong class="sb-hours-value">${escapeHtml(value)}</strong>
+         ${hint ? `<span class="sb-hours-hint">${escapeHtml(hint)}</span>` : ''}
+       </div>`;
+
+    let varianceCell;
+    if (d.budget_minutes == null) {
+      varianceCell = cell('Vs. sold', 'no budget', 'this job came from no estimate', null);
+    } else if (d.actual_minutes === 0) {
+      varianceCell = cell('Vs. sold', 'not started', 'no time logged yet', null);
+    } else {
+      const over = d.variance_minutes > 0;
+      varianceCell = cell(
+        'Vs. sold',
+        (over ? '+' : '') + (d.variance_minutes / 60).toFixed(1) + 'h',
+        over ? 'over what we sold' : 'under what we sold',
+        over ? 'over' : 'under',
+      );
+    }
+
+    host.innerHTML =
+      cell('Sold', d.budget_minutes == null ? '—' : h(d.budget_minutes), 'from the estimate') +
+      cell('Planned', h(d.planned_minutes), 'people-hours booked') +
+      cell('Actual', h(d.actual_minutes), d.break_minutes > 0 ? `net of ${h(d.break_minutes)} break` : 'net of breaks') +
+      varianceCell;
+  } catch (e) {
+    host.innerHTML = '<span class="muted" style="font-size:12px">Hours unavailable</span>';
+  }
+};
+
 window._sbRefreshCapacity = async function() {
   try {
     const range = _sbCurrentDateRange();
@@ -18990,6 +19045,13 @@ window._sbOpenVisitModal = async function(woId) {
             </div>
           </section>
 
+          <!-- Hours: sold vs planned vs actual. Filled in by _sbLoadHours()
+               after the modal paints, so opening a job never waits on it. -->
+          <section class="sb-modal-section" id="sbm-hours-section">
+            <h3 class="sb-modal-section-title">Hours</h3>
+            <div id="sbm-hours" class="sb-hours-grid"><span class="muted" style="font-size:12px">Loading…</span></div>
+          </section>
+
           <!-- Completion Details -->
           <section class="sb-modal-section">
             <h3 class="sb-modal-section-title">Completion Details</h3>
@@ -19208,6 +19270,10 @@ window._sbOpenVisitModal = async function(woId) {
   // Store current WO for handlers
   window._sbCurrentWO = JSON.parse(JSON.stringify(wo));
   window._sbCurrentWOId = wo.id;
+
+  // Fill the Hours card after the modal is on screen — opening a job must not
+  // wait on this request.
+  _sbLoadHours(wo.id);
 
   // Mount Client Portal Updates panel (daily updates + photo publish)
   if (typeof window._gwPortalUpdatesPanel === 'function') {
