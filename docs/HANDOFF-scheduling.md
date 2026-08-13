@@ -92,7 +92,34 @@ the numerator is correctly week-scoped.
 
 ---
 
-## What is next: step 5, the API
+## Status: steps 1–11 are built
+
+Everything below from "step 5" onward is now done and on
+`claude/scheduling-capacity`. Kept as the record of what was intended; the notes
+under each item still describe the constraints the implementation honours.
+
+| Step | What | Where |
+|---|---|---|
+| 1–4 | migrations `0060`–`0063` + `capacity.ts` | `migrations/`, `src/scheduling/capacity.ts` |
+| 5 | `/api/scheduling` router | `src/scheduling/api.ts` |
+| 6 | Week view reads real crew capacity | `app_premium.js` crew-lane metric |
+| 7 | labor-vs-labor ratio + capacity refresh after a drag | `_sbRefreshCapacity()` |
+| 8 | per-day labor derived from the job's crew | `syncDayEmployees()` |
+| 9–10 | Hours card: sold / planned / actual / variance | `_sbLoadHours()` |
+| 11 | retired the widget that contradicted it | visit modal |
+
+Two things a future session should know:
+
+- **`week_planned_minutes` is only non-zero once people are on the job.**
+  `syncDayEmployees()` derives it from `work_order_employees`, so it becomes
+  real as jobs are edited, but a crew with nobody assigned reads
+  "nobody assigned yet" rather than a fake percentage.
+- **`work_orders.actual_hours` is stale and should not be trusted.** Nothing
+  keeps it current — it read 0h on a job with 930 minutes of time entries.
+  Actual hours come from `time_entries`, net of breaks, via
+  `GET /api/scheduling/work-orders/:id/hours`.
+
+## The original step 5 brief, for reference
 
 New router `src/scheduling/api.ts`, mounted at `/api/scheduling` with
 `requireAuth` at the mount point in `src/index.tsx` — the same pattern as
