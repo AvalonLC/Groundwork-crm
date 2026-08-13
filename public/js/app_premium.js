@@ -17860,7 +17860,15 @@ async function _sbLoadData() {
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
       fetch('/api/reps', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
-      fetch('/api/work-orders?limit=300', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      // The Job Pool, from the endpoint built for it.
+      //
+      // This used to be a SECOND full /api/work-orders fetch at limit=300,
+      // filtered client-side for rows with no date — so every board load pulled
+      // the work-order list twice, and anything past the 300th row simply did
+      // not exist as far as the pool was concerned. /api/scheduling/backlog does
+      // the bucketing server-side, strips money for field roles, and had been
+      // sitting there with tests and no callers since it was written.
+      fetch('/api/scheduling/backlog?limit=500', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
       // Real crew capacity: people on the crew x productive minutes per working
       // day. One payload for the whole week — see src/scheduling/api.ts. Failing
       // this fetch must not break the board, so the metric falls back to the
@@ -17883,7 +17891,19 @@ async function _sbLoadData() {
       }
     }
     if (wo.ok)  window._sbState.workOrders = wo.data  || [];
-    if (backlog && backlog.ok) window._sbState.backlog = (backlog.data || []).filter(w => !w.scheduled_date && !['completed','cancelled'].includes(w.status));
+    if (backlog && backlog.ok) {
+      // Three buckets, kept apart, each tagged so the pool can filter on them.
+      // See src/scheduling/api.ts for why 'tentative' wins over 'needs
+      // scheduling': a held job is work the client has not bought yet, and the
+      // next action on it is to close the sale, not to find it a Tuesday.
+      window._sbState.pool = [
+        ...(backlog.needs_scheduling || []).map(w => ({ ...w, pool_state: 'needs_scheduling' })),
+        ...(backlog.needs_crew       || []).map(w => ({ ...w, pool_state: 'needs_crew' })),
+        ...(backlog.tentative        || []).map(w => ({ ...w, pool_state: 'tentative' })),
+      ].map(w => ({ ...w, id: w.work_order_id }));
+      // Kept for the timeline view's own "Unscheduled" aside, which reads it.
+      window._sbState.backlog = window._sbState.pool.filter(w => w.pool_state === 'needs_scheduling');
+    }
     window._sbState.loaded = true;
   } catch(e) {
     console.warn('[scheduleBoard] API load failed, using localStorage fallback', e);
@@ -17981,9 +18001,165 @@ function _sbLoadPreferences() {
 }
 _sbLoadPreferences();
 
+// ── Job Pool ─────────────────────────────────────────────────────────────────
+//
+// Work that is not yet on the grid, beside the grid rather than pretending to be
+// a crew in it. Backed by GET /api/scheduling/backlog, which buckets server-side.
+//
+// Three states, and they answer different questions:
+//   needs_scheduling  no date. Nobody knows when.
+//   needs_crew        has a date, nobody to do it.
+//   tentative         status 'hold' — the client has not bought it yet.
+//
+// Drag out to schedule; drag a card back in to unschedule it.
+
+const _GW_POOL_TABS = [
+  { id: 'all',              label: 'All' },
+  { id: 'needs_scheduling', label: 'Needs Scheduling' },
+  { id: 'needs_crew',       label: 'Needs Crew' },
+  { id: 'tentative',        label: 'Tentative' },
+];
+
+function _sbPoolFiltered() {
+  const sb = window._sbState;
+  const pool = sb.pool || [];
+  const tab = sb.poolTab || 'all';
+  const q = (sb.poolQuery || '').trim().toLowerCase();
+  const type = sb.poolType || '';
+  return pool.filter(w => {
+    if (tab !== 'all' && w.pool_state !== tab) return false;
+    if (type && (w.type || '') !== type) return false;
+    if (!q) return true;
+    return [w.wo_number, w.client_name, w.title, w.property_addr, w.type]
+      .some(v => String(v || '').toLowerCase().includes(q));
+  });
+}
+
+function _sbPoolCard(w) {
+  const hrs = w.budget_minutes != null ? (w.budget_minutes / 60) : (w.duration_minutes != null ? w.duration_minutes / 60 : null);
+  const stateLabel = { needs_scheduling: 'Needs scheduling', needs_crew: 'Needs crew', tentative: 'Tentative' }[w.pool_state] || '';
+  return `
+    <article class="sb-pool-card sb-pool-card--${w.pool_state}"
+             draggable="true"
+             data-wo="${escapeHtml(w.id)}"
+             ondragstart="_sbDragStart(event,'${escapeHtml(w.id)}',0)">
+      <header>
+        <strong>${escapeHtml(w.client_name || w.title || 'Job')}</strong>
+        <span class="sb-pool-wonum">${escapeHtml(w.wo_number || '')}</span>
+      </header>
+      ${w.title && w.client_name ? `<p class="sb-pool-title">${escapeHtml(w.title)}</p>` : ''}
+      <div class="sb-pool-meta">
+        ${w.type ? `<span>${escapeHtml(w.type)}</span>` : ''}
+        ${hrs != null ? `<span>${hrs.toFixed(hrs % 1 ? 1 : 0)} sold hrs</span>` : ''}
+        ${w.scheduled_date ? `<span>${escapeHtml(gwDateFormat(w.scheduled_date, { month:'short', day:'numeric' }))}</span>` : ''}
+      </div>
+      ${w.property_addr ? `<div class="sb-pool-addr">${escapeHtml(w.property_addr)}</div>` : ''}
+      <span class="sb-pool-state">${stateLabel}</span>
+    </article>`;
+}
+
+function _sbPoolHtml() {
+  const sb = window._sbState;
+  if (sb.poolCollapsed) {
+    return `<aside class="sb-pool sb-pool--collapsed">
+      <button class="sb-pool-toggle" onclick="_sbTogglePool()" title="Show the Job Pool" aria-label="Show the Job Pool">
+        <span class="sb-pool-toggle-count">${(sb.pool || []).length}</span>
+        <span class="sb-pool-toggle-label">Job Pool</span>
+      </button>
+    </aside>`;
+  }
+  const rows = _sbPoolFiltered();
+  const counts = (sb.pool || []).reduce((acc, w) => { acc[w.pool_state] = (acc[w.pool_state] || 0) + 1; return acc; }, {});
+  const types = [...new Set((sb.pool || []).map(w => w.type).filter(Boolean))].sort();
+
+  return `<aside class="sb-pool"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="_sbDropOnPool(event)">
+    <header class="sb-pool-head">
+      <div>
+        <strong>Job Pool</strong>
+        <small>${(sb.pool || []).length} waiting</small>
+      </div>
+      <button class="sb-pool-toggle" onclick="_sbTogglePool()" title="Hide the Job Pool" aria-label="Hide the Job Pool">&laquo;</button>
+    </header>
+    <div class="sb-pool-tabs">
+      ${_GW_POOL_TABS.map(t => {
+        const n = t.id === 'all' ? (sb.pool || []).length : (counts[t.id] || 0);
+        return `<button class="sb-pool-tab${(sb.poolTab || 'all') === t.id ? ' is-active' : ''}"
+                        onclick="_sbSetPoolTab('${t.id}')">${t.label}<b>${n}</b></button>`;
+      }).join('')}
+    </div>
+    <div class="sb-pool-filters">
+      <input class="sb-pool-search" type="search" placeholder="Search jobs" value="${escapeHtml(sb.poolQuery || '')}"
+             oninput="_sbSetPoolQuery(this.value)" aria-label="Search the Job Pool">
+      ${types.length ? `<select class="sb-pool-type" onchange="_sbSetPoolType(this.value)" aria-label="Filter by service type">
+        <option value="">All types</option>
+        ${types.map(t => `<option value="${escapeHtml(t)}"${sb.poolType === t ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+      </select>` : ''}
+    </div>
+    <div class="sb-pool-list">
+      ${rows.length
+        ? rows.map(_sbPoolCard).join('')
+        : `<div class="sb-pool-empty">${(sb.pool || []).length ? 'Nothing matches those filters.' : 'Everything is scheduled.'}</div>`}
+    </div>
+    <footer class="sb-pool-foot">Drag a job onto a crew and day to schedule it. Drag one back here to unschedule.</footer>
+  </aside>`;
+}
+
+window._sbTogglePool = function() {
+  window._sbState.poolCollapsed = !window._sbState.poolCollapsed;
+  _sbSavePreferences();
+  _sbRender();
+};
+window._sbSetPoolTab = function(tab) { window._sbState.poolTab = tab; _sbRender(); };
+window._sbSetPoolType = function(t) { window._sbState.poolType = t; _sbRender(); };
+window._sbSetPoolQuery = function(v) {
+  // Re-render on every keystroke would blow away the input and its caret, so the
+  // value is stashed and the list is filtered in place.
+  window._sbState.poolQuery = v;
+  const list = document.querySelector('.sb-pool-list');
+  if (!list) return _sbRender();
+  const rows = _sbPoolFiltered();
+  list.innerHTML = rows.length
+    ? rows.map(_sbPoolCard).join('')
+    : `<div class="sb-pool-empty">${(window._sbState.pool || []).length ? 'Nothing matches those filters.' : 'Everything is scheduled.'}</div>`;
+};
+
+/**
+ * Drop a scheduled job back into the pool — i.e. unschedule it.
+ *
+ * DELETE /api/scheduling/days/:id/schedule clears the date but keeps the day row
+ * and the people on it, so re-scheduling the job does not lose its staffing.
+ * That endpoint has existed since the router was written and had no UI at all:
+ * there was no way to take a job off the grid short of editing it.
+ */
+window._sbDropOnPool = async function(e) {
+  e.preventDefault();
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  const woId = e.dataTransfer.getData('text/plain');
+  if (!woId) return;
+  const wo = (window._sbState.workOrders || []).find(w => w.id === woId);
+  if (!wo) return;                    // already in the pool — nothing to undo
+  if (!wo.md_day_id) return;
+  if (wo.schedule_locked) return showToast('Unlock this visit before unscheduling it','error');
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(wo.md_day_id)}/schedule`, {
+      method:'DELETE', credentials:'include'
+    });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || 'Could not unschedule');
+    showToast('Moved to the Job Pool','success');
+    await _sbRefresh();
+  } catch(err) {
+    showToast((err && err.message) || 'Could not unschedule','error');
+  }
+};
+
 function _sbTimelineHtml(sb, visibleWOs, allCrews) {
   const date = sb.timelineDate || gwToday();
-  const crews = [{id:'__unassigned__',name:'Unassigned',color:'#94a3b8'}, ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))];
+  // Real crews only; unscheduled and uncrewed work lives in the Job Pool.
+  const crews = allCrews.filter(c=>!sb.hiddenCrews.has(c.id));
   const start = Number(sb.workdayStart || 6) * 60, end = Number(sb.workdayEnd || 20) * 60;
   const ppm = 1.15, height = (end - start) * ppm;
   const hours = Array.from({length: Math.max(1, (end-start)/60 + 1)}, (_,i)=>start+i*60).filter(m=>m<=end);
@@ -17991,7 +18167,7 @@ function _sbTimelineHtml(sb, visibleWOs, allCrews) {
   const today = gwToday();
   const timeRail = `<div class="sb-time-rail" style="height:${height}px">${hours.map(m=>`<span style="top:${(m-start)*ppm}px">${_sbDisplayTime(_sbClock(m))}</span>`).join('')}</div>`;
   const columns = crews.map(cr => {
-    const jobs = visibleWOs.filter(w => (w.scheduled_date||'').slice(0,10)===date && ((w.md_crew_id||w.crew_id||'__unassigned__')===cr.id));
+    const jobs = visibleWOs.filter(w => (w.scheduled_date||'').slice(0,10)===date && ((w.md_crew_id||w.crew_id)===cr.id));
     return `<div class="sb-timeline-crew"><div class="sb-timeline-crew-head" style="--crew-color:${cr.color}"><span></span>${escapeHtml(cr.name)}<small>${jobs.length} visits</small></div><div class="sb-timeline-track" style="height:${height}px" data-date="${date}" data-crew="${cr.id}" ondragover="event.preventDefault()" ondrop="_sbDropOnTimeline(event,this)">
       ${hours.map(m=>`<i style="top:${(m-start)*ppm}px"></i>`).join('')}
       ${today===date && nowMinutes>=start && nowMinutes<=end ? `<b class="sb-now-line" style="top:${(nowMinutes-start)*ppm}px"></b>` : ''}
@@ -18157,11 +18333,18 @@ function _sbRender() {
       // ONE unified grid: header row + one row per crew. All cells share column
       // widths and row heights automatically because they are in the same grid.
 
-      // Unassigned + each visible crew
-      const laneCrews = [
-        { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
-        ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
-      ];
+      // One lane per visible crew. Nothing else.
+      //
+      // There used to be an "Unassigned" lane pinned above the real crews, and
+      // it was two things at once, neither of them a crew. Blue Crew has a lane
+      // because Blue Crew occupies production capacity on Tuesday; an
+      // unscheduled job does not occupy Tuesday at 7am. Worse, the lane only
+      // held jobs that had a DATE but no crew — genuinely unscheduled work never
+      // appeared in it at all, and lived only in the timeline view's separate
+      // aside. A job created from this view could vanish from this view.
+      //
+      // Both cases now live in the Job Pool beside the grid (_sbPoolHtml).
+      const laneCrews = allCrews.filter(c=>!sb.hiddenCrews.has(c.id));
 
       // Header cells (corner + 7 day heads)
       const headerCells = `
@@ -18177,8 +18360,7 @@ function _sbRender() {
 
       // One label + 7 cells per crew row — all flat inside the single grid
       const crewCells = laneCrews.map(cr=>{
-        const isUnassigned = cr.id==='__unassigned__';
-        const crewWeekJobs = visibleWOs.filter(w => (isUnassigned ? !(w.md_crew_id || w.crew_id) : (w.md_crew_id || w.crew_id) === cr.id));
+        const crewWeekJobs = visibleWOs.filter(w => (w.md_crew_id || w.crew_id) === cr.id);
         const scheduledHours = crewWeekJobs.reduce((sum,w)=>sum+(_sbEventRange(w).duration/60),0);
         // Capacity from /api/scheduling/week: crew members x productive minutes
         // x working days. This used to be a hardcoded 40, which made the
@@ -18186,7 +18368,7 @@ function _sbRender() {
         // 40-hour week — a three-person crew was permanently shown as
         // over-booked. capMeta is null for the Unassigned lane (not a real
         // crew), when the fetch failed, or when nobody is on the crew.
-        const capMeta = (window._sbState.capacity && !isUnassigned)
+        const capMeta = window._sbState.capacity
           ? (window._sbState.capacity.crews || []).find(c => c.id === cr.id)
           : null;
         const weeklyCapacityHours = capMeta ? (capMeta.week_capacity_minutes / 60) : 0;
@@ -18229,16 +18411,14 @@ function _sbRender() {
         const dayCells = days.map(d=>{
           const iso = gwDateISO(d);
           const isToday = iso===today;
-          const jobs = isUnassigned
-            ? visibleWOs.filter(w => (!(w.md_crew_id || w.crew_id)) && w.scheduled_date?.slice(0,10)===iso)
-            : visibleWOs.filter(w => (w.md_crew_id || w.crew_id)===cr.id && w.scheduled_date?.slice(0,10)===iso);
+          const jobs = visibleWOs.filter(w => (w.md_crew_id || w.crew_id)===cr.id && w.scheduled_date?.slice(0,10)===iso);
           return `<div class="sb-lane-cell${isToday?' today':''}"
               data-date="${iso}" data-crew="${cr.id}"
               ondragover="event.preventDefault();this.classList.add('drag-over')"
               ondragleave="this.classList.remove('drag-over')"
               ondrop="_sbDropOnCell(event,'${iso}','${cr.id}')">
             ${jobs.map(wo=>_sbJobCard(wo,allCrews,true)).join('')}
-            <button class="sb-lane-add-btn" onclick="_sbOpenNewVisit('${iso}','${isUnassigned?'':cr.id}')">+</button>
+            <button class="sb-lane-add-btn" onclick="_sbOpenNewVisit('${iso}','${cr.id}')">+</button>
           </div>`;
         }).join('');
         return `
@@ -18385,8 +18565,11 @@ function _sbRender() {
 
     ${crewFilterBar}
 
-    <div class="sb-grid-wrap">
-      ${gridHtml}
+    <div class="sb-board-split">
+      ${['week','month'].includes(sb.viewMode) ? _sbPoolHtml() : ''}
+      <div class="sb-grid-wrap">
+        ${gridHtml}
+      </div>
     </div>
   </div>`;
 }
@@ -18674,22 +18857,18 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
   // Crew lanes for selected day (if enabled)
   let dayContent = '';
   if (sb.crewLanes && allCrews.length) {
-    const laneCrews = [
-      { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
-      ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
-    ];
+    // Real crews only — the Unassigned pseudo-lane is retired here too. On
+    // mobile it was already hidden when empty, which meant work with no crew
+    // was sometimes visible and sometimes not, with nothing to tell you which.
+    const laneCrews = allCrews.filter(c=>!sb.hiddenCrews.has(c.id));
     dayContent = laneCrews.map(cr => {
-      const isUnassigned = cr.id==='__unassigned__';
-      const crewJobs = isUnassigned
-        ? selJobs.filter(w=>!(w.md_crew_id || w.crew_id))
-        : selJobs.filter(w=>(w.md_crew_id || w.crew_id)===cr.id);
-      if (!crewJobs.length && isUnassigned) return ''; // hide empty unassigned lane
+      const crewJobs = selJobs.filter(w=>(w.md_crew_id || w.crew_id)===cr.id);
       return `<div class="sbm-crew-lane">
         <div class="sbm-crew-lane-head" style="border-left:3px solid ${cr.color}">
           <span class="sbm-crew-lane-dot" style="background:${cr.color}"></span>
           <span class="sbm-crew-lane-name">${escapeHtml(cr.name)}</span>
           <span class="sbm-crew-lane-count">${crewJobs.length} job${crewJobs.length!==1?'s':''}</span>
-          <button class="sbm-add-lane-btn" onclick="_sbOpenNewVisit('${selDay}','${isUnassigned?'':cr.id}')">+</button>
+          <button class="sbm-add-lane-btn" onclick="_sbOpenNewVisit('${selDay}','${cr.id}')">+</button>
         </div>
         ${crewJobs.map(wo=>_sbMobileJobCard(wo,allCrews)).join('') || `<div class="sbm-lane-empty">No jobs</div>`}
       </div>`;
@@ -18861,8 +19040,15 @@ window._sbDropOnCell = async function(e, iso, crewId) {
   const woId = e.dataTransfer.getData('text/plain');
   const dragDayNumber = parseInt(e.dataTransfer.getData('application/gw-day-number') || '0') || 0;
   if (!woId) return;
-  const wo = window._sbState.workOrders.find(w=>w.id===woId && (!dragDayNumber || Number(w.md_day_number) === dragDayNumber)) || window._sbState.workOrders.find(w=>w.id===woId);
+  // Cards on the grid first, then the Job Pool. A pool job is not in
+  // workOrders at all — it has no date, so the week query never returned it —
+  // and the old lookup gave up with a bare `return`, which is why dragging a
+  // backlog card onto a week or month cell silently did nothing at all.
+  const wo = window._sbState.workOrders.find(w=>w.id===woId && (!dragDayNumber || Number(w.md_day_number) === dragDayNumber))
+    || window._sbState.workOrders.find(w=>w.id===woId)
+    || (window._sbState.pool || []).find(w=>w.id===woId);
   if (!wo) return;
+  const fromPool = !window._sbState.workOrders.some(w=>w.id===woId);
   const oldDate = wo.scheduled_date;
   const oldCrew = wo.md_crew_id || wo.crew_id;
   const isMdDay = !!(wo.md_day_number || dragDayNumber);
@@ -18930,6 +19116,14 @@ window._sbDropOnCell = async function(e, iso, crewId) {
       d = await r.json().catch(()=>({}));
       if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
       wo.md_day_id = d.day_id;
+    }
+    if (fromPool) {
+      // The job was not on the grid a moment ago, so there is no card to patch
+      // and no pool row that should still be there. Reload rather than trying to
+      // move an object between two lists by hand.
+      showToast('Scheduled','success');
+      await _sbRefresh();
+      return;
     }
     showToast('Job rescheduled','success');
     // Capacity came back with the write, for the lane it left as well as the one
