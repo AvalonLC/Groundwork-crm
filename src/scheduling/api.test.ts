@@ -271,13 +271,32 @@ describe('syncDayEmployees', () => {
     expect(rows[0].crew_role).toBe('foreman');
   });
 
-  it('removes people taken off the job', async () => {
+  it('removes people taken off the job, when the day has no crew of its own', async () => {
+    // The job employee list governs staffing only for a day with no crew.
+    // Once a day carries a crew, that crew's roster is what staffs it — which is
+    // what makes dragging a job into another crew lane move the labor with it.
+    await db()
+      .prepare(`UPDATE wo_days SET crew_id='' WHERE work_order_id=?`)
+      .bind(WO_SCHED)
+      .run();
     await putOnJob(WO_SCHED, [REP_A, REP_B]);
     await syncDayEmployees(db(), CO, WO_SCHED);
     await putOnJob(WO_SCHED, [REP_A]);
     await syncDayEmployees(db(), CO, WO_SCHED);
     const rows = await dayAssignments(WO_SCHED);
     expect(rows.map((r: any) => r.rep_id)).toEqual([REP_A]);
+  });
+
+  it('staffs from the day crew rather than the job list once a crew is set', async () => {
+    // Deliberate behaviour change: the day's crew wins. Previously the job's
+    // employee list drove every day regardless of which crew was on it, so
+    // moving a job between crews left the labor behind.
+    await putOnJob(WO_SCHED, [REP_A]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const rows = await dayAssignments(WO_SCHED);
+    // Blue Crew is REP_A + REP_B, so both are staffed even though only REP_A is
+    // on the job's employee list.
+    expect(rows.map((r: any) => r.rep_id)).toEqual([REP_A, REP_B]);
   });
 
   it('does NOT clobber minutes tuned by hand', async () => {
@@ -658,5 +677,136 @@ describe('DELETE /days/:id/schedule', () => {
       .bind(dayId)
       .first<{ n: number }>();
     expect(r?.n).toBe(1);
+  });
+});
+
+// ── crew reassignment moves the people, not just the card ────────────────────
+
+describe('moving a job to another crew restaffs it', () => {
+  const rosterOf = async (dayId: string) => {
+    const r = await db()
+      .prepare(`SELECT rep_id, source, planned_minutes FROM wo_day_employees WHERE wo_day_id=? ORDER BY rep_id`)
+      .bind(dayId)
+      .all<any>();
+    return r.results || [];
+  };
+
+  it('replaces the old crew roster with the new one', async () => {
+    // Blue Crew is REP_A + REP_B; put a third person on their own crew.
+    await seedRep('rep-solo', 'Casey Solo', 'foreman');
+    await db()
+      .prepare(`INSERT INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`)
+      .bind('cm-solo', EMPTY_CREW, 'rep-solo', CO, 'foreman')
+      .run();
+
+    const dayId = await primaryDayId(WO_SCHED);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    expect((await rosterOf(dayId)).map((r: any) => r.rep_id)).toEqual([REP_A, REP_B]);
+
+    // Drag it into the other crew's lane.
+    const res = await req(`/days/${dayId}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify({ crew_id: EMPTY_CREW }),
+    });
+    expect(res.status).toBe(200);
+
+    // The people came with it — the old crew no longer carries this labor.
+    expect((await rosterOf(dayId)).map((r: any) => r.rep_id)).toEqual(['rep-solo']);
+  });
+
+  it('moves the planned labor to the new crew in the week payload', async () => {
+    await seedRep('rep-solo2', 'Dana Solo', 'foreman');
+    await db()
+      .prepare(`INSERT INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`)
+      .bind('cm-solo2', EMPTY_CREW, 'rep-solo2', CO, 'foreman')
+      .run();
+    const dayId = await primaryDayId(WO_SCHED);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+
+    let body = await json(await req(`/week?start=${MONDAY}`));
+    expect(body.crews.find((c: any) => c.id === CREW).week_planned_minutes).toBe(480);
+    expect(body.crews.find((c: any) => c.id === EMPTY_CREW).week_planned_minutes).toBe(0);
+
+    await req(`/days/${dayId}/schedule`, { method: 'POST', body: JSON.stringify({ crew_id: EMPTY_CREW }) });
+
+    body = await json(await req(`/week?start=${MONDAY}`));
+    // Old crew is free again; the new crew carries it.
+    expect(body.crews.find((c: any) => c.id === CREW).week_planned_minutes).toBe(0);
+    expect(body.crews.find((c: any) => c.id === EMPTY_CREW).week_planned_minutes).toBe(240);
+  });
+
+  it('keeps a deliberately added person through a crew change', async () => {
+    const dayId = await primaryDayId(WO_SCHED);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    // Someone on NEITHER crew, put on this day deliberately. A person who is on
+    // the day's own crew stays 'roster' — tuning their minutes should not pin
+    // them through a crew change.
+    await seedRep('rep-outsider', '外 Outsider', 'laborer');
+    await req(`/days/${dayId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ rep_id: 'rep-outsider', planned_minutes: 120 }),
+    });
+    await seedRep('rep-solo3', 'Eli Solo', 'foreman');
+    await db()
+      .prepare(`INSERT INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`)
+      .bind('cm-solo3', EMPTY_CREW, 'rep-solo3', CO, 'foreman')
+      .run();
+
+    await req(`/days/${dayId}/schedule`, { method: 'POST', body: JSON.stringify({ crew_id: EMPTY_CREW }) });
+
+    const roster = await rosterOf(dayId);
+    const ids = roster.map((r: any) => r.rep_id).sort();
+    // The new crew's person arrives; the deliberate addition survives; the old
+    // crew's roster-derived people are gone.
+    expect(ids).toContain('rep-solo3');
+    expect(ids).toContain('rep-outsider');
+    expect(ids).not.toContain(REP_A);
+    expect(roster.find((r: any) => r.rep_id === 'rep-outsider').planned_minutes).toBe(120);
+    expect(roster.find((r: any) => r.rep_id === 'rep-outsider').source).toBe('manual');
+  });
+
+  it('staffs each day of a multi-day job from its own crew', async () => {
+    await seedRep('rep-solo4', 'Fran Solo', 'foreman');
+    await db()
+      .prepare(`INSERT INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`)
+      .bind('cm-solo4', EMPTY_CREW, 'rep-solo4', CO, 'foreman')
+      .run();
+    // Day 2 runs with the other crew.
+    await db()
+      .prepare(
+        `INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, questions, crew_id, scheduled_duration_minutes, is_primary)
+         VALUES (?,?,?,?,?,'[]',?,?,0)`,
+      )
+      .bind('wod-day2', CO, WO_SCHED, 2, '2026-08-18', EMPTY_CREW, 240)
+      .run();
+
+    await syncDayEmployees(db(), CO, WO_SCHED);
+
+    const day1 = await primaryDayId(WO_SCHED);
+    // Each day is staffed from its OWN crew, not the job's employee list.
+    expect((await rosterOf(day1)).map((r: any) => r.rep_id)).toEqual([REP_A, REP_B]);
+    expect((await rosterOf('wod-day2')).map((r: any) => r.rep_id)).toEqual(['rep-solo4']);
+  });
+
+  it('restaffs only the day that moved, leaving other phases alone', async () => {
+    await db()
+      .prepare(
+        `INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, questions, crew_id, scheduled_duration_minutes, is_primary)
+         VALUES (?,?,?,?,?,'[]',?,?,0)`,
+      )
+      .bind('wod-day3', CO, WO_SCHED, 2, '2026-08-18', CREW, 240)
+      .run();
+    await seedRep('rep-solo5', 'Gus Solo', 'foreman');
+    await db()
+      .prepare(`INSERT INTO crew_members (id, crew_id, rep_id, company_id, crew_role) VALUES (?,?,?,?,?)`)
+      .bind('cm-solo5', EMPTY_CREW, 'rep-solo5', CO, 'foreman')
+      .run();
+    await syncDayEmployees(db(), CO, WO_SCHED);
+
+    await req(`/days/wod-day3/schedule`, { method: 'POST', body: JSON.stringify({ crew_id: EMPTY_CREW }) });
+
+    const day1 = await primaryDayId(WO_SCHED);
+    expect((await rosterOf(day1)).map((r: any) => r.rep_id)).toEqual([REP_A, REP_B]);
+    expect((await rosterOf('wod-day3')).map((r: any) => r.rep_id)).toEqual(['rep-solo5']);
   });
 });
