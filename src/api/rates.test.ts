@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers" />
 import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
+import { Hono } from "hono";
 import { ratesRouter } from "./rates";
 import {
   insertLaborRateProfile, insertEquipmentRateProfile, upsertTenantFinancePolicy,
@@ -10,8 +11,26 @@ import golden from "../../fixtures/golden.json";
 const db = () => env.DB;
 const TENANT = "t-rates-api";
 
+/**
+ * requireAuth is applied at the mount point in src/index.tsx, so these tests wrap
+ * the router the same way production does — otherwise the tenant guard inside the
+ * router (which fails closed without a session) would reject everything.
+ */
+function authedAs(companyId: string, isSuperAdmin = false) {
+  const app = new Hono();
+  app.use("*", async (c, next) => {
+    c.set("companyId" as never, companyId as never);
+    c.set("repId" as never, "test-rep" as never);
+    c.set("role" as never, "owner" as never);
+    c.set("isSuperAdmin" as never, isSuperAdmin as never);
+    await next();
+  });
+  app.route("/", ratesRouter);
+  return app;
+}
+
 const post = (path: string, body: unknown) =>
-  ratesRouter.request(path, {
+  authedAs(TENANT).request(path, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   }, env);
@@ -84,7 +103,13 @@ describe("POST /internal/rates/resolve", () => {
   });
 
   it("RA-04 returns 404, not a cached/guessed value, when nothing resolves", async () => {
-    const res = await post("/resolve", { company_id: "t-empty", employee_id: "nobody", work_date: "2026-01-01" });
+    // Authenticated AS the empty tenant rather than querying it from another
+    // session: the assertion is unchanged (nothing resolves -> 404, never a
+    // guessed number), but crossing tenants is now a 403 and would mask it.
+    const res = await authedAs("t-empty").request("/resolve", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ company_id: "t-empty", employee_id: "nobody", work_date: "2026-01-01" }),
+    }, env);
     expect(res.status).toBe(404);
   });
 });
@@ -113,5 +138,53 @@ describe("POST /internal/rates/equipment", () => {
     expect(json.ownership_rate).not.toBe(json.operating_rate);
     expect(Number((json.total_rate / 10000).toFixed(2))).toBe(38.23);
     expect(json.confidence).toBeDefined();
+  });
+});
+
+/**
+ * These endpoints carry wage-derived data. They shipped mounted with no
+ * authentication at all — an anonymous POST reached the handler on production —
+ * and they take their tenant from the request body rather than the session, so
+ * authentication alone would still have allowed cross-tenant reads.
+ */
+describe("tenant isolation", () => {
+  const raw = (path: string, body: unknown) =>
+    ratesRouter.request(path, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }, env);
+
+  it("rejects an unauthenticated request rather than falling through", async () => {
+    // No session vars at all — the shape the router shipped in.
+    const res = await raw("/resolve", {
+      company_id: TENANT, employee_id: "emp-1", work_date: "2026-01-15",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a company_id that does not match the session", async () => {
+    const res = await authedAs("some-other-tenant").request("/resolve", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ company_id: TENANT, employee_id: "emp-1", work_date: "2026-01-15" }),
+    }, env);
+    expect(res.status).toBe(403);
+    // The rate must not leak in the error body either.
+    expect(JSON.stringify(await res.json())).not.toContain("resolved_rate");
+  });
+
+  it("allows a super admin to cross tenants, since that is their purpose", async () => {
+    const res = await authedAs("support-tenant", true).request("/resolve", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ company_id: TENANT, employee_id: "emp-1", work_date: "2026-01-15" }),
+    }, env);
+    expect(res.status).not.toBe(403);
+    expect(res.status).not.toBe(401);
+  });
+
+  it("guards the equipment endpoint too, not just resolve", async () => {
+    const res = await raw("/equipment", {
+      company_id: TENANT, equipment_id: "eq-1", work_date: "2026-01-15",
+    });
+    expect(res.status).toBe(401);
   });
 });

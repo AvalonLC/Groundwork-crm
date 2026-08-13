@@ -53,6 +53,14 @@ type Variables = { repId: string; companyId: string; role: string; isSuperAdmin:
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Finance OS routes — mounted, not inlined; see src/api/rates.ts, src/api/actions.ts, src/ui/mount.ts ──
+// These carry wage-derived data (burdened labor rates) and were previously mounted
+// with NO authentication at all — an anonymous POST reached the handler. It leaked
+// nothing only because no tenant had rate profiles yet. Gated the same way as
+// /api/marketing/* and /api/scheduling/*. The routers additionally check that the
+// company_id in the request body matches the session, because these endpoints take
+// the tenant from the payload rather than the cookie.
+app.use('/internal/rates/*', requireAuth)
+app.use('/internal/actions/*', requireAuth)
 app.route('/internal/rates', ratesRouter)
 app.route('/internal/actions', actionsRouter)
 // No requireAuth — this has its own X-Cron-Secret header auth (see
