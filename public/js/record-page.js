@@ -574,11 +574,11 @@
       if (!v || isNaN(n)) return '—';
       return '$' + n.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
     };
-    const fmtDate = d => {
-      if (!d) return '';
-      try { return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
-      catch(e) { return d; }
-    };
+    // A verbatim copy of the old _p5FmtDate, with the same UTC-midnight defect:
+    // a milestone dueDate of '2026-08-11' rendered as Aug 10 west of Greenwich.
+    // Keeps returning '' rather than an em dash for no date — this one sits
+    // inline in a timeline row where a dash would read as a real value.
+    const fmtDate = d => (d ? gwDateFormat(d) : '');
     if (!milestones.length) {
       return `<div class="fin-sum-card">
         <div class="fin-sum-title">Payment Schedule</div>
