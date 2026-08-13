@@ -18161,14 +18161,27 @@ function _sbRender() {
           ? (window._sbState.capacity.crews || []).find(c => c.id === cr.id)
           : null;
         const weeklyCapacityHours = capMeta ? (capMeta.week_capacity_minutes / 60) : 0;
+        // Utilisation compares LABOR to LABOR. scheduledHours above is calendar
+        // time — how long the jobs block the grid — and capacity is people-hours,
+        // so dividing one by the other is the same units mix-up this whole engine
+        // exists to remove: a two-person crew on an 8-hour job consumes 16
+        // people-hours, not 8. The numerator is therefore week_planned_minutes,
+        // summed from wo_day_employees.
+        //
         // null, never 0 — a crew with nobody on it is not "0% utilised", the
-        // number is undefined. Rendering 0% there is the bug this replaces.
+        // number is undefined, and nobody assigned to the work yet is not the
+        // same as an empty week.
+        const plannedHours = capMeta ? (capMeta.week_planned_minutes / 60) : 0;
         const utilization = (capMeta && capMeta.week_capacity_minutes > 0)
-          ? Math.round((scheduledHours * 60 / capMeta.week_capacity_minutes) * 100)
+          ? capMeta.week_utilization_pct
           : null;
-        const utilLabel = utilization === null
-          ? (capMeta && capMeta.member_count === 0 ? 'no crew assigned' : '—')
-          : (utilization + '% of ' + weeklyCapacityHours.toFixed(0) + 'h');
+        const utilLabel = !capMeta
+          ? '—'
+          : capMeta.member_count === 0
+            ? 'no crew assigned'
+            : capMeta.week_planned_minutes === 0
+              ? 'nobody assigned yet'
+              : plannedHours.toFixed(1) + 'h of ' + weeklyCapacityHours.toFixed(0) + 'h · ' + utilization + '%';
         const dayCells = days.map(d=>{
           const iso = d.toISOString().slice(0,10);
           const isToday = iso===today;
@@ -18187,7 +18200,7 @@ function _sbRender() {
         return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
             <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
-            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small>${scheduledHours.toFixed(1)}h · ${escapeHtml(utilLabel)}</small><i><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i></span>
+            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small title="Booked is calendar time on the grid; the second figure is people-hours against this crew's capacity">${scheduledHours.toFixed(1)}h booked · ${escapeHtml(utilLabel)}</small><i><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i></span>
           </div>
           ${dayCells}`;
       }).join('');
@@ -18371,6 +18384,27 @@ window._sbRefresh = async function() {
   window._sbState.loaded = false;
   await _sbLoadData();
   _sbRender();
+};
+/**
+ * Re-read crew capacity for the visible week and repaint.
+ *
+ * Cheaper than _sbRefresh() — one request instead of five, and it keeps the
+ * optimistic move already painted on the grid. Used after a write that moved a
+ * job but whose result is already reflected locally: without it the lane metric
+ * keeps the capacity figures from before the move and drifts away from the grid
+ * it sits next to.
+ *
+ * Silent on failure: a stale percentage is a much smaller problem than an error
+ * toast on top of a drag that actually succeeded.
+ */
+window._sbRefreshCapacity = async function() {
+  try {
+    const range = _sbCurrentDateRange();
+    const r = await fetch('/api/scheduling/week?start=' + encodeURIComponent(range.from), { credentials: 'include' });
+    const d = await r.json();
+    window._sbState.capacity = (d && d.ok) ? d : window._sbState.capacity;
+    _sbRender();
+  } catch (_) { /* keep the previous figures */ }
 };
 window._sbSelectDay = function(iso) {
   window._sbState.mobileSelectedDay = iso;
@@ -18732,6 +18766,10 @@ window._sbDropOnCell = async function(e, iso, crewId) {
       });
     }
     showToast('Job rescheduled','success');
+    // The grid already shows the move optimistically, but the crew-lane
+    // capacity figures were computed before it. Re-read them so the metric
+    // beside the grid cannot disagree with the grid.
+    await _sbRefreshCapacity();
   } catch(err) {
     wo.scheduled_date = oldDate;
     if (isMdDay) wo.md_crew_id = oldCrew || '';
