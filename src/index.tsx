@@ -45,6 +45,7 @@ import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/l
 import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, toolSpecs } from './marketing/ai-tools'
 // ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
 import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
+import { hoursPerVisitFromRecurringData } from './recurring/estimate_hours'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -7281,9 +7282,18 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
   }
   const materials = items.map((i: any) => ({ name: i.name || i.desc || '', qty: Number(i.qty || 1), unit: i.unit || '' })).filter((m: any) => m.name)
 
-  // Budgeted hours from the cost engine if present
+  // Budgeted hours from the cost engine if present.
+  //
+  // A recurring estimate never populates cost_data — its numbers live in
+  // recurring_data — so this read returned 0 and every recurring job converted
+  // with no budget hours at all. See src/recurring/estimate_hours.ts for why the
+  // fix is per-visit hours and NOT recurring_data.rollup.yearly_hours, which is
+  // a whole year of visits and would be far more wrong than the zero.
   let budgetHours = 0
   try { budgetHours = Number(JSON.parse(est.cost_data || '{}')?.rollup?.budgeted_hours || 0) } catch {}
+  if (!budgetHours && est.doc_type === 'recurring') {
+    budgetHours = hoursPerVisitFromRecurringData(est.recurring_data) || 0
+  }
 
   const woNumber = await nextWorkOrderNumber(db, companyId)
   const woId = 'wo_' + uid()
@@ -9645,13 +9655,26 @@ app.post('/api/recurring-plans', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
   await ensurePortfolioSchema(db)
   const body = await c.req.json() as any
-  const { name, description, frequency, frequency_unit, price, visit_duration_minutes, services_included, is_active } = body
+  const {
+    name, description, frequency, frequency_unit, price, visit_duration_minutes,
+    services_included, is_active,
+    // These were accepted by neither the destructure nor the INSERT, so the plan
+    // builder's task checklist, estimated hours and crew size were silently
+    // discarded on every save — the form collects them and posts them, and they
+    // simply never reached a column. See recurring_plans.js plan builder.
+    service_type, frequency_days, price_type, unit_label, estimated_hours, crew_size, tasks,
+  } = body
   if (!name || !frequency || !price) return c.json({ error: 'name, frequency, price required' }, 400)
   const id = Date.now()
   await db.prepare(`
-    INSERT INTO recurring_plans (id, company_id, name, description, frequency, frequency_unit, price, price_cents, visit_duration_minutes, services_included, is_active)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-  `).bind(id, companyId, name, description||'', frequency, frequency_unit||'weeks', price, Math.round(Number(price) * 100), visit_duration_minutes||60, services_included||'', is_active??1).run()
+    INSERT INTO recurring_plans (id, company_id, name, description, frequency, frequency_unit, price, price_cents, visit_duration_minutes, services_included, is_active,
+                                 service_type, frequency_days, price_type, unit_label, estimated_hours, crew_size, tasks)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, companyId, name, description||'', frequency, frequency_unit||'weeks', price, Math.round(Number(price) * 100), visit_duration_minutes||60, services_included||'', is_active??1,
+          service_type||'', frequency_days ?? null, price_type||'per_visit', unit_label||'',
+          estimated_hours ?? null, crew_size ?? null,
+          // tasks arrives as an array from the builder; the column is TEXT JSON.
+          typeof tasks === 'string' ? tasks : JSON.stringify(tasks || [])).run()
   const created = await db.prepare(`SELECT * FROM recurring_plans WHERE id=?`).bind(id).first()
   return c.json(created, 201)
 })
@@ -9664,12 +9687,18 @@ app.put('/api/recurring-plans/:id', requireAuth, async (c) => {
   const plan = await db.prepare(`SELECT id FROM recurring_plans WHERE id=? AND company_id=?`).bind(planId, companyId).first()
   if (!plan) return c.json({ error: 'Not found' }, 404)
   const body = await c.req.json() as any
-  const fields = ['name','description','frequency','frequency_unit','price','visit_duration_minutes','services_included','is_active']
+  // Mirrors the create handler. The second row was missing entirely, so editing a
+  // plan silently dropped its task list, hours and crew size the same way creating
+  // one did.
+  const fields = ['name','description','frequency','frequency_unit','price','visit_duration_minutes','services_included','is_active',
+                  'service_type','frequency_days','price_type','unit_label','estimated_hours','crew_size','tasks']
   const setClauses: string[] = []
   const vals: any[] = []
   fields.forEach(f => {
     if (body[f] !== undefined) {
-      setClauses.push(`${f}=?`); vals.push(body[f])
+      setClauses.push(`${f}=?`)
+      // tasks is a TEXT JSON column; the builder sends an array.
+      vals.push(f === 'tasks' && typeof body[f] !== 'string' ? JSON.stringify(body[f] || []) : body[f])
       if (f === 'price') { setClauses.push('price_cents=?'); vals.push(Math.round(Number(body[f]) * 100)) }
     }
   })
@@ -9717,7 +9746,9 @@ app.get('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
     WHERE cs.id=? AND cs.company_id=?`).bind(subId, companyId).first()
   if (!sub) return c.json({ error: 'Not found' }, 404)
   // Also fetch visit history
-  const visits = await db.prepare(`SELECT * FROM plan_visits WHERE subscription_id=? ORDER BY visit_date DESC LIMIT 50`).bind(subId).all()
+  // Was ORDER BY visit_date — no such column on plan_visits, so this endpoint
+  // errored for any subscription that existed. The real column is scheduled_date.
+  const visits = await db.prepare(`SELECT * FROM plan_visits WHERE subscription_id=? ORDER BY scheduled_date DESC LIMIT 50`).bind(subId).all()
   return c.json({ ...sub, visits: visits.results || [] })
 })
 
@@ -9726,7 +9757,13 @@ app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const body = await c.req.json() as any
-  const { plan_id, client_id, client_name, start_date, next_visit_date, price_override, notes } = body
+  const { plan_id, client_id, client_name, start_date, next_visit_date, notes } = body
+  // The enrolment form posts `custom_price` (matching the column name) while this
+  // handler only ever read `price_override`, so a per-client price typed into the
+  // modal was silently discarded and the plan's list price used instead. Accept
+  // both: `custom_price` is what the UI sends, `price_override` is kept working
+  // for anything already calling the API.
+  const price_override = body.custom_price ?? body.price_override
   if (!plan_id || !client_id) return c.json({ error: 'plan_id and client_id required' }, 400)
   // Verify plan belongs to this company
   const plan = await db.prepare(`SELECT * FROM recurring_plans WHERE id=? AND company_id=?`).bind(plan_id, companyId).first() as any
@@ -9766,56 +9803,67 @@ app.put('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
   const setClauses: string[] = []
   const vals: any[] = []
   fields.forEach(f => { if (body[f] !== undefined) { setClauses.push(`${f}=?`); vals.push(body[f]) } })
-  if (body.price_override !== undefined) {
-    setClauses.push('custom_price=?'); vals.push(body.price_override)
-    setClauses.push('custom_price_cents=?'); vals.push(Math.round(Number(body.price_override) * 100))
+  // Accepts both keys for the same reason as the POST above.
+  const priceInput = body.custom_price ?? body.price_override
+  if (priceInput !== undefined) {
+    setClauses.push('custom_price=?'); vals.push(priceInput)
+    setClauses.push('custom_price_cents=?'); vals.push(Math.round(Number(priceInput) * 100))
   }
   if (!setClauses.length) return c.json({ error: 'No fields to update' }, 400)
-  if (body.status === 'cancelled') { setClauses.push('cancelled_at=?'); vals.push(new Date().toISOString()) }
+  // `cancelled_at` is not a column on client_plan_subscriptions, so writing it
+  // made every cancellation fail outright. The cancellation date is recoverable
+  // from updated_at, which the UPDATE already sets, so this drops the write
+  // rather than adding a column nothing reads.
+  if (body.status === 'cancelled') { setClauses.push("updated_at=datetime('now')") }
   vals.push(subId, companyId)
   await db.prepare(`UPDATE client_plan_subscriptions SET ${setClauses.join(',')} WHERE id=? AND company_id=?`).bind(...vals).run()
   const updated = await db.prepare(`SELECT * FROM client_plan_subscriptions WHERE id=?`).bind(subId).first()
   return c.json(updated)
 })
 
-// POST /api/recurring-subscriptions/:id/log-visit — log a completed visit + advance next date
-app.post('/api/recurring-subscriptions/:id/log-visit', requireAuth, async (c) => {
-  const companyId = c.var.companyId as string
-  const db = c.env.DB as D1Database
-  const subId = parseInt(c.req.param('id'))
-  const sub = await db.prepare(`
-    SELECT cs.*, rp.frequency, rp.frequency_unit
-    FROM client_plan_subscriptions cs
-    LEFT JOIN recurring_plans rp ON rp.id = cs.plan_id
-    WHERE cs.id=? AND cs.company_id=?`).bind(subId, companyId).first() as any
-  if (!sub) return c.json({ error: 'Not found' }, 404)
+/**
+ * Days between visits for a subscription's plan.
+ *
+ * Single source of truth for cadence. There used to be two implementations that
+ * disagreed: /complete's named-bucket day map (below), and a /log-visit endpoint
+ * that multiplied `frequency` by a unit — but `frequency` holds a string like
+ * 'monthly', so `'monthly' * 7` was NaN and the following toISOString() threw.
+ * That endpoint was unreachable from the UI and has been deleted; the generator
+ * work landing next needs exactly one answer to "when is the next visit", so it
+ * lives here.
+ *
+ * `frequency_days` wins when set, so a custom cadence is honoured; otherwise the
+ * named bucket maps to days. Falls back to monthly rather than throwing.
+ */
+function planFrequencyDays(row: any): number {
+  const map: Record<string, number> = {
+    weekly: 7, biweekly: 14, monthly: 30, bimonthly: 60,
+    quarterly: 91, semiannual: 182, annual: 365,
+  }
+  const explicit = Number(row?.frequency_days)
+  if (Number.isFinite(explicit) && explicit > 0) return Math.trunc(explicit)
+  return map[String(row?.frequency || '').toLowerCase()] ?? 30
+}
 
-  const body = await c.req.json() as any
-  const { visit_date, notes, technician_name, work_order_id } = body
-  const visitDate = visit_date || new Date().toISOString().split('T')[0]
+/** Add `days` to a YYYY-MM-DD string, returning YYYY-MM-DD. */
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
 
-  // Log the visit
-  const visitId = Date.now()
-  await db.prepare(`
-    INSERT INTO plan_visits (id, company_id, subscription_id, visit_date, notes, technician_name, work_order_id, status)
-    VALUES (?,?,?,?,?,?,?,'completed')
-  `).bind(visitId, companyId, subId, visitDate, notes||'', technician_name||'', work_order_id||null).run()
-
-  // Advance next_visit_date based on plan frequency
-  let nextDate = new Date(visitDate)
-  const freq = sub.frequency || 1
-  const unit = sub.frequency_unit || 'weeks'
-  if (unit === 'days')   nextDate.setDate(nextDate.getDate() + freq)
-  else if (unit === 'weeks')  nextDate.setDate(nextDate.getDate() + freq * 7)
-  else if (unit === 'months') nextDate.setMonth(nextDate.getMonth() + freq)
-  else if (unit === 'years')  nextDate.setFullYear(nextDate.getFullYear() + freq)
-  const nextDateStr = nextDate.toISOString().split('T')[0]
-
-  await db.prepare(`UPDATE client_plan_subscriptions SET next_visit_date=?, last_visit_date=? WHERE id=?`)
-    .bind(nextDateStr, visitDate, subId).run()
-
-  return c.json({ success: true, visit_id: visitId, next_visit_date: nextDateStr })
-})
+// POST /api/recurring-subscriptions/:id/log-visit was DELETED rather than repaired.
+//
+// It was unreachable — nothing in public/js/recurring_plans.js or anywhere else
+// in the client called it — and it was broken three separate ways: it INSERTed
+// `visit_date` and `technician_name` (neither is a column on plan_visits), and
+// its cadence arithmetic threw before it could return. Every possible call was a
+// 500, so there is no caller to preserve compatibility with.
+//
+// The working path is POST /api/plan-visits/:id/complete below, which records
+// actual hours, the checklist state and photos as well as the date. Repairing
+// this one would have left a second, thinner completion path for someone to wire
+// a button to later, and the two would drift apart again.
 
 // ── PLAN VISITS (individual visit management) ─────────────────────────────────
 
@@ -9973,11 +10021,12 @@ app.post('/api/plan-visits/:id/complete', requireAuth, async (c) => {
 
   let nextDateStr = today
   if (sub) {
-    const freqDaysMap: Record<string,number> = { weekly:7,biweekly:14,monthly:30,bimonthly:60,quarterly:91,semiannual:182,annual:365 }
-    const days = sub.frequency_days || freqDaysMap[sub.frequency] || 30
-    const base = new Date(today + 'T00:00:00')
-    base.setDate(base.getDate() + days)
-    nextDateStr = base.toISOString().split('T')[0]
+    // Was an inline copy of the day map plus local-time date maths: `new
+    // Date(today + 'T00:00:00')` is midnight in the RUNTIME's zone, and the
+    // toISOString() that followed reads it back as UTC, so east of Greenwich
+    // every next-visit date landed a day early. planFrequencyDays/addDaysIso are
+    // UTC throughout and are the one cadence answer the generator will share.
+    nextDateStr = addDaysIso(today, planFrequencyDays(sub))
     await db.prepare(`
       UPDATE client_plan_subscriptions
       SET visit_count = visit_count + 1, last_visit_date=?, next_visit_date=?, updated_at=datetime('now')
@@ -12620,7 +12669,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260813b002">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12643,8 +12692,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260810b002"></script>
-  <script src="/js/client_portal.js?v=20260810b002"></script>  <script>
+  <script src="/js/platform_core.js?v=20260813b002"></script>
+  <script src="/js/client_portal.js?v=20260813b002"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13278,10 +13327,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260810b002">
-  <link rel="stylesheet" href="/js/styles.css?v=20260810b002">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260810b002">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260810b002">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260813b002">
+  <link rel="stylesheet" href="/js/styles.css?v=20260813b002">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260813b002">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260813b002">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -13934,45 +13983,45 @@ function getHtml(): string {
 </div>
 <div id="toast" class="toast" hidden role="alert" aria-live="assertive"></div>
 
-<script src="/js/gw-icons.js?v=20260810b002"></script>
-<script src="/js/sales-process.js?v=20260810b002"></script>
-<script src="/js/richtext.js?v=20260810b002"></script>
-<script src="/js/db.js?v=20260810b002"></script>
-<script src="/js/data.js?v=20260810b002"></script>
-<script src="/js/reps.js?v=20260810b002"></script>
-<script src="/js/record-page.js?v=20260810b002"></script>
-<script src="/js/academy.js?v=20260810b002"></script>
-<script src="/js/task_engine.js?v=20260810b002"></script>
-<script src="/js/gw_i18n.js?v=20260810b002"></script>
-<script src="/js/app_premium.js?v=20260810b002"></script>
-<script src="/js/estimates.js?v=20260810b002"></script>
-<script src="/js/multiday.js?v=20260810b002"></script>
-<script src="/js/proposals.js?v=20260810b002"></script>
-<script src="/js/pricing.js?v=20260810b002"></script>
-<script src="/js/invoices.js?v=20260810b002"></script>
-<script src="/js/csv_import.js?v=20260810b002"></script>
-<script src="/js/onboarding.js?v=20260810b002"></script>
-<script src="/js/gw_copilot.js?v=20260810b002"></script>
-<script src="/js/groundwork_ai.js?v=20260810b002"></script>
-<script src="/js/recurring_plans.js?v=20260810b002"></script>
-<script src="/js/reviews.js?v=20260810b002"></script>
-<script src="/js/stripe.js?v=20260810b002"></script>
-<script src="/js/email.js?v=20260810b002"></script>
-<script src="/js/notifications.js?v=20260810b002"></script>
-<script src="/js/integrations.js?v=20260810b002"></script>
-<script src="/js/sms.js?v=20260810b002"></script>
-<script src="/js/calendar_sync.js?v=20260810b002"></script>
-<script src="/js/ai_followup.js?v=20260810b002"></script>
-<script src="/js/user_management.js?v=20260810b002"></script>
-<script src="/js/platform_admin.js?v=20260810b002"></script>
-<script src="/js/time_tracker.js?v=20260810b002"></script>
-<script src="/js/field_workday.js?v=20260810b002"></script>
-<script src="/js/platform_core.js?v=20260810b002"></script>
-<script src="/js/approval_engine.js?v=20260810b002"></script>
-<script src="/js/automation_engine.js?v=20260810b002"></script>
-<script src="/js/client_portal.js?v=20260810b002"></script>
-<script src="/js/field_mode.js?v=20260810b002"></script>
-<script src="/js/assets_hub.js?v=20260810b002"></script><script src="/js/marketing.js?v=20260812a001"></script><script>
+<script src="/js/gw-icons.js?v=20260813b002"></script>
+<script src="/js/sales-process.js?v=20260813b002"></script>
+<script src="/js/richtext.js?v=20260813b002"></script>
+<script src="/js/db.js?v=20260813b002"></script>
+<script src="/js/data.js?v=20260813b002"></script>
+<script src="/js/reps.js?v=20260813b002"></script>
+<script src="/js/record-page.js?v=20260813b002"></script>
+<script src="/js/academy.js?v=20260813b002"></script>
+<script src="/js/task_engine.js?v=20260813b002"></script>
+<script src="/js/gw_i18n.js?v=20260813b002"></script>
+<script src="/js/app_premium.js?v=20260813b002"></script>
+<script src="/js/estimates.js?v=20260813b002"></script>
+<script src="/js/multiday.js?v=20260813b002"></script>
+<script src="/js/proposals.js?v=20260813b002"></script>
+<script src="/js/pricing.js?v=20260813b002"></script>
+<script src="/js/invoices.js?v=20260813b002"></script>
+<script src="/js/csv_import.js?v=20260813b002"></script>
+<script src="/js/onboarding.js?v=20260813b002"></script>
+<script src="/js/gw_copilot.js?v=20260813b002"></script>
+<script src="/js/groundwork_ai.js?v=20260813b002"></script>
+<script src="/js/recurring_plans.js?v=20260813b002"></script>
+<script src="/js/reviews.js?v=20260813b002"></script>
+<script src="/js/stripe.js?v=20260813b002"></script>
+<script src="/js/email.js?v=20260813b002"></script>
+<script src="/js/notifications.js?v=20260813b002"></script>
+<script src="/js/integrations.js?v=20260813b002"></script>
+<script src="/js/sms.js?v=20260813b002"></script>
+<script src="/js/calendar_sync.js?v=20260813b002"></script>
+<script src="/js/ai_followup.js?v=20260813b002"></script>
+<script src="/js/user_management.js?v=20260813b002"></script>
+<script src="/js/platform_admin.js?v=20260813b002"></script>
+<script src="/js/time_tracker.js?v=20260813b002"></script>
+<script src="/js/field_workday.js?v=20260813b002"></script>
+<script src="/js/platform_core.js?v=20260813b002"></script>
+<script src="/js/approval_engine.js?v=20260813b002"></script>
+<script src="/js/automation_engine.js?v=20260813b002"></script>
+<script src="/js/client_portal.js?v=20260813b002"></script>
+<script src="/js/field_mode.js?v=20260813b002"></script>
+<script src="/js/assets_hub.js?v=20260813b002"></script><script src="/js/marketing.js?v=20260813b002"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
