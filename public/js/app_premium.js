@@ -17767,6 +17767,10 @@ window._sbState = window._sbState || {
   crews: [],
   workOrders: [],
   backlog: [],
+  // Per-crew capacity for the visible week, from /api/scheduling/week. Null
+  // until loaded, or if that fetch fails — the lane metric degrades to showing
+  // scheduled hours without a percentage rather than blocking the board.
+  capacity: null,
   loaded: false,
   crewLanes: true,         // show crew-lane rows in week view
   density: 'compact',
@@ -17823,13 +17827,20 @@ async function _sbLoadData() {
     const _woParams = new URLSearchParams({ limit: '1000', date_from: range.from, date_to: range.to });
     if (_sbIsField && _sbRep) _woParams.set('rep_id', _sbRep.id);
     const _woUrl = '/api/work-orders?' + _woParams.toString();
-    const [cr, wo, rr, backlog] = await Promise.all([
+    const [cr, wo, rr, backlog, cap] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
       fetch('/api/reps', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
       fetch('/api/work-orders?limit=300', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      // Real crew capacity: people on the crew x productive minutes per working
+      // day. One payload for the whole week — see src/scheduling/api.ts. Failing
+      // this fetch must not break the board, so the metric falls back to the
+      // old scheduled-hours-only display rather than the grid refusing to draw.
+      fetch('/api/scheduling/week?start=' + encodeURIComponent(range.from), {credentials:'include'})
+        .then(r=>r.json()).catch(()=>null),
     ]);
     if (rr && rr.ok) window._gwAllReps = rr.data || rr.reps || [];
+    window._sbState.capacity = (cap && cap.ok) ? cap : null;
     if (cr.ok) {
       // Field roles: only show their own crew(s) in the crew filter bar
       if (_sbIsField && _sbRep) {
@@ -18140,8 +18151,24 @@ function _sbRender() {
         const isUnassigned = cr.id==='__unassigned__';
         const crewWeekJobs = visibleWOs.filter(w => (isUnassigned ? !(w.md_crew_id || w.crew_id) : (w.md_crew_id || w.crew_id) === cr.id));
         const scheduledHours = crewWeekJobs.reduce((sum,w)=>sum+(_sbEventRange(w).duration/60),0);
-        const weeklyCapacity = 40;
-        const utilization = Math.round((scheduledHours/weeklyCapacity)*100);
+        // Capacity from /api/scheduling/week: crew members x productive minutes
+        // x working days. This used to be a hardcoded 40, which made the
+        // percentage meaningless for any crew that was not one person on a
+        // 40-hour week — a three-person crew was permanently shown as
+        // over-booked. capMeta is null for the Unassigned lane (not a real
+        // crew), when the fetch failed, or when nobody is on the crew.
+        const capMeta = (window._sbState.capacity && !isUnassigned)
+          ? (window._sbState.capacity.crews || []).find(c => c.id === cr.id)
+          : null;
+        const weeklyCapacityHours = capMeta ? (capMeta.week_capacity_minutes / 60) : 0;
+        // null, never 0 — a crew with nobody on it is not "0% utilised", the
+        // number is undefined. Rendering 0% there is the bug this replaces.
+        const utilization = (capMeta && capMeta.week_capacity_minutes > 0)
+          ? Math.round((scheduledHours * 60 / capMeta.week_capacity_minutes) * 100)
+          : null;
+        const utilLabel = utilization === null
+          ? (capMeta && capMeta.member_count === 0 ? 'no crew assigned' : '—')
+          : (utilization + '% of ' + weeklyCapacityHours.toFixed(0) + 'h');
         const dayCells = days.map(d=>{
           const iso = d.toISOString().slice(0,10);
           const isToday = iso===today;
@@ -18160,7 +18187,7 @@ function _sbRender() {
         return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
             <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
-            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small>${scheduledHours.toFixed(1)}h · ${utilization}%</small><i><b style="width:${Math.min(100,utilization)}%;${utilization>100?'background:#d84b42':''}"></b></i></span>
+            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small>${scheduledHours.toFixed(1)}h · ${escapeHtml(utilLabel)}</small><i><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i></span>
           </div>
           ${dayCells}`;
       }).join('');
