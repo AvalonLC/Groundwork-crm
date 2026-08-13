@@ -2,7 +2,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { Hono } from 'hono';
-import { schedulingRouter, ensurePrimaryDay, hidesMoney, syncDayEmployees } from './api';
+import {
+  schedulingRouter, ensurePrimaryDay, hidesMoney, syncDayEmployees, syncPrimaryDayFromWorkOrder,
+} from './api';
 
 const db = () => env.DB;
 const CO = 'co-sched';
@@ -148,6 +150,83 @@ describe('ensurePrimaryDay', () => {
 
   it('will not touch a work order belonging to another company', async () => {
     expect(await ensurePrimaryDay(db(), 'someone-else', WO_SCHED)).toBeNull();
+  });
+});
+
+// ── syncPrimaryDayFromWorkOrder ──────────────────────────────────────────────
+
+describe('syncPrimaryDayFromWorkOrder', () => {
+  it('moves the day row when the work order is rescheduled', async () => {
+    // Simulates the pre-existing /api/work-orders/:id/reschedule path the board
+    // uses for drag and drop, which writes work_orders and nothing else.
+    await db()
+      .prepare(`UPDATE work_orders SET scheduled_date=?, scheduled_time=? WHERE id=?`)
+      .bind('2026-08-20', '13:00', WO_SCHED)
+      .run();
+    await syncPrimaryDayFromWorkOrder(db(), CO, WO_SCHED);
+
+    const day = await db()
+      .prepare(`SELECT day_date, start_time FROM wo_days WHERE work_order_id=?`)
+      .bind(WO_SCHED)
+      .first<any>();
+    expect(day.day_date).toBe('2026-08-20');
+    expect(day.start_time).toBe('13:00');
+  });
+
+  it('stops capacity being attributed to the day the job came from', async () => {
+    await putOnJob(WO_SCHED, [REP_A, REP_B]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+
+    // Monday, before the move: both people are booked.
+    let body = await json(await req(`/week?start=${MONDAY}`));
+    let crew = body.crews.find((c: any) => c.id === CREW);
+    expect(crew.days.find((d: any) => d.date === MONDAY).planned_minutes).toBe(480);
+
+    // The job is dragged to Wednesday through the work_orders path.
+    await db()
+      .prepare(`UPDATE work_orders SET scheduled_date=? WHERE id=?`)
+      .bind('2026-08-19', WO_SCHED)
+      .run();
+    await syncPrimaryDayFromWorkOrder(db(), CO, WO_SCHED);
+
+    body = await json(await req(`/week?start=${MONDAY}`));
+    crew = body.crews.find((c: any) => c.id === CREW);
+    // Monday is free again and Wednesday carries the labor. Without the sync
+    // both figures stay on Monday while the grid shows the job on Wednesday.
+    expect(crew.days.find((d: any) => d.date === MONDAY).planned_minutes).toBe(0);
+    expect(crew.days.find((d: any) => d.date === '2026-08-19').planned_minutes).toBe(480);
+  });
+
+  it('creates the day row when a backlog job is scheduled for the first time', async () => {
+    await db()
+      .prepare(`UPDATE work_orders SET scheduled_date=? WHERE id=?`)
+      .bind(MONDAY, WO_BACKLOG)
+      .run();
+    await syncPrimaryDayFromWorkOrder(db(), CO, WO_BACKLOG);
+    expect(await primaryDayId(WO_BACKLOG)).toBeTruthy();
+  });
+
+  it('leaves hand-authored multi-day rows alone', async () => {
+    await db()
+      .prepare(
+        `INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, questions, is_primary)
+         VALUES (?,?,?,?,?,'[]',0)`,
+      )
+      .bind('wod-phase-2', CO, WO_SCHED, 2, '2026-08-21')
+      .run();
+    await db()
+      .prepare(`UPDATE work_orders SET scheduled_date=? WHERE id=?`)
+      .bind('2026-08-18', WO_SCHED)
+      .run();
+    await syncPrimaryDayFromWorkOrder(db(), CO, WO_SCHED);
+
+    const phase2 = await db()
+      .prepare(`SELECT day_date FROM wo_days WHERE id=?`)
+      .bind('wod-phase-2')
+      .first<any>();
+    // work_orders carries one date and cannot describe a multi-day job; those
+    // rows move through the multi-day endpoints instead.
+    expect(phase2.day_date).toBe('2026-08-21');
   });
 });
 

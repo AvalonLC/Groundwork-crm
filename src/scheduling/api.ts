@@ -177,6 +177,67 @@ export async function ensurePrimaryDay(
 }
 
 /**
+ * Push a work order's scheduling columns onto its primary day row.
+ *
+ * The board's drag, drop and resize all write through the pre-existing
+ * /api/work-orders/:id/reschedule, which updates work_orders and nothing else.
+ * Capacity is computed from wo_days, so without this a dragged job moves on the
+ * grid while its labor stays attributed to the day it came from — the grid and
+ * the capacity figure beside it disagree, and no amount of refetching fixes it
+ * because the underlying row is stale.
+ *
+ * Only the primary (backfilled) day is synced. Multi-day jobs have hand-authored
+ * rows with their own dates and phases, and work_orders carries a single date
+ * that cannot describe them — those are moved through the multi-day endpoints,
+ * which already write wo_days directly.
+ */
+export async function syncPrimaryDayFromWorkOrder(
+  db: D1Database,
+  companyId: string,
+  workOrderId: string,
+): Promise<void> {
+  const wo = await db
+    .prepare(
+      `SELECT scheduled_date, scheduled_time, scheduled_end_time,
+              scheduled_duration_minutes, crew_id, schedule_locked
+         FROM work_orders WHERE id=? AND company_id=? LIMIT 1`,
+    )
+    .bind(workOrderId, companyId)
+    .first<any>();
+  if (!wo) return;
+
+  const day = await db
+    .prepare(`SELECT id FROM wo_days WHERE work_order_id=? AND company_id=? AND is_primary=1 LIMIT 1`)
+    .bind(workOrderId, companyId)
+    .first<{ id: string }>();
+
+  // No primary row yet — a job scheduled for the first time. Create it.
+  if (!day) {
+    await ensurePrimaryDay(db, companyId, workOrderId);
+    return;
+  }
+
+  await db
+    .prepare(
+      `UPDATE wo_days
+          SET day_date=?, start_time=?, end_time=?, scheduled_duration_minutes=?,
+              crew_id=?, schedule_locked=?, updated_at=datetime('now')
+        WHERE id=? AND company_id=?`,
+    )
+    .bind(
+      s(wo.scheduled_date ?? '', 10),
+      wo.scheduled_time ?? null,
+      wo.scheduled_end_time ?? null,
+      wo.scheduled_duration_minutes == null ? null : int(wo.scheduled_duration_minutes),
+      s(wo.crew_id ?? ''),
+      int(wo.schedule_locked, 0),
+      day.id,
+      companyId,
+    )
+    .run();
+}
+
+/**
  * Mirror "who is on this job" into "who is on this job that day, for how long".
  *
  * The CRM already tracks work_order_employees — the people assigned to a job —

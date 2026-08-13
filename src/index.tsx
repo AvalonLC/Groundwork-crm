@@ -44,7 +44,7 @@ import { marketingCronRouter } from './marketing/cron'
 import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/leads'
 import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, toolSpecs } from './marketing/ai-tools'
 // ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
-import { schedulingRouter, ensurePrimaryDay, syncDayEmployees } from './scheduling/api'
+import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -12002,6 +12002,10 @@ app.patch('/api/work-orders/:id/reschedule', requireAuth, async (c) => {
     JSON.stringify(timeline),
     woId, companyId
   ).run()
+  // Keep the primary day row in step. Capacity is computed from wo_days, so
+  // without this a dragged job moves on the grid while its labor stays
+  // attributed to the day it came from.
+  await syncPrimaryDayFromWorkOrder(db, companyId, woId)
   return c.json({ ok: true })
 })
 
