@@ -895,3 +895,47 @@ describe('work order numbering', () => {
     expect(await nextNumber()).toBe('WO-00003');
   });
 });
+
+// ── volume: the assignments query must not bind one parameter per day ────────
+
+describe('GET /week survives a busy week', () => {
+  it('handles well over a hundred day rows in one week', async () => {
+    // The original implementation built `WHERE wo_day_id IN (?,?,?…)` with one
+    // bound parameter per day row. Past roughly a hundred, D1 rejected the query
+    // and /week returned 500 — the board died outright on any busy week, and
+    // recurring work would have hit it immediately (300 mowing stops is ~300 day
+    // rows). Reproduced at 120 before the fix.
+    const N = 140;
+    const stmts: D1PreparedStatement[] = [];
+    for (let i = 0; i < N; i++) {
+      const woId = `vol-wo-${i}`;
+      const dayId = `vol-day-${i}`;
+      const date = `2026-08-${17 + (i % 5)}`;
+      stmts.push(
+        db().prepare(
+          `INSERT INTO work_orders (id, company_id, wo_number, title, type, status, crew_id, scheduled_date, scheduled_duration_minutes)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+        ).bind(woId, CO, `VOL-${i}`, `Mow ${i}`, 'Maintenance', 'scheduled', CREW, date, 30),
+        db().prepare(
+          `INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, questions, status, crew_id, scheduled_duration_minutes, is_primary)
+           VALUES (?,?,?,1,?,'[]','pending',?,30,1)`,
+        ).bind(dayId, CO, woId, date, CREW),
+        db().prepare(
+          `INSERT INTO wo_day_employees (id, company_id, wo_day_id, rep_id, planned_minutes, crew_role, source)
+           VALUES (?,?,?,?,?,?,'roster')`,
+        ).bind(`vol-wde-${i}`, CO, dayId, REP_A, 30, 'foreman'),
+      );
+    }
+    await db().batch(stmts);
+
+    const res = await req(`/week?start=${MONDAY}`);
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.ok).toBe(true);
+    expect(body.assignments.length).toBeGreaterThanOrEqual(N);
+
+    // The labor still adds up, so the join did not drop or duplicate rows.
+    const crew = body.crews.find((c: any) => c.id === CREW);
+    expect(crew.week_planned_minutes).toBeGreaterThanOrEqual(N * 30);
+  });
+});
