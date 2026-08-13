@@ -176,6 +176,95 @@ export async function ensurePrimaryDay(
   return dayId;
 }
 
+/**
+ * Mirror "who is on this job" into "who is on this job that day, for how long".
+ *
+ * The CRM already tracks work_order_employees — the people assigned to a job —
+ * but with no notion of time, so it cannot answer "how much labor is this crew
+ * committed to on Tuesday". wo_day_employees answers that, and this keeps the
+ * two in step so the capacity figure becomes real on existing data instead of
+ * waiting for someone to re-enter every assignment through a new screen.
+ *
+ * Deliberately NOT a wholesale rewrite of the day rows:
+ *   - people newly on the job get a row per day, defaulting to that day's
+ *     calendar duration (two people on an 8-hour day is 16 people-hours, which
+ *     is the number capacity is measured against)
+ *   - people taken off the job lose their rows
+ *   - rows that already exist keep their planned_minutes, so minutes tuned by
+ *     hand through POST /days/:id/assign survive a later edit to the job's
+ *     employee list
+ *
+ * Returns the number of assignment rows written, for callers that want to log.
+ */
+export async function syncDayEmployees(
+  db: D1Database,
+  companyId: string,
+  workOrderId: string,
+): Promise<number> {
+  const [empRes, dayRes, existingRes] = await Promise.all([
+    db.prepare(
+      `SELECT woe.rep_id, COALESCE(cm.crew_role, 'laborer') AS crew_role
+         FROM work_order_employees woe
+         LEFT JOIN crew_members cm ON cm.rep_id = woe.rep_id AND cm.company_id = woe.company_id
+        WHERE woe.wo_id=? AND woe.company_id=?`,
+    ).bind(workOrderId, companyId).all<any>(),
+    db.prepare(
+      `SELECT d.id, d.scheduled_duration_minutes, wo.duration_hours
+         FROM wo_days d
+         JOIN work_orders wo ON wo.id = d.work_order_id
+        WHERE d.work_order_id=? AND d.company_id=?`,
+    ).bind(workOrderId, companyId).all<any>(),
+    db.prepare(
+      `SELECT e.wo_day_id, e.rep_id
+         FROM wo_day_employees e
+         JOIN wo_days d ON d.id = e.wo_day_id
+        WHERE d.work_order_id=? AND e.company_id=?`,
+    ).bind(workOrderId, companyId).all<any>(),
+  ]);
+
+  const reps = empRes.results || [];
+  const days = dayRes.results || [];
+  const repIds = new Set(reps.map((r: any) => r.rep_id));
+  const existing = new Set((existingRes.results || []).map((e: any) => `${e.wo_day_id}::${e.rep_id}`));
+
+  const statements: D1PreparedStatement[] = [];
+
+  // Drop anyone no longer on the job.
+  for (const e of existingRes.results || []) {
+    if (!repIds.has(e.rep_id)) {
+      statements.push(
+        db.prepare(`DELETE FROM wo_day_employees WHERE wo_day_id=? AND rep_id=? AND company_id=?`)
+          .bind(e.wo_day_id, e.rep_id, companyId),
+      );
+    }
+  }
+
+  // Add anyone newly on the job, one row per day.
+  let written = 0;
+  for (const day of days) {
+    const defaultMinutes =
+      day.scheduled_duration_minutes != null
+        ? int(day.scheduled_duration_minutes)
+        : day.duration_hours != null
+          ? Math.round(Number(day.duration_hours) * 60)
+          : 0;
+    for (const rep of reps) {
+      if (existing.has(`${day.id}::${rep.rep_id}`)) continue;
+      statements.push(
+        db.prepare(
+          `INSERT INTO wo_day_employees (id, company_id, wo_day_id, rep_id, planned_minutes, crew_role)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(wo_day_id, rep_id) DO NOTHING`,
+        ).bind(newId('wde'), companyId, day.id, rep.rep_id, defaultMinutes, rep.crew_role || 'laborer'),
+      );
+      written += 1;
+    }
+  }
+
+  if (statements.length) await db.batch(statements);
+  return written;
+}
+
 // ── GET /week ────────────────────────────────────────────────────────────────
 
 /**

@@ -44,7 +44,7 @@ import { marketingCronRouter } from './marketing/cron'
 import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/leads'
 import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, toolSpecs } from './marketing/ai-tools'
 // ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
-import { schedulingRouter, ensurePrimaryDay } from './scheduling/api'
+import { schedulingRouter, ensurePrimaryDay, syncDayEmployees } from './scheduling/api'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -11789,6 +11789,8 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, id, eId, companyId).run()
   }
+  // Per-day labor for the people just put on this job.
+  if (employees.length) await syncDayEmployees(db, companyId, id)
   await syncWorkOrderFinanceColumns(db, companyId, id)
   return c.json({ ok: true, id, wo_number: woNum })
 })
@@ -11900,6 +11902,9 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
         .bind(eid, woId, eId, companyId).run()
     }
+    // Mirror the change into per-day labor so crew capacity reflects it.
+    // Keeps hand-tuned planned_minutes; see syncDayEmployees.
+    await syncDayEmployees(db, companyId, woId)
   }
   await syncWorkOrderFinanceColumns(db, companyId, woId)
   return c.json({ ok: true })
@@ -11954,6 +11959,8 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, newId, (e as any).rep_id, companyId).run()
   }
+  // Per-day labor for the copied assignments.
+  if ((emps.results || []).length) await syncDayEmployees(db, companyId, newId)
   return c.json({ ok: true, id: newId, wo_number: woNum })
 })
 

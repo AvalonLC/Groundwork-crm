@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { Hono } from 'hono';
-import { schedulingRouter, ensurePrimaryDay, hidesMoney } from './api';
+import { schedulingRouter, ensurePrimaryDay, hidesMoney, syncDayEmployees } from './api';
 
 const db = () => env.DB;
 const CO = 'co-sched';
@@ -148,6 +148,93 @@ describe('ensurePrimaryDay', () => {
 
   it('will not touch a work order belonging to another company', async () => {
     expect(await ensurePrimaryDay(db(), 'someone-else', WO_SCHED)).toBeNull();
+  });
+});
+
+// ── syncDayEmployees ─────────────────────────────────────────────────────────
+
+const putOnJob = async (workOrderId: string, repIds: string[]) => {
+  await db().prepare(`DELETE FROM work_order_employees WHERE wo_id=?`).bind(workOrderId).run();
+  for (const r of repIds) {
+    await db()
+      .prepare(`INSERT INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
+      .bind(`woe-${workOrderId}-${r}`, workOrderId, r, CO)
+      .run();
+  }
+};
+
+const dayAssignments = async (workOrderId: string) => {
+  const r = await db()
+    .prepare(
+      `SELECT e.rep_id, e.planned_minutes, e.crew_role
+         FROM wo_day_employees e JOIN wo_days d ON d.id = e.wo_day_id
+        WHERE d.work_order_id=? ORDER BY e.rep_id`,
+    )
+    .bind(workOrderId)
+    .all<any>();
+  return r.results || [];
+};
+
+describe('syncDayEmployees', () => {
+  it('gives each person on the job a day row defaulting to the day duration', async () => {
+    await putOnJob(WO_SCHED, [REP_A, REP_B]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const rows = await dayAssignments(WO_SCHED);
+    expect(rows).toHaveLength(2);
+    // The day is 240 calendar minutes, so two people is 480 people-minutes.
+    expect(rows.every((r: any) => r.planned_minutes === 240)).toBe(true);
+  });
+
+  it('carries the crew role across so the grid can colour by it', async () => {
+    await putOnJob(WO_SCHED, [REP_A]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const rows = await dayAssignments(WO_SCHED);
+    expect(rows[0].crew_role).toBe('foreman');
+  });
+
+  it('removes people taken off the job', async () => {
+    await putOnJob(WO_SCHED, [REP_A, REP_B]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    await putOnJob(WO_SCHED, [REP_A]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const rows = await dayAssignments(WO_SCHED);
+    expect(rows.map((r: any) => r.rep_id)).toEqual([REP_A]);
+  });
+
+  it('does NOT clobber minutes tuned by hand', async () => {
+    await putOnJob(WO_SCHED, [REP_A]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const dayId = await primaryDayId(WO_SCHED);
+    // Someone shortens this person's day through the assign endpoint...
+    await req(`/days/${dayId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ rep_id: REP_A, planned_minutes: 90 }),
+    });
+    // ...then a second person is added to the job, re-running the sync.
+    await putOnJob(WO_SCHED, [REP_A, REP_B]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const rows = await dayAssignments(WO_SCHED);
+    const a = rows.find((r: any) => r.rep_id === REP_A);
+    const b = rows.find((r: any) => r.rep_id === REP_B);
+    expect(a.planned_minutes).toBe(90); // preserved
+    expect(b.planned_minutes).toBe(240); // new person gets the default
+  });
+
+  it('is a no-op for a job with no day rows', async () => {
+    await putOnJob(WO_BACKLOG, [REP_A]);
+    const written = await syncDayEmployees(db(), CO, WO_BACKLOG);
+    expect(written).toBe(0);
+    expect(await dayAssignments(WO_BACKLOG)).toHaveLength(0);
+  });
+
+  it('makes crew capacity reflect the assignment', async () => {
+    await putOnJob(WO_SCHED, [REP_A, REP_B]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const body = await json(await req(`/week?start=${MONDAY}`));
+    const crew = body.crews.find((c: any) => c.id === CREW);
+    // Two people x 240 minutes = 480 people-minutes against 4500 capacity.
+    expect(crew.week_planned_minutes).toBe(480);
+    expect(crew.week_utilization_pct).toBe(11);
   });
 });
 
