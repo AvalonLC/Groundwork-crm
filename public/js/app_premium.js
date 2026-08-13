@@ -17767,6 +17767,10 @@ window._sbState = window._sbState || {
   crews: [],
   workOrders: [],
   backlog: [],
+  // Per-crew capacity for the visible week, from /api/scheduling/week. Null
+  // until loaded, or if that fetch fails — the lane metric degrades to showing
+  // scheduled hours without a percentage rather than blocking the board.
+  capacity: null,
   loaded: false,
   crewLanes: true,         // show crew-lane rows in week view
   density: 'compact',
@@ -17823,13 +17827,20 @@ async function _sbLoadData() {
     const _woParams = new URLSearchParams({ limit: '1000', date_from: range.from, date_to: range.to });
     if (_sbIsField && _sbRep) _woParams.set('rep_id', _sbRep.id);
     const _woUrl = '/api/work-orders?' + _woParams.toString();
-    const [cr, wo, rr, backlog] = await Promise.all([
+    const [cr, wo, rr, backlog, cap] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
       fetch('/api/reps', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
       fetch('/api/work-orders?limit=300', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      // Real crew capacity: people on the crew x productive minutes per working
+      // day. One payload for the whole week — see src/scheduling/api.ts. Failing
+      // this fetch must not break the board, so the metric falls back to the
+      // old scheduled-hours-only display rather than the grid refusing to draw.
+      fetch('/api/scheduling/week?start=' + encodeURIComponent(range.from), {credentials:'include'})
+        .then(r=>r.json()).catch(()=>null),
     ]);
     if (rr && rr.ok) window._gwAllReps = rr.data || rr.reps || [];
+    window._sbState.capacity = (cap && cap.ok) ? cap : null;
     if (cr.ok) {
       // Field roles: only show their own crew(s) in the crew filter bar
       if (_sbIsField && _sbRep) {
@@ -18140,8 +18151,37 @@ function _sbRender() {
         const isUnassigned = cr.id==='__unassigned__';
         const crewWeekJobs = visibleWOs.filter(w => (isUnassigned ? !(w.md_crew_id || w.crew_id) : (w.md_crew_id || w.crew_id) === cr.id));
         const scheduledHours = crewWeekJobs.reduce((sum,w)=>sum+(_sbEventRange(w).duration/60),0);
-        const weeklyCapacity = 40;
-        const utilization = Math.round((scheduledHours/weeklyCapacity)*100);
+        // Capacity from /api/scheduling/week: crew members x productive minutes
+        // x working days. This used to be a hardcoded 40, which made the
+        // percentage meaningless for any crew that was not one person on a
+        // 40-hour week — a three-person crew was permanently shown as
+        // over-booked. capMeta is null for the Unassigned lane (not a real
+        // crew), when the fetch failed, or when nobody is on the crew.
+        const capMeta = (window._sbState.capacity && !isUnassigned)
+          ? (window._sbState.capacity.crews || []).find(c => c.id === cr.id)
+          : null;
+        const weeklyCapacityHours = capMeta ? (capMeta.week_capacity_minutes / 60) : 0;
+        // Utilisation compares LABOR to LABOR. scheduledHours above is calendar
+        // time — how long the jobs block the grid — and capacity is people-hours,
+        // so dividing one by the other is the same units mix-up this whole engine
+        // exists to remove: a two-person crew on an 8-hour job consumes 16
+        // people-hours, not 8. The numerator is therefore week_planned_minutes,
+        // summed from wo_day_employees.
+        //
+        // null, never 0 — a crew with nobody on it is not "0% utilised", the
+        // number is undefined, and nobody assigned to the work yet is not the
+        // same as an empty week.
+        const plannedHours = capMeta ? (capMeta.week_planned_minutes / 60) : 0;
+        const utilization = (capMeta && capMeta.week_capacity_minutes > 0)
+          ? capMeta.week_utilization_pct
+          : null;
+        const utilLabel = !capMeta
+          ? '—'
+          : capMeta.member_count === 0
+            ? 'no crew assigned'
+            : capMeta.week_planned_minutes === 0
+              ? 'nobody assigned yet'
+              : plannedHours.toFixed(1) + 'h of ' + weeklyCapacityHours.toFixed(0) + 'h · ' + utilization + '%';
         const dayCells = days.map(d=>{
           const iso = d.toISOString().slice(0,10);
           const isToday = iso===today;
@@ -18160,7 +18200,7 @@ function _sbRender() {
         return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
             <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
-            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small>${scheduledHours.toFixed(1)}h · ${utilization}%</small><i><b style="width:${Math.min(100,utilization)}%;${utilization>100?'background:#d84b42':''}"></b></i></span>
+            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small title="Booked is calendar time on the grid; the second figure is people-hours against this crew's capacity">${scheduledHours.toFixed(1)}h booked · ${escapeHtml(utilLabel)}</small><i><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i></span>
           </div>
           ${dayCells}`;
       }).join('');
@@ -18344,6 +18384,82 @@ window._sbRefresh = async function() {
   window._sbState.loaded = false;
   await _sbLoadData();
   _sbRender();
+};
+/**
+ * Re-read crew capacity for the visible week and repaint.
+ *
+ * Cheaper than _sbRefresh() — one request instead of five, and it keeps the
+ * optimistic move already painted on the grid. Used after a write that moved a
+ * job but whose result is already reflected locally: without it the lane metric
+ * keeps the capacity figures from before the move and drifts away from the grid
+ * it sits next to.
+ *
+ * Silent on failure: a stale percentage is a much smaller problem than an error
+ * toast on top of a drag that actually succeeded.
+ */
+/**
+ * Fill the Hours card in the visit modal: sold vs planned vs actual.
+ *
+ * Three numbers the CRM used to collapse into one. From
+ * GET /api/scheduling/work-orders/:id/hours:
+ *
+ *   budget   what the estimate sold (null when the job came from no estimate)
+ *   planned  what we intend to spend, summed from wo_day_employees
+ *   actual   what it took, NET of breaks
+ *
+ * "No budget" is rendered as such rather than as zero or as on-target — a job
+ * with nothing to compare against is a different statement from a job that
+ * landed exactly on its number.
+ */
+window._sbLoadHours = async function(woId) {
+  const host = document.getElementById('sbm-hours');
+  if (!host) return;
+  const h = m => (Number(m || 0) / 60).toFixed(1) + 'h';
+  try {
+    const r = await fetch(`/api/scheduling/work-orders/${encodeURIComponent(woId)}/hours`, { credentials: 'include' });
+    const d = await r.json();
+    if (!d || !d.ok) throw new Error(d && d.error);
+
+    const cell = (label, value, hint, tone) =>
+      `<div class="sb-hours-cell${tone ? ' sb-hours-cell--' + tone : ''}">
+         <span class="sb-hours-label">${escapeHtml(label)}</span>
+         <strong class="sb-hours-value">${escapeHtml(value)}</strong>
+         ${hint ? `<span class="sb-hours-hint">${escapeHtml(hint)}</span>` : ''}
+       </div>`;
+
+    let varianceCell;
+    if (d.budget_minutes == null) {
+      varianceCell = cell('Vs. sold', 'no budget', 'this job came from no estimate', null);
+    } else if (d.actual_minutes === 0) {
+      varianceCell = cell('Vs. sold', 'not started', 'no time logged yet', null);
+    } else {
+      const over = d.variance_minutes > 0;
+      varianceCell = cell(
+        'Vs. sold',
+        (over ? '+' : '') + (d.variance_minutes / 60).toFixed(1) + 'h',
+        over ? 'over what we sold' : 'under what we sold',
+        over ? 'over' : 'under',
+      );
+    }
+
+    host.innerHTML =
+      cell('Sold', d.budget_minutes == null ? '—' : h(d.budget_minutes), 'from the estimate') +
+      cell('Planned', h(d.planned_minutes), 'people-hours booked') +
+      cell('Actual', h(d.actual_minutes), d.break_minutes > 0 ? `net of ${h(d.break_minutes)} break` : 'net of breaks') +
+      varianceCell;
+  } catch (e) {
+    host.innerHTML = '<span class="muted" style="font-size:12px">Hours unavailable</span>';
+  }
+};
+
+window._sbRefreshCapacity = async function() {
+  try {
+    const range = _sbCurrentDateRange();
+    const r = await fetch('/api/scheduling/week?start=' + encodeURIComponent(range.from), { credentials: 'include' });
+    const d = await r.json();
+    window._sbState.capacity = (d && d.ok) ? d : window._sbState.capacity;
+    _sbRender();
+  } catch (_) { /* keep the previous figures */ }
 };
 window._sbSelectDay = function(iso) {
   window._sbState.mobileSelectedDay = iso;
@@ -18705,6 +18821,10 @@ window._sbDropOnCell = async function(e, iso, crewId) {
       });
     }
     showToast('Job rescheduled','success');
+    // The grid already shows the move optimistically, but the crew-lane
+    // capacity figures were computed before it. Re-read them so the metric
+    // beside the grid cannot disagree with the grid.
+    await _sbRefreshCapacity();
   } catch(err) {
     wo.scheduled_date = oldDate;
     if (isMdDay) wo.md_crew_id = oldCrew || '';
@@ -18871,8 +18991,10 @@ window._sbOpenVisitModal = async function(woId) {
     </div>`;
 
   // Work tracking
+  // Calendar duration, not budgeted labor — work_orders.duration_hours drives
+  // how long the job blocks the grid. What was sold lives in budget_minutes and
+  // is surfaced by the Hours card.
   const budgetedHrs = wo.duration_hours || 0;
-  const actualHrs   = wo.actual_hours   || 0;
 
   const modal = document.createElement('div');
   modal.id = 'sb-visit-modal';
@@ -18923,6 +19045,13 @@ window._sbOpenVisitModal = async function(woId) {
               <span>Visit Notes (visible to crew)</span>
               <textarea class="rp-input" id="sbm-notes" rows="3" placeholder="Scope, special instructions…">${escapeHtml(wo.notes||'')}</textarea>
             </div>
+          </section>
+
+          <!-- Hours: sold vs planned vs actual. Filled in by _sbLoadHours()
+               after the modal paints, so opening a job never waits on it. -->
+          <section class="sb-modal-section" id="sbm-hours-section">
+            <h3 class="sb-modal-section-title">Hours</h3>
+            <div id="sbm-hours" class="sb-hours-grid"><span class="muted" style="font-size:12px">Loading…</span></div>
           </section>
 
           <!-- Completion Details -->
@@ -19035,22 +19164,26 @@ window._sbOpenVisitModal = async function(woId) {
             ${photosHtml('After',  afterPhotos,  'after_photos')}
           </section>
 
-          <!-- Work Tracking -->
+          <!-- Time on the calendar.
+               This section used to be "Work Tracking" and showed a Budgeted and
+               an Actual stat. Both were misleading:
+
+                 "Budgeted" read work_orders.duration_hours, which is ALSO what
+                 the grid uses to decide how long a job blocks — so the field
+                 labelled "total man-hrs" silently resized the job on the board.
+                 It is calendar time, and is now labelled as such.
+
+                 "Actual" read work_orders.actual_hours, a denormalised column
+                 nothing keeps current — it showed 0h on jobs with real logged
+                 time. The Hours card above computes actual from time_entries,
+                 net of breaks, so a second contradictory figure is worse than
+                 none. Removed rather than left to disagree. -->
           <section class="sb-modal-section">
-            <h3 class="sb-modal-section-title">Work Tracking</h3>
-            <div class="sb-work-track">
-              <div class="sb-work-stat">
-                <span class="sb-work-num">${budgetedHrs}h</span>
-                <span class="sb-work-lbl">Budgeted</span>
-              </div>
-              <div class="sb-work-stat">
-                <span class="sb-work-num sb-work-num--blue">${actualHrs}h</span>
-                <span class="sb-work-lbl">Actual</span>
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+            <h3 class="sb-modal-section-title">Time on the calendar</h3>
+            <p class="sb-modal-hint">How long this blocks the schedule. Sold, planned and actual hours are in the Hours card above.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
               <label class="sb-modal-field">
-                <span>Budgeted Hours <em style="font-size:10px;font-weight:400;opacity:.6">(total man-hrs)</em></span>
+                <span>Duration <em style="font-size:10px;font-weight:400;opacity:.6">(hours on the grid)</em></span>
                 <input class="rp-input" id="sbm-duration" type="number" min="0" step="0.5" value="${budgetedHrs||''}">
               </label>
               <label class="sb-modal-field">
@@ -19143,6 +19276,10 @@ window._sbOpenVisitModal = async function(woId) {
   // Store current WO for handlers
   window._sbCurrentWO = JSON.parse(JSON.stringify(wo));
   window._sbCurrentWOId = wo.id;
+
+  // Fill the Hours card after the modal is on screen — opening a job must not
+  // wait on this request.
+  _sbLoadHours(wo.id);
 
   // Mount Client Portal Updates panel (daily updates + photo publish)
   if (typeof window._gwPortalUpdatesPanel === 'function') {

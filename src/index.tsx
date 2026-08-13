@@ -43,6 +43,8 @@ import { marketingPublicRouter } from './marketing/public'
 import { marketingCronRouter } from './marketing/cron'
 import { insertOpportunityRow, resolveDefaultPipelineStage } from './marketing/leads'
 import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, toolSpecs } from './marketing/ai-tools'
+// ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
+import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -67,6 +69,13 @@ app.route('/finance', financeUiRouter)
 // so the router stays a plain Hono app that can be tested on its own.
 app.use('/api/marketing/*', requireAuth)
 app.route('/api/marketing', marketingRouter)
+
+// ── Scheduling engine ────────────────────────────────────────────────────────
+// Same pattern: requireAuth at the mount point so the router stays a plain Hono
+// app that can be tested on its own, and every handler can rely on
+// c.var.companyId.
+app.use('/api/scheduling/*', requireAuth)
+app.route('/api/scheduling', schedulingRouter)
 // Scheduled drain — X-Cron-Secret header auth, same as the finance rollup.
 app.route('/internal/cron', marketingCronRouter)
 // Public: campaign images, unsubscribe, click redirects, inquiry forms and the
@@ -7293,6 +7302,12 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
     repId
   ).run()
 
+  // Give the new job its primary wo_days row so it appears on the scheduling
+  // grid. Migration 0061 backfilled history only; without this, every job
+  // created from then on would be invisible in the Week view. No-ops when the
+  // job has no date yet — a backlog job gets its row when it is scheduled.
+  await ensurePrimaryDay(db, companyId, woId)
+
   await db.prepare(`UPDATE estimates SET work_order_id=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(woId, est.id, companyId).run()
 
@@ -11765,6 +11780,8 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     JSON.stringify(body.after_photos || []),
     repId
   ).run()
+  // Primary wo_days row — see the note at the from-estimate conversion.
+  await ensurePrimaryDay(db, companyId, id)
   // Add employees if provided
   const employees: string[] = body.employee_ids || []
   for (const eId of employees) {
@@ -11772,6 +11789,8 @@ app.post('/api/work-orders', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, id, eId, companyId).run()
   }
+  // Per-day labor for the people just put on this job.
+  if (employees.length) await syncDayEmployees(db, companyId, id)
   await syncWorkOrderFinanceColumns(db, companyId, id)
   return c.json({ ok: true, id, wo_number: woNum })
 })
@@ -11883,6 +11902,9 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
         .bind(eid, woId, eId, companyId).run()
     }
+    // Mirror the change into per-day labor so crew capacity reflects it.
+    // Keeps hand-tuned planned_minutes; see syncDayEmployees.
+    await syncDayEmployees(db, companyId, woId)
   }
   await syncWorkOrderFinanceColumns(db, companyId, woId)
   return c.json({ ok: true })
@@ -11928,6 +11950,8 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
     JSON.stringify([{ action: 'Duplicated from ' + src.wo_number, note: `by ${repId}`, at: new Date().toISOString() }]),
     '[]', '[]', repId
   ).run()
+  // Primary wo_days row — see the note at the from-estimate conversion.
+  await ensurePrimaryDay(db, companyId, newId)
   // Duplicate employee assignments
   const emps = await db.prepare(`SELECT rep_id FROM work_order_employees WHERE wo_id=?`).bind(woId).all()
   for (const e of (emps.results || [])) {
@@ -11935,6 +11959,8 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
     await db.prepare(`INSERT OR IGNORE INTO work_order_employees (id, wo_id, rep_id, company_id) VALUES (?,?,?,?)`)
       .bind(eid, newId, (e as any).rep_id, companyId).run()
   }
+  // Per-day labor for the copied assignments.
+  if ((emps.results || []).length) await syncDayEmployees(db, companyId, newId)
   return c.json({ ok: true, id: newId, wo_number: woNum })
 })
 
@@ -11976,6 +12002,10 @@ app.patch('/api/work-orders/:id/reschedule', requireAuth, async (c) => {
     JSON.stringify(timeline),
     woId, companyId
   ).run()
+  // Keep the primary day row in step. Capacity is computed from wo_days, so
+  // without this a dragged job moves on the grid while its labor stays
+  // attributed to the day it came from.
+  await syncPrimaryDayFromWorkOrder(db, companyId, woId)
   return c.json({ ok: true })
 })
 
