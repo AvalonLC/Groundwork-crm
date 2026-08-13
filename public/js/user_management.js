@@ -568,7 +568,11 @@ const UM_ALL_VIEWS = [
   { key:'fieldMode',          label:'Field Mode',              hub:'Operations',  kind:'page'   },
   { key:'fieldDashboard',     label:'Field Dashboard',         hub:'Operations',  kind:'page'   },
   { key:'approvalQueue',      label:'Approval Queue',          hub:'Operations',  kind:'page'   },
-  { key:'gwRecurringPlans',   label:'Recurring Plans',         hub:'Operations',  kind:'page'   },
+  // 'gwRecurringPlans' / "Recurring Plans" was a second toggle for the same
+  // screen as 'recurringServices' above, which made the permissions editor read
+  // as though they were two features an admin had to grant separately. The tab
+  // is retired; show() rewrites the old name to 'recurringServices', so old
+  // bookmarks resolve under that permission instead of hitting a dead key.
   { key:'gwFieldReports',     label:'Field Reports',           hub:'Operations',  kind:'page'   },
 
   // ── REPORTS ────────────────────────────────────────────────────────────────

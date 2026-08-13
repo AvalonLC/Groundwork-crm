@@ -1192,7 +1192,10 @@ function _gwOpsNavConfig() {
     {id:'dispatchBoard',      label:'Dispatch'},
     {id:'workOrderList',      label:'Work Orders'},
     {id:'recurringServices',  label:'Recurring Services'},
-    {id:'gwRecurringPlans',   label:'Service Plans'},
+    // 'gwRecurringPlans' / "Service Plans" was a second tab rendering the
+    // IDENTICAL screen — recurringServices() below just calls
+    // window.gwRecurringPlans(). One screen, one name. The route is kept as a
+    // deep-link alias so an existing #gwRecurringPlans bookmark still lands.
     {id:'assetsHub',          label:'Assets'},
     {id:'timeTracker',        label:'Time Tracker'},
     {id:'gwTimesheetAdmin',   label:'Timesheet Review', sub:true},
@@ -1207,7 +1210,10 @@ function gwOperations(tab) {
   else if (tab === 'dispatchBoard')    (typeof dispatchBoard==='function') ? dispatchBoard() : _gwTabStub('Dispatch');
   else if (tab === 'workOrderList')    (typeof workOrderList==='function') ? workOrderList() : _gwTabStub('Work Orders');
   else if (tab === 'recurringServices')(typeof recurringServices==='function') ? recurringServices() : _gwTabStub('Recurring Services');
-  else if (tab === 'gwRecurringPlans') (typeof window.gwRecurringPlans==='function') ? window.gwRecurringPlans() : _gwTabStub('Service Plans');
+  // Retired tab name. show() now rewrites it to 'recurringServices' before it
+  // gets here, so this branch only catches a direct gwOperations() call; it
+  // renders the same screen either way.
+  else if (tab === 'gwRecurringPlans') (typeof window.gwRecurringPlans==='function') ? window.gwRecurringPlans() : _gwTabStub('Recurring Services');
   else if (tab === 'gwResources')      (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : _gwTabStub('Assets');
   else if (tab === 'assetsHub')        (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : _gwTabStub('Assets');
   else if (tab === 'assetList')        (typeof window.assetsHub==='function') ? window.assetsHub('equipment') : _gwTabStub('Assets');
@@ -1556,6 +1562,14 @@ function _gwTabStubHTML(label) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function show(viewName='today', param){
+  // ── Retired view names ────────────────────────────────────────────────────
+  // Rewritten BEFORE the permission gate below, which tests the view name as a
+  // permission key. 'gwRecurringPlans' was a second tab rendering the identical
+  // screen as 'recurringServices' and has been retired; its permission toggle
+  // went with it, so leaving the name intact here would send anyone with an old
+  // bookmark to "Access Restricted" rather than to the screen they asked for.
+  if (viewName === 'gwRecurringPlans') viewName = 'recurringServices';
+
   // ── Field Preview cleanup: leaving the preview clears impersonated context ──
   if (viewName !== 'fieldMode' && window._fieldPreviewRep) {
     window._fieldPreviewRep = null;
