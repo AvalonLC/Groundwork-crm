@@ -7285,8 +7285,7 @@ app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
   let budgetHours = 0
   try { budgetHours = Number(JSON.parse(est.cost_data || '{}')?.rollup?.budgeted_hours || 0) } catch {}
 
-  const countRow: any = await db.prepare(`SELECT COUNT(*) as n FROM work_orders WHERE company_id=?`).bind(companyId).first()
-  const woNumber = `WO-${((countRow?.n || 0) + 1).toString().padStart(5, '0')}`
+  const woNumber = await nextWorkOrderNumber(db, companyId)
   const woId = 'wo_' + uid()
   const woAmountEstCents = Number(est.total_cents || 0)
   const woAmountEst = woAmountEstCents / 100
@@ -11754,6 +11753,32 @@ app.get('/api/work-orders', requireAuth, async (c) => {
 })
 
 // POST /api/work-orders — create a work order
+/**
+ * Next work order number for a company.
+ *
+ * Derived from the highest number already issued, not from COUNT(*). The count
+ * approach reused a number every time a work order was deleted — production
+ * already carries three separate jobs numbered WO-00002 for exactly that reason,
+ * which matters the moment a number appears on paperwork or is quoted to a
+ * client.
+ *
+ * Reads the numeric tail rather than MAX(wo_number) so a stray non-conforming
+ * value cannot poison the sequence, and ignores anything not shaped 'WO-…'.
+ *
+ * Not collision-proof under genuinely concurrent creation — two requests can
+ * still read the same max. Closing that needs a unique index on
+ * (company_id, wo_number), which cannot be added until the existing duplicates
+ * are reconciled, and that is a data decision rather than a code one.
+ */
+async function nextWorkOrderNumber(db: D1Database, companyId: string): Promise<string> {
+  const row: any = await db.prepare(
+    `SELECT MAX(CAST(SUBSTR(wo_number, 4) AS INTEGER)) AS n
+       FROM work_orders
+      WHERE company_id=? AND wo_number LIKE 'WO-%'`
+  ).bind(companyId).first()
+  return 'WO-' + String(Number(row?.n || 0) + 1).padStart(5, '0')
+}
+
 app.post('/api/work-orders', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const repId     = c.var.repId as string
@@ -11761,8 +11786,7 @@ app.post('/api/work-orders', requireAuth, async (c) => {
   const body: any = await c.req.json()
   const id = 'wo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
   // Auto-number
-  const countRow = await db.prepare(`SELECT COUNT(*) as cnt FROM work_orders WHERE company_id=?`).bind(companyId).first() as any
-  const woNum = 'WO-' + String((countRow?.cnt || 0) + 1).padStart(5, '0')
+  const woNum = await nextWorkOrderNumber(db, companyId)
   const createAmountEst = body.amount_est || 0
   await db.prepare(`
     INSERT INTO work_orders
@@ -11923,7 +11947,21 @@ app.delete('/api/work-orders/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   const woId = c.req.param('id')
-  await db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId).run()
+  // wo_days carries no foreign key to work_orders, so deleting the job used to
+  // leave its scheduling rows behind forever. They were invisible — every read
+  // inner-joins back to work_orders — but they accumulated, and migration 0061
+  // made that worse by giving every scheduled job a day row rather than only
+  // multi-day ones. wo_day_employees cascades from wo_days, but only if the
+  // wo_days row is actually deleted, so it is removed explicitly first for
+  // tenants where foreign keys are not enforced.
+  await db.batch([
+    db.prepare(
+      `DELETE FROM wo_day_employees
+        WHERE company_id=? AND wo_day_id IN (SELECT id FROM wo_days WHERE work_order_id=?)`
+    ).bind(companyId, woId),
+    db.prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=?`).bind(woId, companyId),
+    db.prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(woId, companyId),
+  ])
   return c.json({ ok: true })
 })
 
@@ -11939,8 +11977,7 @@ app.post('/api/work-orders/:id/duplicate', requireAuth, async (c) => {
   ).bind(woId, companyId).first()
   if (!src) return c.json({ ok: false, error: 'Not found' }, 404)
   const newId = 'wo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)
-  const countRow: any = await db.prepare(`SELECT COUNT(*) as cnt FROM work_orders WHERE company_id=?`).bind(companyId).first()
-  const woNum = 'WO-' + String((countRow?.cnt || 0) + 1).padStart(5, '0')
+  const woNum = await nextWorkOrderNumber(db, companyId)
   const newDate = body.scheduled_date || src.scheduled_date
   await db.prepare(`
     INSERT INTO work_orders

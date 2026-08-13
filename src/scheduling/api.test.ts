@@ -810,3 +810,88 @@ describe('moving a job to another crew restaffs it', () => {
     expect((await rosterOf('wod-day3')).map((r: any) => r.rep_id)).toEqual(['rep-solo5']);
   });
 });
+
+// ── work order deletion and numbering ────────────────────────────────────────
+
+describe('deleting a work order does not orphan its scheduling rows', () => {
+  it('removes the day rows and their assignments', async () => {
+    await putOnJob(WO_SCHED, [REP_A, REP_B]);
+    await syncDayEmployees(db(), CO, WO_SCHED);
+    const dayId = await primaryDayId(WO_SCHED);
+    expect(dayId).toBeTruthy();
+
+    // Mirrors what DELETE /api/work-orders/:id now does.
+    await db().batch([
+      db().prepare(
+        `DELETE FROM wo_day_employees
+          WHERE company_id=? AND wo_day_id IN (SELECT id FROM wo_days WHERE work_order_id=?)`,
+      ).bind(CO, WO_SCHED),
+      db().prepare(`DELETE FROM wo_days WHERE work_order_id=? AND company_id=?`).bind(WO_SCHED, CO),
+      db().prepare(`DELETE FROM work_orders WHERE id=? AND company_id=?`).bind(WO_SCHED, CO),
+    ]);
+
+    const days = await db()
+      .prepare(`SELECT COUNT(*) AS n FROM wo_days WHERE work_order_id=?`).bind(WO_SCHED).first<{ n: number }>();
+    const emps = await db()
+      .prepare(`SELECT COUNT(*) AS n FROM wo_day_employees WHERE wo_day_id=?`).bind(dayId).first<{ n: number }>();
+    expect(days?.n).toBe(0);
+    expect(emps?.n).toBe(0);
+  });
+});
+
+describe('work order numbering', () => {
+  // Mirrors nextWorkOrderNumber in src/index.tsx.
+  const nextNumber = async () => {
+    const row = await db()
+      .prepare(
+        `SELECT MAX(CAST(SUBSTR(wo_number, 4) AS INTEGER)) AS n
+           FROM work_orders WHERE company_id=? AND wo_number LIKE 'WO-%'`,
+      )
+      .bind(CO)
+      .first<{ n: number | null }>();
+    return 'WO-' + String(Number(row?.n || 0) + 1).padStart(5, '0');
+  };
+
+  it('never hands out a number an existing job already has', async () => {
+    // This is the invariant that matters, and the one COUNT(*) broke: with jobs
+    // WO-00001 and WO-00002, deleting the FIRST leaves one row, so a count-based
+    // scheme issues WO-00002 — which is still in use. That is exactly how
+    // production ended up with three jobs sharing WO-00002.
+    expect(await nextNumber()).toBe('WO-00003');
+
+    await db().prepare(`DELETE FROM work_orders WHERE id=?`).bind(WO_SCHED).run();
+
+    const issued = await nextNumber();
+    const clash = await db()
+      .prepare(`SELECT COUNT(*) AS n FROM work_orders WHERE company_id=? AND wo_number=?`)
+      .bind(CO, issued)
+      .first<{ n: number }>();
+    expect(clash?.n).toBe(0);
+    // Counting rows would have produced WO-00002, which WO_BACKLOG still holds.
+    expect(issued).not.toBe('WO-00002');
+  });
+
+  it('reuses a retired top number, which is acceptable — no two live jobs collide', async () => {
+    // Deleting the highest-numbered job does free its number. That is a weaker
+    // guarantee than a monotonic sequence, but it cannot produce a duplicate,
+    // because max+1 is always greater than every number in use. Recorded here so
+    // the limitation is deliberate rather than discovered later.
+    expect(await nextNumber()).toBe('WO-00003');
+    await db().prepare(`DELETE FROM work_orders WHERE id=?`).bind(WO_BACKLOG).run(); // WO-00002
+    expect(await nextNumber()).toBe('WO-00002');
+  });
+
+  it('starts at WO-00001 for a company with no jobs', async () => {
+    await db().prepare(`DELETE FROM work_orders WHERE company_id=?`).bind(CO).run();
+    expect(await nextNumber()).toBe('WO-00001');
+  });
+
+  it('is not derailed by a non-conforming number', async () => {
+    await db()
+      .prepare(`INSERT INTO work_orders (id, company_id, wo_number, status) VALUES (?,?,?,?)`)
+      .bind('wo-legacy', CO, 'LEGACY-1', 'scheduled')
+      .run();
+    // Still counts from the WO- series only.
+    expect(await nextNumber()).toBe('WO-00003');
+  });
+});
