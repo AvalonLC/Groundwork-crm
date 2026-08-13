@@ -18175,12 +18175,27 @@ function _sbRender() {
         const utilization = (capMeta && capMeta.week_capacity_minutes > 0)
           ? capMeta.week_utilization_pct
           : null;
+        // Four genuinely different situations, and they must not share wording:
+        //
+        //   not a real crew        the Unassigned lane — no capacity to speak of
+        //   crew with no members   there is nobody to do the work
+        //   nothing booked         the crew is free; show how much room it has,
+        //                          which is the most useful thing on an empty week
+        //   booked but no labor    jobs are on the grid but wo_day_employees has
+        //                          not been populated for them yet
+        //
+        // The third and fourth used to share "nobody assigned yet", which read as
+        // a data problem on a week that was simply empty and — worse — hid the
+        // capacity figure entirely.
+        const hasJobs = crewWeekJobs.length > 0;
         const utilLabel = !capMeta
           ? '—'
           : capMeta.member_count === 0
             ? 'no crew assigned'
             : capMeta.week_planned_minutes === 0
-              ? 'nobody assigned yet'
+              ? (hasJobs
+                  ? 'booked, labor not assigned yet'
+                  : weeklyCapacityHours.toFixed(0) + 'h open')
               : plannedHours.toFixed(1) + 'h of ' + weeklyCapacityHours.toFixed(0) + 'h · ' + utilization + '%';
         const dayCells = days.map(d=>{
           const iso = d.toISOString().slice(0,10);
