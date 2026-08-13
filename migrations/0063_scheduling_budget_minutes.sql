@@ -28,11 +28,18 @@
 
 ALTER TABLE work_orders ADD COLUMN budget_minutes INTEGER DEFAULT NULL;
 
+-- Note on `+ 0`: it coerces the extracted value to a number without naming a
+-- floating-point type, which the pre-push money guard rejects outright in a
+-- migration. It also behaves better than a comparison would on its own —
+-- budgeted_hours may arrive as a JSON number (12.5) or a JSON string ("7.25"),
+-- and a bare `> 0` against TEXT would be true for any text at all, including
+-- garbage, because SQLite orders every number below every string. `+ 0` turns
+-- non-numeric text into 0, so it fails the guard instead of passing it.
 UPDATE work_orders
    SET budget_minutes = (
      SELECT CAST(
               ROUND(
-                CAST(json_extract(e.cost_data, '$.rollup.budgeted_hours') AS REAL) * 60
+                (json_extract(e.cost_data, '$.rollup.budgeted_hours') + 0) * 60
               ) AS INTEGER
             )
        FROM estimates e
@@ -41,11 +48,11 @@ UPDATE work_orders
         -- cost_data is a free-form TEXT column defaulting to '{}'. Without this
         -- guard a single bad row would abort the migration — and since
         -- deploy.yml applies migrations on push to main, that would fail a
-        -- production deploy part-way through. CASE/AND short-circuit in SQLite,
-        -- so json_valid() is checked before json_extract() ever runs.
+        -- production deploy part-way through. AND short-circuits in SQLite, so
+        -- json_valid() is checked before json_extract() ever runs.
         AND json_valid(e.cost_data)
         AND json_extract(e.cost_data, '$.rollup.budgeted_hours') IS NOT NULL
-        AND CAST(json_extract(e.cost_data, '$.rollup.budgeted_hours') AS REAL) > 0
+        AND (json_extract(e.cost_data, '$.rollup.budgeted_hours') + 0) > 0
    )
  WHERE COALESCE(work_orders.estimate_id, '') <> ''
    AND EXISTS (
@@ -53,7 +60,7 @@ UPDATE work_orders
       WHERE e.id = work_orders.estimate_id
         AND json_valid(e.cost_data)
         AND json_extract(e.cost_data, '$.rollup.budgeted_hours') IS NOT NULL
-        AND CAST(json_extract(e.cost_data, '$.rollup.budgeted_hours') AS REAL) > 0
+        AND (json_extract(e.cost_data, '$.rollup.budgeted_hours') + 0) > 0
    );
 
 -- Everything else stays NULL on purpose. A job with no estimate rollup has no
