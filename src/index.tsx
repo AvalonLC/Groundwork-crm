@@ -12231,6 +12231,12 @@ app.patch('/api/work-orders/:id/days/:n', requireAuth, async (c) => {
   if (dayN === 1 && dayDate) {
     await db.prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`).bind(dayDate, woId, companyId).run()
   }
+  // A multi-day job can be split across days AND crews, so moving one phase to a
+  // different crew must restaff that phase without touching the others. Scoped
+  // to this day only.
+  if (crewId !== (day.crew_id || '')) {
+    await syncDayEmployees(db, companyId, woId, day.id)
+  }
   const updated: any = await db.prepare(`SELECT * FROM wo_days WHERE id=? AND company_id=?`).bind(day.id, companyId).first()
   return c.json({ ok: true, data: { ...updated, questions: JSON.parse(updated.questions || '[]') } })
 })

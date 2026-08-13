@@ -207,15 +207,18 @@ export async function syncPrimaryDayFromWorkOrder(
   if (!wo) return;
 
   const day = await db
-    .prepare(`SELECT id FROM wo_days WHERE work_order_id=? AND company_id=? AND is_primary=1 LIMIT 1`)
+    .prepare(`SELECT id, crew_id FROM wo_days WHERE work_order_id=? AND company_id=? AND is_primary=1 LIMIT 1`)
     .bind(workOrderId, companyId)
-    .first<{ id: string }>();
+    .first<{ id: string; crew_id: string | null }>();
 
   // No primary row yet — a job scheduled for the first time. Create it.
   if (!day) {
-    await ensurePrimaryDay(db, companyId, workOrderId);
+    const created = await ensurePrimaryDay(db, companyId, workOrderId);
+    if (created) await syncDayEmployees(db, companyId, workOrderId, created);
     return;
   }
+
+  const crewChanged = s(wo.crew_id ?? '') !== s(day.crew_id ?? '');
 
   await db
     .prepare(
@@ -235,34 +238,56 @@ export async function syncPrimaryDayFromWorkOrder(
       companyId,
     )
     .run();
+
+  // Reassigning a single-day job to another crew has to move its people too.
+  // Handled here rather than at each call site so every path that changes a work
+  // order's crew — the reschedule endpoint, the work-order PUT, drag and drop —
+  // gets it without having to remember.
+  if (crewChanged) await syncDayEmployees(db, companyId, workOrderId, day.id);
 }
 
 /**
- * Mirror "who is on this job" into "who is on this job that day, for how long".
+ * Put the right people on each day, derived from that day's own crew.
  *
- * The CRM already tracks work_order_employees — the people assigned to a job —
- * but with no notion of time, so it cannot answer "how much labor is this crew
- * committed to on Tuesday". wo_day_employees answers that, and this keeps the
- * two in step so the capacity figure becomes real on existing data instead of
- * waiting for someone to re-enter every assignment through a new screen.
+ * Precedence, stated once so three modules do not each invent their own:
  *
- * Deliberately NOT a wholesale rewrite of the day rows:
- *   - people newly on the job get a row per day, defaulting to that day's
- *     calendar duration (two people on an 8-hour day is 16 people-hours, which
- *     is the number capacity is measured against)
- *   - people taken off the job lose their rows
- *   - rows that already exist keep their planned_minutes, so minutes tuned by
- *     hand through POST /days/:id/assign survive a later edit to the job's
- *     employee list
+ *   1. wo_day_employees rows marked 'manual' — someone deliberately put this
+ *      person on this day. Never removed by a crew change.
+ *   2. The roster of the day's own crew (wo_days.crew_id -> crew_members).
+ *   3. The job's employee list (work_order_employees) when the day has no crew.
  *
- * Returns the number of assignment rows written, for callers that want to log.
+ * Deriving per DAY rather than per JOB is what makes two things work:
+ *
+ *   - Dragging a job to another crew lane moves the labor with it. Previously
+ *     only wo_days.crew_id changed, so the card appeared under the new crew
+ *     while its planned minutes stayed attributed to the old one.
+ *   - A multi-day job can be split across days AND crews. Each wo_days row
+ *     carries its own crew_id, so day 1 can run with one crew and day 2 with
+ *     another, each staffed correctly.
+ *
+ * Minutes tuned by hand survive as long as the person is still on the day —
+ * only the set of people is re-derived, never their planned_minutes.
+ *
+ * Pass `dayId` to re-derive a single day (a crew change on one day of a
+ * multi-day job); omit it to do every day of the work order.
  */
 export async function syncDayEmployees(
   db: D1Database,
   companyId: string,
   workOrderId: string,
+  dayId?: string,
 ): Promise<number> {
-  const [empRes, dayRes, existingRes] = await Promise.all([
+  const dayFilter = dayId ? ' AND d.id = ?' : '';
+  const dayBinds = dayId ? [workOrderId, companyId, dayId] : [workOrderId, companyId];
+
+  const [dayRes, jobEmpRes, existingRes] = await Promise.all([
+    db.prepare(
+      `SELECT d.id, d.crew_id, d.scheduled_duration_minutes, wo.duration_hours
+         FROM wo_days d
+         JOIN work_orders wo ON wo.id = d.work_order_id
+        WHERE d.work_order_id=? AND d.company_id=?${dayFilter}`,
+    ).bind(...dayBinds).all<any>(),
+    // Fallback roster for days that carry no crew of their own.
     db.prepare(
       `SELECT woe.rep_id, COALESCE(cm.crew_role, 'laborer') AS crew_role
          FROM work_order_employees woe
@@ -270,51 +295,73 @@ export async function syncDayEmployees(
         WHERE woe.wo_id=? AND woe.company_id=?`,
     ).bind(workOrderId, companyId).all<any>(),
     db.prepare(
-      `SELECT d.id, d.scheduled_duration_minutes, wo.duration_hours
-         FROM wo_days d
-         JOIN work_orders wo ON wo.id = d.work_order_id
-        WHERE d.work_order_id=? AND d.company_id=?`,
-    ).bind(workOrderId, companyId).all<any>(),
-    db.prepare(
-      `SELECT e.wo_day_id, e.rep_id
+      `SELECT e.wo_day_id, e.rep_id, e.source
          FROM wo_day_employees e
          JOIN wo_days d ON d.id = e.wo_day_id
-        WHERE d.work_order_id=? AND e.company_id=?`,
-    ).bind(workOrderId, companyId).all<any>(),
+        WHERE d.work_order_id=? AND e.company_id=?${dayFilter}`,
+    ).bind(...dayBinds).all<any>(),
   ]);
 
-  const reps = empRes.results || [];
   const days = dayRes.results || [];
-  const repIds = new Set(reps.map((r: any) => r.rep_id));
-  const existing = new Set((existingRes.results || []).map((e: any) => `${e.wo_day_id}::${e.rep_id}`));
+  if (!days.length) return 0;
 
-  const statements: D1PreparedStatement[] = [];
-
-  // Drop anyone no longer on the job.
-  for (const e of existingRes.results || []) {
-    if (!repIds.has(e.rep_id)) {
-      statements.push(
-        db.prepare(`DELETE FROM wo_day_employees WHERE wo_day_id=? AND rep_id=? AND company_id=?`)
-          .bind(e.wo_day_id, e.rep_id, companyId),
-      );
+  // One read for every crew involved, rather than one per day.
+  const crewIds = [...new Set(days.map((d: any) => s(d.crew_id || '')).filter(Boolean))];
+  const rosterByCrew = new Map<string, any[]>();
+  if (crewIds.length) {
+    const placeholders = crewIds.map(() => '?').join(',');
+    const rosterRes = await db
+      .prepare(
+        `SELECT crew_id, rep_id, COALESCE(crew_role,'laborer') AS crew_role
+           FROM crew_members WHERE company_id=? AND crew_id IN (${placeholders})`,
+      )
+      .bind(companyId, ...crewIds)
+      .all<any>();
+    for (const m of rosterRes.results || []) {
+      if (!rosterByCrew.has(m.crew_id)) rosterByCrew.set(m.crew_id, []);
+      rosterByCrew.get(m.crew_id)!.push(m);
     }
   }
 
-  // Add anyone newly on the job, one row per day.
+  const existingByDay = new Map<string, Map<string, string>>();
+  for (const e of existingRes.results || []) {
+    if (!existingByDay.has(e.wo_day_id)) existingByDay.set(e.wo_day_id, new Map());
+    existingByDay.get(e.wo_day_id)!.set(e.rep_id, s(e.source || 'roster'));
+  }
+
+  const statements: D1PreparedStatement[] = [];
   let written = 0;
+
   for (const day of days) {
+    const crewId = s(day.crew_id || '');
+    const desired = crewId ? (rosterByCrew.get(crewId) || []) : (jobEmpRes.results || []);
+    const desiredIds = new Set(desired.map((r: any) => r.rep_id));
+    const existing = existingByDay.get(day.id) || new Map<string, string>();
+
+    // Drop roster-derived people who are no longer on this day's crew. A
+    // 'manual' row is a deliberate choice and stays.
+    for (const [repId, source] of existing) {
+      if (source !== 'roster') continue;
+      if (desiredIds.has(repId)) continue;
+      statements.push(
+        db.prepare(`DELETE FROM wo_day_employees WHERE wo_day_id=? AND rep_id=? AND company_id=?`)
+          .bind(day.id, repId, companyId),
+      );
+    }
+
     const defaultMinutes =
       day.scheduled_duration_minutes != null
         ? int(day.scheduled_duration_minutes)
         : day.duration_hours != null
           ? Math.round(Number(day.duration_hours) * 60)
           : 0;
-    for (const rep of reps) {
-      if (existing.has(`${day.id}::${rep.rep_id}`)) continue;
+
+    for (const rep of desired) {
+      if (existing.has(rep.rep_id)) continue; // keeps hand-tuned planned_minutes
       statements.push(
         db.prepare(
-          `INSERT INTO wo_day_employees (id, company_id, wo_day_id, rep_id, planned_minutes, crew_role)
-           VALUES (?,?,?,?,?,?)
+          `INSERT INTO wo_day_employees (id, company_id, wo_day_id, rep_id, planned_minutes, crew_role, source)
+           VALUES (?,?,?,?,?,?, 'roster')
            ON CONFLICT(wo_day_id, rep_id) DO NOTHING`,
         ).bind(newId('wde'), companyId, day.id, rep.rep_id, defaultMinutes, rep.crew_role || 'laborer'),
       );
@@ -612,7 +659,7 @@ async function applyDaySchedule(c: any, dayId: string, body: any) {
   const companyId = c.var.companyId as string;
 
   const day = await db
-    .prepare(`SELECT id, work_order_id, schedule_locked FROM wo_days WHERE id=? AND company_id=? LIMIT 1`)
+    .prepare(`SELECT id, work_order_id, schedule_locked, crew_id FROM wo_days WHERE id=? AND company_id=? LIMIT 1`)
     .bind(dayId, companyId)
     .first<any>();
   if (!day) return c.json({ ok: false, error: 'Day not found' }, 404);
@@ -650,11 +697,19 @@ async function applyDaySchedule(c: any, dayId: string, body: any) {
 
   if (!sets.length) return c.json({ ok: false, error: 'Nothing to update' }, 400);
 
+  const crewChanged = body.crew_id !== undefined && s(body.crew_id, 64) !== s(day.crew_id || '');
+
   sets.push("updated_at=datetime('now')");
   await db
     .prepare(`UPDATE wo_days SET ${sets.join(', ')} WHERE id=? AND company_id=?`)
     .bind(...binds, dayId, companyId)
     .run();
+
+  // Dropping a job into a different crew lane has to move the people too,
+  // otherwise the card appears under the new crew while its planned labor stays
+  // attributed to the old one. Scoped to this day, so one day of a multi-day job
+  // can change crew without disturbing the others.
+  if (crewChanged) await syncDayEmployees(db, companyId, day.work_order_id, dayId);
 
   // Keep the work order's own scheduling columns in step for the primary day,
   // so screens still reading work_orders directly do not go stale.
@@ -769,19 +824,34 @@ schedulingRouter.post('/days/:id/assign', async (c) => {
   }
   const crewRole = s(body.crew_role, 32) || 'laborer';
 
+  // Someone on the day's own crew stays 'roster' — they are here because of the
+  // crew, and tuning their minutes should not pin them there through a crew
+  // change. Anyone else is a deliberate addition and is marked 'manual' so
+  // re-deriving the roster cannot silently drop them. See migration 0069.
+  const onDayCrew = await db
+    .prepare(
+      `SELECT 1 AS x FROM wo_days d
+         JOIN crew_members cm ON cm.crew_id = d.crew_id AND cm.company_id = d.company_id
+        WHERE d.id=? AND d.company_id=? AND cm.rep_id=? LIMIT 1`,
+    )
+    .bind(dayId, companyId, repId)
+    .first<{ x: number }>();
+  const source = onDayCrew ? 'roster' : 'manual';
+
   // The unique index on (wo_day_id, rep_id) is what makes this safe to repeat:
   // re-assigning updates the minutes rather than stacking a second row, which
   // would silently double that person's contribution to capacity.
   await db
     .prepare(
-      `INSERT INTO wo_day_employees (id, company_id, wo_day_id, rep_id, planned_minutes, crew_role)
-       VALUES (?,?,?,?,?,?)
+      `INSERT INTO wo_day_employees (id, company_id, wo_day_id, rep_id, planned_minutes, crew_role, source)
+       VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(wo_day_id, rep_id)
        DO UPDATE SET planned_minutes=excluded.planned_minutes,
                      crew_role=excluded.crew_role,
+                     source=excluded.source,
                      updated_at=datetime('now')`,
     )
-    .bind(newId('wde'), companyId, dayId, repId, planned, crewRole)
+    .bind(newId('wde'), companyId, dayId, repId, planned, crewRole, source)
     .run();
 
   return c.json({ ok: true, day_id: dayId, rep_id: repId, planned_minutes: planned });
