@@ -3,6 +3,7 @@ import { getEquipmentRateAsOf, getLaborRateAsOf, getTenantFinancePolicy } from "
 import { computeBurden } from "../engines/burden";
 import { computeEquipmentRate } from "../engines/equipment";
 import type { RateConfidence } from "../db/schema";
+import { canViewCompensation, validateEquipmentSupport } from "./compensation";
 
 export type RatesBindings = { DB: D1Database };
 
@@ -130,6 +131,7 @@ export type RatesVariables = {
   companyId: string;
   role: string;
   isSuperAdmin: boolean;
+  canViewCompensation: boolean;
 };
 
 export const ratesRouter = new Hono<{ Bindings: RatesBindings; Variables: RatesVariables }>();
@@ -191,4 +193,117 @@ ratesRouter.post("/equipment", async (c) => {
     return c.json({ error: "no equipment rate profile resolves for this equipment/date", confidence: "none" }, 404);
   }
   return c.json(result);
+});
+
+// ── POST /profile — the labor-rate write path ────────────────────────────────
+
+/**
+ * Create a labor rate profile, or recalibrate an existing one.
+ *
+ * PUNCHLIST item 8: "There is no way, anywhere in the product, to create a
+ * labor_rate_profile row." /finance/budget is read-only, the seed does not make
+ * one, and nothing else writes the table — so every tenant resolves against
+ * nothing and the whole burden engine has been running on defaults. This is
+ * that write path.
+ *
+ * Two rules from CLAUDE.md that this enforces rather than assumes:
+ *
+ *   Rate rows are IMMUTABLE and effective-dated. Recalibration INSERTs a new
+ *   row and closes the prior one by setting effective_to. Nothing here ever
+ *   UPDATEs a rate's numbers — a job costed last March must still resolve last
+ *   March's rate, and rewriting a row in place silently restates history.
+ *
+ *   support_equipment_annual_cents MUST be 0 while the equipment engine is
+ *   active, or the same machine is billed twice. Refused at the door rather than
+ *   accepted and left to fail a fixture later. See BH-13.
+ *
+ * Per-employee rates need no new table: scope='employee' with scope_id set to
+ * the rep id is what the existing schema already expresses, and getLaborRateAsOf
+ * already resolves employee before crew before company.
+ */
+ratesRouter.post("/profile", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+
+  // Writing a wage is not a scheduling action. Only people who may SEE
+  // compensation may set it — the read rule and the write rule are the same
+  // rule, and letting someone set a rate they cannot read back is worse than
+  // either alone.
+  if (!canViewCompensation({ role: c.var.role, can_view_compensation: c.var.canViewCompensation, is_super_admin: c.var.isSuperAdmin })) {
+    return c.json({ error: "compensation permission required" }, 403);
+  }
+
+  const body = await c.req.json<any>().catch(() => ({}));
+  const scope = String(body.scope || "company").toLowerCase();
+  if (!["company", "crew", "employee"].includes(scope)) {
+    return c.json({ error: "scope must be company, crew or employee" }, 400);
+  }
+  const scopeId = scope === "company" ? "" : String(body.scope_id || "");
+  if (scope !== "company" && !scopeId) {
+    return c.json({ error: `scope_id is required for scope=${scope}` }, 400);
+  }
+  const effectiveFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(body.effective_from || ""))
+    ? String(body.effective_from)
+    : new Date().toISOString().slice(0, 10);
+
+  const wageCents = Math.trunc(Number(body.wage_cents) || 0);
+  if (wageCents <= 0) return c.json({ error: "wage_cents must be a positive integer (cents)" }, 400);
+
+  const policy = await getTenantFinancePolicy(db, companyId);
+  const guard = validateEquipmentSupport(body.support_equipment_annual_cents, !!policy?.equipment_engine_active);
+  if (!guard.ok) return c.json({ error: guard.error }, 400);
+
+  // Close the row this one supersedes. This is the ONE update a rate row ever
+  // receives, and it changes when the row applied — never what it says.
+  const prior = await db
+    .prepare(
+      `SELECT id, effective_from FROM labor_rate_profile
+        WHERE company_id=? AND scope=? AND COALESCE(scope_id,'')=?
+          AND (effective_to IS NULL OR effective_to='')
+        ORDER BY effective_from DESC LIMIT 1`,
+    )
+    .bind(companyId, scope, scopeId)
+    .first<{ id: number; effective_from: string }>();
+
+  if (prior && prior.effective_from >= effectiveFrom) {
+    // Back-dating on top of an open row would leave two rows live for the same
+    // day and make resolution order-dependent.
+    return c.json(
+      { error: `A rate already applies from ${prior.effective_from}. Use an effective_from after that date.` },
+      409,
+    );
+  }
+
+  const int0 = (v: unknown) => Math.trunc(Number(v) || 0);
+  const statements = [] as D1PreparedStatement[];
+  if (prior) {
+    statements.push(
+      db.prepare(`UPDATE labor_rate_profile SET effective_to=? WHERE id=? AND company_id=?`)
+        .bind(effectiveFrom, prior.id, companyId),
+    );
+  }
+  statements.push(
+    db.prepare(
+      `INSERT INTO labor_rate_profile
+         (company_id, scope, scope_id, wage_cents, paid_hours, pto_hours, shop_hours, idle_hours,
+          tax_rate, comp_rate, benefits_monthly_cents,
+          support_truck_annual_cents, support_tools_annual_cents, support_equipment_annual_cents,
+          require_rate_approval, effective_from, effective_to)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+    ).bind(
+      companyId, scope, scopeId, wageCents,
+      int0(body.paid_hours), int0(body.pto_hours), int0(body.shop_hours), int0(body.idle_hours),
+      int0(body.tax_rate), int0(body.comp_rate), int0(body.benefits_monthly_cents),
+      int0(body.support_truck_annual_cents), int0(body.support_tools_annual_cents),
+      int0(body.support_equipment_annual_cents),
+      body.require_rate_approval ? 1 : 0, effectiveFrom,
+    ),
+  );
+  await db.batch(statements);
+
+  return c.json({
+    ok: true,
+    scope, scope_id: scopeId, effective_from: effectiveFrom,
+    superseded: prior ? { id: prior.id, effective_to: effectiveFrom } : null,
+  }, 201);
 });
