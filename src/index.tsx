@@ -9653,6 +9653,22 @@ app.post('/api/auth/resend-verification', requireAuth, async (c) => {
   return json(c, { sent })
 })
 
+/**
+ * A unique id for the recurring tables.
+ *
+ * Both of these are TEXT PRIMARY KEYs that were minted with `Date.now()`. Two
+ * rows created in the same millisecond collide and the second INSERT throws —
+ * which is unlikely by hand and stops being unlikely the moment a generator
+ * creates rows in a loop, which is exactly what recurring visit generation does.
+ *
+ * Same shape as the ids used everywhere else in this file: a prefix, the time
+ * for rough sortability, and enough randomness that the millisecond stops being
+ * the thing keeping rows apart.
+ */
+function recurringId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
 // ── RECURRING PLANS (D1) ──────────────────────────────────────────────────────
 
 // GET /api/recurring-plans — list all plans for company
@@ -9671,7 +9687,9 @@ app.get('/api/recurring-plans', requireAuth, async (c) => {
 app.get('/api/recurring-plans/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const planId = parseInt(c.req.param('id'))
+  // TEXT primary key — parseInt only ever worked because these ids happened to
+  // be numeric strings from Date.now(). See recurringId above.
+  const planId = c.req.param('id')
   const plan = await db.prepare(`SELECT * FROM recurring_plans WHERE id=? AND company_id=?`).bind(planId, companyId).first()
   if (!plan) return c.json({ error: 'Not found' }, 404)
   return c.json(plan)
@@ -9693,7 +9711,7 @@ app.post('/api/recurring-plans', requireAuth, async (c) => {
     service_type, frequency_days, price_type, unit_label, estimated_hours, crew_size, tasks,
   } = body
   if (!name || !frequency || !price) return c.json({ error: 'name, frequency, price required' }, 400)
-  const id = Date.now()
+  const id = recurringId('rp')
   await db.prepare(`
     INSERT INTO recurring_plans (id, company_id, name, description, frequency, frequency_unit, price, price_cents, visit_duration_minutes, services_included, is_active,
                                  service_type, frequency_days, price_type, unit_label, estimated_hours, crew_size, tasks)
@@ -9711,7 +9729,9 @@ app.post('/api/recurring-plans', requireAuth, async (c) => {
 app.put('/api/recurring-plans/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const planId = parseInt(c.req.param('id'))
+  // TEXT primary key — parseInt only ever worked because these ids happened to
+  // be numeric strings from Date.now(). See recurringId above.
+  const planId = c.req.param('id')
   const plan = await db.prepare(`SELECT id FROM recurring_plans WHERE id=? AND company_id=?`).bind(planId, companyId).first()
   if (!plan) return c.json({ error: 'Not found' }, 404)
   const body = await c.req.json() as any
@@ -9764,7 +9784,9 @@ app.get('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
   await ensurePortfolioSchema(db)
-  const subId = parseInt(c.req.param('id'))
+  // TEXT primary key — parseInt only ever worked because these ids happened to
+  // be numeric strings from Date.now(). See recurringId above.
+  const subId = c.req.param('id')
   const sub = await db.prepare(`
     SELECT cs.*, rp.name as plan_name, rp.frequency, rp.frequency_unit, rp.price_cents / 100.0 as plan_price,
            cl.name as client_display_name, cl.phone as client_phone
@@ -9796,7 +9818,7 @@ app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
   // Verify plan belongs to this company
   const plan = await db.prepare(`SELECT * FROM recurring_plans WHERE id=? AND company_id=?`).bind(plan_id, companyId).first() as any
   if (!plan) return c.json({ error: 'Plan not found' }, 404)
-  const id = Date.now()
+  const id = recurringId('cps')
   const startDate = start_date || new Date().toISOString().split('T')[0]
   const nextVisit = next_visit_date || startDate
   // price_override (if given) is fresh request input, converted once; falling
@@ -9821,7 +9843,9 @@ app.post('/api/recurring-subscriptions', requireAuth, async (c) => {
 app.put('/api/recurring-subscriptions/:id', requireAuth, async (c) => {
   const companyId = c.var.companyId as string
   const db = c.env.DB as D1Database
-  const subId = parseInt(c.req.param('id'))
+  // TEXT primary key — parseInt only ever worked because these ids happened to
+  // be numeric strings from Date.now(). See recurringId above.
+  const subId = c.req.param('id')
   const sub = await db.prepare(`SELECT id FROM client_plan_subscriptions WHERE id=? AND company_id=?`).bind(subId, companyId).first()
   if (!sub) return c.json({ error: 'Not found' }, 404)
   const body = await c.req.json() as any
@@ -12858,7 +12882,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b019">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b021">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12881,8 +12905,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260814b019"></script>
-  <script src="/js/client_portal.js?v=20260814b019"></script>  <script>
+  <script src="/js/platform_core.js?v=20260814b021"></script>
+  <script src="/js/client_portal.js?v=20260814b021"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13516,10 +13540,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b019">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b019">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b019">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b019">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b021">
+  <link rel="stylesheet" href="/js/styles.css?v=20260814b021">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b021">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b021">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14174,46 +14198,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260814b019"></script>
-<script src="/js/gw-icons.js?v=20260814b019"></script>
-<script src="/js/sales-process.js?v=20260814b019"></script>
-<script src="/js/richtext.js?v=20260814b019"></script>
-<script src="/js/db.js?v=20260814b019"></script>
-<script src="/js/data.js?v=20260814b019"></script>
-<script src="/js/reps.js?v=20260814b019"></script>
-<script src="/js/record-page.js?v=20260814b019"></script>
-<script src="/js/academy.js?v=20260814b019"></script>
-<script src="/js/task_engine.js?v=20260814b019"></script>
-<script src="/js/gw_i18n.js?v=20260814b019"></script>
-<script src="/js/app_premium.js?v=20260814b019"></script>
-<script src="/js/estimates.js?v=20260814b019"></script>
-<script src="/js/multiday.js?v=20260814b019"></script>
-<script src="/js/proposals.js?v=20260814b019"></script>
-<script src="/js/pricing.js?v=20260814b019"></script>
-<script src="/js/invoices.js?v=20260814b019"></script>
-<script src="/js/csv_import.js?v=20260814b019"></script>
-<script src="/js/onboarding.js?v=20260814b019"></script>
-<script src="/js/gw_copilot.js?v=20260814b019"></script>
-<script src="/js/groundwork_ai.js?v=20260814b019"></script>
-<script src="/js/recurring_plans.js?v=20260814b019"></script>
-<script src="/js/reviews.js?v=20260814b019"></script>
-<script src="/js/stripe.js?v=20260814b019"></script>
-<script src="/js/email.js?v=20260814b019"></script>
-<script src="/js/notifications.js?v=20260814b019"></script>
-<script src="/js/integrations.js?v=20260814b019"></script>
-<script src="/js/sms.js?v=20260814b019"></script>
-<script src="/js/calendar_sync.js?v=20260814b019"></script>
-<script src="/js/ai_followup.js?v=20260814b019"></script>
-<script src="/js/user_management.js?v=20260814b019"></script>
-<script src="/js/platform_admin.js?v=20260814b019"></script>
-<script src="/js/time_tracker.js?v=20260814b019"></script>
-<script src="/js/field_workday.js?v=20260814b019"></script>
-<script src="/js/platform_core.js?v=20260814b019"></script>
-<script src="/js/approval_engine.js?v=20260814b019"></script>
-<script src="/js/automation_engine.js?v=20260814b019"></script>
-<script src="/js/client_portal.js?v=20260814b019"></script>
-<script src="/js/field_mode.js?v=20260814b019"></script>
-<script src="/js/assets_hub.js?v=20260814b019"></script><script src="/js/marketing.js?v=20260814b019"></script><script>
+<script src="/js/gw_date.js?v=20260814b021"></script>
+<script src="/js/gw-icons.js?v=20260814b021"></script>
+<script src="/js/sales-process.js?v=20260814b021"></script>
+<script src="/js/richtext.js?v=20260814b021"></script>
+<script src="/js/db.js?v=20260814b021"></script>
+<script src="/js/data.js?v=20260814b021"></script>
+<script src="/js/reps.js?v=20260814b021"></script>
+<script src="/js/record-page.js?v=20260814b021"></script>
+<script src="/js/academy.js?v=20260814b021"></script>
+<script src="/js/task_engine.js?v=20260814b021"></script>
+<script src="/js/gw_i18n.js?v=20260814b021"></script>
+<script src="/js/app_premium.js?v=20260814b021"></script>
+<script src="/js/estimates.js?v=20260814b021"></script>
+<script src="/js/multiday.js?v=20260814b021"></script>
+<script src="/js/proposals.js?v=20260814b021"></script>
+<script src="/js/pricing.js?v=20260814b021"></script>
+<script src="/js/invoices.js?v=20260814b021"></script>
+<script src="/js/csv_import.js?v=20260814b021"></script>
+<script src="/js/onboarding.js?v=20260814b021"></script>
+<script src="/js/gw_copilot.js?v=20260814b021"></script>
+<script src="/js/groundwork_ai.js?v=20260814b021"></script>
+<script src="/js/recurring_plans.js?v=20260814b021"></script>
+<script src="/js/reviews.js?v=20260814b021"></script>
+<script src="/js/stripe.js?v=20260814b021"></script>
+<script src="/js/email.js?v=20260814b021"></script>
+<script src="/js/notifications.js?v=20260814b021"></script>
+<script src="/js/integrations.js?v=20260814b021"></script>
+<script src="/js/sms.js?v=20260814b021"></script>
+<script src="/js/calendar_sync.js?v=20260814b021"></script>
+<script src="/js/ai_followup.js?v=20260814b021"></script>
+<script src="/js/user_management.js?v=20260814b021"></script>
+<script src="/js/platform_admin.js?v=20260814b021"></script>
+<script src="/js/time_tracker.js?v=20260814b021"></script>
+<script src="/js/field_workday.js?v=20260814b021"></script>
+<script src="/js/platform_core.js?v=20260814b021"></script>
+<script src="/js/approval_engine.js?v=20260814b021"></script>
+<script src="/js/automation_engine.js?v=20260814b021"></script>
+<script src="/js/client_portal.js?v=20260814b021"></script>
+<script src="/js/field_mode.js?v=20260814b021"></script>
+<script src="/js/assets_hub.js?v=20260814b021"></script><script src="/js/marketing.js?v=20260814b021"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
