@@ -46,6 +46,7 @@ import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, 
 // ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
 import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
 import { hoursPerVisitFromRecurringData } from './recurring/estimate_hours'
+import { generateVisits, VISIT_HORIZON_DAYS, WORK_ORDER_HORIZON_DAYS } from './recurring/generate'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -9916,6 +9917,46 @@ function addDaysIso(iso: string, days: number): string {
 // actual hours, the checklist state and photos as well as the date. Repairing
 // this one would have left a second, thinner completion path for someone to wire
 // a button to later, and the two would drift apart again.
+
+
+// POST /api/recurring/generate — materialise upcoming visits, and work orders
+// for the near ones. Safe to re-run; see src/recurring/generate.ts.
+app.post('/api/recurring/generate', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  // Creates work on the calendar for the whole company. Not a field-role action.
+  if (role !== 'admin' && role !== 'office_manager' && role !== 'division_manager') {
+    return c.json({ ok: false, error: 'Admin or office manager only' }, 403)
+  }
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json().catch(() => ({}))
+  // `today` is accepted so a caller can generate a specific window deliberately,
+  // and so tests do not have to wait for tomorrow. Validated, not trusted.
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(String(b.today || '')) ? String(b.today) : new Date().toISOString().slice(0, 10)
+  try {
+    // `?? default` is wrong here and was: Number(undefined) is NaN, and ?? only
+    // catches null/undefined — so an omitted horizon became NaN, every
+    // `delta <= NaN` was false, and the generator silently produced visits and
+    // not one work order. `|| default` is wrong too, because 0 is a meaningful
+    // value for the work-order horizon: "plan the year, put nothing on the
+    // board yet". Hence an explicit finite check for that one.
+    const clamp = (v: unknown, lo: number, hi: number, dflt: number) => {
+      // null and '' must mean "not provided", not 0 — Number(null) is 0, which
+      // would silently clamp a missing visit horizon to a single day.
+      if (v === null || v === undefined || v === '') return dflt
+      const n = Number(v)
+      return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt
+    }
+    const result = await generateVisits(db, companyId, today, {
+      visitHorizonDays: clamp(b.visit_horizon_days, 1, 730, VISIT_HORIZON_DAYS),
+      workOrderHorizonDays: clamp(b.work_order_horizon_days, 0, 180, WORK_ORDER_HORIZON_DAYS),
+      subscriptionId: b.subscription_id ? String(b.subscription_id) : undefined,
+    })
+    return c.json({ ok: true, ...result })
+  } catch (e: any) {
+    return c.json({ ok: false, error: e?.message || 'Generation failed' }, 500)
+  }
+})
 
 // ── PLAN VISITS (individual visit management) ─────────────────────────────────
 
