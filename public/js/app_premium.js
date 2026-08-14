@@ -18173,10 +18173,14 @@ function _sbTimelineHtml(sb, visibleWOs, allCrews) {
       ${today===date && nowMinutes>=start && nowMinutes<=end ? `<b class="sb-now-line" style="top:${(nowMinutes-start)*ppm}px"></b>` : ''}
       ${jobs.map(w=>{
         const r=_sbEventRange(w), top=Math.max(0,(r.start-start)*ppm), h=Math.max(32,Math.min(height-top,r.duration*ppm));
-        const color=w.is_multiday||w.md_day_number?_sbMdColor(w.id):(w.crew_color||cr.color);
-        const statusColor=_sbStatusColor(w.status);
+        // Crew colour, always. This used to swap to a per-job hash colour for
+        // multi-day jobs, so the same visual channel meant "which crew" for one
+        // card and "which multi-day plan" for the next one beside it.
+        // Multi-day now gets its own channel: a class, and its own inset ring.
+        const color=w.crew_color||cr.color;
+        const isMdEvent=!!(w.is_multiday||w.md_day_number);
         const conflict=window._sbConflicts?.get(`${w.id}:${w.md_day_number||0}`);
-        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--status-color:${statusColor}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
+        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}${isMdEvent?' sb-time-event--multiday':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--md-color:${isMdEvent?_sbMdColor(w.id):'transparent'}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
           <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
         </article>`;
       }).join('')}
@@ -18230,9 +18234,8 @@ function _sbJobCard(wo, crews, draggable) {
   const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
   const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
-  const statusColor = _sbStatusColor(wo.status);
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -18470,9 +18473,15 @@ function _sbRender() {
       const isToday = iso === today;
       const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
       const dots = jobs.slice(0,5).map(wo => {
-        // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
+        // ONE meaning per channel: the dot is the CREW, exactly as this
+        // comment always claimed. It was calling _sbStatusColor, so a month cell
+        // showed status in its dots and crew in its chips three lines later,
+        // while mobile month used crew for both — three meanings for a dot
+        // across three views, with no legend anywhere. Status still shows,
+        // through the --hold / --cancelled modifier classes and the title.
         const isMd = !!(wo.is_multiday || wo.md_day_number);
-        const dotColor = _sbStatusColor(wo.status);        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
+        const dotColor = wo.crew_color || (crews||[]).find(c=>c.id===(wo.md_crew_id||wo.crew_id))?.color || '#94a3b8';
+        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
         return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}${isMd ? ' sb-month-dot--multiday' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${escapeHtml(mdTitle)}${wo.status==='hold' ? ' - HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
@@ -19601,10 +19610,6 @@ window._sbOpenVisitModal = async function(woId) {
       <!-- Action Bar -->
       <div class="sb-modal-actions">
         <div class="sb-modal-actions-left">
-          <button class="sb-action-btn sb-action-skip" onclick="_sbSkipVisit('${wo.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            Skip
-          </button>
           <button class="sb-action-btn" style="gap:5px" onclick="_sbDuplicateJob('${wo.id}')">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
             Duplicate
@@ -19615,14 +19620,24 @@ window._sbOpenVisitModal = async function(woId) {
           ${wo.opp_id ? `<button class="sb-action-btn sb-action-upsell" onclick="_sbUpsell('${wo.opp_id}')">Up-sell</button>` : ''}
         </div>
         <div class="sb-modal-actions-right">
-          <button class="sb-action-btn sb-action-delete" onclick="_sbDeleteVisit('${wo.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-            Delete
-          </button>
-          <button class="rp-btn" onclick="_sbSaveVisit('${wo.id}',false)">Save</button>
+          <!-- Delete Job used to sit here, immediately beside Save, with only a
+               flex gap between "keep my edits" and "destroy the job and every
+               day, photo and time entry hanging off it". It now lives behind
+               the overflow below, and this drawer offers the two reversible
+               things a scheduler actually wants instead: take the day off the
+               calendar, or call the day off. -->
+          <div class="sb-overflow">
+            <button class="sb-action-btn" aria-haspopup="menu" aria-expanded="false" onclick="_sbToggleOverflow(this)" title="More actions">···</button>
+            <div class="sb-overflow-menu" hidden>
+              <button onclick="_sbUnscheduleDay('${wo.id}')">Unschedule day<small>Back to the Job Pool. Keeps the crew.</small></button>
+              <button onclick="_sbSkipVisit('${wo.id}')">Cancel day<small>Marks it cancelled. The job stays.</small></button>
+              <button class="sb-overflow-danger" onclick="_sbDeleteVisit('${wo.id}')">Delete job<small>Permanent. Takes its days, photos and time entries.</small></button>
+            </div>
+          </div>
+          <button class="rp-btn" onclick="_sbSaveVisit('${wo.id}',false)">Save changes</button>
           <button class="rp-btn rp-btn--primary" id="sb-complete-btn" onclick="_sbCompleteVisit('${wo.id}','${wo.type||'Service'}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
-            Complete
+            Mark day complete
           </button>
         </div>
       </div>
@@ -19720,6 +19735,47 @@ window._sbSaveVisit = async function(woId, andComplete) {
     }
   } catch(e) {
     showToast('Save failed: '+e.message,'error');
+  }
+};
+
+window._sbToggleOverflow = function(btn) {
+  const menu = btn.parentElement.querySelector('.sb-overflow-menu');
+  const open = menu.hidden;
+  document.querySelectorAll('.sb-overflow-menu').forEach(m => { m.hidden = true; });
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if (open) {
+    // One-shot outside-click close. Registered on the next frame so the click
+    // that opened the menu does not immediately close it again.
+    setTimeout(() => document.addEventListener('click', function away(ev) {
+      if (menu.parentElement.contains(ev.target)) return;
+      menu.hidden = true; btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', away);
+    }), 0);
+  }
+};
+
+/**
+ * Take this day off the calendar, keeping the job and its crew.
+ *
+ * The reversible counterpart to Delete. DELETE /days/:id/schedule clears the
+ * date and keeps the day row and its people, so the job returns to the Job Pool
+ * with its staffing intact and re-scheduling does not start from an empty crew.
+ */
+window._sbUnscheduleDay = async function(woId) {
+  const wo = (window._sbState.workOrders || []).find(w => w.id === woId);
+  const dayId = wo?.md_day_id;
+  if (!dayId) return showToast('This job is not on the calendar', 'error');
+  if (wo.schedule_locked) return showToast('Unlock this visit before unscheduling it', 'error');
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/schedule`, { method: 'DELETE', credentials: 'include' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || 'Could not unschedule');
+    showToast('Moved to the Job Pool', 'success');
+    _sbCloseModal();
+    await _sbRefresh();
+  } catch (e) {
+    showToast((e && e.message) || 'Could not unschedule', 'error');
   }
 };
 
