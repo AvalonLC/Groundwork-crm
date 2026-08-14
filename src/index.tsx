@@ -47,6 +47,8 @@ import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, 
 import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
 import { hoursPerVisitFromRecurringData } from './recurring/estimate_hours'
 import { generateVisits, VISIT_HORIZON_DAYS, WORK_ORDER_HORIZON_DAYS } from './recurring/generate'
+import { shouldLockRate } from './api/labor_variance'
+import { resolveLaborRate } from './api/rates'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -6959,6 +6961,7 @@ app.post('/api/estimates/:id/send', requireAuth, async (c) => {
     if (!emailed && !fallback) return c.json({ ok: false, error: 'Email delivery failed' }, 500)
   }
 
+  await lockEstimateLaborRate(db, companyId, c.req.param('id'), 'sent')
   await db.prepare(`UPDATE estimates SET status='sent', sent_at=datetime('now'), send_method=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(b.method||'email', estId, companyId).run()
   return c.json({ ok: true, emailed, fallback, to: toEmail || null, portal_link: portalLink })
@@ -6984,6 +6987,7 @@ async function _woFlipHolds(db: D1Database, estimateId: string, companyId: strin
 // POST /api/estimates/:id/accept — portal or internal accept
 app.post('/api/estimates/:id/accept', requireAuth, async (c) => {
   const db = c.env.DB as D1Database
+  await lockEstimateLaborRate(db, companyId, c.req.param('id'), 'accepted')
   const r = await db.prepare(`UPDATE estimates SET status='accepted', accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND company_id=?`)
     .bind(c.req.param('id'), c.var.companyId as string).run()
   if (!r.meta.changes) return c.json({ ok: false, error: 'Not found' }, 404)
@@ -7267,6 +7271,41 @@ app.put('/api/estimate-defaults', requireAuth, async (c) => {
     .bind(`${companyId}:estimate_defaults`, JSON.stringify(merged)).run()
   return c.json({ ok: true })
 })
+
+
+/**
+ * Freeze the labor rate an estimate was priced at, the first time it reaches the
+ * customer.
+ *
+ * Tyler's rule: a sent or approved estimate keeps its original blended labor
+ * rate, and customer pricing is never silently recalculated. That needs the rate
+ * recorded at the moment it stops moving — drafts follow current rates, and
+ * re-sending never re-locks (see shouldLockRate).
+ *
+ * A missing rate profile is not an error. The tenant may not have configured one
+ * yet, in which case there is nothing to freeze and variance later reports as
+ * unknown rather than as zero.
+ */
+async function lockEstimateLaborRate(db: D1Database, companyId: string, estimateId: string, nextStatus: string) {
+  try {
+    const est: any = await db.prepare(`SELECT locked_labor_rate FROM estimates WHERE id=? AND company_id=?`)
+      .bind(estimateId, companyId).first()
+    if (!est || !shouldLockRate(nextStatus, est.locked_labor_rate)) return
+    const resolved = await resolveLaborRate(db, {
+      company_id: companyId,
+      employee_id: '',                       // company-scope rate: what an estimate is priced at
+      work_date: new Date().toISOString().slice(0, 10),
+    })
+    if (!resolved || !resolved.resolved_rate) return
+    await db.prepare(
+      `UPDATE estimates SET locked_labor_rate=?, estimate_rate_locked_at=datetime('now') WHERE id=? AND company_id=?`,
+    ).bind(Math.round(resolved.resolved_rate), estimateId, companyId).run()
+  } catch (_) {
+    // Never block sending an estimate because a rate could not be resolved.
+    // The estimate going out matters more than the bookkeeping around it, and
+    // an unlocked rate degrades to "variance unknown", which is honest.
+  }
+}
 
 // ── Convert estimate → job (work order + optional schedule) ──
 app.post('/api/estimates/:id/convert-to-job', requireAuth, async (c) => {
@@ -12927,6 +12966,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b027">  <style>
   <link rel="stylesheet" href="/js/premium.css?v=20260814b023">  <style>
   <link rel="stylesheet" href="/js/premium.css?v=20260814b025">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12951,6 +12991,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
+  <script src="/js/platform_core.js?v=20260814b027"></script>
+  <script src="/js/client_portal.js?v=20260814b027"></script>  <script>
   <script src="/js/platform_core.js?v=20260814b023"></script>
   <script src="/js/client_portal.js?v=20260814b023"></script>  <script>
   <script src="/js/platform_core.js?v=20260814b025"></script>
@@ -13588,6 +13630,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b027">
+  <link rel="stylesheet" href="/js/styles.css?v=20260814b027">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b027">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b027">  <style>
   <link rel="stylesheet" href="/js/premium.css?v=20260814b023">
   <link rel="stylesheet" href="/js/styles.css?v=20260814b023">
   <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b023">
@@ -14250,6 +14296,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
+<script src="/js/gw_date.js?v=20260814b027"></script>
+<script src="/js/gw-icons.js?v=20260814b027"></script>
+<script src="/js/sales-process.js?v=20260814b027"></script>
+<script src="/js/richtext.js?v=20260814b027"></script>
+<script src="/js/db.js?v=20260814b027"></script>
+<script src="/js/data.js?v=20260814b027"></script>
+<script src="/js/reps.js?v=20260814b027"></script>
+<script src="/js/record-page.js?v=20260814b027"></script>
+<script src="/js/academy.js?v=20260814b027"></script>
+<script src="/js/task_engine.js?v=20260814b027"></script>
+<script src="/js/gw_i18n.js?v=20260814b027"></script>
+<script src="/js/app_premium.js?v=20260814b027"></script>
+<script src="/js/estimates.js?v=20260814b027"></script>
+<script src="/js/multiday.js?v=20260814b027"></script>
+<script src="/js/proposals.js?v=20260814b027"></script>
+<script src="/js/pricing.js?v=20260814b027"></script>
+<script src="/js/invoices.js?v=20260814b027"></script>
+<script src="/js/csv_import.js?v=20260814b027"></script>
+<script src="/js/onboarding.js?v=20260814b027"></script>
+<script src="/js/gw_copilot.js?v=20260814b027"></script>
+<script src="/js/groundwork_ai.js?v=20260814b027"></script>
+<script src="/js/recurring_plans.js?v=20260814b027"></script>
+<script src="/js/reviews.js?v=20260814b027"></script>
+<script src="/js/stripe.js?v=20260814b027"></script>
+<script src="/js/email.js?v=20260814b027"></script>
+<script src="/js/notifications.js?v=20260814b027"></script>
+<script src="/js/integrations.js?v=20260814b027"></script>
+<script src="/js/sms.js?v=20260814b027"></script>
+<script src="/js/calendar_sync.js?v=20260814b027"></script>
+<script src="/js/ai_followup.js?v=20260814b027"></script>
+<script src="/js/user_management.js?v=20260814b027"></script>
+<script src="/js/platform_admin.js?v=20260814b027"></script>
+<script src="/js/time_tracker.js?v=20260814b027"></script>
+<script src="/js/field_workday.js?v=20260814b027"></script>
+<script src="/js/platform_core.js?v=20260814b027"></script>
+<script src="/js/approval_engine.js?v=20260814b027"></script>
+<script src="/js/automation_engine.js?v=20260814b027"></script>
+<script src="/js/client_portal.js?v=20260814b027"></script>
+<script src="/js/field_mode.js?v=20260814b027"></script>
+<script src="/js/assets_hub.js?v=20260814b027"></script><script src="/js/marketing.js?v=20260814b027"></script><script>
 <script src="/js/gw_date.js?v=20260814b023"></script>
 <script src="/js/gw-icons.js?v=20260814b023"></script>
 <script src="/js/sales-process.js?v=20260814b023"></script>

@@ -18,6 +18,14 @@ export interface Stop {
   lng?: number | null;
   /** Time on site, not travel. */
   duration_minutes?: number | null;
+  /**
+   * Travel to this stop, once a provider supplies it. Null until then.
+   *
+   * summarizeRoute has always read this and the interface never declared it —
+   * the test papered over the gap with `as Partial<Stop>`, and typecheck was not
+   * covering src/recurring at all, so nothing objected. Declared now.
+   */
+  drive_minutes?: number | null;
 }
 
 /**
@@ -65,6 +73,9 @@ export function reorderStops<T extends Stop>(
   const target = Math.max(1, Math.min(stops.length, Math.trunc(toPosition || 1)));
   const next = stops.slice();
   const [moved] = next.splice(from, 1);
+  // findIndex above guarantees this, but the compiler cannot see that and a
+  // non-null assertion would hide a real bug if the guard ever moved.
+  if (!moved) return stops;
   next.splice(target - 1, 0, moved);
   return next.map((s, i) => ({ ...s, position: i + 1 }));
 }

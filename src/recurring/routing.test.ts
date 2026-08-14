@@ -87,7 +87,7 @@ describe('route totals', () => {
     // Partial drive times summed would read as a complete route total and be
     // short by however many legs are missing.
     const partial = summarizeRoute([
-      stop('a', { drive_minutes: 10 } as Partial<Stop>), stop('b'),
+      stop('a', { drive_minutes: 10 }), stop('b'),
     ]);
     expect(partial.drive_minutes).toBeNull();
     expect(partial.total_minutes).toBeNull();
