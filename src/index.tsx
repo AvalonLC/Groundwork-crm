@@ -46,6 +46,7 @@ import { CAMPAIGN_DRAFT_SCHEMA, COPILOT_SYSTEM_PROMPT, normalizeDraft, runTool, 
 // ── Scheduling engine — mounted sub-router (see src/scheduling/) ─────────────
 import { schedulingRouter, ensurePrimaryDay, syncDayEmployees, syncPrimaryDayFromWorkOrder } from './scheduling/api'
 import { hoursPerVisitFromRecurringData } from './recurring/estimate_hours'
+import { generateVisits, VISIT_HORIZON_DAYS, WORK_ORDER_HORIZON_DAYS } from './recurring/generate'
 
 
 type Bindings = { DB: D1Database; MEDIA: R2Bucket; CRON_SECRET?: string; SENDGRID_API_KEY?: string; OPENAI_API_KEY?: string; OPENAI_BASE_URL?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
@@ -9893,6 +9894,46 @@ function addDaysIso(iso: string, days: number): string {
 // this one would have left a second, thinner completion path for someone to wire
 // a button to later, and the two would drift apart again.
 
+
+// POST /api/recurring/generate — materialise upcoming visits, and work orders
+// for the near ones. Safe to re-run; see src/recurring/generate.ts.
+app.post('/api/recurring/generate', requireAuth, async (c) => {
+  const companyId = c.var.companyId as string
+  const role = c.var.role as string
+  // Creates work on the calendar for the whole company. Not a field-role action.
+  if (role !== 'admin' && role !== 'office_manager' && role !== 'division_manager') {
+    return c.json({ ok: false, error: 'Admin or office manager only' }, 403)
+  }
+  const db = c.env.DB as D1Database
+  const b: any = await c.req.json().catch(() => ({}))
+  // `today` is accepted so a caller can generate a specific window deliberately,
+  // and so tests do not have to wait for tomorrow. Validated, not trusted.
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(String(b.today || '')) ? String(b.today) : new Date().toISOString().slice(0, 10)
+  try {
+    // `?? default` is wrong here and was: Number(undefined) is NaN, and ?? only
+    // catches null/undefined — so an omitted horizon became NaN, every
+    // `delta <= NaN` was false, and the generator silently produced visits and
+    // not one work order. `|| default` is wrong too, because 0 is a meaningful
+    // value for the work-order horizon: "plan the year, put nothing on the
+    // board yet". Hence an explicit finite check for that one.
+    const clamp = (v: unknown, lo: number, hi: number, dflt: number) => {
+      // null and '' must mean "not provided", not 0 — Number(null) is 0, which
+      // would silently clamp a missing visit horizon to a single day.
+      if (v === null || v === undefined || v === '') return dflt
+      const n = Number(v)
+      return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt
+    }
+    const result = await generateVisits(db, companyId, today, {
+      visitHorizonDays: clamp(b.visit_horizon_days, 1, 730, VISIT_HORIZON_DAYS),
+      workOrderHorizonDays: clamp(b.work_order_horizon_days, 0, 180, WORK_ORDER_HORIZON_DAYS),
+      subscriptionId: b.subscription_id ? String(b.subscription_id) : undefined,
+    })
+    return c.json({ ok: true, ...result })
+  } catch (e: any) {
+    return c.json({ ok: false, error: e?.message || 'Generation failed' }, 500)
+  }
+})
+
 // ── PLAN VISITS (individual visit management) ─────────────────────────────────
 
 // GET /api/plan-visits — list visits (filter by subscription_id, status, date range)
@@ -12858,7 +12899,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b019">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b021">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12881,8 +12922,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260814b019"></script>
-  <script src="/js/client_portal.js?v=20260814b019"></script>  <script>
+  <script src="/js/platform_core.js?v=20260814b021"></script>
+  <script src="/js/client_portal.js?v=20260814b021"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13516,10 +13557,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260814b019">
-  <link rel="stylesheet" href="/js/styles.css?v=20260814b019">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b019">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b019">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b021">
+  <link rel="stylesheet" href="/js/styles.css?v=20260814b021">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b021">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b021">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14174,46 +14215,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260814b019"></script>
-<script src="/js/gw-icons.js?v=20260814b019"></script>
-<script src="/js/sales-process.js?v=20260814b019"></script>
-<script src="/js/richtext.js?v=20260814b019"></script>
-<script src="/js/db.js?v=20260814b019"></script>
-<script src="/js/data.js?v=20260814b019"></script>
-<script src="/js/reps.js?v=20260814b019"></script>
-<script src="/js/record-page.js?v=20260814b019"></script>
-<script src="/js/academy.js?v=20260814b019"></script>
-<script src="/js/task_engine.js?v=20260814b019"></script>
-<script src="/js/gw_i18n.js?v=20260814b019"></script>
-<script src="/js/app_premium.js?v=20260814b019"></script>
-<script src="/js/estimates.js?v=20260814b019"></script>
-<script src="/js/multiday.js?v=20260814b019"></script>
-<script src="/js/proposals.js?v=20260814b019"></script>
-<script src="/js/pricing.js?v=20260814b019"></script>
-<script src="/js/invoices.js?v=20260814b019"></script>
-<script src="/js/csv_import.js?v=20260814b019"></script>
-<script src="/js/onboarding.js?v=20260814b019"></script>
-<script src="/js/gw_copilot.js?v=20260814b019"></script>
-<script src="/js/groundwork_ai.js?v=20260814b019"></script>
-<script src="/js/recurring_plans.js?v=20260814b019"></script>
-<script src="/js/reviews.js?v=20260814b019"></script>
-<script src="/js/stripe.js?v=20260814b019"></script>
-<script src="/js/email.js?v=20260814b019"></script>
-<script src="/js/notifications.js?v=20260814b019"></script>
-<script src="/js/integrations.js?v=20260814b019"></script>
-<script src="/js/sms.js?v=20260814b019"></script>
-<script src="/js/calendar_sync.js?v=20260814b019"></script>
-<script src="/js/ai_followup.js?v=20260814b019"></script>
-<script src="/js/user_management.js?v=20260814b019"></script>
-<script src="/js/platform_admin.js?v=20260814b019"></script>
-<script src="/js/time_tracker.js?v=20260814b019"></script>
-<script src="/js/field_workday.js?v=20260814b019"></script>
-<script src="/js/platform_core.js?v=20260814b019"></script>
-<script src="/js/approval_engine.js?v=20260814b019"></script>
-<script src="/js/automation_engine.js?v=20260814b019"></script>
-<script src="/js/client_portal.js?v=20260814b019"></script>
-<script src="/js/field_mode.js?v=20260814b019"></script>
-<script src="/js/assets_hub.js?v=20260814b019"></script><script src="/js/marketing.js?v=20260814b019"></script><script>
+<script src="/js/gw_date.js?v=20260814b021"></script>
+<script src="/js/gw-icons.js?v=20260814b021"></script>
+<script src="/js/sales-process.js?v=20260814b021"></script>
+<script src="/js/richtext.js?v=20260814b021"></script>
+<script src="/js/db.js?v=20260814b021"></script>
+<script src="/js/data.js?v=20260814b021"></script>
+<script src="/js/reps.js?v=20260814b021"></script>
+<script src="/js/record-page.js?v=20260814b021"></script>
+<script src="/js/academy.js?v=20260814b021"></script>
+<script src="/js/task_engine.js?v=20260814b021"></script>
+<script src="/js/gw_i18n.js?v=20260814b021"></script>
+<script src="/js/app_premium.js?v=20260814b021"></script>
+<script src="/js/estimates.js?v=20260814b021"></script>
+<script src="/js/multiday.js?v=20260814b021"></script>
+<script src="/js/proposals.js?v=20260814b021"></script>
+<script src="/js/pricing.js?v=20260814b021"></script>
+<script src="/js/invoices.js?v=20260814b021"></script>
+<script src="/js/csv_import.js?v=20260814b021"></script>
+<script src="/js/onboarding.js?v=20260814b021"></script>
+<script src="/js/gw_copilot.js?v=20260814b021"></script>
+<script src="/js/groundwork_ai.js?v=20260814b021"></script>
+<script src="/js/recurring_plans.js?v=20260814b021"></script>
+<script src="/js/reviews.js?v=20260814b021"></script>
+<script src="/js/stripe.js?v=20260814b021"></script>
+<script src="/js/email.js?v=20260814b021"></script>
+<script src="/js/notifications.js?v=20260814b021"></script>
+<script src="/js/integrations.js?v=20260814b021"></script>
+<script src="/js/sms.js?v=20260814b021"></script>
+<script src="/js/calendar_sync.js?v=20260814b021"></script>
+<script src="/js/ai_followup.js?v=20260814b021"></script>
+<script src="/js/user_management.js?v=20260814b021"></script>
+<script src="/js/platform_admin.js?v=20260814b021"></script>
+<script src="/js/time_tracker.js?v=20260814b021"></script>
+<script src="/js/field_workday.js?v=20260814b021"></script>
+<script src="/js/platform_core.js?v=20260814b021"></script>
+<script src="/js/approval_engine.js?v=20260814b021"></script>
+<script src="/js/automation_engine.js?v=20260814b021"></script>
+<script src="/js/client_portal.js?v=20260814b021"></script>
+<script src="/js/field_mode.js?v=20260814b021"></script>
+<script src="/js/assets_hub.js?v=20260814b021"></script><script src="/js/marketing.js?v=20260814b021"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that
