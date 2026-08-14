@@ -348,6 +348,9 @@ export async function syncDayEmployees(
   const days = dayRes.results || [];
   if (!days.length) return 0;
 
+  // Only read once we know there is work to do, and only for the fallback below.
+  const { productive_minutes_per_day: productiveMinutes } = await loadWorkdaySettings(db, companyId);
+
   // One read for every crew involved, rather than one per day.
   const crewIds = [...new Set(days.map((d: any) => s(d.crew_id || '')).filter(Boolean))];
   const rosterByCrew = new Map<string, any[]>();
@@ -392,12 +395,25 @@ export async function syncDayEmployees(
       );
     }
 
+    // How much labor to plan for each person on this day.
+    //
+    // The day's own calendar duration wins, then the job's. The last resort used
+    // to be 0, which is a claim nobody would make out loud: it says this crew is
+    // on site and doing nothing. A job scheduled straight off the Job Pool has no
+    // stated duration yet, so every person landed at 0 and the crew read as
+    // completely idle on a day it was fully booked — capacity was 0% next to a
+    // grid full of cards.
+    //
+    // Falling back to the company's productive day is the honest default: you
+    // have put a crew on a job for a day, and absent any other information they
+    // are on it for the day. Correct it by resizing the block or by tuning a
+    // person's minutes, both of which this function preserves.
     const defaultMinutes =
       day.scheduled_duration_minutes != null
         ? int(day.scheduled_duration_minutes)
         : day.duration_hours != null
           ? Math.round(Number(day.duration_hours) * 60)
-          : 0;
+          : productiveMinutes;
 
     for (const rep of desired) {
       if (existing.has(rep.rep_id)) continue; // keeps hand-tuned planned_minutes
@@ -650,6 +666,18 @@ schedulingRouter.get('/backlog', async (c) => {
       budget_minutes: wo.budget_minutes == null ? null : int(wo.budget_minutes),
       ...(stripMoney ? {} : { value_cents: int(wo.amount_est_cents, 0) }),
     };
+    // Order matters, and 'hold' deliberately wins.
+    //
+    // The revamp plan proposed reversing this so a held job with no date would
+    // report as needs_scheduling rather than being "swallowed" by tentative.
+    // That is wrong, and the existing test caught it. 'hold' is what
+    // estimate -> work-order conversion writes when the client has NOT accepted
+    // yet (see src/index.tsx, the traffic-light hold). Surfacing unsold work
+    // under "needs scheduling" would invite someone to commit a crew to a job
+    // the customer has not agreed to buy.
+    //
+    // Tentative first is the honest answer: the next action on that job is to
+    // close the sale, not to find it a Tuesday.
     if (wo.status === 'hold') buckets.tentative.push(card);
     else if (!s(wo.scheduled_date)) buckets.needs_scheduling.push(card);
     else buckets.needs_crew.push(card);

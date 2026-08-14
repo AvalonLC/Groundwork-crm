@@ -515,6 +515,60 @@ describe('the single atomic call the board now makes', () => {
   });
 });
 
+describe('the Job Pool', () => {
+  it('P1-27 a job scheduled with no stated duration still consumes capacity', async () => {
+    // Found in the browser: dragging a job out of the pool put the right people
+    // on it and left the crew reading 0% — capacity said idle next to a grid
+    // with a card on it. A job off the pool has no calendar duration yet, and
+    // planned_minutes defaulted to 0, which claims the crew is on site doing
+    // nothing. It now falls back to the company's productive day.
+    const woId = await createJob({ scheduled_date: null, crew_id: null, scheduled_duration_minutes: null });
+    await req(`/api/scheduling/work-orders/${woId}/schedule`, cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: BLUE }),
+    });
+
+    const day = await dayRow(woId);
+    const rows = await db().prepare(`SELECT planned_minutes FROM wo_day_employees WHERE wo_day_id=?`).bind(day.id).all<any>();
+    expect(rows.results).toHaveLength(2);
+    expect(rows.results!.every((r: any) => r.planned_minutes === 450)).toBe(true);
+
+    const week = (await (await req(`/api/scheduling/week?start=${MONDAY}`, cookie)).json()) as any;
+    const blue = week.crews.find((c: any) => c.id === BLUE);
+    expect(blue.week_planned_minutes).toBe(900); // two people x a productive day
+    expect(blue.week_utilization_pct).toBeGreaterThan(0);
+  });
+
+  it('P1-28 the fallback follows the tenant setting, not a hardcoded 450', async () => {
+    await req('/api/workday-settings', cookie, { method: 'PUT', body: body({ productive_minutes_per_day: 400 }) });
+    const woId = await createJob({ scheduled_date: null, crew_id: null, scheduled_duration_minutes: null });
+    await req(`/api/scheduling/work-orders/${woId}/schedule`, cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: BLUE }),
+    });
+    const day = await dayRow(woId);
+    const row = await db().prepare(`SELECT planned_minutes FROM wo_day_employees WHERE wo_day_id=? LIMIT 1`).bind(day.id).first<any>();
+    expect(row.planned_minutes).toBe(400);
+  });
+
+  it('P1-29 unscheduling returns a job to the pool without losing its people', async () => {
+    // DELETE /days/:id/schedule has existed since the router was written and had
+    // no UI at all — there was no way to take a job off the grid short of
+    // editing it. It clears the date and keeps the day row and its staffing, so
+    // re-scheduling does not start from an empty crew.
+    const woId = await createJob();
+    const day = await dayRow(woId);
+    expect(await peopleOn(day.id)).toEqual(['wp-anna', 'wp-ben']);
+
+    const res = await req(`/api/scheduling/days/${day.id}/schedule`, cookie, { method: 'DELETE' });
+    expect(res.status).toBe(200);
+
+    expect((await woRow(woId)).scheduled_date).toBeNull();
+    expect(await peopleOn(day.id)).toEqual(['wp-anna', 'wp-ben']); // staffing survives
+
+    const backlog = (await (await req('/api/scheduling/backlog', cookie)).json()) as any;
+    expect(backlog.needs_scheduling.map((w: any) => w.work_order_id)).toContain(woId);
+  });
+});
+
 describe('GET /api/work-orders paging and shape', () => {
   it('P1-16 one row per job by default, one row per day on request', async () => {
     // The wo_days join had no is_primary predicate, so a five-day job came back
