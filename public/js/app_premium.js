@@ -18232,7 +18232,7 @@ function _sbJobCard(wo, crews, draggable) {
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   const statusColor = _sbStatusColor(wo.status);
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
