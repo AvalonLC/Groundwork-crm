@@ -14,6 +14,9 @@
  */
 
 import { Hono } from 'hono';
+import { computeLaborVariance } from '../api/labor_variance';
+import { canViewCompensation } from '../api/compensation';
+import { resolveLaborRate } from '../api/rates';
 import {
   DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
   parseWorkingDays,
@@ -102,10 +105,12 @@ async function loadWorkdaySettings(db: D1Database, companyId: string): Promise<W
     shift_end: row?.shift_end ?? '17:00',
     // A NULL here would make every crew's capacity 0 and render 0% everywhere,
     // which is the exact bug this module exists to remove.
-    productive_minutes_per_day:
-      Number(row?.productive_minutes_per_day) > 0
-        ? Number(row.productive_minutes_per_day)
-        : DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
+    // Read once and narrow, rather than checking row?.x and then reading row.x —
+    // which typechecks only because nothing was checking this file.
+    productive_minutes_per_day: (() => {
+      const configured = Number(row?.productive_minutes_per_day);
+      return configured > 0 ? configured : DEFAULT_PRODUCTIVE_MINUTES_PER_DAY;
+    })(),
   };
 }
 
@@ -643,7 +648,9 @@ schedulingRouter.get('/week', async (c) => {
   }
   for (const [key, v] of repDay) {
     if (v.days.size < 2) continue;
-    const [rep_id, date] = key.split('|');
+    // split() is typed as possibly-undefined per element; the key is built
+    // immediately above as `${rep_id}|${date}` so both halves exist.
+    const [rep_id = '', date = ''] = key.split('|');
     warnings.push({
       type: 'employee_double_booked', severity: 'error', date, rep_id,
       message: `${v.name} is on ${v.days.size} jobs on this day`,
@@ -721,7 +728,10 @@ schedulingRouter.get('/backlog', async (c) => {
     .bind(companyId, typeFilter, typeFilter, limit)
     .all<any>();
 
-  const buckets: Record<string, any[]> = { needs_scheduling: [], needs_crew: [], tentative: [] };
+  // A concrete shape, not Record<string, any[]>: the index signature made every
+  // bucket possibly-undefined, so `buckets.tentative.push(...)` was unchecked.
+  const buckets: { needs_scheduling: any[]; needs_crew: any[]; tentative: any[] } =
+    { needs_scheduling: [], needs_crew: [], tentative: [] };
   for (const wo of res.results || []) {
     const card = {
       work_order_id: wo.id,

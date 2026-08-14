@@ -22,6 +22,8 @@
     "src/ui/**/*.tsx",
     "src/ui/**/*.ts",
     "src/bridge/**/*.ts",
+    "src/scheduling/**/*.ts",
+    "src/recurring/**/*.ts",
     "scripts/**/*.js"
   ],
   // Test files reference implementation modules from later waves/tasks (e.g.
