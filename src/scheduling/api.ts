@@ -14,6 +14,9 @@
  */
 
 import { Hono } from 'hono';
+import { computeLaborVariance } from '../api/labor_variance';
+import { canViewCompensation } from '../api/compensation';
+import { resolveLaborRate } from '../api/rates';
 import { normalizeStopOrder, reorderStops, summarizeRoute, fromE7 } from '../recurring/routing';
 import {
   DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
@@ -103,10 +106,12 @@ async function loadWorkdaySettings(db: D1Database, companyId: string): Promise<W
     shift_end: row?.shift_end ?? '17:00',
     // A NULL here would make every crew's capacity 0 and render 0% everywhere,
     // which is the exact bug this module exists to remove.
-    productive_minutes_per_day:
-      Number(row?.productive_minutes_per_day) > 0
-        ? Number(row.productive_minutes_per_day)
-        : DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
+    // Read once and narrow, rather than checking row?.x and then reading row.x —
+    // which typechecks only because nothing was checking this file.
+    productive_minutes_per_day: (() => {
+      const configured = Number(row?.productive_minutes_per_day);
+      return configured > 0 ? configured : DEFAULT_PRODUCTIVE_MINUTES_PER_DAY;
+    })(),
   };
 }
 
@@ -644,7 +649,9 @@ schedulingRouter.get('/week', async (c) => {
   }
   for (const [key, v] of repDay) {
     if (v.days.size < 2) continue;
-    const [rep_id, date] = key.split('|');
+    // split() is typed as possibly-undefined per element; the key is built
+    // immediately above as `${rep_id}|${date}` so both halves exist.
+    const [rep_id = '', date = ''] = key.split('|');
     warnings.push({
       type: 'employee_double_booked', severity: 'error', date, rep_id,
       message: `${v.name} is on ${v.days.size} jobs on this day`,
@@ -829,7 +836,10 @@ schedulingRouter.get('/backlog', async (c) => {
     .bind(companyId, typeFilter, typeFilter, limit)
     .all<any>();
 
-  const buckets: Record<string, any[]> = { needs_scheduling: [], needs_crew: [], tentative: [] };
+  // A concrete shape, not Record<string, any[]>: the index signature made every
+  // bucket possibly-undefined, so `buckets.tentative.push(...)` was unchecked.
+  const buckets: { needs_scheduling: any[]; needs_crew: any[]; tentative: any[] } =
+    { needs_scheduling: [], needs_crew: [], tentative: [] };
   for (const wo of res.results || []) {
     const card = {
       work_order_id: wo.id,
@@ -1278,7 +1288,10 @@ schedulingRouter.get('/work-orders/:id/hours', async (c) => {
 
   const wo = await db
     .prepare(
-      `SELECT id, wo_number, title, budget_minutes, duration_hours
+      // estimate_id and scheduled_date are for the labor variance below: the
+      // estimate carries the frozen rate this job was sold at, and the date is
+      // which day's rates to cost it against.
+      `SELECT id, wo_number, title, budget_minutes, duration_hours, estimate_id, scheduled_date
          FROM work_orders WHERE id=? AND company_id=? LIMIT 1`,
     )
     .bind(workOrderId, companyId)
@@ -1329,5 +1342,59 @@ schedulingRouter.get('/work-orders/:id/hours', async (c) => {
     break_minutes: grossMinutes - actualMinutes,
     variance_minutes: variance,
     over_budget: variance != null && variance > 0,
+    // What the labor is COSTING against what it was SOLD at.
+    //
+    // Money, so it is stripped for anyone without the compensation permission —
+    // the hours themselves stay visible, because a foreman needs to know a job
+    // is running long without being told what the crew is paid.
+    ...(await laborVarianceFor(c, wo)),
   });
 });
+
+/**
+ * Sold-vs-cost for one work order, or an explained absence.
+ *
+ * Tyler's rule: a sent estimate keeps its blended rate, actual employee rates
+ * drive internal costing, and the gap is DISPLAYED rather than reconciled away.
+ * So the sold figure comes from the estimate's frozen rate and the cost figure
+ * from rates resolved today, and neither is allowed to overwrite the other.
+ */
+async function laborVarianceFor(c: any, wo: any): Promise<Record<string, unknown>> {
+  const allowed = canViewCompensation({
+    role: c.var.role, can_view_compensation: c.var.canViewCompensation, is_super_admin: c.var.isSuperAdmin,
+  });
+  if (!allowed) return {};
+
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const est = wo.estimate_id
+    ? await db.prepare(`SELECT locked_labor_rate FROM estimates WHERE id=? AND company_id=?`)
+        .bind(wo.estimate_id, companyId).first<any>()
+    : null;
+
+  let currentRate: number | null = null;
+  try {
+    const resolved = await resolveLaborRate(db, {
+      company_id: companyId, employee_id: '',
+      work_date: s(wo.scheduled_date ?? '', 10) || nowIso().slice(0, 10),
+    });
+    currentRate = resolved?.resolved_rate ?? null;
+  } catch (_) { /* no profile configured — variance reports as unknown */ }
+
+  const planned = await db
+    .prepare(
+      `SELECT COALESCE(SUM(e.planned_minutes),0) AS planned FROM wo_day_employees e
+         JOIN wo_days d ON d.id = e.wo_day_id
+        WHERE d.work_order_id=? AND e.company_id=?`,
+    )
+    .bind(wo.id, companyId)
+    .first<{ planned: number }>();
+
+  return {
+    labor_variance: computeLaborVariance({
+      lockedRate: est?.locked_labor_rate ?? null,
+      currentRate,
+      minutes: int(planned?.planned, 0),
+    }),
+  };
+}
