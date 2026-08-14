@@ -1170,7 +1170,10 @@ schedulingRouter.get('/work-orders/:id/hours', async (c) => {
 
   const wo = await db
     .prepare(
-      `SELECT id, wo_number, title, budget_minutes, duration_hours
+      // estimate_id and scheduled_date are for the labor variance below: the
+      // estimate carries the frozen rate this job was sold at, and the date is
+      // which day's rates to cost it against.
+      `SELECT id, wo_number, title, budget_minutes, duration_hours, estimate_id, scheduled_date
          FROM work_orders WHERE id=? AND company_id=? LIMIT 1`,
     )
     .bind(workOrderId, companyId)
@@ -1221,5 +1224,59 @@ schedulingRouter.get('/work-orders/:id/hours', async (c) => {
     break_minutes: grossMinutes - actualMinutes,
     variance_minutes: variance,
     over_budget: variance != null && variance > 0,
+    // What the labor is COSTING against what it was SOLD at.
+    //
+    // Money, so it is stripped for anyone without the compensation permission —
+    // the hours themselves stay visible, because a foreman needs to know a job
+    // is running long without being told what the crew is paid.
+    ...(await laborVarianceFor(c, wo)),
   });
 });
+
+/**
+ * Sold-vs-cost for one work order, or an explained absence.
+ *
+ * Tyler's rule: a sent estimate keeps its blended rate, actual employee rates
+ * drive internal costing, and the gap is DISPLAYED rather than reconciled away.
+ * So the sold figure comes from the estimate's frozen rate and the cost figure
+ * from rates resolved today, and neither is allowed to overwrite the other.
+ */
+async function laborVarianceFor(c: any, wo: any): Promise<Record<string, unknown>> {
+  const allowed = canViewCompensation({
+    role: c.var.role, can_view_compensation: c.var.canViewCompensation, is_super_admin: c.var.isSuperAdmin,
+  });
+  if (!allowed) return {};
+
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  const est = wo.estimate_id
+    ? await db.prepare(`SELECT locked_labor_rate FROM estimates WHERE id=? AND company_id=?`)
+        .bind(wo.estimate_id, companyId).first<any>()
+    : null;
+
+  let currentRate: number | null = null;
+  try {
+    const resolved = await resolveLaborRate(db, {
+      company_id: companyId, employee_id: '',
+      work_date: s(wo.scheduled_date ?? '', 10) || nowIso().slice(0, 10),
+    });
+    currentRate = resolved?.resolved_rate ?? null;
+  } catch (_) { /* no profile configured — variance reports as unknown */ }
+
+  const planned = await db
+    .prepare(
+      `SELECT COALESCE(SUM(e.planned_minutes),0) AS planned FROM wo_day_employees e
+         JOIN wo_days d ON d.id = e.wo_day_id
+        WHERE d.work_order_id=? AND e.company_id=?`,
+    )
+    .bind(wo.id, companyId)
+    .first<{ planned: number }>();
+
+  return {
+    labor_variance: computeLaborVariance({
+      lockedRate: est?.locked_labor_rate ?? null,
+      currentRate,
+      minutes: int(planned?.planned, 0),
+    }),
+  };
+}
