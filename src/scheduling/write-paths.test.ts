@@ -829,3 +829,72 @@ describe('GET /api/work-orders paging and shape', () => {
     expect((await req('/api/work-orders?limit=99999999', cookie)).status).toBe(200);
   });
 });
+
+describe('stop ordering', () => {
+  async function threeStops() {
+    const ids: string[] = [];
+    for (const [n, time] of [['A', '07:00'], ['B', '09:00'], ['C', '11:00']] as const) {
+      const woId = await createJob({ client_name: `Stop${n}`, scheduled_time: time });
+      ids.push((await dayRow(woId)).id);
+    }
+    return ids;
+  }
+  const routeOf = async () => {
+    const r = await req(`/api/scheduling/route?date=${MONDAY}&crew_id=${BLUE}`, cookie);
+    return (await r.json()) as any;
+  };
+
+  it('P1-44 a day with no ordering yet falls back to start time, not row order', async () => {
+    // Before anyone reorders anything, the sensible order is the order the day
+    // already runs in. Falling back to insertion order would look arbitrary.
+    await threeStops();
+    const route = await routeOf();
+    expect(route.stops.map((s: any) => s.client_name)).toEqual(['StopA', 'StopB', 'StopC']);
+    expect(route.stops.map((s: any) => s.position)).toEqual([1, 2, 3]);
+  });
+
+  it('P1-45 reordering persists the WHOLE order, not just the moved stop', async () => {
+    // Renumbering one row and leaving the rest is how a list ends up with two
+    // stop 3s and no stop 5.
+    const [a] = await threeStops();
+    const res = await req('/api/scheduling/route/reorder', cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: BLUE, day_id: a, to_position: 3 }),
+    });
+    expect(res.status).toBe(200);
+
+    const stored = await db().prepare(
+      `SELECT id, stop_order FROM wo_days WHERE company_id=? AND day_date=? AND crew_id=? ORDER BY stop_order`,
+    ).bind(CO, MONDAY, BLUE).all<any>();
+    expect(stored.results!.map((r: any) => r.stop_order)).toEqual([1, 2, 3]); // gapless
+    expect(stored.results!.at(-1)!.id).toBe(a);                              // moved to the end
+  });
+
+  it('P1-46 the new order survives a reload', async () => {
+    const [a] = await threeStops();
+    await req('/api/scheduling/route/reorder', cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: BLUE, day_id: a, to_position: 3 }),
+    });
+    const route = await routeOf();
+    expect(route.stops.map((s: any) => s.client_name)).toEqual(['StopB', 'StopC', 'StopA']);
+  });
+
+  it('P1-47 the summary reports on-site time and withholds drive time', async () => {
+    // Drive time stays null until every leg is known. A partial sum would read
+    // as a complete route total and be short by the missing legs.
+    await threeStops();
+    const route = await routeOf();
+    expect(route.summary.stops).toBe(3);
+    expect(route.summary.on_site_minutes).toBe(1440); // 3 x 480
+    expect(route.summary.drive_minutes).toBeNull();
+    expect(route.summary.total_minutes).toBeNull();
+    expect(route.summary.ungeocoded).toBe(3);
+  });
+
+  it('P1-48 a stop from another crew cannot be reordered into this one', async () => {
+    const [a] = await threeStops();
+    const res = await req('/api/scheduling/route/reorder', cookie, {
+      method: 'POST', body: body({ date: MONDAY, crew_id: GREEN, day_id: a, to_position: 1 }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
