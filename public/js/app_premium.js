@@ -19379,7 +19379,36 @@ window._sbDuplicateJob = async function(woId) {
 };
 
 // ── Visit / Work Order Modal ──────────────────────────────────────────────────
-window._sbOpenVisitModal = async function(woId) {
+/**
+ * "Day 2 of 4", with a way to get to days 1, 3 and 4.
+ *
+ * A multi-day job opens on whichever card you clicked and then dead-ends: the
+ * drawer shows one day, and the only route to another was to close it, find the
+ * right card on the grid, and click that. On a four-day job spanning two weeks
+ * that means navigating the calendar to read your own job.
+ *
+ * Renders nothing for a single-day job, where there is no "of" to speak of.
+ */
+function _sbDayNavHtml(wo) {
+  const total = Number(wo.total_days || 0);
+  const n = Number(wo.md_day_number || 0);
+  if (!(total > 1 && n > 0)) return '';
+  const sib = (target) => (window._sbState.workOrders || [])
+    .find(w => w.id === wo.id && Number(w.md_day_number) === target);
+  const prev = sib(n - 1), next = sib(n + 1);
+  const btn = (day, label, arrow) => day
+    ? `<button class="sb-daynav-btn" title="${label}" aria-label="${label}" onclick="_sbOpenVisitModal('${wo.id}',${Number(day.md_day_number)})">${arrow}</button>`
+    // Disabled rather than hidden, so the control does not move as you page
+    // through the days.
+    : `<button class="sb-daynav-btn" disabled aria-hidden="true">${arrow}</button>`;
+  return `<span class="sb-daynav">
+    ${btn(prev, 'Previous day', '\u2039')}
+    <span class="sb-daynav-label">Day ${n} of ${total}</span>
+    ${btn(next, 'Next day', '\u203a')}
+  </span>`;
+}
+
+window._sbOpenVisitModal = async function(woId, dayNumber) {
   // Remove any stale modal first
   const _existing = document.getElementById('sb-visit-modal');
   if (_existing) _existing.remove();
@@ -19408,6 +19437,26 @@ window._sbOpenVisitModal = async function(woId) {
   } catch(e) { console.warn('[_sbOpenVisitModal] fetch error:', e); }
   // Fallback to localStorage
   if (!wo) wo = (state.workOrders||[]).find(w=>w.id===woId);
+
+  // Opening a SPECIFIC day of a multi-day job.
+  //
+  // GET /api/work-orders/:id joins the day whose date matches the work order's
+  // own scheduled_date, which is day 1 — so without this, paging to day 3 would
+  // fetch the job and render day 1 again. The board already holds one row per
+  // day (expand=days), so the day-level fields come from there.
+  if (wo && dayNumber) {
+    const dayRow = (window._sbState?.workOrders || [])
+      .find(w => w.id === woId && Number(w.md_day_number) === Number(dayNumber));
+    if (dayRow) {
+      wo = { ...wo,
+        md_day_id: dayRow.md_day_id, md_day_number: dayRow.md_day_number, md_day_date: dayRow.md_day_date,
+        md_scope: dayRow.md_scope, md_phase_name: dayRow.md_phase_name, md_crew_id: dayRow.md_crew_id,
+        md_status: dayRow.md_status, scheduled_date: dayRow.scheduled_date,
+        scheduled_time: dayRow.scheduled_time, scheduled_end_time: dayRow.scheduled_end_time,
+        schedule_locked: dayRow.schedule_locked,
+      };
+    }
+  }
   if (!wo) {
     // Also check _sbState.workOrders
     wo = (window._sbState?.workOrders||[]).find(w=>w.id===woId);
@@ -19481,6 +19530,7 @@ window._sbOpenVisitModal = async function(woId) {
         <div class="sb-modal-title-block">
           <span class="sb-modal-wo-num">${wo.wo_number||wo.id}</span>
           <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}" id="sb-status-badge">${_p6WOStatusLabel(wo.status)}</span>
+          ${_sbDayNavHtml(wo)}
         </div>
         <div class="sb-modal-header-meta">
           <span>${wo.scheduled_date ? _p5FmtDate(wo.scheduled_date) : 'No date'}</span>
