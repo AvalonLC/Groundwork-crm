@@ -638,7 +638,8 @@ schedulingRouter.get('/backlog', async (c) => {
   const res = await db
     .prepare(
       `SELECT id, wo_number, title, client_name, property_addr, type, status,
-              crew_id, scheduled_date, duration_hours, budget_minutes, amount_est_cents
+              crew_id, scheduled_date, duration_hours, budget_minutes, amount_est_cents,
+              priority, required_completion_date, target_crew_size
          FROM work_orders
         WHERE company_id=?
           AND status NOT IN ('completed','cancelled')
@@ -664,6 +665,11 @@ schedulingRouter.get('/backlog', async (c) => {
       crew_id: s(wo.crew_id || ''),
       duration_minutes: wo.duration_hours == null ? null : Math.round(Number(wo.duration_hours) * 60),
       budget_minutes: wo.budget_minutes == null ? null : int(wo.budget_minutes),
+      // Migration 0070. The pool filters and sorts on these, which is the whole
+      // reason the columns exist — see the migration header.
+      priority: s(wo.priority || '') || null,
+      required_completion_date: s(wo.required_completion_date || '', 10) || null,
+      target_crew_size: wo.target_crew_size == null ? null : int(wo.target_crew_size),
       ...(stripMoney ? {} : { value_cents: int(wo.amount_est_cents, 0) }),
     };
     // Order matters, and 'hold' deliberately wins.

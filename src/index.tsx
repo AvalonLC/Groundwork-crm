@@ -11902,8 +11902,9 @@ app.post('/api/work-orders', requireAuth, async (c) => {
       (id, company_id, wo_number, opp_id, crew_id, client_name, client_id, property_addr, title,
        type, status, readiness, scheduled_date, scheduled_time, scheduled_end_time, duration_hours,
        scheduled_duration_minutes, budget_minutes, notes,
+       priority, required_completion_date, target_crew_size, access_notes,
        amount_est, amount_est_cents, checklist, materials, equipment, timeline, before_photos, after_photos, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     id, companyId, woNum,
     body.opp_id || null, body.crew_id || null,
@@ -11926,6 +11927,15 @@ app.post('/api/work-orders', requireAuth, async (c) => {
         ? Math.round(Math.max(0, Number(body.budget_hours) || 0) * 60)
         : null,
     body.notes || '',
+    // Migration 0070. Nullable throughout — a quick-add job says nothing about
+    // any of these, and "not stated" has to stay distinguishable from "normal".
+    body.priority || null,
+    body.required_completion_date || null,
+    // A crew size below 1 is not a small crew, it is a cleared field. Clamping
+    // it up to 1 would silently assert a one-person crew and feed that into the
+    // derived production-day count; null keeps "not stated" saying so.
+    Number(body.target_crew_size) >= 1 ? Math.min(50, Math.trunc(Number(body.target_crew_size))) : null,
+    body.access_notes || null,
     createAmountEst, Math.round(createAmountEst * 100),
     JSON.stringify(body.checklist || []),
     JSON.stringify(body.materials || []),
@@ -12033,6 +12043,9 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
       scheduled_duration_minutes=COALESCE(?,scheduled_duration_minutes),
       schedule_locked=COALESCE(?,schedule_locked),
       duration_hours=COALESCE(?,duration_hours), notes=COALESCE(?,notes),
+      budget_minutes=COALESCE(?,budget_minutes),
+      priority=COALESCE(?,priority), required_completion_date=COALESCE(?,required_completion_date),
+      target_crew_size=COALESCE(?,target_crew_size), access_notes=COALESCE(?,access_notes),
       completion_notes=COALESCE(?,completion_notes),
       amount_est=COALESCE(?,amount_est), amount_est_cents=COALESCE(?,amount_est_cents),
       amount_actual=COALESCE(?,amount_actual), amount_actual_cents=COALESCE(?,amount_actual_cents),
@@ -12057,6 +12070,17 @@ app.put('/api/work-orders/:id', requireAuth, async (c) => {
     body.schedule_locked !== undefined ? (body.schedule_locked ? 1 : 0) : null,
     body.duration_hours !== undefined ? body.duration_hours : null,
     body.notes !== undefined ? body.notes : null,
+    // Sold labor is editable here because a job created by hand has no estimate
+    // to inherit it from — accepts minutes or hours, the same as create.
+    body.budget_minutes !== undefined
+      ? Math.max(0, Number(body.budget_minutes) || 0)
+      : body.budget_hours !== undefined
+        ? Math.round(Math.max(0, Number(body.budget_hours) || 0) * 60)
+        : null,
+    body.priority !== undefined ? body.priority : null,
+    body.required_completion_date !== undefined ? body.required_completion_date : null,
+    body.target_crew_size !== undefined ? Math.max(1, Math.min(50, Number(body.target_crew_size) || 1)) : null,
+    body.access_notes !== undefined ? body.access_notes : null,
     body.completion_notes !== undefined ? body.completion_notes : null,
     body.amount_est !== undefined ? body.amount_est : null,
     body.amount_est !== undefined ? Math.round(Number(body.amount_est) * 100) : null,
@@ -12807,7 +12831,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260813b016">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b003">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12830,8 +12854,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260813b016"></script>
-  <script src="/js/client_portal.js?v=20260813b016"></script>  <script>
+  <script src="/js/platform_core.js?v=20260814b003"></script>
+  <script src="/js/client_portal.js?v=20260814b003"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13465,10 +13489,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260813b016">
-  <link rel="stylesheet" href="/js/styles.css?v=20260813b016">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260813b016">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260813b016">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260814b003">
+  <link rel="stylesheet" href="/js/styles.css?v=20260814b003">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260814b003">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260814b003">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14123,46 +14147,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260813b016"></script>
-<script src="/js/gw-icons.js?v=20260813b016"></script>
-<script src="/js/sales-process.js?v=20260813b016"></script>
-<script src="/js/richtext.js?v=20260813b016"></script>
-<script src="/js/db.js?v=20260813b016"></script>
-<script src="/js/data.js?v=20260813b016"></script>
-<script src="/js/reps.js?v=20260813b016"></script>
-<script src="/js/record-page.js?v=20260813b016"></script>
-<script src="/js/academy.js?v=20260813b016"></script>
-<script src="/js/task_engine.js?v=20260813b016"></script>
-<script src="/js/gw_i18n.js?v=20260813b016"></script>
-<script src="/js/app_premium.js?v=20260813b016"></script>
-<script src="/js/estimates.js?v=20260813b016"></script>
-<script src="/js/multiday.js?v=20260813b016"></script>
-<script src="/js/proposals.js?v=20260813b016"></script>
-<script src="/js/pricing.js?v=20260813b016"></script>
-<script src="/js/invoices.js?v=20260813b016"></script>
-<script src="/js/csv_import.js?v=20260813b016"></script>
-<script src="/js/onboarding.js?v=20260813b016"></script>
-<script src="/js/gw_copilot.js?v=20260813b016"></script>
-<script src="/js/groundwork_ai.js?v=20260813b016"></script>
-<script src="/js/recurring_plans.js?v=20260813b016"></script>
-<script src="/js/reviews.js?v=20260813b016"></script>
-<script src="/js/stripe.js?v=20260813b016"></script>
-<script src="/js/email.js?v=20260813b016"></script>
-<script src="/js/notifications.js?v=20260813b016"></script>
-<script src="/js/integrations.js?v=20260813b016"></script>
-<script src="/js/sms.js?v=20260813b016"></script>
-<script src="/js/calendar_sync.js?v=20260813b016"></script>
-<script src="/js/ai_followup.js?v=20260813b016"></script>
-<script src="/js/user_management.js?v=20260813b016"></script>
-<script src="/js/platform_admin.js?v=20260813b016"></script>
-<script src="/js/time_tracker.js?v=20260813b016"></script>
-<script src="/js/field_workday.js?v=20260813b016"></script>
-<script src="/js/platform_core.js?v=20260813b016"></script>
-<script src="/js/approval_engine.js?v=20260813b016"></script>
-<script src="/js/automation_engine.js?v=20260813b016"></script>
-<script src="/js/client_portal.js?v=20260813b016"></script>
-<script src="/js/field_mode.js?v=20260813b016"></script>
-<script src="/js/assets_hub.js?v=20260813b016"></script><script src="/js/marketing.js?v=20260813b016"></script><script>
+<script src="/js/gw_date.js?v=20260814b003"></script>
+<script src="/js/gw-icons.js?v=20260814b003"></script>
+<script src="/js/sales-process.js?v=20260814b003"></script>
+<script src="/js/richtext.js?v=20260814b003"></script>
+<script src="/js/db.js?v=20260814b003"></script>
+<script src="/js/data.js?v=20260814b003"></script>
+<script src="/js/reps.js?v=20260814b003"></script>
+<script src="/js/record-page.js?v=20260814b003"></script>
+<script src="/js/academy.js?v=20260814b003"></script>
+<script src="/js/task_engine.js?v=20260814b003"></script>
+<script src="/js/gw_i18n.js?v=20260814b003"></script>
+<script src="/js/app_premium.js?v=20260814b003"></script>
+<script src="/js/estimates.js?v=20260814b003"></script>
+<script src="/js/multiday.js?v=20260814b003"></script>
+<script src="/js/proposals.js?v=20260814b003"></script>
+<script src="/js/pricing.js?v=20260814b003"></script>
+<script src="/js/invoices.js?v=20260814b003"></script>
+<script src="/js/csv_import.js?v=20260814b003"></script>
+<script src="/js/onboarding.js?v=20260814b003"></script>
+<script src="/js/gw_copilot.js?v=20260814b003"></script>
+<script src="/js/groundwork_ai.js?v=20260814b003"></script>
+<script src="/js/recurring_plans.js?v=20260814b003"></script>
+<script src="/js/reviews.js?v=20260814b003"></script>
+<script src="/js/stripe.js?v=20260814b003"></script>
+<script src="/js/email.js?v=20260814b003"></script>
+<script src="/js/notifications.js?v=20260814b003"></script>
+<script src="/js/integrations.js?v=20260814b003"></script>
+<script src="/js/sms.js?v=20260814b003"></script>
+<script src="/js/calendar_sync.js?v=20260814b003"></script>
+<script src="/js/ai_followup.js?v=20260814b003"></script>
+<script src="/js/user_management.js?v=20260814b003"></script>
+<script src="/js/platform_admin.js?v=20260814b003"></script>
+<script src="/js/time_tracker.js?v=20260814b003"></script>
+<script src="/js/field_workday.js?v=20260814b003"></script>
+<script src="/js/platform_core.js?v=20260814b003"></script>
+<script src="/js/approval_engine.js?v=20260814b003"></script>
+<script src="/js/automation_engine.js?v=20260814b003"></script>
+<script src="/js/client_portal.js?v=20260814b003"></script>
+<script src="/js/field_mode.js?v=20260814b003"></script>
+<script src="/js/assets_hub.js?v=20260814b003"></script><script src="/js/marketing.js?v=20260814b003"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

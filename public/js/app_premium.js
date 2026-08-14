@@ -18535,7 +18535,7 @@ function _sbRender() {
           </div>
           <select class="sb-density-select" onchange="_sbSetDensity(this.value)" title="Calendar density"><option value="compact"${sb.density==='compact'?' selected':''}>Compact</option><option value="comfortable"${sb.density==='comfortable'?' selected':''}>Comfortable</option><option value="detailed"${sb.density==='detailed'?' selected':''}>Detailed</option></select>
           <button class="gwp-btn-ghost" onclick="_sbToggleMetrics()">${sb.showMetrics?'Hide':'Show'} metrics</button>
-          <button class="gwp-btn-primary" onclick="_sbOpenNewVisit(null,null)">+ Work Order</button>
+          <button class="gwp-btn-primary" onclick="_sbOpenJobBuilder()">+ Job</button>
         </div>
       </header>
 
@@ -18939,7 +18939,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     <!-- Selected day label + add button -->
     <div class="sbm-day-header">
       <span class="sbm-day-label">${selLabel}</span>
-      <button class="sbm-add-day-btn" onclick="_sbOpenNewVisit('${selDay}',null)">+ Work Order</button>
+      <button class="sbm-add-day-btn" onclick="_sbOpenNewVisit('${selDay}',null)">+ Job</button>
     </div>
 
     <!-- Day content: job cards / crew lanes -->
@@ -20121,7 +20121,7 @@ window._sbOpenNewVisit = async function(prefilledDate, prefilledCrewId, prefille
   modal.innerHTML=`
     <div class="sb-modal-panel sb-modal-panel--new">
       <div class="sb-modal-header">
-        <div class="sb-modal-title-block"><span class="sb-modal-wo-num">New Work Order / Visit</span></div>
+        <div class="sb-modal-title-block"><span class="sb-modal-wo-num">Quick Add</span><span class="jb-subtitle">Just the essentials. Need scope, labor and materials? <button class="jb-linkbtn" onclick="document.getElementById('sb-new-visit-modal')?.remove();_sbOpenJobBuilder()">Open the full Job Builder</button></span></div>
         <button class="sb-modal-close" onclick="document.getElementById('sb-new-visit-modal')?.remove()">×</button>
       </div>
       <div class="sb-modal-body" style="display:block;max-height:80vh;overflow-y:auto">
@@ -20375,6 +20375,253 @@ window._snvCreate = async function() {
   } catch(e) { showToast('Create failed: '+e.message,'error'); }
 };
 
+// ── Job Builder ──────────────────────────────────────────────────────────────
+//
+// The full creation path. _sbOpenNewVisit above stays as the quick add: client,
+// type, and optionally a date and crew, for dropping a known job onto a day. The
+// brief asked to delete it; keeping a fast path is a deliberate call, because
+// removing every quick route is how people end up scheduling on paper and typing
+// it in later.
+//
+// The two differences that matter:
+//
+//   1. A job does not need a schedule. "Save to Job Pool" is a first-class
+//      action, not an accident of leaving the date blank. The API always allowed
+//      a dateless job; before the pool existed, one simply vanished.
+//
+//   2. Sold labor and calendar time are collected SEPARATELY. The old modal had
+//      one "Budgeted Hours" box that went to duration_hours, which the grid
+//      reads as the length of the block — so 24 sold hours became a 24-hour
+//      block. They are different numbers and this asks for them as such.
+//
+// Every field here maps to a real column. Fields the brief asked for that have
+// no column and no consumer — division, project manager, salesperson — are
+// deliberately absent rather than collected and dropped. See migration 0070.
+
+window._gwJobDraft = null;
+
+window._sbOpenJobBuilder = async function(prefill) {
+  prefill = prefill || {};
+  const crews = window._sbState?.crews || [];
+  const allReps = (window._gwAllReps || []).filter(r => r.active !== false && r.active !== 0);
+
+  window._gwJobDraft = {
+    materials: [], equipment: [], employee_ids: [],
+    ...prefill,
+  };
+
+  document.getElementById('gw-job-builder')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gw-job-builder';
+  modal.className = 'sb-modal-overlay';
+
+  const section = (id, title, hint, body) => `
+    <section class="jb-section">
+      <header class="jb-section-head">
+        <h3>${title}</h3>
+        ${hint ? `<p>${hint}</p>` : ''}
+      </header>
+      <div class="jb-section-body" id="${id}">${body}</div>
+    </section>`;
+
+  const field = (label, control, hint) => `
+    <label class="jb-field">
+      <span>${label}</span>
+      ${control}
+      ${hint ? `<small>${hint}</small>` : ''}
+    </label>`;
+
+  modal.innerHTML = `
+    <div class="sb-modal-panel jb-panel">
+      <div class="sb-modal-header">
+        <div class="sb-modal-title-block">
+          <span class="sb-modal-wo-num">New Job</span>
+          <span class="jb-subtitle">A job can exist before it has a date.</span>
+        </div>
+        <button class="sb-modal-close" onclick="document.getElementById('gw-job-builder')?.remove()">×</button>
+      </div>
+
+      <div class="sb-modal-body jb-body">
+        ${section('jb-info', 'Job Information', '', `
+          <div class="jb-grid">
+            ${field('Client', `<input class="rp-input" id="jb-client" placeholder="Client name" value="${escapeHtml(prefill.client_name || '')}">`)}
+            ${field('Job name', `<input class="rp-input" id="jb-title" placeholder="e.g. Backyard renovation">`)}
+            ${field('Service type', `<select class="rp-input" id="jb-type">
+              ${['Landscaping','Lawn Care','Install','Maintenance','Cleanup','Hardscape','Drainage','Irrigation','Snow','Other']
+                .map(t => `<option${t === prefill.type ? ' selected' : ''}>${t}</option>`).join('')}
+            </select>`)}
+            ${field('Priority', `<select class="rp-input" id="jb-priority">
+              <option value="">Not set</option>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>`, 'Sorts the Job Pool.')}
+            ${field('Property address', `<input class="rp-input" id="jb-addr" placeholder="Street, city">`)}
+            ${field('Must be finished by', `<input class="rp-input" type="date" id="jb-deadline">`, 'Optional. Drives deadline warnings.')}
+          </div>`)}
+
+        ${section('jb-scope', 'Scope & Production Plan', 'What the crew is actually doing.', `
+          ${field('Scope of work', `<textarea class="rp-input" id="jb-scope-text" rows="4" placeholder="What gets built, in the order it gets built"></textarea>`)}
+          ${field('Site access', `<textarea class="rp-input" id="jb-access" rows="2" placeholder="Gate code, dogs, where to park, who to call on arrival"></textarea>`, 'Shown to the crew on the day.')}
+        `)}
+
+        ${section('jb-labor', 'Labor Plan', 'Sold labor and calendar time are different numbers. This asks for both.', `
+          <div class="jb-grid">
+            ${field('Sold labor (hours)', `<input class="rp-input" type="number" min="0" step="0.5" id="jb-budget-hours" oninput="_jbRecalc()" placeholder="e.g. 72">`, 'What was estimated. Never changes because the schedule changed.')}
+            ${field('Target crew size', `<input class="rp-input" type="number" min="1" max="50" step="1" id="jb-crew-size" oninput="_jbRecalc()" placeholder="e.g. 3">`)}
+            ${field('Hours on site per day', `<input class="rp-input" type="number" min="0" step="0.5" id="jb-day-hours" oninput="_jbRecalc()" placeholder="blank = one day">`, 'How long the job blocks the grid each day.')}
+          </div>
+          <output class="jb-derived" id="jb-derived">Enter sold labor and a crew size to see how many days this is.</output>
+        `)}
+
+        ${section('jb-crew', 'Crew', '', `
+          <div class="jb-grid">
+            ${field('Crew', `<select class="rp-input" id="jb-crew-select">
+              <option value="">— None yet —</option>
+              ${crews.map(c => `<option value="${c.id}"${c.id === prefill.crew_id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+            </select>`, 'Its roster is planned onto every day of the job.')}
+            ${field('Also include', `<select class="rp-input" id="jb-extra-rep" onchange="_jbAddRep(this.value); this.value=''">
+              <option value="">Add a person…</option>
+              ${allReps.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('')}
+            </select>`, 'People beyond the crew roster.')}
+          </div>
+          <div class="jb-chips" id="jb-rep-chips"></div>
+        `)}
+
+        ${section('jb-materials', 'Materials & Equipment', '', `
+          ${field('Materials', `<textarea class="rp-input" id="jb-materials" rows="3" placeholder="One per line — 4 yd topsoil&#10;120 lf paver edging"></textarea>`)}
+          ${field('Equipment', `<textarea class="rp-input" id="jb-equipment" rows="2" placeholder="One per line — Skid steer&#10;F-350 + dump trailer"></textarea>`,
+            'Recorded on the job. Reserving a specific machine against a date needs the asset link table that Phase 7 adds — until then this is a note, not a booking.')}
+        `)}
+
+        ${section('jb-schedule', 'Schedule', 'Optional. Leave blank and the job waits in the Job Pool.', `
+          <div class="jb-grid">
+            ${field('Start date', `<input class="rp-input" type="date" id="jb-date" value="${escapeHtml(prefill.scheduled_date || '')}">`)}
+            ${field('Start time', `<input class="rp-input" type="time" id="jb-time" value="${escapeHtml(prefill.scheduled_time || '07:00')}">`)}
+          </div>
+        `)}
+      </div>
+
+      <div class="sb-modal-actions jb-actions">
+        <button class="rp-btn" onclick="document.getElementById('gw-job-builder')?.remove()">Cancel</button>
+        <div class="jb-actions-right">
+          <button class="rp-btn" onclick="_jbSave(false)">Save to Job Pool</button>
+          <button class="rp-btn rp-btn--primary" onclick="_jbSave(true)">Save &amp; Schedule</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  _jbRecalc();
+};
+
+/**
+ * Expected production days, derived rather than typed.
+ *
+ * "If a value can be derived, never add an input for it" — CLAUDE.md. Sold
+ * labor divided by the crew divided by a productive day is exactly derivable,
+ * so it is shown, not asked for.
+ *
+ * Productive minutes come from the week payload, which carries the company's
+ * own setting, not a hardcoded 8 hours. A shift is not all productive time.
+ */
+window._jbRecalc = function() {
+  const out = document.getElementById('jb-derived');
+  if (!out) return;
+  const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
+  const crewSize  = parseInt(document.getElementById('jb-crew-size')?.value || '', 10) || 0;
+  const productiveMinutes = window._sbState?.capacity?.working_hours?.productive_minutes_per_day || 450;
+  const productiveHours = productiveMinutes / 60;
+
+  if (!soldHours || !crewSize) {
+    out.textContent = 'Enter sold labor and a crew size to see how many days this is.';
+    out.classList.remove('jb-derived--set');
+    return;
+  }
+  const days = soldHours / crewSize / productiveHours;
+  const rounded = Math.max(1, Math.ceil(days - 0.05)); // 3.02 days is 3, 3.4 is 4
+  out.innerHTML = `<strong>${rounded} production day${rounded === 1 ? '' : 's'}</strong> `
+    + `— ${soldHours}h ÷ ${crewSize} ${crewSize === 1 ? 'person' : 'people'} ÷ ${productiveHours.toFixed(1)}h productive`
+    + (rounded > 1 ? ' · schedule the first day here, then split it into phases from the job screen.' : '');
+  out.classList.add('jb-derived--set');
+};
+
+window._jbAddRep = function(repId) {
+  if (!repId) return;
+  const draft = window._gwJobDraft;
+  if (!draft || draft.employee_ids.includes(repId)) return;
+  draft.employee_ids.push(repId);
+  _jbRenderChips();
+};
+window._jbRemoveRep = function(repId) {
+  const draft = window._gwJobDraft;
+  if (!draft) return;
+  draft.employee_ids = draft.employee_ids.filter(id => id !== repId);
+  _jbRenderChips();
+};
+function _jbRenderChips() {
+  const host = document.getElementById('jb-rep-chips');
+  if (!host) return;
+  const reps = window._gwAllReps || [];
+  host.innerHTML = (window._gwJobDraft?.employee_ids || []).map(id => {
+    const r = reps.find(x => x.id === id);
+    return `<span class="jb-chip">${escapeHtml(r?.name || id)}<button onclick="_jbRemoveRep('${escapeHtml(id)}')" aria-label="Remove">×</button></span>`;
+  }).join('');
+}
+
+const _jbLines = (id) => (document.getElementById(id)?.value || '')
+  .split('\n').map(s => s.trim()).filter(Boolean);
+
+window._jbSave = async function(withSchedule) {
+  const clientName = document.getElementById('jb-client')?.value?.trim();
+  if (!clientName) return showToast('Client name required', 'error');
+
+  const date = document.getElementById('jb-date')?.value || null;
+  if (withSchedule && !date) return showToast('Pick a start date, or save to the Job Pool instead', 'error');
+
+  const dayHours = parseFloat(document.getElementById('jb-day-hours')?.value || '') || 0;
+  const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
+
+  const body = {
+    client_name: clientName,
+    title: document.getElementById('jb-title')?.value?.trim() || '',
+    type: document.getElementById('jb-type')?.value || 'Service',
+    property_addr: document.getElementById('jb-addr')?.value?.trim() || '',
+    notes: document.getElementById('jb-scope-text')?.value || '',
+    access_notes: document.getElementById('jb-access')?.value || '',
+    priority: document.getElementById('jb-priority')?.value || null,
+    required_completion_date: document.getElementById('jb-deadline')?.value || null,
+    target_crew_size: parseInt(document.getElementById('jb-crew-size')?.value || '', 10) || null,
+    // Sold labor and calendar span, kept apart all the way to the column.
+    budget_hours: soldHours || null,
+    scheduled_duration_minutes: dayHours ? Math.round(dayHours * 60) : null,
+    crew_id: document.getElementById('jb-crew-select')?.value || null,
+    employee_ids: window._gwJobDraft?.employee_ids || [],
+    materials: _jbLines('jb-materials').map(name => ({ name })),
+    equipment: _jbLines('jb-equipment'),
+    // Only when scheduling. A pool job with a stray time on it would show up
+    // in the wrong place the moment anything read scheduled_time.
+    scheduled_date: withSchedule ? date : null,
+    scheduled_time: withSchedule ? (document.getElementById('jb-time')?.value || null) : null,
+  };
+
+  try {
+    const r = await fetch('/api/work-orders', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Create failed');
+    showToast(withSchedule ? `${d.wo_number} scheduled` : `${d.wo_number} saved to the Job Pool`, 'success');
+    document.getElementById('gw-job-builder')?.remove();
+    window._gwJobDraft = null;
+    await _sbRefresh();
+  } catch (e) {
+    showToast('Create failed: ' + (e && e.message ? e.message : e), 'error');
+  }
+};
+
 // ── Crew Manager Modal ────────────────────────────────────────────────────────
 window._sbOpenCrewManager = async function() {
   // Ensure fresh data
@@ -20612,7 +20859,7 @@ function dispatchBoard() {
       </div>
       <div class="gwp-header-actions">
         <button class="gwp-btn-ghost" onclick="show('scheduleBoard')">Schedule View</button>
-        <button class="gwp-btn-primary" onclick="show('workOrderList')">+ Work Order</button>
+        <button class="gwp-btn-primary" onclick="show('workOrderList')">+ Job</button>
       </div>
     </header>
 
@@ -23407,7 +23654,7 @@ function crewView() {
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('scheduleBoard')">Week Schedule</button>
         <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch Board</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Job</button>
       </div>
     </header>
 
