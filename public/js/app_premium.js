@@ -18179,6 +18179,16 @@ const _GW_POOL_TABS = [
   { id: 'tentative',        label: 'Tentative' },
 ];
 
+const _GW_POOL_SORTS = [
+  { id: 'priority', label: 'Priority' },
+  { id: 'deadline', label: 'Deadline' },
+  { id: 'hours',    label: 'Sold hours' },
+  { id: 'client',   label: 'Client' },
+];
+
+/** Urgent first. Anything unset sorts BELOW everything stated. */
+const _GW_PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
 function _sbPoolFiltered() {
   const sb = window._sbState;
   const pool = sb.pool || [];
@@ -18191,8 +18201,44 @@ function _sbPoolFiltered() {
     if (!q) return true;
     return [w.wo_number, w.client_name, w.title, w.property_addr, w.type]
       .some(v => String(v || '').toLowerCase().includes(q));
-  });
+  }).sort(_sbPoolComparator(sb.poolSort || 'priority'));
 }
+
+/**
+ * Pool ordering.
+ *
+ * Every comparator pushes UNSET values to the bottom rather than treating them
+ * as zero or as an empty string. A job with no deadline is not due first, and a
+ * job with no priority is not the least urgent thing in the list — both are
+ * simply unstated, and the list should show what IS stated first.
+ *
+ * Ties break on wo_number so the order never reshuffles between renders.
+ */
+function _sbPoolComparator(sort) {
+  const last = (v) => (v === null || v === undefined || v === '');
+  const tie = (a, b) => String(a.wo_number || '').localeCompare(String(b.wo_number || ''));
+  return (a, b) => {
+    if (sort === 'deadline') {
+      const av = a.required_completion_date, bv = b.required_completion_date;
+      if (last(av) !== last(bv)) return last(av) ? 1 : -1;
+      if (!last(av) && av !== bv) return av < bv ? -1 : 1;
+    } else if (sort === 'hours') {
+      const av = a.budget_minutes, bv = b.budget_minutes;
+      if (last(av) !== last(bv)) return last(av) ? 1 : -1;
+      if (av !== bv) return (bv || 0) - (av || 0); // biggest first: it needs the most planning
+    } else if (sort === 'client') {
+      const c = String(a.client_name || '').localeCompare(String(b.client_name || ''));
+      if (c) return c;
+    } else {
+      const ar = _GW_PRIORITY_RANK[String(a.priority || '').toLowerCase()];
+      const br = _GW_PRIORITY_RANK[String(b.priority || '').toLowerCase()];
+      if ((ar === undefined) !== (br === undefined)) return ar === undefined ? 1 : -1;
+      if (ar !== undefined && ar !== br) return ar - br;
+    }
+    return tie(a, b);
+  };
+}
+window._sbSetPoolSort = function(v) { window._sbState.poolSort = v; _sbRender(); };
 
 function _sbPoolCard(w) {
   const hrs = w.budget_minutes != null ? (w.budget_minutes / 60) : (w.duration_minutes != null ? w.duration_minutes / 60 : null);
@@ -18213,6 +18259,10 @@ function _sbPoolCard(w) {
         ${w.scheduled_date ? `<span>${escapeHtml(gwDateFormat(w.scheduled_date, { month:'short', day:'numeric' }))}</span>` : ''}
       </div>
       ${w.property_addr ? `<div class="sb-pool-addr">${escapeHtml(w.property_addr)}</div>` : ''}
+      ${(w.priority || w.required_completion_date) ? `<div class="sb-pool-flags">
+        ${w.priority ? `<span class="sb-pool-pri sb-pool-pri--${escapeHtml(String(w.priority).toLowerCase())}">${escapeHtml(w.priority)}</span>` : ''}
+        ${w.required_completion_date ? `<span class="sb-pool-due" title="Must be finished by">by ${escapeHtml(gwDateFormat(w.required_completion_date, { month:'short', day:'numeric' }))}</span>` : ''}
+      </div>` : ''}
       <span class="sb-pool-state">${stateLabel}</span>
     </article>`;
 }
@@ -18317,6 +18367,9 @@ function _sbPoolHtml() {
     <div class="sb-pool-filters">
       <input class="sb-pool-search" type="search" placeholder="Search jobs" value="${escapeHtml(sb.poolQuery || '')}"
              oninput="_sbSetPoolQuery(this.value)" aria-label="Search the Job Pool">
+      <select class="sb-pool-sort" onchange="_sbSetPoolSort(this.value)" aria-label="Sort the Job Pool" title="Sort the Job Pool">
+        ${_GW_POOL_SORTS.map(o => `<option value="${o.id}"${(sb.poolSort||'priority')===o.id?' selected':''}>${o.label}</option>`).join('')}
+      </select>
       ${types.length ? `<select class="sb-pool-type" onchange="_sbSetPoolType(this.value)" aria-label="Filter by service type">
         <option value="">All types</option>
         ${types.map(t => `<option value="${escapeHtml(t)}"${sb.poolType === t ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}
