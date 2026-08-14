@@ -602,11 +602,81 @@ schedulingRouter.get('/week', async (c) => {
       };
     });
 
+  // ── Conflicts ──────────────────────────────────────────────────────────────
+  //
+  // Computed here rather than behind their own endpoint because everything they
+  // need is already loaded, and because a warning that arrives in a second
+  // request is a warning the grid can render without.
+  //
+  // Every one of these is derived from data that exists. There is deliberately
+  // no "materials not ready" or "equipment already assigned" until the columns
+  // behind them are real — a warning that cannot fire is worse than no warning,
+  // because it teaches people the check is running when it is not.
+  const warnings: Array<{ type: string; severity: 'warn' | 'error'; date: string; crew_id?: string; day_id?: string; rep_id?: string; message: string }> = [];
+
+  for (const cr of crews) {
+    for (const d of cr.days) {
+      if (d.utilization_pct != null && d.utilization_pct > 100) {
+        warnings.push({
+          type: 'crew_over_capacity', severity: 'warn', date: d.date, crew_id: cr.id,
+          message: `${cr.name} is booked to ${d.utilization_pct}% of capacity`,
+        });
+      }
+      if (!d.is_working_day && d.planned_minutes > 0) {
+        warnings.push({
+          type: 'outside_working_days', severity: 'warn', date: d.date, crew_id: cr.id,
+          message: `${cr.name} has work booked on a non-working day`,
+        });
+      }
+    }
+  }
+
+  // One person, two jobs, same date. Distinct DAYS, so a person legitimately
+  // listed once is never flagged — this is about two separate commitments.
+  const repDay = new Map<string, { name: string; days: Set<string> }>();
+  for (const a of assignments) {
+    for (const e of a.employees) {
+      const key = `${e.rep_id}|${a.date}`;
+      if (!repDay.has(key)) repDay.set(key, { name: e.rep_name, days: new Set() });
+      repDay.get(key)!.days.add(a.day_id);
+    }
+  }
+  for (const [key, v] of repDay) {
+    if (v.days.size < 2) continue;
+    const [rep_id, date] = key.split('|');
+    warnings.push({
+      type: 'employee_double_booked', severity: 'error', date, rep_id,
+      message: `${v.name} is on ${v.days.size} jobs on this day`,
+    });
+  }
+
+  // Planned labor short of what was sold, on a job whose days are all in view.
+  // Only flagged when the job actually has a sold figure — a null budget means
+  // "never costed", which is not the same as "under-planned".
+  const byWorkOrder = new Map<string, { planned: number; budget: number | null; last: string; day_id: string }>();
+  for (const a of assignments) {
+    const cur = byWorkOrder.get(a.work_order_id) || { planned: 0, budget: a.budget_minutes, last: a.date, day_id: a.day_id };
+    cur.planned += a.planned_minutes;
+    if (a.date > cur.last) cur.last = a.date;
+    byWorkOrder.set(a.work_order_id, cur);
+  }
+  for (const [, v] of byWorkOrder) {
+    if (v.budget == null || v.budget <= 0) continue;
+    if (v.planned === 0) continue; // unstaffed is its own, more obvious, problem
+    if (v.planned < v.budget * 0.75) {
+      warnings.push({
+        type: 'under_planned', severity: 'warn', date: v.last, day_id: v.day_id,
+        message: `Only ${Math.round((v.planned / v.budget) * 100)}% of the sold labor is on the schedule`,
+      });
+    }
+  }
+
   return c.json({
     ok: true,
     start,
     end,
     days,
+    warnings,
     working_hours: {
       working_days: workingDays,
       shift_start: settings.shift_start,

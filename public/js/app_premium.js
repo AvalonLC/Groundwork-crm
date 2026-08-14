@@ -18058,6 +18058,71 @@ function _sbPoolCard(w) {
     </article>`;
 }
 
+/**
+ * The week in four numbers.
+ *
+ * Replaces a band that counted Scheduled Visits / Holds / In Progress /
+ * Completed / Crews. Those are all facts, and none of them answers the question
+ * a scheduler is actually holding in their head on a Monday morning: can I take
+ * more work this week, and what is stopping me?
+ *
+ * So: what is booked, the labor behind it, what capacity is left, and how much
+ * work is sitting in the pool waiting for a crew. Planned labor and capacity are
+ * people-hours from wo_day_employees, NOT calendar time — the distinction this
+ * whole engine exists to keep.
+ */
+function _sbKpiBandHtml(totalScheduled, totalUniqueJobs) {
+  const cap = window._sbState.capacity;
+  const crews = (cap?.crews) || [];
+  const plannedMin  = crews.reduce((n, c) => n + (c.week_planned_minutes || 0), 0);
+  const capacityMin = crews.reduce((n, c) => n + (c.week_capacity_minutes || 0), 0);
+  const remainingMin = Math.max(0, capacityMin - plannedMin);
+  const pct = capacityMin > 0 ? Math.round((plannedMin / capacityMin) * 100) : null;
+  const remainingPct = capacityMin > 0 ? Math.round((remainingMin / capacityMin) * 100) : null;
+  const needCrew = (window._sbState.pool || []).filter(w => w.pool_state === 'needs_crew').length;
+  const needSched = (window._sbState.pool || []).filter(w => w.pool_state === 'needs_scheduling').length;
+  const h = (m) => (m / 60).toFixed(1) + 'h';
+
+  const card = (mod, value, label, sub) => `
+    <div class="gwp-kpi-card${mod ? ' gwp-kpi-card--' + mod : ''}">
+      <div class="gwp-kpi-body">
+        <div class="gwp-kpi-value">${value}</div>
+        <div class="gwp-kpi-label">${label}</div>
+        ${sub ? `<div class="gwp-kpi-sub">${sub}</div>` : ''}
+      </div>
+    </div>`;
+
+  return `<div class="gwp-kpi-row" style="margin-bottom:14px">
+    ${card('blue', totalScheduled, 'Jobs Scheduled', `${totalUniqueJobs} job${totalUniqueJobs === 1 ? '' : 's'} this week`)}
+    ${card('', h(plannedMin), 'Planned Labor', pct == null ? 'no crew capacity set' : `${pct}% of capacity`)}
+    ${card(remainingPct != null && remainingPct < 10 ? 'yellow' : 'green', capacityMin > 0 ? h(remainingMin) : '—', 'Remaining Capacity',
+      remainingPct == null ? 'add people to a crew' : `${remainingPct}% remaining`)}
+    ${card(needCrew ? 'yellow' : 'muted', needCrew, 'Jobs Needing Crew', needSched ? `${needSched} not scheduled yet` : 'pool is clear')}
+  </div>
+  ${_sbWarningsHtml()}`;
+}
+
+/**
+ * Conflicts, from the week payload.
+ *
+ * Deliberately quiet: nothing renders when there is nothing wrong. A strip that
+ * is always there is a strip nobody reads.
+ */
+function _sbWarningsHtml() {
+  const list = (window._sbState.capacity?.warnings) || [];
+  if (!list.length) return '';
+  const errors = list.filter(w => w.severity === 'error');
+  const shown = [...errors, ...list.filter(w => w.severity !== 'error')].slice(0, 4);
+  return `<div class="sb-warnings${errors.length ? ' sb-warnings--error' : ''}">
+    <strong>${errors.length ? errors.length + ' conflict' + (errors.length === 1 ? '' : 's') : list.length + ' thing' + (list.length === 1 ? '' : 's') + ' to check'}</strong>
+    <ul>${shown.map(w => `<li class="sb-warn sb-warn--${w.severity}">
+      <span class="sb-warn-date">${escapeHtml(gwDateFormat(w.date, { month:'short', day:'numeric' }))}</span>
+      ${escapeHtml(w.message)}
+    </li>`).join('')}</ul>
+    ${list.length > shown.length ? `<small>and ${list.length - shown.length} more</small>` : ''}
+  </div>`;
+}
+
 function _sbPoolHtml() {
   const sb = window._sbState;
   if (sb.poolCollapsed) {
@@ -18548,28 +18613,7 @@ function _sbRender() {
         </div>
       </header>
 
-      ${sb.showMetrics ? `<div class="gwp-kpi-row${totalHolds ? ' gwp-kpi-row--5' : ''}" style="margin-bottom:14px">
-        <div class="gwp-kpi-card gwp-kpi-card--blue">
-          <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled Visits</div><div class="gwp-kpi-sub">${totalUniqueJobs} work orders</div></div>
-        </div>
-        ${totalHolds ? `<div class="gwp-kpi-card gwp-kpi-card--yellow" title="Jobs held on the calendar — waiting for the client to accept the estimate">
-          <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><span style="width:10px;height:10px;border-radius:50%;background:#EAB308;display:inline-block"></span></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalHolds}</div><div class="gwp-kpi-label">Holds</div><div class="gwp-kpi-sub">awaiting acceptance</div></div>
-        </div>` : ''}
-        <div class="gwp-kpi-card">
-          <div class="gwp-kpi-icon gwp-kpi-icon--purple"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalInProgress}</div><div class="gwp-kpi-label">In Progress</div></div>
-        </div>
-        <div class="gwp-kpi-card gwp-kpi-card--green">
-          <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalCompleted}</div><div class="gwp-kpi-label">Completed</div></div>
-        </div>
-        <div class="gwp-kpi-card gwp-kpi-card--muted">
-          <div class="gwp-kpi-icon gwp-kpi-icon--muted"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div><div class="gwp-kpi-sub">${totalMultiDayPlans} multi-day plans</div></div>
-        </div>
-      </div>` : ''}
+      ${sb.showMetrics ? _sbKpiBandHtml(totalScheduled, totalUniqueJobs) : ''}
     </div>
 
     ${crewFilterBar}

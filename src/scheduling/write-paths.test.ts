@@ -569,6 +569,69 @@ describe('the Job Pool', () => {
   });
 });
 
+describe('conflict warnings', () => {
+  const warningsFor = async (start: string) => {
+    const week = (await (await req(`/api/scheduling/week?start=${start}`, cookie)).json()) as any;
+    return week.warnings as any[];
+  };
+
+  it('P1-38 a clean week reports nothing', async () => {
+    // The bar for a warning system: it has to be silent when there is nothing
+    // wrong, or people stop reading it.
+    await createJob({ scheduled_duration_minutes: 240 });
+    expect(await warningsFor(MONDAY)).toEqual([]);
+  });
+
+  it('P1-39 a crew booked past its capacity says so', async () => {
+    // Two people on Blue x 450 productive = 900 minutes. Two 480-minute jobs
+    // plan 960 each, so one alone is already over.
+    await createJob({ scheduled_duration_minutes: 480 });
+    const w = (await warningsFor(MONDAY)).filter(x => x.type === 'crew_over_capacity');
+    expect(w).toHaveLength(1);
+    expect(w[0].crew_id).toBe(BLUE);
+    expect(w[0].message).toMatch(/booked to \d+% of capacity/);
+  });
+
+  it('P1-40 one person on two jobs the same day is an error, not a warning', async () => {
+    // Over capacity is a judgement call — a crew can push through a long day.
+    // Being in two places at once is not.
+    const a = await createJob({ scheduled_duration_minutes: 60 });
+    const b = await createJob({ scheduled_duration_minutes: 60 });
+    expect(a).not.toBe(b);
+
+    const w = (await warningsFor(MONDAY)).filter(x => x.type === 'employee_double_booked');
+    expect(w.length).toBeGreaterThanOrEqual(1);
+    expect(w[0].severity).toBe('error');
+    expect(w[0].message).toMatch(/is on 2 jobs/);
+  });
+
+  it('P1-41 work booked on a non-working day is flagged', async () => {
+    // Saturday. workday_settings says Mon-Fri for this company.
+    const woId = await createJob({ scheduled_date: '2026-08-22', scheduled_duration_minutes: 240 });
+    expect(woId).toBeTruthy();
+    const w = (await warningsFor('2026-08-16')).filter(x => x.type === 'outside_working_days');
+    expect(w).toHaveLength(1);
+    expect(w[0].date).toBe('2026-08-22');
+  });
+
+  it('P1-42 a job with far less labor scheduled than was sold is flagged', async () => {
+    // 40 sold hours, one day of two people at 4h each = 8 planned. Someone sold
+    // a week and scheduled an afternoon.
+    await createJob({ scheduled_duration_minutes: 240, budget_hours: 40 });
+    const w = (await warningsFor(MONDAY)).filter(x => x.type === 'under_planned');
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toMatch(/of the sold labor is on the schedule/);
+  });
+
+  it('P1-43 a job with no sold figure is never called under-planned', async () => {
+    // budget_minutes null means "never costed", which is not the same claim as
+    // "under-planned" — and reporting it as one would make the warning useless
+    // on every hand-created job.
+    await createJob({ scheduled_duration_minutes: 240 });
+    expect((await warningsFor(MONDAY)).filter(x => x.type === 'under_planned')).toEqual([]);
+  });
+});
+
 describe('multi-day dependencies', () => {
   async function threeDayJob(deps: Array<{ n: number; date: string; dependsOn?: number; lag?: number }>) {
     const woId = await createJob({ scheduled_date: null, crew_id: null });
