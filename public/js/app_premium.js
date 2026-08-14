@@ -17851,12 +17851,24 @@ async function _sbLoadData() {
     const range = _sbCurrentDateRange();
     const _woParams = new URLSearchParams({ limit: '1000', date_from: range.from, date_to: range.to });
     if (_sbIsField && _sbRep) _woParams.set('rep_id', _sbRep.id);
+    // One row per scheduled DAY, not per job — the grid draws each phase of a
+    // multi-day job as its own card. Every other caller wants one row per job and
+    // now gets that by default; see the expand=days note in src/index.tsx.
+    _woParams.set('expand', 'days');
     const _woUrl = '/api/work-orders?' + _woParams.toString();
     const [cr, wo, rr, backlog, cap] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),
       fetch(_woUrl, {credentials:'include'}).then(r=>r.json()),
       fetch('/api/reps', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
-      fetch('/api/work-orders?limit=300', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
+      // The Job Pool, from the endpoint built for it.
+      //
+      // This used to be a SECOND full /api/work-orders fetch at limit=300,
+      // filtered client-side for rows with no date — so every board load pulled
+      // the work-order list twice, and anything past the 300th row simply did
+      // not exist as far as the pool was concerned. /api/scheduling/backlog does
+      // the bucketing server-side, strips money for field roles, and had been
+      // sitting there with tests and no callers since it was written.
+      fetch('/api/scheduling/backlog?limit=500', {credentials:'include'}).then(r=>r.json()).catch(()=>null),
       // Real crew capacity: people on the crew x productive minutes per working
       // day. One payload for the whole week — see src/scheduling/api.ts. Failing
       // this fetch must not break the board, so the metric falls back to the
@@ -17879,7 +17891,19 @@ async function _sbLoadData() {
       }
     }
     if (wo.ok)  window._sbState.workOrders = wo.data  || [];
-    if (backlog && backlog.ok) window._sbState.backlog = (backlog.data || []).filter(w => !w.scheduled_date && !['completed','cancelled'].includes(w.status));
+    if (backlog && backlog.ok) {
+      // Three buckets, kept apart, each tagged so the pool can filter on them.
+      // See src/scheduling/api.ts for why 'tentative' wins over 'needs
+      // scheduling': a held job is work the client has not bought yet, and the
+      // next action on it is to close the sale, not to find it a Tuesday.
+      window._sbState.pool = [
+        ...(backlog.needs_scheduling || []).map(w => ({ ...w, pool_state: 'needs_scheduling' })),
+        ...(backlog.needs_crew       || []).map(w => ({ ...w, pool_state: 'needs_crew' })),
+        ...(backlog.tentative        || []).map(w => ({ ...w, pool_state: 'tentative' })),
+      ].map(w => ({ ...w, id: w.work_order_id }));
+      // Kept for the timeline view's own "Unscheduled" aside, which reads it.
+      window._sbState.backlog = window._sbState.pool.filter(w => w.pool_state === 'needs_scheduling');
+    }
     window._sbState.loaded = true;
   } catch(e) {
     console.warn('[scheduleBoard] API load failed, using localStorage fallback', e);
@@ -17977,9 +18001,230 @@ function _sbLoadPreferences() {
 }
 _sbLoadPreferences();
 
+// ── Job Pool ─────────────────────────────────────────────────────────────────
+//
+// Work that is not yet on the grid, beside the grid rather than pretending to be
+// a crew in it. Backed by GET /api/scheduling/backlog, which buckets server-side.
+//
+// Three states, and they answer different questions:
+//   needs_scheduling  no date. Nobody knows when.
+//   needs_crew        has a date, nobody to do it.
+//   tentative         status 'hold' — the client has not bought it yet.
+//
+// Drag out to schedule; drag a card back in to unschedule it.
+
+const _GW_POOL_TABS = [
+  { id: 'all',              label: 'All' },
+  { id: 'needs_scheduling', label: 'Needs Scheduling' },
+  { id: 'needs_crew',       label: 'Needs Crew' },
+  { id: 'tentative',        label: 'Tentative' },
+];
+
+function _sbPoolFiltered() {
+  const sb = window._sbState;
+  const pool = sb.pool || [];
+  const tab = sb.poolTab || 'all';
+  const q = (sb.poolQuery || '').trim().toLowerCase();
+  const type = sb.poolType || '';
+  return pool.filter(w => {
+    if (tab !== 'all' && w.pool_state !== tab) return false;
+    if (type && (w.type || '') !== type) return false;
+    if (!q) return true;
+    return [w.wo_number, w.client_name, w.title, w.property_addr, w.type]
+      .some(v => String(v || '').toLowerCase().includes(q));
+  });
+}
+
+function _sbPoolCard(w) {
+  const hrs = w.budget_minutes != null ? (w.budget_minutes / 60) : (w.duration_minutes != null ? w.duration_minutes / 60 : null);
+  const stateLabel = { needs_scheduling: 'Needs scheduling', needs_crew: 'Needs crew', tentative: 'Tentative' }[w.pool_state] || '';
+  return `
+    <article class="sb-pool-card sb-pool-card--${w.pool_state}"
+             draggable="true"
+             data-wo="${escapeHtml(w.id)}"
+             ondragstart="_sbDragStart(event,'${escapeHtml(w.id)}',0)">
+      <header>
+        <strong>${escapeHtml(w.client_name || w.title || 'Job')}</strong>
+        <span class="sb-pool-wonum">${escapeHtml(w.wo_number || '')}</span>
+      </header>
+      ${w.title && w.client_name ? `<p class="sb-pool-title">${escapeHtml(w.title)}</p>` : ''}
+      <div class="sb-pool-meta">
+        ${w.type ? `<span>${escapeHtml(w.type)}</span>` : ''}
+        ${hrs != null ? `<span>${hrs.toFixed(hrs % 1 ? 1 : 0)} sold hrs</span>` : ''}
+        ${w.scheduled_date ? `<span>${escapeHtml(gwDateFormat(w.scheduled_date, { month:'short', day:'numeric' }))}</span>` : ''}
+      </div>
+      ${w.property_addr ? `<div class="sb-pool-addr">${escapeHtml(w.property_addr)}</div>` : ''}
+      <span class="sb-pool-state">${stateLabel}</span>
+    </article>`;
+}
+
+/**
+ * The week in four numbers.
+ *
+ * Replaces a band that counted Scheduled Visits / Holds / In Progress /
+ * Completed / Crews. Those are all facts, and none of them answers the question
+ * a scheduler is actually holding in their head on a Monday morning: can I take
+ * more work this week, and what is stopping me?
+ *
+ * So: what is booked, the labor behind it, what capacity is left, and how much
+ * work is sitting in the pool waiting for a crew. Planned labor and capacity are
+ * people-hours from wo_day_employees, NOT calendar time — the distinction this
+ * whole engine exists to keep.
+ */
+function _sbKpiBandHtml(totalScheduled, totalUniqueJobs) {
+  const cap = window._sbState.capacity;
+  const crews = (cap?.crews) || [];
+  const plannedMin  = crews.reduce((n, c) => n + (c.week_planned_minutes || 0), 0);
+  const capacityMin = crews.reduce((n, c) => n + (c.week_capacity_minutes || 0), 0);
+  const remainingMin = Math.max(0, capacityMin - plannedMin);
+  const pct = capacityMin > 0 ? Math.round((plannedMin / capacityMin) * 100) : null;
+  const remainingPct = capacityMin > 0 ? Math.round((remainingMin / capacityMin) * 100) : null;
+  const needCrew = (window._sbState.pool || []).filter(w => w.pool_state === 'needs_crew').length;
+  const needSched = (window._sbState.pool || []).filter(w => w.pool_state === 'needs_scheduling').length;
+  const h = (m) => (m / 60).toFixed(1) + 'h';
+
+  const card = (mod, value, label, sub) => `
+    <div class="gwp-kpi-card${mod ? ' gwp-kpi-card--' + mod : ''}">
+      <div class="gwp-kpi-body">
+        <div class="gwp-kpi-value">${value}</div>
+        <div class="gwp-kpi-label">${label}</div>
+        ${sub ? `<div class="gwp-kpi-sub">${sub}</div>` : ''}
+      </div>
+    </div>`;
+
+  return `<div class="gwp-kpi-row" style="margin-bottom:14px">
+    ${card('blue', totalScheduled, 'Jobs Scheduled', `${totalUniqueJobs} job${totalUniqueJobs === 1 ? '' : 's'} this week`)}
+    ${card('', h(plannedMin), 'Planned Labor', pct == null ? 'no crew capacity set' : `${pct}% of capacity`)}
+    ${card(remainingPct != null && remainingPct < 10 ? 'yellow' : 'green', capacityMin > 0 ? h(remainingMin) : '—', 'Remaining Capacity',
+      remainingPct == null ? 'add people to a crew' : `${remainingPct}% remaining`)}
+    ${card(needCrew ? 'yellow' : 'muted', needCrew, 'Jobs Needing Crew', needSched ? `${needSched} not scheduled yet` : 'pool is clear')}
+  </div>
+  ${_sbWarningsHtml()}`;
+}
+
+/**
+ * Conflicts, from the week payload.
+ *
+ * Deliberately quiet: nothing renders when there is nothing wrong. A strip that
+ * is always there is a strip nobody reads.
+ */
+function _sbWarningsHtml() {
+  const list = (window._sbState.capacity?.warnings) || [];
+  if (!list.length) return '';
+  const errors = list.filter(w => w.severity === 'error');
+  const shown = [...errors, ...list.filter(w => w.severity !== 'error')].slice(0, 4);
+  return `<div class="sb-warnings${errors.length ? ' sb-warnings--error' : ''}">
+    <strong>${errors.length ? errors.length + ' conflict' + (errors.length === 1 ? '' : 's') : list.length + ' thing' + (list.length === 1 ? '' : 's') + ' to check'}</strong>
+    <ul>${shown.map(w => `<li class="sb-warn sb-warn--${w.severity}">
+      <span class="sb-warn-date">${escapeHtml(gwDateFormat(w.date, { month:'short', day:'numeric' }))}</span>
+      ${escapeHtml(w.message)}
+    </li>`).join('')}</ul>
+    ${list.length > shown.length ? `<small>and ${list.length - shown.length} more</small>` : ''}
+  </div>`;
+}
+
+function _sbPoolHtml() {
+  const sb = window._sbState;
+  if (sb.poolCollapsed) {
+    return `<aside class="sb-pool sb-pool--collapsed">
+      <button class="sb-pool-toggle" onclick="_sbTogglePool()" title="Show the Job Pool" aria-label="Show the Job Pool">
+        <span class="sb-pool-toggle-count">${(sb.pool || []).length}</span>
+        <span class="sb-pool-toggle-label">Job Pool</span>
+      </button>
+    </aside>`;
+  }
+  const rows = _sbPoolFiltered();
+  const counts = (sb.pool || []).reduce((acc, w) => { acc[w.pool_state] = (acc[w.pool_state] || 0) + 1; return acc; }, {});
+  const types = [...new Set((sb.pool || []).map(w => w.type).filter(Boolean))].sort();
+
+  return `<aside class="sb-pool"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="_sbDropOnPool(event)">
+    <header class="sb-pool-head">
+      <div>
+        <strong>Job Pool</strong>
+        <small>${(sb.pool || []).length} waiting</small>
+      </div>
+      <button class="sb-pool-toggle" onclick="_sbTogglePool()" title="Hide the Job Pool" aria-label="Hide the Job Pool">&laquo;</button>
+    </header>
+    <div class="sb-pool-tabs">
+      ${_GW_POOL_TABS.map(t => {
+        const n = t.id === 'all' ? (sb.pool || []).length : (counts[t.id] || 0);
+        return `<button class="sb-pool-tab${(sb.poolTab || 'all') === t.id ? ' is-active' : ''}"
+                        onclick="_sbSetPoolTab('${t.id}')">${t.label}<b>${n}</b></button>`;
+      }).join('')}
+    </div>
+    <div class="sb-pool-filters">
+      <input class="sb-pool-search" type="search" placeholder="Search jobs" value="${escapeHtml(sb.poolQuery || '')}"
+             oninput="_sbSetPoolQuery(this.value)" aria-label="Search the Job Pool">
+      ${types.length ? `<select class="sb-pool-type" onchange="_sbSetPoolType(this.value)" aria-label="Filter by service type">
+        <option value="">All types</option>
+        ${types.map(t => `<option value="${escapeHtml(t)}"${sb.poolType === t ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+      </select>` : ''}
+    </div>
+    <div class="sb-pool-list">
+      ${rows.length
+        ? rows.map(_sbPoolCard).join('')
+        : `<div class="sb-pool-empty">${(sb.pool || []).length ? 'Nothing matches those filters.' : 'Everything is scheduled.'}</div>`}
+    </div>
+    <footer class="sb-pool-foot">Drag a job onto a crew and day to schedule it. Drag one back here to unschedule.</footer>
+  </aside>`;
+}
+
+window._sbTogglePool = function() {
+  window._sbState.poolCollapsed = !window._sbState.poolCollapsed;
+  _sbSavePreferences();
+  _sbRender();
+};
+window._sbSetPoolTab = function(tab) { window._sbState.poolTab = tab; _sbRender(); };
+window._sbSetPoolType = function(t) { window._sbState.poolType = t; _sbRender(); };
+window._sbSetPoolQuery = function(v) {
+  // Re-render on every keystroke would blow away the input and its caret, so the
+  // value is stashed and the list is filtered in place.
+  window._sbState.poolQuery = v;
+  const list = document.querySelector('.sb-pool-list');
+  if (!list) return _sbRender();
+  const rows = _sbPoolFiltered();
+  list.innerHTML = rows.length
+    ? rows.map(_sbPoolCard).join('')
+    : `<div class="sb-pool-empty">${(window._sbState.pool || []).length ? 'Nothing matches those filters.' : 'Everything is scheduled.'}</div>`;
+};
+
+/**
+ * Drop a scheduled job back into the pool — i.e. unschedule it.
+ *
+ * DELETE /api/scheduling/days/:id/schedule clears the date but keeps the day row
+ * and the people on it, so re-scheduling the job does not lose its staffing.
+ * That endpoint has existed since the router was written and had no UI at all:
+ * there was no way to take a job off the grid short of editing it.
+ */
+window._sbDropOnPool = async function(e) {
+  e.preventDefault();
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  const woId = e.dataTransfer.getData('text/plain');
+  if (!woId) return;
+  const wo = (window._sbState.workOrders || []).find(w => w.id === woId);
+  if (!wo) return;                    // already in the pool — nothing to undo
+  if (!wo.md_day_id) return;
+  if (wo.schedule_locked) return showToast('Unlock this visit before unscheduling it','error');
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(wo.md_day_id)}/schedule`, {
+      method:'DELETE', credentials:'include'
+    });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || 'Could not unschedule');
+    showToast('Moved to the Job Pool','success');
+    await _sbRefresh();
+  } catch(err) {
+    showToast((err && err.message) || 'Could not unschedule','error');
+  }
+};
+
 function _sbTimelineHtml(sb, visibleWOs, allCrews) {
   const date = sb.timelineDate || gwToday();
-  const crews = [{id:'__unassigned__',name:'Unassigned',color:'#94a3b8'}, ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))];
+  // Real crews only; unscheduled and uncrewed work lives in the Job Pool.
+  const crews = allCrews.filter(c=>!sb.hiddenCrews.has(c.id));
   const start = Number(sb.workdayStart || 6) * 60, end = Number(sb.workdayEnd || 20) * 60;
   const ppm = 1.15, height = (end - start) * ppm;
   const hours = Array.from({length: Math.max(1, (end-start)/60 + 1)}, (_,i)=>start+i*60).filter(m=>m<=end);
@@ -17987,16 +18232,20 @@ function _sbTimelineHtml(sb, visibleWOs, allCrews) {
   const today = gwToday();
   const timeRail = `<div class="sb-time-rail" style="height:${height}px">${hours.map(m=>`<span style="top:${(m-start)*ppm}px">${_sbDisplayTime(_sbClock(m))}</span>`).join('')}</div>`;
   const columns = crews.map(cr => {
-    const jobs = visibleWOs.filter(w => (w.scheduled_date||'').slice(0,10)===date && ((w.md_crew_id||w.crew_id||'__unassigned__')===cr.id));
+    const jobs = visibleWOs.filter(w => (w.scheduled_date||'').slice(0,10)===date && ((w.md_crew_id||w.crew_id)===cr.id));
     return `<div class="sb-timeline-crew"><div class="sb-timeline-crew-head" style="--crew-color:${cr.color}"><span></span>${escapeHtml(cr.name)}<small>${jobs.length} visits</small></div><div class="sb-timeline-track" style="height:${height}px" data-date="${date}" data-crew="${cr.id}" ondragover="event.preventDefault()" ondrop="_sbDropOnTimeline(event,this)">
       ${hours.map(m=>`<i style="top:${(m-start)*ppm}px"></i>`).join('')}
       ${today===date && nowMinutes>=start && nowMinutes<=end ? `<b class="sb-now-line" style="top:${(nowMinutes-start)*ppm}px"></b>` : ''}
       ${jobs.map(w=>{
         const r=_sbEventRange(w), top=Math.max(0,(r.start-start)*ppm), h=Math.max(32,Math.min(height-top,r.duration*ppm));
-        const color=w.is_multiday||w.md_day_number?_sbMdColor(w.id):(w.crew_color||cr.color);
-        const statusColor=_sbStatusColor(w.status);
+        // Crew colour, always. This used to swap to a per-job hash colour for
+        // multi-day jobs, so the same visual channel meant "which crew" for one
+        // card and "which multi-day plan" for the next one beside it.
+        // Multi-day now gets its own channel: a class, and its own inset ring.
+        const color=w.crew_color||cr.color;
+        const isMdEvent=!!(w.is_multiday||w.md_day_number);
         const conflict=window._sbConflicts?.get(`${w.id}:${w.md_day_number||0}`);
-        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--status-color:${statusColor}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
+        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}${isMdEvent?' sb-time-event--multiday':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--md-color:${isMdEvent?_sbMdColor(w.id):'transparent'}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
           <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
         </article>`;
       }).join('')}
@@ -18050,9 +18299,8 @@ function _sbJobCard(wo, crews, draggable) {
   const mdColor = isMd ? _sbMdColor(wo.id) : crewColor;
   const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
-  const statusColor = _sbStatusColor(wo.status);
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" style="--crew-color:${crewColor};--status-color:${statusColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -18153,11 +18401,18 @@ function _sbRender() {
       // ONE unified grid: header row + one row per crew. All cells share column
       // widths and row heights automatically because they are in the same grid.
 
-      // Unassigned + each visible crew
-      const laneCrews = [
-        { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
-        ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
-      ];
+      // One lane per visible crew. Nothing else.
+      //
+      // There used to be an "Unassigned" lane pinned above the real crews, and
+      // it was two things at once, neither of them a crew. Blue Crew has a lane
+      // because Blue Crew occupies production capacity on Tuesday; an
+      // unscheduled job does not occupy Tuesday at 7am. Worse, the lane only
+      // held jobs that had a DATE but no crew — genuinely unscheduled work never
+      // appeared in it at all, and lived only in the timeline view's separate
+      // aside. A job created from this view could vanish from this view.
+      //
+      // Both cases now live in the Job Pool beside the grid (_sbPoolHtml).
+      const laneCrews = allCrews.filter(c=>!sb.hiddenCrews.has(c.id));
 
       // Header cells (corner + 7 day heads)
       const headerCells = `
@@ -18173,8 +18428,7 @@ function _sbRender() {
 
       // One label + 7 cells per crew row — all flat inside the single grid
       const crewCells = laneCrews.map(cr=>{
-        const isUnassigned = cr.id==='__unassigned__';
-        const crewWeekJobs = visibleWOs.filter(w => (isUnassigned ? !(w.md_crew_id || w.crew_id) : (w.md_crew_id || w.crew_id) === cr.id));
+        const crewWeekJobs = visibleWOs.filter(w => (w.md_crew_id || w.crew_id) === cr.id);
         const scheduledHours = crewWeekJobs.reduce((sum,w)=>sum+(_sbEventRange(w).duration/60),0);
         // Capacity from /api/scheduling/week: crew members x productive minutes
         // x working days. This used to be a hardcoded 40, which made the
@@ -18182,7 +18436,7 @@ function _sbRender() {
         // 40-hour week — a three-person crew was permanently shown as
         // over-booked. capMeta is null for the Unassigned lane (not a real
         // crew), when the fetch failed, or when nobody is on the crew.
-        const capMeta = (window._sbState.capacity && !isUnassigned)
+        const capMeta = window._sbState.capacity
           ? (window._sbState.capacity.crews || []).find(c => c.id === cr.id)
           : null;
         const weeklyCapacityHours = capMeta ? (capMeta.week_capacity_minutes / 60) : 0;
@@ -18225,16 +18479,14 @@ function _sbRender() {
         const dayCells = days.map(d=>{
           const iso = gwDateISO(d);
           const isToday = iso===today;
-          const jobs = isUnassigned
-            ? visibleWOs.filter(w => (!(w.md_crew_id || w.crew_id)) && w.scheduled_date?.slice(0,10)===iso)
-            : visibleWOs.filter(w => (w.md_crew_id || w.crew_id)===cr.id && w.scheduled_date?.slice(0,10)===iso);
+          const jobs = visibleWOs.filter(w => (w.md_crew_id || w.crew_id)===cr.id && w.scheduled_date?.slice(0,10)===iso);
           return `<div class="sb-lane-cell${isToday?' today':''}"
               data-date="${iso}" data-crew="${cr.id}"
               ondragover="event.preventDefault();this.classList.add('drag-over')"
               ondragleave="this.classList.remove('drag-over')"
               ondrop="_sbDropOnCell(event,'${iso}','${cr.id}')">
             ${jobs.map(wo=>_sbJobCard(wo,allCrews,true)).join('')}
-            <button class="sb-lane-add-btn" onclick="_sbOpenNewVisit('${iso}','${isUnassigned?'':cr.id}')">+</button>
+            <button class="sb-lane-add-btn" onclick="_sbOpenNewVisit('${iso}','${cr.id}')">+</button>
           </div>`;
         }).join('');
         return `
@@ -18286,9 +18538,15 @@ function _sbRender() {
       const isToday = iso === today;
       const jobs = visibleWOs.filter(w => w.scheduled_date && w.scheduled_date.slice(0,10) === iso);
       const dots = jobs.slice(0,5).map(wo => {
-        // Traffic-light month dots: yellow = hold, red = cancelled, otherwise crew color
+        // ONE meaning per channel: the dot is the CREW, exactly as this
+        // comment always claimed. It was calling _sbStatusColor, so a month cell
+        // showed status in its dots and crew in its chips three lines later,
+        // while mobile month used crew for both — three meanings for a dot
+        // across three views, with no legend anywhere. Status still shows,
+        // through the --hold / --cancelled modifier classes and the title.
         const isMd = !!(wo.is_multiday || wo.md_day_number);
-        const dotColor = _sbStatusColor(wo.status);        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
+        const dotColor = wo.crew_color || (crews||[]).find(c=>c.id===(wo.md_crew_id||wo.crew_id))?.color || '#94a3b8';
+        const mdTitle = isMd ? ` Day ${wo.md_day_number||'?'}${wo.md_phase_name ? ' - ' + wo.md_phase_name : ''}` : '';
         return `<span class="sb-month-dot${wo.status==='hold' ? ' sb-month-dot--hold' : ''}${isMd ? ' sb-month-dot--multiday' : ''}" style="background:${dotColor}" title="${escapeHtml(wo.client_name||wo.wo_number)}${escapeHtml(mdTitle)}${wo.status==='hold' ? ' - HOLD (awaiting acceptance)' : ''}"></span>`;
       }).join('');
       cells += `
@@ -18351,38 +18609,20 @@ function _sbRender() {
           </div>
           <select class="sb-density-select" onchange="_sbSetDensity(this.value)" title="Calendar density"><option value="compact"${sb.density==='compact'?' selected':''}>Compact</option><option value="comfortable"${sb.density==='comfortable'?' selected':''}>Comfortable</option><option value="detailed"${sb.density==='detailed'?' selected':''}>Detailed</option></select>
           <button class="gwp-btn-ghost" onclick="_sbToggleMetrics()">${sb.showMetrics?'Hide':'Show'} metrics</button>
-          <button class="gwp-btn-primary" onclick="_sbOpenNewVisit(null,null)">+ Work Order</button>
+          <button class="gwp-btn-primary" onclick="_sbOpenJobBuilder()">+ Job</button>
         </div>
       </header>
 
-      ${sb.showMetrics ? `<div class="gwp-kpi-row${totalHolds ? ' gwp-kpi-row--5' : ''}" style="margin-bottom:14px">
-        <div class="gwp-kpi-card gwp-kpi-card--blue">
-          <div class="gwp-kpi-icon gwp-kpi-icon--blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalScheduled}</div><div class="gwp-kpi-label">Scheduled Visits</div><div class="gwp-kpi-sub">${totalUniqueJobs} work orders</div></div>
-        </div>
-        ${totalHolds ? `<div class="gwp-kpi-card gwp-kpi-card--yellow" title="Jobs held on the calendar — waiting for the client to accept the estimate">
-          <div class="gwp-kpi-icon gwp-kpi-icon--yellow"><span style="width:10px;height:10px;border-radius:50%;background:#EAB308;display:inline-block"></span></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalHolds}</div><div class="gwp-kpi-label">Holds</div><div class="gwp-kpi-sub">awaiting acceptance</div></div>
-        </div>` : ''}
-        <div class="gwp-kpi-card">
-          <div class="gwp-kpi-icon gwp-kpi-icon--purple"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="7"/><path d="M8 4v4l3 2"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalInProgress}</div><div class="gwp-kpi-label">In Progress</div></div>
-        </div>
-        <div class="gwp-kpi-card gwp-kpi-card--green">
-          <div class="gwp-kpi-icon gwp-kpi-icon--green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 8l4 4 8-8"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${totalCompleted}</div><div class="gwp-kpi-label">Completed</div></div>
-        </div>
-        <div class="gwp-kpi-card gwp-kpi-card--muted">
-          <div class="gwp-kpi-icon gwp-kpi-icon--muted"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5.5" cy="5" r="2.5"/><circle cx="11" cy="6" r="2"/><path d="M1.5 13.5c0-2.2 1.8-4 4-4s4 1.8 4 4M9.5 13.5c0-1.9 1.3-3.2 3-3.2 1.2 0 2.2.6 2.7 1.6"/></svg></div>
-          <div class="gwp-kpi-body"><div class="gwp-kpi-value">${allCrews.length}</div><div class="gwp-kpi-label">Crews</div><div class="gwp-kpi-sub">${totalMultiDayPlans} multi-day plans</div></div>
-        </div>
-      </div>` : ''}
+      ${sb.showMetrics ? _sbKpiBandHtml(totalScheduled, totalUniqueJobs) : ''}
     </div>
 
     ${crewFilterBar}
 
-    <div class="sb-grid-wrap">
-      ${gridHtml}
+    <div class="sb-board-split">
+      ${['week','month'].includes(sb.viewMode) ? _sbPoolHtml() : ''}
+      <div class="sb-grid-wrap">
+        ${gridHtml}
+      </div>
     </div>
   </div>`;
 }
@@ -18500,6 +18740,44 @@ window._sbRefreshCapacity = async function() {
     window._sbState.capacity = (d && d.ok) ? d : window._sbState.capacity;
     _sbRender();
   } catch (_) { /* keep the previous figures */ }
+};
+
+/**
+ * Fold the capacity a scheduling write returned into the lane metrics.
+ *
+ * The write reports every (crew, date) it touched — the lane the job left as
+ * well as the one it joined — so both bars can be corrected without re-reading
+ * the whole week. Anything not mentioned is left exactly as it was.
+ *
+ * Week totals are recomputed from the per-day figures rather than patched, so
+ * the header and the columns underneath it cannot drift apart.
+ */
+window._sbApplyCapacity = function(capacity) {
+  const cap = window._sbState.capacity;
+  if (!cap || !Array.isArray(capacity) || !capacity.length) {
+    // Nothing usable came back — fall back to the old behaviour rather than
+    // leaving stale numbers on screen.
+    return _sbRefreshCapacity();
+  }
+  for (const entry of capacity) {
+    const crew = (cap.crews || []).find(c => c.id === entry.crew_id);
+    if (!crew) continue;
+    const day = (crew.days || []).find(d => d.date === entry.date);
+    if (!day) continue;
+    day.capacity_minutes = entry.capacity_minutes;
+    day.planned_minutes  = entry.planned_minutes;
+    day.utilization_pct  = entry.utilization_pct;
+  }
+  for (const crew of (cap.crews || [])) {
+    crew.week_capacity_minutes = (crew.days || []).reduce((sum, d) => sum + (d.capacity_minutes || 0), 0);
+    crew.week_planned_minutes  = (crew.days || []).reduce((sum, d) => sum + (d.planned_minutes  || 0), 0);
+    // null, not 0, when there is no capacity to divide by — the same rule the
+    // server applies. See src/scheduling/capacity.ts.
+    crew.week_utilization_pct = crew.week_capacity_minutes > 0
+      ? Math.round((crew.week_planned_minutes / crew.week_capacity_minutes) * 100)
+      : null;
+  }
+  _sbRender();
 };
 window._sbSelectDay = function(iso) {
   window._sbState.mobileSelectedDay = iso;
@@ -18632,22 +18910,18 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
   // Crew lanes for selected day (if enabled)
   let dayContent = '';
   if (sb.crewLanes && allCrews.length) {
-    const laneCrews = [
-      { id:'__unassigned__', name:'Unassigned', color:'#94a3b8' },
-      ...allCrews.filter(c=>!sb.hiddenCrews.has(c.id))
-    ];
+    // Real crews only — the Unassigned pseudo-lane is retired here too. On
+    // mobile it was already hidden when empty, which meant work with no crew
+    // was sometimes visible and sometimes not, with nothing to tell you which.
+    const laneCrews = allCrews.filter(c=>!sb.hiddenCrews.has(c.id));
     dayContent = laneCrews.map(cr => {
-      const isUnassigned = cr.id==='__unassigned__';
-      const crewJobs = isUnassigned
-        ? selJobs.filter(w=>!(w.md_crew_id || w.crew_id))
-        : selJobs.filter(w=>(w.md_crew_id || w.crew_id)===cr.id);
-      if (!crewJobs.length && isUnassigned) return ''; // hide empty unassigned lane
+      const crewJobs = selJobs.filter(w=>(w.md_crew_id || w.crew_id)===cr.id);
       return `<div class="sbm-crew-lane">
         <div class="sbm-crew-lane-head" style="border-left:3px solid ${cr.color}">
           <span class="sbm-crew-lane-dot" style="background:${cr.color}"></span>
           <span class="sbm-crew-lane-name">${escapeHtml(cr.name)}</span>
           <span class="sbm-crew-lane-count">${crewJobs.length} job${crewJobs.length!==1?'s':''}</span>
-          <button class="sbm-add-lane-btn" onclick="_sbOpenNewVisit('${selDay}','${isUnassigned?'':cr.id}')">+</button>
+          <button class="sbm-add-lane-btn" onclick="_sbOpenNewVisit('${selDay}','${cr.id}')">+</button>
         </div>
         ${crewJobs.map(wo=>_sbMobileJobCard(wo,allCrews)).join('') || `<div class="sbm-lane-empty">No jobs</div>`}
       </div>`;
@@ -18718,7 +18992,7 @@ function _sbRenderMobile(sb, visibleWOs, allCrews, allWOs, totalScheduled, total
     <!-- Selected day label + add button -->
     <div class="sbm-day-header">
       <span class="sbm-day-label">${selLabel}</span>
-      <button class="sbm-add-day-btn" onclick="_sbOpenNewVisit('${selDay}',null)">+ Work Order</button>
+      <button class="sbm-add-day-btn" onclick="_sbOpenNewVisit('${selDay}',null)">+ Job</button>
     </div>
 
     <!-- Day content: job cards / crew lanes -->
@@ -18813,58 +19087,161 @@ window._sbDragStart = function(e, woId, dayNumber) {
   e.currentTarget.style.opacity = '0.45';
 };
 
+/**
+ * "Move which dates?" — asked, not assumed.
+ *
+ * Returns 'day' | 'following' | 'job', or null when the user backs out. A drag
+ * that moves four days when the user meant one is not recoverable by dragging
+ * back: the other three have already lost their original dates.
+ */
+window._sbAskMoveScope = function(dayNumber, totalDays) {
+  return new Promise(resolve => {
+    document.getElementById('gw-move-scope')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'gw-move-scope';
+    modal.className = 'sb-modal-overlay';
+    const pick = (v) => { modal.remove(); resolve(v); };
+    modal.innerHTML = `
+      <div class="sb-modal-panel gw-scope-panel">
+        <div class="sb-modal-header">
+          <div class="sb-modal-title-block">
+            <span class="sb-modal-wo-num">Move which dates?</span>
+            <span class="jb-subtitle">Day ${dayNumber} of ${totalDays}</span>
+          </div>
+        </div>
+        <div class="gw-scope-options">
+          <button class="gw-scope-opt" data-v="day">
+            <strong>This day only</strong>
+            <small>The other days stay exactly where they are.</small>
+          </button>
+          <button class="gw-scope-opt" data-v="following">
+            <strong>This day and the ones after it</strong>
+            <small>Days ${dayNumber}\u2013${totalDays} shift by the same amount. Earlier days are untouched.</small>
+          </button>
+          <button class="gw-scope-opt" data-v="job">
+            <strong>The entire job</strong>
+            <small>All ${totalDays} days move together, keeping their spacing.</small>
+          </button>
+        </div>
+        <div class="sb-modal-actions">
+          <button class="rp-btn" data-v="">Cancel</button>
+        </div>
+      </div>`;
+    modal.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-v]');
+      if (!btn) return;
+      pick(btn.dataset.v || null);
+    });
+    document.body.appendChild(modal);
+  });
+};
+
 window._sbDropOnCell = async function(e, iso, crewId) {
   e.preventDefault();
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
   const woId = e.dataTransfer.getData('text/plain');
   const dragDayNumber = parseInt(e.dataTransfer.getData('application/gw-day-number') || '0') || 0;
   if (!woId) return;
-  const wo = window._sbState.workOrders.find(w=>w.id===woId && (!dragDayNumber || Number(w.md_day_number) === dragDayNumber)) || window._sbState.workOrders.find(w=>w.id===woId);
+  // Cards on the grid first, then the Job Pool. A pool job is not in
+  // workOrders at all — it has no date, so the week query never returned it —
+  // and the old lookup gave up with a bare `return`, which is why dragging a
+  // backlog card onto a week or month cell silently did nothing at all.
+  const wo = window._sbState.workOrders.find(w=>w.id===woId && (!dragDayNumber || Number(w.md_day_number) === dragDayNumber))
+    || window._sbState.workOrders.find(w=>w.id===woId)
+    || (window._sbState.pool || []).find(w=>w.id===woId);
   if (!wo) return;
+  const fromPool = !window._sbState.workOrders.some(w=>w.id===woId);
   const oldDate = wo.scheduled_date;
   const oldCrew = wo.md_crew_id || wo.crew_id;
   const isMdDay = !!(wo.md_day_number || dragDayNumber);
   const dayNumber = Number(wo.md_day_number || dragDayNumber);
   const nextCrew = crewId && crewId !== '__unassigned__' ? crewId : (crewId === '__unassigned__' ? '' : oldCrew);
-  const shiftMode = isMdDay && e.shiftKey;
+  // Moving one day of a multi-day job is ambiguous, so ask instead of guessing.
+  //
+  // This used to be an undocumented Shift-drag: hold Shift and the drag silently
+  // became "move this phase and every day after it". Nothing in the UI said so,
+  // which meant the destructive option was the invisible one. A four-day job
+  // could shift by a week because someone happened to be holding a modifier.
+  const isRealMultiDay = isMdDay && Number(wo.total_days || 0) > 1;
+  let moveMode = 'day';
+  if (isRealMultiDay && !fromPool) {
+    moveMode = await _sbAskMoveScope(dayNumber, Number(wo.total_days || 0));
+    if (!moveMode) return; // cancelled — put the card back where it was
+  }
+  const shiftMode = moveMode === 'following' || moveMode === 'job';
   wo.scheduled_date = iso;
   if (isMdDay) wo.md_crew_id = nextCrew || '';
   else if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
   else if (crewId === '__unassigned__') wo.crew_id = null;
   _sbRender();
   try {
-    if (isMdDay) {
-      const path = shiftMode
-        ? `/api/work-orders/${woId}/days/${dayNumber}/shift-downstream`
-        : `/api/work-orders/${woId}/days/${dayNumber}`;
-      const body = shiftMode
-        ? { day_date: iso, crew_id: nextCrew || null }
-        : { day_date: iso, crew_id: nextCrew || null };
-      const r = await fetch(path, { method: shiftMode ? 'POST' : 'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (shiftMode) {
+      const fromDay = moveMode === 'job' ? 1 : dayNumber;
+      const r = await fetch(`/api/work-orders/${woId}/days/${fromDay}/shift-downstream`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ day_date: iso, crew_id: nextCrew || null })
+      });
       const d = await r.json().catch(()=>({}));
       if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
-      showToast(shiftMode ? 'Phase and downstream days shifted' : 'Phase rescheduled','success');
+      showToast(moveMode === 'job' ? 'Whole job moved' : 'This day and the ones after it moved','success');
       await _sbRefresh();
       return;
     }
-    const body = { scheduled_date: iso };
-    if (crewId !== null) body.crew_id = crewId === '__unassigned__' ? null : crewId;
-    const r = await fetch(`/api/work-orders/${woId}/reschedule`, {
-      method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
-    if (crewId !== null && crewId !== oldCrew) {
-      await fetch(`/api/work-orders/${woId}`, {
-        method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ crew_id: crewId === '__unassigned__' ? null : crewId })
+    // Every drop goes through the Job Day, whatever its day number.
+    //
+    // This used to fork on `isMdDay`, which is true whenever the card carries a
+    // day number — and the primary day of an ordinary single-day job is day 1.
+    // So almost every drag took the "multi-day" branch to PATCH /days/:n, which
+    // updates wo_days but mirrors only scheduled_date back to the work order,
+    // never crew_id. After dragging a job to another crew, one API response
+    // carried both answers at once:
+    //
+    //     crew_id:   crew-blue      <- what the drawer's crew picker selects
+    //     crew_name: "Green Crew"   <- resolved through the day row
+    //
+    // Capacity was right, because that reads wo_days. Open the job and it still
+    // said Blue. That is the "the card moves but the crew doesn't follow it"
+    // report, and it is a mirror gap rather than the two-request race.
+    //
+    // /api/scheduling/days/:id/schedule writes the day, mirrors the whole row —
+    // crew included — onto the work order in the SAME batch when the day is
+    // primary, re-derives the people when the crew changes, and returns the
+    // recomputed capacity. One endpoint, one transaction, for every day.
+    const dayId = wo.md_day_id;
+    const nextCrewId = crewId === '__unassigned__' ? '' : (crewId === null ? undefined : crewId);
+    let d;
+    if (dayId) {
+      const payload = { date: iso };
+      if (nextCrewId !== undefined) payload.crew_id = nextCrewId;
+      const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/schedule`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
+      d = await r.json().catch(()=>({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
+    } else {
+      // No day row yet — a job coming off the backlog. This endpoint creates one
+      // and then applies the same schedule, so the two cases converge.
+      const r = await fetch(`/api/scheduling/work-orders/${encodeURIComponent(woId)}/schedule`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ date: iso, crew_id: nextCrewId === undefined ? '' : nextCrewId })
+      });
+      d = await r.json().catch(()=>({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
+      wo.md_day_id = d.day_id;
+    }
+    if (fromPool) {
+      // The job was not on the grid a moment ago, so there is no card to patch
+      // and no pool row that should still be there. Reload rather than trying to
+      // move an object between two lists by hand.
+      showToast('Scheduled','success');
+      await _sbRefresh();
+      return;
     }
     showToast('Job rescheduled','success');
-    // The grid already shows the move optimistically, but the crew-lane
-    // capacity figures were computed before it. Re-read them so the metric
-    // beside the grid cannot disagree with the grid.
-    await _sbRefreshCapacity();
+    // Capacity came back with the write, for the lane it left as well as the one
+    // it joined. No follow-up round trip to /week, and therefore no window in
+    // which the grid and the number beside it can disagree.
+    _sbApplyCapacity(d.capacity);
   } catch(err) {
     wo.scheduled_date = oldDate;
     if (isMdDay) wo.md_crew_id = oldCrew || '';
@@ -19277,10 +19654,6 @@ window._sbOpenVisitModal = async function(woId) {
       <!-- Action Bar -->
       <div class="sb-modal-actions">
         <div class="sb-modal-actions-left">
-          <button class="sb-action-btn sb-action-skip" onclick="_sbSkipVisit('${wo.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            Skip
-          </button>
           <button class="sb-action-btn" style="gap:5px" onclick="_sbDuplicateJob('${wo.id}')">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
             Duplicate
@@ -19291,14 +19664,24 @@ window._sbOpenVisitModal = async function(woId) {
           ${wo.opp_id ? `<button class="sb-action-btn sb-action-upsell" onclick="_sbUpsell('${wo.opp_id}')">Up-sell</button>` : ''}
         </div>
         <div class="sb-modal-actions-right">
-          <button class="sb-action-btn sb-action-delete" onclick="_sbDeleteVisit('${wo.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-            Delete
-          </button>
-          <button class="rp-btn" onclick="_sbSaveVisit('${wo.id}',false)">Save</button>
+          <!-- Delete Job used to sit here, immediately beside Save, with only a
+               flex gap between "keep my edits" and "destroy the job and every
+               day, photo and time entry hanging off it". It now lives behind
+               the overflow below, and this drawer offers the two reversible
+               things a scheduler actually wants instead: take the day off the
+               calendar, or call the day off. -->
+          <div class="sb-overflow">
+            <button class="sb-action-btn" aria-haspopup="menu" aria-expanded="false" onclick="_sbToggleOverflow(this)" title="More actions">···</button>
+            <div class="sb-overflow-menu" hidden>
+              <button onclick="_sbUnscheduleDay('${wo.id}')">Unschedule day<small>Back to the Job Pool. Keeps the crew.</small></button>
+              <button onclick="_sbSkipVisit('${wo.id}')">Cancel day<small>Marks it cancelled. The job stays.</small></button>
+              <button class="sb-overflow-danger" onclick="_sbDeleteVisit('${wo.id}')">Delete job<small>Permanent. Takes its days, photos and time entries.</small></button>
+            </div>
+          </div>
+          <button class="rp-btn" onclick="_sbSaveVisit('${wo.id}',false)">Save changes</button>
           <button class="rp-btn rp-btn--primary" id="sb-complete-btn" onclick="_sbCompleteVisit('${wo.id}','${wo.type||'Service'}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
-            Complete
+            Mark day complete
           </button>
         </div>
       </div>
@@ -19396,6 +19779,47 @@ window._sbSaveVisit = async function(woId, andComplete) {
     }
   } catch(e) {
     showToast('Save failed: '+e.message,'error');
+  }
+};
+
+window._sbToggleOverflow = function(btn) {
+  const menu = btn.parentElement.querySelector('.sb-overflow-menu');
+  const open = menu.hidden;
+  document.querySelectorAll('.sb-overflow-menu').forEach(m => { m.hidden = true; });
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if (open) {
+    // One-shot outside-click close. Registered on the next frame so the click
+    // that opened the menu does not immediately close it again.
+    setTimeout(() => document.addEventListener('click', function away(ev) {
+      if (menu.parentElement.contains(ev.target)) return;
+      menu.hidden = true; btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', away);
+    }), 0);
+  }
+};
+
+/**
+ * Take this day off the calendar, keeping the job and its crew.
+ *
+ * The reversible counterpart to Delete. DELETE /days/:id/schedule clears the
+ * date and keeps the day row and its people, so the job returns to the Job Pool
+ * with its staffing intact and re-scheduling does not start from an empty crew.
+ */
+window._sbUnscheduleDay = async function(woId) {
+  const wo = (window._sbState.workOrders || []).find(w => w.id === woId);
+  const dayId = wo?.md_day_id;
+  if (!dayId) return showToast('This job is not on the calendar', 'error');
+  if (wo.schedule_locked) return showToast('Unlock this visit before unscheduling it', 'error');
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/schedule`, { method: 'DELETE', credentials: 'include' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || 'Could not unschedule');
+    showToast('Moved to the Job Pool', 'success');
+    _sbCloseModal();
+    await _sbRefresh();
+  } catch (e) {
+    showToast((e && e.message) || 'Could not unschedule', 'error');
   }
 };
 
@@ -19856,7 +20280,7 @@ window._sbOpenNewVisit = async function(prefilledDate, prefilledCrewId, prefille
   modal.innerHTML=`
     <div class="sb-modal-panel sb-modal-panel--new">
       <div class="sb-modal-header">
-        <div class="sb-modal-title-block"><span class="sb-modal-wo-num">New Work Order / Visit</span></div>
+        <div class="sb-modal-title-block"><span class="sb-modal-wo-num">Quick Add</span><span class="jb-subtitle">Just the essentials. Need scope, labor and materials? <button class="jb-linkbtn" onclick="document.getElementById('sb-new-visit-modal')?.remove();_sbOpenJobBuilder()">Open the full Job Builder</button></span></div>
         <button class="sb-modal-close" onclick="document.getElementById('sb-new-visit-modal')?.remove()">×</button>
       </div>
       <div class="sb-modal-body" style="display:block;max-height:80vh;overflow-y:auto">
@@ -20110,6 +20534,352 @@ window._snvCreate = async function() {
   } catch(e) { showToast('Create failed: '+e.message,'error'); }
 };
 
+// ── Job Builder ──────────────────────────────────────────────────────────────
+//
+// The full creation path. _sbOpenNewVisit above stays as the quick add: client,
+// type, and optionally a date and crew, for dropping a known job onto a day. The
+// brief asked to delete it; keeping a fast path is a deliberate call, because
+// removing every quick route is how people end up scheduling on paper and typing
+// it in later.
+//
+// The two differences that matter:
+//
+//   1. A job does not need a schedule. "Save to Job Pool" is a first-class
+//      action, not an accident of leaving the date blank. The API always allowed
+//      a dateless job; before the pool existed, one simply vanished.
+//
+//   2. Sold labor and calendar time are collected SEPARATELY. The old modal had
+//      one "Budgeted Hours" box that went to duration_hours, which the grid
+//      reads as the length of the block — so 24 sold hours became a 24-hour
+//      block. They are different numbers and this asks for them as such.
+//
+// Every field here maps to a real column. Fields the brief asked for that have
+// no column and no consumer — division, project manager, salesperson — are
+// deliberately absent rather than collected and dropped. See migration 0070.
+
+window._gwJobDraft = null;
+
+window._sbOpenJobBuilder = async function(prefill) {
+  prefill = prefill || {};
+  const crews = window._sbState?.crews || [];
+  const allReps = (window._gwAllReps || []).filter(r => r.active !== false && r.active !== 0);
+
+  window._gwJobDraft = {
+    materials: [], equipment: [], employee_ids: [],
+    ...prefill,
+  };
+
+  document.getElementById('gw-job-builder')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'gw-job-builder';
+  modal.className = 'sb-modal-overlay';
+
+  const section = (id, title, hint, body) => `
+    <section class="jb-section">
+      <header class="jb-section-head">
+        <h3>${title}</h3>
+        ${hint ? `<p>${hint}</p>` : ''}
+      </header>
+      <div class="jb-section-body" id="${id}">${body}</div>
+    </section>`;
+
+  const field = (label, control, hint) => `
+    <label class="jb-field">
+      <span>${label}</span>
+      ${control}
+      ${hint ? `<small>${hint}</small>` : ''}
+    </label>`;
+
+  modal.innerHTML = `
+    <div class="sb-modal-panel jb-panel">
+      <div class="sb-modal-header">
+        <div class="sb-modal-title-block">
+          <span class="sb-modal-wo-num">New Job</span>
+          <span class="jb-subtitle">A job can exist before it has a date.</span>
+        </div>
+        <button class="sb-modal-close" onclick="document.getElementById('gw-job-builder')?.remove()">×</button>
+      </div>
+
+      <div class="sb-modal-body jb-body">
+        ${section('jb-info', 'Job Information', '', `
+          <div class="jb-grid">
+            ${field('Client', `<input class="rp-input" id="jb-client" placeholder="Client name" value="${escapeHtml(prefill.client_name || '')}">`)}
+            ${field('Job name', `<input class="rp-input" id="jb-title" placeholder="e.g. Backyard renovation">`)}
+            ${field('Service type', `<select class="rp-input" id="jb-type">
+              ${['Landscaping','Lawn Care','Install','Maintenance','Cleanup','Hardscape','Drainage','Irrigation','Snow','Other']
+                .map(t => `<option${t === prefill.type ? ' selected' : ''}>${t}</option>`).join('')}
+            </select>`)}
+            ${field('Priority', `<select class="rp-input" id="jb-priority">
+              <option value="">Not set</option>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>`, 'Sorts the Job Pool.')}
+            ${field('Property address', `<input class="rp-input" id="jb-addr" placeholder="Street, city">`)}
+            ${field('Must be finished by', `<input class="rp-input" type="date" id="jb-deadline">`, 'Optional. Drives deadline warnings.')}
+          </div>`)}
+
+        ${section('jb-scope', 'Scope & Production Plan', 'What the crew is actually doing.', `
+          ${field('Scope of work', `<textarea class="rp-input" id="jb-scope-text" rows="4" placeholder="What gets built, in the order it gets built"></textarea>`)}
+          ${field('Site access', `<textarea class="rp-input" id="jb-access" rows="2" placeholder="Gate code, dogs, where to park, who to call on arrival"></textarea>`, 'Shown to the crew on the day.')}
+        `)}
+
+        ${section('jb-labor', 'Labor Plan', 'Sold labor and calendar time are different numbers. This asks for both.', `
+          <div class="jb-grid">
+            ${field('Sold labor (hours)', `<input class="rp-input" type="number" min="0" step="0.5" id="jb-budget-hours" oninput="_jbRecalc()" placeholder="e.g. 72">`, 'What was estimated. Never changes because the schedule changed.')}
+            ${field('Target crew size', `<input class="rp-input" type="number" min="1" max="50" step="1" id="jb-crew-size" oninput="_jbRecalc()" placeholder="e.g. 3">`)}
+            ${field('Hours on site per day', `<input class="rp-input" type="number" min="0" step="0.5" id="jb-day-hours" oninput="_jbRecalc()" placeholder="blank = one day">`, 'How long the job blocks the grid each day.')}
+          </div>
+          <output class="jb-derived" id="jb-derived">Enter sold labor and a crew size to see how many days this is.</output>
+        `)}
+
+        ${section('jb-crew', 'Crew', '', `
+          <div class="jb-grid">
+            ${field('Crew', `<select class="rp-input" id="jb-crew-select">
+              <option value="">— None yet —</option>
+              ${crews.map(c => `<option value="${c.id}"${c.id === prefill.crew_id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+            </select>`, 'Its roster is planned onto every day of the job.')}
+            ${field('Also include', `<select class="rp-input" id="jb-extra-rep" onchange="_jbAddRep(this.value); this.value=''">
+              <option value="">Add a person…</option>
+              ${allReps.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('')}
+            </select>`, 'People beyond the crew roster.')}
+          </div>
+          <div class="jb-chips" id="jb-rep-chips"></div>
+        `)}
+
+        ${section('jb-materials', 'Materials & Equipment', '', `
+          ${field('Materials', `<textarea class="rp-input" id="jb-materials" rows="3" placeholder="One per line — 4 yd topsoil&#10;120 lf paver edging"></textarea>`)}
+          ${field('Equipment', `<textarea class="rp-input" id="jb-equipment" rows="2" placeholder="One per line — Skid steer&#10;F-350 + dump trailer"></textarea>`,
+            'Recorded on the job. Reserving a specific machine against a date needs the asset link table that Phase 7 adds — until then this is a note, not a booking.')}
+        `)}
+
+        ${section('jb-schedule', 'Schedule', 'Optional. Leave blank and the job waits in the Job Pool.', `
+          <div class="jb-radios" role="radiogroup" aria-label="Schedule type">
+            <label><input type="radio" name="jb-sched-type" value="single" checked onchange="_jbScheduleType()"> Single day</label>
+            <label><input type="radio" name="jb-sched-type" value="multi" onchange="_jbScheduleType()"> Multiple days</label>
+            <label><input type="radio" name="jb-sched-type" value="tbd" onchange="_jbScheduleType()"> Flexible / TBD</label>
+          </div>
+          <div class="jb-grid" id="jb-sched-fields">
+            ${field('Start date', `<input class="rp-input" type="date" id="jb-date" value="${escapeHtml(prefill.scheduled_date || '')}" onchange="_jbRecalc()">`)}
+            ${field('Start time', `<input class="rp-input" type="time" id="jb-time" value="${escapeHtml(prefill.scheduled_time || '07:00')}">`)}
+            <div id="jb-days-field" hidden>${field('How many days', `<input class="rp-input" type="number" min="2" max="30" step="1" id="jb-days" value="3" oninput="_jbRecalc()">`, 'Consecutive working days, skipping weekends.')}</div>
+          </div>
+          <div id="jb-preview"></div>
+        `)}
+      </div>
+
+      <div class="sb-modal-actions jb-actions">
+        <button class="rp-btn" onclick="document.getElementById('gw-job-builder')?.remove()">Cancel</button>
+        <div class="jb-actions-right">
+          <button class="rp-btn" onclick="_jbSave(false)">Save to Job Pool</button>
+          <button class="rp-btn rp-btn--primary" onclick="_jbSave(true)">Save &amp; Schedule</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  _jbRecalc();
+};
+
+/**
+ * Expected production days, derived rather than typed.
+ *
+ * "If a value can be derived, never add an input for it" — CLAUDE.md. Sold
+ * labor divided by the crew divided by a productive day is exactly derivable,
+ * so it is shown, not asked for.
+ *
+ * Productive minutes come from the week payload, which carries the company's
+ * own setting, not a hardcoded 8 hours. A shift is not all productive time.
+ */
+window._jbRecalc = function() {
+  const out = document.getElementById('jb-derived');
+  if (!out) return;
+  const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
+  const crewSize  = parseInt(document.getElementById('jb-crew-size')?.value || '', 10) || 0;
+  const productiveMinutes = window._sbState?.capacity?.working_hours?.productive_minutes_per_day || 450;
+  const productiveHours = productiveMinutes / 60;
+
+  if (!soldHours || !crewSize) {
+    out.textContent = 'Enter sold labor and a crew size to see how many days this is.';
+    out.classList.remove('jb-derived--set');
+    return;
+  }
+  const days = soldHours / crewSize / productiveHours;
+  const rounded = Math.max(1, Math.ceil(days - 0.05)); // 3.02 days is 3, 3.4 is 4
+  out.innerHTML = `<strong>${rounded} production day${rounded === 1 ? '' : 's'}</strong> `
+    + `— ${soldHours}h ÷ ${crewSize} ${crewSize === 1 ? 'person' : 'people'} ÷ ${productiveHours.toFixed(1)}h productive`
+    + (rounded > 1 ? ' · schedule the first day here, then split it into phases from the job screen.' : '');
+  out.classList.add('jb-derived--set');
+  _jbRenderPreview();
+};
+
+window._jbScheduleType = function() {
+  const type = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  const fields = document.getElementById('jb-sched-fields');
+  const daysField = document.getElementById('jb-days-field');
+  if (fields) fields.hidden = type === 'tbd';
+  if (daysField) daysField.hidden = type !== 'multi';
+  _jbRecalc();
+};
+
+/**
+ * The days this job would occupy, shown before anything is written.
+ *
+ * The brief asks for a preview table, and it earns its place: the old flow
+ * created the job, then made you open a panel, type a day count, and press
+ * "Set Up Multi-Day Job" — by which point rows already existed and undoing
+ * meant deleting them. Nothing here has been written yet.
+ *
+ * Working days come from the company's own setting, so a four-day-week crew
+ * does not get handed a Friday.
+ */
+function _jbPreviewDays() {
+  const type = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  const start = document.getElementById('jb-date')?.value || '';
+  if (type === 'tbd' || !start) return [];
+  const count = type === 'multi' ? Math.max(2, Math.min(30, parseInt(document.getElementById('jb-days')?.value || '2', 10) || 2)) : 1;
+  const working = window._sbState?.capacity?.working_hours?.working_days || [1, 2, 3, 4, 5];
+  const out = [];
+  let cursor = start;
+  let guard = 0;
+  while (out.length < count && guard++ < 400) {
+    const dow = gwDateParse(cursor)?.getDay();
+    if (working.includes(dow)) out.push(cursor);
+    cursor = gwDateAddDays(cursor, 1);
+  }
+  return out;
+}
+
+function _jbRenderPreview() {
+  const host = document.getElementById('jb-preview');
+  if (!host) return;
+  const days = _jbPreviewDays();
+  const type = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  if (type !== 'multi' || days.length < 2) { host.innerHTML = ''; return; }
+
+  const crewName = document.getElementById('jb-crew-select')?.selectedOptions?.[0]?.textContent?.trim() || '—';
+  const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
+  const crewSize = parseInt(document.getElementById('jb-crew-size')?.value || '', 10) || 0;
+  // Sold labor spread evenly across the days, which is a plan, not a promise —
+  // the real per-day figure comes from who is actually rostered on each day.
+  const perDay = soldHours && days.length ? (soldHours / days.length) : 0;
+
+  host.innerHTML = `
+    <table class="jb-preview">
+      <thead><tr><th>Day</th><th>Date</th><th>Crew</th><th class="jb-num">Planned labor</th></tr></thead>
+      <tbody>
+        ${days.map((d, i) => `<tr>
+          <td>${i + 1}/${days.length}</td>
+          <td>${escapeHtml(gwDateFormat(d, { weekday:'short', month:'short', day:'numeric' }))}</td>
+          <td>${escapeHtml(crewName)}</td>
+          <td class="jb-num">${perDay ? perDay.toFixed(1) + 'h' : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="jb-preview-note">One job, ${days.length} scheduled days — never ${days.length} separate work orders.
+    ${crewSize ? '' : 'Set a target crew size to see how many days this really needs.'}</p>`;
+}
+
+window._jbAddRep = function(repId) {
+  if (!repId) return;
+  const draft = window._gwJobDraft;
+  if (!draft || draft.employee_ids.includes(repId)) return;
+  draft.employee_ids.push(repId);
+  _jbRenderChips();
+};
+window._jbRemoveRep = function(repId) {
+  const draft = window._gwJobDraft;
+  if (!draft) return;
+  draft.employee_ids = draft.employee_ids.filter(id => id !== repId);
+  _jbRenderChips();
+};
+function _jbRenderChips() {
+  const host = document.getElementById('jb-rep-chips');
+  if (!host) return;
+  const reps = window._gwAllReps || [];
+  host.innerHTML = (window._gwJobDraft?.employee_ids || []).map(id => {
+    const r = reps.find(x => x.id === id);
+    return `<span class="jb-chip">${escapeHtml(r?.name || id)}<button onclick="_jbRemoveRep('${escapeHtml(id)}')" aria-label="Remove">×</button></span>`;
+  }).join('');
+}
+
+const _jbLines = (id) => (document.getElementById(id)?.value || '')
+  .split('\n').map(s => s.trim()).filter(Boolean);
+
+window._jbSave = async function(withSchedule) {
+  const clientName = document.getElementById('jb-client')?.value?.trim();
+  if (!clientName) return showToast('Client name required', 'error');
+
+  const schedType = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  const date = schedType === 'tbd' ? null : (document.getElementById('jb-date')?.value || null);
+  if (withSchedule && !date) {
+    return showToast(schedType === 'tbd'
+      ? 'Flexible jobs go to the Job Pool — pick a date to schedule one'
+      : 'Pick a start date, or save to the Job Pool instead', 'error');
+  }
+  const previewDays = withSchedule ? _jbPreviewDays() : [];
+
+  const dayHours = parseFloat(document.getElementById('jb-day-hours')?.value || '') || 0;
+  const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
+
+  const body = {
+    client_name: clientName,
+    title: document.getElementById('jb-title')?.value?.trim() || '',
+    type: document.getElementById('jb-type')?.value || 'Service',
+    property_addr: document.getElementById('jb-addr')?.value?.trim() || '',
+    notes: document.getElementById('jb-scope-text')?.value || '',
+    access_notes: document.getElementById('jb-access')?.value || '',
+    priority: document.getElementById('jb-priority')?.value || null,
+    required_completion_date: document.getElementById('jb-deadline')?.value || null,
+    target_crew_size: parseInt(document.getElementById('jb-crew-size')?.value || '', 10) || null,
+    // Sold labor and calendar span, kept apart all the way to the column.
+    budget_hours: soldHours || null,
+    scheduled_duration_minutes: dayHours ? Math.round(dayHours * 60) : null,
+    crew_id: document.getElementById('jb-crew-select')?.value || null,
+    employee_ids: window._gwJobDraft?.employee_ids || [],
+    materials: _jbLines('jb-materials').map(name => ({ name })),
+    equipment: _jbLines('jb-equipment'),
+    // Only when scheduling. A pool job with a stray time on it would show up
+    // in the wrong place the moment anything read scheduled_time.
+    scheduled_date: withSchedule ? date : null,
+    scheduled_time: withSchedule ? (document.getElementById('jb-time')?.value || null) : null,
+  };
+
+  try {
+    const r = await fetch('/api/work-orders', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Create failed');
+    // One job, N scheduled days. Never N work orders — that is the distinction
+    // the whole Job / Job Day split exists to make, and the reason this posts
+    // once and then splits, rather than looping over create.
+    if (withSchedule && previewDays.length > 1) {
+      const r2 = await fetch(`/api/work-orders/${d.id}/multiday`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          total_days: previewDays.length,
+          start_date: previewDays[0],
+          day_scopes: previewDays.map((_, i) => `Day ${i + 1} of ${previewDays.length}`),
+        }),
+      });
+      if (!r2.ok) showToast('Job created, but splitting it into days failed — open it to retry', 'error');
+    }
+    showToast(
+      !withSchedule ? `${d.wo_number} saved to the Job Pool`
+        : previewDays.length > 1 ? `${d.wo_number} scheduled across ${previewDays.length} days`
+        : `${d.wo_number} scheduled`,
+      'success');
+    document.getElementById('gw-job-builder')?.remove();
+    window._gwJobDraft = null;
+    await _sbRefresh();
+  } catch (e) {
+    showToast('Create failed: ' + (e && e.message ? e.message : e), 'error');
+  }
+};
+
 // ── Crew Manager Modal ────────────────────────────────────────────────────────
 window._sbOpenCrewManager = async function() {
   // Ensure fresh data
@@ -20347,7 +21117,7 @@ function dispatchBoard() {
       </div>
       <div class="gwp-header-actions">
         <button class="gwp-btn-ghost" onclick="show('scheduleBoard')">Schedule View</button>
-        <button class="gwp-btn-primary" onclick="show('workOrderList')">+ Work Order</button>
+        <button class="gwp-btn-primary" onclick="show('workOrderList')">+ Job</button>
       </div>
     </header>
 
@@ -23142,7 +23912,7 @@ function crewView() {
       <div class="rp-header-actions">
         <button class="rp-btn" onclick="show('scheduleBoard')">Week Schedule</button>
         <button class="rp-btn" onclick="show('dispatchBoard')">Dispatch Board</button>
-        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Work Order</button>
+        <button class="rp-btn rp-btn--primary" onclick="show('workOrderList')">+ Job</button>
       </div>
     </header>
 

@@ -136,11 +136,34 @@ export async function ensurePrimaryDay(
   if (!wo) return null;
   if (!s(wo.scheduled_date)) return null;
 
+  // Scoped to this company and to the PRIMARY row specifically.
+  //
+  // This used to be `WHERE work_order_id=? ORDER BY day_number LIMIT 1` with
+  // neither predicate, which had two consequences. A multi-day job matched its
+  // hand-authored day 1 (is_primary=0), so this returned that id and the caller
+  // believed a primary row existed — syncPrimaryDayFromWorkOrder then found no
+  // is_primary row, called this, got day 1 back, and updated nothing at all.
+  // Rescheduling a multi-day job silently did nothing to any wo_days row.
   const existing = await db
-    .prepare(`SELECT id FROM wo_days WHERE work_order_id=? ORDER BY day_number LIMIT 1`)
-    .bind(workOrderId)
+    .prepare(
+      `SELECT id FROM wo_days
+        WHERE work_order_id=? AND company_id=? AND is_primary=1
+        ORDER BY day_number LIMIT 1`,
+    )
+    .bind(workOrderId, companyId)
     .first<{ id: string }>();
   if (existing) return existing.id;
+
+  // A multi-day job's days are authored deliberately, each with its own date,
+  // phase and crew. work_orders carries a single date that cannot describe them,
+  // so there is nothing for a primary row to mirror — creating one would invent
+  // a day the user never scheduled. Those jobs move through the multi-day
+  // endpoints, which write wo_days directly.
+  const multiDay = await db
+    .prepare(`SELECT id FROM wo_days WHERE work_order_id=? AND company_id=? LIMIT 1`)
+    .bind(workOrderId, companyId)
+    .first<{ id: string }>();
+  if (multiDay) return null;
 
   // Same deterministic id shape as migration 0061, so a row created here and a
   // row created by the backfill are indistinguishable and cannot collide.
@@ -179,12 +202,18 @@ export async function ensurePrimaryDay(
 /**
  * Push a work order's scheduling columns onto its primary day row.
  *
- * The board's drag, drop and resize all write through the pre-existing
- * /api/work-orders/:id/reschedule, which updates work_orders and nothing else.
- * Capacity is computed from wo_days, so without this a dragged job moves on the
- * grid while its labor stays attributed to the day it came from — the grid and
- * the capacity figure beside it disagree, and no amount of refetching fixes it
- * because the underlying row is stale.
+ * Capacity is computed from wo_days, so any endpoint that moves a job by writing
+ * work_orders has to call this or the grid and the capacity figure beside it
+ * disagree — and no amount of refetching fixes it, because the underlying row is
+ * the thing that is stale.
+ *
+ * Callers, and why the list matters: this originally covered only
+ * PATCH /api/work-orders/:id/reschedule, and an earlier version of this comment
+ * claimed it covered "every path that changes a work order's crew" including the
+ * work-order PUT. It did not. PUT /api/work-orders/:id writes every scheduling
+ * column this function mirrors and called nothing, which is exactly how a crew
+ * drag — PATCH then PUT — left wo_days pointing at the old crew. Both call it now.
+ * If a third write path appears, it needs to be added here too.
  *
  * Only the primary (backfilled) day is synced. Multi-day jobs have hand-authored
  * rows with their own dates and phases, and work_orders carries a single date
@@ -288,10 +317,24 @@ export async function syncDayEmployees(
         WHERE d.work_order_id=? AND d.company_id=?${dayFilter}`,
     ).bind(...dayBinds).all<any>(),
     // Fallback roster for days that carry no crew of their own.
+    //
+    // The crew_role subquery is scoped to the WORK ORDER's crew. It used to join
+    // crew_members on rep_id alone, and nothing stops a rep being on several
+    // crews (the unique index is on (crew_id, rep_id), not rep_id) — so a person
+    // on two crews produced one row per crew, made the returned crew_role
+    // whichever SQLite happened to emit first, and inflated the inserted count.
+    // Only ON CONFLICT DO NOTHING kept it from writing a duplicate.
+    //
+    // MIN() rather than an arbitrary pick so the answer is at least stable
+    // between runs; 'foreman' sorts before 'laborer', which is the useful tie-break.
     db.prepare(
-      `SELECT woe.rep_id, COALESCE(cm.crew_role, 'laborer') AS crew_role
+      `SELECT woe.rep_id,
+              COALESCE((SELECT MIN(cm.crew_role) FROM crew_members cm
+                         WHERE cm.rep_id = woe.rep_id
+                           AND cm.company_id = woe.company_id
+                           AND cm.crew_id = (SELECT crew_id FROM work_orders WHERE id = woe.wo_id)),
+                       'laborer') AS crew_role
          FROM work_order_employees woe
-         LEFT JOIN crew_members cm ON cm.rep_id = woe.rep_id AND cm.company_id = woe.company_id
         WHERE woe.wo_id=? AND woe.company_id=?`,
     ).bind(workOrderId, companyId).all<any>(),
     db.prepare(
@@ -304,6 +347,9 @@ export async function syncDayEmployees(
 
   const days = dayRes.results || [];
   if (!days.length) return 0;
+
+  // Only read once we know there is work to do, and only for the fallback below.
+  const { productive_minutes_per_day: productiveMinutes } = await loadWorkdaySettings(db, companyId);
 
   // One read for every crew involved, rather than one per day.
   const crewIds = [...new Set(days.map((d: any) => s(d.crew_id || '')).filter(Boolean))];
@@ -349,12 +395,25 @@ export async function syncDayEmployees(
       );
     }
 
+    // How much labor to plan for each person on this day.
+    //
+    // The day's own calendar duration wins, then the job's. The last resort used
+    // to be 0, which is a claim nobody would make out loud: it says this crew is
+    // on site and doing nothing. A job scheduled straight off the Job Pool has no
+    // stated duration yet, so every person landed at 0 and the crew read as
+    // completely idle on a day it was fully booked — capacity was 0% next to a
+    // grid full of cards.
+    //
+    // Falling back to the company's productive day is the honest default: you
+    // have put a crew on a job for a day, and absent any other information they
+    // are on it for the day. Correct it by resizing the block or by tuning a
+    // person's minutes, both of which this function preserves.
     const defaultMinutes =
       day.scheduled_duration_minutes != null
         ? int(day.scheduled_duration_minutes)
         : day.duration_hours != null
           ? Math.round(Number(day.duration_hours) * 60)
-          : 0;
+          : productiveMinutes;
 
     for (const rep of desired) {
       if (existing.has(rep.rep_id)) continue; // keeps hand-tuned planned_minutes
@@ -543,11 +602,81 @@ schedulingRouter.get('/week', async (c) => {
       };
     });
 
+  // ── Conflicts ──────────────────────────────────────────────────────────────
+  //
+  // Computed here rather than behind their own endpoint because everything they
+  // need is already loaded, and because a warning that arrives in a second
+  // request is a warning the grid can render without.
+  //
+  // Every one of these is derived from data that exists. There is deliberately
+  // no "materials not ready" or "equipment already assigned" until the columns
+  // behind them are real — a warning that cannot fire is worse than no warning,
+  // because it teaches people the check is running when it is not.
+  const warnings: Array<{ type: string; severity: 'warn' | 'error'; date: string; crew_id?: string; day_id?: string; rep_id?: string; message: string }> = [];
+
+  for (const cr of crews) {
+    for (const d of cr.days) {
+      if (d.utilization_pct != null && d.utilization_pct > 100) {
+        warnings.push({
+          type: 'crew_over_capacity', severity: 'warn', date: d.date, crew_id: cr.id,
+          message: `${cr.name} is booked to ${d.utilization_pct}% of capacity`,
+        });
+      }
+      if (!d.is_working_day && d.planned_minutes > 0) {
+        warnings.push({
+          type: 'outside_working_days', severity: 'warn', date: d.date, crew_id: cr.id,
+          message: `${cr.name} has work booked on a non-working day`,
+        });
+      }
+    }
+  }
+
+  // One person, two jobs, same date. Distinct DAYS, so a person legitimately
+  // listed once is never flagged — this is about two separate commitments.
+  const repDay = new Map<string, { name: string; days: Set<string> }>();
+  for (const a of assignments) {
+    for (const e of a.employees) {
+      const key = `${e.rep_id}|${a.date}`;
+      if (!repDay.has(key)) repDay.set(key, { name: e.rep_name, days: new Set() });
+      repDay.get(key)!.days.add(a.day_id);
+    }
+  }
+  for (const [key, v] of repDay) {
+    if (v.days.size < 2) continue;
+    const [rep_id, date] = key.split('|');
+    warnings.push({
+      type: 'employee_double_booked', severity: 'error', date, rep_id,
+      message: `${v.name} is on ${v.days.size} jobs on this day`,
+    });
+  }
+
+  // Planned labor short of what was sold, on a job whose days are all in view.
+  // Only flagged when the job actually has a sold figure — a null budget means
+  // "never costed", which is not the same as "under-planned".
+  const byWorkOrder = new Map<string, { planned: number; budget: number | null; last: string; day_id: string }>();
+  for (const a of assignments) {
+    const cur = byWorkOrder.get(a.work_order_id) || { planned: 0, budget: a.budget_minutes, last: a.date, day_id: a.day_id };
+    cur.planned += a.planned_minutes;
+    if (a.date > cur.last) cur.last = a.date;
+    byWorkOrder.set(a.work_order_id, cur);
+  }
+  for (const [, v] of byWorkOrder) {
+    if (v.budget == null || v.budget <= 0) continue;
+    if (v.planned === 0) continue; // unstaffed is its own, more obvious, problem
+    if (v.planned < v.budget * 0.75) {
+      warnings.push({
+        type: 'under_planned', severity: 'warn', date: v.last, day_id: v.day_id,
+        message: `Only ${Math.round((v.planned / v.budget) * 100)}% of the sold labor is on the schedule`,
+      });
+    }
+  }
+
   return c.json({
     ok: true,
     start,
     end,
     days,
+    warnings,
     working_hours: {
       working_days: workingDays,
       shift_start: settings.shift_start,
@@ -579,7 +708,8 @@ schedulingRouter.get('/backlog', async (c) => {
   const res = await db
     .prepare(
       `SELECT id, wo_number, title, client_name, property_addr, type, status,
-              crew_id, scheduled_date, duration_hours, budget_minutes, amount_est_cents
+              crew_id, scheduled_date, duration_hours, budget_minutes, amount_est_cents,
+              priority, required_completion_date, target_crew_size
          FROM work_orders
         WHERE company_id=?
           AND status NOT IN ('completed','cancelled')
@@ -605,8 +735,25 @@ schedulingRouter.get('/backlog', async (c) => {
       crew_id: s(wo.crew_id || ''),
       duration_minutes: wo.duration_hours == null ? null : Math.round(Number(wo.duration_hours) * 60),
       budget_minutes: wo.budget_minutes == null ? null : int(wo.budget_minutes),
+      // Migration 0070. The pool filters and sorts on these, which is the whole
+      // reason the columns exist — see the migration header.
+      priority: s(wo.priority || '') || null,
+      required_completion_date: s(wo.required_completion_date || '', 10) || null,
+      target_crew_size: wo.target_crew_size == null ? null : int(wo.target_crew_size),
       ...(stripMoney ? {} : { value_cents: int(wo.amount_est_cents, 0) }),
     };
+    // Order matters, and 'hold' deliberately wins.
+    //
+    // The revamp plan proposed reversing this so a held job with no date would
+    // report as needs_scheduling rather than being "swallowed" by tentative.
+    // That is wrong, and the existing test caught it. 'hold' is what
+    // estimate -> work-order conversion writes when the client has NOT accepted
+    // yet (see src/index.tsx, the traffic-light hold). Surfacing unsold work
+    // under "needs scheduling" would invite someone to commit a crew to a job
+    // the customer has not agreed to buy.
+    //
+    // Tentative first is the honest answer: the next action on that job is to
+    // close the sale, not to find it a Tuesday.
     if (wo.status === 'hold') buckets.tentative.push(card);
     else if (!s(wo.scheduled_date)) buckets.needs_scheduling.push(card);
     else buckets.needs_crew.push(card);
@@ -639,6 +786,16 @@ schedulingRouter.post('/work-orders/:id/schedule', async (c) => {
     .first<any>();
   if (!wo) return c.json({ ok: false, error: 'Work order not found' }, 404);
 
+  // Lock checked HERE, before anything is written.
+  //
+  // schedule_locked was selected above and never read: the only lock check
+  // happened downstream inside applyDaySchedule, by which point the UPDATE below
+  // had already committed a new date. A locked job returned 409 and moved
+  // anyway — the refusal and the write both happened.
+  if (int(wo.schedule_locked, 0) === 1 && body.force !== true) {
+    return c.json({ ok: false, error: 'This visit is locked. Unlock it before rescheduling.' }, 409);
+  }
+
   // Set the date first so ensurePrimaryDay has something to copy from.
   await db
     .prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
@@ -647,6 +804,11 @@ schedulingRouter.post('/work-orders/:id/schedule', async (c) => {
 
   const dayId = await ensurePrimaryDay(db, companyId, workOrderId);
   if (!dayId) return c.json({ ok: false, error: 'Could not create a day row' }, 500);
+
+  // The day was just created from the work order, so it already carries the
+  // right crew — but nobody is on it yet. Without this a job scheduled straight
+  // off the backlog lands on the grid with zero planned labor.
+  await syncDayEmployees(db, companyId, workOrderId, dayId);
 
   return applyDaySchedule(c, dayId, body);
 });
@@ -663,8 +825,15 @@ async function applyDaySchedule(c: any, dayId: string, body: any) {
   const db = c.env.DB as D1Database;
   const companyId = c.var.companyId as string;
 
+  // Everything needed to decide AND to mirror, in one read. The is_primary flag
+  // used to be fetched in a second round trip after the write, along with a
+  // third read for the fresh row — see the batch below for why that mattered.
   const day = await db
-    .prepare(`SELECT id, work_order_id, schedule_locked, crew_id FROM wo_days WHERE id=? AND company_id=? LIMIT 1`)
+    .prepare(
+      `SELECT id, work_order_id, schedule_locked, crew_id, is_primary,
+              day_date, start_time, end_time, scheduled_duration_minutes
+         FROM wo_days WHERE id=? AND company_id=? LIMIT 1`,
+    )
     .bind(dayId, companyId)
     .first<any>();
   if (!day) return c.json({ ok: false, error: 'Day not found' }, 404);
@@ -704,56 +873,178 @@ async function applyDaySchedule(c: any, dayId: string, body: any) {
 
   const crewChanged = body.crew_id !== undefined && s(body.crew_id, 64) !== s(day.crew_id || '');
 
+  // What the row will hold once this write lands. Computed here rather than
+  // re-read afterwards, which is what lets the mirror share one transaction.
+  const next = {
+    day_date: body.date !== undefined ? isoDateOr(body.date, '') : s(day.day_date ?? '', 10),
+    start_time: body.start_time !== undefined ? timeOrNull(body.start_time) : (day.start_time ?? null),
+    end_time: body.end_time !== undefined ? timeOrNull(body.end_time) : (day.end_time ?? null),
+    duration:
+      body.duration_minutes !== undefined
+        ? int(body.duration_minutes, 0) || null
+        : day.scheduled_duration_minutes == null
+          ? null
+          : int(day.scheduled_duration_minutes),
+    crew_id: body.crew_id !== undefined ? s(body.crew_id, 64) : s(day.crew_id ?? ''),
+  };
+
   sets.push("updated_at=datetime('now')");
-  await db
-    .prepare(`UPDATE wo_days SET ${sets.join(', ')} WHERE id=? AND company_id=?`)
-    .bind(...binds, dayId, companyId)
-    .run();
+
+  const statements = [
+    db.prepare(`UPDATE wo_days SET ${sets.join(', ')} WHERE id=? AND company_id=?`).bind(...binds, dayId, companyId),
+  ];
+
+  // Resizing a job on the grid has to move the labor with it. planned_minutes
+  // was seeded from the day's calendar duration and then never revisited, so
+  // stretching a 4-hour block to 8 left every person on it still planned for 4
+  // and the crew's utilisation unchanged — the grid said one thing and the
+  // capacity bar beside it said another.
+  //
+  // Restricted to rows that still hold the OLD duration exactly: that is the
+  // signature of an untouched default. Anyone whose minutes were hand-tuned
+  // (someone leaving at noon) keeps them, which is the same rule syncDayEmployees
+  // already follows when it re-derives a roster.
+  const durationChanged = body.duration_minutes !== undefined && next.duration !== (day.scheduled_duration_minutes ?? null);
+  if (durationChanged && next.duration != null) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE wo_day_employees SET planned_minutes=?, updated_at=datetime('now')
+            WHERE wo_day_id=? AND company_id=? AND source='roster'
+              AND planned_minutes = ?`,
+        )
+        .bind(next.duration, dayId, companyId, int(day.scheduled_duration_minutes, 0)),
+    );
+  }
+
+  // Keep the work order's own scheduling columns in step for the primary day, so
+  // screens still reading work_orders directly do not go stale.
+  //
+  // In the SAME batch as the day update. These were two independent statements
+  // with two reads between them; a failure in the gap left the day moved and the
+  // work order on its old date — precisely the split-brain the day row exists to
+  // prevent. D1 runs a batch in one transaction, so now they land together or
+  // not at all.
+  //
+  // budget_minutes is deliberately absent from this UPDATE and from every other
+  // write in this router. Scheduling changes when a job happens and who is on
+  // it — never what we sold.
+  if (int(day.is_primary, 0) === 1) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE work_orders
+              SET scheduled_date=?, scheduled_time=?, scheduled_end_time=?,
+                  scheduled_duration_minutes=?, crew_id=?, updated_at=datetime('now')
+            WHERE id=? AND company_id=?`,
+        )
+        .bind(
+          next.day_date,
+          next.start_time,
+          next.end_time,
+          next.duration,
+          next.crew_id || null,
+          day.work_order_id,
+          companyId,
+        ),
+    );
+  }
+
+  await db.batch(statements);
 
   // Dropping a job into a different crew lane has to move the people too,
   // otherwise the card appears under the new crew while its planned labor stays
   // attributed to the old one. Scoped to this day, so one day of a multi-day job
   // can change crew without disturbing the others.
+  //
+  // Outside the batch because it needs to read the new crew's roster first. It is
+  // idempotent and derives everything from the day's crew, so a failure here is
+  // recoverable by re-running — unlike a half-applied move, which is not.
   if (crewChanged) await syncDayEmployees(db, companyId, day.work_order_id, dayId);
 
-  // Keep the work order's own scheduling columns in step for the primary day,
-  // so screens still reading work_orders directly do not go stale.
-  //
-  // budget_minutes is deliberately absent from this UPDATE and from every other
-  // write in this router. Scheduling changes when a job happens and who is on
-  // it — never what we sold.
-  const isPrimary = await db
-    .prepare(`SELECT is_primary FROM wo_days WHERE id=? AND company_id=?`)
-    .bind(dayId, companyId)
-    .first<{ is_primary: number }>();
-  if (int(isPrimary?.is_primary, 0) === 1) {
-    const fresh = await db
-      .prepare(
-        `SELECT day_date, start_time, end_time, scheduled_duration_minutes, crew_id
-           FROM wo_days WHERE id=? AND company_id=?`,
-      )
-      .bind(dayId, companyId)
-      .first<any>();
-    await db
-      .prepare(
-        `UPDATE work_orders
-            SET scheduled_date=?, scheduled_time=?, scheduled_end_time=?,
-                scheduled_duration_minutes=?, crew_id=?, updated_at=datetime('now')
-          WHERE id=? AND company_id=?`,
-      )
-      .bind(
-        fresh.day_date,
-        fresh.start_time,
-        fresh.end_time,
-        fresh.scheduled_duration_minutes,
-        s(fresh.crew_id || '') || null,
-        day.work_order_id,
-        companyId,
-      )
-      .run();
-  }
+  return c.json({
+    ok: true,
+    day_id: dayId,
+    work_order_id: day.work_order_id,
+    // Capacity for every crew and date this touched — the crew it left as well
+    // as the one it joined. Without the old crew the sidebar keeps showing labor
+    // that has already moved away, and the caller has no way to know which other
+    // lane to refresh.
+    capacity: await capacityFor(
+      db,
+      companyId,
+      [s(day.crew_id ?? ''), next.crew_id],
+      [s(day.day_date ?? '', 10), next.day_date],
+    ),
+  });
+}
 
-  return c.json({ ok: true, day_id: dayId, work_order_id: day.work_order_id });
+/**
+ * Capacity and planned labor for a set of (crew, date) pairs.
+ *
+ * Every scheduling write returns this so the grid and the number beside it
+ * cannot disagree. docs/HANDOFF-scheduling.md promised it when the router was
+ * designed and it was never built, so the board compensated with a second
+ * round trip to /week after every drag — which is both slower and a window in
+ * which the two can differ.
+ *
+ * Blank crew ids and blank dates are dropped: an unassigned or undated day has
+ * no lane to report on.
+ */
+export async function capacityFor(
+  db: D1Database,
+  companyId: string,
+  crewIds: string[],
+  dates: string[],
+): Promise<Array<{ crew_id: string; date: string; capacity_minutes: number; planned_minutes: number; utilization_pct: number | null }>> {
+  const crews = [...new Set(crewIds.map((v) => s(v ?? '')).filter(Boolean))];
+  const days = [...new Set(dates.map((v) => s(v ?? '', 10)).filter(Boolean))];
+  if (!crews.length || !days.length) return [];
+
+  const settings = await loadWorkdaySettings(db, companyId);
+  const workingDays = parseWorkingDays(settings.working_days);
+
+  const crewPlaceholders = crews.map(() => '?').join(',');
+  const [membersRes, plannedRes] = await Promise.all([
+    db
+      .prepare(`SELECT crew_id, COUNT(*) AS n FROM crew_members WHERE company_id=? AND crew_id IN (${crewPlaceholders}) GROUP BY crew_id`)
+      .bind(companyId, ...crews)
+      .all<any>(),
+    db
+      .prepare(
+        `SELECT d.crew_id, d.day_date, COALESCE(SUM(e.planned_minutes), 0) AS planned
+           FROM wo_days d
+           LEFT JOIN wo_day_employees e ON e.wo_day_id = d.id AND e.company_id = d.company_id
+          WHERE d.company_id=? AND d.crew_id IN (${crewPlaceholders})
+            AND d.day_date >= ? AND d.day_date <= ?
+          GROUP BY d.crew_id, d.day_date`,
+      )
+      .bind(companyId, ...crews, days.slice().sort()[0], days.slice().sort().at(-1))
+      .all<any>(),
+  ]);
+
+  const memberCount = new Map<string, number>();
+  for (const m of membersRes.results || []) memberCount.set(m.crew_id, int(m.n, 0));
+  const plannedBy = new Map<string, number>();
+  for (const p of plannedRes.results || []) plannedBy.set(`${p.crew_id}|${p.day_date}`, int(p.planned, 0));
+
+  const out = [];
+  for (const crewId of crews) {
+    const daily = crewDailyCapacityMinutes(memberCount.get(crewId) || 0, settings.productive_minutes_per_day);
+    for (const date of days) {
+      const isWorkingDay = workingDays.includes(new Date(`${date}T00:00:00Z`).getUTCDay());
+      const capacity = isWorkingDay ? daily : 0;
+      const planned = plannedBy.get(`${crewId}|${date}`) || 0;
+      out.push({
+        crew_id: crewId,
+        date,
+        capacity_minutes: capacity,
+        planned_minutes: planned,
+        utilization_pct: utilizationPct(planned, capacity),
+      });
+    }
+  }
+  return out;
 }
 
 // ── DELETE /days/:id/schedule ────────────────────────────────────────────────
