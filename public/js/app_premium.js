@@ -18001,6 +18001,165 @@ function _sbLoadPreferences() {
 }
 _sbLoadPreferences();
 
+
+// ── Job Day rail ─────────────────────────────────────────────────────────────
+//
+// The day drawer, docked beside the board rather than covering it.
+//
+// It was a full-screen overlay: opening a job hid the schedule, so comparing a
+// day against the rest of the week meant closing it, looking, and opening it
+// again. A scheduler works between the two constantly. The rail keeps both on
+// screen, which is the whole point of the layout in the reference.
+//
+// The overlay modal is kept for every OTHER entry point — client detail,
+// estimates, My Day — where there is no board to dock against.
+
+window._sbOpenDayRail = function(woId, dayNumber) {
+  const sb = window._sbState;
+  const key = `${woId}:${dayNumber || 0}`;
+  // Clicking the selected card again closes the rail, which is what people try.
+  sb.selectedDayId = sb.selectedDayId === key ? null : key;
+  sb.selectedRail = null;
+  _sbRender();
+  if (sb.selectedDayId) _sbLoadRail(woId, dayNumber);
+};
+window._sbCloseRail = function() {
+  window._sbState.selectedDayId = null;
+  window._sbState.selectedRail = null;
+  _sbRender();
+};
+
+async function _sbLoadRail(woId, dayNumber) {
+  try {
+    const r = await fetch(`/api/work-orders/${encodeURIComponent(woId)}`, { credentials: 'include' });
+    const d = await r.json();
+    if (!d.ok) return;
+    let wo = d.data;
+    // The board holds one row per DAY, so a specific day's fields come from
+    // there — the work-order read joins whichever day matches its own date.
+    if (dayNumber) {
+      const row = (window._sbState.workOrders || []).find(w => w.id === woId && Number(w.md_day_number) === Number(dayNumber));
+      if (row) wo = { ...wo, ...{
+        md_day_id: row.md_day_id, md_day_number: row.md_day_number, md_scope: row.md_scope,
+        md_phase_name: row.md_phase_name, md_crew_id: row.md_crew_id, md_status: row.md_status,
+        scheduled_date: row.scheduled_date, scheduled_time: row.scheduled_time,
+        scheduled_end_time: row.scheduled_end_time, schedule_locked: row.schedule_locked,
+      } };
+    }
+    window._sbState.selectedRail = wo;
+    _sbRender();
+    _sbLoadHours(woId);
+  } catch (e) { /* rail simply stays in its loading state */ }
+}
+
+function _sbRailSection(title, count, body, open) {
+  return `<section class="sb-rail-sec${open === false ? '' : ' is-open'}">
+    <header class="sb-rail-sec-head" onclick="this.parentElement.classList.toggle('is-open')">
+      <h4>${title}</h4>${count != null ? `<span class="sb-rail-count">${count}</span>` : ''}
+      <span class="sb-rail-caret" aria-hidden="true">&rsaquo;</span>
+    </header>
+    <div class="sb-rail-sec-body">${body}</div>
+  </section>`;
+}
+
+function _sbDayRailHtml() {
+  const sb = window._sbState;
+  const wo = sb.selectedRail;
+  if (!wo) {
+    return `<aside class="sb-rail" aria-label="Job day details" aria-busy="true">
+      <div class="sb-rail-head"><div class="sb-rail-skel-line" style="width:40%"></div><button class="sb-rail-close" onclick="_sbCloseRail()" aria-label="Close">&times;</button></div>
+      <div class="sb-rail-body">${'<div class="sb-rail-skel"></div>'.repeat(4)}</div>
+    </aside>`;
+  }
+
+  const crews = sb.crews || [];
+  const crewId = wo.md_crew_id || wo.crew_id;
+  const crew = crews.find(c => c.id === crewId);
+  const total = Number(wo.total_days || 0), dayN = Number(wo.md_day_number || 0);
+  const cap = sb.capacity;
+  const assignment = (cap?.assignments || []).find(a => a.day_id === wo.md_day_id);
+  const people = assignment?.employees || [];
+  const checklist = Array.isArray(wo.checklist) ? wo.checklist : [];
+  const doneCount = checklist.filter(x => x && (x.done || x.checked)).length;
+  const equipment = Array.isArray(wo.equipment) ? wo.equipment : [];
+  const materials = Array.isArray(wo.materials) ? wo.materials : [];
+  const photos = [...(Array.isArray(wo.before_photos) ? wo.before_photos : []), ...(Array.isArray(wo.after_photos) ? wo.after_photos : [])];
+
+  const sib = (target) => (sb.workOrders || []).find(w => w.id === wo.id && Number(w.md_day_number) === target);
+  const navBtn = (target, label, glyph) => (total > 1 && sib(target))
+    ? `<button class="sb-daynav-btn" onclick="_sbOpenDayRail('${escapeHtml(wo.id)}',${target})" aria-label="${label}" title="${label}">${glyph}</button>`
+    : `<button class="sb-daynav-btn" disabled aria-hidden="true">${glyph}</button>`;
+
+  return `<aside class="sb-rail" aria-label="Job day details">
+    <div class="sb-rail-head">
+      <div class="sb-rail-daynav">
+        ${total > 1 ? `${navBtn(dayN - 1, 'Previous day', '&lsaquo;')}<span class="sb-rail-dayof">Day ${dayN} of ${total}</span>${navBtn(dayN + 1, 'Next day', '&rsaquo;')}` : '<span class="sb-rail-dayof">Single day</span>'}
+      </div>
+      <button class="sb-rail-close" onclick="_sbCloseRail()" aria-label="Close details">&times;</button>
+    </div>
+
+    <div class="sb-rail-title">
+      <div class="sb-rail-wo">
+        <span class="sb-rail-wonum">${escapeHtml(wo.wo_number || '')}</span>
+        <span class="ops-ready-badge ${_p6WOStatusClass(wo.status)}">${_p6WOStatusLabel(wo.status)}</span>
+      </div>
+      <h3>${escapeHtml(wo.title || wo.client_name || 'Job')}</h3>
+      <dl class="sb-rail-facts">
+        ${wo.property_addr ? `<div><dt>Site</dt><dd>${escapeHtml(wo.property_addr)}</dd></div>` : ''}
+        <div><dt>Date</dt><dd>${escapeHtml(gwDateFormat(wo.scheduled_date, { weekday:'short', month:'short', day:'numeric' }))}${wo.scheduled_time ? ' &middot; ' + escapeHtml(_sbDisplayTime(wo.scheduled_time)) : ''}</dd></div>
+        <div><dt>Crew</dt><dd>${crew ? `<span class="sb-rail-crewdot" style="background:${crew.color}"></span>${escapeHtml(crew.name)}` : 'Not assigned'}</dd></div>
+      </dl>
+    </div>
+
+    <div class="sb-rail-body">
+      ${_sbRailSection('Labor', null, `
+        <div class="sb-rail-hours" id="sbm-hours">
+          <div class="sb-rail-skel" style="height:44px"></div>
+        </div>`)}
+
+      ${_sbRailSection('Crew &amp; employees', people.length, people.length
+        ? `<ul class="sb-rail-people">${people.map(p => `<li>
+             <span class="sb-rail-avatar">${escapeHtml((p.rep_name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase())}</span>
+             <span class="sb-rail-pname">${escapeHtml(p.rep_name || '')}</span>
+             ${p.crew_role === 'foreman' ? '<span class="sb-rail-role">Foreman</span>' : ''}
+             <span class="sb-rail-pmin">${((p.planned_minutes || 0) / 60).toFixed(1)}h</span>
+           </li>`).join('')}</ul>`
+        : '<p class="sb-rail-empty">Nobody is on this day yet. Assign a crew and its roster is planned in automatically.</p>')}
+
+      ${_sbRailSection("Today&rsquo;s scope", null,
+        (wo.md_scope || wo.notes)
+          ? `<p class="sb-rail-scope">${escapeHtml(wo.md_scope || wo.notes)}</p>`
+          : '<p class="sb-rail-empty">No scope written for this day.</p>')}
+
+      ${_sbRailSection('Checklist', checklist.length ? `${doneCount}/${checklist.length}` : null, checklist.length
+        ? `<ul class="sb-rail-check">${checklist.map(x => `<li class="${x && (x.done || x.checked) ? 'is-done' : ''}"><span class="sb-rail-box" aria-hidden="true"></span>${escapeHtml((x && (x.text || x.label)) || String(x))}</li>`).join('')}</ul>`
+        : '<p class="sb-rail-empty">No checklist items.</p>')}
+
+      ${_sbRailSection('Materials &amp; equipment', (materials.length + equipment.length) || null,
+        (materials.length || equipment.length)
+          ? `<ul class="sb-rail-kit">
+              ${materials.map(m => `<li><span class="sb-rail-kit-name">${escapeHtml(m.name || String(m))}</span>${m.status ? `<span class="sb-rail-kit-status">${escapeHtml(m.status)}</span>` : ''}</li>`).join('')}
+              ${equipment.map(e => `<li><span class="sb-rail-kit-name">${escapeHtml(typeof e === 'string' ? e : (e.name || ''))}</span>${(e && e.status) ? `<span class="sb-rail-kit-status">${escapeHtml(e.status)}</span>` : ''}</li>`).join('')}
+             </ul>`
+          : '<p class="sb-rail-empty">Nothing recorded for this day.</p>', false)}
+
+      ${_sbRailSection('Client update', photos.length || null, `
+        <div class="sb-rail-photos">
+          ${photos.slice(0, 4).map(u => `<img src="${escapeHtml(typeof u === 'string' ? u : (u.url || ''))}" alt="" loading="lazy">`).join('')}
+          <button class="sb-rail-addphoto" onclick="_sbOpenVisitModal('${escapeHtml(wo.id)}',${dayN || 0})" title="Add photos and publish an update">+</button>
+        </div>`, false)}
+    </div>
+
+    <div class="sb-rail-actions">
+      <button class="sb-rail-danger" onclick="_sbUnscheduleDay('${escapeHtml(wo.id)}')">Unschedule day</button>
+      <div class="sb-rail-actions-right">
+        <button class="rp-btn" onclick="_sbOpenVisitModal('${escapeHtml(wo.id)}',${dayN || 0})">Open full job</button>
+        <button class="rp-btn rp-btn--primary" onclick="_sbCompleteVisit('${escapeHtml(wo.id)}','${escapeHtml(wo.type||'Service')}')">Mark day complete</button>
+      </div>
+    </div>
+  </aside>`;
+}
+
 // ── Job Pool ─────────────────────────────────────────────────────────────────
 //
 // Work that is not yet on the grid, beside the grid rather than pretending to be
@@ -18358,8 +18517,8 @@ function _sbJobCard(wo, crews, draggable) {
   const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--type-color:${_sbTypeColor(wo.type)};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
-        onclick="_sbOpenVisitModal('${wo.id}')">
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}${(window._sbState?.selectedDayId === `${wo.id}:${isMd ? Number(wo.md_day_number||0) : 0}`) ? ' is-selected' : ''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--type-color:${_sbTypeColor(wo.type)};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+        onclick="_sbOpenDayRail('${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
@@ -18646,42 +18805,44 @@ function _sbRender() {
   }
 
   view.innerHTML = `
-  <div class="sched-shell gw-workflow-cleanup sb-density-${sb.density}">
-    <div class="gwp-shell" style="padding-bottom:0">
-      <header class="gwp-header" style="margin-bottom:14px">
-        <div class="gwp-header-left">
-          <h1 class="gwp-title">Schedule</h1>
-          <div class="sb-nav-controls">
-            <button class="sb-nav-btn" onclick="_sbNav(-1)">‹</button>
-            <span class="sb-period-label">${headerLabel}</span>
-            <button class="sb-nav-btn" onclick="_sbNav(1)">›</button>
-            <button class="gwp-chip" onclick="_sbGoToday()">Today</button>
-          </div>
-        </div>
-        <div class="gwp-header-actions">
-          <div class="sb-view-toggle">
-            <button class="sb-view-btn${sb.viewMode==='timeline'?' active':''}" onclick="_sbSetView('timeline')">Timeline</button>
-            <button class="sb-view-btn${sb.viewMode==='week'?' active':''}" onclick="_sbSetView('week')">Week</button>
-            <button class="sb-view-btn${sb.viewMode==='month'?' active':''}" onclick="_sbSetView('month')">Month</button>
-            <button class="sb-view-btn${sb.viewMode==='agenda'?' active':''}" onclick="_sbSetView('agenda')">Agenda</button>
-          </div>
-          <select class="sb-density-select" onchange="_sbSetDensity(this.value)" title="Calendar density"><option value="compact"${sb.density==='compact'?' selected':''}>Compact</option><option value="comfortable"${sb.density==='comfortable'?' selected':''}>Comfortable</option><option value="detailed"${sb.density==='detailed'?' selected':''}>Detailed</option></select>
-          <button class="gwp-btn-ghost" onclick="_sbToggleMetrics()">${sb.showMetrics?'Hide':'Show'} metrics</button>
-          <button class="gwp-btn-primary" onclick="_sbOpenJobBuilder()">+ Job</button>
-        </div>
-      </header>
+  <div class="sched-shell sb-workstation gw-workflow-cleanup sb-density-${sb.density}">
 
-      ${sb.showMetrics ? _sbKpiBandHtml(totalScheduled, totalUniqueJobs) : ''}
+    <!-- Command bar: one compact row. The board is the product, and an
+         oversized page title spends the vertical space the week needs. -->
+    <div class="sb-cmd">
+      <div class="sb-cmd-left">
+        <div class="sb-weeknav">
+          <button class="sb-nav-btn" onclick="_sbNav(-1)" aria-label="Previous period" title="Previous">&lsaquo;</button>
+          <span class="sb-period-label">${headerLabel}</span>
+          <button class="sb-nav-btn" onclick="_sbNav(1)" aria-label="Next period" title="Next">&rsaquo;</button>
+        </div>
+        <button class="sb-today-btn" onclick="_sbGoToday()">Today</button>
+      </div>
+      <div class="sb-cmd-right">
+        <div class="sb-view-toggle" role="tablist" aria-label="Schedule view">
+          ${['timeline','week','month','agenda'].map(v => `<button role="tab" aria-selected="${sb.viewMode===v}" class="sb-view-btn${sb.viewMode===v?' active':''}" onclick="_sbSetView('${v}')">${v.charAt(0).toUpperCase()+v.slice(1)}</button>`).join('')}
+        </div>
+        <select class="sb-density-select" onchange="_sbSetDensity(this.value)" aria-label="Board density" title="Board density">
+          ${['compact','comfortable','detailed'].map(d => `<option value="${d}"${sb.density===d?' selected':''}>${d.charAt(0).toUpperCase()+d.slice(1)}</option>`).join('')}
+        </select>
+        <button class="sb-icon-btn" onclick="_sbToggleMetrics()" title="${sb.showMetrics?'Hide metrics':'Show metrics'}" aria-label="Toggle metrics">&#9707;</button>
+        <button class="gwp-btn-primary sb-newjob" onclick="_sbOpenJobBuilder()">+ Job</button>
+      </div>
     </div>
 
+    ${sb.showMetrics ? _sbKpiBandHtml(totalScheduled, totalUniqueJobs) : ''}
     ${crewFilterBar}
 
-    <div class="sb-board-split">
+    <!-- Job Pool | production board | Job Day rail, as ONE grid rather than
+         three floated panels — so the board absorbs every pixel the other two
+         are not using, and the page never scrolls sideways. -->
+    <div class="sb-workspace${sb.poolCollapsed ? ' is-pool-collapsed' : ''}${sb.selectedDayId ? ' has-rail' : ''}">
       ${['week','month'].includes(sb.viewMode) ? _sbPoolHtml() : ''}
-      <div class="sb-grid-wrap">
+      <main class="sb-board" aria-label="Production schedule">
         ${gridHtml}
         ${['week','month','timeline'].includes(sb.viewMode) ? _sbTypeLegendHtml(visibleWOs) : ''}
-      </div>
+      </main>
+      ${sb.selectedDayId ? _sbDayRailHtml() : ''}
     </div>
   </div>`;
 }

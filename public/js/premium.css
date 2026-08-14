@@ -16821,7 +16821,7 @@ h1.pl-title,
   justify-content: center;
 }
 .sched-shell .sb-lane-wrap { min-width: 1280px; border-radius: 8px; }
-.sched-shell .sb-lane-grid { grid-template-columns: 126px repeat(7, minmax(164px, 240px)); justify-content: center; }
+.sched-shell:not(.sb-workstation) .sb-lane-grid { grid-template-columns: 126px repeat(7, minmax(164px, 240px)); justify-content: center; }
 .sched-shell .sb-lane-day-head { min-height: 58px; box-sizing: border-box; }
 .sched-shell .sb-lane-label { padding: 10px 9px; align-items: flex-start; }
 .sched-shell .sb-lane-cell { min-height: 112px; padding: 7px; gap: 6px; background: #fff; }
@@ -17696,4 +17696,295 @@ h1.pl-title,
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--gw-muted);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCHEDULE WORKSTATION
+   Job Pool | production board | Job Day rail, as one grid.
+
+   The board is the product. Everything here exists to give it width and to
+   keep the two side panels from taking any the board could use.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.sb-workstation {
+  --sb-pool-w: 300px;
+  --sb-rail-w: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px 20px;
+  /* Fill the viewport so the board scrolls inside itself rather than pushing
+     the command bar and KPIs off the top of a long week. */
+  height: calc(100vh - var(--gw-topbar-h, 56px));
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* ── Command bar ────────────────────────────────────────────────────────── */
+.sb-cmd {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.sb-cmd-left, .sb-cmd-right { display: flex; align-items: center; gap: 8px; }
+.sb-weeknav {
+  display: inline-flex; align-items: center; gap: 2px;
+  border: 1px solid var(--gw-border); border-radius: 9px;
+  background: var(--gw-surface, #fff);
+}
+.sb-weeknav .sb-nav-btn {
+  min-width: 30px; min-height: 32px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  font-size: 17px; line-height: 1; color: var(--gw-text);
+}
+.sb-weeknav .sb-nav-btn:hover { color: var(--gw-pine-500); }
+.sb-period-label {
+  padding: 0 10px; font-size: 13px; font-weight: 700; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sb-today-btn {
+  min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--gw-border); border-radius: 9px;
+  background: var(--gw-surface, #fff); cursor: pointer;
+  font-size: 12.5px; font-weight: 700; color: var(--gw-text);
+}
+.sb-today-btn:hover { border-color: var(--gw-pine-500); color: var(--gw-pine-500); }
+.sb-icon-btn {
+  min-width: 32px; min-height: 32px;
+  border: 1px solid var(--gw-border); border-radius: 9px;
+  background: var(--gw-surface, #fff); cursor: pointer; color: var(--gw-text-muted);
+}
+.sb-icon-btn:hover { color: var(--gw-text); border-color: var(--gw-pine-500); }
+.sb-workstation .sb-newjob { min-height: 32px; padding: 0 14px; font-size: 12.5px; }
+.sb-workstation .sb-view-toggle { border-radius: 9px; }
+.sb-workstation .sb-density-select { min-height: 32px; border-radius: 9px; font-size: 12.5px; }
+
+/* ── The three-pane workspace ───────────────────────────────────────────── */
+.sb-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--sb-pool-w) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.sb-workspace.has-rail { grid-template-columns: var(--sb-pool-w) minmax(0, 1fr) var(--sb-rail-w); }
+.sb-workspace.is-pool-collapsed { grid-template-columns: 46px minmax(0, 1fr); }
+.sb-workspace.is-pool-collapsed.has-rail { grid-template-columns: 46px minmax(0, 1fr) var(--sb-rail-w); }
+
+.sb-board {
+  min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: auto;
+  border: 1px solid var(--gw-border); border-radius: 12px;
+  background: var(--gw-surface, #fff);
+  padding: 0 0 10px;
+}
+.sb-workstation .sb-grid-wrap { padding: 0; max-width: none; overflow: visible; }
+.sb-workstation .sb-legend { padding: 10px 14px 2px; margin-top: auto; }
+
+/* The pool is already styled; here it only needs to live in the grid. */
+.sb-workstation .sb-pool { width: auto; flex: none; margin-top: 0; max-height: none; }
+.sb-workstation .sb-pool--collapsed { width: auto; }
+
+/* ── Sticky board chrome ────────────────────────────────────────────────── */
+/* Day headers stay put while a long crew list scrolls under them; the crew
+   column stays put while the week scrolls sideways. Both are what make a wide
+   board usable on a laptop. */
+.sb-workstation .sb-lane-wrap { overflow: visible; }
+.sb-workstation .sb-lane-day-head {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--gw-surface, #fff);
+}
+.sb-workstation .sb-lane-corner {
+  position: sticky; top: 0; left: 0; z-index: 4;
+  background: var(--gw-surface, #fff);
+}
+.sb-workstation .sb-lane-label {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--gw-surface, #fff);
+}
+
+/* ── Job Day rail ───────────────────────────────────────────────────────── */
+.sb-rail {
+  min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--gw-border); border-radius: 12px;
+  background: var(--gw-surface, #fff);
+  overflow: hidden;
+}
+.sb-rail-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 10px 9px 12px; border-bottom: 1px solid var(--gw-border);
+}
+.sb-rail-daynav { display: inline-flex; align-items: center; gap: 3px; }
+.sb-rail-dayof { font-size: 12px; font-weight: 800; color: var(--gw-text); padding: 0 4px; }
+.sb-rail-close {
+  min-width: 30px; min-height: 30px; border: none; border-radius: 8px;
+  background: none; cursor: pointer; font-size: 19px; line-height: 1; color: var(--gw-text-muted);
+}
+.sb-rail-close:hover { background: var(--gw-border); color: var(--gw-text); }
+
+.sb-rail-title { padding: 12px 14px 13px; border-bottom: 1px solid var(--gw-border); }
+.sb-rail-wo { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.sb-rail-wonum { font-size: 11px; font-weight: 800; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+.sb-rail-title h3 { font-size: 16px; font-weight: 800; line-height: 1.25; margin: 0 0 9px; }
+.sb-rail-facts { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.sb-rail-facts > div { display: flex; gap: 8px; font-size: 12px; }
+.sb-rail-facts dt { flex: 0 0 42px; color: var(--gw-text-muted); font-weight: 600; }
+.sb-rail-facts dd { margin: 0; color: var(--gw-text); display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sb-rail-crewdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+.sb-rail-body { flex: 1 1 auto; overflow-y: auto; }
+.sb-rail-sec { border-bottom: 1px solid var(--gw-border); }
+.sb-rail-sec-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; cursor: pointer; user-select: none; min-height: 42px;
+}
+.sb-rail-sec-head h4 {
+  flex: 1 1 auto; margin: 0;
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--gw-text-muted);
+}
+.sb-rail-count {
+  font-size: 10.5px; font-weight: 800; color: var(--gw-text);
+  background: var(--gw-border); border-radius: 999px; padding: 1px 7px;
+}
+.sb-rail-caret { color: var(--gw-text-muted); transition: transform .15s; font-size: 15px; }
+.sb-rail-sec.is-open .sb-rail-caret { transform: rotate(90deg); }
+.sb-rail-sec-body { display: none; padding: 0 14px 13px; }
+.sb-rail-sec.is-open .sb-rail-sec-body { display: block; }
+
+.sb-rail-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.sb-rail-people li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.sb-rail-avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--gw-pine-500) 14%, transparent);
+  color: var(--gw-pine-600, var(--gw-pine-500));
+  font-size: 10px; font-weight: 800;
+}
+.sb-rail-pname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-rail-role {
+  font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--gw-pine-600, var(--gw-pine-500));
+  background: color-mix(in srgb, var(--gw-pine-500) 10%, transparent);
+  border-radius: 4px; padding: 2px 5px;
+}
+.sb-rail-pmin { font-size: 11.5px; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+
+.sb-rail-scope { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--gw-text); }
+.sb-rail-empty { margin: 0; font-size: 12px; line-height: 1.5; color: var(--gw-text-muted); }
+
+.sb-rail-check { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sb-rail-check li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.4; }
+.sb-rail-box {
+  width: 14px; height: 14px; margin-top: 1px; flex-shrink: 0;
+  border: 1.5px solid var(--gw-border); border-radius: 4px;
+}
+.sb-rail-check li.is-done { color: var(--gw-text-muted); text-decoration: line-through; }
+.sb-rail-check li.is-done .sb-rail-box { background: var(--gw-pine-500); border-color: var(--gw-pine-500); }
+
+.sb-rail-kit { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sb-rail-kit li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.sb-rail-kit-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-rail-kit-status {
+  font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--gw-text-muted); background: var(--gw-border);
+  border-radius: 4px; padding: 2px 6px;
+}
+
+.sb-rail-photos { display: flex; flex-wrap: wrap; gap: 6px; }
+.sb-rail-photos img { width: 62px; height: 48px; object-fit: cover; border-radius: 7px; border: 1px solid var(--gw-border); }
+.sb-rail-addphoto {
+  width: 62px; height: 48px; border: 1.5px dashed var(--gw-border); border-radius: 7px;
+  background: none; cursor: pointer; font-size: 18px; color: var(--gw-text-muted);
+}
+.sb-rail-addphoto:hover { border-color: var(--gw-pine-500); color: var(--gw-pine-500); }
+
+.sb-rail-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border-top: 1px solid var(--gw-border);
+  background: var(--gw-bg, #fff);
+}
+.sb-rail-actions-right { display: flex; gap: 7px; }
+.sb-rail-actions .rp-btn { min-height: 34px; font-size: 12.5px; padding: 0 12px; }
+/* Unschedule is reversible and lives on the bar; Delete Job stays in the full
+   job's overflow, away from anything routine. */
+.sb-rail-danger {
+  min-height: 34px; padding: 0 12px;
+  border: 1px solid color-mix(in srgb, #C94B43 40%, transparent); border-radius: 8px;
+  background: none; cursor: pointer; font-size: 12.5px; font-weight: 700; color: #C94B43;
+}
+.sb-rail-danger:hover { background: color-mix(in srgb, #C94B43 8%, transparent); }
+
+/* Loading, so the rail never flashes empty structure. */
+.sb-rail-skel, .sb-rail-skel-line {
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--gw-border) 25%, color-mix(in srgb, var(--gw-border) 45%, transparent) 50%, var(--gw-border) 75%);
+  background-size: 200% 100%;
+  animation: sb-skel 1.3s ease-in-out infinite;
+}
+.sb-rail-skel { height: 54px; margin: 12px 14px; }
+.sb-rail-skel-line { height: 13px; margin: 0; }
+@keyframes sb-skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .sb-rail-skel, .sb-rail-skel-line { animation: none; } }
+
+/* The card the rail is describing. */
+.sched-shell .sb-job-card.is-selected {
+  border-color: var(--gw-pine-500) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gw-pine-500) 30%, transparent) !important;
+}
+
+/* The board sizes to the space it is GIVEN rather than demanding a minimum and
+   overflowing. The pre-workstation rule set a 164px floor per day, which is
+   1274px before the pool and rail are accounted for — at 1600px with both open
+   the week was cut off at Wednesday. Columns now shrink to a still-legible
+   floor and only scroll when they truly cannot fit. */
+.sb-workstation .sb-lane-grid {
+  grid-template-columns: 104px repeat(7, minmax(84px, 1fr));
+  justify-content: stretch;
+  min-width: 0;
+}
+.sb-workstation .sb-week-grid { min-width: 0; }
+.sb-workstation .sb-lane-wrap { min-width: 0; }
+
+/* Denser cards inside the workstation: the week has to fit, and a card that
+   wraps "Blue Crew" onto two lines is spending height on something the lane
+   label already says. */
+.sb-workstation .sb-job-card { padding: 6px 7px; }
+.sb-workstation .sb-card-crew { display: none; }
+.sb-workstation .sb-card-client { font-size: 11.5px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-workstation .sb-card-md-marker { display: none; }
+.sb-workstation .sb-lane-cell { min-height: 76px; padding: 4px; }
+
+/* ── Desktop widths ─────────────────────────────────────────────────────── */
+/* The board must stay usable; the panels give way, not the schedule. */
+@media (max-width: 1500px) {
+  .sb-workstation { --sb-pool-w: 268px; --sb-rail-w: 336px; padding: 12px 14px 16px; }
+}
+@media (max-width: 1400px) {
+  /* A seven-day week and a detail rail is genuinely tight here. The rail gives
+     up width before the board does — the board is what the rail describes. */
+  .sb-workstation { --sb-rail-w: 306px; }
+  .sb-workstation .sb-lane-grid { grid-template-columns: 92px repeat(7, minmax(72px, 1fr)); }
+  .sb-rail-actions { flex-wrap: wrap; }
+  .sb-rail-actions-right { flex: 1 1 100%; }
+  .sb-rail-danger { flex: 1 1 100%; }
+}
+@media (max-width: 1560px) {
+  /* Below this the pool and the rail cannot both sit beside a seven-day grid
+     without squeezing it to uselessness. The rail wins — it is what you opened
+     — and the pool collapses to its rail. */
+  .sb-workspace.has-rail { grid-template-columns: 46px minmax(0, 1fr) var(--sb-rail-w); }
+  .sb-workspace.has-rail .sb-pool { width: 46px; }
+  .sb-workspace.has-rail .sb-pool-head,
+  .sb-workspace.has-rail .sb-pool-tabs,
+  .sb-workspace.has-rail .sb-pool-filters,
+  .sb-workspace.has-rail .sb-pool-list,
+  .sb-workspace.has-rail .sb-pool-foot { display: none; }
+}
+@media (max-width: 1100px) {
+  .sb-workstation { height: auto; }
+  .sb-workspace, .sb-workspace.has-rail, .sb-workspace.is-pool-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .sb-rail { max-height: 70vh; }
 }
