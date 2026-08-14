@@ -11818,6 +11818,7 @@ app.get('/api/work-orders', requireAuth, async (c) => {
              COALESCE(md.scheduled_duration_minutes, wo.scheduled_duration_minutes) as scheduled_duration_minutes,
              COALESCE(md.schedule_locked, wo.schedule_locked, 0) as schedule_locked,
              COALESCE(NULLIF(md.crew_id,''), wo.crew_id) as crew_id, cr.name as crew_name, cr.color as crew_color,
+             md.id as md_day_id,
              md.day_number as md_day_number, md.day_date as md_day_date, md.scope as md_scope,
              md.phase_name as md_phase_name, md.phase_sequence as md_phase_sequence, md.crew_id as md_crew_id,
              md.depends_on_day_number as md_depends_on_day_number, md.dependency_type as md_dependency_type, md.dependency_lag_days as md_dependency_lag_days,
@@ -12806,7 +12807,7 @@ app.get('/portal', (c) => {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260813b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260813b010">  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0F1F1E; color: #E8EDE8; font-family: 'Inter', sans-serif; min-height: 100vh; }
     #portal-loading {
@@ -12829,8 +12830,8 @@ app.get('/portal', (c) => {
   <div id="portal-root"></div>
 
   <script>window.__PORTAL_TOKEN__ = ${JSON.stringify(token)};</script>
-  <script src="/js/platform_core.js?v=20260813b006"></script>
-  <script src="/js/client_portal.js?v=20260813b006"></script>  <script>
+  <script src="/js/platform_core.js?v=20260813b010"></script>
+  <script src="/js/client_portal.js?v=20260813b010"></script>  <script>
     // Hide spinner once portal renders, or show error if no token
     document.addEventListener('DOMContentLoaded', function() {
       if (!window.__PORTAL_TOKEN__) {
@@ -13464,10 +13465,10 @@ function getHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/js/premium.css?v=20260813b006">
-  <link rel="stylesheet" href="/js/styles.css?v=20260813b006">
-  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260813b006">
-  <link rel="stylesheet" href="/js/finance-shell.css?v=20260813b006">  <style>
+  <link rel="stylesheet" href="/js/premium.css?v=20260813b010">
+  <link rel="stylesheet" href="/js/styles.css?v=20260813b010">
+  <link rel="stylesheet" href="/js/groundwork-design.css?v=20260813b010">
+  <link rel="stylesheet" href="/js/finance-shell.css?v=20260813b010">  <style>
     /* ── Nav baseline ───────────────────────────────────────────────────────── */
     .nav-item svg { vertical-align: middle; flex-shrink: 0; }
 
@@ -14122,46 +14123,46 @@ function getHtml(): string {
 
 <!-- Calendar dates. Must load before anything that renders one. See the header
      of public/js/gw_date.js for the two day-shift bugs it exists to end. -->
-<script src="/js/gw_date.js?v=20260813b006"></script>
-<script src="/js/gw-icons.js?v=20260813b006"></script>
-<script src="/js/sales-process.js?v=20260813b006"></script>
-<script src="/js/richtext.js?v=20260813b006"></script>
-<script src="/js/db.js?v=20260813b006"></script>
-<script src="/js/data.js?v=20260813b006"></script>
-<script src="/js/reps.js?v=20260813b006"></script>
-<script src="/js/record-page.js?v=20260813b006"></script>
-<script src="/js/academy.js?v=20260813b006"></script>
-<script src="/js/task_engine.js?v=20260813b006"></script>
-<script src="/js/gw_i18n.js?v=20260813b006"></script>
-<script src="/js/app_premium.js?v=20260813b006"></script>
-<script src="/js/estimates.js?v=20260813b006"></script>
-<script src="/js/multiday.js?v=20260813b006"></script>
-<script src="/js/proposals.js?v=20260813b006"></script>
-<script src="/js/pricing.js?v=20260813b006"></script>
-<script src="/js/invoices.js?v=20260813b006"></script>
-<script src="/js/csv_import.js?v=20260813b006"></script>
-<script src="/js/onboarding.js?v=20260813b006"></script>
-<script src="/js/gw_copilot.js?v=20260813b006"></script>
-<script src="/js/groundwork_ai.js?v=20260813b006"></script>
-<script src="/js/recurring_plans.js?v=20260813b006"></script>
-<script src="/js/reviews.js?v=20260813b006"></script>
-<script src="/js/stripe.js?v=20260813b006"></script>
-<script src="/js/email.js?v=20260813b006"></script>
-<script src="/js/notifications.js?v=20260813b006"></script>
-<script src="/js/integrations.js?v=20260813b006"></script>
-<script src="/js/sms.js?v=20260813b006"></script>
-<script src="/js/calendar_sync.js?v=20260813b006"></script>
-<script src="/js/ai_followup.js?v=20260813b006"></script>
-<script src="/js/user_management.js?v=20260813b006"></script>
-<script src="/js/platform_admin.js?v=20260813b006"></script>
-<script src="/js/time_tracker.js?v=20260813b006"></script>
-<script src="/js/field_workday.js?v=20260813b006"></script>
-<script src="/js/platform_core.js?v=20260813b006"></script>
-<script src="/js/approval_engine.js?v=20260813b006"></script>
-<script src="/js/automation_engine.js?v=20260813b006"></script>
-<script src="/js/client_portal.js?v=20260813b006"></script>
-<script src="/js/field_mode.js?v=20260813b006"></script>
-<script src="/js/assets_hub.js?v=20260813b006"></script><script src="/js/marketing.js?v=20260813b006"></script><script>
+<script src="/js/gw_date.js?v=20260813b010"></script>
+<script src="/js/gw-icons.js?v=20260813b010"></script>
+<script src="/js/sales-process.js?v=20260813b010"></script>
+<script src="/js/richtext.js?v=20260813b010"></script>
+<script src="/js/db.js?v=20260813b010"></script>
+<script src="/js/data.js?v=20260813b010"></script>
+<script src="/js/reps.js?v=20260813b010"></script>
+<script src="/js/record-page.js?v=20260813b010"></script>
+<script src="/js/academy.js?v=20260813b010"></script>
+<script src="/js/task_engine.js?v=20260813b010"></script>
+<script src="/js/gw_i18n.js?v=20260813b010"></script>
+<script src="/js/app_premium.js?v=20260813b010"></script>
+<script src="/js/estimates.js?v=20260813b010"></script>
+<script src="/js/multiday.js?v=20260813b010"></script>
+<script src="/js/proposals.js?v=20260813b010"></script>
+<script src="/js/pricing.js?v=20260813b010"></script>
+<script src="/js/invoices.js?v=20260813b010"></script>
+<script src="/js/csv_import.js?v=20260813b010"></script>
+<script src="/js/onboarding.js?v=20260813b010"></script>
+<script src="/js/gw_copilot.js?v=20260813b010"></script>
+<script src="/js/groundwork_ai.js?v=20260813b010"></script>
+<script src="/js/recurring_plans.js?v=20260813b010"></script>
+<script src="/js/reviews.js?v=20260813b010"></script>
+<script src="/js/stripe.js?v=20260813b010"></script>
+<script src="/js/email.js?v=20260813b010"></script>
+<script src="/js/notifications.js?v=20260813b010"></script>
+<script src="/js/integrations.js?v=20260813b010"></script>
+<script src="/js/sms.js?v=20260813b010"></script>
+<script src="/js/calendar_sync.js?v=20260813b010"></script>
+<script src="/js/ai_followup.js?v=20260813b010"></script>
+<script src="/js/user_management.js?v=20260813b010"></script>
+<script src="/js/platform_admin.js?v=20260813b010"></script>
+<script src="/js/time_tracker.js?v=20260813b010"></script>
+<script src="/js/field_workday.js?v=20260813b010"></script>
+<script src="/js/platform_core.js?v=20260813b010"></script>
+<script src="/js/approval_engine.js?v=20260813b010"></script>
+<script src="/js/automation_engine.js?v=20260813b010"></script>
+<script src="/js/client_portal.js?v=20260813b010"></script>
+<script src="/js/field_mode.js?v=20260813b010"></script>
+<script src="/js/assets_hub.js?v=20260813b010"></script><script src="/js/marketing.js?v=20260813b010"></script><script>
   // ── Service Worker: KILL MODE (no reload loop) ────────────────────────────
   // Silently unregister all SWs and wipe all caches. Never register a new SW.
   // The /sw.js route still serves a self-destructing SW for browsers that

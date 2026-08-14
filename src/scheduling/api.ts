@@ -682,6 +682,16 @@ schedulingRouter.post('/work-orders/:id/schedule', async (c) => {
     .first<any>();
   if (!wo) return c.json({ ok: false, error: 'Work order not found' }, 404);
 
+  // Lock checked HERE, before anything is written.
+  //
+  // schedule_locked was selected above and never read: the only lock check
+  // happened downstream inside applyDaySchedule, by which point the UPDATE below
+  // had already committed a new date. A locked job returned 409 and moved
+  // anyway — the refusal and the write both happened.
+  if (int(wo.schedule_locked, 0) === 1 && body.force !== true) {
+    return c.json({ ok: false, error: 'This visit is locked. Unlock it before rescheduling.' }, 409);
+  }
+
   // Set the date first so ensurePrimaryDay has something to copy from.
   await db
     .prepare(`UPDATE work_orders SET scheduled_date=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
@@ -690,6 +700,11 @@ schedulingRouter.post('/work-orders/:id/schedule', async (c) => {
 
   const dayId = await ensurePrimaryDay(db, companyId, workOrderId);
   if (!dayId) return c.json({ ok: false, error: 'Could not create a day row' }, 500);
+
+  // The day was just created from the work order, so it already carries the
+  // right crew — but nobody is on it yet. Without this a job scheduled straight
+  // off the backlog lands on the grid with zero planned labor.
+  await syncDayEmployees(db, companyId, workOrderId, dayId);
 
   return applyDaySchedule(c, dayId, body);
 });

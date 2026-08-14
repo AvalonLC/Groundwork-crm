@@ -18505,6 +18505,44 @@ window._sbRefreshCapacity = async function() {
     _sbRender();
   } catch (_) { /* keep the previous figures */ }
 };
+
+/**
+ * Fold the capacity a scheduling write returned into the lane metrics.
+ *
+ * The write reports every (crew, date) it touched — the lane the job left as
+ * well as the one it joined — so both bars can be corrected without re-reading
+ * the whole week. Anything not mentioned is left exactly as it was.
+ *
+ * Week totals are recomputed from the per-day figures rather than patched, so
+ * the header and the columns underneath it cannot drift apart.
+ */
+window._sbApplyCapacity = function(capacity) {
+  const cap = window._sbState.capacity;
+  if (!cap || !Array.isArray(capacity) || !capacity.length) {
+    // Nothing usable came back — fall back to the old behaviour rather than
+    // leaving stale numbers on screen.
+    return _sbRefreshCapacity();
+  }
+  for (const entry of capacity) {
+    const crew = (cap.crews || []).find(c => c.id === entry.crew_id);
+    if (!crew) continue;
+    const day = (crew.days || []).find(d => d.date === entry.date);
+    if (!day) continue;
+    day.capacity_minutes = entry.capacity_minutes;
+    day.planned_minutes  = entry.planned_minutes;
+    day.utilization_pct  = entry.utilization_pct;
+  }
+  for (const crew of (cap.crews || [])) {
+    crew.week_capacity_minutes = (crew.days || []).reduce((sum, d) => sum + (d.capacity_minutes || 0), 0);
+    crew.week_planned_minutes  = (crew.days || []).reduce((sum, d) => sum + (d.planned_minutes  || 0), 0);
+    // null, not 0, when there is no capacity to divide by — the same rule the
+    // server applies. See src/scheduling/capacity.ts.
+    crew.week_utilization_pct = crew.week_capacity_minutes > 0
+      ? Math.round((crew.week_planned_minutes / crew.week_capacity_minutes) * 100)
+      : null;
+  }
+  _sbRender();
+};
 window._sbSelectDay = function(iso) {
   window._sbState.mobileSelectedDay = iso;
   _sbRender();
@@ -18830,45 +18868,74 @@ window._sbDropOnCell = async function(e, iso, crewId) {
   const isMdDay = !!(wo.md_day_number || dragDayNumber);
   const dayNumber = Number(wo.md_day_number || dragDayNumber);
   const nextCrew = crewId && crewId !== '__unassigned__' ? crewId : (crewId === '__unassigned__' ? '' : oldCrew);
-  const shiftMode = isMdDay && e.shiftKey;
+  // Shift-drag on a genuinely multi-day job moves this phase AND everything
+  // after it. Only meaningful past day 1, and it is a bulk operation across
+  // several rows, so it keeps its own endpoint.
+  const shiftMode = isMdDay && dayNumber > 1 && e.shiftKey;
   wo.scheduled_date = iso;
   if (isMdDay) wo.md_crew_id = nextCrew || '';
   else if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
   else if (crewId === '__unassigned__') wo.crew_id = null;
   _sbRender();
   try {
-    if (isMdDay) {
-      const path = shiftMode
-        ? `/api/work-orders/${woId}/days/${dayNumber}/shift-downstream`
-        : `/api/work-orders/${woId}/days/${dayNumber}`;
-      const body = shiftMode
-        ? { day_date: iso, crew_id: nextCrew || null }
-        : { day_date: iso, crew_id: nextCrew || null };
-      const r = await fetch(path, { method: shiftMode ? 'POST' : 'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (shiftMode) {
+      const r = await fetch(`/api/work-orders/${woId}/days/${dayNumber}/shift-downstream`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ day_date: iso, crew_id: nextCrew || null })
+      });
       const d = await r.json().catch(()=>({}));
       if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
-      showToast(shiftMode ? 'Phase and downstream days shifted' : 'Phase rescheduled','success');
+      showToast('Phase and downstream days shifted','success');
       await _sbRefresh();
       return;
     }
-    const body = { scheduled_date: iso };
-    if (crewId !== null) body.crew_id = crewId === '__unassigned__' ? null : crewId;
-    const r = await fetch(`/api/work-orders/${woId}/reschedule`, {
-      method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const d = await r.json().catch(()=>({}));
-    if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
-    if (crewId !== null && crewId !== oldCrew) {
-      await fetch(`/api/work-orders/${woId}`, {
-        method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ crew_id: crewId === '__unassigned__' ? null : crewId })
+    // Every drop goes through the Job Day, whatever its day number.
+    //
+    // This used to fork on `isMdDay`, which is true whenever the card carries a
+    // day number — and the primary day of an ordinary single-day job is day 1.
+    // So almost every drag took the "multi-day" branch to PATCH /days/:n, which
+    // updates wo_days but mirrors only scheduled_date back to the work order,
+    // never crew_id. After dragging a job to another crew, one API response
+    // carried both answers at once:
+    //
+    //     crew_id:   crew-blue      <- what the drawer's crew picker selects
+    //     crew_name: "Green Crew"   <- resolved through the day row
+    //
+    // Capacity was right, because that reads wo_days. Open the job and it still
+    // said Blue. That is the "the card moves but the crew doesn't follow it"
+    // report, and it is a mirror gap rather than the two-request race.
+    //
+    // /api/scheduling/days/:id/schedule writes the day, mirrors the whole row —
+    // crew included — onto the work order in the SAME batch when the day is
+    // primary, re-derives the people when the crew changes, and returns the
+    // recomputed capacity. One endpoint, one transaction, for every day.
+    const dayId = wo.md_day_id;
+    const nextCrewId = crewId === '__unassigned__' ? '' : (crewId === null ? undefined : crewId);
+    let d;
+    if (dayId) {
+      const payload = { date: iso };
+      if (nextCrewId !== undefined) payload.crew_id = nextCrewId;
+      const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/schedule`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
+      d = await r.json().catch(()=>({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
+    } else {
+      // No day row yet — a job coming off the backlog. This endpoint creates one
+      // and then applies the same schedule, so the two cases converge.
+      const r = await fetch(`/api/scheduling/work-orders/${encodeURIComponent(woId)}/schedule`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ date: iso, crew_id: nextCrewId === undefined ? '' : nextCrewId })
+      });
+      d = await r.json().catch(()=>({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
+      wo.md_day_id = d.day_id;
     }
     showToast('Job rescheduled','success');
-    // The grid already shows the move optimistically, but the crew-lane
-    // capacity figures were computed before it. Re-read them so the metric
-    // beside the grid cannot disagree with the grid.
-    await _sbRefreshCapacity();
+    // Capacity came back with the write, for the lane it left as well as the one
+    // it joined. No follow-up round trip to /week, and therefore no window in
+    // which the grid and the number beside it can disagree.
+    _sbApplyCapacity(d.capacity);
   } catch(err) {
     wo.scheduled_date = oldDate;
     if (isMdDay) wo.md_crew_id = oldCrew || '';
