@@ -4,6 +4,7 @@ import { computeBurden } from "../engines/burden";
 import { computeEquipmentRate } from "../engines/equipment";
 import type { RateConfidence } from "../db/schema";
 import { canViewCompensation, validateEquipmentSupport } from "./compensation";
+import { computeCrewCost } from "./crew_cost";
 
 export type RatesBindings = { DB: D1Database };
 
@@ -306,4 +307,85 @@ ratesRouter.post("/profile", async (c) => {
     scope, scope_id: scopeId, effective_from: effectiveFrom,
     superseded: prior ? { id: prior.id, effective_to: effectiveFrom } : null,
   }, 201);
+});
+
+// ── GET /employees — per-person rates, and where each one came from ──────────
+
+/**
+ * Every rep with the rate that currently resolves for them, and its scope.
+ *
+ * The scope is the point. A list of rates with no provenance invites someone to
+ * read the company default as "what Ben earns" — the editor needs to show which
+ * rows are real and which are inherited, or setting one is indistinguishable
+ * from leaving it alone.
+ */
+ratesRouter.get("/employees", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  if (!canViewCompensation({ role: c.var.role, can_view_compensation: c.var.canViewCompensation, is_super_admin: c.var.isSuperAdmin })) {
+    return c.json({ error: "compensation permission required" }, 403);
+  }
+  const workDate = new Date().toISOString().slice(0, 10);
+  const reps = await db
+    .prepare(`SELECT id, name, role FROM reps WHERE company_id=? AND active=1 ORDER BY name`)
+    .bind(companyId).all<any>();
+
+  const employees = [];
+  for (const r of reps.results || []) {
+    const resolved = await resolveLaborRate(db, { company_id: companyId, employee_id: r.id, work_date: workDate });
+    employees.push({
+      rep_id: r.id, rep_name: r.name, role: r.role,
+      resolved_rate: resolved?.resolved_rate ?? null,
+      resolved_scope: resolved?.resolved_scope ?? null,
+      // A rate inherited from the company is not a rate for this person, and the
+      // editor renders the two differently.
+      has_own_rate: resolved?.resolved_scope === "employee",
+      confidence: resolved?.confidence ?? null,
+      stale_components: resolved?.stale_components ?? [],
+    });
+  }
+  return c.json({ ok: true, work_date: workDate, employees });
+});
+
+// ── GET /crew/:id/cost — what a crew costs per hour ─────────────────────────
+
+/**
+ * Crew cost from the ROSTER, with the inference guard attached.
+ *
+ * Never the bare number. computeCrewCost returns the total alongside which
+ * members' rates were inherited and which have none at all, because
+ * "Blue Crew costs $126/hr" and "…and two of those rates are the company
+ * default" are different claims and only one of them should price a job.
+ */
+ratesRouter.get("/crew/:id/cost", async (c) => {
+  const db = c.env.DB as D1Database;
+  const companyId = c.var.companyId as string;
+  if (!canViewCompensation({ role: c.var.role, can_view_compensation: c.var.canViewCompensation, is_super_admin: c.var.isSuperAdmin })) {
+    return c.json({ error: "compensation permission required" }, 403);
+  }
+  const crewId = c.req.param("id");
+  const workDate = /^\d{4}-\d{2}-\d{2}$/.test(String(c.req.query("date") || ""))
+    ? String(c.req.query("date"))
+    : new Date().toISOString().slice(0, 10);
+
+  const members = await db
+    .prepare(
+      `SELECT cm.rep_id, cm.crew_role, r.name AS rep_name
+         FROM crew_members cm JOIN reps r ON r.id = cm.rep_id
+        WHERE cm.crew_id=? AND cm.company_id=?`,
+    )
+    .bind(crewId, companyId).all<any>();
+
+  const rated = [];
+  for (const m of members.results || []) {
+    const resolved = await resolveLaborRate(db, {
+      company_id: companyId, employee_id: m.rep_id, work_date: workDate, crew_id: crewId, role: m.crew_role,
+    });
+    rated.push({
+      rep_id: m.rep_id, rep_name: m.rep_name, crew_role: m.crew_role,
+      resolved_rate: resolved?.resolved_rate ?? null,
+      resolved_scope: resolved?.resolved_scope ?? null,
+    });
+  }
+  return c.json({ ok: true, work_date: workDate, ...computeCrewCost(crewId, rated) });
 });
