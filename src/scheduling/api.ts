@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { normalizeStopOrder, reorderStops, summarizeRoute, fromE7 } from '../recurring/routing';
 import {
   DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
   parseWorkingDays,
@@ -687,6 +688,113 @@ schedulingRouter.get('/week', async (c) => {
     assignments,
     money_visible: !stripMoney,
   });
+});
+
+
+// ── GET /route?date=&crew_id= ────────────────────────────────────────────────
+
+/**
+ * One crew's stops for one day, in order, with the on-site total.
+ *
+ * Ordering is the half of routing that works with no external service, and it
+ * is useful the day it ships: a crew driving its stops in a sensible order
+ * saves more time than any optimiser will find on top of that.
+ */
+schedulingRouter.get('/route', async (c) => {
+  const db = c.env.DB;
+  const companyId = c.var.companyId;
+  const date = isoDateOr(c.req.query('date'), nowIso().slice(0, 10));
+  const crewId = s(c.req.query('crew_id'), 64);
+  if (!crewId) return c.json({ ok: false, error: 'crew_id is required' }, 400);
+
+  const rows = await db
+    .prepare(
+      `SELECT d.id AS day_id, d.work_order_id, d.stop_order, d.lat_e7, d.lng_e7, d.drive_minutes,
+              d.start_time, d.scheduled_duration_minutes,
+              wo.wo_number, wo.client_name, wo.property_addr, wo.duration_hours
+         FROM wo_days d
+         JOIN work_orders wo ON wo.id = d.work_order_id AND wo.company_id = d.company_id
+        WHERE d.company_id=? AND d.day_date=? AND d.crew_id=?`,
+    )
+    .bind(companyId, date, crewId)
+    .all<any>();
+
+  const raw = (rows.results || []).map((r: any) => ({
+    day_id: r.day_id,
+    work_order_id: r.work_order_id,
+    wo_number: r.wo_number,
+    client_name: r.client_name,
+    address: r.property_addr,
+    stop_order: r.stop_order,
+    // Degrees out, scaled integers in the column. See migration 0073.
+    lat: fromE7(r.lat_e7),
+    lng: fromE7(r.lng_e7),
+    drive_minutes: r.drive_minutes,
+    start_time: r.start_time,
+    duration_minutes:
+      r.scheduled_duration_minutes != null
+        ? int(r.scheduled_duration_minutes)
+        : r.duration_hours != null
+          ? Math.round(Number(r.duration_hours) * 60)
+          : null,
+  }));
+  const startTimes: Record<string, string | null> = {};
+  for (const r of rows.results || []) startTimes[r.day_id] = r.start_time ?? null;
+
+  const stops = normalizeStopOrder(raw, startTimes);
+  return c.json({ ok: true, date, crew_id: crewId, stops, summary: summarizeRoute(stops) });
+});
+
+// ── POST /route/reorder ──────────────────────────────────────────────────────
+
+/**
+ * Move one stop to a new position and persist the whole resulting order.
+ *
+ * The whole order, not just the moved row: renumbering one and leaving the rest
+ * is how a list ends up with two stop 3s and no stop 5. Written in one batch so
+ * the day is never half-reordered.
+ */
+schedulingRouter.post('/route/reorder', async (c) => {
+  const db = c.env.DB;
+  const companyId = c.var.companyId;
+  const body = (await c.req.json().catch(() => ({}))) as any;
+  const date = isoDateOr(body.date, '');
+  const crewId = s(body.crew_id, 64);
+  const dayId = s(body.day_id, 64);
+  const toPosition = int(body.to_position, 0);
+  if (!date || !crewId || !dayId || toPosition < 1) {
+    return c.json({ ok: false, error: 'date, crew_id, day_id and to_position are required' }, 400);
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT id AS day_id, work_order_id, stop_order, start_time, scheduled_duration_minutes
+         FROM wo_days WHERE company_id=? AND day_date=? AND crew_id=?`,
+    )
+    .bind(companyId, date, crewId)
+    .all<any>();
+  const list = rows.results || [];
+  if (!list.some((r: any) => r.day_id === dayId)) {
+    return c.json({ ok: false, error: 'That stop is not on this crew this day' }, 404);
+  }
+
+  const startTimes: Record<string, string | null> = {};
+  for (const r of list) startTimes[r.day_id] = r.start_time ?? null;
+  const current = normalizeStopOrder(
+    list.map((r: any) => ({ day_id: r.day_id, work_order_id: r.work_order_id, stop_order: r.stop_order })),
+    startTimes,
+  );
+  const next = reorderStops(current, dayId, toPosition);
+
+  await db.batch(
+    next.map((st) =>
+      db
+        .prepare(`UPDATE wo_days SET stop_order=?, updated_at=datetime('now') WHERE id=? AND company_id=?`)
+        .bind(st.position, st.day_id, companyId),
+    ),
+  );
+
+  return c.json({ ok: true, date, crew_id: crewId, stops: next });
 });
 
 // ── GET /backlog ─────────────────────────────────────────────────────────────
