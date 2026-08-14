@@ -9683,6 +9683,27 @@ h1.pl-title,
   .jb-actions button { width: 100%; min-height: 44px; }
 }
 
+/* Multi-day preview + schedule type */
+.jb-radios { display: flex; flex-wrap: wrap; gap: 14px; }
+.jb-radios label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.jb-preview { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+.jb-preview th, .jb-preview td { padding: 6px 8px; border-bottom: 1px solid var(--gw-border); text-align: left; }
+.jb-preview th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--gw-text-muted); font-weight: 800; }
+.jb-preview .jb-num { text-align: right; font-variant-numeric: tabular-nums; }
+.jb-preview-note { margin: 8px 0 0; font-size: 11.5px; color: var(--gw-text-muted); }
+
+/* "Move which dates?" */
+.gw-scope-panel { max-width: 460px; width: 100%; }
+.gw-scope-options { display: flex; flex-direction: column; gap: 8px; padding: 4px 20px 12px; }
+.gw-scope-opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 11px 13px; border: 1px solid var(--gw-border); border-radius: 10px;
+  background: var(--gw-bg, #fff); cursor: pointer; min-height: 44px;
+}
+.gw-scope-opt:hover { border-color: var(--gw-pine-500); background: color-mix(in srgb, var(--gw-pine-500) 6%, transparent); }
+.gw-scope-opt strong { font-size: 13px; font-weight: 700; }
+.gw-scope-opt small { font-size: 11.5px; color: var(--gw-text-muted); line-height: 1.45; }
+
 /* ── Board split: Job Pool beside the grid ────────────────────────────────── */
 .sb-board-split {
   display: flex;

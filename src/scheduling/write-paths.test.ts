@@ -569,6 +569,83 @@ describe('the Job Pool', () => {
   });
 });
 
+describe('multi-day dependencies', () => {
+  async function threeDayJob(deps: Array<{ n: number; date: string; dependsOn?: number; lag?: number }>) {
+    const woId = await createJob({ scheduled_date: null, crew_id: null });
+    for (const d of deps) {
+      await db().prepare(
+        `INSERT INTO wo_days (id, company_id, work_order_id, day_number, day_date, questions, status, crew_id,
+                              scheduled_duration_minutes, is_primary, depends_on_day_number, dependency_type, dependency_lag_days)
+         VALUES (?,?,?,?,?, '[]','pending','',480,0,?,'finish_to_start',?)`,
+      ).bind(`dep-${d.n}`, CO, woId, d.n, d.date, d.dependsOn ?? null, d.lag ?? 0).run();
+    }
+    await db().prepare(`UPDATE work_orders SET is_multiday=1, total_days=? WHERE id=?`).bind(deps.length, woId).run();
+    return woId;
+  }
+  const dates = async (woId: string) => {
+    const r = await db().prepare(`SELECT day_number, day_date FROM wo_days WHERE work_order_id=? ORDER BY day_number`).bind(woId).all<any>();
+    return (r.results || []).map((d: any) => d.day_date);
+  };
+
+  it('P1-35 a dependent day follows its predecessor by its stated lag', async () => {
+    // depends_on_day_number, dependency_type and dependency_lag_days have been
+    // stored since migration 0046, written by the multi-day panel, echoed back by
+    // every read — and consulted by nothing. Shifting used to move every
+    // downstream day by the same blanket delta, ignoring the graph entirely.
+    // A dependency that changes nothing is worse than none: it reads as a
+    // promise the scheduler is keeping.
+    //
+    // Day 2 waits 2 days after day 1 (concrete cure). Day 3 follows day 2 the
+    // next day. Moving day 1 forward must preserve the CURE, not just the gap.
+    const woId = await threeDayJob([
+      { n: 1, date: '2026-08-17' },
+      { n: 2, date: '2026-08-19', dependsOn: 1, lag: 2 },
+      { n: 3, date: '2026-08-20', dependsOn: 2, lag: 1 },
+    ]);
+
+    await req(`/api/work-orders/${woId}/days/1/shift-downstream`, cookie, {
+      method: 'POST', body: body({ day_date: '2026-08-24' }),
+    });
+
+    expect(await dates(woId)).toEqual(['2026-08-24', '2026-08-26', '2026-08-27']);
+  });
+
+  it('P1-36 days with no dependency still move by the blanket delta', async () => {
+    // The old behaviour, kept for unconstrained days — which is most of them.
+    const woId = await threeDayJob([
+      { n: 1, date: '2026-08-17' },
+      { n: 2, date: '2026-08-18' },
+      { n: 3, date: '2026-08-21' }, // deliberately not adjacent
+    ]);
+
+    await req(`/api/work-orders/${woId}/days/1/shift-downstream`, cookie, {
+      method: 'POST', body: body({ day_date: '2026-08-19' }),
+    });
+
+    // Everything moves +2 and the uneven spacing is preserved.
+    expect(await dates(woId)).toEqual(['2026-08-19', '2026-08-20', '2026-08-23']);
+  });
+
+  it('P1-37 moving a middle day leaves the days before it alone', async () => {
+    // "This day and the ones after it" must mean exactly that. Day 1 is not
+    // "after" day 2 and must not move.
+    const woId = await threeDayJob([
+      { n: 1, date: '2026-08-17' },
+      { n: 2, date: '2026-08-18' },
+      { n: 3, date: '2026-08-19' },
+    ]);
+
+    await req(`/api/work-orders/${woId}/days/2/shift-downstream`, cookie, {
+      method: 'POST', body: body({ day_date: '2026-08-20' }),
+    });
+
+    const after = await dates(woId);
+    expect(after[0]).toBe('2026-08-17'); // untouched
+    expect(after[1]).toBe('2026-08-20');
+    expect(after[2]).toBe('2026-08-21');
+  });
+});
+
 describe('Job Builder fields (migration 0070)', () => {
   it('P1-30 everything the builder collects survives a save', async () => {
     // The whole point of migration 0070. The brief asked the builder to collect

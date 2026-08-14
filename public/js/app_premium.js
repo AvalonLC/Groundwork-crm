@@ -19034,6 +19034,55 @@ window._sbDragStart = function(e, woId, dayNumber) {
   e.currentTarget.style.opacity = '0.45';
 };
 
+/**
+ * "Move which dates?" — asked, not assumed.
+ *
+ * Returns 'day' | 'following' | 'job', or null when the user backs out. A drag
+ * that moves four days when the user meant one is not recoverable by dragging
+ * back: the other three have already lost their original dates.
+ */
+window._sbAskMoveScope = function(dayNumber, totalDays) {
+  return new Promise(resolve => {
+    document.getElementById('gw-move-scope')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'gw-move-scope';
+    modal.className = 'sb-modal-overlay';
+    const pick = (v) => { modal.remove(); resolve(v); };
+    modal.innerHTML = `
+      <div class="sb-modal-panel gw-scope-panel">
+        <div class="sb-modal-header">
+          <div class="sb-modal-title-block">
+            <span class="sb-modal-wo-num">Move which dates?</span>
+            <span class="jb-subtitle">Day ${dayNumber} of ${totalDays}</span>
+          </div>
+        </div>
+        <div class="gw-scope-options">
+          <button class="gw-scope-opt" data-v="day">
+            <strong>This day only</strong>
+            <small>The other days stay exactly where they are.</small>
+          </button>
+          <button class="gw-scope-opt" data-v="following">
+            <strong>This day and the ones after it</strong>
+            <small>Days ${dayNumber}\u2013${totalDays} shift by the same amount. Earlier days are untouched.</small>
+          </button>
+          <button class="gw-scope-opt" data-v="job">
+            <strong>The entire job</strong>
+            <small>All ${totalDays} days move together, keeping their spacing.</small>
+          </button>
+        </div>
+        <div class="sb-modal-actions">
+          <button class="rp-btn" data-v="">Cancel</button>
+        </div>
+      </div>`;
+    modal.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-v]');
+      if (!btn) return;
+      pick(btn.dataset.v || null);
+    });
+    document.body.appendChild(modal);
+  });
+};
+
 window._sbDropOnCell = async function(e, iso, crewId) {
   e.preventDefault();
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
@@ -19054,10 +19103,19 @@ window._sbDropOnCell = async function(e, iso, crewId) {
   const isMdDay = !!(wo.md_day_number || dragDayNumber);
   const dayNumber = Number(wo.md_day_number || dragDayNumber);
   const nextCrew = crewId && crewId !== '__unassigned__' ? crewId : (crewId === '__unassigned__' ? '' : oldCrew);
-  // Shift-drag on a genuinely multi-day job moves this phase AND everything
-  // after it. Only meaningful past day 1, and it is a bulk operation across
-  // several rows, so it keeps its own endpoint.
-  const shiftMode = isMdDay && dayNumber > 1 && e.shiftKey;
+  // Moving one day of a multi-day job is ambiguous, so ask instead of guessing.
+  //
+  // This used to be an undocumented Shift-drag: hold Shift and the drag silently
+  // became "move this phase and every day after it". Nothing in the UI said so,
+  // which meant the destructive option was the invisible one. A four-day job
+  // could shift by a week because someone happened to be holding a modifier.
+  const isRealMultiDay = isMdDay && Number(wo.total_days || 0) > 1;
+  let moveMode = 'day';
+  if (isRealMultiDay && !fromPool) {
+    moveMode = await _sbAskMoveScope(dayNumber, Number(wo.total_days || 0));
+    if (!moveMode) return; // cancelled — put the card back where it was
+  }
+  const shiftMode = moveMode === 'following' || moveMode === 'job';
   wo.scheduled_date = iso;
   if (isMdDay) wo.md_crew_id = nextCrew || '';
   else if (crewId && crewId !== '__unassigned__') wo.crew_id = crewId;
@@ -19065,13 +19123,14 @@ window._sbDropOnCell = async function(e, iso, crewId) {
   _sbRender();
   try {
     if (shiftMode) {
-      const r = await fetch(`/api/work-orders/${woId}/days/${dayNumber}/shift-downstream`, {
+      const fromDay = moveMode === 'job' ? 1 : dayNumber;
+      const r = await fetch(`/api/work-orders/${woId}/days/${fromDay}/shift-downstream`, {
         method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ day_date: iso, crew_id: nextCrew || null })
       });
       const d = await r.json().catch(()=>({}));
       if (!r.ok || d.ok === false) throw new Error(d.error || 'Reschedule failed');
-      showToast('Phase and downstream days shifted','success');
+      showToast(moveMode === 'job' ? 'Whole job moved' : 'This day and the ones after it moved','success');
       await _sbRefresh();
       return;
     }
@@ -20496,10 +20555,17 @@ window._sbOpenJobBuilder = async function(prefill) {
         `)}
 
         ${section('jb-schedule', 'Schedule', 'Optional. Leave blank and the job waits in the Job Pool.', `
-          <div class="jb-grid">
-            ${field('Start date', `<input class="rp-input" type="date" id="jb-date" value="${escapeHtml(prefill.scheduled_date || '')}">`)}
-            ${field('Start time', `<input class="rp-input" type="time" id="jb-time" value="${escapeHtml(prefill.scheduled_time || '07:00')}">`)}
+          <div class="jb-radios" role="radiogroup" aria-label="Schedule type">
+            <label><input type="radio" name="jb-sched-type" value="single" checked onchange="_jbScheduleType()"> Single day</label>
+            <label><input type="radio" name="jb-sched-type" value="multi" onchange="_jbScheduleType()"> Multiple days</label>
+            <label><input type="radio" name="jb-sched-type" value="tbd" onchange="_jbScheduleType()"> Flexible / TBD</label>
           </div>
+          <div class="jb-grid" id="jb-sched-fields">
+            ${field('Start date', `<input class="rp-input" type="date" id="jb-date" value="${escapeHtml(prefill.scheduled_date || '')}" onchange="_jbRecalc()">`)}
+            ${field('Start time', `<input class="rp-input" type="time" id="jb-time" value="${escapeHtml(prefill.scheduled_time || '07:00')}">`)}
+            <div id="jb-days-field" hidden>${field('How many days', `<input class="rp-input" type="number" min="2" max="30" step="1" id="jb-days" value="3" oninput="_jbRecalc()">`, 'Consecutive working days, skipping weekends.')}</div>
+          </div>
+          <div id="jb-preview"></div>
         `)}
       </div>
 
@@ -20545,7 +20611,75 @@ window._jbRecalc = function() {
     + `— ${soldHours}h ÷ ${crewSize} ${crewSize === 1 ? 'person' : 'people'} ÷ ${productiveHours.toFixed(1)}h productive`
     + (rounded > 1 ? ' · schedule the first day here, then split it into phases from the job screen.' : '');
   out.classList.add('jb-derived--set');
+  _jbRenderPreview();
 };
+
+window._jbScheduleType = function() {
+  const type = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  const fields = document.getElementById('jb-sched-fields');
+  const daysField = document.getElementById('jb-days-field');
+  if (fields) fields.hidden = type === 'tbd';
+  if (daysField) daysField.hidden = type !== 'multi';
+  _jbRecalc();
+};
+
+/**
+ * The days this job would occupy, shown before anything is written.
+ *
+ * The brief asks for a preview table, and it earns its place: the old flow
+ * created the job, then made you open a panel, type a day count, and press
+ * "Set Up Multi-Day Job" — by which point rows already existed and undoing
+ * meant deleting them. Nothing here has been written yet.
+ *
+ * Working days come from the company's own setting, so a four-day-week crew
+ * does not get handed a Friday.
+ */
+function _jbPreviewDays() {
+  const type = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  const start = document.getElementById('jb-date')?.value || '';
+  if (type === 'tbd' || !start) return [];
+  const count = type === 'multi' ? Math.max(2, Math.min(30, parseInt(document.getElementById('jb-days')?.value || '2', 10) || 2)) : 1;
+  const working = window._sbState?.capacity?.working_hours?.working_days || [1, 2, 3, 4, 5];
+  const out = [];
+  let cursor = start;
+  let guard = 0;
+  while (out.length < count && guard++ < 400) {
+    const dow = gwDateParse(cursor)?.getDay();
+    if (working.includes(dow)) out.push(cursor);
+    cursor = gwDateAddDays(cursor, 1);
+  }
+  return out;
+}
+
+function _jbRenderPreview() {
+  const host = document.getElementById('jb-preview');
+  if (!host) return;
+  const days = _jbPreviewDays();
+  const type = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  if (type !== 'multi' || days.length < 2) { host.innerHTML = ''; return; }
+
+  const crewName = document.getElementById('jb-crew-select')?.selectedOptions?.[0]?.textContent?.trim() || '—';
+  const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
+  const crewSize = parseInt(document.getElementById('jb-crew-size')?.value || '', 10) || 0;
+  // Sold labor spread evenly across the days, which is a plan, not a promise —
+  // the real per-day figure comes from who is actually rostered on each day.
+  const perDay = soldHours && days.length ? (soldHours / days.length) : 0;
+
+  host.innerHTML = `
+    <table class="jb-preview">
+      <thead><tr><th>Day</th><th>Date</th><th>Crew</th><th class="jb-num">Planned labor</th></tr></thead>
+      <tbody>
+        ${days.map((d, i) => `<tr>
+          <td>${i + 1}/${days.length}</td>
+          <td>${escapeHtml(gwDateFormat(d, { weekday:'short', month:'short', day:'numeric' }))}</td>
+          <td>${escapeHtml(crewName)}</td>
+          <td class="jb-num">${perDay ? perDay.toFixed(1) + 'h' : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="jb-preview-note">One job, ${days.length} scheduled days — never ${days.length} separate work orders.
+    ${crewSize ? '' : 'Set a target crew size to see how many days this really needs.'}</p>`;
+}
 
 window._jbAddRep = function(repId) {
   if (!repId) return;
@@ -20577,8 +20711,14 @@ window._jbSave = async function(withSchedule) {
   const clientName = document.getElementById('jb-client')?.value?.trim();
   if (!clientName) return showToast('Client name required', 'error');
 
-  const date = document.getElementById('jb-date')?.value || null;
-  if (withSchedule && !date) return showToast('Pick a start date, or save to the Job Pool instead', 'error');
+  const schedType = document.querySelector('input[name="jb-sched-type"]:checked')?.value || 'single';
+  const date = schedType === 'tbd' ? null : (document.getElementById('jb-date')?.value || null);
+  if (withSchedule && !date) {
+    return showToast(schedType === 'tbd'
+      ? 'Flexible jobs go to the Job Pool — pick a date to schedule one'
+      : 'Pick a start date, or save to the Job Pool instead', 'error');
+  }
+  const previewDays = withSchedule ? _jbPreviewDays() : [];
 
   const dayHours = parseFloat(document.getElementById('jb-day-hours')?.value || '') || 0;
   const soldHours = parseFloat(document.getElementById('jb-budget-hours')?.value || '') || 0;
@@ -20613,7 +20753,25 @@ window._jbSave = async function(withSchedule) {
     });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || 'Create failed');
-    showToast(withSchedule ? `${d.wo_number} scheduled` : `${d.wo_number} saved to the Job Pool`, 'success');
+    // One job, N scheduled days. Never N work orders — that is the distinction
+    // the whole Job / Job Day split exists to make, and the reason this posts
+    // once and then splits, rather than looping over create.
+    if (withSchedule && previewDays.length > 1) {
+      const r2 = await fetch(`/api/work-orders/${d.id}/multiday`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          total_days: previewDays.length,
+          start_date: previewDays[0],
+          day_scopes: previewDays.map((_, i) => `Day ${i + 1} of ${previewDays.length}`),
+        }),
+      });
+      if (!r2.ok) showToast('Job created, but splitting it into days failed — open it to retry', 'error');
+    }
+    showToast(
+      !withSchedule ? `${d.wo_number} saved to the Job Pool`
+        : previewDays.length > 1 ? `${d.wo_number} scheduled across ${previewDays.length} days`
+        : `${d.wo_number} scheduled`,
+      'success');
     document.getElementById('gw-job-builder')?.remove();
     window._gwJobDraft = null;
     await _sbRefresh();
