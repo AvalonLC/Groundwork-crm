@@ -18245,7 +18245,7 @@ function _sbTimelineHtml(sb, visibleWOs, allCrews) {
         const color=w.crew_color||cr.color;
         const isMdEvent=!!(w.is_multiday||w.md_day_number);
         const conflict=window._sbConflicts?.get(`${w.id}:${w.md_day_number||0}`);
-        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}${isMdEvent?' sb-time-event--multiday':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--md-color:${isMdEvent?_sbMdColor(w.id):'transparent'}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
+        return `<article class="sb-time-event${conflict?' has-conflict':''}${w.schedule_locked?' is-locked':''}${isMdEvent?' sb-time-event--multiday':''}" data-status="${escapeHtml(w.status||'scheduled')}" style="top:${top}px;height:${h}px;--event-color:${color};--type-color:${_sbTypeColor(w.type)};--md-color:${isMdEvent?_sbMdColor(w.id):'transparent'}" draggable="${w.schedule_locked?'false':'true'}" ondragstart="_sbDragStart(event,'${w.id}',${Number(w.md_day_number||0)})" onclick="_sbOpenVisitModal('${w.id}')">
           <div class="sb-time-event-time">${_p6WOTrafficDot(w.status)}<span>${_sbDisplayTime(_sbClock(r.start))} - ${_sbDisplayTime(_sbClock(r.end))}</span></div><strong>${escapeHtml(w.client_name||w.title||'Job')}</strong><small>${escapeHtml(w.md_phase_name||w.type||'Service')}</small>${conflict?`<em>${conflict}</em>`:''}          ${w.schedule_locked?'':`<span class="sb-time-resize" title="Drag to change end time" onpointerdown="event.stopPropagation();_sbResizeStart(event,'${w.id}',${Number(w.md_day_number||0)})"></span>`}
         </article>`;
       }).join('')}
@@ -18287,6 +18287,64 @@ function _sbMdWarningMap(rows) {
   return out;
 }
 
+/**
+ * Service type -> colour. The card's FILL.
+ *
+ * Two channels, two meanings, everywhere:
+ *
+ *     fill        what kind of work it is   (this map)
+ *     left border which crew has it         (--crew-color)
+ *     badge       status                    (labelled, never colour alone)
+ *
+ * The written brief said crew = accent and stopped there. In crew-lane view the
+ * ROW already says which crew, so spending the fill on it too says one thing
+ * twice and nothing about the work. Tyler's mockup colours by service type, and
+ * it is right — but only for the lane view. Week-column and month views have no
+ * lanes, so crew has to live somewhere: it stays on the left border, which is
+ * present in every view. Neither channel ever changes meaning depending on where
+ * you are looking, which was the actual defect this replaces.
+ *
+ * Keys are matched case-insensitively against work_orders.type, which is free
+ * text from a <select> and has drifted over the years — so 'Lawn Care',
+ * 'lawn care' and 'Lawn' all land in the same bucket. Anything unrecognised
+ * gets the neutral 'other' slate rather than a generated colour: a hash colour
+ * would be stable but meaningless, and a legend cannot explain it.
+ */
+const _GW_TYPE_COLORS = {
+  landscaping: '#2D7A55', landscape: '#2D7A55', install: '#2D7A55', planting: '#2D7A55',
+  maintenance: '#3978C5', 'lawn care': '#3978C5', lawn: '#3978C5', mowing: '#3978C5', service: '#3978C5',
+  hardscape: '#8B5CF6', masonry: '#8B5CF6', paver: '#8B5CF6',
+  irrigation: '#D9564B', sprinkler: '#D9564B',
+  drainage: '#D99A05', grading: '#D99A05',
+  cleanup: '#0E9488', snow: '#64748B',
+};
+const _GW_TYPE_FALLBACK = '#94a3b8';
+
+function _sbTypeColor(type) {
+  const key = String(type || '').trim().toLowerCase();
+  if (!key) return _GW_TYPE_FALLBACK;
+  if (_GW_TYPE_COLORS[key]) return _GW_TYPE_COLORS[key];
+  // Substring match so 'Landscape Construction' finds 'landscape'.
+  for (const k in _GW_TYPE_COLORS) if (key.includes(k)) return _GW_TYPE_COLORS[k];
+  return _GW_TYPE_FALLBACK;
+}
+
+/** The legend. Only types actually present this week, so it stays honest. */
+function _sbTypeLegendHtml(visibleWOs) {
+  const seen = [];
+  for (const w of visibleWOs || []) {
+    const t = String(w.type || '').trim();
+    if (t && !seen.some(x => x.toLowerCase() === t.toLowerCase())) seen.push(t);
+  }
+  if (!seen.length) return '';
+  const poolCount = (window._sbState.pool || []).length;
+  return `<div class="sb-legend">
+    ${seen.sort().map(t => `<span class="sb-legend-item"><i style="background:${_sbTypeColor(t)}"></i>${escapeHtml(t)}</span>`).join('')}
+    ${poolCount ? `<span class="sb-legend-item sb-legend-item--pool"><i></i>Needs scheduling</span>` : ''}
+    <span class="sb-legend-note">Fill is the service type · the left edge is the crew</span>
+  </div>`;
+}
+
 function _sbJobCard(wo, crews, draggable) {
   const mdCrewId = wo.md_crew_id || wo.crew_id;
   const crew = crews.find(c=>c.id===mdCrewId);
@@ -18300,7 +18358,7 @@ function _sbJobCard(wo, crews, draggable) {
   const phaseName = wo.md_phase_name || (wo.md_day_number ? 'Phase ' + wo.md_day_number : 'Multi-day plan');
   const mdWarn = isMd ? (window._sbMdWarnings && window._sbMdWarnings.get(wo.id + ':' + wo.md_day_number)) : '';
   return `
-    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
+    <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--type-color:${_sbTypeColor(wo.type)};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenVisitModal('${wo.id}')">
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
@@ -18622,6 +18680,7 @@ function _sbRender() {
       ${['week','month'].includes(sb.viewMode) ? _sbPoolHtml() : ''}
       <div class="sb-grid-wrap">
         ${gridHtml}
+        ${['week','month','timeline'].includes(sb.viewMode) ? _sbTypeLegendHtml(visibleWOs) : ''}
       </div>
     </div>
   </div>`;
