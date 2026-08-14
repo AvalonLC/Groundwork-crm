@@ -18531,7 +18531,16 @@ function _sbJobCard(wo, crews, draggable) {
         <span class="sb-card-num">${wo.wo_number||wo.id}</span>
         ${timeStr ? `<span class="sb-card-time">${timeStr}${endStr}</span>` : ''}
         ${isMd ? `<span class="sb-card-md-pill" title="Multi-day plan">Day ${escapeHtml(wo.md_day_number||'?')}/${escapeHtml(wo.total_days||'?')}</span>` : ''}
-        ${mdWarn ? `<span class="sb-card-md-warn" title="${escapeHtml(mdWarn)}">${escapeHtml(mdWarn)}</span>` : ''}
+        ${mdWarn ? `<span class="sb-card-md-warn" title="${escapeHtml(mdWarn)}" aria-label="${escapeHtml(mdWarn)}"></span>` : ''}
+        ${(() => {
+          // Planned people-hours for THIS day, from the week payload that is
+          // already loaded. Not calendar duration — the whole point of the four
+          // numbers. Silent when nobody is on the day yet, because "0.0h" on a
+          // card reads as a claim rather than an absence.
+          const a = (window._sbState?.capacity?.assignments || []).find(x => x.day_id === wo.md_day_id);
+          const mins = a ? a.planned_minutes : 0;
+          return mins > 0 ? `<span class="sb-card-labor" title="Planned people-hours for this day">${(mins/60).toFixed(mins%60?1:0)}h</span>` : '';
+        })()}
       </div>
       ${isMd ? `<div class="sb-card-md-marker"><span style="background:${mdColor}"></span>${escapeHtml(phaseName)}</div>` : ''}
       <div class="sb-card-client">${escapeHtml(wo.client_name||wo.title||'Job')}</div>
@@ -18708,8 +18717,24 @@ function _sbRender() {
         }).join('');
         return `
           <div class="sb-lane-label" style="border-left:3px solid ${cr.color}">
-            <span class="sb-lane-crew-dot" style="background:${cr.color}"></span>
-            <span class="sb-lane-crew-name">${escapeHtml(cr.name)}<small title="Booked is calendar time on the grid; the second figure is people-hours against this crew's capacity">${scheduledHours.toFixed(1)}h booked · ${escapeHtml(utilLabel)}</small><i><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i></span>
+            <span class="sb-lane-crew-head">
+              <span class="sb-lane-crew-badge" style="background:${cr.color}">${escapeHtml((cr.name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase())}</span>
+              <span class="sb-lane-crew-id">
+                <b>${escapeHtml(cr.name)}</b>
+                <!-- Foreman and headcount: who to call, and how many bodies.
+                     Both come from the crew roster the capacity figure is
+                     already derived from, so they cost no extra request. -->
+                <em>${capMeta && capMeta.members && capMeta.members.length
+                  ? escapeHtml((capMeta.members.find(m=>m.crew_role==='foreman')||{}).rep_name || 'No foreman')
+                    + ' · ' + capMeta.members.length + (capMeta.members.length===1?' person':' people')
+                  : 'No crew members'}</em>
+              </span>
+            </span>
+            <span class="sb-lane-cap" title="Planned people-hours against this crew's productive capacity. Booked is calendar time on the grid — a different number.">
+              <span class="sb-lane-cap-nums">${capMeta ? (capMeta.week_planned_minutes/60).toFixed(1) + 'h / ' + (capMeta.week_capacity_minutes/60).toFixed(0) + 'h' : scheduledHours.toFixed(1) + 'h booked'}</span>
+              ${utilization !== null ? `<span class="sb-lane-cap-pct${utilization > 100 ? ' is-over' : ''}">${utilization}%</span>` : ''}
+            </span>
+            <i class="sb-lane-bar"><b style="width:${utilization === null ? 0 : Math.min(100,utilization)}%;${utilization !== null && utilization > 100 ? 'background:#d84b42' : ''}"></b></i>
           </div>
           ${dayCells}`;
       }).join('');

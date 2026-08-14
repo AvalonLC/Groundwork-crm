@@ -17988,3 +17988,60 @@ h1.pl-title,
   .sb-workspace, .sb-workspace.has-rail, .sb-workspace.is-pool-collapsed { grid-template-columns: minmax(0, 1fr); }
   .sb-rail { max-height: 70vh; }
 }
+
+/* ── Crew row identity ──────────────────────────────────────────────────── */
+/* Three lines, in the order a scheduler reads them: who the crew is, who to
+   call, and how full they are. */
+.sb-workstation .sb-lane-label {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 9px; justify-content: center;
+}
+.sb-lane-crew-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.sb-lane-crew-badge {
+  width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+  display: grid; place-items: center;
+  color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+}
+.sb-lane-crew-id { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.sb-lane-crew-id b { font-size: 12px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-lane-crew-id em {
+  font-style: normal; font-size: 10px; color: var(--gw-text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sb-lane-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; white-space: nowrap; }
+.sb-lane-cap-nums {
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gw-text);
+  /* Never wrap "16.0h / 38h" onto two lines — a broken number reads as a
+     broken figure, and the lane label is only ~100px wide. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sb-lane-cap-pct { font-size: 10.5px; font-weight: 800; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+.sb-lane-cap-pct.is-over { color: #d84b42; }
+.sb-lane-bar {
+  display: block; height: 4px; border-radius: 999px;
+  background: var(--gw-border); overflow: hidden;
+}
+.sb-lane-bar b { display: block; height: 100%; background: var(--gw-pine-500); border-radius: 999px; }
+
+/* ── Card signals ───────────────────────────────────────────────────────── */
+.sb-workstation .sb-card-labor {
+  margin-left: auto;
+  font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--gw-text-muted);
+}
+/* A dot, not a sentence. The warning text lives in the tooltip and the strip
+   above the board; a chip on the card pushes the client name out of a cell
+   that is already 84px wide. */
+.sb-workstation .sb-card-md-warn {
+  width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%;
+  background: #D99A05; font-size: 0; flex-shrink: 0;
+}
+/* Multi-day continuity: a tick on the leading edge of every day after the
+   first, so a run reads as one job without merging the days into a fake block
+   that would hide their independent crews and dates. */
+.sb-workstation .sb-job-card--multiday::before {
+  content: ''; position: absolute; left: -5px; top: 50%;
+  width: 5px; height: 2px; background: var(--md-color, var(--crew-color));
+  opacity: .55;
+}
+.sb-workstation .sb-job-card { position: relative; }
