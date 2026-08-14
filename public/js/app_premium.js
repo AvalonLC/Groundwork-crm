@@ -17851,6 +17851,10 @@ async function _sbLoadData() {
     const range = _sbCurrentDateRange();
     const _woParams = new URLSearchParams({ limit: '1000', date_from: range.from, date_to: range.to });
     if (_sbIsField && _sbRep) _woParams.set('rep_id', _sbRep.id);
+    // One row per scheduled DAY, not per job — the grid draws each phase of a
+    // multi-day job as its own card. Every other caller wants one row per job and
+    // now gets that by default; see the expand=days note in src/index.tsx.
+    _woParams.set('expand', 'days');
     const _woUrl = '/api/work-orders?' + _woParams.toString();
     const [cr, wo, rr, backlog, cap] = await Promise.all([
       fetch('/api/crews', {credentials:'include'}).then(r=>r.json()),

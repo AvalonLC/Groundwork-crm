@@ -94,9 +94,33 @@ the numerator is correctly week-scoped.
 
 ## Status: steps 1–11 are built
 
-Everything below from "step 5" onward is now done and on
-`claude/scheduling-capacity`. Kept as the record of what was intended; the notes
-under each item still describe the constraints the implementation honours.
+> **Read this first — the rest of this document is a historical record, not a
+> description of current behaviour.** Corrected 2026-08-13.
+>
+> - **It is all on `main`.** This said the work lived on
+>   `claude/scheduling-capacity` and needed reconciling. That branch is
+>   superseded; `main` is ahead of it. Delete the branch.
+> - **"Nothing creates `wo_days` rows for new work orders yet"** (below, under
+>   the step 5 brief) is **false**. All three creation paths call
+>   `ensurePrimaryDay`, and all three now call `syncDayEmployees` too.
+> - **"Every write returns recomputed capacity"** was a design intent that was
+>   never implemented. It is implemented now — `applyDaySchedule` returns
+>   capacity for the old crew and the new one via `capacityFor()`.
+> - **The endpoint table below listed six endpoints as shipped. Five of them had
+>   no caller in the product.** The board dragged through
+>   `PATCH /api/work-orders/:id/reschedule` + `PUT /api/work-orders/:id`
+>   instead — and `/reschedule`'s UPDATE has no `crew_id` column while the `PUT`
+>   called no sync, which is why moving a job between crew lanes left its people
+>   and its capacity on the old crew. Both legacy paths now sync. Wiring the
+>   board onto the router's own write endpoints is Phase 1b.
+> - **`syncDayEmployees` precedence** is the day's own crew roster first,
+>   `work_order_employees` only as a fallback for a crewless day. The note below
+>   describing it as derived from `work_order_employees` predates PR #37.
+> - Test and migration counts below are snapshots from the day they were written.
+
+Everything below from "step 5" onward is done. Kept as the record of what was
+intended; the notes under each item still describe the constraints the
+implementation honours.
 
 | Step | What | Where |
 |---|---|---|
