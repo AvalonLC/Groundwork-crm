@@ -569,6 +569,84 @@ describe('the Job Pool', () => {
   });
 });
 
+describe('Job Builder fields (migration 0070)', () => {
+  it('P1-30 everything the builder collects survives a save', async () => {
+    // The whole point of migration 0070. The brief asked the builder to collect
+    // a dozen fields; work_orders had columns for none of them, and building
+    // inputs anyway is exactly how the recurring-services plan builder ended up
+    // silently discarding its own task list.
+    const res = await req('/api/work-orders', cookie, {
+      method: 'POST',
+      body: body({
+        client_name: 'Johnson', title: 'Backyard renovation', type: 'Hardscape',
+        priority: 'high', required_completion_date: '2026-09-30',
+        target_crew_size: 3, access_notes: 'Gate code 4821. Dog in the yard.',
+        budget_hours: 72, scheduled_duration_minutes: 480,
+      }),
+    });
+    const woId = ((await res.json()) as any).id;
+    const wo = await woRow(woId);
+
+    expect(wo.priority).toBe('high');
+    expect(wo.required_completion_date).toBe('2026-09-30');
+    expect(wo.target_crew_size).toBe(3);
+    expect(wo.access_notes).toBe('Gate code 4821. Dog in the yard.');
+    // Sold labor and calendar span, separately, from one form.
+    expect(wo.budget_minutes).toBe(72 * 60);
+    expect(wo.scheduled_duration_minutes).toBe(480);
+  });
+
+  it('P1-31 they round-trip through an edit too', async () => {
+    const woId = await createJob();
+    await req(`/api/work-orders/${woId}`, cookie, {
+      method: 'PUT', body: body({ priority: 'urgent', target_crew_size: 5, access_notes: 'Park on the street', budget_hours: 40 }),
+    });
+    const wo = await woRow(woId);
+    expect(wo.priority).toBe('urgent');
+    expect(wo.target_crew_size).toBe(5);
+    expect(wo.access_notes).toBe('Park on the street');
+    expect(wo.budget_minutes).toBe(2400);
+  });
+
+  it('P1-32 a quick-add job leaves them null rather than guessing', async () => {
+    // "Not stated" has to stay distinguishable from "normal priority" — a pool
+    // that shows every job as normal is a pool with no signal in it.
+    const res = await req('/api/work-orders', cookie, { method: 'POST', body: body({ client_name: 'Quick' }) });
+    const wo = await woRow(((await res.json()) as any).id);
+    expect(wo.priority).toBeNull();
+    expect(wo.required_completion_date).toBeNull();
+    expect(wo.target_crew_size).toBeNull();
+    expect(wo.access_notes).toBeNull();
+  });
+
+  it('P1-33 the pool payload carries them, so its filters have something to read', async () => {
+    await req('/api/work-orders', cookie, {
+      method: 'POST',
+      body: body({ client_name: 'Pooled', priority: 'urgent', required_completion_date: '2026-10-01', target_crew_size: 2 }),
+    });
+    const backlog = (await (await req('/api/scheduling/backlog', cookie)).json()) as any;
+    const card = backlog.needs_scheduling.find((w: any) => w.client_name === 'Pooled');
+    expect(card.priority).toBe('urgent');
+    expect(card.required_completion_date).toBe('2026-10-01');
+    expect(card.target_crew_size).toBe(2);
+  });
+
+  it('P1-34 a nonsense crew size cannot poison the derived day count', async () => {
+    const res = await req('/api/work-orders', cookie, {
+      method: 'POST', body: body({ client_name: 'Bad', target_crew_size: 0 }),
+    });
+    const wo = await woRow(((await res.json()) as any).id);
+    // 0 would make "sold hours / crew size" divide by zero on the way to
+    // "expected production days".
+    expect(wo.target_crew_size).toBeNull();
+
+    const res2 = await req('/api/work-orders', cookie, {
+      method: 'POST', body: body({ client_name: 'Bad2', target_crew_size: 9999 }),
+    });
+    expect((await woRow(((await res2.json()) as any).id)).target_crew_size).toBe(50);
+  });
+});
+
 describe('GET /api/work-orders paging and shape', () => {
   it('P1-16 one row per job by default, one row per day on request', async () => {
     // The wo_days join had no is_primary predicate, so a five-day job came back
