@@ -18065,3 +18065,42 @@ h1.pl-title,
 .sb-pool-pri--urgent { color: #fff; background: #C94B43; }
 .sb-pool-pri--high   { color: #8a5a00; background: color-mix(in srgb, #D99A05 22%, transparent); }
 .sb-pool-due { font-size: 10.5px; font-weight: 700; color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Card hover: quick production details ───────────────────────────────── */
+/* Appears on hover AND on keyboard focus, so it is not mouse-only. Positioned
+   to open downward-right from the card and pinned above everything, because it
+   has to clear neighbouring cards in a dense week. */
+.sb-card-hover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  min-width: 208px; max-width: 260px; padding: 9px 11px;
+  border: 1px solid var(--gw-border); border-radius: 10px;
+  background: var(--gw-surface, #fff);
+  box-shadow: 0 12px 30px rgba(17, 57, 49, .18);
+  opacity: 0; visibility: hidden; transform: translateY(-3px);
+  transition: opacity .12s ease, transform .12s ease, visibility .12s;
+  pointer-events: none; /* never blocks the drag it sits on top of */
+  text-align: left;
+}
+.sb-job-card:hover > .sb-card-hover,
+.sb-job-card:focus-visible > .sb-card-hover { opacity: 1; visibility: visible; transform: translateY(0); }
+/* Cards in the last two columns would push the panel off the right edge. */
+.sb-lane-cell:nth-child(8n) .sb-card-hover,
+.sb-lane-cell:nth-child(8n+7) .sb-card-hover { left: auto; right: 0; }
+/* A card near the bottom opens upward instead of off the board. */
+.sb-lane-label:last-of-type ~ .sb-lane-cell .sb-card-hover { top: auto; bottom: calc(100% + 6px); }
+
+.sb-card-hover strong { display: block; font-size: 12.5px; font-weight: 800; line-height: 1.25; }
+.sb-card-hover em {
+  display: block; font-style: normal; font-size: 11px; color: var(--gw-text-muted);
+  margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sb-card-hover dl { margin: 7px 0 0; display: flex; flex-direction: column; gap: 3px; }
+.sb-card-hover dl > div { display: flex; gap: 8px; font-size: 11.5px; line-height: 1.4; }
+.sb-card-hover dt { flex: 0 0 52px; color: var(--gw-text-muted); font-weight: 600; }
+.sb-card-hover dd { margin: 0; color: var(--gw-text); min-width: 0; }
+
+/* The panel must be able to escape its cell. The board is still the scroll
+   container, so a panel near the edge is clipped by the board rather than by
+   the 84px cell it lives in. */
+.sb-workstation .sb-lane-cell { overflow: visible; }
+.sb-workstation .sb-lane-grid { overflow: visible; }

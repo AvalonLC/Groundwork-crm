@@ -18572,6 +18572,31 @@ function _sbJobCard(wo, crews, draggable) {
   return `
     <div class="sb-job-card ${statusCls}${isMd?' sb-job-card--multiday':''}${(window._sbState?.selectedDayId === `${wo.id}:${isMd ? Number(wo.md_day_number||0) : 0}`) ? ' is-selected' : ''}" data-status="${escapeHtml(wo.status||'scheduled')}" data-wo="${escapeHtml(wo.id||'')}" data-day="${escapeHtml(wo.md_day_id||'')}" style="--crew-color:${crewColor};--type-color:${_sbTypeColor(wo.type)};${isMd ? '--md-color:' + mdColor : ''}"        ${draggable ? `draggable="true" ondragstart="_sbDragStart(event,'${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})" ondragend="this.style.opacity=''"` : ''}
         onclick="_sbOpenDayRail('${wo.id}',${isMd ? Number(wo.md_day_number||0) : 0})">
+      ${(() => {
+        // Quick production details, on hover and on keyboard focus.
+        //
+        // Everything here is already in memory from the week payload — no
+        // request, no fetch on hover. Only fields that actually have a value
+        // are rendered: an empty row would teach people the panel is broken
+        // rather than that the data is missing.
+        const a = (window._sbState?.capacity?.assignments || []).find(x => x.day_id === wo.md_day_id);
+        const rows = [];
+        if (a && a.employees && a.employees.length) {
+          const fm = a.employees.find(e => e.crew_role === 'foreman');
+          rows.push(['Crew', `${a.employees.length} on site${fm ? ' · ' + escapeHtml(fm.rep_name) : ''}`]);
+        }
+        if (a && a.planned_minutes > 0) rows.push(['Planned', (a.planned_minutes / 60).toFixed(1) + 'h']);
+        if (a && a.budget_minutes != null) rows.push(['Sold', (a.budget_minutes / 60).toFixed(1) + 'h']);
+        if (wo.required_completion_date) rows.push(['Due', escapeHtml(gwDateFormat(wo.required_completion_date, { month:'short', day:'numeric' }))]);
+        if (wo.access_notes) rows.push(['Access', escapeHtml(String(wo.access_notes).slice(0, 90))]);
+        if (mdWarn) rows.push(['Warning', escapeHtml(mdWarn)]);
+        if (!rows.length) return '';
+        return `<div class="sb-card-hover" role="tooltip">
+          <strong>${escapeHtml(wo.client_name || wo.title || 'Job')}</strong>
+          ${wo.property_addr ? `<em>${escapeHtml(wo.property_addr)}</em>` : ''}
+          <dl>${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+        </div>`;
+      })()}
       <div class="sb-card-top">
         <span class="sb-card-drag-handle" title="Drag to reschedule">
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" opacity=".45">
