@@ -18049,8 +18049,35 @@ async function _sbLoadRail(woId, dayNumber) {
     window._sbState.selectedRail = wo;
     _sbRender();
     _sbLoadHours(woId);
+    // Equipment is a separate read because it is a separate TABLE — the work
+    // order's `equipment` field is free text somebody typed, wo_day_equipment is
+    // what is actually booked to this day. The rail showed the former for months
+    // because nothing read the latter.
+    if (wo.md_day_id) _sbLoadDayEquipment(wo.md_day_id);
   } catch (e) { /* rail simply stays in its loading state */ }
 }
+
+async function _sbLoadDayEquipment(dayId) {
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment`, { credentials: 'include' });
+    const d = await r.json();
+    if (!d || !d.ok) return;
+    // Keyed by day so a fast click through three cards cannot leave the second
+    // card's equipment showing under the third card's heading.
+    window._sbState.dayEquipment = { day_id: dayId, ...d };
+    _sbRender();
+  } catch (e) { /* the section falls back to the job's free-text notes */ }
+}
+
+window._sbUnbookEquipment = async function(dayId, assetId) {
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment/${encodeURIComponent(assetId)}`,
+      { method: 'DELETE', credentials: 'include' });
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error || 'Could not release that equipment', 'error'); return; }
+    _sbLoadDayEquipment(dayId);
+  } catch (e) { showToast('Could not release that equipment', 'error'); }
+};
 
 function _sbRailSection(title, count, body, open) {
   return `<section class="sb-rail-sec${open === false ? '' : ' is-open'}">
@@ -18081,8 +18108,16 @@ function _sbDayRailHtml() {
   const people = assignment?.employees || [];
   const checklist = Array.isArray(wo.checklist) ? wo.checklist : [];
   const doneCount = checklist.filter(x => x && (x.done || x.checked)).length;
-  const equipment = Array.isArray(wo.equipment) ? wo.equipment : [];
   const materials = Array.isArray(wo.materials) ? wo.materials : [];
+  // Real bookings from wo_day_equipment, but only if they belong to THIS day —
+  // otherwise a slow response repaints the previous card's equipment here.
+  const eqState = window._sbState.dayEquipment;
+  const eq = (eqState && eqState.day_id && eqState.day_id === wo.md_day_id) ? eqState : {};
+  const bookings = Array.isArray(eq.bookings) ? eq.bookings : [];
+  // Free text typed before the table existed. Shown as "Note only" so nobody
+  // mistakes a word somebody typed for a machine that is actually reserved.
+  const notes = Array.isArray(eq.unbooked_notes) ? eq.unbooked_notes
+    : (Array.isArray(wo.equipment) ? wo.equipment.map(e => typeof e === 'string' ? e : (e && e.name) || '').filter(Boolean) : []);
   const photos = [...(Array.isArray(wo.before_photos) ? wo.before_photos : []), ...(Array.isArray(wo.after_photos) ? wo.after_photos : [])];
 
   const sib = (target) => (sb.workOrders || []).find(w => w.id === wo.id && Number(w.md_day_number) === target);
@@ -18135,11 +18170,18 @@ function _sbDayRailHtml() {
         ? `<ul class="sb-rail-check">${checklist.map(x => `<li class="${x && (x.done || x.checked) ? 'is-done' : ''}"><span class="sb-rail-box" aria-hidden="true"></span>${escapeHtml((x && (x.text || x.label)) || String(x))}</li>`).join('')}</ul>`
         : '<p class="sb-rail-empty">No checklist items.</p>')}
 
-      ${_sbRailSection('Materials &amp; equipment', (materials.length + equipment.length) || null,
-        (materials.length || equipment.length)
-          ? `<ul class="sb-rail-kit">
+      ${_sbRailSection('Materials &amp; equipment', (materials.length + bookings.length + notes.length) || null,
+        (materials.length || bookings.length || notes.length)
+          ? `${eq.conflicts && eq.conflicts.length ? `<div class="sb-rail-eqwarn">${eq.conflicts.map(x => escapeHtml(x.message)).join('<br>')}</div>` : ''}
+             <ul class="sb-rail-kit">
               ${materials.map(m => `<li><span class="sb-rail-kit-name">${escapeHtml(m.name || String(m))}</span>${m.status ? `<span class="sb-rail-kit-status">${escapeHtml(m.status)}</span>` : ''}</li>`).join('')}
-              ${equipment.map(e => `<li><span class="sb-rail-kit-name">${escapeHtml(typeof e === 'string' ? e : (e.name || ''))}</span>${(e && e.status) ? `<span class="sb-rail-kit-status">${escapeHtml(e.status)}</span>` : ''}</li>`).join('')}
+              ${bookings.map(b => `<li class="sb-rail-kit-booked${b.conflict ? ' is-conflict' : ''}">
+                  <span class="sb-rail-kit-name">${escapeHtml(b.asset_name || b.asset_tag || 'Equipment')}</span>
+                  <span class="sb-rail-kit-status sb-eq-${escapeHtml(b.status)}">${escapeHtml(b.status_label)}</span>
+                  <button type="button" class="sb-rail-kit-x" title="Release this equipment"
+                          onclick="_sbUnbookEquipment('${escapeHtml(eq.day_id)}','${escapeHtml(b.asset_id)}')">&times;</button>
+                </li>`).join('')}
+              ${notes.map(n => `<li class="sb-rail-kit-note"><span class="sb-rail-kit-name">${escapeHtml(n)}</span><span class="sb-rail-kit-status">Note only</span></li>`).join('')}
              </ul>`
           : '<p class="sb-rail-empty">Nothing recorded for this day.</p>', false)}
 
