@@ -18066,8 +18066,66 @@ async function _sbLoadDayEquipment(dayId) {
     // card's equipment showing under the third card's heading.
     window._sbState.dayEquipment = { day_id: dayId, ...d };
     _sbRender();
+    // Needed to populate the picker; render again once it lands rather than
+    // blocking the bookings behind the catalogue.
+    if (!window._sbState.assets) { await _sbLoadAssets(); _sbRender(); }
   } catch (e) { /* the section falls back to the job's free-text notes */ }
 }
+
+async function _sbLoadAssets() {
+  // Fetched once per board session. The catalogue is small and changes rarely,
+  // and re-fetching it on every card click would put a request behind an
+  // interaction that should feel instant.
+  if (window._sbState.assets) return window._sbState.assets;
+  try {
+    const r = await fetch('/api/assets', { credentials: 'include' });
+    const d = await r.json();
+    window._sbState.assets = (d && d.ok && d.data && d.data.assets) ? d.data.assets : [];
+  } catch (e) { window._sbState.assets = []; }
+  return window._sbState.assets;
+}
+
+window._sbBookEquipment = async function(dayId, assetId) {
+  if (!assetId) return;
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ asset_id: assetId }),
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error || 'Could not book that equipment', 'error'); return; }
+    window._sbState.dayEquipment = { day_id: dayId, ...d };
+    _sbRender();
+    // The double-booking warning is the whole reason this returns the full day
+    // rather than the one row — booking is exactly when somebody needs to hear
+    // that the machine is already spoken for.
+    if (d.conflicts && d.conflicts.length) showToast(d.conflicts[d.conflicts.length - 1].message, 'warning');
+  } catch (e) { showToast('Could not book that equipment', 'error'); }
+};
+
+/**
+ * Advance a booking: needed -> loaded -> on site -> needed.
+ *
+ * A cycle rather than a dropdown because this gets tapped on a phone at 6am by
+ * somebody standing next to the trailer, and three states do not justify a
+ * menu. It wraps so a mis-tap is one more tap to fix, not a dead end.
+ */
+window._sbCycleEquipmentStatus = async function(dayId, assetId, current) {
+  const order = ['needed', 'loaded', 'on_site'];
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  try {
+    const r = await fetch(`/api/scheduling/days/${encodeURIComponent(dayId)}/equipment`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ asset_id: assetId, status: next }),
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error || 'Could not update that equipment', 'error'); return; }
+    window._sbState.dayEquipment = { day_id: dayId, ...d };
+    _sbRender();
+  } catch (e) { showToast('Could not update that equipment', 'error'); }
+};
 
 window._sbUnbookEquipment = async function(dayId, assetId) {
   try {
@@ -18079,9 +18137,58 @@ window._sbUnbookEquipment = async function(dayId, assetId) {
   } catch (e) { showToast('Could not release that equipment', 'error'); }
 };
 
+/**
+ * The "book a machine" control.
+ *
+ * Renders nothing without a day id — an unsaved or unscheduled day has nothing
+ * to book against, and an inert dropdown that silently fails is worse than no
+ * dropdown. Already-booked machines are filtered out rather than disabled: the
+ * list is short, and a menu of things you cannot pick is noise.
+ */
+function _sbEquipmentPickerHtml(eq, bookings) {
+  if (!eq || !eq.day_id) return '';
+  const all = window._sbState.assets;
+  if (!all) return '<p class="sb-rail-eqhint">Loading equipment&hellip;</p>';
+  const taken = new Set((bookings || []).map(b => b.asset_id));
+  const free = all.filter(a => !taken.has(a.id));
+  if (!free.length) {
+    return all.length
+      ? '<p class="sb-rail-eqhint">Everything in the yard is on this day.</p>'
+      : '<p class="sb-rail-eqhint">No equipment on file yet.</p>';
+  }
+  return `<div class="sb-rail-eqadd">
+    <select class="sb-rail-eqsel" onchange="_sbBookEquipment('${escapeHtml(eq.day_id)}', this.value); this.value='';">
+      <option value="">+ Book equipment&hellip;</option>
+      ${free.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name || a.asset_tag || 'Untitled')}${a.asset_tag && a.name ? ` &middot; ${escapeHtml(a.asset_tag)}` : ''}</option>`).join('')}
+    </select>
+  </div>`;
+}
+
+/**
+ * One collapsible section of the day rail.
+ *
+ * Which sections are open is STATE, not DOM. It used to live only in the
+ * `is-open` class, so any _sbRender() — booking a machine, cycling a status,
+ * the capacity refresh — silently collapsed everything the user had opened.
+ * Found by booking equipment in a browser: the section you were working in
+ * shut itself the moment you used it.
+ *
+ * The key is derived from the title so it survives re-render without every
+ * caller having to invent an id.
+ */
+window._sbToggleRailSec = function(el, key) {
+  const open = el.parentElement.classList.toggle('is-open');
+  (window._sbState.railSecs || (window._sbState.railSecs = {}))[key] = open;
+};
+
 function _sbRailSection(title, count, body, open) {
-  return `<section class="sb-rail-sec${open === false ? '' : ' is-open'}">
-    <header class="sb-rail-sec-head" onclick="this.parentElement.classList.toggle('is-open')">
+  const key = String(title).replace(/&[a-z]+;/g, '').replace(/[^a-z]/gi, '').toLowerCase();
+  const remembered = (window._sbState.railSecs || {})[key];
+  // A remembered choice wins over the caller's default in both directions —
+  // a section the user closed stays closed too.
+  const isOpen = remembered === undefined ? open !== false : remembered;
+  return `<section class="sb-rail-sec${isOpen ? ' is-open' : ''}">
+    <header class="sb-rail-sec-head" onclick="_sbToggleRailSec(this,'${key}')">
       <h4>${title}</h4>${count != null ? `<span class="sb-rail-count">${count}</span>` : ''}
       <span class="sb-rail-caret" aria-hidden="true">&rsaquo;</span>
     </header>
@@ -18177,13 +18284,16 @@ function _sbDayRailHtml() {
               ${materials.map(m => `<li><span class="sb-rail-kit-name">${escapeHtml(m.name || String(m))}</span>${m.status ? `<span class="sb-rail-kit-status">${escapeHtml(m.status)}</span>` : ''}</li>`).join('')}
               ${bookings.map(b => `<li class="sb-rail-kit-booked${b.conflict ? ' is-conflict' : ''}">
                   <span class="sb-rail-kit-name">${escapeHtml(b.asset_name || b.asset_tag || 'Equipment')}</span>
-                  <span class="sb-rail-kit-status sb-eq-${escapeHtml(b.status)}">${escapeHtml(b.status_label)}</span>
+                  <button type="button" class="sb-rail-kit-status sb-eq-${escapeHtml(b.status)}"
+                          title="Mark as ${b.status === 'needed' ? 'loaded' : b.status === 'loaded' ? 'on site' : 'needed'}"
+                          onclick="_sbCycleEquipmentStatus('${escapeHtml(eq.day_id)}','${escapeHtml(b.asset_id)}','${escapeHtml(b.status)}')">${escapeHtml(b.status_label)}</button>
                   <button type="button" class="sb-rail-kit-x" title="Release this equipment"
                           onclick="_sbUnbookEquipment('${escapeHtml(eq.day_id)}','${escapeHtml(b.asset_id)}')">&times;</button>
                 </li>`).join('')}
               ${notes.map(n => `<li class="sb-rail-kit-note"><span class="sb-rail-kit-name">${escapeHtml(n)}</span><span class="sb-rail-kit-status">Note only</span></li>`).join('')}
-             </ul>`
-          : '<p class="sb-rail-empty">Nothing recorded for this day.</p>', false)}
+             </ul>
+             ${_sbEquipmentPickerHtml(eq, bookings)}`
+          : `<p class="sb-rail-empty">Nothing recorded for this day.</p>${_sbEquipmentPickerHtml(eq, bookings)}`, false)}
 
       ${_sbRailSection('Client update', photos.length || null, `
         <div class="sb-rail-photos">
