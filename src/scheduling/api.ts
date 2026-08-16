@@ -18,6 +18,7 @@ import { computeLaborVariance } from '../api/labor_variance';
 import { canViewCompensation } from '../api/compensation';
 import { resolveLaborRate } from '../api/rates';
 import { normalizeStopOrder, reorderStops, summarizeRoute, fromE7 } from '../recurring/routing';
+import { summarizeDayEquipment, normalizeStatus } from './equipment';
 import {
   DEFAULT_PRODUCTIVE_MINUTES_PER_DAY,
   parseWorkingDays,
@@ -1281,6 +1282,145 @@ schedulingRouter.post('/days/:id/assign', async (c) => {
  * accumulates separately without ever being subtracted — so summing duration_min
  * alone overstates actual hours by exactly the break time.
  */
+// ── /days/:id/equipment ──────────────────────────────────────────────────────
+
+/**
+ * Read, book and release the machines on one day.
+ *
+ * wo_day_equipment has existed since migration 0071 with no reader anywhere in
+ * src/ — the rail has been showing the work order's free-text equipment notes,
+ * which cannot be checked against anything. These three handlers are what make
+ * the table real.
+ *
+ * Booking ids are deterministic: `wde_<day>_<asset>`. The table already has a
+ * UNIQUE index on (wo_day_id, asset_id), so a random id would turn "book the
+ * excavator" pressed twice into a UNIQUE violation. Deriving the id from the
+ * pair it is unique on makes the second press an idempotent no-op instead,
+ * which is the same reasoning as wod_bf_/pv_/wo_rc_ elsewhere.
+ */
+const equipmentBookingId = (dayId: string, assetId: string) => `wde_${dayId}_${assetId}`;
+
+/** The day, scoped to the company, plus the date its collisions are judged on. */
+async function equipmentDay(db: D1Database, dayId: string, companyId: string) {
+  return db
+    .prepare(
+      `SELECT d.id, d.day_date, d.work_order_id, d.schedule_locked
+         FROM wo_days d WHERE d.id=? AND d.company_id=? LIMIT 1`,
+    )
+    .bind(dayId, companyId)
+    .first<any>();
+}
+
+/** Bookings for a day, joined to the assets they point at. */
+const DAY_EQUIPMENT_SQL = `
+  SELECT e.id, e.wo_day_id, e.asset_id, e.status, e.notes,
+         a.name AS asset_name, a.asset_tag, a.category,
+         d.day_date, d.work_order_id,
+         wo.title AS job_title, cr.name AS crew_name
+    FROM wo_day_equipment e
+    JOIN wo_days d      ON d.id = e.wo_day_id AND d.company_id = e.company_id
+    LEFT JOIN assets a  ON a.id = e.asset_id  AND a.company_id = e.company_id
+    LEFT JOIN work_orders wo ON wo.id = d.work_order_id AND wo.company_id = d.company_id
+    LEFT JOIN crews cr  ON cr.id = d.crew_id AND cr.company_id = d.company_id
+   WHERE e.company_id = ?`;
+
+schedulingRouter.get('/days/:id/equipment', async (c) => {
+  const db = c.env.DB;
+  const companyId = c.var.companyId;
+  const dayId = c.req.param('id');
+
+  const day = await equipmentDay(db, dayId, companyId);
+  if (!day) return c.json({ ok: false, error: 'Day not found' }, 404);
+
+  const mine = await db.prepare(`${DAY_EQUIPMENT_SQL} AND e.wo_day_id = ? ORDER BY a.name`)
+    .bind(companyId, dayId).all<any>();
+
+  // Every booking company-wide on this date, so the same-date collision can be
+  // computed. An unscheduled day has day_date '' and collides with nothing.
+  const sameDate = day.day_date
+    ? await db.prepare(`${DAY_EQUIPMENT_SQL} AND d.day_date = ?`).bind(companyId, day.day_date).all<any>()
+    : { results: [] as any[] };
+
+  // The free-text notes this replaces, so nothing typed before 0071 disappears.
+  const wo = await db.prepare(`SELECT equipment FROM work_orders WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(day.work_order_id, companyId).first<any>();
+  let notes: any[] = [];
+  try { const p = JSON.parse(wo?.equipment || '[]'); if (Array.isArray(p)) notes = p; } catch { /* free text, not JSON */ }
+
+  return c.json({
+    ok: true,
+    day_id: dayId,
+    day_date: day.day_date || null,
+    ...summarizeDayEquipment(dayId, mine.results || [], sameDate.results || [], notes),
+  });
+});
+
+schedulingRouter.post('/days/:id/equipment', async (c) => {
+  const db = c.env.DB;
+  const companyId = c.var.companyId;
+  const dayId = c.req.param('id');
+  const body = await c.req.json<any>().catch(() => ({}));
+  const assetId = String(body?.asset_id || '').trim();
+  if (!assetId) return c.json({ ok: false, error: 'asset_id is required' }, 400);
+
+  const day = await equipmentDay(db, dayId, companyId);
+  if (!day) return c.json({ ok: false, error: 'Day not found' }, 404);
+  // A locked day refuses equipment changes for the same reason it refuses a
+  // move: somebody has committed to this plan and told the crew.
+  if (int(day.schedule_locked, 0) === 1) {
+    return c.json({ ok: false, error: 'This day is locked. Unlock it to change equipment.' }, 409);
+  }
+
+  const asset = await db.prepare(`SELECT id, name FROM assets WHERE id=? AND company_id=? LIMIT 1`)
+    .bind(assetId, companyId).first<any>();
+  if (!asset) return c.json({ ok: false, error: 'Equipment not found' }, 404);
+
+  const status = normalizeStatus(body?.status);
+  const notes = String(body?.notes || '');
+  await db
+    .prepare(
+      `INSERT INTO wo_day_equipment (id, company_id, wo_day_id, asset_id, status, notes)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(wo_day_id, asset_id)
+         DO UPDATE SET status=excluded.status, notes=excluded.notes, updated_at=datetime('now')`,
+    )
+    .bind(equipmentBookingId(dayId, assetId), companyId, dayId, assetId, status, notes)
+    .run();
+
+  // Return the whole day, conflicts included: booking a machine is exactly when
+  // somebody needs to be told it is already on another job.
+  const mine = await db.prepare(`${DAY_EQUIPMENT_SQL} AND e.wo_day_id = ? ORDER BY a.name`)
+    .bind(companyId, dayId).all<any>();
+  const sameDate = day.day_date
+    ? await db.prepare(`${DAY_EQUIPMENT_SQL} AND d.day_date = ?`).bind(companyId, day.day_date).all<any>()
+    : { results: [] as any[] };
+
+  return c.json({
+    ok: true, day_id: dayId, day_date: day.day_date || null,
+    ...summarizeDayEquipment(dayId, mine.results || [], sameDate.results || [], []),
+  });
+});
+
+schedulingRouter.delete('/days/:id/equipment/:assetId', async (c) => {
+  const db = c.env.DB;
+  const companyId = c.var.companyId;
+  const dayId = c.req.param('id');
+  const assetId = c.req.param('assetId');
+
+  const day = await equipmentDay(db, dayId, companyId);
+  if (!day) return c.json({ ok: false, error: 'Day not found' }, 404);
+  if (int(day.schedule_locked, 0) === 1) {
+    return c.json({ ok: false, error: 'This day is locked. Unlock it to change equipment.' }, 409);
+  }
+
+  await db
+    .prepare(`DELETE FROM wo_day_equipment WHERE wo_day_id=? AND asset_id=? AND company_id=?`)
+    .bind(dayId, assetId, companyId)
+    .run();
+
+  return c.json({ ok: true, day_id: dayId, asset_id: assetId });
+});
+
 schedulingRouter.get('/work-orders/:id/hours', async (c) => {
   const db = c.env.DB;
   const companyId = c.var.companyId;
